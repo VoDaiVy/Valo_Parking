@@ -33,6 +33,7 @@ router.use(authorize('customer', 'admin'));
 router.get('/my', bookingController.getMyBookings);
 router.get('/my-history', bookingController.getMyBookings);
 router.get('/:id/qr', bookingController.getBookingQr);
+router.get('/:id/cancel-quote', bookingController.quoteBookingCancellation);
 router.post('/', requirePolicyAcceptance({ action: 'booking:create' }), bookingController.createBooking);
 router.post('/bulk', requirePolicyAcceptance({ action: 'booking:create' }), bookingController.createBulkBooking);
 router.post('/bulk/quote', bookingController.quoteBulkBooking);

@@ -1168,6 +1168,43 @@ exports.getBookingQr = async (req, res, next) => {
   }
 };
 
+exports.quoteBookingCancellation = async (req, res, next) => {
+  try {
+    const booking = await findOwnedBooking(req.params.id, req.user);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    if (booking.status !== 'PAID') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only paid bookings can be cancelled before check-in',
+      });
+    }
+
+    const now = new Date();
+    if (booking.scheduledStart <= now) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot cancel after the booking start time',
+      });
+    }
+
+    const refundBreakdown = await bookingRefundService.quoteCancellation(booking, now);
+    return res.status(200).json({
+      success: true,
+      data: {
+        bookingId: booking._id,
+        paidAmount: booking.prepaidAmount,
+        refundAmount: refundBreakdown.refundAmount || 0,
+        refundBreakdown,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * @desc    Thay đổi phương tiện (Biển số xe) cho Đặt chỗ trước giờ Check-in
  * @route   PUT /api/bookings/:id/vehicle

@@ -17,6 +17,7 @@ import {
 import {
   cancelBooking,
   extendBooking,
+  getBookingCancellationQuote,
   getBookingQr,
   getMyBookings,
   updateBookingVehicle,
@@ -97,6 +98,8 @@ export default function BookingPage() {
   const [extendEndTime, setExtendEndTime] = useState('');
   const [qrDialog, setQrDialog] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [cancelDialog, setCancelDialog] = useState(null);
+  const [cancelQuoteLoading, setCancelQuoteLoading] = useState('');
   const lastEventRef = useRef(null);
 
   const loadData = async (silent = false) => {
@@ -244,11 +247,32 @@ export default function BookingPage() {
   };
 
   const handleCancel = async (booking) => {
-    const confirmed = window.confirm(`Cancel this booking and refund ${formatMoney(getBookingPaidAmount(booking))} to your wallet?`);
-    if (!confirmed) return;
+    setError('');
+    setCancelQuoteLoading(booking._id);
+    try {
+      const response = await getBookingCancellationQuote(booking._id);
+      if (!response.ok) {
+        setError(response.data?.message || 'Could not calculate the cancellation refund.');
+        return;
+      }
+      setCancelDialog({
+        booking,
+        quote: response.data?.data || null,
+      });
+    } catch {
+      setError('Network error while calculating the cancellation refund.');
+    } finally {
+      setCancelQuoteLoading('');
+    }
+  };
 
+  const confirmCancel = async () => {
+    if (!cancelDialog) return;
+
+    const booking = cancelDialog.booking;
     const res = await runBookingAction(`cancel-${booking._id}`, () => cancelBooking(booking._id));
     if (res) {
+      setCancelDialog(null);
       setSuccess(`Booking cancelled. Refunded ${formatMoney(res.data?.data?.refundAmount || 0)}.`);
     }
   };
@@ -334,6 +358,7 @@ export default function BookingPage() {
             {bookings.map((booking) => {
               const timing = getBookingTiming(booking);
               const isBusy = actionLoading.endsWith(booking._id);
+              const isCancelQuoteBusy = cancelQuoteLoading === booking._id;
 
               return (
                 <div key={booking._id} className={`rounded-2xl border bg-white/[0.03] p-5 flex flex-col lg:flex-row lg:items-center gap-4 justify-between transition hover:border-white/20 ${
@@ -425,11 +450,11 @@ export default function BookingPage() {
                     {timing.canEditBeforeCheckIn && (
                       <button
                         type="button"
-                        disabled={isBusy}
+                        disabled={isBusy || Boolean(cancelQuoteLoading)}
                         onClick={() => handleCancel(booking)}
                         className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-400/20 transition flex items-center gap-2 disabled:opacity-50"
                       >
-                        <Trash2 size={14} />
+                        {isCancelQuoteBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                         Cancel
                       </button>
                     )}
@@ -555,6 +580,60 @@ export default function BookingPage() {
               >
                 {actionLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl border border-rose-400/25 bg-[#121212] p-6 shadow-2xl">
+            <div className="mb-5 flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-400/25 bg-rose-400/10 text-rose-200">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-white">Cancel booking?</h3>
+                <p className="mt-1 text-sm leading-6 text-white/45">
+                  Slot {getBookingSlot(cancelDialog.booking)} - {cancelDialog.booking.licensePlate}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="font-semibold text-white/50">Policy refund</span>
+                <span className="font-black text-yellow-300">
+                  {formatMoney(cancelDialog.quote?.refundAmount || 0)}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-4 text-xs">
+                <span className="font-semibold text-white/35">Paid amount</span>
+                <span className="font-bold text-white/55">{formatMoney(getBookingPaidAmount(cancelDialog.booking))}</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-white/40">
+                Applied policy: {cancelDialog.quote?.refundBreakdown?.appliedRefundPercent ?? 0}% refund for the current cancellation window.
+              </p>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                disabled={Boolean(actionLoading)}
+                onClick={() => setCancelDialog(null)}
+                className="flex-1 rounded-2xl border border-white/10 px-4 py-3 text-sm font-bold text-white/60 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+              >
+                Keep booking
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(actionLoading)}
+                onClick={confirmCancel}
+                className="flex-1 rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-400/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {actionLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                Confirm cancel
               </button>
             </div>
           </div>

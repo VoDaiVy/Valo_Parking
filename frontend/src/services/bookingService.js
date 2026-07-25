@@ -109,6 +109,12 @@ export const getBookingQr = (bookingId) =>
     headers: authHeader(),
   });
 
+export const getBookingCancellationQuote = (bookingId) =>
+  apiFetch(`/bookings/${bookingId}/cancel-quote`, {
+    method: 'GET',
+    headers: authHeader(),
+  });
+
 export const checkInBooking = (bookingId) =>
   apiFetch(`/bookings/${bookingId}/check-in`, {
     method: 'POST',
