@@ -1808,6 +1808,7 @@ exports.quoteBulkBooking = async (req, res, next) => {
     
     let grandTotal = 0;
     const quotedItems = [];
+    const itemErrors = [];
 
     // Check items sequentially
     for (const item of items) {
@@ -1823,6 +1824,7 @@ exports.quoteBulkBooking = async (req, res, next) => {
       const start = new Date(scheduledStart);
       const end = new Date(scheduledEnd);
       
+      try {
       let vehicle;
       if (vehicleId) {
         vehicle = await Vehicle.findOne({ _id: vehicleId, owner: userId });
@@ -1914,13 +1916,20 @@ exports.quoteBulkBooking = async (req, res, next) => {
         pricingPreview: pricing,
         servicesTotal
       });
+      } catch (err) {
+        itemErrors.push({
+          clientItemId,
+          message: err.message
+        });
+      }
     }
 
     res.status(200).json({
       success: true,
       data: {
         grandTotal,
-        items: quotedItems
+        items: quotedItems,
+        itemErrors
       }
     });
   } catch (error) {

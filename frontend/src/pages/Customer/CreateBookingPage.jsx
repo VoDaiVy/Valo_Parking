@@ -998,6 +998,7 @@ export default function CreateBookingPage() {
     }
 
     const rawManualPlate = manualPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const formattedManualPlate = formatVietnamesePlate(rawManualPlate) || manualPlate.trim().toUpperCase();
 
     if (!vehicleId) {
       if (!rawManualPlate) {
@@ -1074,7 +1075,7 @@ export default function CreateBookingPage() {
       licensePlate: vehicleId ? selectedVehicle?.licensePlate : rawManualPlate,
       vehicleLabel: vehicleId
         ? `${selectedVehicle?.licensePlate || 'Vehicle'} - ${selectedVehicle?.brand || 'Vehicle'} ${selectedVehicle?.model || ''}`.trim()
-        : rawManualPlate.trim(),
+        : formattedManualPlate,
       floorId: selectedSlot.floorId,
       floorName: selectedSlot.floorName,
       slotCode: selectedSlot.slotCode,
@@ -1102,6 +1103,7 @@ export default function CreateBookingPage() {
     setCartItemErrors({});
     setEditingClientItemId(null);
     setSuccess(editingClientItemId ? 'Booking item updated.' : 'Booking item added to the list.');
+    fetchActiveHoldsData();
 
     setSelectedServices([]);
     handleFindSlots();
@@ -1132,6 +1134,7 @@ export default function CreateBookingPage() {
     if (itemToRemove && itemToRemove.holdId) {
       await releaseBookingHold(itemToRemove.holdId).catch(() => {});
       handleFindSlots();
+      fetchActiveHoldsData();
     }
     setCartItems((current) => current.filter((item) => item.clientItemId !== clientItemId));
     setCartItemErrors((current) => {
