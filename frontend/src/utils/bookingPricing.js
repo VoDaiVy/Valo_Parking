@@ -24,29 +24,33 @@ export const calculateBookingPrice = (startTime, endTime, options = {}) => {
     };
   }
 
-  const startOfDay = new Date(start);
-  startOfDay.setHours(0, 0, 0, 0);
-  startOfDay.setDate(startOfDay.getDate() - 1);
+  const shiftMs = 7 * 60 * 60 * 1000;
+  const startVn = new Date(start.getTime() + shiftMs);
+  const endVn = new Date(end.getTime() + shiftMs);
 
-  const endOfDay = new Date(end);
-  endOfDay.setHours(23, 59, 59, 999);
+  const startOfDay = new Date(startVn);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  startOfDay.setUTCDate(startOfDay.getUTCDate() - 1);
+
+  const endOfDay = new Date(endVn);
+  endOfDay.setUTCHours(23, 59, 59, 999);
 
   let rawTotal = 0;
 
-  for (let d = new Date(startOfDay); d <= endOfDay; d.setDate(d.getDate() + 1)) {
-    const year = d.getFullYear();
-    const month = d.getMonth();
-    const date = d.getDate();
+  for (let d = new Date(startOfDay); d <= endOfDay; d.setUTCDate(d.getUTCDate() + 1)) {
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth();
+    const date = d.getUTCDate();
 
     for (const block of blocks) {
-      let blockStart = new Date(year, month, date, block.startHour, 0, 0, 0);
-      let blockEnd = new Date(year, month, date, block.endHour, 0, 0, 0);
+      let blockStart = new Date(Date.UTC(year, month, date, block.startHour, 0, 0, 0));
+      let blockEnd = new Date(Date.UTC(year, month, date, block.endHour, 0, 0, 0));
 
       if (block.endHour <= block.startHour) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
+        blockEnd.setUTCDate(blockEnd.getUTCDate() + 1);
       }
 
-      if (start < blockEnd && end > blockStart) {
+      if (startVn < blockEnd && endVn > blockStart) {
         rawTotal += block.price;
       }
     }
