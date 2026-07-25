@@ -351,6 +351,24 @@ exports.getPendingVehicles = async (req, res, next) => {
 };
 
 /**
+ * @desc  List all approved vehicles (with owner info)
+ * @route GET /api/admin/vehicles/approved
+ * @access Admin only
+ */
+exports.getApprovedVehicles = async (req, res, next) => {
+  try {
+    const vehicles = await Vehicle.find({ status: "approved" })
+      .populate("owner", "name email")
+      .sort({ updatedAt: -1, createdAt: -1 });
+    res
+      .status(200)
+      .json({ success: true, count: vehicles.length, data: vehicles });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * @desc  Update user status (block/unblock)
  * @route PUT /api/admin/users/:id/status
  * @access Admin only

@@ -37,6 +37,16 @@ const getBookingStatus = (booking) => String(booking?.status || '').toUpperCase(
 const getBookingStart = (booking) => booking.scheduledStart || booking.startTime;
 const getBookingEnd = (booking) => booking.scheduledEnd || booking.endTime;
 const getBookingSlot = (booking) => booking.parkingSlot || booking.slotCode || '--';
+const getBookingPaidAmount = (booking) => {
+  const candidates = [
+    booking?.prepaidAmount,
+    booking?.paymentBreakdownSnapshot?.totalAmount,
+    booking?.finalAmount,
+    booking?.totalAmount,
+  ];
+  const amount = candidates.find((value) => value !== null && value !== undefined && Number.isFinite(Number(value)));
+  return Number(amount || 0);
+};
 
 const statusClass = (status) => {
   const normalizedStatus = String(status || '').toUpperCase();
@@ -234,7 +244,7 @@ export default function BookingPage() {
   };
 
   const handleCancel = async (booking) => {
-    const confirmed = window.confirm(`Cancel this booking and refund ${formatMoney(booking.finalAmount || 0)} to your wallet?`);
+    const confirmed = window.confirm(`Cancel this booking and refund ${formatMoney(getBookingPaidAmount(booking))} to your wallet?`);
     if (!confirmed) return;
 
     const res = await runBookingAction(`cancel-${booking._id}`, () => cancelBooking(booking._id));
@@ -358,7 +368,7 @@ export default function BookingPage() {
                       </div>
                       <div className="flex flex-col">
                         <span className="text-[10px] font-bold tracking-widest uppercase text-white/30 mb-0.5">Paid</span>
-                        <span className="font-bold text-yellow-400/90">{formatMoney(booking.finalAmount)}</span>
+                        <span className="font-bold text-yellow-400/90">{formatMoney(getBookingPaidAmount(booking))}</span>
                       </div>
                     </div>
                     {booking.services?.length > 0 && (
