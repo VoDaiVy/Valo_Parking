@@ -3,7 +3,7 @@ import { Menu, Transition } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, X, Mail, Phone, Calendar, Users, User, Shield, UserX,
-  ChevronDown, Edit3,
+  ChevronDown, Edit3, Trash2,
   AlertTriangle, Check, Clock, UserPlus,
   RefreshCw, Layers, Eye
 } from 'lucide-react';
@@ -157,6 +157,7 @@ export default function AccountManagement() {
   const [editForm, setEditForm] = useState({});
   const [saveState, setSaveState] = useState('idle'); // idle | saving | success | error
   const [blockConfirm, setBlockConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [sortOrder, setSortOrder] = useState('newest');
   const [toast, setToast] = useState(null);
 
@@ -202,8 +203,26 @@ export default function AccountManagement() {
     }
   };
 
-  const openPanel = (u) => { setPanelUser(u); setIsEditing(false); setBlockConfirm(false); setSaveState('idle'); };
-  const closePanel = () => { setPanelUser(null); setIsEditing(false); setBlockConfirm(false); };
+  const openPanel = (u) => { setPanelUser(u); setIsEditing(false); setBlockConfirm(false); setDeleteConfirm(false); setSaveState('idle'); };
+  const closePanel = () => { setPanelUser(null); setIsEditing(false); setBlockConfirm(false); setDeleteConfirm(false); };
+
+  const handleDeleteUser = async (userId) => {
+    try {
+      const res = await apiFetch(`/admin/users/${userId}`, {
+        method: 'DELETE', headers: authHeader
+      });
+      if (res.ok && res.data?.success) {
+        setUsers(prev => prev.filter(u => u._id !== userId));
+        if (panelUser?._id === userId) closePanel();
+        showToast('User deleted successfully', 'success');
+      } else {
+        showToast(res.data?.message || 'Failed to delete user', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('An error occurred', 'error');
+    }
+  };
 
   const startEdit = (u) => {
     // Prevent React SyntheticEvent from overwriting the user object
@@ -768,7 +787,7 @@ export default function AccountManagement() {
                   </motion.div>
                 )}
 
-                {!blockConfirm ? (
+                {(!blockConfirm && !deleteConfirm) ? (
                   <div className="flex gap-3">
                     {isEditing ? (
                       <>
@@ -805,10 +824,14 @@ export default function AccountManagement() {
                             Unblock User
                           </button>
                         )}
+                        <button onClick={() => setDeleteConfirm(true)}
+                          className="w-10 h-[42px] flex items-center justify-center rounded-xl border border-red-600/50 bg-red-500/10 text-red-500 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all active:scale-95 shrink-0">
+                          <Trash2 size={16} />
+                        </button>
                       </>
                     )}
                   </div>
-                ) : (
+                ) : blockConfirm ? (
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4">
                     <div className="flex items-start gap-3 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20">
                       <AlertTriangle size={18} className="text-rose-400 mt-0.5 flex-shrink-0" />
@@ -819,6 +842,21 @@ export default function AccountManagement() {
                     <div className="flex gap-3">
                       <button onClick={() => setBlockConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">Cancel</button>
                       <button onClick={() => { handleBlockToggle(panelUser._id, panelUser.status); setBlockConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all">Confirm Block</button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4">
+                    <div className="flex items-start gap-3 p-3 bg-red-600/10 rounded-xl border border-red-600/20">
+                      <AlertTriangle size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-red-300/80 leading-relaxed">
+                        Are you absolutely sure you want to <strong className="text-red-400">PERMANENTLY DELETE</strong> <strong className="text-white">{displayName(panelUser)}</strong>? This will wipe all their data and cannot be undone.
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">Cancel</button>
+                      <button onClick={() => { handleDeleteUser(panelUser._id); setDeleteConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all flex items-center justify-center gap-2">
+                        <Trash2 size={16} /> Delete User
+                      </button>
                     </div>
                   </motion.div>
                 )}

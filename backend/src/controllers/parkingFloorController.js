@@ -252,13 +252,16 @@ exports.getFloorSlots = async (req, res) => {
 
     const slots = await Slot.find({ floorID: id }).populate('zoneID', 'zoneName zoneType').lean();
 
-    const activeEntitlements = await MembershipSlotEntitlement.find({
+    const rawEntitlements = await MembershipSlotEntitlement.find({
       floorId: id,
       status: { $in: ['active', 'transfer_locked'] },
       expireAt: { $gt: new Date() },
     })
       .populate('packageId', 'type name price')
       .populate('ownerId', 'username email phone');
+      
+    // Lọc bỏ những entitlement của user đã bị xoá (orphan)
+    const activeEntitlements = rawEntitlements.filter(e => e.ownerId);
 
     const slotPackageMap = {};
     const slotSubscriptionMap = {};
@@ -296,7 +299,9 @@ exports.getLiveMapData = async (req, res) => {
 
     const slots = await Slot.find()
       .populate('zoneID', 'zoneName zoneType')
-      .populate('floorID', 'name floorNumber');
+      .populate('floorID', 'name floorNumber')
+      .populate('reservedFor', '_id')
+      .populate('reservedByEntitlementId', 'ownerId status expireAt');
 
     const now = new Date();
     const next2Hours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -321,12 +326,18 @@ exports.getLiveMapData = async (req, res) => {
     const maintenanceSet = new Set(maintenanceLogs.map(m => m.slotNumber));
     const subscriptionSlots = new Set(
       slots
-        .filter(
-          (slot) =>
-            slot.reservedFor ||
-            slot.reservedByEntitlementId ||
-            slot.reservedBySubscriptionId
-        )
+        .filter((slot) => {
+          // If reservedFor is set but populated as null -> User was deleted
+          if (slot.reservedFor && slot.reservedFor._id) return true;
+          // If entitlement is set but ownerId is null or it's expired -> Orphaned/Expired
+          if (slot.reservedByEntitlementId && slot.reservedByEntitlementId.ownerId) {
+             const ent = slot.reservedByEntitlementId;
+             if (['active', 'transfer_locked'].includes(ent.status) && new Date(ent.expireAt) > now) {
+               return true;
+             }
+          }
+          return false;
+        })
         .map((slot) => slot.slotNumber)
     );
 
