@@ -14,8 +14,8 @@ const {
 } = require('./refundEngine');
 
 const getRefundEngineMode = () => {
-  const mode = String(process.env.REFUND_ENGINE_MODE || 'legacy').toLowerCase();
-  return ['legacy', 'shadow', 'active'].includes(mode) ? mode : 'legacy';
+  const mode = String(process.env.REFUND_ENGINE_MODE || 'active').toLowerCase();
+  return ['legacy', 'shadow', 'active'].includes(mode) ? mode : 'active';
 };
 
 const getSnapshotRule = (booking) =>

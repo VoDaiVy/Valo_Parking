@@ -50,7 +50,7 @@ const formatServicePrice = (price) => {
     return 'Contact us';
   }
 
-  return `$${amount.toFixed(2)}`;
+  return `${amount.toLocaleString('vi-VN')} VND`;
 };
 
 const formatServiceTime = (timeCost) => {
