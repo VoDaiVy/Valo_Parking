@@ -115,6 +115,41 @@ export const createEntitlementTransfer = async (entitlementId, input) =>
     body: JSON.stringify(input),
   });
 
+export const searchMembershipTransferRecipients = async (search = "", limit = 12) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (search.trim()) params.set("q", search.trim());
+  return apiFetch(`/customer/membership-transfer-recipients?${params.toString()}`, {
+    method: "GET",
+    headers: authHeader(),
+  });
+};
+
+export const getMembershipTransferMarketplace = async (filters = {}) => {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  });
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch(`/customer/membership-transfer-marketplace${suffix}`, {
+    method: 'GET',
+    headers: authHeader(),
+  });
+};
+
+export const getMembershipTransferListing = async (transferId) =>
+  apiFetch(`/customer/membership-transfer-marketplace/${transferId}`, {
+    method: 'GET',
+    headers: authHeader(),
+  });
+
+export const claimMembershipTransferListing = async (transferId) =>
+  apiFetch(`/customer/membership-transfer-marketplace/${transferId}/claim`, {
+    method: 'POST',
+    headers: authHeader(),
+  });
+
 export const getMyEntitlementTransfers = async () =>
   apiFetch('/customer/membership-entitlement-transfers', {
     method: 'GET',
@@ -132,6 +167,12 @@ export const rejectEntitlementTransfer = async (transferId, reason = '') =>
     method: 'PUT',
     headers: authHeader(),
     body: JSON.stringify({ reason }),
+  });
+
+export const cancelEntitlementTransfer = async (transferId) =>
+  apiFetch(`/customer/membership-entitlement-transfers/${transferId}/cancel`, {
+    method: 'PUT',
+    headers: authHeader(),
   });
 
 export const settleEntitlementTransfer = async (transferId) =>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bell, Calendar, FileText, Send, Users, User } from "lucide-react";
 import { PRIORITY, PRIORITY_META, TARGET_OPTIONS } from "../../../lib/notifications/types";
+import StaffDropdown from "../components/StaffDropdown.jsx";
 
 const sampleCustomers = [
   { id: "cust_001", name: "Customer A" },
@@ -67,17 +68,16 @@ export default function ComposeForm({ templates, onSend, onSchedule }) {
           <div className="grid gap-4">
             <div>
               <label className="mb-2 block text-sm font-semibold text-gray-300">Audience</label>
-              <select
+              <StaffDropdown
                 value={target}
-                onChange={(event) => setTarget(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-gray-100 outline-none focus:border-yellow-400"
-              >
-                {TARGET_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setTarget}
+                options={TARGET_OPTIONS}
+                ariaLabel="Select notification audience"
+                icon={Users}
+                className="w-full"
+                buttonClassName="h-12 rounded-2xl bg-white/5 px-4"
+                menuClassName="w-full"
+              />
             </div>
 
             {(target === "single" || target === "multi") && (
@@ -120,17 +120,16 @@ export default function ComposeForm({ templates, onSend, onSchedule }) {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-semibold text-gray-300">Priority</label>
-                <select
+                <StaffDropdown
                   value={priority}
-                  onChange={(event) => setPriority(event.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-gray-100 outline-none focus:border-yellow-400"
-                >
-                  {Object.entries(PRIORITY_META).map(([key, meta]) => (
-                    <option key={key} value={key}>
-                      {meta.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setPriority}
+                  options={Object.entries(PRIORITY_META).map(([key, meta]) => [key, meta.label])}
+                  ariaLabel="Select notification priority"
+                  icon={Bell}
+                  className="w-full"
+                  buttonClassName="h-12 rounded-2xl bg-white/5 px-4"
+                  menuClassName="w-full"
+                />
               </div>
             </div>
 

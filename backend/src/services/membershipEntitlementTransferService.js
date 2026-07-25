@@ -16,10 +16,60 @@ const {
 } = require('./pdfService');
 const { recomputeUserMembership } = require('./membershipProjectionService');
 
-const OPEN_STATUSES = ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'AWAITING_PAYMENT'];
+const OPEN_STATUSES = [
+  'PENDING_RECIPIENT',
+  'PENDING_ADMIN',
+  'LISTED',
+  'AWAITING_PAYMENT',
+];
+const DIRECT_PAYMENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const PUBLIC_LISTING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const PUBLIC_CLAIM_WINDOW_MS = 15 * 60 * 1000;
+const MARKETPLACE_INDEX_NAME = 'one_open_transfer_per_entitlement_v2';
+let marketplaceReadinessCache = {
+  checkedAt: 0,
+  ready: false,
+};
 const error = (message, statusCode = 400, code) =>
   Object.assign(new Error(message), { statusCode, code });
 const floor1000 = (value) => Math.floor(Math.max(0, Number(value || 0)) / 1000) * 1000;
+const normalizeMode = (mode) => String(mode || 'DIRECT').trim().toUpperCase();
+const escapeRegex = (value) =>
+  String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const getExpiredTransferResolution = (transfer, now = new Date()) =>
+  transfer.mode === 'PUBLIC' &&
+  transfer.listingExpiresAt &&
+  new Date(transfer.listingExpiresAt) > now
+    ? 'RELIST'
+    : 'EXPIRE';
+
+const assertPublicMarketplaceReady = async () => {
+  if (String(process.env.MEMBERSHIP_TRANSFER_PUBLIC_ENABLED || 'true') === 'false') {
+    throw error(
+      'Public membership transfers are currently disabled.',
+      503,
+      'MARKETPLACE_DISABLED'
+    );
+  }
+  const now = Date.now();
+  if (marketplaceReadinessCache.ready && now - marketplaceReadinessCache.checkedAt < 60000) {
+    return;
+  }
+  const indexes = await MembershipEntitlementTransfer.collection.indexes();
+  const index = indexes.find((item) => item.name === MARKETPLACE_INDEX_NAME);
+  const statuses = index?.partialFilterExpression?.status?.$in || [];
+  const ready =
+    index?.unique === true &&
+    OPEN_STATUSES.every((status) => statuses.includes(status));
+  marketplaceReadinessCache = { checkedAt: now, ready };
+  if (!ready) {
+    throw error(
+      'Public membership transfers are waiting for database migration.',
+      503,
+      'MARKETPLACE_NOT_READY'
+    );
+  }
+};
 
 const calculateTransferPricing = (entitlement, askingPrice, now = new Date()) => {
   const validFrom = new Date(entitlement.validFrom);
@@ -109,11 +159,33 @@ const assertRecipientCapacity = async (userId, session = null) => {
 const createTransfer = async ({
   entitlementId,
   fromUserId,
+  mode,
   toUserId,
   toUserEmail,
   askingPrice,
   reason,
 }) => {
+  const normalizedMode = normalizeMode(mode);
+  if (!['DIRECT', 'PUBLIC'].includes(normalizedMode)) {
+    throw error('Invalid transfer mode.', 400, 'INVALID_TRANSFER_MODE');
+  }
+  if (normalizedMode === 'PUBLIC' && (toUserId || toUserEmail)) {
+    throw error(
+      'A public listing cannot target a recipient.',
+      400,
+      'PUBLIC_RECIPIENT_NOT_ALLOWED'
+    );
+  }
+  if (normalizedMode === 'DIRECT' && !toUserId && !toUserEmail) {
+    throw error(
+      'Recipient user ID or email is required.',
+      400,
+      'RECIPIENT_REQUIRED'
+    );
+  }
+  if (normalizedMode === 'PUBLIC') {
+    await assertPublicMarketplaceReady();
+  }
   const entitlement = await MembershipSlotEntitlement.findOne({
     _id: entitlementId,
     ownerId: fromUserId,
@@ -125,21 +197,35 @@ const createTransfer = async ({
     throw error('This membership space cannot be transferred.', 404, 'NOT_TRANSFERABLE');
   }
   await assertNoActiveSession(entitlement._id);
-  const recipient = await User.findOne(
-    toUserId ? { _id: toUserId } : { email: String(toUserEmail || '').trim().toLowerCase() }
-  ).select('role status username email');
-  if (!recipient || recipient.role !== 'customer' || !recipient.status) {
-    throw error('Active recipient account not found.', 404, 'RECIPIENT_NOT_FOUND');
+  if (
+    await MembershipEntitlementTransfer.exists({
+      entitlementId: entitlement._id,
+      status: { $in: OPEN_STATUSES },
+    })
+  ) {
+    throw error('This space already has an open transfer.', 409, 'TRANSFER_EXISTS');
   }
-  if (String(recipient._id) === String(fromUserId)) {
-    throw error('You cannot transfer a space to yourself.', 400, 'SELF_TRANSFER');
+  let recipient = null;
+  if (normalizedMode === 'DIRECT') {
+    recipient = await User.findOne(
+      toUserId
+        ? { _id: toUserId }
+        : { email: String(toUserEmail || '').trim().toLowerCase() }
+    ).select('role status username email');
+    if (!recipient || recipient.role !== 'customer' || !recipient.status) {
+      throw error('Active recipient account not found.', 404, 'RECIPIENT_NOT_FOUND');
+    }
+    if (String(recipient._id) === String(fromUserId)) {
+      throw error('You cannot transfer a space to yourself.', 400, 'SELF_TRANSFER');
+    }
   }
   const pricing = calculateTransferPricing(entitlement, askingPrice);
   const transfer = await MembershipEntitlementTransfer.create({
     entitlementId: entitlement._id,
     fromUserId,
-    toUserId: recipient._id,
-    status: 'PENDING_RECIPIENT',
+    mode: normalizedMode,
+    toUserId: recipient?._id || null,
+    status: normalizedMode === 'DIRECT' ? 'PENDING_RECIPIENT' : 'PENDING_ADMIN',
     reason,
     askingPrice: pricing.askingPrice,
     remainingValue: pricing.remainingValue,
@@ -154,9 +240,36 @@ const createTransfer = async ({
   return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
 };
 
+const searchTransferRecipients = async (
+  requesterId,
+  search = '',
+  requestedLimit = 12
+) => {
+  const limit = Math.min(20, Math.max(1, Number.parseInt(requestedLimit, 10) || 12));
+  const normalizedSearch = String(search || '').trim().toLowerCase();
+  const query = {
+    _id: { $ne: requesterId },
+    role: 'customer',
+    status: true,
+  };
+  if (normalizedSearch) {
+    query.email = { $regex: escapeRegex(normalizedSearch), $options: 'i' };
+  }
+  return User.find(query)
+    .select('_id username email')
+    .sort({ email: 1 })
+    .limit(limit)
+    .lean();
+};
+
 const acceptTransfer = async (transferId, userId) => {
   const transfer = await MembershipEntitlementTransfer.findOneAndUpdate(
-    { _id: transferId, toUserId: userId, status: 'PENDING_RECIPIENT' },
+    {
+      _id: transferId,
+      mode: 'DIRECT',
+      toUserId: userId,
+      status: 'PENDING_RECIPIENT',
+    },
     { $set: { status: 'PENDING_ADMIN', acceptedAt: new Date() } },
     { new: true }
   );
@@ -193,6 +306,34 @@ const rejectTransfer = async (transferId, userId, reason = '') => {
   return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
 };
 
+const cancelTransfer = async (transferId, userId, reason = '') => {
+  const transfer = await MembershipEntitlementTransfer.findOneAndUpdate(
+    {
+      _id: transferId,
+      fromUserId: userId,
+      status: { $in: ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'LISTED'] },
+    },
+    {
+      $set: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        rejectedBy: userId,
+        rejectedAt: new Date(),
+        rejectionReason: String(reason || '').trim(),
+      },
+    },
+    { new: true }
+  );
+  if (!transfer) {
+    throw error(
+      'Transfer cannot be cancelled in its current state.',
+      409,
+      'TRANSFER_CANNOT_CANCEL'
+    );
+  }
+  return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
+};
+
 const approveTransfer = async (transferId, adminId) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -202,9 +343,31 @@ const approveTransfer = async (transferId, adminId) => {
       status: 'PENDING_ADMIN',
     }).session(session);
     if (!transfer) throw error('Transfer is not awaiting admin approval.', 409);
-    await assertRecipientCapacity(transfer.toUserId, session);
     await assertNoActiveSession(transfer.entitlementId, session);
-    const lockExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    if (transfer.mode === 'PUBLIC') {
+      await assertPublicMarketplaceReady();
+      const entitlement = await MembershipSlotEntitlement.findOne({
+        _id: transfer.entitlementId,
+        ownerId: transfer.fromUserId,
+        status: 'active',
+        transferCount: { $lt: 1 },
+        expireAt: { $gt: new Date() },
+      }).session(session);
+      if (!entitlement) throw error('Entitlement changed before approval.', 409);
+      const now = new Date();
+      transfer.status = 'LISTED';
+      transfer.approvedBy = adminId;
+      transfer.approvedAt = now;
+      transfer.listingApprovedAt = now;
+      transfer.listingExpiresAt = new Date(now.getTime() + PUBLIC_LISTING_WINDOW_MS);
+      transfer.lockExpiresAt = null;
+      await transfer.save({ session });
+      await session.commitTransaction();
+      return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
+    }
+
+    await assertRecipientCapacity(transfer.toUserId, session);
+    const lockExpiresAt = new Date(Date.now() + DIRECT_PAYMENT_WINDOW_MS);
     const entitlement = await MembershipSlotEntitlement.findOneAndUpdate(
       {
         _id: transfer.entitlementId,
@@ -226,6 +389,257 @@ const approveTransfer = async (transferId, adminId) => {
     return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
   } catch (cause) {
     await session.abortTransaction();
+    throw cause;
+  } finally {
+    session.endSession();
+  }
+};
+
+const toMarketplaceItem = (transfer, viewerId = null) => {
+  const entitlement = transfer.entitlementId || {};
+  const floor = entitlement.floorId || {};
+  const parkingLot = floor.parkingLotID || {};
+  const ticketPackage = entitlement.packageId || {};
+  return {
+    transferId: transfer._id,
+    mode: transfer.mode,
+    status: transfer.status,
+    available:
+      transfer.status === 'LISTED' &&
+      Boolean(transfer.listingExpiresAt) &&
+      new Date(transfer.listingExpiresAt) > new Date(),
+    canSettle:
+      transfer.status === 'AWAITING_PAYMENT' &&
+      Boolean(viewerId) &&
+      String(transfer.toUserId?._id || transfer.toUserId) === String(viewerId),
+    slotCode: entitlement.slotCode,
+    parkingLot: parkingLot?._id
+      ? {
+          id: parkingLot._id,
+          name: parkingLot.name,
+          address: parkingLot.address,
+        }
+      : null,
+    floor: floor?._id
+      ? {
+          id: floor._id,
+          name: floor.name,
+          floorNumber: floor.floorNumber,
+        }
+      : null,
+    package: ticketPackage?._id
+      ? {
+          id: ticketPackage._id,
+          name: ticketPackage.name,
+          type: ticketPackage.type,
+        }
+      : null,
+    askingPrice: transfer.askingPrice,
+    remainingValue: transfer.remainingValue,
+    transferFee: transfer.transferFee,
+    totalDue: Number(transfer.askingPrice || 0) + Number(transfer.transferFee || 0),
+    validFrom: entitlement.validFrom,
+    expireAt: entitlement.expireAt,
+    listingExpiresAt: transfer.listingExpiresAt,
+    lockExpiresAt: transfer.lockExpiresAt,
+    createdAt: transfer.createdAt,
+  };
+};
+
+const marketplacePopulate = (query) =>
+  query.populate({
+    path: 'entitlementId',
+    select: 'slotCode validFrom expireAt floorId packageId',
+    populate: [
+      {
+        path: 'floorId',
+        select: 'name floorNumber parkingLotID',
+        populate: { path: 'parkingLotID', select: 'name address' },
+      },
+      { path: 'packageId', select: 'name type' },
+    ],
+  });
+
+const buildMarketplaceQuery = async (filters = {}) => {
+  const now = new Date();
+  const query = {
+    mode: 'PUBLIC',
+    status: 'LISTED',
+    listingExpiresAt: { $gt: now },
+  };
+  const minimumExpiry = Number.isFinite(Number(filters.minRemainingDays))
+    ? new Date(
+        now.getTime() +
+          Math.max(0, Number(filters.minRemainingDays)) * 86400000
+      )
+    : now;
+  query['priceSnapshot.expireAt'] = { $gt: minimumExpiry };
+  const minPrice = Number(filters.minPrice);
+  const maxPrice = Number(filters.maxPrice);
+  if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+    query.askingPrice = {};
+    if (Number.isFinite(minPrice)) query.askingPrice.$gte = Math.max(0, minPrice);
+    if (Number.isFinite(maxPrice)) query.askingPrice.$lte = Math.max(0, maxPrice);
+  }
+
+  const entitlementQuery = { status: 'active', expireAt: { $gt: minimumExpiry } };
+  if (filters.floorId) entitlementQuery.floorId = filters.floorId;
+  if (filters.parkingLotId) {
+    const floorIds = await ParkingFloor.find({
+      parkingLotID: filters.parkingLotId,
+    }).distinct('_id');
+    entitlementQuery.floorId = entitlementQuery.floorId
+      ? { $in: floorIds.filter((id) => String(id) === String(filters.floorId)) }
+      : { $in: floorIds };
+  }
+  if (filters.floorId || filters.parkingLotId) {
+    query.entitlementId = {
+      $in: await MembershipSlotEntitlement.find(entitlementQuery).distinct('_id'),
+    };
+  }
+  return query;
+};
+
+const listMarketplace = async (filters = {}) => {
+  await assertPublicMarketplaceReady();
+  const page = Math.max(1, Number.parseInt(filters.page, 10) || 1);
+  const limit = Math.min(50, Math.max(1, Number.parseInt(filters.limit, 10) || 20));
+  const query = await buildMarketplaceQuery(filters);
+  const sort = {
+    price_asc: { askingPrice: 1, createdAt: -1 },
+    expiry_asc: { listingExpiresAt: 1, createdAt: -1 },
+  }[filters.sort] || { createdAt: -1 };
+  const [records, total] = await Promise.all([
+    marketplacePopulate(
+      MembershipEntitlementTransfer.find(query)
+        .sort(sort)
+        .skip((page - 1) * limit)
+        .limit(limit)
+    ).lean(),
+    MembershipEntitlementTransfer.countDocuments(query),
+  ]);
+  return {
+    items: records.map(toMarketplaceItem),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+};
+
+const getMarketplaceListing = async (transferId, viewerId) => {
+  await assertPublicMarketplaceReady();
+  const transfer = await marketplacePopulate(
+    MembershipEntitlementTransfer.findOne({
+      _id: transferId,
+      mode: 'PUBLIC',
+      $or: [
+        { status: 'LISTED' },
+        { status: 'AWAITING_PAYMENT', toUserId: viewerId },
+      ],
+    })
+  ).lean();
+  if (!transfer) {
+    throw error(
+      'This marketplace listing is not available.',
+      404,
+      'LISTING_NOT_AVAILABLE'
+    );
+  }
+  const item = toMarketplaceItem(transfer, viewerId);
+  if (item.canSettle) {
+    const wallet = await walletService.getBalance(viewerId);
+    item.walletBalance = Number(wallet.balance || 0);
+    item.shortfall = Math.max(0, item.totalDue - item.walletBalance);
+  }
+  return item;
+};
+
+const claimMarketplaceListing = async (transferId, buyerId) => {
+  await assertPublicMarketplaceReady();
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const now = new Date();
+    const transfer = await MembershipEntitlementTransfer.findOne({
+      _id: transferId,
+      mode: 'PUBLIC',
+      status: 'LISTED',
+      toUserId: null,
+      listingExpiresAt: { $gt: now },
+    }).session(session);
+    if (!transfer) {
+      throw error(
+        'This listing is no longer available.',
+        409,
+        'LISTING_ALREADY_CLAIMED'
+      );
+    }
+    if (String(transfer.fromUserId) === String(buyerId)) {
+      throw error('You cannot buy your own listing.', 400, 'SELF_TRANSFER');
+    }
+    const buyer = await User.findOne({
+      _id: buyerId,
+      role: 'customer',
+      status: true,
+    }).session(session);
+    if (!buyer) throw error('Active buyer account not found.', 404, 'RECIPIENT_NOT_FOUND');
+
+    await assertRecipientCapacity(buyerId, session);
+    await assertNoActiveSession(transfer.entitlementId, session);
+    const entitlement = await MembershipSlotEntitlement.findOneAndUpdate(
+      {
+        _id: transfer.entitlementId,
+        ownerId: transfer.fromUserId,
+        status: 'active',
+        transferCount: { $lt: 1 },
+        expireAt: { $gt: now },
+      },
+      { $set: { status: 'transfer_locked' } },
+      { new: true, session }
+    );
+    if (!entitlement) {
+      throw error('This listing is no longer available.', 409, 'LISTING_NOT_AVAILABLE');
+    }
+
+    transfer.toUserId = buyerId;
+    transfer.status = 'AWAITING_PAYMENT';
+    transfer.claimedAt = now;
+    transfer.lockExpiresAt = new Date(now.getTime() + PUBLIC_CLAIM_WINDOW_MS);
+    transfer.claimAttemptCount = Number(transfer.claimAttemptCount || 0) + 1;
+    await transfer.save({ session });
+    await session.commitTransaction();
+
+    const [safeTransfer, wallet] = await Promise.all([
+      marketplacePopulate(
+        MembershipEntitlementTransfer.findById(transfer._id)
+      ).lean(),
+      walletService.getBalance(buyerId),
+    ]);
+    const populated = toMarketplaceItem(safeTransfer, buyerId);
+    const totalDue =
+      Number(populated.askingPrice || 0) + Number(populated.transferFee || 0);
+    return {
+      ...populated,
+      walletBalance: Number(wallet.balance || 0),
+      totalDue,
+      shortfall: Math.max(0, totalDue - Number(wallet.balance || 0)),
+    };
+  } catch (cause) {
+    await session.abortTransaction().catch(() => {});
+    if (
+      cause?.code === 112 ||
+      cause?.codeName === 'WriteConflict' ||
+      cause?.errorLabels?.includes?.('TransientTransactionError')
+    ) {
+      throw error(
+        'This listing was claimed by another customer.',
+        409,
+        'LISTING_ALREADY_CLAIMED'
+      );
+    }
     throw cause;
   } finally {
     session.endSession();
@@ -387,6 +801,15 @@ const settleTransfer = async (transferId, recipientId) => {
     });
     await recomputeUserMembership(recipientId, { session, rotateQr: true });
     await session.commitTransaction();
+    if (transfer.mode === 'PUBLIC') {
+      const completed = await marketplacePopulate(
+        MembershipEntitlementTransfer.findById(transfer._id)
+      ).lean();
+      return {
+        ...toMarketplaceItem(completed, recipientId),
+        _id: completed._id,
+      };
+    }
     return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
   } catch (cause) {
     await session.abortTransaction();
@@ -401,6 +824,9 @@ const listTransfers = async (userId, role, filters = {}) => {
     ? {}
     : { $or: [{ fromUserId: userId }, { toUserId: userId }] };
   if (filters.status) query.status = filters.status;
+  if (filters.mode && ['DIRECT', 'PUBLIC'].includes(normalizeMode(filters.mode))) {
+    query.mode = normalizeMode(filters.mode);
+  }
   return populateTransfer(MembershipEntitlementTransfer.find(query))
     .sort({ createdAt: -1 })
     .limit(100)
@@ -523,19 +949,29 @@ const releaseExpiredTransferLocks = async (now = new Date()) => {
   const transfers = await MembershipEntitlementTransfer.find({
     status: 'AWAITING_PAYMENT',
     lockExpiresAt: { $lte: now },
-  }).select('_id entitlementId fromUserId');
+  }).select('_id entitlementId fromUserId mode listingExpiresAt');
   let released = 0;
   for (const transfer of transfers) {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
+      const shouldRelist = getExpiredTransferResolution(transfer, now) === 'RELIST';
       const closed = await MembershipEntitlementTransfer.findOneAndUpdate(
         {
           _id: transfer._id,
           status: 'AWAITING_PAYMENT',
           lockExpiresAt: { $lte: now },
         },
-        { $set: { status: 'EXPIRED' } },
+        shouldRelist
+          ? {
+              $set: {
+                status: 'LISTED',
+                toUserId: null,
+                claimedAt: null,
+                lockExpiresAt: null,
+              },
+            }
+          : { $set: { status: 'EXPIRED', lockExpiresAt: null } },
         { new: true, session }
       );
       if (!closed) {
@@ -560,19 +996,34 @@ const releaseExpiredTransferLocks = async (now = new Date()) => {
       session.endSession();
     }
   }
+  await MembershipEntitlementTransfer.updateMany(
+    {
+      mode: 'PUBLIC',
+      status: 'LISTED',
+      listingExpiresAt: { $lte: now },
+    },
+    { $set: { status: 'EXPIRED' } }
+  );
   return released;
 };
 
 module.exports = {
   OPEN_STATUSES,
   calculateTransferPricing,
+  toMarketplaceItem,
+  getExpiredTransferResolution,
   buildTransferContractData,
   buildTransferContractLines,
   createTransfer,
+  searchTransferRecipients,
   acceptTransfer,
   rejectTransfer,
+  cancelTransfer,
   approveTransfer,
   rejectByAdmin,
+  listMarketplace,
+  getMarketplaceListing,
+  claimMarketplaceListing,
   settleTransfer,
   listTransfers,
   generateTransferPdf,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { format, isToday } from 'date-fns';
+import { format } from 'date-fns';
 import {
   MonitorCheck, Car, FileWarning, ClipboardList,
   TrendingUp, CheckCircle2, AlertTriangle, DoorOpen,
@@ -9,9 +9,21 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { getAllFloors, getFloorSlots } from '../../services/parkingFloorService';
 import { getAllBookings } from '../../services/bookingService';
-import { API_BASE } from '../../services/api';
+import { getAllSessions } from '../../services/sessionService';
 import { getAdminPlatformRevenueStatistics } from '../../services/statisticsService';
+import {
+  buildStaffDashboardMetrics,
+  buildStaffLotDiagnostics,
+  getStaffDashboardOperationalStatus,
+  getStaffDashboardSyncStatus,
+  getStaffDashboardViewAvailability,
+} from '../../utils/staffDashboardDiagnostics';
+import {
+  getOperationalValue,
+  getOperationalViewState,
+} from '../../utils/staffOperationalAvailability';
 import toast, { Toaster } from 'react-hot-toast';
+import { STAFF_THEME } from './components/staffTheme.js';
 
 const formatCurrency = (value) => new Intl.NumberFormat('vi-VN', {
   style: 'currency',
@@ -63,7 +75,7 @@ const compareSlotLabels = (firstSlot, secondSlot) => {
 
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
 const StatCard = ({ icon, label, value, sub, color, hoverBorder }) => (
-  <div className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#16181F]/80 p-4 shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md transition-all duration-300 ${hoverBorder}`}>
+  <div className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111111] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)] transition-all duration-300 ${hoverBorder}`}>
     {/* Subtle gradient background glow */}
     <div className={`absolute -inset-20 opacity-0 group-hover:opacity-10 transition-opacity duration-500 blur-3xl ${color}`} />
     
@@ -100,19 +112,19 @@ const SlotCell = ({ id, name, status, plate, isVip, onClick }) => {
       glow: ''
     },
     EMPTY:    { 
-      bg: 'bg-gradient-to-b from-emerald-900/40 to-[#0b111c] border-emerald-700/40', 
+      bg: 'bg-gradient-to-b from-emerald-900/35 to-[#0b0b0b] border-emerald-700/40',
       text: 'text-emerald-400', 
       badge: 'text-emerald-300 bg-emerald-900/60 border border-emerald-500/30',
       glow: 'shadow-[0_0_15px_rgba(16,185,129,0.1)]'
     },
     MAINTENANCE: {
-      bg: 'bg-gradient-to-b from-red-900/30 to-[#0b111c] border-red-700/40',
+      bg: 'bg-gradient-to-b from-red-900/25 to-[#0b0b0b] border-red-700/40',
       text: 'text-red-400',
       badge: 'text-red-300 bg-red-900/60 border border-red-500/30',
       glow: 'shadow-[0_0_15px_rgba(239,68,68,0.1)]'
     },
     RESERVED: { 
-      bg: 'bg-gradient-to-b from-yellow-900/30 to-[#0b111c] border-yellow-700/40', 
+      bg: 'bg-gradient-to-b from-yellow-900/25 to-[#0b0b0b] border-yellow-700/40',
       text: 'text-yellow-400', 
       badge: 'text-yellow-300 bg-yellow-900/60 border border-yellow-500/30',
       glow: 'shadow-[0_0_15px_rgba(234,179,8,0.1)]'
@@ -198,6 +210,9 @@ export default function StaffDashboard() {
     EMPTY_REVENUE_STATISTICS
   );
   const [revenueError, setRevenueError] = useState('');
+  const [syncStatus, setSyncStatus] = useState(() =>
+    getStaffDashboardSyncStatus()
+  );
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -209,34 +224,67 @@ export default function StaffDashboard() {
         getAdminPlatformRevenueStatistics('all'),
       ]);
       
-      // Fetch sessions separately using API_BASE
-      const sessionsRes = await fetch(`${API_BASE}/sessions`);
-      const sessionsData = await sessionsRes.json();
+      const sessionsRes = await getAllSessions();
 
-      const fetchedFloors = floorsRes.data?.success ? (floorsRes.data.data || floorsRes.data.floors || []) : [];
+      const floorSourceSucceeded = Boolean(
+        floorsRes.ok && floorsRes.data?.success
+      );
+      const bookingSourceSucceeded = Boolean(
+        bookingsRes.ok && bookingsRes.data?.success
+      );
+      const sessionSourceSucceeded = Boolean(
+        sessionsRes.ok && sessionsRes.data?.success
+      );
+      const revenueSourceSucceeded = Boolean(
+        revenueRes.ok && revenueRes.data?.success
+      );
+      const fetchedFloors = floorSourceSucceeded
+        ? (floorsRes.data.data || floorsRes.data.floors || [])
+        : [];
       setFloors(fetchedFloors);
+
+      let slotsOk = floorSourceSucceeded && fetchedFloors.length === 0;
       
       if (fetchedFloors.length > 0) {
         const promises = fetchedFloors.map(f => getFloorSlots(f._id));
         const results = await Promise.all(promises);
-        const allSlots = results.flatMap(r => (r.ok && r.data.success) ? r.data.data : []);
+        slotsOk = results.every((result) => result.ok && result.data?.success);
+        const allSlots = results.flatMap((result) =>
+          result.ok && result.data?.success ? result.data.data : []
+        );
         setDbSlots(allSlots);
       } else {
         setDbSlots([]);
       }
 
-      if (bookingsRes.data?.success) setBookings(bookingsRes.data.data || []);
-      if (sessionsData.success) setSessions(sessionsData.data || []);
-      if (revenueRes.ok && revenueRes.data?.success) {
+      setSyncStatus(getStaffDashboardSyncStatus({
+        floors: floorSourceSucceeded,
+        bookings: bookingSourceSucceeded,
+        sessions: sessionSourceSucceeded,
+        slotsOk,
+        revenue: revenueSourceSucceeded,
+      }));
+
+      setBookings(bookingSourceSucceeded ? (bookingsRes.data.data || []) : []);
+      setSessions(sessionSourceSucceeded ? (sessionsRes.data.data || []) : []);
+      if (revenueSourceSucceeded) {
         setRevenueStatistics(normalizeRevenueStatistics(revenueRes.data.data));
         setRevenueError('');
       } else {
+        setRevenueStatistics(EMPTY_REVENUE_STATISTICS);
         setRevenueError(
           revenueRes.data?.message || 'Revenue data could not be synchronized.'
         );
       }
 
     } catch {
+      setFloors([]);
+      setBookings([]);
+      setSessions([]);
+      setDbSlots([]);
+      setSyncStatus(getStaffDashboardSyncStatus());
+      setRevenueStatistics(EMPTY_REVENUE_STATISTICS);
+      setRevenueError('Revenue data could not be synchronized.');
       toast.error('Failed to sync dashboard data');
     } finally {
       setLoading(false);
@@ -252,53 +300,35 @@ export default function StaffDashboard() {
     };
   }, [fetchData]);
 
-  const { totalSlots, activeFloor, activeFloorSlots, vehiclesInside, violationsCount, recentBookings, occupancyRate } = useMemo(() => {
-    let tSlots = 0;
-    floors.forEach(f => {
-      const elements = f.layoutData?.elements || [];
-      tSlots += elements.filter(e => e.type?.startsWith('slot')).length;
-    });
-
-    // 1. Vehicles Inside Now (Active Sessions)
-    const activeSessions = sessions.filter(s => s.status === 'active' || s.status === 'ACTIVE');
-    const vInside = activeSessions.length;
-
-    // 2. Violations Today (Cancelled Bookings today)
-    const cancelledToday = bookings.filter(b => 
-      b.status === 'CANCELLED' && 
-      isToday(new Date(b.updatedAt || b.createdAt))
-    );
-    const vCount = cancelledToday.length;
-
-    // Sort bookings descending by creation time (or start time)
-    const sortedBookings = [...bookings].sort((a, b) => new Date(b.createdAt || b.scheduledStart) - new Date(a.createdAt || a.scheduledStart)).reverse();
-    const recent = sortedBookings.slice(0, 5);
-
-    const aFloor = floors.length > 0 ? floors[0] : null;
-    let aFloorSlots = [];
-    if (aFloor) {
-      const elements = aFloor.layoutData?.elements || [];
-      aFloorSlots = elements.filter(e => e.type?.startsWith('slot'))
-                            .map(e => ({ id: e.id, name: e.name || '', type: e.type }))
-                            .sort((a, b) => {
-                              const nameA = a.name || a.id;
-                              const nameB = b.name || b.id;
-                              return nameA.localeCompare(nameB, undefined, { numeric: true });
-                            });
-    }
-
-    const occRate = tSlots > 0 ? Math.round((vInside / tSlots) * 100) : 0;
-
-    return { 
-      totalSlots: tSlots, 
-      activeFloor: aFloor, 
-      activeFloorSlots: aFloorSlots, 
-      vehiclesInside: vInside, 
-      violationsCount: vCount,
-      recentBookings: recent,
-      occupancyRate: occRate
-    };
-  }, [floors, bookings, sessions]);
+  const dashboardMetrics = useMemo(
+    () => buildStaffDashboardMetrics({ floors, dbSlots, sessions, bookings }),
+    [floors, dbSlots, sessions, bookings]
+  );
+  const {
+    totalSlots,
+    activeFloor,
+    activeFloorSlots,
+    vehiclesInside,
+    cancellationsToday,
+    recentBookings,
+    occupancyRate,
+  } = dashboardMetrics;
+  const viewAvailability = getStaffDashboardViewAvailability(
+    syncStatus.sources
+  );
+  const operationalStatus = getStaffDashboardOperationalStatus(
+    syncStatus.sources
+  );
+  const lotDiagnostics = buildStaffLotDiagnostics({
+    metrics: dashboardMetrics,
+    availability: operationalStatus,
+  });
+  const revenueState = getOperationalViewState({
+    loading,
+    error: revenueError || (!syncStatus.sources.revenue
+      ? 'Revenue data could not be synchronized.'
+      : ''),
+  });
 
   const activeFloorZones = useMemo(() => {
     const slotsByZone = activeFloorSlots.reduce((zones, slot) => {
@@ -376,21 +406,29 @@ export default function StaffDashboard() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-8 min-h-full bg-[#0b111c] text-white selection:bg-emerald-500/30">
+    <div className={`${STAFF_THEME.page} space-y-8 p-6 lg:p-8`}>
       <Toaster position="top-right" toastOptions={{
-        style: { background: '#16181F', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+        style: { background: '#111111', color: '#fff', border: '1px solid rgba(255,213,85,0.18)' }
       }} />
       
       {/* Page header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-white to-white/60 bg-clip-text text-transparent">System Overview</h1>
-          <p className="text-emerald-400/80 text-sm mt-1.5 font-medium flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-            Real-time data synced
+          <h1 className={STAFF_THEME.title}>System Overview</h1>
+          <p className={`text-sm mt-1.5 font-medium flex items-center gap-2 ${
+            syncStatus.isAvailable ? 'text-emerald-400/80' : 'text-red-400/90'
+          }`}>
+            {syncStatus.isAvailable ? (
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+            ) : (
+              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+            )}
+            {syncStatus.isAvailable
+              ? 'Real-time data synced'
+              : `Operational sync unavailable: ${syncStatus.error}`}
           </p>
         </div>
         <div className="text-right">
@@ -402,7 +440,7 @@ export default function StaffDashboard() {
       <div className="space-y-4">
         <section>
           <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+            <p className={STAFF_THEME.eyebrow}>
               System Statistics
             </p>
           </div>
@@ -412,35 +450,43 @@ export default function StaffDashboard() {
               color="from-yellow-600/80 to-yellow-500/20"
               hoverBorder="hover:border-yellow-500/30"
               label="Managed Slots"
-              value={totalSlots}
-              sub={`${floors.length} active floors`}
+              value={viewAvailability.managedSlots ? totalSlots : '—'}
+              sub={viewAvailability.managedSlots
+                ? `${floors.length} active floors`
+                : 'Data unavailable'}
             />
             <StatCard
               icon={<Car size={20} className="text-sky-100" />}
               color="from-sky-600/80 to-sky-500/20"
               hoverBorder="hover:border-sky-500/30"
               label="Vehicles Inside"
-              value={vehiclesInside}
-              sub={`${occupancyRate}% occupancy`}
+              value={viewAvailability.vehiclesInside ? vehiclesInside : '—'}
+              sub={viewAvailability.occupancy
+                ? `${occupancyRate}% occupancy`
+                : 'Data unavailable'}
             />
             <StatCard
               icon={<FileWarning size={20} className="text-orange-100" />}
               color="from-orange-600/80 to-orange-500/20"
               hoverBorder="hover:border-orange-500/30"
               label="Cancellations"
-              value={violationsCount}
-              sub="Requires attention"
+              value={viewAvailability.cancellations ? cancellationsToday : '—'}
+              sub={viewAvailability.cancellations
+                ? 'Requires attention'
+                : 'Data unavailable'}
             />
           </div>
         </section>
 
         <section>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+            <p className={STAFF_THEME.eyebrow}>
               Revenue Statistics
             </p>
             <p className={`text-[10px] font-semibold ${revenueError ? 'text-red-300/80' : 'text-emerald-400/60'}`}>
-              {revenueError || 'All-time realized revenue'}
+              {revenueState.isAvailable
+                ? 'All-time realized revenue'
+                : revenueState.error || 'Revenue data unavailable'}
             </p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -449,32 +495,38 @@ export default function StaffDashboard() {
               color="from-violet-600/80 to-violet-500/20"
               hoverBorder="hover:border-violet-500/30"
               label="VIP Revenue"
-              value={formatCurrency(revenueStatistics.vip.revenue)}
-              sub={`${revenueStatistics.vip.transactionCount} paid transactions`}
+              value={getOperationalValue(revenueState, formatCurrency(revenueStatistics.vip.revenue))}
+              sub={revenueState.isAvailable
+                ? `${revenueStatistics.vip.transactionCount} paid transactions`
+                : 'Data unavailable'}
             />
             <StatCard
               icon={<CalendarCheck2 size={20} className="text-emerald-100" />}
               color="from-emerald-600/80 to-emerald-500/20"
               hoverBorder="hover:border-emerald-500/30"
               label="Booking Revenue"
-              value={formatCurrency(revenueStatistics.booking.revenue)}
-              sub={`${revenueStatistics.booking.completedCount} completed bookings`}
+              value={getOperationalValue(revenueState, formatCurrency(revenueStatistics.booking.revenue))}
+              sub={revenueState.isAvailable
+                ? `${revenueStatistics.booking.completedCount} completed bookings`
+                : 'Data unavailable'}
             />
             <StatCard
               icon={<Wrench size={20} className="text-cyan-100" />}
               color="from-cyan-600/80 to-cyan-500/20"
               hoverBorder="hover:border-cyan-500/30"
               label="Service Revenue"
-              value={formatCurrency(revenueStatistics.service.revenue)}
-              sub={`${revenueStatistics.service.completedBookingCount} completed with services`}
+              value={getOperationalValue(revenueState, formatCurrency(revenueStatistics.service.revenue))}
+              sub={revenueState.isAvailable
+                ? `${revenueStatistics.service.completedBookingCount} completed with services`
+                : 'Data unavailable'}
             />
             <StatCard
               icon={<CircleDollarSign size={20} className="text-amber-100" />}
               color="from-amber-600/80 to-amber-500/20"
               hoverBorder="hover:border-amber-500/30"
               label="Platform Revenue"
-              value={formatCurrency(revenueStatistics.totalRevenue)}
-              sub="VIP + booking + services"
+              value={getOperationalValue(revenueState, formatCurrency(revenueStatistics.totalRevenue))}
+              sub={revenueState.isAvailable ? 'VIP + booking + services' : 'Data unavailable'}
             />
           </div>
         </section>
@@ -484,27 +536,49 @@ export default function StaffDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Live Grid */}
-        <div className="lg:col-span-2 bg-[#16181F]/80 backdrop-blur-md border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111111] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)] lg:col-span-2">
           {/* Decorative background glow */}
           <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
           
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 relative z-10">
             <div>
               <h3 className="text-white font-extrabold text-lg flex items-center gap-2">
-                Live Grid <span className="text-gray-500 font-normal">—</span> <span className="text-emerald-400">{activeFloor ? activeFloor.name : 'Loading...'}</span>
+                Live Grid <span className="text-gray-500 font-normal">—</span> <span className="text-[#ffd555]">{activeFloor ? activeFloor.name : 'Loading...'}</span>
               </h3>
               <p className="text-gray-400 text-xs mt-1 font-medium tracking-wide uppercase">Real-time slot telemetry</p>
             </div>
-            <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5 shadow-inner">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-inner ${
+              viewAvailability.liveGrid
+                ? 'bg-black/40 border-white/5'
+                : 'bg-red-500/10 border-red-500/30'
+            }`}>
+              {viewAvailability.liveGrid ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              ) : (
+                <span className="inline-flex h-2 w-2 rounded-full bg-red-500" />
+              )}
+              <span className={`text-[11px] font-bold uppercase tracking-widest ${
+                viewAvailability.liveGrid ? 'text-emerald-400' : 'text-red-400'
+              }`}>
+                {viewAvailability.liveGrid ? 'Live Sync' : 'Data unavailable'}
               </span>
-              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest">Live Sync</span>
             </div>
           </div>
           
-          <div className="max-h-[450px] overflow-y-auto scrollbar-hidden relative z-10 pb-4">
+          {!viewAvailability.liveGrid && (
+            <div className="relative z-10 flex flex-col items-center justify-center py-20 text-center">
+              <AlertTriangle size={48} className="mb-4 text-red-400" />
+              <p className="font-medium text-red-200">Live grid data unavailable.</p>
+              <p className="mt-1 text-xs text-red-300/70">
+                Floor, slot, session, or booking data could not be synchronized.
+              </p>
+            </div>
+          )}
+
+          <div className={`${viewAvailability.liveGrid ? 'max-h-[450px] overflow-y-auto pb-4' : 'hidden'} scrollbar-hidden relative z-10`}>
             {activeFloorZones.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 opacity-50">
                 <MonitorCheck size={48} className="text-gray-600 mb-4" />
@@ -518,7 +592,7 @@ export default function StaffDashboard() {
                       <div className="h-px flex-1 bg-gradient-to-r from-transparent to-emerald-400/25" />
                       <h4
                         id={`dashboard-zone-${zone.key}`}
-                        className="shrink-0 text-xs font-black uppercase tracking-[0.2em] text-emerald-400"
+                        className="shrink-0 text-xs font-black uppercase tracking-[0.2em] text-[#d7b94a]"
                       >
                         {zone.label}
                       </h4>
@@ -551,7 +625,7 @@ export default function StaffDashboard() {
           </div>
 
           {/* Legend */}
-          <div className="flex items-center gap-6 mt-2 pt-4 border-t border-white/10 relative z-10">
+          <div className={`${viewAvailability.liveGrid ? 'flex' : 'hidden'} items-center gap-6 mt-2 pt-4 border-t border-white/10 relative z-10`}>
             {[
               { color: 'bg-gray-500 shadow-[0_0_8px_rgba(107,114,128,0.5)]', label: 'Occupied' },
               { color: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]', label: 'Empty' },
@@ -567,7 +641,7 @@ export default function StaffDashboard() {
         </div>
 
         {/* Gate Control Panel */}
-        <div className="bg-[#16181F]/80 backdrop-blur-md border border-white/5 rounded-3xl p-6 flex flex-col gap-4 shadow-2xl relative overflow-hidden">
+        <div className="relative flex flex-col gap-4 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111111] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
           <div className="absolute -top-40 -left-40 w-80 h-80 bg-sky-500/5 rounded-full blur-[100px] pointer-events-none" />
           
           <h3 className="text-white font-extrabold text-lg relative z-10">Gate & Actions</h3>
@@ -642,7 +716,7 @@ export default function StaffDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-6">
 
         {/* Recent Bookings */}
-        <div className="bg-[#16181F]/80 backdrop-blur-md border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111111] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
           <div className="flex items-center justify-between mb-5 relative z-10">
             <h3 className="text-white font-extrabold text-lg">Activity Stream</h3>
             <span className="text-[11px] text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20 cursor-pointer hover:bg-emerald-500/20 transition-colors uppercase tracking-wider">
@@ -650,7 +724,13 @@ export default function StaffDashboard() {
             </span>
           </div>
           <div className="space-y-2 relative z-10 bg-black/20 p-2 rounded-2xl border border-white/5">
-            {recentBookings.length === 0 ? (
+            {!viewAvailability.activityStream ? (
+              <div className="py-8 flex flex-col items-center text-center">
+                <AlertTriangle size={32} className="text-red-400 mb-2" />
+                <p className="text-red-200 font-medium">Activity data unavailable.</p>
+                <p className="text-xs text-red-300/70 mt-1">Booking records could not be synchronized.</p>
+              </div>
+            ) : recentBookings.length === 0 ? (
               <div className="py-8 flex flex-col items-center opacity-50">
                 <Activity size={32} className="text-gray-500 mb-2" />
                 <p className="text-white font-medium">No activities today.</p>
@@ -671,32 +751,26 @@ export default function StaffDashboard() {
         </div>
 
         {/* Alerts */}
-        <div className="bg-[#16181F]/80 backdrop-blur-md border border-white/5 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111111] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
           <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-red-500/5 rounded-full blur-[100px] pointer-events-none" />
           
           <h3 className="text-white font-extrabold text-lg mb-5 relative z-10">Lot Diagnostics</h3>
           <div className="space-y-3 relative z-10">
-            {occupancyRate > 90 ? (
+            {lotDiagnostics.map((diagnostic) => (
               <AlertPill
-                icon={<AlertTriangle size={16} className="text-yellow-400" />}
-                text={`Lot ${activeFloor?.name || 'A'} is nearing capacity (${occupancyRate}%). Consider diverting incoming traffic.`}
-                time="Active Now" level="warn"
+                key={diagnostic.key}
+                icon={diagnostic.key === 'maintenance'
+                  ? <Wrench size={16} className="text-orange-400" />
+                  : diagnostic.key === 'cancellations'
+                    ? <FileWarning size={16} className="text-orange-400" />
+                    : diagnostic.level === 'ok'
+                      ? <CheckCircle2 size={16} className="text-emerald-400" />
+                      : <AlertTriangle size={16} className={diagnostic.level === 'error' ? 'text-red-400' : 'text-yellow-400'} />}
+                text={diagnostic.text}
+                time={diagnostic.time}
+                level={diagnostic.level}
               />
-            ) : (
-              <AlertPill
-                icon={<CheckCircle2 size={16} className="text-emerald-400" />}
-                text={`Lot ${activeFloor?.name || 'A'} capacity is optimal (${occupancyRate}%).`}
-                time="Active Now" level="ok"
-              />
-            )}
-            
-            {violationsCount > 0 && (
-              <AlertPill
-                icon={<FileWarning size={16} className="text-orange-400" />}
-                text={`${violationsCount} booking(s) cancelled today. Please review cancellation logs.`}
-                time="Today" level="warn"
-              />
-            )}
+            ))}
 
             <AlertPill
               icon={<CheckCircle2 size={16} className="text-emerald-400" />}

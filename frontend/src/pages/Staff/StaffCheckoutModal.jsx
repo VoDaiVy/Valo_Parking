@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Camera, X, Check, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { API_BASE } from '../../services/api';
+import StaffDropdown from './components/StaffDropdown.jsx';
 
 export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess }) {
   const [step, setStep] = useState('camera'); // 'camera', 'scanning', 'invoice', 'submitting', 'success'
@@ -13,14 +14,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  useEffect(() => {
-    if (isOpen && step === 'camera') {
-      startCamera();
-    }
-    return () => stopCamera();
-  }, [isOpen, step]);
-
-  const startCamera = async () => {
+  async function startCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       if (videoRef.current) {
@@ -32,14 +26,25 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
       console.error('Camera access denied or error:', err);
       setErrorMsg('Could not access camera. Please allow camera permissions.');
     }
-  };
+  }
 
-  const stopCamera = () => {
+  function stopCamera() {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-  };
+  }
+
+  useEffect(() => {
+    let cameraTimer;
+    if (isOpen && step === 'camera') {
+      cameraTimer = window.setTimeout(startCamera, 0);
+    }
+    return () => {
+      if (cameraTimer) window.clearTimeout(cameraTimer);
+      stopCamera();
+    };
+  }, [isOpen, step]);
 
   const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -126,13 +131,13 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
-      <div className="bg-[#181c23] border border-white/10 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col">
+      <div className="flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] shadow-2xl">
         
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
-              <Check size={16} className="text-emerald-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd555]/30 bg-[#ffd555]/15">
+              <Check size={16} className="text-[#ffd555]" />
             </div>
             <div>
               <h3 className="text-white font-bold tracking-wide uppercase text-sm">Process Check-out</h3>
@@ -158,7 +163,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
             <div className="flex flex-col flex-1">
               <div className="relative flex-1 bg-black rounded-xl overflow-hidden border border-white/10 flex items-center justify-center min-h-[300px]">
                 <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-emerald-500/50 m-8 rounded-xl" />
+                <div className="pointer-events-none absolute inset-0 m-8 rounded-xl border-2 border-dashed border-[#ffd555]/50" />
                 <div className="absolute bottom-4 left-0 right-0 text-center">
                   <span className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-white tracking-wider border border-white/10">
                     ALIGN VEHICLE & CAPTURE
@@ -167,7 +172,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
               </div>
               <button 
                 onClick={capturePhoto}
-                className="mt-4 w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-extrabold uppercase tracking-wider py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] flex items-center justify-center gap-2"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
               >
                 <Camera size={20} />
                 Capture Photo
@@ -177,7 +182,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'scanning' && (
             <div className="flex flex-col items-center justify-center flex-1 py-12">
-              <Loader2 size={48} className="text-emerald-500 animate-spin mb-4" />
+              <Loader2 size={48} className="mb-4 animate-spin text-[#ffd555]" />
               <h3 className="text-xl font-bold text-white mb-2">Calculating Price</h3>
               <p className="text-sm text-gray-400">Verifying session duration and pricing...</p>
             </div>
@@ -217,26 +222,31 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-gray-300 font-bold uppercase tracking-wide">Final Amount</span>
-                  <span className="text-3xl font-black text-emerald-400">{(invoiceData.amountToPay || 0).toLocaleString()} VND</span>
+                  <span className="text-3xl font-black text-[#ffd555]">{(invoiceData.amountToPay || 0).toLocaleString()} VND</span>
                 </div>
               </div>
 
               <div className="mb-4">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Payment Method</label>
-                <select 
-                  className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white font-semibold outline-none focus:border-emerald-500/50 transition-colors"
+                <StaffDropdown
                   value={paymentMethod}
-                  onChange={e => setPaymentMethod(e.target.value)}
-                >
-                  <option value="CASH">CASH</option>
-                  <option value="BANK_TRANSFER">BANK TRANSFER</option>
-                  <option value="POS">POS CARD</option>
-                </select>
+                  onChange={setPaymentMethod}
+                  options={[
+                    ['CASH', 'Cash'],
+                    ['BANK_TRANSFER', 'Bank transfer'],
+                    ['POS', 'POS card'],
+                  ]}
+                  ariaLabel="Select payment method"
+                  placement="top"
+                  className="w-full"
+                  buttonClassName="bg-black/50 font-bold uppercase tracking-wide"
+                  menuClassName="w-full"
+                />
               </div>
 
               <button 
                 onClick={handleConfirmCheckout}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-extrabold uppercase tracking-wider py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] flex items-center justify-center gap-2"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
               >
                 Confirm Payment & Checkout
                 <ArrowRight size={18} />
@@ -246,7 +256,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'submitting' && (
             <div className="flex flex-col items-center justify-center flex-1 py-12">
-              <Loader2 size={48} className="text-emerald-500 animate-spin mb-4" />
+              <Loader2 size={48} className="mb-4 animate-spin text-[#ffd555]" />
               <h3 className="text-xl font-bold text-white mb-2">Processing</h3>
               <p className="text-sm text-gray-400">Finalizing checkout and opening gate...</p>
             </div>

@@ -58,14 +58,71 @@ export const matchesNotificationFilter = (item: UserNotification, filter: Notifi
   return item.type === filter;
 };
 
+export type NotificationNavigationTarget =
+  | { tab: 'Bookings'; screen: 'BookingDetail'; params: { bookingId: string } }
+  | {
+      tab: 'WalletTab';
+      screen: 'MembershipMarketplaceDetail';
+      params: { transferId: string };
+    }
+  | { tab: 'WalletTab'; screen: 'Membership' }
+  | { tab: 'WalletTab'; screen: 'Wallet' }
+  | { tab: 'ProfileTab'; screen: 'Profile' };
+
+const getMarketplaceTransferId = (metadata: Record<string, unknown>) => {
+  const isListingEvent = metadata.eventType === 'MEMBERSHIP_TRANSFER_LISTED';
+  if (
+    isListingEvent &&
+    typeof metadata.transferId === 'string' &&
+    metadata.transferId.trim()
+  ) {
+    return metadata.transferId.trim();
+  }
+
+  if (typeof metadata.deepLink !== 'string') return null;
+
+  const normalized = metadata.deepLink
+    .trim()
+    .replace(/^valo:\/\//i, '/')
+    .split(/[?#]/, 1)[0];
+  const match = normalized.match(
+    /\/(?:customer\/)?(?:membership-transfer-marketplace|membership-marketplace)\/([a-zA-Z0-9_-]+)\/?$/,
+  );
+  return match?.[1] ?? null;
+};
+
 export const getNotificationNavigationTarget = (item: UserNotification) => {
   const metadata = item.metadata || {};
-  if (typeof metadata.deepLink === 'string') return { deepLink: metadata.deepLink };
-  if (item.type === 'BOOKING' && typeof metadata.bookingId === 'string') {
-    return { tab: 'Bookings', screen: 'BookingDetail', params: { bookingId: metadata.bookingId } };
+  if (
+    metadata.eventType === 'MEMBERSHIP_TRANSFER_CLAIMED' ||
+    metadata.eventType === 'MEMBERSHIP_TRANSFER_COMPLETED'
+  ) {
+    return {
+      tab: 'WalletTab',
+      screen: 'Membership',
+    } satisfies NotificationNavigationTarget;
   }
-  if (item.type === 'WALLET' || item.type === 'PAYMENT') return { tab: 'WalletTab', screen: 'Wallet' };
-  if (item.type === 'ACCOUNT') return { tab: 'ProfileTab', screen: 'Profile' };
+  const transferId = getMarketplaceTransferId(metadata);
+  if (transferId) {
+    return {
+      tab: 'WalletTab',
+      screen: 'MembershipMarketplaceDetail',
+      params: { transferId },
+    } satisfies NotificationNavigationTarget;
+  }
+  if (item.type === 'BOOKING' && typeof metadata.bookingId === 'string') {
+    return {
+      tab: 'Bookings',
+      screen: 'BookingDetail',
+      params: { bookingId: metadata.bookingId },
+    } satisfies NotificationNavigationTarget;
+  }
+  if (item.type === 'WALLET' || item.type === 'PAYMENT') {
+    return { tab: 'WalletTab', screen: 'Wallet' } satisfies NotificationNavigationTarget;
+  }
+  if (item.type === 'ACCOUNT') {
+    return { tab: 'ProfileTab', screen: 'Profile' } satisfies NotificationNavigationTarget;
+  }
   return null;
 };
 

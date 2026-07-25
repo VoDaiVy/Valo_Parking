@@ -23,7 +23,7 @@ router.post('/kiosk-entry', sessionController.createKioskSession);
 router.get('/my-history', protect, authorize('customer', 'admin'), sessionController.getMyHistory);
 
 // GET /api/sessions
-router.get('/', sessionController.getAllSessions);
+router.get('/', protect, authorize('staff', 'admin'), sessionController.getAllSessions);
 
 // POST /api/sessions/kiosk-exit-scan
 router.post('/kiosk-exit-scan', sessionController.kioskExitScan);

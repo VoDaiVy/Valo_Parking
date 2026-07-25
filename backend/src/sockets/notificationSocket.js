@@ -169,7 +169,11 @@ async function emitNotification(
   io,
   userId,
   notification,
-  { notifyAdmins = true, updateUnreadCount = true } = {}
+  {
+    notifyAdmins = true,
+    updateUnreadCount = true,
+    includeAudience = true,
+  } = {}
 ) {
   const payload = {
     _id: notification._id,
@@ -179,10 +183,14 @@ async function emitNotification(
     priority: notification.priority,
     metadata: notification.metadata,
     createdAt: notification.createdAt,
-    targetType: notification.targetType,
-    targetRoles: notification.targetRoles,
-    targetUsers: notification.targetUsers,
-    recipientCount: notification.recipientCount,
+    ...(includeAudience
+      ? {
+          targetType: notification.targetType,
+          targetRoles: notification.targetRoles,
+          targetUsers: notification.targetUsers,
+          recipientCount: notification.recipientCount,
+        }
+      : {}),
   };
 
   emitToUser(io, userId, 'notification:new', payload);

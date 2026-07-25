@@ -5,17 +5,24 @@ import {
   Clock3,
   Crown,
   Filter,
+  Globe2,
   Mail,
   ParkingCircle,
   RefreshCw,
   Search,
   ShieldCheck,
   TimerReset,
+  UserCheck,
   UserRound,
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import {
+  getOperationalValue,
+  getOperationalViewState,
+  getResponseAvailability,
+} from '../../utils/staffOperationalAvailability';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
 const dateFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -72,6 +79,14 @@ const getPackageClass = (type) => {
       return 'border-purple-400/25 bg-purple-400/10 text-purple-300';
     default:
       return 'border-cyan-400/25 bg-cyan-400/10 text-cyan-300';
+  }
+};
+
+const getStoredRole = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('valo_user') || '{}')?.role || '';
+  } catch {
+    return '';
   }
 };
 
@@ -227,7 +242,7 @@ function TransferReviewSection({ transfers, onReview }) {
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-black text-white">Transfer reviews</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">Only recipient-accepted requests can be approved.</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">Review direct transfers and public marketplace listings.</p>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs font-black text-amber-300">
           <TimerReset size={14} /> {pendingTransfers.length} pending
@@ -238,8 +253,12 @@ function TransferReviewSection({ transfers, onReview }) {
         {pendingTransfers.map((transfer) => (
           <div key={transfer._id} className="flex flex-col gap-3 py-3 lg:flex-row lg:items-center">
             <div className="min-w-0 flex-1">
+              <span className={`mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${transfer.mode === 'PUBLIC' ? 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300' : 'border-violet-400/20 bg-violet-400/10 text-violet-300'}`}>
+                {transfer.mode === 'PUBLIC' ? <Globe2 size={12} /> : <UserCheck size={12} />}
+                {transfer.mode === 'PUBLIC' ? 'Public listing' : 'Direct transfer'}
+              </span>
               <p className="truncate text-sm font-black text-slate-100">
-                {transfer.entitlementId?.slotCode || 'Parking space'} · {transfer.fromUserId?.email || 'Sender'} → {transfer.toUserId?.email || 'Recipient'}
+                {transfer.entitlementId?.slotCode || 'Parking space'} · {transfer.fromUserId?.email || 'Sender'} → {transfer.mode === 'PUBLIC' ? 'Marketplace' : (transfer.toUserId?.email || 'Recipient')}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-500">
                 Price {formatCurrency(transfer.askingPrice)} · Fee {formatCurrency(transfer.transferFee)}
@@ -258,7 +277,7 @@ function TransferReviewSection({ transfers, onReview }) {
                 onClick={() => onReview(transfer._id, true)}
                 className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200/70"
               >
-                Approve & lock 24h
+                {transfer.mode === 'PUBLIC' ? 'Approve & list 7d' : 'Approve & lock 24h'}
               </button>
             </div>
           </div>
@@ -269,42 +288,82 @@ function TransferReviewSection({ transfers, onReview }) {
 }
 
 export default function SubscriptionManagement() {
+  const isAdmin = useMemo(() => getStoredRole() === 'admin', []);
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [subscriptionError, setSubscriptionError] = useState('');
+  const [transferError, setTransferError] = useState('');
+  const [transferLoading, setTransferLoading] = useState(isAdmin);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [packageFilter, setPackageFilter] = useState('all');
   const [transfers, setTransfers] = useState([]);
+  const subscriptionState = getOperationalViewState({
+    loading,
+    error: subscriptionError,
+  });
+  const transferState = getOperationalViewState({
+    loading: isAdmin && transferLoading,
+    error: isAdmin ? transferError : '',
+  });
 
   const fetchSubscriptions = async () => {
     try {
       setLoading(true);
-      setError('');
+      setSubscriptionError('');
+      setTransferError('');
+      setTransferLoading(isAdmin);
       const token = localStorage.getItem('accessToken');
 
+      const subscriptionRequest = apiFetch('/subscriptions/all', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const transferRequest = isAdmin
+        ? apiFetch('/admin/membership-entitlement-transfers', {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        : Promise.resolve(null);
       const [res, transferRes] = await Promise.all([
-        apiFetch('/subscriptions/all', {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        apiFetch('/admin/membership-entitlement-transfers', {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+        subscriptionRequest,
+        transferRequest,
       ]);
 
-      if (res.ok && res.data?.success) {
-        setSubscriptions(res.data.data);
+      const subscriptionResponse = getResponseAvailability(
+        res,
+        'Failed to fetch subscriptions'
+      );
+      if (subscriptionResponse.isAvailable) {
+        setSubscriptions(subscriptionResponse.data || []);
       } else {
-        setError(res.data?.message || 'Failed to fetch subscriptions');
+        setSubscriptions([]);
+        setSubscriptionError(subscriptionResponse.error);
       }
-      if (transferRes.ok && transferRes.data?.success) {
-        setTransfers(transferRes.data.data || []);
+
+      if (isAdmin) {
+        const transferResponse = getResponseAvailability(
+          transferRes,
+          'Membership transfer reviews are unavailable.'
+        );
+        if (transferResponse.isAvailable) {
+          setTransfers(transferResponse.data || []);
+        } else {
+          setTransfers([]);
+          setTransferError(transferResponse.error);
+        }
+      } else {
+        setTransfers([]);
       }
     } catch (err) {
       console.error(err);
-      setError('An error occurred while fetching subscriptions');
+      setSubscriptions([]);
+      setSubscriptionError('An error occurred while fetching subscriptions');
+      if (isAdmin) {
+        setTransfers([]);
+        setTransferError('Membership transfer reviews are unavailable.');
+      }
     } finally {
       setLoading(false);
+      setTransferLoading(false);
     }
   };
 
@@ -323,7 +382,7 @@ export default function SubscriptionManagement() {
       }
     );
     if (!response.ok || !response.data?.success) {
-      setError(response.data?.message || 'Unable to review transfer.');
+      setTransferError(response.data?.message || 'Unable to review transfer.');
       return;
     }
     await fetchSubscriptions();
@@ -398,19 +457,44 @@ export default function SubscriptionManagement() {
           <button
             type="button"
             onClick={fetchSubscriptions}
-            disabled={loading}
+            disabled={loading || transferLoading}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loading || transferLoading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </header>
 
-        <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 lg:grid-cols-4">
-          <SummaryItem icon={Crown} label="Total VIP" value={summary.total.toLocaleString('vi-VN')} support="Loaded memberships" />
-          <SummaryItem icon={ShieldCheck} label="Active" value={summary.active.toLocaleString('vi-VN')} support="Current active status" tone="text-emerald-300" />
-          <SummaryItem icon={Clock3} label="Expiring Soon" value={summary.expiringSoon.toLocaleString('vi-VN')} support="Within 30 days" tone="text-amber-300" />
-          <SummaryItem icon={TimerReset} label="Transfers" value={summary.pendingTransfers.toLocaleString('vi-VN')} support="Pending admin review" tone="text-purple-300" />
+        <section className={`mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+          <SummaryItem
+            icon={Crown}
+            label="Total VIP"
+            value={getOperationalValue(subscriptionState, summary.total.toLocaleString('vi-VN'))}
+            support={subscriptionState.isAvailable ? 'Loaded memberships' : 'Data unavailable'}
+          />
+          <SummaryItem
+            icon={ShieldCheck}
+            label="Active"
+            value={getOperationalValue(subscriptionState, summary.active.toLocaleString('vi-VN'))}
+            support={subscriptionState.isAvailable ? 'Current active status' : 'Data unavailable'}
+            tone="text-emerald-300"
+          />
+          <SummaryItem
+            icon={Clock3}
+            label="Expiring Soon"
+            value={getOperationalValue(subscriptionState, summary.expiringSoon.toLocaleString('vi-VN'))}
+            support={subscriptionState.isAvailable ? 'Within 30 days' : 'Data unavailable'}
+            tone="text-amber-300"
+          />
+          {isAdmin && (
+            <SummaryItem
+              icon={TimerReset}
+              label="Transfers"
+              value={getOperationalValue(transferState, summary.pendingTransfers.toLocaleString('vi-VN'))}
+              support={transferState.isAvailable ? 'Pending admin review' : 'Data unavailable'}
+              tone="text-purple-300"
+            />
+          )}
         </section>
 
         <section className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -463,11 +547,11 @@ export default function SubscriptionManagement() {
           )}
         </section>
 
-        {error && (
+        {subscriptionError && (
           <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-300 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <AlertCircle size={17} />
-              <span className="font-semibold">{error}</span>
+              <span className="font-semibold">{subscriptionError}</span>
             </div>
             <button
               type="button"
@@ -480,7 +564,23 @@ export default function SubscriptionManagement() {
           </div>
         )}
 
-        <TransferReviewSection transfers={transfers} onReview={reviewTransfer} />
+        {isAdmin && transferLoading && (
+          <section className="mb-6 border-y border-white/10 py-5 text-sm font-semibold text-slate-400">
+            Loading membership transfer reviews...
+          </section>
+        )}
+        {isAdmin && !transferLoading && transferError && (
+          <section className="mb-6 flex items-start gap-3 border-y border-red-500/25 py-4 text-sm text-red-300" role="alert">
+            <AlertCircle size={17} className="mt-0.5 shrink-0" />
+            <div>
+              <h2 className="font-black text-red-200">Transfer reviews unavailable</h2>
+              <p className="mt-1 font-medium text-red-300/75">{transferError}</p>
+            </div>
+          </section>
+        )}
+        {isAdmin && transferState.isAvailable && (
+          <TransferReviewSection transfers={transfers} onReview={reviewTransfer} />
+        )}
 
         <section>
           <div className="hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
@@ -494,6 +594,12 @@ export default function SubscriptionManagement() {
 
           {loading ? (
             <LoadingRows />
+          ) : subscriptionError ? (
+            <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-6 py-10 text-center" role="alert">
+              <AlertCircle size={28} className="mx-auto text-red-400" />
+              <h2 className="mt-3 text-lg font-black text-red-200">Subscription data unavailable</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{subscriptionError}</p>
+            </div>
           ) : filteredSubscriptions.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-10 text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">

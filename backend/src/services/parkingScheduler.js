@@ -371,6 +371,25 @@ async function checkExpiredContracts(app) {
   }
 }
 
+async function checkExpiredMembershipTransfers() {
+  try {
+    const {
+      releaseExpiredTransferLocks,
+    } = require('./membershipEntitlementTransferService');
+    const releasedCount = await releaseExpiredTransferLocks(new Date());
+    if (releasedCount > 0) {
+      console.log(
+        `[ParkingScheduler] Released ${releasedCount} expired membership transfer holds.`
+      );
+    }
+  } catch (err) {
+    console.error(
+      '[ParkingScheduler] Error releasing membership transfer holds:',
+      err.message
+    );
+  }
+}
+
 async function checkVIPSubscriptions(app) {
   try {
     const Subscription = require('../models/Subscription');
@@ -381,11 +400,6 @@ async function checkVIPSubscriptions(app) {
     const now = new Date();
     const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     const Slot = require('../models/Slot');
-    const {
-      releaseExpiredTransferLocks,
-    } = require('./membershipEntitlementTransferService');
-    await releaseExpiredTransferLocks(now);
-
     const entitlementSubscriptions = await MembershipSlotEntitlement.distinct(
       'sourceSubscriptionId'
     );
@@ -583,6 +597,9 @@ function startScheduler(app) {
   checkVIPSubscriptions(app).catch((err) =>
     console.error('[ParkingScheduler] Initial VIP subscription check error:', err.message)
   );
+  checkExpiredMembershipTransfers().catch((err) =>
+    console.error('[ParkingScheduler] Initial transfer hold check error:', err.message)
+  );
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
@@ -591,6 +608,9 @@ function startScheduler(app) {
     );
     checkBookings(app).catch((err) =>
       console.error('[ParkingScheduler] Interval checkBookings error:', err.message)
+    );
+    checkExpiredMembershipTransfers().catch((err) =>
+      console.error('[ParkingScheduler] Transfer hold interval error:', err.message)
     );
   }, CHECK_INTERVAL_MS);
 
@@ -625,6 +645,7 @@ module.exports = {
   checkActiveSessions,
   checkBookings,
   checkExpiredContracts,
+  checkExpiredMembershipTransfers,
   checkVIPSubscriptions,
   getUpcomingMilestone,
   LOW_BALANCE_THRESHOLD,

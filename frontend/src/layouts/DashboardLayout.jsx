@@ -31,6 +31,7 @@ import {
   BookOpen,
   CalendarCheck,
   ArrowLeftRight,
+  ShoppingBag,
   // Common
   Bell,
   LogOut,
@@ -138,6 +139,11 @@ const NAV_CONFIG = {
       label: "Membership ",
       icon: <ArrowLeftRight size={18} />,
       to: "/customer/membership-transfers",
+    },
+    {
+      label: "Transfer Marketplace",
+      icon: <ShoppingBag size={18} />,
+      to: "/customer/membership-transfer-marketplace",
     },
     { label: "My Vehicles", icon: <Car size={18} />, to: "/customer/vehicles" },
     {

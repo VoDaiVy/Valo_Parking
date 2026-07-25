@@ -3,10 +3,10 @@
  * All service files should import from here.
  */
 
-import { clearAuthSession, notifyAuthChange } from "./authStorage";
+import { clearAuthSession, notifyAuthChange } from "./authStorage.js";
 
 export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001/api";
+  import.meta.env?.VITE_API_BASE_URL ?? "http://localhost:5001/api";
 
 let isRefreshing = false;
 let refreshPromise = null;

@@ -14,12 +14,55 @@ const TYPE_FILTERS = [
   { value: 'SYSTEM', label: 'System' },
 ];
 
+const CUSTOMER_DEEP_LINKS = [
+  '/customer/membership-transfer-marketplace',
+  '/customer/membership-transfers',
+  '/customer/booking',
+  '/customer/wallet',
+];
+
+const getSafeCustomerDeepLink = (notification) => {
+  const rawLink = notification?.metadata?.deepLink;
+  if (typeof rawLink === 'string' && rawLink.startsWith('/') && !rawLink.startsWith('//')) {
+    try {
+      const parsed = new URL(rawLink, window.location.origin);
+      const isMarketplaceDetail = /^\/customer\/membership-transfer-marketplace\/[a-f\d]{24}$/i.test(
+        parsed.pathname
+      );
+      const allowed = isMarketplaceDetail || CUSTOMER_DEEP_LINKS.some(
+        (path) => parsed.pathname === path
+      );
+      if (parsed.origin === window.location.origin && allowed) {
+        return `${parsed.pathname}${parsed.search}`;
+      }
+    } catch {
+      // Fall through to the typed notification fallback.
+    }
+  }
+
+  const eventType = String(notification?.metadata?.eventType || '');
+  if (eventType.startsWith('MEMBERSHIP_TRANSFER_')) {
+    const transferId = notification?.metadata?.transferId;
+    return transferId
+      ? `/customer/membership-transfer-marketplace?transferId=${encodeURIComponent(transferId)}`
+      : '/customer/membership-transfer-marketplace';
+  }
+  if (notification?.type === 'BOOKING') {
+    const bookingId = notification?.metadata?.bookingId;
+    return bookingId
+      ? `/customer/booking?bookingId=${encodeURIComponent(bookingId)}`
+      : '/customer/booking';
+  }
+  return null;
+};
+
 export default function CustomerNotifications({ contextRole = 'customer' }) {
   const navigate = useNavigate();
   const {
     notifications,
     unreadCount,
     loading,
+    error,
     hasMore,
     filters,
     fetchMore,
@@ -43,7 +86,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
           <div>
             <h1 className="text-2xl font-bold text-white">Notifications</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {unreadCount > 0 ? `${unreadCount} unread notifications` : 'All caught up'}
+              {error ? 'Notifications unavailable' : unreadCount > 0 ? `${unreadCount} unread notifications` : 'All caught up'}
             </p>
           </div>
           {unreadCount > 0 && (
@@ -88,7 +131,15 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
         </div>
 
         <div className="space-y-2">
-          {loading && notifications.length === 0 ? (
+          {error ? (
+            <div className="flex flex-col items-center py-16 text-center" role="alert">
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+                <Bell size={28} className="text-red-400" />
+              </div>
+              <p className="text-red-300 font-medium">Unable to load notifications</p>
+              <p className="text-red-200/60 text-sm mt-1">{error}</p>
+            </div>
+          ) : loading && notifications.length === 0 ? (
             <div className="flex flex-col items-center py-16">
               <div className="w-8 h-8 border-2 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin" />
               <p className="text-gray-500 text-sm mt-4">Loading notifications...</p>
@@ -110,12 +161,9 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
                   onRead={markAsRead}
                   onDelete={deleteNotification}
                   onClick={() => {
-                    if (contextRole === 'customer' && n.type === 'BOOKING') {
-                      navigate(
-                        n.metadata?.bookingId
-                          ? `/customer/booking?bookingId=${n.metadata.bookingId}`
-                          : '/customer/booking'
-                      );
+                    if (contextRole === 'customer') {
+                      const destination = getSafeCustomerDeepLink(n);
+                      if (destination) navigate(destination);
                     }
                   }}
                 />

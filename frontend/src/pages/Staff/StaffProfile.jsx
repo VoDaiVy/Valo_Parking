@@ -452,13 +452,13 @@ export default function StaffProfile() {
     if (magneticRef.current) magneticRef.current.style.transform = "translate(0, 0)";
   };
 
-  // ── Accent colour for Staff: emerald ───────────────────────────────────
-  const ACCENT = "#10b981";          // emerald-500
-  const ACCENT_DIM = "rgba(52,211,153,0.7)";
-  const ACCENT_GLOW = "rgba(16,185,129,0.3)";
-  const ACCENT_BG = "rgba(16,185,129,0.08)";
-  const ACCENT_BORDER = "rgba(16,185,129,0.25)";
-  const ACCENT_TEXT = "#bbf7d0";    // emerald-200
+  // ── Shared Staff accent: VALO gold ─────────────────────────────────────
+  const ACCENT = "#ffd555";
+  const ACCENT_DIM = "rgba(255,213,85,0.7)";
+  const ACCENT_GLOW = "rgba(255,213,85,0.25)";
+  const ACCENT_BG = "rgba(255,213,85,0.08)";
+  const ACCENT_BORDER = "rgba(255,213,85,0.25)";
+  const ACCENT_TEXT = "#ffe58a";
 
   // ── Gold Accent for Content Sections ─────────────────────────────────────
   const GOLD = "#EAB308";
@@ -473,7 +473,7 @@ export default function StaffProfile() {
   return (
     <div
       className="relative h-full flex flex-col overflow-hidden"
-      style={{ backgroundColor: "#050505", fontFamily: "'Plus Jakarta Sans', 'Montserrat', sans-serif" }}
+      style={{ backgroundColor: "#080808", fontFamily: "'Plus Jakarta Sans', 'Montserrat', sans-serif" }}
     >
       {/* ── Cursor spotlight ── */}
       <div
@@ -491,19 +491,19 @@ export default function StaffProfile() {
       {/* ════════════════════ HERO SECTION ════════════════════ */}
       <section className="relative flex items-center px-8 py-5 overflow-hidden flex-shrink-0">
         <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at 15% 60%, ${ACCENT_GLOW} 0%, transparent 55%)` }} />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: "linear-gradient(to top, #050505 0%, transparent 60%)" }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "linear-gradient(to top, #080808 0%, transparent 60%)" }} />
 
         <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-10 w-full">
           {/* ── 3D Avatar Orb ── */}
           <div ref={orbRef} className="relative flex-shrink-0" style={{ width: 150, height: 150, perspective: "1000px", transition: "transform 0.1s ease-out" }}>
-            <div className="absolute inset-0 rounded-full border border-emerald-500" style={{ opacity: 0.55, animation: "valo-rotateRing 8s linear infinite" }} />
+            <div className="absolute inset-0 rounded-full border border-[#ffd555]" style={{ opacity: 0.55, animation: "valo-rotateRing 8s linear infinite" }} />
             <div className="absolute rounded-full border" style={{ inset: "8px", borderColor: "#bbf7d0", opacity: 0.35, animation: "valo-rotateRing 5s linear infinite reverse" }} />
 
             <div className="w-full h-full rounded-full overflow-hidden" style={{ border: `2px solid ${ACCENT}`, padding: "3px", background: "#1a1b22", boxShadow: `0 0 36px ${ACCENT_GLOW}, 0 0 80px rgba(16,185,129,0.1)` }}>
               {profile.avatar ? (
                 <img src={profile.avatar} alt={profile.name} className="w-full h-full rounded-full object-cover" />
               ) : (
-                <div className="w-full h-full rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white font-extrabold text-2xl">
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-[#ffd555] text-2xl font-extrabold text-[#080808]">
                   {getInitials(profile.name)}
                 </div>
               )}
@@ -523,8 +523,8 @@ export default function StaffProfile() {
                 </svg>
               ) : (
                 <>
-                  <Camera size={22} className="text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <span className="text-emerald-400 text-[9px] font-bold tracking-wider uppercase opacity-0 group-hover:opacity-100 transition-opacity">Change</span>
+                  <Camera size={22} className="text-[#ffd555] opacity-0 transition-opacity group-hover:opacity-100" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#ffd555] opacity-0 transition-opacity group-hover:opacity-100">Change</span>
                 </>
               )}
             </label>

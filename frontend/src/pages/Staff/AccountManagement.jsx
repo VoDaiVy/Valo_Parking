@@ -8,6 +8,10 @@ import {
   RefreshCw, Eye, Lock
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import {
+  getOperationalViewState,
+  getResponseAvailability,
+} from '../../utils/staffOperationalAvailability';
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -111,7 +115,7 @@ function SkeletonRow() {
 }
 
 // --- Overview Card ------------------------------------------------------------
-function StatCard({ icon: Icon, label, value, gradient, glow, loading }) {
+function StatCard({ icon: Icon, label, value, gradient, glow, loading, unavailable }) {
   return (
     <div
       className="relative rounded-xl p-3 overflow-hidden cursor-default group transition-all duration-300 hover:scale-[1.02]"
@@ -133,7 +137,11 @@ function StatCard({ icon: Icon, label, value, gradient, glow, loading }) {
         <div>
           <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold mb-1">{label}</p>
           <p className="text-2xl font-bold text-white">
-            {loading ? <span className="inline-block w-12 h-8 rounded bg-white/10 animate-skeleton" /> : <AnimatedCounter target={value} />}
+            {loading
+              ? <span className="inline-block w-12 h-8 rounded bg-white/10 animate-skeleton" />
+              : unavailable
+                ? '—'
+                : <AnimatedCounter target={value} />}
           </p>
         </div>
         <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
@@ -150,6 +158,7 @@ export default function AccountManagement() {
   // -- State --
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const filterRole = 'customer'; // Always customer for Staff
   const [filterStatus, setFilterStatus] = useState('all');
@@ -161,6 +170,7 @@ export default function AccountManagement() {
   const [blockConfirm, setBlockConfirm] = useState(false);
   const [sortOrder, setSortOrder] = useState('newest');
   const [toast, setToast] = useState(null);
+  const accountState = getOperationalViewState({ loading, error: loadError });
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -171,13 +181,24 @@ export default function AccountManagement() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await apiFetch('/staff/users', { headers: authHeader });
-      if (res.ok && res.data?.success) {
-        // Strict Data Filtering: ONLY fetch and display accounts where role === 'customer'
-        const customersOnly = res.data.data.filter(u => u.role === 'customer');
-        setUsers(customersOnly);
+      const responseState = getResponseAvailability(res, 'Unable to load customer accounts.');
+      if (!responseState.isAvailable) {
+        setUsers([]);
+        setPanelUser(null);
+        setLoadError(responseState.error);
+        return;
       }
-    } catch (e) { console.error(e); }
+      // Strict Data Filtering: ONLY fetch and display accounts where role === 'customer'
+      const customersOnly = (responseState.data || []).filter(u => u.role === 'customer');
+      setUsers(customersOnly);
+    } catch (e) {
+      console.error(e);
+      setUsers([]);
+      setPanelUser(null);
+      setLoadError(e?.message || 'Unable to load customer accounts.');
+    }
     finally { setLoading(false); }
   };
 
@@ -433,10 +454,10 @@ export default function AccountManagement() {
 
           {/* -- Stat Cards -- */}
           <div className="grid grid-cols-4 gap-3 mt-4">
-            <StatCard icon={Users}   label="Total Customers"  value={totalAccounts} gradient="from-cyan-400 to-blue-500"    glow="rgba(6,182,212,0.3)"    loading={loading} />
-            <StatCard icon={UserPlus} label="New This Month"  value={newThisMonth}  gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)"  loading={loading} />
-            <StatCard icon={UserX}   label="Blocked Customers" value={blockedCount}  gradient="from-rose-500 to-red-600"     glow="rgba(239,68,68,0.3)"    loading={loading} />
-            <StatCard icon={Clock}   label="Pending Verify"   value={pendingCount}  gradient="from-amber-400 to-orange-500" glow="rgba(251,191,36,0.3)"   loading={loading} />
+            <StatCard icon={Users} label="Total Customers" value={totalAccounts} gradient="from-cyan-400 to-blue-500" glow="rgba(6,182,212,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} gradient="from-rose-500 to-red-600" glow="rgba(239,68,68,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} gradient="from-amber-400 to-orange-500" glow="rgba(251,191,36,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
           </div>
         </div>
 
@@ -507,7 +528,11 @@ export default function AccountManagement() {
             </Menu>
           </div>
 
-          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">{filtered.length} of {users.length} accounts</div>
+          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">
+            {accountState.isAvailable
+              ? `${filtered.length} of ${users.length} accounts`
+              : 'Customer counts unavailable'}
+          </div>
         </div>
 
         {/* -- Table -- */}
@@ -526,7 +551,16 @@ export default function AccountManagement() {
             </thead>
             <tbody>
               {loading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
-              {!loading && pageUsers.length === 0 && (
+              {!loading && loadError && (
+                <tr><td colSpan="8" className="py-20 text-center">
+                  <div className="flex flex-col items-center gap-3 text-red-300" role="alert">
+                    <AlertTriangle size={36} />
+                    <span className="text-sm font-medium">Customer data unavailable</span>
+                    <span className="max-w-md text-xs text-red-200/70">{loadError}</span>
+                  </div>
+                </td></tr>
+              )}
+              {!loading && !loadError && pageUsers.length === 0 && (
                 <tr><td colSpan="8" className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3 text-white/30">
                     <UserX size={36} />
@@ -577,11 +611,15 @@ export default function AccountManagement() {
 
         {/* -- Pagination -- */}
         <div className="flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
-          <span className="text-xs text-white/30">Page {page} of {totalPages} · {filtered.length} results</span>
+          <span className="text-xs text-white/30">
+            {accountState.isAvailable
+              ? `Page ${page} of ${totalPages} · ${filtered.length} results`
+              : 'Page — of — · — results'}
+          </span>
           <div className="flex items-center gap-1">
-            <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+            <button disabled={!accountState.isAvailable || page === 1} onClick={() => setPage(p => p - 1)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
-            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+            {Array.from({ length: accountState.isAvailable ? Math.min(totalPages, 7) : 0 }, (_, i) => {
               const p = i + 1;
               return (
                 <button key={p} onClick={() => setPage(p)}
@@ -590,7 +628,7 @@ export default function AccountManagement() {
                 </button>
               );
             })}
-            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
+            <button disabled={!accountState.isAvailable || page === totalPages} onClick={() => setPage(p => p + 1)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">Next &rarr;</button>
           </div>
         </div>

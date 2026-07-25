@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FileText, Plus, Trash2, Edit3 } from "lucide-react";
 import { PRIORITY_META, PRIORITY } from "../../../lib/notifications/types";
+import StaffDropdown from "../components/StaffDropdown.jsx";
 
 export default function TemplateManager({ templates, onCreate, onUpdate, onDelete }) {
   const [editingId, setEditingId] = useState(null);
@@ -129,19 +130,18 @@ export default function TemplateManager({ templates, onCreate, onUpdate, onDelet
             </div>
             <div>
               <label className="mb-2 block text-sm font-semibold text-gray-300">Priority</label>
-              <select
+              <StaffDropdown
                 value={formState.priority}
-                onChange={(event) =>
-                  setFormState((prev) => ({ ...prev, priority: event.target.value }))
+                onChange={(value) =>
+                  setFormState((prev) => ({ ...prev, priority: value }))
                 }
-                className="w-full rounded-2xl border border-gray-700/80 bg-gray-900 px-4 py-3 text-sm text-gray-100 outline-none focus:border-sky-400"
-              >
-                {Object.entries(PRIORITY_META).map(([key, meta]) => (
-                  <option key={key} value={key}>
-                    {meta.label}
-                  </option>
-                ))}
-              </select>
+                options={Object.entries(PRIORITY_META).map(([key, meta]) => [key, meta.label])}
+                ariaLabel="Select template priority"
+                icon={FileText}
+                className="w-full"
+                buttonClassName="h-12 rounded-2xl bg-gray-900 px-4"
+                menuClassName="w-full"
+              />
             </div>
             <button
               type="button"

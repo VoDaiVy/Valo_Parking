@@ -3,6 +3,8 @@ const notificationEmailService = require('./notificationEmailService');
 const { emitNotification, broadcastNotification } = require('../sockets/notificationSocket');
 const NotificationRule = require('../models/NotificationRule');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
+const MembershipEntitlementTransfer = require('../models/MembershipEntitlementTransfer');
 
 /**
  * Notification Trigger Helpers
@@ -761,6 +763,119 @@ async function notifyTransferCompleted(app, transfer) {
   }
 }
 
+async function notifyMembershipTransferListed(app, transfer) {
+  try {
+    const fromUserId = String(transfer.fromUserId?._id || transfer.fromUserId);
+    const users = await User.find({
+      role: 'customer',
+      status: true,
+      _id: { $ne: fromUserId },
+    })
+      .select('_id')
+      .lean();
+    const userIds = users.map((user) => String(user._id));
+    if (!userIds.length) return null;
+
+    const entitlement = transfer.entitlementId || {};
+    const result = await notificationService.createForUsersAutoNotification(
+      'MEMBERSHIP_TRANSFER_LISTED',
+      `membership_transfer_${transfer._id}_listed`,
+      userIds,
+      'MEMBERSHIP_TRANSFER_LISTED',
+      {
+        transferId: String(transfer._id),
+        slotCode: entitlement.slotCode || 'Membership space',
+        askingPrice: Number(transfer.askingPrice || 0).toLocaleString('vi-VN'),
+        listingExpiresAt: transfer.listingExpiresAt,
+        deepLink: `/customer/membership-transfer-marketplace/${transfer._id}`,
+      }
+    );
+    const io = getIO(app);
+    if (result?.notification && io) {
+      await Promise.all(
+        result.userIds.map((userId) =>
+          emitNotification(io, userId, result.notification, {
+            notifyAdmins: false,
+            includeAudience: false,
+          }).catch(() => null)
+        )
+      );
+    }
+    return result;
+  } catch (err) {
+    console.error('[NotifTrigger] notifyMembershipTransferListed error:', err.message);
+    return null;
+  }
+}
+
+async function notifyMembershipTransferClaimed(app, transferId) {
+  try {
+    const transfer = await MembershipEntitlementTransfer.findById(transferId)
+      .populate('entitlementId', 'slotCode')
+      .lean();
+    if (!transfer?.fromUserId || transfer.mode !== 'PUBLIC') return null;
+    const userId = String(transfer.fromUserId);
+    const notification = await notificationService.createAutoNotification(
+      'MEMBERSHIP_TRANSFER_CLAIMED',
+      `membership_transfer_${transfer._id}_claimed_${transfer.claimAttemptCount}`,
+      userId,
+      'MEMBERSHIP_TRANSFER_CLAIMED',
+      {
+        transferId: String(transfer._id),
+        slotCode: transfer.entitlementId?.slotCode || 'Membership space',
+        deepLink: '/customer/membership-transfers',
+      }
+    );
+    const io = getIO(app);
+    if (notification && io) {
+      await emitNotification(io, userId, notification, {
+        notifyAdmins: false,
+        includeAudience: false,
+      });
+    }
+    return notification;
+  } catch (err) {
+    console.error('[NotifTrigger] notifyMembershipTransferClaimed error:', err.message);
+    return null;
+  }
+}
+
+async function notifyMembershipTransferCompleted(app, transferId) {
+  try {
+    const transfer = await MembershipEntitlementTransfer.findById(transferId)
+      .populate('entitlementId', 'slotCode')
+      .lean();
+    if (!transfer || transfer.status !== 'COMPLETED') return null;
+    const userIds = [transfer.fromUserId, transfer.toUserId]
+      .filter(Boolean)
+      .map(String);
+    const io = getIO(app);
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const notification = await notificationService.createAutoNotification(
+          'MEMBERSHIP_TRANSFER_COMPLETED',
+          `membership_transfer_${transfer._id}_completed_${userId}`,
+          userId,
+          'MEMBERSHIP_TRANSFER_COMPLETED',
+          {
+            transferId: String(transfer._id),
+            slotCode: transfer.entitlementId?.slotCode || 'Membership space',
+            deepLink: '/customer/membership-transfers',
+          }
+        );
+        if (notification && io) {
+          await emitNotification(io, userId, notification, {
+            notifyAdmins: false,
+            includeAudience: false,
+          });
+        }
+      })
+    );
+  } catch (err) {
+    console.error('[NotifTrigger] notifyMembershipTransferCompleted error:', err.message);
+  }
+}
+
 // ─── PARKING ────────────────────────────────────────────────────────────────────
 
 async function sendContractNotification(app, contract, eventKey, templateKey, suffix, templateData = {}) {
@@ -1067,6 +1182,9 @@ module.exports = {
   notifyTransferApproved,
   notifyTransferRejected,
   notifyTransferCompleted,
+  notifyMembershipTransferListed,
+  notifyMembershipTransferClaimed,
+  notifyMembershipTransferCompleted,
   notifyContractActivated,
   notifyContractCancelled,
   notifyContractExpired,

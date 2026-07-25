@@ -173,6 +173,25 @@ describe('notification recipient delivery', { concurrency: false }, () => {
     assert.deepEqual(insertedRecipients.map((item) => item.userId), [IDS.one, IDS.two]);
   });
 
+  test('can fan out without exposing the full recipient audience on notification payload', async () => {
+    insertedRecipients = [];
+    availableUsers = [IDS.one, IDS.two];
+
+    const result = await notificationService.createForUsers(
+      [IDS.one, IDS.two],
+      { title: 'Marketplace', content: 'New membership listing' },
+      null,
+      { requireActive: true, includeTargetUsers: false }
+    );
+
+    assert.equal(result.recipientCount, 2);
+    assert.deepEqual(result.targetUsers, []);
+    assert.deepEqual(
+      insertedRecipients.map((item) => item.userId),
+      [IDS.one, IDS.two]
+    );
+  });
+
   test('sends system-wide notifications to all active application roles', async () => {
     insertedRecipients = [];
     availableUsers = [IDS.one, IDS.two, IDS.three];

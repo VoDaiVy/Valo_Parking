@@ -14,10 +14,17 @@ const membershipEntitlementTransferSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    mode: {
+      type: String,
+      enum: ['DIRECT', 'PUBLIC'],
+      default: 'DIRECT',
+      required: true,
+      index: true,
+    },
     toUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
       index: true,
     },
     status: {
@@ -25,6 +32,7 @@ const membershipEntitlementTransferSchema = new mongoose.Schema(
       enum: [
         'PENDING_RECIPIENT',
         'PENDING_ADMIN',
+        'LISTED',
         'AWAITING_PAYMENT',
         'COMPLETED',
         'REJECTED',
@@ -40,6 +48,10 @@ const membershipEntitlementTransferSchema = new mongoose.Schema(
     transferFee: { type: Number, required: true, min: 0 },
     priceSnapshot: { type: mongoose.Schema.Types.Mixed, required: true },
     acceptedAt: { type: Date, default: null },
+    listingApprovedAt: { type: Date, default: null },
+    listingExpiresAt: { type: Date, default: null, index: true },
+    claimedAt: { type: Date, default: null },
+    claimAttemptCount: { type: Number, default: 0, min: 0 },
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     approvedAt: { type: Date, default: null },
     lockExpiresAt: { type: Date, default: null, index: true },
@@ -74,10 +86,16 @@ membershipEntitlementTransferSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      status: { $in: ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'AWAITING_PAYMENT'] },
+      status: {
+        $in: ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'LISTED', 'AWAITING_PAYMENT'],
+      },
     },
-    name: 'one_open_transfer_per_entitlement',
+    name: 'one_open_transfer_per_entitlement_v2',
   }
+);
+membershipEntitlementTransferSchema.index(
+  { mode: 1, status: 1, listingExpiresAt: 1, askingPrice: 1 },
+  { name: 'membership_transfer_marketplace_browse' }
 );
 
 module.exports = mongoose.model(

@@ -48,6 +48,7 @@ import BookingManagement from "./pages/Staff/BookingManagement";
 import CustomerProfile from "./pages/Customer/CustomerProfile";
 import Membership from "./pages/Customer/Membership";
 import MembershipTransfers from "./pages/Customer/MembershipTransfers";
+import MembershipTransferMarketplace from "./pages/Customer/MembershipTransferMarketplace";
 import MyVehicles from "./pages/Customer/MyVehicles";
 import WalletPage from "./pages/Wallet/WalletPage";
 import ParkingHistory from "./pages/Customer/ParkingHistory";
@@ -194,10 +195,26 @@ export default function App() {
               path="/customer/membership-transfers"
               element={<MembershipTransfers />}
             />
+            <Route
+              path="/customer/membership-transfer-marketplace"
+              element={<MembershipTransferMarketplace />}
+            />
+            <Route
+              path="/customer/membership-transfer-marketplace/:transferId"
+              element={<MembershipTransferMarketplace />}
+            />
             <Route path="/customer/vehicles" element={<MyVehicles />} />
             <Route path="/customer/wallet" element={<WalletPage />} />
             <Route path="/customer/history" element={<ParkingHistory />} />
             <Route path="/customer/booking" element={<BookingPage />} />
+            <Route
+              path="/customer/notification-inbox"
+              element={<CustomerNotifications />}
+            />
+            <Route
+              path="/customer/notifications"
+              element={<CustomerNotifications />}
+            />
             <Route path="/wallet/*" element={<RedirectOldWalletRoutes />} />
           </Route>
 

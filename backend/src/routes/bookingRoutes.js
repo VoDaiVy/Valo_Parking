@@ -19,12 +19,17 @@ router.delete('/holds/:holdId', softProtect, bookingController.releaseBookingHol
 // Route cho Staff/Admin xem toàn bộ booking
 router.get('/active-for-map', protect, authorize('staff', 'admin'), bookingController.getActiveMapBookings);
 router.get('/all', protect, authorize('staff', 'admin'), bookingController.getAllBookings);
+router.get(
+  '/available-slots',
+  protect,
+  authorize('customer', 'staff', 'admin'),
+  bookingController.getAvailableSlots
+);
 
 // Các route yêu cầu khách hàng đã đăng nhập
 router.use(protect);
 router.use(authorize('customer', 'admin'));
 
-router.get('/available-slots', bookingController.getAvailableSlots);
 router.get('/my', bookingController.getMyBookings);
 router.get('/my-history', bookingController.getMyBookings);
 router.get('/:id/qr', bookingController.getBookingQr);

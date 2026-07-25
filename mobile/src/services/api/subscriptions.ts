@@ -8,6 +8,11 @@ import type {
   SubscriptionRenewalResult,
   SubscriptionPackage,
   MembershipEntitlementTransfer,
+  CreateMembershipEntitlementTransferRequest,
+  MembershipTransferClaimResult,
+  MembershipTransferMarketplaceFilters,
+  MembershipTransferMarketplaceList,
+  MembershipTransferMarketplaceListing,
 } from '@/types/subscription.types';
 
 export const subscriptionsService = {
@@ -64,11 +69,24 @@ export const subscriptionsService = {
     ),
   createEntitlementTransfer: (
     entitlementId: string,
-    data: { toUserEmail: string; askingPrice: number; reason: string },
+    data: CreateMembershipEntitlementTransferRequest,
   ) =>
     apiClient.post<APIResponse<MembershipEntitlementTransfer>>(
       `/customer/membership-entitlements/${entitlementId}/transfers`,
       data,
+    ),
+  getTransferMarketplace: (filters: MembershipTransferMarketplaceFilters = {}) =>
+    apiClient.get<APIResponse<MembershipTransferMarketplaceList>>(
+      '/customer/membership-transfer-marketplace',
+      { params: filters },
+    ),
+  getTransferMarketplaceListing: (transferId: string) =>
+    apiClient.get<APIResponse<MembershipTransferMarketplaceListing>>(
+      `/customer/membership-transfer-marketplace/${transferId}`,
+    ),
+  claimTransferMarketplaceListing: (transferId: string) =>
+    apiClient.post<APIResponse<MembershipTransferClaimResult>>(
+      `/customer/membership-transfer-marketplace/${transferId}/claim`,
     ),
   getEntitlementTransfers: () =>
     apiClient.get<APIResponse<MembershipEntitlementTransfer[]>>(
@@ -86,5 +104,9 @@ export const subscriptionsService = {
   settleEntitlementTransfer: (transferId: string) =>
     apiClient.post<APIResponse<MembershipEntitlementTransfer>>(
       `/customer/membership-entitlement-transfers/${transferId}/settle-wallet`,
+    ),
+  cancelEntitlementTransfer: (transferId: string) =>
+    apiClient.put<APIResponse<MembershipEntitlementTransfer>>(
+      `/customer/membership-entitlement-transfers/${transferId}/cancel`,
     ),
 };

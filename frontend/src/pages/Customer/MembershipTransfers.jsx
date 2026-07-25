@@ -8,8 +8,11 @@ import {
   Clock3,
   Download,
   FileText,
+  Globe2,
   Loader2,
   RefreshCw,
+  Search,
+  ShoppingBag,
   Wallet,
   X,
 } from "lucide-react";
@@ -17,10 +20,12 @@ import toast, { Toaster } from "react-hot-toast";
 import { API_BASE } from "../../services/api";
 import {
   acceptEntitlementTransfer,
+  cancelEntitlementTransfer,
   createEntitlementTransfer,
   getMembershipStatus,
   getMyEntitlementTransfers,
   rejectEntitlementTransfer,
+  searchMembershipTransferRecipients,
   settleEntitlementTransfer,
 } from "../../services/subscriptionService";
 import { getWalletInfo } from "../../services/walletService";
@@ -40,6 +45,10 @@ const STATUS_META = {
     label: "Payment required",
     className: "border-violet-400/20 bg-violet-400/10 text-violet-300",
   },
+  LISTED: {
+    label: "Live marketplace listing",
+    className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+  },
   COMPLETED: {
     label: "Completed",
     className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
@@ -58,7 +67,7 @@ const STATUS_META = {
   },
 };
 
-const EMPTY_FORM = { toUserEmail: "", askingPrice: "", reason: "" };
+const EMPTY_FORM = { mode: "DIRECT", toUserEmail: "", askingPrice: "", reason: "" };
 const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} VND`;
 const entityId = (entity) => String(entity?._id || entity || "");
 
@@ -79,6 +88,9 @@ export default function MembershipTransfers() {
   const [filter, setFilter] = useState("all");
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [recipientOptions, setRecipientOptions] = useState([]);
+  const [recipientLoading, setRecipientLoading] = useState(false);
+  const [recipientOpen, setRecipientOpen] = useState(false);
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
@@ -114,6 +126,37 @@ export default function MembershipTransfers() {
     return () => window.clearTimeout(timerId);
   }, [loadData]);
 
+  useEffect(() => {
+    if (!selectedSlot || form.mode !== "DIRECT") {
+      return undefined;
+    }
+
+    let ignore = false;
+    const timerId = window.setTimeout(async () => {
+      setRecipientLoading(true);
+      try {
+        const response = await searchMembershipTransferRecipients(
+          form.toUserEmail,
+          12,
+        );
+        if (!ignore) {
+          setRecipientOptions(
+            response.ok && response.data?.success ? response.data.data || [] : [],
+          );
+        }
+      } catch {
+        if (!ignore) setRecipientOptions([]);
+      } finally {
+        if (!ignore) setRecipientLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timerId);
+    };
+  }, [form.mode, form.toUserEmail, selectedSlot]);
+
   const refreshData = useCallback(
     () => loadData({ silent: true }),
     [loadData],
@@ -138,7 +181,8 @@ export default function MembershipTransfers() {
     setActiveAction(`create:${selectedSlot.entitlementId}`);
     try {
       const response = await createEntitlementTransfer(selectedSlot.entitlementId, {
-        toUserEmail: form.toUserEmail.trim(),
+        mode: form.mode,
+        ...(form.mode === "DIRECT" ? { toUserEmail: form.toUserEmail.trim() } : {}),
         askingPrice: Number(form.askingPrice || 0),
         reason: form.reason.trim(),
       });
@@ -146,9 +190,15 @@ export default function MembershipTransfers() {
         toast.error(response.data?.message || "Unable to create transfer request.");
         return;
       }
-      toast.success("Transfer invitation sent to the recipient.");
+      toast.success(
+        form.mode === "PUBLIC"
+          ? "Public listing submitted for admin review."
+          : "Transfer invitation sent to the recipient.",
+      );
       setSelectedSlot(null);
       setForm(EMPTY_FORM);
+      setRecipientOpen(false);
+      setRecipientOptions([]);
       await loadData({ silent: true });
     } catch (error) {
       toast.error(error.message || "Unable to create transfer request.");
@@ -165,9 +215,11 @@ export default function MembershipTransfers() {
           ? await acceptEntitlementTransfer(transfer._id)
           : action === "settle"
             ? await settleEntitlementTransfer(transfer._id)
+            : action === "cancel"
+              ? await cancelEntitlementTransfer(transfer._id)
             : await rejectEntitlementTransfer(
                 transfer._id,
-                action === "cancel" ? "Cancelled by sender" : "Declined by recipient",
+                "Declined by recipient",
               );
 
       if (!response.ok || !response.data?.success) {
@@ -225,7 +277,10 @@ export default function MembershipTransfers() {
           title="Membership"
           description="Send a parking-space entitlement, respond to invitations, pay after admin approval, and keep the signed PDF contract."
           className="border-b border-white/10 pb-6"
-          action={
+          action={<div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => navigate("/customer/membership-transfer-marketplace")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-4 text-sm font-black text-[#16130B]">
+              <ShoppingBag size={16} /> Marketplace
+            </button>
             <button
               type="button"
               onClick={refreshData}
@@ -235,7 +290,7 @@ export default function MembershipTransfers() {
               <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
               Refresh
             </button>
-          }
+          </div>}
         />
 
         <MembershipOwnershipPanel
@@ -245,6 +300,8 @@ export default function MembershipTransfers() {
           onTransfer={(slot) => {
             setSelectedSlot(slot);
             setForm(EMPTY_FORM);
+            setRecipientOpen(false);
+            setRecipientOptions([]);
           }}
         />
 
@@ -322,10 +379,13 @@ export default function MembershipTransfers() {
                             >
                               {status.label}
                             </span>
+                            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase text-white/45">
+                              {transfer.mode || "DIRECT"}
+                            </span>
                           </div>
                           <p className="mt-2 truncate text-xs text-white/40">
                             {transfer.fromUserId?.email || "Unknown"} →{" "}
-                            {transfer.toUserId?.email || "Unknown"}
+                            {transfer.toUserId?.email || (transfer.mode === "PUBLIC" ? "Public marketplace" : "Unknown")}
                           </p>
                           <p className="mt-1 text-xs text-white/40">
                             Price {money(transfer.askingPrice)} · Fee{" "}
@@ -362,7 +422,7 @@ export default function MembershipTransfers() {
                           </>
                         )}
                         {isSender &&
-                          ["PENDING_RECIPIENT", "PENDING_ADMIN"].includes(transfer.status) && (
+                          ["PENDING_RECIPIENT", "PENDING_ADMIN", "LISTED"].includes(transfer.status) && (
                             <button
                               type="button"
                               disabled={processing}
@@ -429,23 +489,27 @@ export default function MembershipTransfers() {
       </div>
 
       {selectedSlot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#171717] p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/75 px-3 py-3 backdrop-blur-sm sm:items-center">
+          <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#171717] p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-[#DCA11D]">
                   New transfer
                 </p>
-                <h2 className="mt-2 text-2xl font-black">
+                <h2 className="mt-1 text-xl font-black">
                   Transfer space {selectedSlot.slotCode}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-white/40">
-                  The recipient accepts first. Admin review and wallet payment follow.
+                <p className="mt-1 text-xs leading-5 text-white/40">
+                  Choose a specific recipient or publish an admin-reviewed marketplace listing.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedSlot(null)}
+                onClick={() => {
+                  setSelectedSlot(null);
+                  setRecipientOpen(false);
+                  setRecipientOptions([]);
+                }}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/40 hover:bg-white/5 hover:text-white"
                 aria-label="Close transfer form"
               >
@@ -453,19 +517,123 @@ export default function MembershipTransfers() {
               </button>
             </div>
 
-            <div className="mt-6 space-y-4">
-              <label className="block">
-                <span className="text-xs font-bold text-white/50">Recipient email</span>
-                <input
-                  type="email"
-                  value={form.toUserEmail}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, toUserEmail: event.target.value }))
-                  }
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none focus:border-[#DCA11D]"
-                  placeholder="member@example.com"
-                />
-              </label>
+            <div className="mt-4 space-y-3">
+              <fieldset>
+                <legend className="text-xs font-bold text-white/50">Transfer method</legend>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {[
+                    { value: "DIRECT", label: "Direct", support: "Choose one customer" },
+                    { value: "PUBLIC", label: "Marketplace", support: "Open to customers" },
+                  ].map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      onClick={() => {
+                        setForm((current) => ({ ...current, mode: option.value }));
+                        if (option.value !== "DIRECT") {
+                          setRecipientOpen(false);
+                          setRecipientOptions([]);
+                        }
+                      }}
+                      className={`min-h-14 rounded-xl border px-3 py-2.5 text-left transition ${
+                        form.mode === option.value
+                          ? "border-[#DCA11D]/60 bg-[#DCA11D]/10"
+                          : "border-white/10 bg-white/[0.025] hover:bg-white/5"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 text-sm font-black">
+                        {option.value === "PUBLIC" ? <Globe2 size={15} /> : <ArrowLeftRight size={15} />}
+                        {option.label}
+                      </span>
+                      <span className="mt-1 block text-[11px] text-white/35">{option.support}</span>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              {form.mode === "DIRECT" && (
+                <label className="relative block">
+                  <span className="text-xs font-bold text-white/50">Recipient email</span>
+                  <div className="relative mt-1.5">
+                    <Search
+                      size={16}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30"
+                    />
+                    <input
+                      type="email"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={recipientOpen}
+                      aria-controls="membership-transfer-recipient-options"
+                      autoComplete="off"
+                      value={form.toUserEmail}
+                      onFocus={() => setRecipientOpen(true)}
+                      onBlur={() =>
+                        window.setTimeout(() => setRecipientOpen(false), 120)
+                      }
+                      onChange={(event) => {
+                        setForm((current) => ({
+                          ...current,
+                          toUserEmail: event.target.value,
+                        }));
+                        setRecipientOpen(true);
+                      }}
+                      className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-10 text-sm outline-none focus:border-[#DCA11D]"
+                      placeholder="Search customer email..."
+                    />
+                    {recipientLoading && (
+                      <Loader2
+                        size={15}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-white/35"
+                      />
+                    )}
+                  </div>
+                  {recipientOpen && (
+                    <div
+                      id="membership-transfer-recipient-options"
+                      role="listbox"
+                      className="scrollbar-hidden absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-xl border border-white/10 bg-[#202020] p-1 shadow-2xl"
+                    >
+                      {!recipientLoading && recipientOptions.length === 0 ? (
+                        <p className="px-3 py-3 text-xs text-white/40">
+                          No active customer email found.
+                        </p>
+                      ) : (
+                        recipientOptions.map((recipient) => (
+                          <button
+                            key={recipient._id}
+                            type="button"
+                            role="option"
+                            aria-selected={form.toUserEmail === recipient.email}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setForm((current) => ({
+                                ...current,
+                                toUserEmail: recipient.email,
+                              }));
+                              setRecipientOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-bold text-white/85">
+                                {recipient.email}
+                              </span>
+                              {recipient.username && (
+                                <span className="block truncate text-[11px] text-white/35">
+                                  {recipient.username}
+                                </span>
+                              )}
+                            </span>
+                            {form.toUserEmail === recipient.email && (
+                              <Check size={14} className="shrink-0 text-[#DCA11D]" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </label>
+              )}
               <label className="block">
                 <span className="text-xs font-bold text-white/50">Transfer price (VND)</span>
                 <input
@@ -476,41 +644,43 @@ export default function MembershipTransfers() {
                   onChange={(event) =>
                     setForm((current) => ({ ...current, askingPrice: event.target.value }))
                   }
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none focus:border-[#DCA11D]"
+                  className="mt-1.5 w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm outline-none focus:border-[#DCA11D] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   placeholder="0 for a free transfer"
                 />
               </label>
               <label className="block">
                 <span className="text-xs font-bold text-white/50">Reason</span>
                 <textarea
-                  rows="3"
+                  rows="2"
                   maxLength="500"
                   value={form.reason}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, reason: event.target.value }))
                   }
-                  className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none focus:border-[#DCA11D]"
+                  className="mt-1.5 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm outline-none focus:border-[#DCA11D]"
                   placeholder="Why are you transferring this parking space?"
                 />
               </label>
-              <p className="rounded-xl bg-white/5 p-3 text-xs leading-5 text-white/40">
-                The price cannot exceed the prorated remaining value. The recipient also
-                pays a processing fee equal to exactly 5% of the remaining value.
+              <p className="rounded-xl bg-white/5 px-3 py-2.5 text-xs leading-5 text-white/40">
+                {form.mode === "PUBLIC"
+                  ? "Admin reviews the listing before it appears in Marketplace. The first eligible customer to claim it gets a 15-minute payment window."
+                  : "The recipient accepts first, then admin reviews the request before wallet payment."}{" "}
+                The price cannot exceed the prorated remaining value and the buyer pays the transfer fee.
               </p>
               <button
                 type="button"
                 disabled={
                   activeAction.startsWith("create:") ||
-                  !form.toUserEmail.trim() ||
+                  (form.mode === "DIRECT" && !form.toUserEmail.trim()) ||
                   !form.reason.trim()
                 }
                 onClick={handleCreate}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-5 text-sm font-black text-[#16130B] disabled:opacity-40"
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-5 text-sm font-black text-[#16130B] disabled:opacity-40"
               >
                 {activeAction.startsWith("create:") && (
                   <Loader2 size={17} className="animate-spin" />
                 )}
-                Send transfer invitation
+                {form.mode === "PUBLIC" ? "Submit marketplace listing" : "Send transfer invitation"}
               </button>
             </div>
           </div>

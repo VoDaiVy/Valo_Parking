@@ -17,6 +17,10 @@ import {
   X,
 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import {
+  getOperationalValue,
+  getOperationalViewState,
+} from '../../utils/staffOperationalAvailability';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
 const dateFormatter = new Intl.DateTimeFormat('vi-VN', {
@@ -224,6 +228,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, index }) {
 export default function TicketPackages() {
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -231,6 +236,7 @@ export default function TicketPackages() {
 
   const [showModal, setShowModal] = useState(false);
   const [editingPackage, setEditingPackage] = useState(null);
+  const packageState = getOperationalViewState({ loading, error: loadError });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -251,19 +257,22 @@ export default function TicketPackages() {
   const fetchPackages = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setPackages(data.data);
-        setError('');
+        setLoadError('');
       } else {
         setPackages([]);
+        setLoadError(data?.message || 'Failed to load ticket packages');
       }
     } catch (err) {
       console.error(err);
-      setError('Failed to load ticket packages');
+      setPackages([]);
+      setLoadError('Failed to load ticket packages');
     } finally {
       setLoading(false);
     }
@@ -416,11 +425,11 @@ export default function TicketPackages() {
           )}
         </header>
 
-        {error && !showModal && (
+        {loadError && !showModal && (
           <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-red-200 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <AlertCircle size={18} className="shrink-0" />
-              <span className="font-semibold">{error}</span>
+              <span className="font-semibold">{loadError}</span>
             </div>
             <button
               type="button"
@@ -434,9 +443,26 @@ export default function TicketPackages() {
         )}
 
         <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-2xl shadow-black/20 sm:grid-cols-3">
-          <SummaryItem icon={Package} label="Total Packages" value={summary.total.toLocaleString('vi-VN')} support="Loaded packages" />
-          <SummaryItem icon={CheckCircle2} label="Active Packages" value={summary.active.toLocaleString('vi-VN')} support="Enabled and visible" tone="text-emerald-300" />
-          <SummaryItem icon={CalendarClock} label="Last Updated" value={summary.latestUpdated.split(' ')[0]} support={summary.latestUpdated.split(' ').slice(1).join(' ') || 'No timestamp'} tone="text-blue-300" />
+          <SummaryItem
+            icon={Package}
+            label="Total Packages"
+            value={getOperationalValue(packageState, summary.total.toLocaleString('vi-VN'))}
+            support={packageState.isAvailable ? 'Loaded packages' : 'Data unavailable'}
+          />
+          <SummaryItem
+            icon={CheckCircle2}
+            label="Active Packages"
+            value={getOperationalValue(packageState, summary.active.toLocaleString('vi-VN'))}
+            support={packageState.isAvailable ? 'Enabled and visible' : 'Data unavailable'}
+            tone="text-emerald-300"
+          />
+          <SummaryItem
+            icon={CalendarClock}
+            label="Last Updated"
+            value={getOperationalValue(packageState, summary.latestUpdated.split(' ')[0])}
+            support={packageState.isAvailable ? (summary.latestUpdated.split(' ').slice(1).join(' ') || 'No timestamp') : 'Data unavailable'}
+            tone="text-blue-300"
+          />
         </section>
 
         <section className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
@@ -497,7 +523,13 @@ export default function TicketPackages() {
             {isAdmin && <span className="text-right">Actions</span>}
           </div>
 
-          {filteredPackages.length > 0 ? (
+          {loadError ? (
+            <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-6 py-10 text-center" role="alert">
+              <AlertCircle size={28} className="mx-auto text-red-400" />
+              <h2 className="mt-3 text-lg font-black text-red-200">Ticket package data unavailable</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{loadError}</p>
+            </div>
+          ) : filteredPackages.length > 0 ? (
             <div className="space-y-3">
               {filteredPackages.map((pkg, index) => (
                 <PackageRow

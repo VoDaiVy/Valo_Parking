@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { NavigationProp } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,7 +20,16 @@ import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
-import { getNotificationId, NOTIFICATION_TYPES, type NotificationFilter } from '@/utils/notifications';
+import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
+import type { NotificationStackParamList } from '@/navigation/types';
+import {
+  getNotificationId,
+  getNotificationNavigationTarget,
+  NOTIFICATION_TYPES,
+  type NotificationFilter,
+} from '@/utils/notifications';
+
+type Props = NativeStackScreenProps<NotificationStackParamList, 'Notifications'>;
 
 const filters: NotificationFilter[] = ['ALL', 'UNREAD', 'READ', ...NOTIFICATION_TYPES];
 
@@ -37,7 +48,7 @@ const FILTER_LABELS: Record<NotificationFilter, string> = {
   VIOLATION: 'Violations',
 };
 
-export const NotificationsScreen = () => {
+export const NotificationsScreen = ({ navigation }: Props) => {
   const [filter, setFilter] = useState<NotificationFilter>('ALL');
   const {
     notifications,
@@ -52,6 +63,33 @@ export const NotificationsScreen = () => {
     markAllAsRead,
     deleteNotification,
   } = useNotifications(filter);
+
+  const openNotification = async (id: string, notification: Parameters<typeof getNotificationNavigationTarget>[0]) => {
+    if (id) await markAsRead(id).catch(() => undefined);
+    const target = getNotificationNavigationTarget(notification);
+    const tabs = navigation.getParent<NavigationProp<CustomerTabParamList>>();
+    if (!target || !tabs) return;
+
+    if (target.tab === 'WalletTab') {
+      if (target.screen === 'Wallet') {
+        tabs.navigate('WalletTab', { screen: 'Wallet' });
+      } else if (target.screen === 'Membership') {
+        tabs.navigate('WalletTab', { screen: 'Membership' });
+      } else {
+        tabs.navigate('WalletTab', {
+          screen: 'MembershipMarketplaceDetail',
+          params: target.params,
+        });
+      }
+    } else if (target.tab === 'Bookings') {
+      tabs.navigate('Bookings', {
+        screen: 'BookingDetail',
+        params: target.params,
+      });
+    } else {
+      tabs.navigate('ProfileTab', { screen: 'Profile' });
+    }
+  };
 
   const renderEmpty = () => {
     if (loading) {
@@ -139,7 +177,7 @@ export const NotificationsScreen = () => {
             <NotificationCard
               notification={item}
               onDelete={() => void deleteNotification(id)}
-              onPress={() => void markAsRead(id)}
+              onPress={() => void openNotification(id, item)}
             />
           );
         }}

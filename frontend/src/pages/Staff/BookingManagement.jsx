@@ -2,14 +2,21 @@ import { useState, useEffect, useMemo } from 'react';
 import { format, addDays, subDays, startOfDay, differenceInMinutes } from 'date-fns';
 import {
   ChevronLeft, ChevronRight, Clock, MapPin, User, CheckCircle,
-  Search, Filter, Loader2, Car, CreditCard, Calendar, LayoutGrid,
+  Search, Filter, Loader2, Car, CreditCard, LayoutGrid,
   ArrowRight, ShieldCheck, Activity, XCircle, BarChart3,
   CircleDollarSign, Ban, BadgeCheck, TrendingUp, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { getAllFloors } from '../../services/parkingFloorService';
 import { getAllBookings } from '../../services/bookingService';
 import { getAdminBookingStatistics } from '../../services/statisticsService';
-import toast, { Toaster } from 'react-hot-toast';
+import {
+  getOperationalValue,
+  getOperationalViewState,
+  getResponseAvailability,
+} from '../../utils/staffOperationalAvailability';
+import { Toaster } from 'react-hot-toast';
+import StaffDropdown from './components/StaffDropdown.jsx';
+import { STAFF_THEME } from './components/staffTheme.js';
 
 const STATISTICS_RANGES = [
   { value: 'daily', label: 'Daily' },
@@ -206,6 +213,7 @@ export default function BookingManagement() {
   const [floors, setFloors] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
 
   const [selectedFloor, setSelectedFloor] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -217,6 +225,7 @@ export default function BookingManagement() {
   const [statisticsRefreshKey, setStatisticsRefreshKey] = useState(0);
   const [statisticsUpdatedAt, setStatisticsUpdatedAt] = useState(null);
   const [clockNow, setClockNow] = useState(() => new Date());
+  const bookingState = getOperationalViewState({ loading, error: dataError });
   const selectedDateKey = format(currentDate, 'yyyy-MM-dd');
   const statisticsDateFilter =
     statisticsRange === 'daily' ? selectedDateKey : '';
@@ -226,8 +235,8 @@ export default function BookingManagement() {
       : '';
 
   useEffect(() => {
-    document.body.classList.add("bg-[#09090b]");
-    return () => document.body.classList.remove("bg-[#09090b]");
+    document.body.classList.add("bg-[#080808]");
+    return () => document.body.classList.remove("bg-[#080808]");
   }, []);
 
   useEffect(() => {
@@ -238,16 +247,33 @@ export default function BookingManagement() {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setDataError('');
+      setSelectedBooking(null);
       try {
         const [floorsRes, bookingsRes] = await Promise.all([
           getAllFloors(),
           getAllBookings({ date: format(currentDate, 'yyyy-MM-dd') })
         ]);
-        if (floorsRes.data?.success) setFloors(floorsRes.data.data || floorsRes.data.floors || []);
-        if (bookingsRes.data?.success) setBookings(bookingsRes.data.data || []);
+        const floorsState = getResponseAvailability(floorsRes, 'Unable to load parking floors.');
+        const bookingsState = getResponseAvailability(bookingsRes, 'Unable to load bookings.');
+        if (!floorsState.isAvailable || !bookingsState.isAvailable) {
+          setFloors([]);
+          setBookings([]);
+          setDataError(
+            [
+              !floorsState.isAvailable ? floorsState.error : '',
+              !bookingsState.isAvailable ? bookingsState.error : '',
+            ].filter(Boolean).join(' '),
+          );
+          return;
+        }
+        setFloors(floorsState.data || floorsRes.data.floors || []);
+        setBookings(bookingsState.data || []);
         setSelectedBooking(null);
       } catch (error) {
-        toast.error(error?.message || 'Failed to load booking data');
+        setFloors([]);
+        setBookings([]);
+        setDataError(error?.message || 'Failed to load booking data.');
       } finally {
         setLoading(false);
       }
@@ -336,7 +362,9 @@ export default function BookingManagement() {
     return groups;
   }, [filteredBookings]);
 
-  const currentBooking = selectedBooking || active[0] || upcoming[0] || history[0];
+  const currentBooking = bookingState.isAvailable
+    ? selectedBooking || active[0] || upcoming[0] || history[0]
+    : null;
   const currentBookingDisplayStatus = currentBooking
     ? getBookingDisplayStatus(currentBooking, clockNow)
     : null;
@@ -401,21 +429,18 @@ export default function BookingManagement() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-70px)] bg-[#09090b] text-white p-4 md:p-8 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-100 relative overflow-hidden"
+    <div className={`${STAFF_THEME.page} relative flex min-h-[calc(100vh-70px)] flex-col overflow-hidden p-4 font-sans md:p-8`}
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '40px 40px' }}>
 
-      <div className="absolute top-0 left-[20%] w-[600px] h-[600px] bg-emerald-900/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="pointer-events-none absolute left-[20%] top-0 h-[600px] w-[600px] rounded-full bg-[#ffd555]/[0.035] blur-[120px]" />
 
       <Toaster position="top-right" toastOptions={{ className: 'bg-[#18181b] text-white border border-white/10 shadow-2xl' }} />
 
         {/* --- HEADER --- */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 shrink-0 relative z-10">
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-              <Calendar className="text-white" size={20} />
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white">Booking Management</h1>
+          <div className="mb-2 flex items-center gap-3">
+            <h1 className={STAFF_THEME.title}>Booking Management</h1>
           </div>
           <p className="text-white/50 text-sm max-w-xl font-medium">Monitor all reservations, active parking sessions, and historical data in real-time.</p>
         </div>
@@ -424,17 +449,17 @@ export default function BookingManagement() {
           <div className="flex bg-[#121214] border border-white/10 rounded-2xl p-1.5 shadow-lg">
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Active</span>
-              <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">{active.length}</span>
+              <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">{getOperationalValue(bookingState, active.length)}</span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Upcoming</span>
-              <span className="text-amber-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]">{upcoming.length}</span>
+              <span className="text-amber-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]">{getOperationalValue(bookingState, upcoming.length)}</span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Total</span>
-              <span className="text-white font-black text-xl leading-none">{filteredBookings.length}</span>
+              <span className="text-white font-black text-xl leading-none">{getOperationalValue(bookingState, filteredBookings.length)}</span>
             </div>
           </div>
 
@@ -449,7 +474,7 @@ export default function BookingManagement() {
               className="relative flex min-w-[140px] cursor-pointer flex-col items-center justify-center px-4"
               title="Choose booking date"
             >
-              <span className="text-emerald-400 text-[9px] uppercase tracking-[0.2em] font-black mb-0.5">{format(currentDate, 'EEEE')}</span>
+              <span className="mb-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#d7b94a]">{format(currentDate, 'EEEE')}</span>
               <span className="text-lg font-bold leading-none text-white">{format(currentDate, 'MMM dd, yyyy')}</span>
               <input
                 type="date"
@@ -473,12 +498,12 @@ export default function BookingManagement() {
       </div>
 
       {/* --- BOOKING PERFORMANCE --- */}
-      <section className="relative z-10 mb-5 shrink-0 overflow-hidden rounded-[24px] border border-white/[0.08] bg-[#0d0d0f]/90 p-4 shadow-2xl backdrop-blur-xl md:p-5">
-        <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-emerald-500/[0.06] blur-[90px]" />
+      <section className="relative z-10 mb-5 shrink-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] md:p-5">
+        <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#ffd555]/[0.05] blur-[90px]" />
         <div className="relative flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/15 text-emerald-300">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#ffd555]/25 bg-[#ffd555]/15 text-[#ffd555]">
                 <BarChart3 size={16} />
               </div>
               <div>
@@ -486,9 +511,9 @@ export default function BookingManagement() {
                   <h2 className="text-base font-extrabold tracking-tight text-white">
                     Booking Performance
                   </h2>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-emerald-300">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                    Live
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-widest ${statisticsError ? 'border-red-400/20 bg-red-500/10 text-red-300' : statisticsLoading ? 'border-amber-400/20 bg-amber-500/10 text-amber-300' : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300'}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${statisticsError ? 'bg-red-400' : statisticsLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+                    {statisticsError ? 'Data unavailable' : statisticsLoading ? 'Updating' : 'Live'}
                   </span>
                 </div>
                 <p className="mt-0.5 text-[11px] font-medium text-white/40">
@@ -524,7 +549,7 @@ export default function BookingManagement() {
                 onClick={() => setStatisticsRange(option.value)}
                 className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold transition ${
                   statisticsRange === option.value
-                    ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.08)]'
+                    ? 'border-[#ffd555]/35 bg-[#ffd555]/15 text-[#ffd555] shadow-[0_0_16px_rgba(255,213,85,0.08)]'
                     : 'border-white/[0.08] bg-white/[0.03] text-white/40 hover:border-white/15 hover:text-white/70'
                 }`}
               >
@@ -535,7 +560,7 @@ export default function BookingManagement() {
               type="button"
               onClick={() => setStatisticsRefreshKey((value) => value + 1)}
               disabled={statisticsLoading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-white/40 transition hover:border-emerald-400/25 hover:text-emerald-300 disabled:cursor-wait disabled:opacity-50"
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-white/40 transition hover:border-[#ffd555]/25 hover:text-[#ffd555] disabled:cursor-wait disabled:opacity-50"
               title="Refresh booking statistics"
             >
               <RefreshCw size={14} className={statisticsLoading ? 'animate-spin' : ''} />
@@ -593,30 +618,30 @@ export default function BookingManagement() {
       {/* --- CONTROLS --- */}
       <div className="flex flex-wrap gap-4 items-center mb-6 shrink-0 relative z-10">
         <div className="relative w-full md:w-[350px] group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-emerald-400 transition-colors" size={18} />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition-colors group-focus-within:text-[#ffd555]" size={18} />
           <input
             type="text"
             placeholder="Search plate, name, slot..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full bg-[#121214]/80 backdrop-blur-md border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all shadow-inner font-medium"
+            className="w-full rounded-full border border-white/[0.08] bg-[#111] py-3.5 pl-12 pr-4 text-sm font-medium text-white shadow-inner outline-none transition-all placeholder:text-white/30 focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30"
           />
         </div>
 
-        <div className="relative group min-w-[200px]">
-          <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 group-focus-within:text-emerald-400 transition-colors" size={18} />
-          <select
-            value={selectedFloor}
-            onChange={e => setSelectedFloor(e.target.value)}
-            className="appearance-none w-full bg-[#121214]/80 backdrop-blur-md border border-white/10 rounded-2xl py-3.5 pl-12 pr-12 text-sm font-medium text-white focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all cursor-pointer shadow-inner"
-          >
-            <option value="all" className="bg-[#121214]">All Floors</option>
-            {floors.map(f => (
-              <option key={f._id} value={f._id} className="bg-[#121214]">{f.name}</option>
-            ))}
-          </select>
-          <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none rotate-90" size={16} />
-        </div>
+        <StaffDropdown
+          value={selectedFloor}
+          onChange={setSelectedFloor}
+          options={[
+            ['all', 'All Floors'],
+            ...floors.map((floor) => [floor._id, floor.name]),
+          ]}
+          ariaLabel="Filter bookings by floor"
+          icon={Filter}
+          align="right"
+          className="min-w-[200px]"
+          buttonClassName="h-12 rounded-2xl bg-[#121214]/80 px-4 backdrop-blur-md"
+          menuClassName="w-full min-w-[200px]"
+        />
       </div>
 
       {/* --- MAIN CONTENT SPLIT VIEW --- */}
@@ -629,6 +654,12 @@ export default function BookingManagement() {
               <Loader2 className="animate-spin text-emerald-500" size={32} />
               <span className="font-medium tracking-wide">Syncing bookings...</span>
             </div>
+          ) : dataError ? (
+            <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-red-500/30 rounded-[32px] bg-red-500/[0.05] text-red-200 text-center px-6" role="alert">
+              <AlertTriangle size={40} className="mb-4 text-red-400" />
+              <p className="font-medium">Booking data unavailable</p>
+              <p className="mt-2 text-sm text-red-200/70">{dataError}</p>
+            </div>
           ) : filteredBookings.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[32px] bg-white/[0.02] text-white/40">
               <Car size={48} className="mb-4 opacity-30 text-white/50" />
@@ -639,7 +670,7 @@ export default function BookingManagement() {
               {/* Active Section */}
               {active.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sticky top-0 bg-[#09090b]/90 backdrop-blur-md z-20 py-3 border-b border-white/5">
+                  <div className="sticky top-0 z-20 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-emerald-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                       Currently Parked ({active.length})
@@ -654,7 +685,7 @@ export default function BookingManagement() {
               {/* Upcoming Section */}
               {upcoming.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sticky top-0 bg-[#09090b]/90 backdrop-blur-md z-20 py-3 border-b border-white/5 mt-4">
+                  <div className="sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-amber-400 flex items-center gap-2">
                       <Clock size={14} />
                       Arriving Soon ({upcoming.length})
@@ -669,7 +700,7 @@ export default function BookingManagement() {
               {/* History Section */}
               {history.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sticky top-0 bg-[#09090b]/90 backdrop-blur-md z-20 py-3 border-b border-white/5 mt-4">
+                  <div className="sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-white/50 flex items-center gap-2">
                       <CheckCircle size={14} />
                       History ({history.length})
@@ -688,7 +719,7 @@ export default function BookingManagement() {
         <div className="flex-1 bg-[#121214]/60 backdrop-blur-2xl border border-white/10 rounded-[40px] shadow-2xl overflow-hidden hidden md:flex flex-col relative">
           {!currentBooking ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white/30 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/5 to-transparent">
-              <div className="w-24 h-24 rounded-full border border-white/10 flex items-center justify-center mb-6 bg-[#09090b] shadow-inner shadow-white/5">
+              <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-[#080808] shadow-inner shadow-white/5">
                 <LayoutGrid size={32} className="text-white/40" />
               </div>
               <p className="text-lg font-medium tracking-wide">Select a booking to view details</p>
@@ -770,7 +801,7 @@ export default function BookingManagement() {
                   {/* Info Grid */}
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     {/* Customer */}
-                    <div className="rounded-[28px] bg-[#09090b]/50 border border-white/5 p-6 hover:bg-white/[0.02] transition-colors overflow-hidden">
+                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center border border-indigo-500/30 text-indigo-400 shrink-0">
                           <User size={20} />
@@ -793,7 +824,7 @@ export default function BookingManagement() {
                     </div>
 
                     {/* Location */}
-                    <div className="rounded-[28px] bg-[#09090b]/50 border border-white/5 p-6 hover:bg-white/[0.02] transition-colors overflow-hidden">
+                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-emerald-500/30 text-emerald-400 shrink-0">
                           <MapPin size={20} />
@@ -818,7 +849,7 @@ export default function BookingManagement() {
                     </div>
 
                     {/* Payment */}
-                    <div className="rounded-[28px] bg-[#09090b]/50 border border-white/5 p-6 hover:bg-white/[0.02] transition-colors overflow-hidden">
+                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center border border-amber-500/30 text-amber-400 shrink-0">
                           <CreditCard size={20} />
@@ -865,7 +896,7 @@ export default function BookingManagement() {
                     </div>
 
                     {/* Summary */}
-                    <div className="rounded-[28px] bg-[#09090b]/50 border border-white/5 p-6 hover:bg-white/[0.02] transition-colors overflow-hidden">
+                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 flex items-center justify-center border border-sky-500/30 text-sky-400 shrink-0">
                           <Activity size={20} />

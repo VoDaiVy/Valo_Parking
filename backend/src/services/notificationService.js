@@ -264,6 +264,24 @@ const NOTIFICATION_TEMPLATES = {
     type: 'BOOKING',
     priority: 'SUCCESS',
   },
+  MEMBERSHIP_TRANSFER_LISTED: {
+    title: 'New membership space available',
+    content: 'Membership space {slotCode} is available for {askingPrice} VND.',
+    type: 'SYSTEM',
+    priority: 'INFO',
+  },
+  MEMBERSHIP_TRANSFER_CLAIMED: {
+    title: 'Membership listing claimed',
+    content: 'Your membership space {slotCode} has been claimed by a buyer.',
+    type: 'SYSTEM',
+    priority: 'INFO',
+  },
+  MEMBERSHIP_TRANSFER_COMPLETED: {
+    title: 'Membership transfer completed',
+    content: 'Membership space {slotCode} has been transferred successfully.',
+    type: 'SYSTEM',
+    priority: 'SUCCESS',
+  },
   CONTRACT_ACTIVATED: {
     title: 'Contract activated',
     content: 'Contract {contractCode} is now active for slot {slotCode}.',
@@ -400,13 +418,14 @@ async function createForUser(userId, data, createdBy = null, options = {}) {
 // ─── Create notification for multiple users ─────────────────────────────────────
 async function createForUsers(userIds, data, createdBy = null, options = {}) {
   const resolvedUserIds = await resolveRecipients(userIds, options);
+  const includeTargetUsers = options.includeTargetUsers !== false;
   return createWithRecipients({
     title: data.title,
     content: data.content,
     type: data.type || 'SYSTEM',
     priority: data.priority || 'INFO',
     targetType: 'MULTI_USER',
-    targetUsers: resolvedUserIds,
+    targetUsers: includeTargetUsers ? resolvedUserIds : [],
     createdBy,
     metadata: data.metadata || {},
   }, resolvedUserIds);
@@ -546,6 +565,48 @@ async function createBroadcastAutoNotification(eventType, referenceId, templateK
   );
 
   return result;
+}
+
+async function createForUsersAutoNotification(
+  eventType,
+  referenceId,
+  userIds,
+  templateKey,
+  templateData = {}
+) {
+  const template = NOTIFICATION_TEMPLATES[templateKey];
+  if (!template) {
+    console.error(`[NotificationService] Template not found: ${templateKey}`);
+    return null;
+  }
+
+  try {
+    await NotificationEventLog.create({ eventType, referenceId });
+  } catch (err) {
+    if (err.code === 11000) return null;
+    throw err;
+  }
+
+  const filled = fillTemplate(template, templateData);
+  try {
+    const notification = await createForUsers(
+      userIds,
+      {
+        ...filled,
+        metadata: { eventType, referenceId, ...templateData },
+      },
+      null,
+      { requireActive: true, includeTargetUsers: false }
+    );
+    await NotificationEventLog.findOneAndUpdate(
+      { eventType, referenceId },
+      { notificationId: notification._id }
+    );
+    return { notification, userIds: normalizeUserIds(userIds) };
+  } catch (error) {
+    await NotificationEventLog.deleteOne({ eventType, referenceId }).catch(() => {});
+    throw error;
+  }
 }
 
 // ─── Get user notifications (paginated + filtered) ──────────────────────────────
@@ -859,6 +920,7 @@ module.exports = {
   createForRole,
   createAutoNotification,
   createBroadcastAutoNotification,
+  createForUsersAutoNotification,
   getUserNotifications,
   getUnreadCount,
   markAsRead,

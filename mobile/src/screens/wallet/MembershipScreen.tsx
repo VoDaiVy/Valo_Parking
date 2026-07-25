@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Crypto from 'expo-crypto';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -552,6 +553,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
   const [qrError, setQrError] = useState('');
   const [transfers, setTransfers] = useState<MembershipEntitlementTransfer[]>([]);
   const [transferSlot, setTransferSlot] = useState<ReservedSlot | null>(null);
+  const [transferMode, setTransferMode] = useState<'DIRECT' | 'PUBLIC'>('DIRECT');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [askingPrice, setAskingPrice] = useState('');
   const [transferReason, setTransferReason] = useState('');
@@ -596,9 +598,11 @@ export const MembershipScreen = ({ navigation }: Props) => {
     }
   }, []);
 
-  useEffect(() => {
-    void loadMembership();
-  }, [loadMembership]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadMembership();
+    }, [loadMembership]),
+  );
 
   const active = membership?.status === 'active';
 
@@ -672,7 +676,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
   const submitTransfer = async () => {
     if (
       !transferSlot?.entitlementId ||
-      !recipientEmail.trim() ||
+      (transferMode === 'DIRECT' && !recipientEmail.trim()) ||
       !transferReason.trim()
     ) return;
     setTransferLoading(true);
@@ -681,12 +685,14 @@ export const MembershipScreen = ({ navigation }: Props) => {
       await subscriptionsService.createEntitlementTransfer(
         transferSlot.entitlementId,
         {
-          toUserEmail: recipientEmail.trim(),
+          mode: transferMode,
+          ...(transferMode === 'DIRECT' ? { toUserEmail: recipientEmail.trim() } : {}),
           askingPrice: Number(askingPrice || 0),
           reason: transferReason.trim(),
         },
       );
       setTransferSlot(null);
+      setTransferMode('DIRECT');
       setRecipientEmail('');
       setAskingPrice('');
       setTransferReason('');
@@ -704,7 +710,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
 
   const updateTransfer = async (
     transfer: MembershipEntitlementTransfer,
-    action: 'accept' | 'reject' | 'settle',
+    action: 'accept' | 'reject' | 'settle' | 'cancel',
   ) => {
     setTransferLoading(true);
     setRenewalError('');
@@ -713,6 +719,8 @@ export const MembershipScreen = ({ navigation }: Props) => {
         await subscriptionsService.acceptEntitlementTransfer(transfer._id);
       } else if (action === 'reject') {
         await subscriptionsService.rejectEntitlementTransfer(transfer._id);
+      } else if (action === 'cancel') {
+        await subscriptionsService.cancelEntitlementTransfer(transfer._id);
       } else {
         await subscriptionsService.settleEntitlementTransfer(transfer._id);
         await loadMembership();
@@ -748,13 +756,28 @@ export const MembershipScreen = ({ navigation }: Props) => {
       ) : error ? (
         <ErrorState message={error} onRetry={loadMembership} />
       ) : !membership ? (
-        <EmptyState
-          icon="ribbon-outline"
-          title="No active membership"
-          message="Choose a plan for reserved spaces and service benefits."
-          actionLabel="View plans"
-          onAction={() => navigation.navigate('SubscriptionPackages')}
-        />
+        <View style={styles.emptyMembershipActions}>
+          <EmptyState
+            icon="ribbon-outline"
+            title="No active membership"
+            message="Choose a plan or buy an approved membership transfer."
+          />
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('MembershipMarketplace')}
+            style={styles.renewButton}
+          >
+            <Ionicons name="storefront-outline" size={18} color={COLORS.textInverse} />
+            <Text style={styles.renewButtonText}>Browse Transfer Marketplace</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('SubscriptionPackages')}
+            style={styles.emptySecondaryButton}
+          >
+            <Text style={styles.emptySecondaryText}>View membership plans</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
@@ -836,6 +859,23 @@ export const MembershipScreen = ({ navigation }: Props) => {
           </View>
 
           <View style={styles.section}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('MembershipMarketplace')}
+              style={styles.marketplaceEntry}
+            >
+              <View style={styles.marketplaceIcon}>
+                <Ionicons name="storefront-outline" size={22} color={COLORS.gold} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.marketplaceTitle}>Transfer Marketplace</Text>
+                <Text style={styles.renewalMeta}>Browse admin-approved membership spaces</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
             <SectionTitle>Reserved spaces</SectionTitle>
             {membership.reservedSlots.length === 0 ? (
               <View style={styles.softState}>
@@ -882,15 +922,40 @@ export const MembershipScreen = ({ navigation }: Props) => {
             <View style={styles.section}>
               <SectionTitle>{`Transfer ${transferSlot.slotCode}`}</SectionTitle>
               <View style={styles.transferForm}>
-                <TextInput
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  onChangeText={setRecipientEmail}
-                  placeholder="Recipient email"
-                  placeholderTextColor={COLORS.textMuted}
-                  style={styles.transferInput}
-                  value={recipientEmail}
-                />
+                <View style={styles.modeRow}>
+                  {(['DIRECT', 'PUBLIC'] as const).map((mode) => (
+                    <TouchableOpacity
+                      key={mode}
+                      activeOpacity={0.8}
+                      onPress={() => setTransferMode(mode)}
+                      style={[styles.modeButton, transferMode === mode && styles.modeButtonActive]}
+                    >
+                      <Ionicons
+                        name={mode === 'DIRECT' ? 'person-outline' : 'storefront-outline'}
+                        size={17}
+                        color={transferMode === mode ? COLORS.gold : COLORS.textMuted}
+                      />
+                      <Text style={[styles.modeText, transferMode === mode && styles.modeTextActive]}>
+                        {mode === 'DIRECT' ? 'Direct user' : 'Public listing'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {transferMode === 'DIRECT' ? (
+                  <TextInput
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    onChangeText={setRecipientEmail}
+                    placeholder="Recipient email"
+                    placeholderTextColor={COLORS.textMuted}
+                    style={styles.transferInput}
+                    value={recipientEmail}
+                  />
+                ) : (
+                  <Text style={styles.publicHint}>
+                    After admin approval, all eligible customers can see and claim this listing.
+                  </Text>
+                )}
                 <TextInput
                   keyboardType="number-pad"
                   onChangeText={setAskingPrice}
@@ -908,7 +973,9 @@ export const MembershipScreen = ({ navigation }: Props) => {
                   value={transferReason}
                 />
                 <Text style={styles.renewalMeta}>
-                  Recipient pays the price plus a 5% fee (10,000-50,000 VND).
+                  {transferMode === 'DIRECT'
+                    ? 'Recipient pays the price plus a fee equal to 5% of the remaining membership value.'
+                    : 'The first eligible customer to claim will have 15 minutes to pay.'}
                 </Text>
                 <TouchableOpacity
                   disabled={transferLoading}
@@ -918,7 +985,9 @@ export const MembershipScreen = ({ navigation }: Props) => {
                   {transferLoading ? (
                     <ActivityIndicator color={COLORS.textInverse} size="small" />
                   ) : null}
-                  <Text style={styles.renewButtonText}>Send invitation</Text>
+                  <Text style={styles.renewButtonText}>
+                    {transferMode === 'DIRECT' ? 'Send invitation' : 'Submit for approval'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -929,7 +998,9 @@ export const MembershipScreen = ({ navigation }: Props) => {
               <SectionTitle>Transfer requests</SectionTitle>
               {transfers.map((transfer) => {
                 const recipientId =
-                  typeof transfer.toUserId === 'string'
+                  !transfer.toUserId
+                    ? null
+                    : typeof transfer.toUserId === 'string'
                     ? transfer.toUserId
                     : transfer.toUserId._id;
                 const entitlement =
@@ -937,11 +1008,16 @@ export const MembershipScreen = ({ navigation }: Props) => {
                     ? null
                     : transfer.entitlementId;
                 const isRecipient = recipientId === (user?._id || user?.id);
+                const senderId =
+                  typeof transfer.fromUserId === 'string'
+                    ? transfer.fromUserId
+                    : transfer.fromUserId._id;
+                const isSender = senderId === (user?._id || user?.id);
                 return (
                   <View key={transfer._id} style={styles.transferCard}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.slotText}>
-                        {entitlement?.slotCode || 'Membership space'} · {transfer.status}
+                        {entitlement?.slotCode || 'Membership space'} · {transfer.mode || 'DIRECT'} · {transfer.status}
                       </Text>
                       <Text style={styles.renewalMeta}>
                         {formatCurrency(transfer.askingPrice)} + {formatCurrency(transfer.transferFee)} fee
@@ -969,6 +1045,15 @@ export const MembershipScreen = ({ navigation }: Props) => {
                         style={styles.slotAction}
                       >
                         <Text style={styles.slotActionText}>Pay wallet</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {isSender && ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'LISTED'].includes(transfer.status) ? (
+                      <TouchableOpacity
+                        disabled={transferLoading}
+                        onPress={() => void updateTransfer(transfer, 'cancel')}
+                        style={styles.slotAction}
+                      >
+                        <Text style={styles.slotActionText}>Cancel</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -1412,6 +1497,77 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: SPACING.sm,
     padding: SPACING.md,
+  },
+  marketplaceEntry: {
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: 'rgba(212,175,55,0.28)',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: SPACING.md,
+    padding: SPACING.md,
+  },
+  emptyMembershipActions: {
+    paddingHorizontal: SPACING.lg,
+  },
+  emptySecondaryButton: {
+    alignItems: 'center',
+    borderColor: COLORS.gold,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    marginTop: SPACING.sm,
+    minHeight: 48,
+  },
+  emptySecondaryText: {
+    color: COLORS.gold,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '800',
+  },
+  marketplaceIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(212,175,55,0.12)',
+    borderRadius: RADIUS.md,
+    height: 46,
+    justifyContent: 'center',
+    width: 46,
+  },
+  marketplaceTitle: {
+    color: COLORS.textPrimary,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '900',
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  modeButton: {
+    alignItems: 'center',
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  modeButtonActive: {
+    backgroundColor: 'rgba(212,175,55,0.1)',
+    borderColor: COLORS.gold,
+  },
+  modeText: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+  },
+  modeTextActive: { color: COLORS.gold },
+  publicHint: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.xs,
+    lineHeight: 18,
+    paddingVertical: SPACING.xs,
   },
   transferInput: {
     backgroundColor: COLORS.surfaceElevated,

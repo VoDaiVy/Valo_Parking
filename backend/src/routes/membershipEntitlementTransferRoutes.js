@@ -1,5 +1,5 @@
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 const controller = require('../controllers/membershipEntitlementTransferController');
 
@@ -16,11 +16,16 @@ router.post(
   '/customer/membership-entitlements/:entitlementId/transfers',
   authorize('customer'),
   entitlementId,
+  body('mode').optional().isIn(['DIRECT', 'PUBLIC']),
   body('toUserId').optional().isMongoId(),
   body('toUserEmail').optional().isEmail().normalizeEmail(),
   body().custom((value) => {
-    if (!value.toUserId && !value.toUserEmail) {
+    const mode = String(value.mode || 'DIRECT').toUpperCase();
+    if (mode === 'DIRECT' && !value.toUserId && !value.toUserEmail) {
       throw new Error('Recipient user ID or email is required');
+    }
+    if (mode === 'PUBLIC' && (value.toUserId || value.toUserEmail)) {
+      throw new Error('Public listings cannot target a recipient');
     }
     return true;
   }),
@@ -29,9 +34,48 @@ router.post(
   controller.create
 );
 router.get(
+  '/customer/membership-transfer-recipients',
+  authorize('customer'),
+  query('q').optional().isString().trim().isLength({ max: 100 }),
+  query('limit').optional().isInt({ min: 1, max: 20 }),
+  controller.searchRecipients
+);
+router.get(
+  '/customer/membership-transfer-marketplace',
+  authorize('customer'),
+  query('parkingLotId').optional().isMongoId(),
+  query('floorId').optional().isMongoId(),
+  query('minPrice').optional().isInt({ min: 0 }),
+  query('maxPrice').optional().isInt({ min: 0 }),
+  query('minRemainingDays').optional().isInt({ min: 0 }),
+  query('sort').optional().isIn(['newest', 'price_asc', 'expiry_asc']),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 50 }),
+  controller.listMarketplace
+);
+router.get(
+  '/customer/membership-transfer-marketplace/:id',
+  authorize('customer'),
+  transferId,
+  controller.marketplaceDetail
+);
+router.post(
+  '/customer/membership-transfer-marketplace/:id/claim',
+  authorize('customer'),
+  transferId,
+  controller.claimMarketplace
+);
+router.get(
   '/customer/membership-entitlement-transfers',
   authorize('customer'),
   controller.listMine
+);
+router.put(
+  '/customer/membership-entitlement-transfers/:id/cancel',
+  authorize('customer'),
+  transferId,
+  body('reason').optional().isString().trim().isLength({ max: 500 }),
+  controller.cancel
 );
 router.put(
   '/customer/membership-entitlement-transfers/:id/accept',

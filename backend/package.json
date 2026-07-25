@@ -9,6 +9,7 @@
     "normalize:plates": "node src/scripts/normalizeLicensePlates.js",
     "migrate:wallet-idempotency": "node src/scripts/fixWalletIdempotencyIndex.js",
     "migrate:membership-entitlements": "node src/scripts/backfillMembershipEntitlements.js",
+    "migrate:membership-transfer-marketplace": "node src/scripts/migrateMembershipTransferMarketplaceIndex.js",
     "audit:membership-entitlements": "node src/scripts/auditMembershipEntitlements.js",
     "audit:refunds": "node src/scripts/auditRefundPolicyRollout.js",
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
