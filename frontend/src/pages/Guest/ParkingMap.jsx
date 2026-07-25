@@ -109,7 +109,8 @@ export default function ParkingMap() {
   // Stats
   const totalSlots = liveData.length;
   const availableSlotsCount = liveData.filter(s => s.status === 'available').length;
-  const occupiedSlotsCount = totalSlots - availableSlotsCount;
+  const maintenanceSlotsCount = liveData.filter(s => s.status === 'maintenance').length;
+  const occupiedSlotsCount = totalSlots - availableSlotsCount - maintenanceSlotsCount;
 
   useEffect(() => {
     document.title = "Live Parking Map - Valo Parking";
@@ -217,6 +218,10 @@ export default function ParkingMap() {
           <div className="flex flex-col items-center bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5 min-w-[80px]">
             <span className="text-sm font-black text-rose-600">{occupiedSlotsCount}</span>
             <span className="text-[9px] font-bold text-rose-600 uppercase tracking-widest">Occupied</span>
+          </div>
+          <div className="flex flex-col items-center bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5 min-w-[80px]">
+            <span className="text-sm font-black text-amber-600">{maintenanceSlotsCount}</span>
+            <span className="text-[9px] font-bold text-amber-600 uppercase tracking-widest">Maintenance</span>
           </div>
         </div>
       </div>
