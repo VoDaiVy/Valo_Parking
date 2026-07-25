@@ -408,11 +408,16 @@ const googleLogin = async (req, res, next) => {
         role: 'customer',
       });
 
+      const nameParts = (name || '').trim().split(' ');
+      const firstName = nameParts.length > 0 ? nameParts[0] : '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
       // Create empty user detail profile
       await UserDetail.create({
         userId: user._id,
-        fullName: name || '',
-        avatarUrl: picture || '',
+        firstName,
+        lastName,
+        avatar: picture || '',
       });
     }
 

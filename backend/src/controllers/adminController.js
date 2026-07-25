@@ -490,6 +490,107 @@ exports.updateUser = async (req, res, next) => {
 };
 
 /**
+ * @desc  Hard delete a user and all their associated data (Cascading delete)
+ * @route DELETE /api/admin/users/:id
+ * @access Admin only
+ */
+exports.deleteUser = async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+    const User = require('../models/User');
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    
+    // Validate we are not deleting ourselves
+    if (String(user._id) === String(req.user._id)) {
+      return res.status(400).json({ success: false, message: "You cannot delete your own admin account." });
+    }
+
+    // Require all models needed for cascading delete
+    const UserDetail = require('../models/UserDetail');
+    const UserToken = require('../models/UserToken');
+    const QrToken = require('../models/QrToken');
+    const Wallet = require('../models/Wallet');
+    const WalletTransaction = require('../models/WalletTransaction');
+    
+    const Vehicle = require('../models/Vehicle');
+    const Booking = require('../models/Booking');
+    const BookingHold = require('../models/BookingHold');
+    const BookingOrder = require('../models/BookingOrder');
+    const BookingTransfer = require('../models/BookingTransfer');
+    const Session = require('../models/Session');
+    
+    const Subscription = require('../models/Subscription');
+    const SubscriptionRenewal = require('../models/SubscriptionRenewal');
+    const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
+    const MembershipEntitlementTransfer = require('../models/MembershipEntitlementTransfer');
+    const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRenewal');
+    const Slot = require('../models/Slot');
+    
+    const Notification = require('../models/Notification');
+    const UserNotification = require('../models/UserNotification');
+    const Contract = require('../models/Contract');
+    const PolicyAcceptance = require('../models/PolicyAcceptance');
+    const Revenue = require('../models/Revenue');
+
+    // 1. Wallets & Transactions
+    await Wallet.deleteOne({ user: userId });
+    await WalletTransaction.deleteMany({ user: userId });
+
+    // 2. Vehicles & Bookings & Sessions
+    await Vehicle.deleteMany({ owner: userId });
+    await Booking.deleteMany({ userId: userId });
+    await BookingHold.deleteMany({ userId: userId });
+    await BookingOrder.deleteMany({ userId: userId });
+    await BookingTransfer.deleteMany({ $or: [{ fromUserId: userId }, { toUserId: userId }] });
+    await Session.deleteMany({ userId: userId });
+
+    // 3. Subscriptions & VIP Packages
+    await Subscription.deleteMany({ user: userId });
+    await SubscriptionRenewal.deleteMany({ userId: userId });
+    await MembershipSlotEntitlement.deleteMany({ ownerId: userId });
+    await MembershipEntitlementTransfer.deleteMany({ $or: [{ fromUserId: userId }, { toUserId: userId }] });
+    await MembershipEntitlementRenewal.deleteMany({ userId: userId });
+    
+    // 4. Free up VIP Slots
+    await Slot.updateMany(
+      { reservedFor: userId },
+      { $set: { reservedFor: null, reservedBySubscriptionId: null, reservedByEntitlementId: null } }
+    );
+
+    // 5. Logs, Contracts, Policies
+    await Notification.deleteMany({ userId: userId });
+    await UserNotification.deleteMany({ userId: userId });
+    await Contract.deleteMany({ userId: userId });
+    await PolicyAcceptance.deleteMany({ userId: userId });
+    await Revenue.deleteMany({ userId: userId });
+    
+    // 6. Auth & Tokens
+    await UserDetail.deleteOne({ userId: userId });
+    await UserToken.deleteMany({ userId: userId });
+    await QrToken.deleteMany({ userId: userId });
+
+    // 7. Delete the User
+    await User.findByIdAndDelete(userId);
+
+    const AdminActionLog = require("../models/AdminActionLog");
+    await AdminActionLog.create({
+      action: "Deleted User & Cascaded Data",
+      target: user.username || user.email || String(user._id),
+      type: "delete",
+      adminId: req.user._id
+    });
+
+    res.status(200).json({ success: true, message: "User and all associated data deleted successfully." });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * @desc  Reject (delete) a pending vehicle
  * @route DELETE /api/admin/vehicles/:id/reject
  * @access Admin only
