@@ -332,7 +332,7 @@ exports.getLiveMapData = async (req, res) => {
 
     const mapData = slots.map(slot => {
       let status = 'available';
-      if (maintenanceSet.has(slot.slotNumber)) {
+      if (slot.status === 'maintenance' || maintenanceSet.has(slot.slotNumber)) {
         status = 'maintenance';
       } else if (occupiedSlots.has(slot.slotNumber)) {
         status = 'occupied';
