@@ -194,7 +194,33 @@ const sendBroadcastNotificationEmail = async (userIds, eventKey, templateData = 
   }
 };
 
+const sendCustomEmail = async (userId, payload) => {
+  try {
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) return;
+
+    const user = await User.findById(userId).lean();
+    if (!user || !user.email) return;
+
+    const transporter = createTransporter();
+    await transporter.sendMail({
+      from: `"VALO Parking" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: `${payload.title} - VALO Parking`,
+      html: renderEmailHtml({
+        title: payload.title,
+        content: payload.content,
+        priority: payload.priority || 'INFO',
+        eventKey: payload.eventKey || 'wallet.refund_success',
+        templateData: payload.templateData || {},
+      }),
+    });
+  } catch (err) {
+    console.error('[NotificationEmailService] sendCustomEmail error:', err.message);
+  }
+};
+
 module.exports = {
   sendNotificationEmail,
   sendBroadcastNotificationEmail,
+  sendCustomEmail,
 };
