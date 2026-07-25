@@ -44,7 +44,7 @@ const unwrapList = (response) => {
 
 const listingId = (listing) => String(listing?.transferId || listing?._id || "");
 
-export default function MembershipTransferMarketplace() {
+export default function MembershipTransferMarketplace({ embedded = false }) {
   const navigate = useNavigate();
   const { transferId: routeTransferId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -150,7 +150,15 @@ export default function MembershipTransferMarketplace() {
       );
       return;
     }
-    setSearchParams(id ? { transferId: id } : {});
+    setSearchParams(
+      embedded
+        ? id
+          ? { tab: "marketplace", transferId: id }
+          : { tab: "marketplace" }
+        : id
+          ? { transferId: id }
+          : {},
+    );
   };
 
   const refreshAll = async () => {
@@ -207,10 +215,16 @@ export default function MembershipTransferMarketplace() {
   };
 
   return (
-    <div className="min-h-full bg-[#0D0D0D] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <Toaster position="top-right" />
-      <div className="mx-auto max-w-7xl">
-        <CustomerPageHeader
+    <div
+      className={
+        embedded
+          ? "text-white"
+          : "min-h-full bg-[#0D0D0D] px-4 py-6 text-white sm:px-6 lg:px-8"
+      }
+    >
+      {!embedded && <Toaster position="top-right" />}
+      <div className={embedded ? "" : "mx-auto max-w-7xl"}>
+        {!embedded && <CustomerPageHeader
           icon={ShoppingBag}
           title="Membership Marketplace"
           description="Browse admin-approved membership spaces, reserve one safely, and pay with your wallet."
@@ -226,7 +240,21 @@ export default function MembershipTransferMarketplace() {
               Refresh
             </button>
           }
-        />
+        />}
+
+        {embedded && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={refreshAll}
+              disabled={loading}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
+        )}
 
         <section className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-[#151515] p-4 md:grid-cols-[1fr_140px_140px_180px]">
           <label className="relative">

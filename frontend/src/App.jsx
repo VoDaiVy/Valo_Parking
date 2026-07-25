@@ -47,8 +47,7 @@ import BookingManagement from "./pages/Staff/BookingManagement";
 // Pages – Customer
 import CustomerProfile from "./pages/Customer/CustomerProfile";
 import Membership from "./pages/Customer/Membership";
-import MembershipTransfers from "./pages/Customer/MembershipTransfers";
-import MembershipTransferMarketplace from "./pages/Customer/MembershipTransferMarketplace";
+import MembershipHub from "./pages/Customer/MembershipHub";
 import MyVehicles from "./pages/Customer/MyVehicles";
 import WalletPage from "./pages/Wallet/WalletPage";
 import ParkingHistory from "./pages/Customer/ParkingHistory";
@@ -62,6 +61,26 @@ import UnauthorizedPage from "./pages/UnauthorizedPage";
 function RedirectOldWalletRoutes() {
   const location = useLocation();
   return <Navigate to={`/customer/wallet${location.search}`} replace />;
+}
+
+function RedirectLegacyMembershipMarketplace() {
+  const location = useLocation();
+  const routeTransferId = location.pathname
+    .match(/^\/customer\/membership-transfer-marketplace\/([^/]+)$/)?.[1];
+  const legacyParams = new URLSearchParams(location.search);
+  const transferId = routeTransferId || legacyParams.get("transferId");
+  const targetParams = new URLSearchParams({ tab: "marketplace" });
+
+  if (transferId) {
+    targetParams.set("transferId", transferId);
+  }
+
+  return (
+    <Navigate
+      to={`/customer/membership-transfers?${targetParams.toString()}`}
+      replace
+    />
+  );
 }
 
 export default function App() {
@@ -193,15 +212,15 @@ export default function App() {
             <Route path="/profile" element={<CustomerProfile />} />
             <Route
               path="/customer/membership-transfers"
-              element={<MembershipTransfers />}
+              element={<MembershipHub />}
             />
             <Route
               path="/customer/membership-transfer-marketplace"
-              element={<MembershipTransferMarketplace />}
+              element={<RedirectLegacyMembershipMarketplace />}
             />
             <Route
               path="/customer/membership-transfer-marketplace/:transferId"
-              element={<MembershipTransferMarketplace />}
+              element={<RedirectLegacyMembershipMarketplace />}
             />
             <Route path="/customer/vehicles" element={<MyVehicles />} />
             <Route path="/customer/wallet" element={<WalletPage />} />

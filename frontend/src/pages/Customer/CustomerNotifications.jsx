@@ -44,8 +44,8 @@ const getSafeCustomerDeepLink = (notification) => {
   if (eventType.startsWith('MEMBERSHIP_TRANSFER_')) {
     const transferId = notification?.metadata?.transferId;
     return transferId
-      ? `/customer/membership-transfer-marketplace?transferId=${encodeURIComponent(transferId)}`
-      : '/customer/membership-transfer-marketplace';
+      ? `/customer/membership-transfers?tab=marketplace&transferId=${encodeURIComponent(transferId)}`
+      : '/customer/membership-transfers?tab=marketplace';
   }
   if (notification?.type === 'BOOKING') {
     const bookingId = notification?.metadata?.bookingId;

@@ -71,7 +71,7 @@ const EMPTY_FORM = { mode: "DIRECT", toUserEmail: "", askingPrice: "", reason: "
 const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} VND`;
 const entityId = (entity) => String(entity?._id || entity || "");
 
-export default function MembershipTransfers() {
+export default function MembershipTransfers({ embedded = false }) {
   const navigate = useNavigate();
   const currentUser = useMemo(
     () => JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
@@ -269,10 +269,16 @@ export default function MembershipTransfers() {
   };
 
   return (
-    <div className="min-h-full bg-[#0D0D0D] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <Toaster position="top-right" />
-      <div className="mx-auto max-w-6xl">
-        <CustomerPageHeader
+    <div
+      className={
+        embedded
+          ? "text-white"
+          : "min-h-full bg-[#0D0D0D] px-4 py-6 text-white sm:px-6 lg:px-8"
+      }
+    >
+      {!embedded && <Toaster position="top-right" />}
+      <div className={embedded ? "" : "mx-auto max-w-6xl"}>
+        {!embedded && <CustomerPageHeader
           icon={ArrowLeftRight}
           title="Membership"
           description="Send a parking-space entitlement, respond to invitations, pay after admin approval, and keep the signed PDF contract."
@@ -291,7 +297,21 @@ export default function MembershipTransfers() {
               Refresh
             </button>
           </div>}
-        />
+        />}
+
+        {embedded && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={refreshData}
+              disabled={refreshing}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
+        )}
 
         <MembershipOwnershipPanel
           membership={membership}
