@@ -23,6 +23,7 @@ import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePr
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import { getPolicyAcceptanceStatus } from '../../services/policyService';
 import { getServices } from '../../services/extraServiceApi';
+import { isValidLicensePlate } from '../../utils/licensePlate';
 import { getMyVehicles } from '../../services/vehicleService';
 import { getWalletInfo } from '../../services/walletService';
 import { apiFetch } from '../../services/api';
@@ -126,6 +127,30 @@ const parseLocalDate = (value) => {
   if (!year || !month || !day) return null;
   const date = new Date(year, month - 1, day);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatVietnamesePlate = (plate) => {
+  if (!plate) return null;
+  const clean = plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let province, series, numbers;
+  if (clean.length === 9) {
+    if (/^\d{2}[A-Z]\d\d{5}$/.test(clean)) { province = clean.slice(0, 2); series = clean.slice(2, 4); numbers = clean.slice(4); }
+    else if (/^\d{2}[A-Z]{2}\d{5}$/.test(clean)) { province = clean.slice(0, 2); series = clean.slice(2, 4); numbers = clean.slice(4); }
+  } else if (clean.length === 8) {
+    if (/^\d{2}[A-Z]\d{5}$/.test(clean)) { province = clean.slice(0, 2); series = clean.slice(2, 3); numbers = clean.slice(3); }
+    else if (/^\d{2}[A-Z]\d\d{4}$/.test(clean)) { province = clean.slice(0, 2); series = clean.slice(2, 4); numbers = clean.slice(4); }
+    else if (/^\d{2}[A-Z]{2}\d{4}$/.test(clean)) { province = clean.slice(0, 2); series = clean.slice(2, 4); numbers = clean.slice(4); }
+  } else if (clean.length === 7) {
+    if (/^\d{2}[A-Z]\d{4}$/.test(clean)) { province = clean.slice(0, 2); series = clean.slice(2, 3); numbers = clean.slice(3); }
+  }
+  if (province && series && numbers) {
+    let formattedNumbers = numbers;
+    if (numbers.length === 5) { formattedNumbers = `${numbers.slice(0, 3)}.${numbers.slice(3)}`; }
+    const isMotorbike = /\d/.test(series);
+    if (isMotorbike) return `${province}-${series} ${formattedNumbers}`;
+    else return `${province}${series} - ${formattedNumbers}`;
+  }
+  return null;
 };
 
 const formatLocalDateValue = (date) => {
@@ -645,6 +670,13 @@ export default function CreateBookingPage() {
     return () => clearInterval(intervalId);
   }, [fetchDbSlots]);
 
+  const handleManualPlateChange = (event) => {
+    const raw = event.target.value.toUpperCase();
+    const clean = raw.replace(/[^A-Z0-9]/g, '');
+    const formatted = formatVietnamesePlate(clean);
+    setManualPlate(formatted || raw);
+  };
+
   const handleStartChange = (newDate, newTime) => {
     setStartDate(newDate);
     setStartTimeStr(newTime);
@@ -724,9 +756,10 @@ export default function CreateBookingPage() {
     ? dbSlots.find((slot) => slot.slotNumber === selectedSlot.slotCode)
     : null;
   const selectedSlotReservedFor = selectedDbSlot?.reservedFor?._id || selectedDbSlot?.reservedFor || null;
-  const currentLicensePlate = vehicleId ? selectedVehicle?.licensePlate : manualPlate.trim();
+  const rawManualPlateForCheck = manualPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const currentLicensePlate = vehicleId ? selectedVehicle?.licensePlate : rawManualPlateForCheck;
   const isRegisteredPlate = vehicles.some(
-    v => v.licensePlate.toUpperCase() === currentLicensePlate?.toUpperCase()
+    v => v.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === currentLicensePlate
   );
 
   const selectedSlotIsOwnVipSlot = Boolean(
@@ -964,14 +997,15 @@ export default function CreateBookingPage() {
       return;
     }
 
+    const rawManualPlate = manualPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
     if (!vehicleId) {
-      if (!manualPlate.trim()) {
+      if (!rawManualPlate) {
         setError('Please select a vehicle or enter a license plate.');
         return;
       }
-      const plateRegex = /^[A-Za-z0-9]{4,12}$/;
-      if (!plateRegex.test(manualPlate.trim())) {
-        setError('License plate must be 4-12 alphanumeric characters.');
+      if (!isValidLicensePlate(rawManualPlate)) {
+        setError('Invalid Vietnamese license plate format. Please check again.');
         return;
       }
     }
@@ -994,8 +1028,9 @@ export default function CreateBookingPage() {
       const itemEnd = new Date(item.endTime);
       
       if (hasOverlap(startObj, endObj, itemStart, itemEnd)) {
+        const itemPlateClean = item.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
         const isSameVehicle = (vehicleId && item.vehicleId === vehicleId) || 
-                              (!vehicleId && manualPlate.trim() === item.licensePlate);
+                              (!vehicleId && rawManualPlate === itemPlateClean);
         if (isSameVehicle) {
           setError(`This vehicle is already in the booking list for an overlapping time.`);
           return true;
@@ -1023,7 +1058,7 @@ export default function CreateBookingPage() {
       const holdRes = await createBookingHold({
         floorId: selectedSlot.floorId,
         slotCode: selectedSlot.slotCode,
-        licensePlate: vehicleId ? selectedVehicle?.licensePlate : manualPlate.trim(),
+        licensePlate: vehicleId ? selectedVehicle?.licensePlate : rawManualPlate,
         startTime: startObj.toISOString(),
         endTime: endObj.toISOString(),
       });
@@ -1036,10 +1071,10 @@ export default function CreateBookingPage() {
     const nextItem = {
       clientItemId: editingClientItemId || createClientItemId(),
       vehicleId: vehicleId || '',
-      licensePlate: vehicleId ? selectedVehicle?.licensePlate : manualPlate.trim(),
+      licensePlate: vehicleId ? selectedVehicle?.licensePlate : rawManualPlate,
       vehicleLabel: vehicleId
         ? `${selectedVehicle?.licensePlate || 'Vehicle'} - ${selectedVehicle?.brand || 'Vehicle'} ${selectedVehicle?.model || ''}`.trim()
-        : manualPlate.trim(),
+        : rawManualPlate.trim(),
       floorId: selectedSlot.floorId,
       floorName: selectedSlot.floorName,
       slotCode: selectedSlot.slotCode,
@@ -1428,22 +1463,22 @@ export default function CreateBookingPage() {
                 ) : (
                   <input
                     value={manualPlate}
-                    onChange={(event) => setManualPlate(event.target.value)}
+                    onChange={handleManualPlateChange}
                     placeholder="License plate"
-                    className="mt-1 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition"
+                    className="mt-1 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
 
                 {vehicleId === '' && vehicles.length > 0 && (
                   <input
                     value={manualPlate}
-                    onChange={(event) => setManualPlate(event.target.value)}
+                    onChange={handleManualPlateChange}
                     placeholder="License plate"
-                    className="mt-2 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition"
+                    className="mt-2 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
 
-                {activeMembershipType && selectedVehicle && selectedSlot && (
+                {activeMembershipType && isRegisteredPlate && selectedSlot && (
                   <div className={`mt-3 rounded-xl border px-3 py-2.5 text-xs font-semibold ${
                     selectedSlotIsOwnVipSlot
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'

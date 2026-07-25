@@ -1667,9 +1667,11 @@ exports.createBookingHold = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Ô đỗ này đã có lịch đặt trước. Vui lòng chọn ô khác.' });
     }
 
-    if (licensePlate) {
+    const normalizedPlate = licensePlate ? licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+
+    if (normalizedPlate) {
       const vehicleOverlap = await Booking.findOne({
-        licensePlate,
+        licensePlate: normalizedPlate,
         status: { $in: ['PAID', 'PAUSED'] },
         scheduledStart: { $lt: end },
         scheduledEnd: { $gt: start }
@@ -1689,9 +1691,9 @@ exports.createBookingHold = async (req, res, next) => {
       if (activeHoldsCount >= 5) {
         return res.status(400).json({ success: false, message: 'Bạn chỉ được giữ tối đa 5 ô đỗ cùng lúc. Vui lòng thanh toán hoặc hủy bớt các ô đã chọn.' });
       }
-    } else if (licensePlate) {
+    } else if (normalizedPlate) {
       const activeHoldsCount = await BookingHold.countDocuments({
-        licensePlate,
+        licensePlate: normalizedPlate,
         status: 'active',
         expiresAt: { $gt: now }
       });
@@ -1706,7 +1708,7 @@ exports.createBookingHold = async (req, res, next) => {
       userId: req.user ? req.user._id : undefined,
       floorId,
       slotCode,
-      licensePlate: licensePlate || '',
+      licensePlate: normalizedPlate,
       startTime: start,
       endTime: end,
       expiresAt: new Date(now.getTime() + holdDurationMs),
@@ -1876,8 +1878,21 @@ exports.quoteBulkBooking = async (req, res, next) => {
       });
       if (slotOverlapBooking) throw new Error(`Ô đỗ ${parkingSlot} đã có người đặt trong khung giờ bạn chọn.`);
 
+      // Check subscription to waive fees if it's the user's own VIP slot
+      const subscriptionInfo = await findActiveSlotOwnership({
+        floorId,
+        slotCode: parkingSlot,
+        at: start,
+      });
+      if (subscriptionInfo && subscriptionInfo.ownerId.toString() !== userId.toString()) {
+        throw new Error(`Ô đỗ ${parkingSlot} đã được đăng ký gói thuê bao cố định.`);
+      }
+
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
+      if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+        pricing.finalTotal = 0;
+      }
       
       // Services pricing
       let servicesTotal = 0;
@@ -2012,7 +2027,7 @@ exports.createBulkBooking = async (req, res, next) => {
       // Record internal reservations
       internalVehicleReservations.push({ 
         vehicleId: vehicle._id ? vehicle._id.toString() : null, 
-        licensePlate: vehicle.licensePlate, 
+        licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate, 
         start, end 
       });
       internalSlotReservations.push({ parkingSlot, start, end });
@@ -2020,7 +2035,7 @@ exports.createBulkBooking = async (req, res, next) => {
       // Check overlapping for vehicle in Database
       const vehicleQuery = vehicle._id 
         ? { vehicleId: vehicle._id } 
-        : { licensePlate: vehicle.licensePlate };
+        : { licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate };
 
       const overlappingBooking = await Booking.findOne({
         ...vehicleQuery,
@@ -2043,7 +2058,7 @@ exports.createBulkBooking = async (req, res, next) => {
       // Check if vehicle is currently inside the parking lot (active Session)
       const Session = require('../models/Session');
       const activeSession = await Session.findOne({
-        licensePlate: vehicle.licensePlate,
+        licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate,
         status: 'active'
       }).session(session);
       
@@ -2088,6 +2103,9 @@ exports.createBulkBooking = async (req, res, next) => {
 
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
+      if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+        pricing.finalTotal = 0;
+      }
       
       // Services pricing
       let itemServices = [];
@@ -2110,7 +2128,7 @@ exports.createBulkBooking = async (req, res, next) => {
       bookingsToCreate.push({
         userId,
         vehicleId: vehicle._id,
-        licensePlate: vehicle.licensePlate,
+        licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate,
         floorId,
         parkingSlot,
         scheduledStart: start,

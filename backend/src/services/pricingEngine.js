@@ -45,32 +45,36 @@ async function calculatePrice(checkIn, checkOut, includeSessionFee = true, confi
     return { finalTotal: 0, rawTotal: 0, durationHours: 0 };
   }
 
+  const shiftMs = 7 * 60 * 60 * 1000;
+  const startVn = new Date(start.getTime() + shiftMs);
+  const endVn = new Date(end.getTime() + shiftMs);
+
   // Lặp qua các ngày đỗ xe, bắt đầu từ 1 ngày trước ngày checkIn để bắt các block vắt qua đêm
-  const startOfDay = new Date(start);
-  startOfDay.setHours(0, 0, 0, 0);
-  startOfDay.setDate(startOfDay.getDate() - 1);
+  const startOfDay = new Date(startVn);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  startOfDay.setUTCDate(startOfDay.getUTCDate() - 1);
   
-  const endOfDay = new Date(end);
-  endOfDay.setHours(23, 59, 59, 999);
+  const endOfDay = new Date(endVn);
+  endOfDay.setUTCHours(23, 59, 59, 999);
   
   let rawTotal = 0;
   
-  for (let d = new Date(startOfDay); d <= endOfDay; d.setDate(d.getDate() + 1)) {
-    const year = d.getFullYear();
-    const month = d.getMonth();
-    const date = d.getDate();
+  for (let d = new Date(startOfDay); d <= endOfDay; d.setUTCDate(d.getUTCDate() + 1)) {
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth();
+    const date = d.getUTCDate();
     
     for (const block of blocks) {
-      let blockStart = new Date(year, month, date, block.startHour, 0, 0, 0);
-      let blockEnd = new Date(year, month, date, block.endHour, 0, 0, 0);
+      let blockStart = new Date(Date.UTC(year, month, date, block.startHour, 0, 0, 0));
+      let blockEnd = new Date(Date.UTC(year, month, date, block.endHour, 0, 0, 0));
       
       // Nếu endHour <= startHour (VD: 22h -> 7h), tức là block kết thúc vào ngày hôm sau
       if (block.endHour <= block.startHour) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
+        blockEnd.setUTCDate(blockEnd.getUTCDate() + 1);
       }
       
       // Điều kiện overlap: start < blockEnd && end > blockStart
-      if (start < blockEnd && end > blockStart) {
+      if (startVn < blockEnd && endVn > blockStart) {
         console.log("Hits block", block.startHour, "-", block.endHour, "of date", date, "price:", block.price);
         rawTotal += block.price;
       }
@@ -156,30 +160,35 @@ async function calculateTotalForIntervals(intervals, config = null) {
     if (iv.end > latestEnd) latestEnd = iv.end;
   }
 
-  const startOfDay = new Date(earliestStart);
-  startOfDay.setHours(0, 0, 0, 0);
-  startOfDay.setDate(startOfDay.getDate() - 1);
+  const shiftMs = 7 * 60 * 60 * 1000;
+  const startOfDay = new Date(earliestStart.getTime() + shiftMs);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  startOfDay.setUTCDate(startOfDay.getUTCDate() - 1);
   
-  const endOfDay = new Date(latestEnd);
-  endOfDay.setHours(23, 59, 59, 999);
+  const endOfDay = new Date(latestEnd.getTime() + shiftMs);
+  endOfDay.setUTCHours(23, 59, 59, 999);
   
   let rawTotal = 0;
   
-  for (let d = new Date(startOfDay); d <= endOfDay; d.setDate(d.getDate() + 1)) {
-    const year = d.getFullYear();
-    const month = d.getMonth();
-    const date = d.getDate();
+  for (let d = new Date(startOfDay); d <= endOfDay; d.setUTCDate(d.getUTCDate() + 1)) {
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth();
+    const date = d.getUTCDate();
     
     for (const block of blocks) {
-      let blockStart = new Date(year, month, date, block.startHour, 0, 0, 0);
-      let blockEnd = new Date(year, month, date, block.endHour, 0, 0, 0);
+      let blockStart = new Date(Date.UTC(year, month, date, block.startHour, 0, 0, 0));
+      let blockEnd = new Date(Date.UTC(year, month, date, block.endHour, 0, 0, 0));
       
       if (block.endHour <= block.startHour) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
+        blockEnd.setUTCDate(blockEnd.getUTCDate() + 1);
       }
       
       // Kiểm tra xem có BẤT KỲ interval nào overlap với block này không
-      const isOverlap = mergedIntervals.some(iv => iv.start < blockEnd && iv.end > blockStart);
+      const isOverlap = mergedIntervals.some(iv => {
+        const ivStartVn = new Date(iv.start.getTime() + shiftMs);
+        const ivEndVn = new Date(iv.end.getTime() + shiftMs);
+        return ivStartVn < blockEnd && ivEndVn > blockStart;
+      });
       if (isOverlap) {
         rawTotal += block.price;
       }

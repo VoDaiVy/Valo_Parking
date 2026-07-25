@@ -129,6 +129,20 @@ const updateProfile = async (req, res, next) => {
   try {
     const { firstName, lastName, phone, dob, gender, avatar } = req.body;
 
+    if (phone) {
+      const existingUserWithPhone = await UserDetail.findOne({ 
+        phone: phone, 
+        userId: { $ne: req.user._id } 
+      });
+      
+      if (existingUserWithPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'This phone number is already linked to another account.'
+        });
+      }
+    }
+
     // Update or create UserDetail
     const userDetail = await UserDetail.findOneAndUpdate(
       { userId: req.user._id },
@@ -154,8 +168,8 @@ const updateProfile = async (req, res, next) => {
     // Claim History Logic: If phone is provided, link all orphan sessions
     if (phone) {
       const result = await Session.updateMany(
-        { phone: phone, userId: null },
-        { userId: req.user._id }
+        { phone: phone, userId: { $in: [null, undefined] } },
+        { $set: { userId: req.user._id } }
       );
       claimedSessions = result.modifiedCount || 0;
     }
