@@ -386,6 +386,32 @@ const googleLogin = async (req, res, next) => {
           message: 'Your account has been deactivated. Please contact admin.',
         });
       }
+
+      // Sync Profile Data (Avatar & Name) if they are missing
+      const userDetail = await UserDetail.findOne({ userId: user._id });
+      if (userDetail) {
+        let profileUpdated = false;
+        
+        // Sync Avatar if it's empty or already a Google Avatar
+        if (picture && (!userDetail.avatar || userDetail.avatar.includes('googleusercontent.com'))) {
+          if (userDetail.avatar !== picture) {
+            userDetail.avatar = picture;
+            profileUpdated = true;
+          }
+        }
+
+        // Sync Name if both firstName and lastName are empty
+        if (name && !userDetail.firstName && !userDetail.lastName) {
+          const nameParts = name.trim().split(' ');
+          userDetail.firstName = nameParts.length > 0 ? nameParts[0] : '';
+          userDetail.lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+          profileUpdated = true;
+        }
+
+        if (profileUpdated) {
+          await userDetail.save();
+        }
+      }
     } else {
       // Create new user from Google info
       const baseUsername = (name || email.split('@')[0])
