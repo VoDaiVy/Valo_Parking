@@ -1148,7 +1148,11 @@ export default function CreateBookingPage() {
   };
 
   const startTopUpForShortfall = async (shortfall) => {
-    const amountToTopUp = Math.ceil(Number(shortfall));
+    let amountToTopUp = Math.ceil(Number(shortfall));
+    if (amountToTopUp > 0 && amountToTopUp < 2000) {
+      amountToTopUp = 2000;
+    }
+    
     if (!Number.isFinite(amountToTopUp) || amountToTopUp <= 0) {
       setError('Could not determine the remaining amount required for this booking.');
       return;
