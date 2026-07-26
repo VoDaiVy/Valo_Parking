@@ -639,7 +639,7 @@ export default function MyVehicles() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setActionLoading(true);
-    const { ok } = await deleteVehicle(deleteTarget._id);
+    const { ok, data } = await deleteVehicle(deleteTarget._id);
     setActionLoading(false);
     if (ok) {
       setDeleteTarget(null);
@@ -647,7 +647,7 @@ export default function MyVehicles() {
       await fetchVehicles();
       showToast('Vehicle deleted ✓');
     } else {
-      showToast('Failed to delete vehicle', 'error');
+      showToast(data?.message || 'Failed to delete vehicle', 'error');
     }
   };
 
