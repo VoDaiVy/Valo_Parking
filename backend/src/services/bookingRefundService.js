@@ -184,9 +184,10 @@ const settleBookingEvent = async ({
   applyState,
   settleExtraWithWallet = true,
   walletNetAmount,
+  session: existingSession,
 }) => {
-  const mongoSession = await mongoose.startSession();
-  mongoSession.startTransaction();
+  const mongoSession = existingSession || await mongoose.startSession();
+  if (!existingSession) mongoSession.startTransaction();
 
   try {
     const booking = await Booking.findById(bookingId).session(mongoSession);
@@ -271,14 +272,14 @@ const settleBookingEvent = async ({
     };
     booking.refundSettlements.push(settlement);
     await booking.save({ session: mongoSession });
-    await mongoSession.commitTransaction();
+    if (!existingSession) await mongoSession.commitTransaction();
 
     return { booking, settlement, alreadyProcessed: false };
   } catch (error) {
-    await mongoSession.abortTransaction();
+    if (!existingSession) await mongoSession.abortTransaction();
     throw error;
   } finally {
-    mongoSession.endSession();
+    if (!existingSession) await mongoSession.endSession();
   }
 };
 

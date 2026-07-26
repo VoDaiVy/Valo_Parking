@@ -1,8 +1,14 @@
 const { validationResult } = require('express-validator');
 const Vehicle = require('../models/Vehicle');
+const Session = require('../models/Session');
+const Booking = require('../models/Booking');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const { getVehicleCapacity } = require('../services/vehicleCapacityService');
+const {
+  findVehicleDeletionBlocker,
+} = require('../services/vehicleDeletionService');
 
 // ─── Cloudinary 3D model auto-discovery ──────────────────────────────────────
 const normalizeSlug = (str = '') =>
@@ -108,8 +114,19 @@ const addVehicle = async (req, res) => {
       });
     }
 
-    // If first vehicle, set as default automatically
+    // Enforce the account-level vehicle limit before external uploads/lookups.
     const count = await Vehicle.countDocuments({ owner: req.user._id });
+    const capacity = getVehicleCapacity(count);
+    if (capacity.limitReached) {
+      return res.status(409).json({
+        success: false,
+        code: 'VEHICLE_LIMIT_REACHED',
+        message: `Each account can register up to ${capacity.limit} vehicles.`,
+        data: capacity,
+      });
+    }
+
+    // If first vehicle, set as default automatically
     const setDefault = count === 0 ? true : !!isDefault;
 
     // Upload registration card image to Cloudinary
@@ -242,12 +259,34 @@ const updateVehicle = async (req, res) => {
  */
 const deleteVehicle = async (req, res) => {
   try {
-    const vehicle = await Vehicle.findOneAndDelete({
+    const vehicle = await Vehicle.findOne({
       _id: req.params.id,
       owner: req.user._id,
     });
 
     if (!vehicle) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Vehicle not found' });
+    }
+
+    const blocker = await findVehicleDeletionBlocker({
+      vehicle,
+      SessionModel: Session,
+      BookingModel: Booking,
+    });
+    if (blocker) {
+      return res.status(409).json({
+        success: false,
+        ...blocker,
+      });
+    }
+
+    const deletionResult = await Vehicle.deleteOne({
+      _id: vehicle._id,
+      owner: req.user._id,
+    });
+    if (deletionResult.deletedCount !== 1) {
       return res
         .status(404)
         .json({ success: false, message: 'Vehicle not found' });

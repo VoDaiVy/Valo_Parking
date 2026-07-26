@@ -61,6 +61,11 @@ const NAV_CONFIG = {
       to: "/admin/parking-lots",
     },
     {
+      label: "Session Management",
+      icon: <MonitorCheck size={18} />,
+      to: "/admin/sessions",
+    },
+    {
       label: "Pricing",
       icon: <DollarSign size={18} />,
       to: "/admin/pricing",
@@ -108,6 +113,11 @@ const NAV_CONFIG = {
       label: "Live Grid Monitor",
       icon: <MonitorCheck size={18} />,
       to: "/staff/live-grid",
+    },
+    {
+      label: "Parking Lots",
+      icon: <ParkingCircle size={18} />,
+      to: "/staff/parking-lots",
     },
     { label: "Gate Control", icon: <Car size={18} />, to: "/staff/gate" },
     {

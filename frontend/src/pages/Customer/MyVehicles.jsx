@@ -7,6 +7,7 @@ import {
 import {
   getMyVehicles, addVehicle, updateVehicle,
   deleteVehicle, setDefaultVehicle, scanRegistrationCard,
+  MAX_VEHICLES_PER_USER,
 } from '../../services/vehicleService';
 import CarViewer from '../../components/CarViewer';
 import CustomerPageHeader from '../../components/Customer/CustomerPageHeader';
@@ -621,6 +622,7 @@ export default function MyVehicles() {
   const clampedIdx = Math.min(selectedIdx, Math.max(0, vehicles.length - 1));
   const selected   = vehicles[clampedIdx] ?? null;
   const typeObj    = VEHICLE_TYPES.find((t) => t.value === selected?.vehicleType);
+  const vehicleLimitReached = vehicles.length >= MAX_VEHICLES_PER_USER;
 
   const handleSaved = async (_v, action) => {
     setModalOpen(false);
@@ -637,7 +639,7 @@ export default function MyVehicles() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setActionLoading(true);
-    const { ok } = await deleteVehicle(deleteTarget._id);
+    const { ok, data } = await deleteVehicle(deleteTarget._id);
     setActionLoading(false);
     if (ok) {
       setDeleteTarget(null);
@@ -645,7 +647,7 @@ export default function MyVehicles() {
       await fetchVehicles();
       showToast('Vehicle deleted ✓');
     } else {
-      showToast('Failed to delete vehicle', 'error');
+      showToast(data?.message || 'Failed to delete vehicle', 'error');
     }
   };
 
@@ -662,7 +664,14 @@ export default function MyVehicles() {
     }
   };
 
-  const openAdd  = () => { setEditVehicle(null); setModalOpen(true); };
+  const openAdd = () => {
+    if (vehicleLimitReached) {
+      showToast(`Each account can register up to ${MAX_VEHICLES_PER_USER} vehicles.`, 'error');
+      return;
+    }
+    setEditVehicle(null);
+    setModalOpen(true);
+  };
   const openEdit = () => { if (selected) { setEditVehicle(selected); setModalOpen(true); } };
 
   // ── Inline quick-color ──
@@ -731,15 +740,21 @@ export default function MyVehicles() {
       <CustomerPageHeader
         icon={Car}
         title="My Garage"
-        description={vehicles.length > 0 ? `${vehicles.length} vehicles` : 'No vehicles yet'}
+        description={vehicles.length > 0 ? `${vehicles.length}/${MAX_VEHICLES_PER_USER} vehicles` : 'No vehicles yet'}
         className="relative z-10 px-6 pb-4 pt-5"
         action={
           <button
             onClick={openAdd}
-            className="flex min-h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-bold text-black shadow-lg shadow-yellow-500/30 transition-colors hover:bg-yellow-400"
+            disabled={vehicleLimitReached}
+            title={vehicleLimitReached ? `Maximum ${MAX_VEHICLES_PER_USER} vehicles reached` : 'Add vehicle'}
+            className={`flex min-h-11 items-center gap-2 rounded-xl px-4 text-sm font-bold transition-colors ${
+              vehicleLimitReached
+                ? 'cursor-not-allowed border border-white/10 bg-white/5 text-white/40 shadow-none'
+                : 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/30 hover:bg-yellow-400'
+            }`}
           >
-            <Plus size={15} />
-            Add vehicle
+            {vehicleLimitReached ? <Check size={15} /> : <Plus size={15} />}
+            {vehicleLimitReached ? 'Vehicle limit reached' : 'Add vehicle'}
           </button>
         }
       />

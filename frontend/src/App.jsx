@@ -151,6 +151,7 @@ export default function App() {
             <Route path="/admin/services" element={<AdminServiceManager />} />
             <Route path="/admin/policies" element={<PolicyManagement />} />
             <Route path="/admin/parking-lots" element={<ParkingLots />} />
+            <Route path="/admin/sessions" element={<StaffSessionManagement />} />
             <Route path="/admin/pricing" element={<PricingManagement />} />
             <Route path="/admin/tickets" element={<TicketPackages />} />
             <Route path="/admin/subscriptions" element={<SubscriptionManagement />} />
@@ -196,6 +197,7 @@ export default function App() {
               element={<CustomerNotifications contextRole="staff" />}
             />
             <Route path="/staff/live-grid" element={<LiveGridMonitor />} />
+            <Route path="/staff/parking-lots" element={<ParkingLots />} />
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/staff/tickets" element={<TicketPackages />} />

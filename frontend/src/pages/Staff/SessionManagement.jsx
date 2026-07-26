@@ -159,25 +159,25 @@ export default function SessionManagement() {
         ) : (
           <>
             <div className="overflow-x-auto [scrollbar-color:rgba(255,213,85,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#d7b94a]/25">
-              <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+              <table className="w-full border-collapse text-left text-sm whitespace-nowrap">
               <thead className="bg-[#14120c]">
                 <tr>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">License Plate</th>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">Phone</th>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">Status</th>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">Check In</th>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">Check Out</th>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">Price</th>
-                  <th className="border-b border-[#ffd555]/20 px-6 py-5 text-right text-[10px] font-black uppercase tracking-[0.15em] text-[#d7b94a]">Actions</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">License Plate</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Phone</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Status</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check In</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check Out</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Price</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Actions</th>
                 </tr>
               </thead>
                 <tbody>
                 {pagination.items.map(session => (
                   <tr key={session._id} className="border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
-                    <td className="px-6 py-[18px] font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
-                    <td className="px-6 py-[18px] font-medium text-slate-400">{session.phone || '-'}</td>
-                    <td className="px-6 py-[18px]">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${
+                    <td className="px-4 py-3 font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
+                    <td className="px-4 py-3 font-medium text-slate-400">{session.phone || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${
                         session.status === 'active' ? 'border-blue-400/20 bg-blue-500/10 text-blue-300' :
                         session.status === 'completed' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300' :
                         'border-white/10 bg-white/5 text-slate-400'
@@ -186,13 +186,13 @@ export default function SessionManagement() {
                         {session.status}
                       </span>
                     </td>
-                    <td className="px-6 py-[18px] font-medium tabular-nums text-slate-400">{formatDate(session.checkInTime)}</td>
-                    <td className="px-6 py-[18px] font-medium tabular-nums text-slate-400">{formatDate(session.checkOutTime)}</td>
-                    <td className="px-6 py-[18px] font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
-                    <td className="px-6 py-[18px] text-right">
+                    <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkInTime)}</td>
+                    <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkOutTime)}</td>
+                    <td className="px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
+                    <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => setSelectedSession(session)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-2 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
                         <ShieldCheck size={14} /> View Details
                       </button>

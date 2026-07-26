@@ -2,7 +2,7 @@ const { body, query } = require('express-validator');
 
 const BOOKING_SHORTFALL_PURPOSE = 'booking_shortfall';
 const DEFAULT_MIN_TOP_UP = 10000;
-const BOOKING_SHORTFALL_MIN_TOP_UP = 1;
+const BOOKING_SHORTFALL_MIN_TOP_UP = 2000; // PayOS / VietQR minimum limit
 const MAX_TOP_UP = 10000000;
 
 const getMinimumTopUpAmount = (purpose) =>

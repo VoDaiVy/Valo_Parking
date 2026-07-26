@@ -25,6 +25,9 @@ const {
 const {
   buildSubscriptionPaymentUrls,
 } = require('../utils/subscriptionPaymentUrls');
+const {
+  buildAdminSubscriptionProjection,
+} = require('../services/adminSubscriptionProjectionService');
 
 const buildExpirationDate = (packageType, fromDate = new Date()) => {
   const expireAt = new Date(fromDate);
@@ -585,25 +588,26 @@ exports.getAllSubscriptions = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const Vehicle = require('../models/Vehicle');
-    const userIds = [...new Set(subscriptions.map(s => s.user?._id?.toString()).filter(Boolean))];
-    const vehicles = await Vehicle.find({ owner: { $in: userIds } }).select('owner licensePlate').lean();
-    
-    const vehiclesByUserId = {};
-    for (const v of vehicles) {
-      if (!vehiclesByUserId[v.owner]) vehiclesByUserId[v.owner] = [];
-      vehiclesByUserId[v.owner].push(v.licensePlate);
-    }
+    const subscriptionIds = subscriptions.map((subscription) => subscription._id);
+    const entitlements = await MembershipSlotEntitlement.find({
+      sourceSubscriptionId: { $in: subscriptionIds },
+    })
+      .select('sourceSubscriptionId ownerId')
+      .populate('ownerId', 'username email status')
+      .lean();
 
-    const enhancedSubscriptions = subscriptions.map(sub => {
-      const userId = sub.user?._id?.toString();
-      return {
-        ...sub,
-        user: {
-          ...sub.user,
-          vehicles: vehiclesByUserId[userId] || []
-        }
-      };
+    const referencedUserIds = [
+      ...subscriptions.map((subscription) => subscription.user?._id),
+      ...entitlements.map((entitlement) => entitlement.ownerId?._id),
+    ].filter(Boolean);
+    const Vehicle = require('../models/Vehicle');
+    const vehicles = await Vehicle.find({ owner: { $in: referencedUserIds } })
+      .select('owner licensePlate')
+      .lean();
+    const enhancedSubscriptions = buildAdminSubscriptionProjection({
+      subscriptions,
+      entitlements,
+      vehicles,
     });
 
     res.status(200).json({

@@ -56,7 +56,7 @@ exports.scanPlate = async (req, res, next) => {
         });
       }
       
-      return res.status(400).json({
+      return res.status(200).json({
         success: false,
         message: 'No license plate found in the image by Local AI',
         model: 'local_yolo'

@@ -87,6 +87,7 @@ const register = async (req, res, next) => {
         user: {
           id: user._id,
           username: user.username,
+          fullName: user.username,
           email: user.email,
           role: user.role,
         },
@@ -167,6 +168,9 @@ const login = async (req, res, next) => {
       expiresAt: refreshExpiry,
     });
 
+    const userDetail = await UserDetail.findOne({ userId: user._id });
+    const fullName = userDetail ? `${userDetail.firstName || ''} ${userDetail.lastName || ''}`.trim() : '';
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -174,6 +178,7 @@ const login = async (req, res, next) => {
         user: {
           id: user._id,
           username: user.username,
+          fullName: fullName || user.username,
           email: user.email,
           role: user.role,
           membership: user.membership,
@@ -386,6 +391,32 @@ const googleLogin = async (req, res, next) => {
           message: 'Your account has been deactivated. Please contact admin.',
         });
       }
+
+      // Sync Profile Data (Avatar & Name) if they are missing
+      const userDetail = await UserDetail.findOne({ userId: user._id });
+      if (userDetail) {
+        let profileUpdated = false;
+        
+        // Sync Avatar if it's empty or already a Google Avatar
+        if (picture && (!userDetail.avatar || userDetail.avatar.includes('googleusercontent.com'))) {
+          if (userDetail.avatar !== picture) {
+            userDetail.avatar = picture;
+            profileUpdated = true;
+          }
+        }
+
+        // Sync Name if both firstName and lastName are empty
+        if (name && !userDetail.firstName && !userDetail.lastName) {
+          const nameParts = name.trim().split(' ');
+          userDetail.firstName = nameParts.length > 0 ? nameParts[0] : '';
+          userDetail.lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+          profileUpdated = true;
+        }
+
+        if (profileUpdated) {
+          await userDetail.save();
+        }
+      }
     } else {
       // Create new user from Google info
       const baseUsername = (name || email.split('@')[0])
@@ -408,11 +439,16 @@ const googleLogin = async (req, res, next) => {
         role: 'customer',
       });
 
+      const nameParts = (name || '').trim().split(' ');
+      const firstName = nameParts.length > 0 ? nameParts[0] : '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
       // Create empty user detail profile
       await UserDetail.create({
         userId: user._id,
-        fullName: name || '',
-        avatarUrl: picture || '',
+        firstName,
+        lastName,
+        avatar: picture || '',
       });
     }
 
@@ -432,6 +468,9 @@ const googleLogin = async (req, res, next) => {
       expiresAt: refreshExpiry,
     });
 
+    const userDetailFinal = await UserDetail.findOne({ userId: user._id });
+    const fullName = userDetailFinal ? `${userDetailFinal.firstName || ''} ${userDetailFinal.lastName || ''}`.trim() : '';
+
     res.status(200).json({
       success: true,
       message: 'Google login successful',
@@ -439,6 +478,7 @@ const googleLogin = async (req, res, next) => {
         user: {
           id: user._id,
           username: user.username,
+          fullName: fullName || user.username,
           email: user.email,
           role: user.role,
           membership: user.membership,

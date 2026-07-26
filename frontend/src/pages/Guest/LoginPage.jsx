@@ -102,14 +102,14 @@ export default function LoginPage() {
         localStorage.setItem('refreshToken', refreshToken);
         sessionStorage.setItem('valo_user', JSON.stringify({
           id: user.id,
-          name: user.username,
+          name: user.fullName || user.username,
           email: user.email,
           role: user.role,
         }));
 
         // Notify Navbar to update immediately
         window.dispatchEvent(new Event('valo_auth_change'));
-        showToast('success', `Welcome back, ${user.username}!`);
+        showToast('success', `Welcome back, ${user.fullName || user.username}!`);
 
         // ── Redirect theo role ──
         const dest = resolvePostLoginDestination(user.role, returnUrl);
@@ -365,10 +365,10 @@ export default function LoginPage() {
         localStorage.setItem('accessToken', accessToken);
         localStorage.setItem('refreshToken', refreshToken);
         sessionStorage.setItem('valo_user', JSON.stringify({
-          id: user.id, name: user.username, email: user.email, role: user.role,
+          id: user.id, name: user.fullName || user.username, email: user.email, role: user.role,
         }));
         window.dispatchEvent(new Event('valo_auth_change'));
-        showToast('success', `Welcome, ${user.username}!`);
+        showToast('success', `Welcome, ${user.fullName || user.username}!`);
         const dest = resolvePostLoginDestination(user.role, returnUrl);
         setTimeout(() => navigate(dest), 1000);
       } catch {
