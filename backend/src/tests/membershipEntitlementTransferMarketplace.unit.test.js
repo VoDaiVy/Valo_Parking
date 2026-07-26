@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const MembershipEntitlementTransfer = require('../models/MembershipEntitlementTransfer');
 const {
   OPEN_STATUSES,
+  isDuplicateKeyForField,
   calculateTransferPricing,
   getExpiredTransferResolution,
   toMarketplaceItem,
@@ -25,6 +26,37 @@ test('one-open-transfer index includes public listings', () => {
   assert.equal(index[1].unique, true);
   assert.ok(
     index[1].partialFilterExpression.status.$in.includes('LISTED')
+  );
+});
+
+test('new transfers omit contractNumber until settlement', () => {
+  const transfer = new MembershipEntitlementTransfer();
+  assert.equal(transfer.contractNumber, undefined);
+  assert.equal(Object.hasOwn(transfer.toObject(), 'contractNumber'), false);
+});
+
+test('duplicate-key mapping only treats entitlementId as an open transfer', () => {
+  assert.equal(
+    isDuplicateKeyForField(
+      {
+        code: 11000,
+        keyPattern: { entitlementId: 1 },
+        keyValue: { entitlementId: 'entitlement-1' },
+      },
+      'entitlementId'
+    ),
+    true
+  );
+  assert.equal(
+    isDuplicateKeyForField(
+      {
+        code: 11000,
+        keyPattern: { contractNumber: 1 },
+        keyValue: { contractNumber: null },
+      },
+      'entitlementId'
+    ),
+    false
   );
 });
 

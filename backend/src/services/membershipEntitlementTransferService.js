@@ -32,6 +32,10 @@ let marketplaceReadinessCache = {
 };
 const error = (message, statusCode = 400, code) =>
   Object.assign(new Error(message), { statusCode, code });
+const isDuplicateKeyForField = (cause, field) =>
+  cause?.code === 11000 &&
+  (cause?.keyPattern?.[field] !== undefined ||
+    Object.prototype.hasOwnProperty.call(cause?.keyValue || {}, field));
 const floor1000 = (value) => Math.floor(Math.max(0, Number(value || 0)) / 1000) * 1000;
 const normalizeMode = (mode) => String(mode || 'DIRECT').trim().toUpperCase();
 const escapeRegex = (value) =>
@@ -232,7 +236,7 @@ const createTransfer = async ({
     transferFee: pricing.transferFee,
     priceSnapshot: pricing,
   }).catch((cause) => {
-    if (cause?.code === 11000) {
+    if (isDuplicateKeyForField(cause, 'entitlementId')) {
       throw error('This space already has an open transfer.', 409, 'TRANSFER_EXISTS');
     }
     throw cause;
@@ -1009,6 +1013,7 @@ const releaseExpiredTransferLocks = async (now = new Date()) => {
 
 module.exports = {
   OPEN_STATUSES,
+  isDuplicateKeyForField,
   calculateTransferPricing,
   toMarketplaceItem,
   getExpiredTransferResolution,
