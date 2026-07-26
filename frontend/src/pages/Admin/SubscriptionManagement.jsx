@@ -55,6 +55,21 @@ const titleCase = (value = '') => {
   return String(value).charAt(0).toUpperCase() + String(value).slice(1);
 };
 
+const getDisplayUser = (subscription) => {
+  const currentOwners = subscription.currentOwners || [];
+  if (subscription.currentOwner) return subscription.currentOwner;
+  if (currentOwners.length > 1) {
+    return {
+      username: `${currentOwners.length} Current Owners`,
+      email: 'Ownership differs by parking slot',
+      vehicles: Array.from(
+        new Set(currentOwners.flatMap((owner) => owner.vehicles || [])),
+      ),
+    };
+  }
+  return subscription.user;
+};
+
 const getStatusClass = (status) => {
   switch (status) {
     case 'active':
@@ -141,7 +156,8 @@ function SlotBadge({ slot }) {
 function MembershipRow({ sub, index }) {
   const remaining = daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
-  const vehicles = sub.user?.vehicles || [];
+  const displayUser = getDisplayUser(sub);
+  const vehicles = displayUser?.vehicles || [];
   const vehicleText = vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''} on file` : 'No vehicle on file';
 
   return (
@@ -157,8 +173,8 @@ function MembershipRow({ sub, index }) {
               <UserRound size={17} />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-black text-white sm:text-base">{sub.user?.username || 'Unknown User'}</h3>
-              <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{sub.user?.email || 'No email'}</p>
+              <h3 className="truncate text-sm font-black text-white sm:text-base">{displayUser?.username || 'Unknown User'}</h3>
+              <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || 'No email'}</p>
             </div>
           </div>
           <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500" title={vehicles.join(', ')}>
@@ -410,10 +426,16 @@ export default function SubscriptionManagement() {
     return subscriptions.filter((sub) => {
       const matchesStatus = statusFilter === 'all' || sub.status === statusFilter;
       const matchesPackage = packageFilter === 'all' || sub.ticketPackage?.type === packageFilter;
+      const searchableUsers = [
+        sub.user,
+        ...(sub.currentOwners || []),
+      ].filter(Boolean);
       const matchesSearch = !searchLower || [
-        sub.user?.username,
-        sub.user?.email,
-        ...(sub.user?.vehicles || []),
+        ...searchableUsers.flatMap((user) => [
+          user.username,
+          user.email,
+          ...(user.vehicles || []),
+        ]),
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(searchLower));
