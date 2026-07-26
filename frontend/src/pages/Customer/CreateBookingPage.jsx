@@ -1065,7 +1065,7 @@ export default function CreateBookingPage() {
       });
 
       if (!holdRes.ok) {
-        setError(holdRes.data?.message || 'Không thể giữ chỗ cho ô đỗ này. Có thể ai đó đã nhanh tay hơn!');
+        setError(holdRes.data?.message || 'Cannot hold this slot. Someone else might have taken it!');
         return;
       }
 
@@ -1166,8 +1166,13 @@ export default function CreateBookingPage() {
       if (topUpRes.ok) {
         setTopUpData(topUpRes.data?.data);
         setShowTopUpModal(true);
+      } else if (isPolicyAcceptanceRequired(topUpRes.data)) {
+        setMissingPolicies(extractMissingPolicies(topUpRes.data));
+        setPendingPolicyAction(() => () => startTopUpForShortfall(shortfall));
+        setShowGlobalPolicyModal(true);
       } else {
-        setError('Insufficient balance and failed to generate top-up QR.');
+        const msg = topUpRes.data?.message || 'Insufficient balance and failed to generate top-up QR.';
+        setError(msg);
       }
     } catch {
       setError('Insufficient balance. Network error while generating top-up QR.');
