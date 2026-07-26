@@ -486,7 +486,7 @@ export default function ParkingLots() {
             <div className="mb-4 flex-1 overflow-y-auto pr-2">
                 <h3 className="text-slate-500 text-[11px] font-bold uppercase tracking-[0.15em] mb-4">{isZone ? "Zone Details" : "Slot Details"}</h3>
                 
-                {(dbSlotInfo || (isZone && zoneId)) && (
+                {(dbSlotInfo || (isZone && zoneId)) && (!selectedItem.session) && (
                   <div className="mb-4">
                     <button 
                       onClick={handleToggleMaintenance}

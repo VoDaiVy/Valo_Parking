@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
@@ -45,6 +46,7 @@ import {
   reconcileBookingCart,
   writeBookingCart,
 } from '../../utils/bookingCartStorage';
+import { findRequestedService } from '../../utils/bookingNavigation';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
@@ -540,6 +542,12 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
 };
 
 export default function CreateBookingPage() {
+  const location = useLocation();
+  const requestedServiceId = useMemo(
+    () => new URLSearchParams(location.search).get('serviceId') || '',
+    [location.search],
+  );
+  const handledRequestedServiceId = useRef('');
   const [initialRange] = useState(() => getInitialTimeRange());
   const [startDate, setStartDate] = useState(() => initialRange.startTime.split('T')[0]);
   const [startTimeStr, setStartTimeStr] = useState(() => initialRange.startTime.split('T')[1]);
@@ -870,6 +878,36 @@ export default function CreateBookingPage() {
 
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (
+      loading ||
+      !requestedServiceId ||
+      handledRequestedServiceId.current === requestedServiceId
+    ) {
+      return;
+    }
+
+    handledRequestedServiceId.current = requestedServiceId;
+    const requestedService = findRequestedService(services, requestedServiceId);
+    const timer = window.setTimeout(() => {
+      if (!requestedService) {
+        setSuccess('');
+        setError('The selected service is no longer available. Please choose another active service.');
+        return;
+      }
+
+      setSelectedServices((current) =>
+        current.includes(requestedService._id)
+          ? current
+          : [...current, requestedService._id]
+      );
+      setError('');
+      setSuccess(''); // Explicitly clear instead of showing message
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loading, requestedServiceId, services]);
 
   useEffect(() => {
     const refreshLiveMap = () => {

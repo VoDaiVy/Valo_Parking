@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Sparkles, CheckCircle2, ArrowRight, Star, Clock } from 'lucide-react';
 import { getServices } from '../../services/extraServiceApi';
 
+const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
+
 const formatServiceTime = (timeCost) => {
   const minutes = Number(timeCost);
 
@@ -146,7 +148,7 @@ const ServiceList = () => {
                     className="absolute bottom-4 left-4 px-4 py-1.5 rounded-full text-sm font-bold"
                     style={{ background: 'linear-gradient(135deg, #C59A3F, #E5C058)', color: '#0f0f0f' }}
                   >
-                    ${service.price.toFixed(2)}
+                    {formatMoney(service.price)}
                   </div>
                 </div>
 

@@ -1,8 +1,12 @@
 import { useState, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, User, ArrowRight, Zap, ShieldCheck, Car, CheckCircle, XCircle } from 'lucide-react';
 import Logo from '../../assets/images/logo.png';
 import { loginUser, registerUser, loginWithGoogle, sendOTP, verifyOTP, forgotPassword, verifyResetPasswordOTP, resetPassword } from '../../services/authService';
+import {
+  getSafeReturnUrl,
+  resolvePostLoginDestination,
+} from '../../utils/bookingNavigation';
 
 // ─── Google Icon SVG ───────────────────────────────────────────────────────────
 const GoogleIcon = () => (
@@ -44,6 +48,8 @@ const FeaturePill = ({ icon, text }) => (
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnUrl = getSafeReturnUrl(location.search);
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -106,11 +112,7 @@ export default function LoginPage() {
         showToast('success', `Welcome back, ${user.fullName || user.username}!`);
 
         // ── Redirect theo role ──
-        const roleRedirect = {
-          admin: '/admin/dashboard',
-          staff: '/staff/dashboard',
-        };
-        const dest = roleRedirect[user.role] || '/';
+        const dest = resolvePostLoginDestination(user.role, returnUrl);
         setTimeout(() => navigate(dest), 1000);
       } else {
         // ── SIGNUP: basic client-side validation ──
@@ -367,8 +369,8 @@ export default function LoginPage() {
         }));
         window.dispatchEvent(new Event('valo_auth_change'));
         showToast('success', `Welcome, ${user.fullName || user.username}!`);
-        const roleRedirect = { admin: '/admin/dashboard', staff: '/staff/dashboard' };
-        setTimeout(() => navigate(roleRedirect[user.role] || '/'), 1000);
+        const dest = resolvePostLoginDestination(user.role, returnUrl);
+        setTimeout(() => navigate(dest), 1000);
       } catch {
         showToast('error', 'Could not connect to the server.');
       } finally {
