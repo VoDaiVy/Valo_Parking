@@ -7,6 +7,7 @@ import { getAllFloors, createFloor, updateFloorLayout, deleteFloor, getFloorSlot
 import { startMaintenance, endMaintenance } from "../../services/maintenanceService";
 import { API_BASE } from "../../services/api";
 import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings } from "../../services/bookingService";
+import StaffCheckoutModal from "../Staff/StaffCheckoutModal";
 
 const LiveDuration = ({ checkInTime, expectedDurationHours }) => {
   const [now, setNow] = useState(() => Date.now());
@@ -40,6 +41,9 @@ export default function ParkingLots() {
   const [currentFloorId, setCurrentFloorId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const raw = sessionStorage.getItem('valo_user');
+  const user = raw ? JSON.parse(raw) : null;
+  const isAdmin = user?.role === 'admin';
   const [availableSlots, setAvailableSlots] = useState(null);
   const [activeHolds, setActiveHolds] = useState([]);
   const [activeBookings, setActiveBookings] = useState([]);
@@ -49,6 +53,7 @@ export default function ParkingLots() {
   // Custom Modal State for Maintenance
   const [maintenanceModal, setMaintenanceModal] = useState({ isOpen: false, item: null, isZone: false });
   const [maintenanceReason, setMaintenanceReason] = useState("");
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   
   // activeSessions to track live cars
   const [activeSessions, setActiveSessions] = useState([]);
@@ -395,11 +400,13 @@ export default function ParkingLots() {
           ariaLabel="Select parking floor"
         />
         
-        <button onClick={handleCreateFloor} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/10" title="Add new floor">
-          <Plus size={18} className="text-cyan-400" />
-        </button>
+        {isAdmin && (
+          <button onClick={handleCreateFloor} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/10" title="Add new floor">
+            <Plus size={18} className="text-cyan-400" />
+          </button>
+        )}
 
-        {currentFloor && (
+        {(currentFloor && isAdmin) && (
           <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-4">
             <button onClick={() => setIsEditMode(true)} className="flex items-center gap-2 bg-cyan-500/20 text-cyan-400 px-4 py-2 rounded-lg font-bold hover:bg-cyan-500/30 transition border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
               <Edit size={16} /> Edit Layout ({currentFloor.name})
@@ -613,6 +620,18 @@ export default function ParkingLots() {
                   </div>
                 )}
             </div>
+            
+            {!isZone && selectedItem.session && (
+              <div className="mt-auto flex-shrink-0 pt-4 pb-2">
+                 <button 
+                    onClick={() => setShowCheckoutModal(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]">
+                    <X size={18} />
+                    Process Check-out
+                 </button>
+              </div>
+            )}
+            
            </>
         )})()}
       </div>
@@ -680,6 +699,22 @@ export default function ParkingLots() {
             </div>
           </div>
         </div>
+      )}
+
+      {showCheckoutModal && selectedItem?.session && (
+        <StaffCheckoutModal 
+          isOpen={showCheckoutModal}
+          onClose={() => setShowCheckoutModal(false)}
+          session={{...selectedItem.session, parkingSlot: selectedItem.id}}
+          onSuccess={() => {
+            setShowCheckoutModal(false);
+            setSelectedItem(null);
+            if (currentFloorId) {
+              fetchLiveData();
+              fetchDbSlots(currentFloorId);
+            }
+          }}
+        />
       )}
 
     </div>
