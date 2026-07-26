@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   AlertCircle,
   Calendar,
+  Car,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -673,8 +674,30 @@ export default function CreateBookingPage() {
   const handleManualPlateChange = (event) => {
     const raw = event.target.value.toUpperCase();
     const clean = raw.replace(/[^A-Z0-9]/g, '');
-    const formatted = formatVietnamesePlate(clean);
-    setManualPlate(formatted || raw);
+    let formatted = formatVietnamesePlate(clean);
+    
+    if (!formatted) {
+       if (clean.length >= 3) {
+          const seriesMatch = clean.substring(2).match(/^[A-Z][A-Z0-9]?/);
+          if (seriesMatch) {
+             const series = seriesMatch[0];
+             const numbers = clean.substring(2 + series.length);
+             if (numbers.length > 0) {
+               formatted = `${clean.substring(0, 2)}${series}-${numbers}`;
+               if (numbers.length > 3) {
+                 formatted = `${clean.substring(0, 2)}${series}-${numbers.substring(0,3)}.${numbers.substring(3)}`;
+               }
+             } else {
+               formatted = clean;
+             }
+          } else {
+             formatted = clean;
+          }
+       } else {
+          formatted = clean;
+       }
+    }
+    setManualPlate(formatted);
   };
 
   const handleStartChange = (newDate, newTime) => {

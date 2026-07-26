@@ -166,6 +166,35 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   }, [streamError]);
 
   // Manual fallback for Tester
+  const handleManualInputChange = (e) => {
+    const raw = e.target.value.toUpperCase();
+    const clean = raw.replace(/[^A-Z0-9]/g, '');
+    let formatted = formatVietnamesePlate(clean);
+    
+    if (!formatted) {
+       if (clean.length >= 3) {
+          const seriesMatch = clean.substring(2).match(/^[A-Z][A-Z0-9]?/);
+          if (seriesMatch) {
+             const series = seriesMatch[0];
+             const numbers = clean.substring(2 + series.length);
+             if (numbers.length > 0) {
+               formatted = `${clean.substring(0, 2)}${series}-${numbers}`;
+               if (numbers.length > 3) {
+                 formatted = `${clean.substring(0, 2)}${series}-${numbers.substring(0,3)}.${numbers.substring(3)}`;
+               }
+             } else {
+               formatted = clean;
+             }
+          } else {
+             formatted = clean;
+          }
+       } else {
+          formatted = clean;
+       }
+    }
+    setManualInput(formatted);
+  };
+
   const handleManualSubmit = (e) => {
     e.preventDefault();
     if (manualInput) {
@@ -266,7 +295,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
           <input
             type="text"
             value={manualInput}
-            onChange={(e) => setManualInput(e.target.value.toUpperCase())}
+            onChange={handleManualInputChange}
             placeholder="e.g. 51H-595.65"
             className="bg-white/10 border border-white/20 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-yellow-400"
           />
