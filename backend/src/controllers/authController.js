@@ -87,6 +87,7 @@ const register = async (req, res, next) => {
         user: {
           id: user._id,
           username: user.username,
+          fullName: user.username,
           email: user.email,
           role: user.role,
         },
@@ -167,6 +168,9 @@ const login = async (req, res, next) => {
       expiresAt: refreshExpiry,
     });
 
+    const userDetail = await UserDetail.findOne({ userId: user._id });
+    const fullName = userDetail ? `${userDetail.firstName || ''} ${userDetail.lastName || ''}`.trim() : '';
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -174,6 +178,7 @@ const login = async (req, res, next) => {
         user: {
           id: user._id,
           username: user.username,
+          fullName: fullName || user.username,
           email: user.email,
           role: user.role,
           membership: user.membership,
@@ -463,6 +468,9 @@ const googleLogin = async (req, res, next) => {
       expiresAt: refreshExpiry,
     });
 
+    const userDetailFinal = await UserDetail.findOne({ userId: user._id });
+    const fullName = userDetailFinal ? `${userDetailFinal.firstName || ''} ${userDetailFinal.lastName || ''}`.trim() : '';
+
     res.status(200).json({
       success: true,
       message: 'Google login successful',
@@ -470,6 +478,7 @@ const googleLogin = async (req, res, next) => {
         user: {
           id: user._id,
           username: user.username,
+          fullName: fullName || user.username,
           email: user.email,
           role: user.role,
           membership: user.membership,
