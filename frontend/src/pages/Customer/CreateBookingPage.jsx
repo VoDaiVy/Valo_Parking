@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   AlertCircle,
   Calendar,
+  Car,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -673,8 +674,30 @@ export default function CreateBookingPage() {
   const handleManualPlateChange = (event) => {
     const raw = event.target.value.toUpperCase();
     const clean = raw.replace(/[^A-Z0-9]/g, '');
-    const formatted = formatVietnamesePlate(clean);
-    setManualPlate(formatted || raw);
+    let formatted = formatVietnamesePlate(clean);
+    
+    if (!formatted) {
+       if (clean.length >= 3) {
+          const seriesMatch = clean.substring(2).match(/^[A-Z][A-Z0-9]?/);
+          if (seriesMatch) {
+             const series = seriesMatch[0];
+             const numbers = clean.substring(2 + series.length);
+             if (numbers.length > 0) {
+               formatted = `${clean.substring(0, 2)}${series}-${numbers}`;
+               if (numbers.length > 3) {
+                 formatted = `${clean.substring(0, 2)}${series}-${numbers.substring(0,3)}.${numbers.substring(3)}`;
+               }
+             } else {
+               formatted = clean;
+             }
+          } else {
+             formatted = clean;
+          }
+       } else {
+          formatted = clean;
+       }
+    }
+    setManualPlate(formatted);
   };
 
   const handleStartChange = (newDate, newTime) => {
@@ -1065,7 +1088,7 @@ export default function CreateBookingPage() {
       });
 
       if (!holdRes.ok) {
-        setError(holdRes.data?.message || 'Không thể giữ chỗ cho ô đỗ này. Có thể ai đó đã nhanh tay hơn!');
+        setError(holdRes.data?.message || 'Cannot hold this slot. Someone else might have taken it!');
         return;
       }
 
@@ -1166,8 +1189,13 @@ export default function CreateBookingPage() {
       if (topUpRes.ok) {
         setTopUpData(topUpRes.data?.data);
         setShowTopUpModal(true);
+      } else if (isPolicyAcceptanceRequired(topUpRes.data)) {
+        setMissingPolicies(extractMissingPolicies(topUpRes.data));
+        setPendingPolicyAction(() => () => startTopUpForShortfall(shortfall));
+        setShowGlobalPolicyModal(true);
       } else {
-        setError('Insufficient balance and failed to generate top-up QR.');
+        const msg = topUpRes.data?.message || 'Insufficient balance and failed to generate top-up QR.';
+        setError(msg);
       }
     } catch {
       setError('Insufficient balance. Network error while generating top-up QR.');
@@ -1565,11 +1593,7 @@ export default function CreateBookingPage() {
                   <span className="font-black text-gray-900">Wallet charge</span>
                   <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
                 </div>
-                {!hasEnoughWallet && (
-                  <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
-                    Top up {formatMoney(walletShortfall)} before this slot can be held.
-                  </div>
-                )}
+
                 {selectedSlot && hasEnoughWallet && (
                   <div className="rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-bold flex items-center gap-2 text-cyan-700">
                     <Lock size={14} />

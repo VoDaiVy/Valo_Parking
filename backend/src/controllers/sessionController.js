@@ -1462,7 +1462,18 @@ exports.getAllSessions = async (req, res, next) => {
  */
 exports.getMyHistory = async (req, res, next) => {
   try {
-    const sessions = await Session.find({ userId: req.user._id }).sort({ checkInTime: -1 });
+    const Vehicle = require('../models/Vehicle');
+    const Booking = require('../models/Booking');
+    const myVehicles = await Vehicle.find({ owner: req.user._id, status: 'approved' }).distinct('licensePlate');
+    const myBookings = await Booking.find({ userId: req.user._id }).distinct('_id');
+    
+    const sessions = await Session.find({
+      $or: [
+        { userId: req.user._id },
+        { licensePlate: { $in: myVehicles } },
+        { bookingId: { $in: myBookings } }
+      ]
+    }).sort({ checkInTime: -1 });
     res.status(200).json({
       success: true,
       data: sessions,
