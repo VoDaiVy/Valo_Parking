@@ -3,6 +3,8 @@ import type { CreateVehicleRequest, UpdateVehicleRequest, Vehicle } from '@/type
 
 import { apiClient } from './client';
 
+export const MAX_VEHICLES_PER_USER = 3;
+
 class VehiclesService {
   getMyVehicles() {
     return apiClient.get<APIResponse<Vehicle[]>>('/vehicles');

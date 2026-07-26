@@ -3,6 +3,7 @@ const Vehicle = require('../models/Vehicle');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const { getVehicleCapacity } = require('../services/vehicleCapacityService');
 
 // ─── Cloudinary 3D model auto-discovery ──────────────────────────────────────
 const normalizeSlug = (str = '') =>
@@ -108,8 +109,19 @@ const addVehicle = async (req, res) => {
       });
     }
 
-    // If first vehicle, set as default automatically
+    // Enforce the account-level vehicle limit before external uploads/lookups.
     const count = await Vehicle.countDocuments({ owner: req.user._id });
+    const capacity = getVehicleCapacity(count);
+    if (capacity.limitReached) {
+      return res.status(409).json({
+        success: false,
+        code: 'VEHICLE_LIMIT_REACHED',
+        message: `Each account can register up to ${capacity.limit} vehicles.`,
+        data: capacity,
+      });
+    }
+
+    // If first vehicle, set as default automatically
     const setDefault = count === 0 ? true : !!isDefault;
 
     // Upload registration card image to Cloudinary
