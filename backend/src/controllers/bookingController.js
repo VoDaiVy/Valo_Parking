@@ -1133,7 +1133,13 @@ exports.modifyBookingTime = async (req, res, next) => {
  */
 exports.getMyBookings = async (req, res, next) => {
   try {
-    const bookings = await Booking.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    const myVehicles = await Vehicle.find({ owner: req.user._id, status: 'approved' }).distinct('licensePlate');
+    const bookings = await Booking.find({
+      $or: [
+        { userId: req.user._id },
+        { licensePlate: { $in: myVehicles } }
+      ]
+    }).sort({ createdAt: -1 });
     res.status(200).json({ success: true, data: bookings });
   } catch (error) {
     console.error('Error getMyBookings:', error);
@@ -2035,6 +2041,36 @@ exports.createBulkBooking = async (req, res, next) => {
           throw new Error(`Invalid license plate ${licensePlate}. Must be 4-12 alphanumeric characters.`);
         }
         const normalized = normalizeLicensePlate(licensePlate);
+        const globallyRegistered = await Vehicle.findOne({ licensePlate: normalized, status: 'approved' }).session(session);
+        if (globallyRegistered && globallyRegistered.owner.toString() !== userId.toString()) {
+          const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
+          const Subscription = require('../models/Subscription');
+          const now = new Date();
+          
+          let hasVip = false;
+          const entitlements = await MembershipSlotEntitlement.find({
+            ownerId: globallyRegistered.owner,
+            status: { $in: ['active', 'transfer_locked'] },
+            expireAt: { $gt: now },
+          }).session(session);
+          
+          if (entitlements.length > 0) {
+            hasVip = true;
+          } else {
+            const sub = await Subscription.findOne({
+              user: globallyRegistered.owner,
+              status: 'active',
+              paymentStatus: 'paid',
+              expireAt: { $gt: now },
+            }).session(session);
+            if (sub && sub.slots && sub.slots.length > 0) hasVip = true;
+          }
+          
+          if (hasVip) {
+            throw new Error('This license plate belongs to another VIP account and cannot be booked on their behalf.');
+          }
+        }
+        
         const foundVehicle = await Vehicle.findOne({ licensePlate: normalized, owner: userId }).session(session);
         vehicle = foundVehicle || { _id: null, licensePlate: normalized };
       }
