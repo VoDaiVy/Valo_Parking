@@ -4,6 +4,8 @@ import { ArrowLeft, CheckCircle, ShieldCheck, Clock, CreditCard, Sparkles } from
 import { getServiceById } from '../../services/extraServiceApi';
 import { buildBookingUrl } from '../../utils/bookingNavigation';
 
+const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
+
 const formatServiceTime = (timeCost) => {
   const minutes = Number(timeCost);
 
@@ -142,7 +144,7 @@ const ServiceDetail = () => {
                 className="px-5 py-2 rounded-full text-lg font-black"
                 style={{ background: 'linear-gradient(135deg, #C59A3F, #E5C058)', color: '#0f0f0f' }}
               >
-                ${service.price.toFixed(2)}
+                {formatMoney(service.price)}
               </span>
             </div>
           </div>
@@ -172,7 +174,7 @@ const ServiceDetail = () => {
                 className="hidden md:block text-4xl font-black mb-6"
                 style={{ background: 'linear-gradient(135deg, #C59A3F, #E5C058, #AA771C)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
               >
-                ${service.price.toFixed(2)}
+                {formatMoney(service.price)}
               </div>
 
               {/* Description */}
