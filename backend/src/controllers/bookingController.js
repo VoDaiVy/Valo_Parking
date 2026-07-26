@@ -5,6 +5,7 @@ const BookingService = require('../models/BookingService');
 const StaffBookingAction = require('../models/StaffBookingAction');
 const TicketPackage = require('../models/TicketPackage');
 const User = require('../models/User');
+const UserDetail = require('../models/UserDetail');
 const Vehicle = require('../models/Vehicle');
 const ParkingFloor = require('../models/ParkingFloor');
 const Session = require('../models/Session');
@@ -19,6 +20,9 @@ const bookingRefundService = require('../services/bookingRefundService');
 const {
   getBookingFinancialSummaryMap,
 } = require('../services/bookingFinancialService');
+const {
+  attachBookingUserDetails,
+} = require('../services/bookingUserProjectionService');
 const {
   attachPaidBookingSnapshots,
   getEffectiveRefundPolicySnapshot,
@@ -2364,13 +2368,23 @@ exports.getAllBookings = async (req, res, next) => {
     }
 
     const bookings = await Booking.find(filter)
-      .populate('userId', 'fullName phone email')
+      .populate('userId', 'username email')
       .populate('vehicleId', 'licensePlate brand color')
       .populate('floorId', 'name floorNumber')
       .sort({ scheduledStart: 1 })
       .lean();
-    const financialSummaries = await getBookingFinancialSummaryMap(bookings);
-    const bookingRows = bookings.map((booking) => ({
+
+    const userIds = bookings
+      .map((booking) => booking.userId?._id)
+      .filter(Boolean);
+    const userDetails = userIds.length > 0
+      ? await UserDetail.find({ userId: { $in: userIds } })
+        .select('userId firstName lastName phone')
+        .lean()
+      : [];
+    const enrichedBookings = attachBookingUserDetails(bookings, userDetails);
+    const financialSummaries = await getBookingFinancialSummaryMap(enrichedBookings);
+    const bookingRows = enrichedBookings.map((booking) => ({
       ...booking,
       financialSummary: financialSummaries.get(String(booking._id)),
     }));
