@@ -1,5 +1,7 @@
 import { apiFetch } from './api';
 
+export const MAX_VEHICLES_PER_USER = 3;
+
 const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
 });

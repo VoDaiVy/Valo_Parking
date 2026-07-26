@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,7 +19,7 @@ import { AnimatedPressable, ProfileScreenHeader, StatusChip } from '@/components
 import { ErrorState } from '@/components/common';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import type { ProfileStackParamList } from '@/navigation/types';
-import { vehiclesService } from '@/services/api/vehicles';
+import { MAX_VEHICLES_PER_USER, vehiclesService } from '@/services/api/vehicles';
 import type { Vehicle } from '@/types/models';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'VehicleList'>;
@@ -206,23 +207,36 @@ export const VehicleListScreen = ({ navigation }: Props) => {
     }
   }, []);
 
-  useEffect(() => {
-    void loadVehicles();
-  }, [loadVehicles]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadVehicles();
+    }, [loadVehicles]),
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     void loadVehicles();
   };
 
+  const vehicleLimitReached = vehicles.length >= MAX_VEHICLES_PER_USER;
+
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <ProfileScreenHeader
         title="My vehicles"
-        subtitle={`${vehicles.length} vehicles`}
+        subtitle={`${vehicles.length}/${MAX_VEHICLES_PER_USER} vehicles`}
         onBack={() => navigation.goBack()}
-        right={<AddFab onPress={() => navigation.navigate('AddVehicle')} />}
+        right={
+          vehicleLimitReached ? (
+            <View style={styles.limitBadge}>
+              <Ionicons name="checkmark" size={15} color={COLORS.gold} />
+              <Text style={styles.limitBadgeText}>Limit reached</Text>
+            </View>
+          ) : (
+            <AddFab onPress={() => navigation.navigate('AddVehicle')} />
+          )
+        }
       />
 
       {loading ? (
@@ -273,6 +287,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 16,
     width: 48,
+  },
+  limitBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(226,186,75,0.08)',
+    borderColor: 'rgba(226,186,75,0.24)',
+    borderRadius: RADIUS.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  limitBadgeText: {
+    color: COLORS.gold,
+    fontSize: 12,
+    fontWeight: '800',
   },
   stateWrap: {
     alignItems: 'center',
