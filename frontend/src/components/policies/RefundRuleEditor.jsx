@@ -32,7 +32,7 @@ function NumberField({
 }) {
   return (
     <label htmlFor={id} className="block">
-      <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-gray-500">
+      <span className="mb-2 flex min-h-8 items-end text-xs font-black uppercase leading-4 tracking-[0.14em] text-gray-500">
         {label}
       </span>
       <div className="relative">
