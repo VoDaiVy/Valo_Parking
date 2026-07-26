@@ -903,7 +903,7 @@ export default function CreateBookingPage() {
           : [...current, requestedService._id]
       );
       setError('');
-      setSuccess(`${requestedService.name} was added to your booking.`);
+      setSuccess(''); // Explicitly clear instead of showing message
     }, 0);
 
     return () => window.clearTimeout(timer);
