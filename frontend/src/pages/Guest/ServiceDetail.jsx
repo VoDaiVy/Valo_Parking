@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, ShieldCheck, Clock, CreditCard, Sparkles } from 'lucide-react';
 import { getServiceById } from '../../services/extraServiceApi';
+import { buildBookingUrl } from '../../utils/bookingNavigation';
 
 const formatServiceTime = (timeCost) => {
   const minutes = Number(timeCost);
@@ -197,7 +198,7 @@ const ServiceDetail = () => {
             {/* CTA */}
             <div className="pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <button
-                onClick={() => alert('This would add the service to your active booking or redirect to booking page with this service pre-selected.')}
+                onClick={() => navigate(buildBookingUrl(service._id || id))}
                 className="group relative w-full overflow-hidden py-4 px-6 rounded-xl font-black text-lg transition-all duration-300 hover:-translate-y-1"
                 style={{
                   background: 'linear-gradient(135deg, #C59A3F, #E5C058)',

@@ -1,4 +1,5 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
+import { buildLoginUrl } from '../utils/bookingNavigation';
 
 /**
  * ProtectedRoute
@@ -11,11 +12,13 @@ import { Navigate } from 'react-router-dom';
  *  - Correct role           → render children
  */
 export default function ProtectedRoute({ allowedRoles = [], children }) {
+  const location = useLocation();
   const raw = sessionStorage.getItem('valo_user');
   const user = raw ? JSON.parse(raw) : null;
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    const returnUrl = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={buildLoginUrl(returnUrl)} replace />;
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
