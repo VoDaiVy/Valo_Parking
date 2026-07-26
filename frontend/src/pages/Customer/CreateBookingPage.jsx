@@ -1565,11 +1565,7 @@ export default function CreateBookingPage() {
                   <span className="font-black text-gray-900">Wallet charge</span>
                   <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
                 </div>
-                {!hasEnoughWallet && (
-                  <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
-                    Top up {formatMoney(walletShortfall)} before this slot can be held.
-                  </div>
-                )}
+
                 {selectedSlot && hasEnoughWallet && (
                   <div className="rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-bold flex items-center gap-2 text-cyan-700">
                     <Lock size={14} />

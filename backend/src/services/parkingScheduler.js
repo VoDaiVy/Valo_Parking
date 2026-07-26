@@ -572,6 +572,33 @@ async function checkVIPSubscriptions(app) {
   }
 }
 
+async function checkPendingSubscriptions() {
+  try {
+    const Subscription = require('../models/Subscription');
+    const now = new Date();
+    
+    // Tự động hủy các subscription PENDING quá 30 phút chưa thanh toán
+    const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
+    const pendingCancelResult = await Subscription.updateMany(
+      {
+        status: 'pending',
+        createdAt: { $lt: thirtyMinsAgo }
+      },
+      { 
+        $set: {
+          status: 'cancelled',
+          paymentStatus: 'cancelled'
+        }
+      }
+    );
+    if (pendingCancelResult.modifiedCount > 0) {
+      console.log(`[ParkingScheduler] Đã tự động hủy ${pendingCancelResult.modifiedCount} gói đăng ký (Subscription) chờ thanh toán quá 30 phút.`);
+    }
+  } catch (err) {
+    console.error('[ParkingScheduler] Lỗi checkPendingSubscriptions:', err.message);
+  }
+}
+
 /**
  * Start the parking session scheduler
  * @param {Express.Application} app - Express app instance (for io access)
@@ -600,6 +627,9 @@ function startScheduler(app) {
   checkExpiredMembershipTransfers().catch((err) =>
     console.error('[ParkingScheduler] Initial transfer hold check error:', err.message)
   );
+  checkPendingSubscriptions().catch((err) =>
+    console.error('[ParkingScheduler] Initial pending subscriptions check error:', err.message)
+  );
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
@@ -611,6 +641,9 @@ function startScheduler(app) {
     );
     checkExpiredMembershipTransfers().catch((err) =>
       console.error('[ParkingScheduler] Transfer hold interval error:', err.message)
+    );
+    checkPendingSubscriptions().catch((err) =>
+      console.error('[ParkingScheduler] Pending subscriptions interval error:', err.message)
     );
   }, CHECK_INTERVAL_MS);
 
@@ -647,6 +680,7 @@ module.exports = {
   checkExpiredContracts,
   checkExpiredMembershipTransfers,
   checkVIPSubscriptions,
+  checkPendingSubscriptions,
   getUpcomingMilestone,
   LOW_BALANCE_THRESHOLD,
 };
