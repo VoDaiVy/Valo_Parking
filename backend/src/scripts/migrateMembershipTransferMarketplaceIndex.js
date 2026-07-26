@@ -55,6 +55,9 @@ const main = async () => {
     missingModeCount: await MembershipEntitlementTransfer.countDocuments({
       mode: { $exists: false },
     }),
+    nullContractNumberCount: await MembershipEntitlementTransfer.countDocuments({
+      contractNumber: { $type: 10 },
+    }),
     duplicateGroups,
     currentIndex: currentIndex || null,
     indexIsCurrent,
@@ -73,6 +76,10 @@ const main = async () => {
   const backfill = await collection.updateMany(
     { mode: { $exists: false } },
     { $set: { mode: 'DIRECT' } }
+  );
+  const contractNumberCleanup = await collection.updateMany(
+    { contractNumber: { $type: 10 } },
+    { $unset: { contractNumber: '' } }
   );
 
   if (!indexIsCurrent) {
@@ -108,6 +115,7 @@ const main = async () => {
       {
         ...report,
         backfilledModes: backfill.modifiedCount,
+        removedNullContractNumbers: contractNumberCleanup.modifiedCount,
         finalIndex,
         success: true,
       },
