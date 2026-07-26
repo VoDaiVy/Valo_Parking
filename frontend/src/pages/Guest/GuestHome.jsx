@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Search, ShieldCheck, Zap, Camera, Car, CreditCard, ArrowRight, Smartphone, QrCode, Wrench, Sparkles, Clock, ChevronDown } from 'lucide-react';
 
 // Import images
@@ -9,6 +9,7 @@ import CarImage from '../../assets/images/car.png';
 import SmartGate3D from '../../components/SmartGate3D';
 
 import { getServices } from '../../services/extraServiceApi';
+import { getLiveMapData } from '../../services/parkingFloorService';
 
 const SERVICE_PRESENTATION = [
   {
@@ -344,11 +345,53 @@ const PremiumCarServicesSection = () => {
 };
 
 export default function GuestHome() {
+  const navigate = useNavigate();
   const [pulse, setPulse] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [mapData, setMapData] = useState([]);
+  const [mapStats, setMapStats] = useState({ available: 12, total: 50 });
+
   useEffect(() => {
     const interval = setInterval(() => setPulse(p => !p), 1500);
-    return () => clearInterval(interval);
+    
+    const checkAuth = () => {
+      const userStr = sessionStorage.getItem('valo_user');
+      setIsLoggedIn(!!userStr);
+    };
+    checkAuth();
+    window.addEventListener('valo_auth_change', checkAuth);
+
+    const fetchMap = async () => {
+      try {
+        const { ok, data } = await getLiveMapData();
+        if (ok && data?.data) {
+          const slots = data.data;
+          setMapStats({
+            available: slots.filter(s => s.status === 'available').length,
+            total: slots.length
+          });
+          // Pick up to 8 slots for the preview
+          setMapData(slots.slice(0, 8));
+        }
+      } catch (e) {
+        console.error('Live Map fetch error:', e);
+      }
+    };
+    fetchMap();
+    const mapInterval = setInterval(fetchMap, 10000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(mapInterval);
+      window.removeEventListener('valo_auth_change', checkAuth);
+    };
   }, []);
+
+  const handleMapClick = () => {
+    if (isLoggedIn) {
+      navigate('/parking-map');
+    }
+  };
 
   return (
     <>
@@ -376,31 +419,69 @@ export default function GuestHome() {
 
         <div className="w-full lg:w-1/2 relative">
           <div className="absolute inset-0 bg-gold-gradient opacity-10 blur-3xl rounded-full transform -translate-y-10"></div>
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-6 relative overflow-hidden scan-line group">
+          <div onClick={handleMapClick} className={`bg-white rounded-2xl shadow-2xl border border-gray-100 p-6 relative overflow-hidden scan-line group ${isLoggedIn ? 'cursor-pointer hover:shadow-[0_0_25px_rgba(255,213,85,0.4)]' : ''}`}>
             <div className="flex justify-between items-center mb-6 border-b border-gray-50 pb-4">
               <div>
-                <h3 className="font-bold text-lg text-charcoal">Live Grid Map (50%)</h3>
-                <p className="text-xs text-gray-400">Current parking status</p>
+                <h3 className="font-bold text-lg text-charcoal">Live Grid Map {isLoggedIn ? '(100%)' : '(50%)'}</h3>
+                <p className="text-xs text-gray-400">{isLoggedIn ? 'Click to view full interactive map' : 'Current parking status'}</p>
               </div>
               <div className="bg-green-50 text-green-600 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 border border-green-100">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> 12/50 Available
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> {mapStats.available}/{mapStats.total} Available
               </div>
             </div>
             <div className="grid grid-cols-4 gap-3 relative">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-01</span><Car size={24} className="text-gray-600 mt-2" /></div>
-              <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center cursor-pointer transition-all duration-300 ${pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-02</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span></div>
-              <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-yellow-700">A-03</span><span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">Booked</span></div>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-04</span><Car size={24} className="text-gray-600 mt-2" /></div>
-              <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center cursor-pointer transition-all duration-300 ${!pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-05</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span></div>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-06</span><Car size={24} className="text-gray-600 mt-2" /></div>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-07</span><Car size={24} className="text-gray-600 mt-2" /></div>
-              <div className="bg-charcoal border border-gray-800 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-500">A-08</span><span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">Maintain</span></div>
+              {mapData.length > 0 ? (
+                mapData.map((slot) => {
+                  if (slot.status === 'available') {
+                    return (
+                      <div key={slot.id} className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}>
+                        <span className="text-xs font-bold text-green-600">{slot.id}</span>
+                        <span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span>
+                      </div>
+                    );
+                  } else if (slot.status === 'occupied') {
+                    return (
+                      <div key={slot.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center">
+                        <span className="text-xs font-bold text-gray-400">{slot.id}</span>
+                        <Car size={24} className="text-gray-600 mt-2" />
+                      </div>
+                    );
+                  } else if (slot.status === 'reserved') {
+                    return (
+                      <div key={slot.id} className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 h-24 flex flex-col justify-center items-center">
+                        <span className="text-xs font-bold text-yellow-700">{slot.id}</span>
+                        <span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">Booked</span>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={slot.id} className="bg-charcoal border border-gray-800 rounded-lg p-3 h-24 flex flex-col justify-center items-center">
+                        <span className="text-xs font-bold text-gray-500">{slot.id}</span>
+                        <span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">Maintain</span>
+                      </div>
+                    );
+                  }
+                })
+              ) : (
+                <>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-01</span><Car size={24} className="text-gray-600 mt-2" /></div>
+                  <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-02</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span></div>
+                  <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-yellow-700">A-03</span><span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">Booked</span></div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-04</span><Car size={24} className="text-gray-600 mt-2" /></div>
+                  <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${!pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-05</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span></div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-06</span><Car size={24} className="text-gray-600 mt-2" /></div>
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-07</span><Car size={24} className="text-gray-600 mt-2" /></div>
+                  <div className="bg-charcoal border border-gray-800 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-500">A-08</span><span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">Maintain</span></div>
+                </>
+              )}
             </div>
-            <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-white via-white/90 to-transparent flex items-end justify-center pb-6">
-              <button className="bg-charcoal text-white font-bold py-3 px-8 rounded-full text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition transform flex items-center gap-2 border border-gray-700">
-                <ShieldCheck size={16} className="text-gold" /> Log in to view 100% of the map
-              </button>
-            </div>
+            {!isLoggedIn && (
+              <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-white via-white/90 to-transparent flex items-end justify-center pb-6">
+                <button onClick={(e) => { e.stopPropagation(); navigate('/login'); }} className="bg-charcoal text-white font-bold py-3 px-8 rounded-full text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition transform flex items-center gap-2 border border-gray-700">
+                  <ShieldCheck size={16} className="text-gold" /> Log in to view 100% of the map
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>
