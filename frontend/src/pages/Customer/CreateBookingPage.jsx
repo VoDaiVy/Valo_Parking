@@ -584,7 +584,8 @@ export default function CreateBookingPage() {
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
-  const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(4);
+  const [submittedCartItems, setSubmittedCartItems] = useState([]);
+  const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(10);
 
   const [showGlobalPolicyModal, setShowGlobalPolicyModal] = useState(false);
   const [missingPolicies, setMissingPolicies] = useState([]);
@@ -965,7 +966,7 @@ export default function CreateBookingPage() {
     if (!showSuccessModal || !bookingInfo) return undefined;
 
     const resetTimer = setTimeout(() => {
-      setSuccessRedirectCountdown(4);
+      setSuccessRedirectCountdown(10);
     }, 0);
 
     const countdownTimer = setInterval(() => {
@@ -982,7 +983,7 @@ export default function CreateBookingPage() {
       setShowSuccessModal(false);
       setBookingInfo(null);
       window.location.href = '/customer/booking';
-    }, 4000);
+    }, 10000);
 
     return () => {
       clearTimeout(resetTimer);
@@ -1134,6 +1135,7 @@ export default function CreateBookingPage() {
       clientItemId: editingClientItemId || createClientItemId(),
       vehicleId: vehicleId || '',
       licensePlate: vehicleId ? selectedVehicle?.licensePlate : rawManualPlate,
+      originalPlate: vehicleId ? selectedVehicle?.licensePlate : manualPlate.trim().toUpperCase(),
       vehicleLabel: vehicleId
         ? `${selectedVehicle?.licensePlate || 'Vehicle'} - ${selectedVehicle?.brand || 'Vehicle'} ${selectedVehicle?.model || ''}`.trim()
         : formattedManualPlate,
@@ -1183,7 +1185,7 @@ export default function CreateBookingPage() {
     setEndDate(localEnd.split('T')[0]);
     setEndTimeStr(localEnd.split('T')[1]);
     setVehicleId(item.vehicleId || '');
-    setManualPlate(item.vehicleId ? '' : item.licensePlate);
+    setManualPlate(item.vehicleId ? '' : (item.originalPlate || item.licensePlate));
     setSelectedServices(item.serviceIds || []);
     setSelectedSlotKey(`${item.floorId}:${item.slotCode}`);
     setSuccess('');
@@ -1391,9 +1393,10 @@ export default function CreateBookingPage() {
       }
 
       setBookingInfo(res.data?.data);
+      setSubmittedCartItems([...cartItems]);
       setShowSuccessModal(true);
 
-      setSuccess(`Booking order created. Wallet charged ${formatMoney(res.data?.data?.grandTotal || cartGrandTotal)}.`);
+      setSuccess(`Booking order created. Wallet charged ${formatMoney(res.data?.data?.transaction?.grandTotal || cartGrandTotal)}.`);
       setCartItems([]);
       setCartQuote(null);
       setCartItemErrors({});
@@ -1872,77 +1875,106 @@ export default function CreateBookingPage() {
 
       {/* SUCCESS MODAL */}
       {showSuccessModal && bookingInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md">
-          <div className="relative bg-white border border-emerald-100 rounded-[32px] p-7 max-w-3xl w-full max-h-[90vh] flex flex-col items-center text-center shadow-[0_30px_90px_rgba(16,185,129,0.18)] overflow-y-auto">
-            <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-300" />
-            <div className="absolute -top-16 -right-10 w-36 h-36 rounded-full bg-emerald-100/70 blur-2xl" />
-            <div className="absolute -bottom-14 -left-8 w-28 h-28 rounded-full bg-cyan-100/70 blur-2xl" />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-[#0b0e16]/90 backdrop-blur-md transition-all duration-300 animate-in fade-in">
+          <div className="relative bg-[#13161c] border border-gold/30 rounded-[32px] p-6 sm:p-8 w-full max-w-lg max-h-[95vh] flex flex-col shadow-[0_0_60px_rgba(212,175,55,0.15)] overflow-hidden">
+            
+            {/* Background Glow */}
+            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-yellow-600 via-gold to-yellow-400 opacity-80" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-gold/10 rounded-full blur-[80px] pointer-events-none" />
 
-            <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-emerald-100 to-teal-50 flex items-center justify-center text-emerald-500 mb-4 shadow-sm border border-emerald-200/70">
-              <CheckCircle2 size={30} />
-            </div>
-            <div className="relative inline-flex items-center rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-600 mb-3">
-              Sweet Success
-            </div>
-            <h2 className="text-[32px] leading-none font-black text-gray-900 mb-2">Booking Confirmed</h2>
-            <p className="text-gray-500 font-medium text-sm mb-5 max-w-[260px]">
-              Everything is ready. Each vehicle has its own QR for check-in.
-            </p>
-
-            <div className="w-full bg-[#f8fafc] border border-gray-100 rounded-[24px] p-4 text-left space-y-3 mb-5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 font-semibold">Order total</span>
-                <span className="font-black text-gray-900 text-lg">{formatMoney(bookingInfo.grandTotal || bookingInfo.finalAmount || 0)}</span>
+            {/* Header */}
+            <div className="flex flex-col items-center text-center mb-5 shrink-0 relative z-10">
+              <div className="w-16 h-16 rounded-full bg-gold/10 flex items-center justify-center text-gold mb-4 border border-gold/20 shadow-[0_0_20px_rgba(212,175,55,0.2)]">
+                <Check size={32} strokeWidth={3} />
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 font-semibold">Bookings</span>
-                <span className="font-black text-gray-900">{successBookingCards.length}</span>
+              <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Booking Confirmed</h2>
+              <p className="text-gray-400 text-sm max-w-sm leading-relaxed">
+                Your parking spots are successfully reserved. Please use the QR code below for check-in.
+              </p>
+            </div>
+
+            {/* Summary Bar */}
+            <div className="flex items-center justify-center gap-6 bg-[#1a1e26] border border-white/5 rounded-2xl px-6 py-3 mb-6 shadow-inner shrink-0 relative z-10 mx-auto w-fit">
+              <div className="text-center">
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">Total Paid</div>
+                <div className="text-lg font-black text-gold tracking-tight">{formatMoney(bookingInfo.transaction?.grandTotal || 0)}</div>
+              </div>
+              <div className="w-px h-8 bg-white/10"></div>
+              <div className="text-center">
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">Passes</div>
+                <div className="text-lg font-black text-white">{successBookingCards.length}</div>
               </div>
             </div>
 
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+            {/* Scrollable Tickets Area */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2 min-h-0 relative z-10 mb-6">
               {successBookingCards.map((booking, index) => (
-                <div key={booking.bookingId || booking._id || index} className="bg-white border border-gray-100 p-4 rounded-[24px] text-left shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Booking {index + 1}</div>
-                      <div className="font-black text-gray-900">{booking.licensePlate || 'Vehicle'}</div>
-                    </div>
-                    <div className="font-black text-gold">{booking.slotCode}</div>
-                  </div>
-                  <div className="flex justify-center bg-gray-50 border border-gray-100 rounded-2xl p-3 mb-3">
+                <div key={booking.bookingId || booking._id || index} className="flex bg-[#1a1e26] border border-white/10 rounded-2xl overflow-hidden shadow-lg relative">
+                  
+                  {/* Left Side: QR Code */}
+                  <div className="bg-white py-4 pr-4 pl-6 flex flex-col items-center justify-center shrink-0 w-[140px] relative border-r-2 border-dashed border-[#13161c]">
                     {booking.qrCode ? (
-                      <QRCodeSVG value={String(booking.qrCode)} size={140} />
+                      <QRCodeSVG value={String(booking.qrCode)} size={90} />
                     ) : (
-                      <div className="flex min-h-36 items-center justify-center px-4 text-center text-xs font-bold text-amber-600">
-                        QR check-in is temporarily unavailable. Open My Bookings to reload it.
+                      <div className="flex h-[90px] w-[90px] items-center justify-center p-2 text-center text-[10px] font-bold text-amber-600 border-2 border-dashed border-amber-200 rounded-lg bg-amber-50">
+                        Pending
                       </div>
                     )}
                   </div>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between gap-3">
-                      <span className="text-gray-500 font-semibold">From</span>
-                      <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.startTime)}</span>
+                  
+                  {/* Ticket Notches */}
+                  <div className="absolute top-1/2 -translate-y-1/2 -left-3 w-6 h-6 rounded-full bg-[#13161c] shadow-inner z-10"></div>
+                  <div className="absolute top-1/2 -translate-y-1/2 left-[128px] w-6 h-6 rounded-full bg-[#13161c] shadow-inner z-10"></div>
+                  
+                  {/* Right Side: Info */}
+                  <div className="p-4 flex-1 flex flex-col justify-between relative pl-6">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="text-[10px] font-black text-gold uppercase tracking-[0.2em] mb-1">Pass #{index + 1}</div>
+                        <div className="font-black text-white text-xl leading-none tracking-wide">
+                          {(() => {
+                            const original = submittedCartItems.find(item => item.licensePlate && item.licensePlate.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === booking.licensePlate);
+                            return original && original.originalPlate 
+                              ? original.originalPlate.toUpperCase() 
+                              : (booking.licensePlate ? booking.licensePlate.toUpperCase() : 'VEHICLE');
+                          })()}
+                        </div>
+                      </div>
+                      <div className="bg-gold/10 border border-gold/20 px-3 py-1.5 rounded-xl shadow-sm">
+                        <div className="font-black text-gold text-lg leading-none">{booking.slotCode}</div>
+                      </div>
                     </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="text-gray-500 font-semibold">Until</span>
-                      <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.endTime)}</span>
+                    
+                    <div className="flex items-center gap-4 bg-[#13161c]/50 p-2.5 rounded-xl border border-white/5">
+                      <div className="flex flex-col flex-1">
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-0.5">Arrival</span>
+                        <span className="text-xs font-bold text-gray-200">{formatDateTime(booking.startTime)}</span>
+                      </div>
+                      <div className="w-px h-6 bg-white/10"></div>
+                      <div className="flex flex-col flex-1 text-right">
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-0.5">Departure</span>
+                        <span className="text-xs font-bold text-gray-200">{formatDateTime(booking.endTime)}</span>
+                      </div>
                     </div>
                   </div>
+
                 </div>
               ))}
             </div>
 
-            <div className="w-full bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 text-emerald-700 font-bold py-3.5 px-4 rounded-[22px] text-sm leading-relaxed">
-              Your booking was successful. Automatically redirecting to My Bookings in{" "}
-              <span className="inline-flex min-w-8 justify-center rounded-full bg-white/80 px-2 py-0.5 text-emerald-600 shadow-sm">
-                {successRedirectCountdown}s
-              </span>
+            {/* Footer action */}
+            <div className="shrink-0 mt-auto relative z-10">
+              <div className="w-full bg-[#1a1e26] border border-white/10 py-4 px-6 rounded-2xl text-sm flex items-center justify-between shadow-inner">
+                <span className="flex items-center gap-2.5 text-gray-400 font-semibold">
+                  <Loader2 size={16} className="animate-spin text-gold" />
+                  Returning to My Bookings...
+                </span>
+                <span className="bg-gold/10 border border-gold/20 text-gold px-3 py-1 rounded-lg font-bold min-w-[40px] text-center shadow-[0_0_10px_rgba(212,175,55,0.15)]">
+                  {successRedirectCountdown}s
+                </span>
+              </div>
             </div>
-
-            <p className="mt-3 text-[11px] text-gray-400 font-medium">
-              Booking status will sync automatically when the kiosk updates.
-            </p>
+            
           </div>
         </div>
       )}

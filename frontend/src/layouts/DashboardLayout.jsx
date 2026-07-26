@@ -157,11 +157,6 @@ const NAV_CONFIG = {
     },
     { label: "History", icon: <History size={18} />, to: "/customer/history" },
     { label: "Wallet", icon: <Wallet size={18} />, to: "/customer/wallet" },
-    {
-      label: "Settings",
-      icon: <Settings size={18} />,
-      to: "/customer/settings",
-    },
   ],
 };
 

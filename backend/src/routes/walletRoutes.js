@@ -19,7 +19,7 @@ router.use(protect);
 router.use(authorize('customer'));
 
 router.get('/', getWallet);
-router.post('/top-up', requirePolicyAcceptance({ action: 'wallet:top-up' }), topUpValidator, createTopUp);
+router.post('/top-up', topUpValidator, createTopUp);
 router.get('/top-up/:orderCode/status', getTopUpStatus);
 router.get('/transactions', transactionQueryValidator, getTransactions);
 

@@ -413,21 +413,10 @@ export default function WalletPage() {
             setPollingShowsOverlay(true);
             setPollingOrderCode(orderCode);
           }}
-          onPolicyRequired={(missingPolicies) => {
-            setModal(null);
-            setPolicyPrompt({ open: true, missingPolicies });
-          }}
         />
       )}
 
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
-
-      <PolicyAcceptancePrompt
-        open={policyPrompt.open}
-        missingPolicies={policyPrompt.missingPolicies}
-        onClose={() => setPolicyPrompt({ open: false, missingPolicies: [] })}
-        onAccepted={() => setPolicyPrompt({ open: false, missingPolicies: [] })}
-      />
     </div>
   );
 }
@@ -853,7 +842,7 @@ function VerificationOverlay() {
   );
 }
 
-function TopUpModal({ wallet, onClose, onStartPolling, onPolicyRequired }) {
+function TopUpModal({ wallet, onClose, onStartPolling }) {
   const [amount, setAmount] = useState(String(MIN_TOP_UP));
   const [loading, setLoading] = useState(false);
   const numericAmount = Number(amount || 0);
@@ -876,11 +865,6 @@ function TopUpModal({ wallet, onClose, onStartPolling, onPolicyRequired }) {
       if (res.ok && res.data?.data?.checkoutUrl) {
         onStartPolling(res.data.data.orderCode);
         window.location.href = res.data.data.checkoutUrl;
-        return;
-      }
-
-      if (isPolicyAcceptanceRequired(res.data)) {
-        onPolicyRequired?.(extractMissingPolicies(res.data));
         return;
       }
 
