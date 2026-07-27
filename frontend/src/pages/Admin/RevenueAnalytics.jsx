@@ -14,14 +14,12 @@ import {
   Info,
   RefreshCw,
   RotateCcw,
-  ShieldAlert,
   WalletCards,
 } from 'lucide-react';
 import {
   getAdminBookingStatistics,
   getAdminPlatformRevenueStatistics,
   getAdminSubscriptionStatistics,
-  getViolationRevenueStatistics,
 } from '../../services/statisticsService';
 
 const RANGE_OPTIONS = [
@@ -129,7 +127,6 @@ export default function RevenueAnalytics() {
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(null);
   const [subscriptions, setSubscriptions] = useState(null);
-  const [violations, setViolations] = useState(null);
   const [platformRevenue, setPlatformRevenue] = useState(null);
   const [error, setError] = useState('');
   const reduceMotion = useReducedMotion();
@@ -139,17 +136,14 @@ export default function RevenueAnalytics() {
     Promise.allSettled([
       getAdminBookingStatistics(range),
       getAdminSubscriptionStatistics(range),
-      getViolationRevenueStatistics(range),
       getAdminPlatformRevenueStatistics(range),
     ]).then((results) => {
       if (!active) return;
-      const [bookingResult, subscriptionResult, violationResult, platformResult] = results;
+      const [bookingResult, subscriptionResult, platformResult] = results;
       const bookingResponse =
         bookingResult.status === 'fulfilled' ? bookingResult.value : null;
       const subscriptionResponse =
         subscriptionResult.status === 'fulfilled' ? subscriptionResult.value : null;
-      const violationResponse =
-        violationResult.status === 'fulfilled' ? violationResult.value : null;
       const platformResponse =
         platformResult.status === 'fulfilled' ? platformResult.value : null;
 
@@ -163,11 +157,6 @@ export default function RevenueAnalytics() {
           ? subscriptionResponse.data.data
           : null
       );
-      setViolations(
-        violationResponse?.ok && violationResponse.data?.success
-          ? violationResponse.data.data
-          : null
-      );
       setPlatformRevenue(
         platformResponse?.ok && platformResponse.data?.success
           ? platformResponse.data.data
@@ -179,7 +168,6 @@ export default function RevenueAnalytics() {
       const allFailed =
         !bookingResponse?.ok &&
         !subscriptionResponse?.ok &&
-        !violationResponse?.ok &&
         !platformResponse?.ok;
       setError(
         statisticsUnavailable
@@ -210,9 +198,7 @@ export default function RevenueAnalytics() {
   };
 
   const bookingMoney = booking?.money || {};
-  const bookingOperations = booking?.operational || {};
   const subscriptionSummary = subscriptions?.summary || {};
-  const violationSummary = violations?.summary || {};
   const transferFeeSummary = platformRevenue?.membershipTransferFees || {};
   const statusRows = booking?.byStatus || [];
   const packageRows = subscriptions?.byPackage || [];
@@ -409,15 +395,12 @@ export default function RevenueAnalytics() {
             />
 
             <section className="mt-7 grid items-start gap-7 xl:grid-cols-12">
-              <BookingFlowSection
-                bookingOperations={bookingOperations}
+              <StatusDistributionSection
                 statusRows={statusRows}
                 totalStatusCount={totalStatusCount}
                 reduceMotion={reduceMotion}
               />
-              <PackagePerformanceSection
-                subscriptionSummary={subscriptionSummary}
-                violationSummary={violationSummary}
+              <PackageValueSection
                 packageRows={packageRows}
                 maxPackageAmount={maxPackageAmount}
                 reduceMotion={reduceMotion}
@@ -671,39 +654,14 @@ function SalesTrendChart({ points, granularity, reduceMotion }) {
   );
 }
 
-function BookingFlowSection({ bookingOperations, statusRows, totalStatusCount, reduceMotion }) {
-  const summaryMetrics = [
-    {
-      label: 'Bookings',
-      value: formatNumber(bookingOperations.totalBookings),
-      note: `${formatNumber(bookingOperations.completedBookings)} completed`,
-    },
-    {
-      label: 'Completion rate',
-      value: `${Number(bookingOperations.completionRate || 0)}%`,
-      note: 'Completed over terminal booking outcomes',
-    },
-    {
-      label: 'Booking domain value',
-      value: formatCurrency(bookingOperations.bookingValue),
-      note: 'Domain value, not accounting revenue',
-      info: true,
-    },
-  ];
-
+function StatusDistributionSection({ statusRows, totalStatusCount, reduceMotion }) {
   return (
     <motion.section
       initial={reduceMotion ? false : { opacity: 0, y: 12 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       className="xl:col-span-7"
     >
-      <SectionHeader
-        title="Booking Flow"
-        description="Operational outcomes and booking-domain value without merging wallet revenue."
-      />
-      <FlatMetricGrid metrics={summaryMetrics} columns="sm:grid-cols-3" />
-
-      <div className="mt-5 border-t border-white/[0.08] pt-5">
+      <div>
         <div className="mb-3 flex items-center justify-between gap-4">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
             Status Distribution
@@ -762,37 +720,7 @@ function BookingFlowSection({ bookingOperations, statusRows, totalStatusCount, r
   );
 }
 
-function PackagePerformanceSection({
-  subscriptionSummary,
-  violationSummary,
-  packageRows,
-  maxPackageAmount,
-  reduceMotion,
-}) {
-  const healthMetrics = [
-    {
-      label: 'Active plans',
-      value: formatNumber(subscriptionSummary.active),
-      note: `${formatNumber(subscriptionSummary.activeReservedSlots)} reserved spaces`,
-    },
-    {
-      label: 'Expiring soon',
-      value: formatNumber(subscriptionSummary.expiringWithin7Days),
-      note: 'Within 7 days',
-    },
-    {
-      label: 'Renewals',
-      value: formatNumber(subscriptionSummary.renewalCount),
-      note: `${Number(subscriptionSummary.renewalRate || 0)}% renewal rate`,
-    },
-    {
-      label: 'Violation revenue',
-      value: formatCurrency(violationSummary.totalAmount),
-      note: `${formatNumber(violationSummary.count)} recorded payments`,
-      icon: ShieldAlert,
-    },
-  ];
-
+function PackageValueSection({ packageRows, maxPackageAmount, reduceMotion }) {
   return (
     <motion.section
       initial={reduceMotion ? false : { opacity: 0, y: 12 }}
@@ -800,13 +728,7 @@ function PackagePerformanceSection({
       transition={{ delay: reduceMotion ? 0 : 0.06 }}
       className="xl:col-span-5"
     >
-      <SectionHeader
-        title="Package Performance"
-        description="Package health, renewals and violation revenue kept as separate signals."
-      />
-      <FlatMetricGrid metrics={healthMetrics} columns="grid-cols-2" />
-
-      <div className="mt-5 border-t border-white/[0.08] pt-5">
+      <div>
         <div className="mb-3 flex items-center justify-between">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
             Value by Package
@@ -895,54 +817,6 @@ function SourceSummaryStrip({ items }) {
         );
       })}
     </section>
-  );
-}
-
-function FlatMetricGrid({ metrics, columns }) {
-  return (
-    <div className={`grid border-y border-white/[0.08] ${columns}`}>
-      {metrics.map((metric, index) => {
-        const Icon = metric.icon;
-        return (
-          <div
-            key={metric.label}
-            className={`border-white/[0.08] px-2 py-4 sm:px-4 ${
-              index < metrics.length - 1 ? 'border-b sm:border-r' : ''
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-                  {metric.label}
-                </p>
-                <p className="mt-2 text-xl font-black tabular-nums text-white">
-                  {metric.value}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  {metric.note}
-                </p>
-              </div>
-              {Icon && <Icon size={16} className="mt-1 shrink-0 text-amber-300" />}
-            </div>
-            {metric.info && (
-              <p className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">
-                <Info size={12} />
-                Domain value, not accounting revenue
-              </p>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SectionHeader({ title, description }) {
-  return (
-    <div className="mb-4">
-      <h2 className="text-xl font-black text-white">{title}</h2>
-      <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>
-    </div>
   );
 }
 

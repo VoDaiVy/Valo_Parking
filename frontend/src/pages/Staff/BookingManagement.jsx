@@ -616,7 +616,7 @@ export default function BookingManagement() {
       </section>
 
       {/* --- CONTROLS --- */}
-      <div className="flex flex-wrap gap-4 items-center mb-6 shrink-0 relative z-10">
+      <div className="relative z-30 mb-6 flex shrink-0 flex-wrap items-center gap-4">
         <div className="relative w-full md:w-[350px] group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition-colors group-focus-within:text-[#ffd555]" size={18} />
           <input

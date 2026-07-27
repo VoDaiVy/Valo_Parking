@@ -469,3 +469,24 @@
     -webkit-text-fill-color: transparent;
   }
 }
+
+/* Staff dashboard density adapts to laptop CSS viewports without scaling the page. */
+@media (min-width: 1024px) and (max-width: 1600px),
+  (min-width: 1024px) and (max-height: 900px) {
+  html.staff-density-active {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1400px),
+  (min-width: 1024px) and (max-height: 780px) {
+  html.staff-density-active {
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 1024px) {
+  html.staff-density-active .dashboard-page-content > * {
+    min-height: 100%;
+  }
+}

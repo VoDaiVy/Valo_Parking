@@ -234,7 +234,7 @@ exports.archivePolicy = async (req, res, next) => {
 
 exports.deletePolicy = async (req, res, next) => {
   try {
-    const policy = await policyService.softDeletePolicy(req.params.id, req.user._id);
+    const policy = await policyService.deletePolicyPermanently(req.params.id);
 
     res.status(200).json({
       success: true,

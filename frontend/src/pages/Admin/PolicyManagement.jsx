@@ -22,7 +22,6 @@ import RefundRulePreview from '../../components/policies/RefundRulePreview';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
 import {
-  archivePolicy,
   createDefaultRefundRule,
   createPolicy,
   createPolicyVersion,
@@ -454,42 +453,23 @@ export default function PolicyManagement() {
   };
 
 
-  const handleArchive = async () => {
-    if (!selectedPolicy) return;
-    setConfirmModalState({
-      isOpen: true,
-      title: 'Archive Policy',
-      message: 'Archive this policy? It will disappear from public policy pages.',
-      isDestructive: true,
-      action: async () => {
-        setSaving(true);
-        const res = await archivePolicy(selectedPolicy._id);
-        if (res.ok && res.data?.success) {
-          showToast('Policy archived');
-          await fetchPolicies();
-          await loadDetail(selectedPolicy._id);
-        } else {
-          setError(res.data?.message || 'Unable to archive policy.');
-        }
-        setSaving(false);
-      }
-    });
-  };
-
   const handleDelete = async () => {
     if (!selectedPolicy) return;
     setConfirmModalState({
       isOpen: true,
       title: 'Delete Policy',
-      message: 'Soft-delete this policy? Published history and acceptances are retained.',
+      message: 'Permanently delete this policy, all versions, refund rules, and customer acceptance records? This action cannot be undone.',
       isDestructive: true,
       action: async () => {
         setSaving(true);
+        setError('');
         const res = await deletePolicy(selectedPolicy._id);
         if (res.ok && res.data?.success) {
           showToast('Policy deleted');
           setSelectedId('');
           setDetail(null);
+          setAcceptances([]);
+          setAcceptanceMeta(null);
           await fetchPolicies();
         } else {
           setError(res.data?.message || 'Unable to delete policy.');
@@ -497,7 +477,6 @@ export default function PolicyManagement() {
         setSaving(false);
       }
     });
-    setSaving(false);
   };
 
   const summary = useMemo(() => {
@@ -763,7 +742,6 @@ export default function PolicyManagement() {
                 saving={saving}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
-                handleArchive={handleArchive}
                 handleDelete={handleDelete}
                 handleMetadataSave={handleMetadataSave}
                 handleDraftSave={handleDraftSave}
@@ -781,6 +759,17 @@ export default function PolicyManagement() {
           </section>
         </motion.main>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        onClose={() => setConfirmModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={() => confirmModalState.action?.()}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+        confirmText="Confirm"
+        cancelText="Cancel"
+        isDestructive={confirmModalState.isDestructive}
+      />
     </div>
   );
 }
@@ -961,7 +950,6 @@ function PolicyWorkspace({
   saving,
   activeTab,
   setActiveTab,
-  handleArchive,
   handleDelete,
   handleMetadataSave,
   handleDraftSave,
@@ -976,7 +964,7 @@ function PolicyWorkspace({
   acceptancesError,
 }) {
   return (
-    <div className={`h-full overflow-y-auto ${scrollbarClass}`}>
+    <div className="h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-[#0c0c0c]/95 px-5 py-5 backdrop-blur-xl lg:px-8">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
@@ -1003,10 +991,6 @@ function PolicyWorkspace({
                 Publish
               </PremiumButton>
             )}
-            <PremiumButton variant="ghost" onClick={handleArchive} disabled={saving}>
-              <Archive size={15} />
-              Archive
-            </PremiumButton>
             <PremiumButton variant="danger" onClick={handleDelete} disabled={saving}>
               <Trash2 size={15} />
               Delete
@@ -1014,7 +998,7 @@ function PolicyWorkspace({
           </div>
         </div>
 
-        <nav className="mt-5 flex gap-1 overflow-x-auto border-b border-white/[0.08]">
+        <nav className="mt-5 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-white/[0.08]">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const selected = activeTab === tab.id;
@@ -1441,20 +1425,6 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
         </div>
       )}
 
-      <ConfirmModal
-        isOpen={confirmModalState.isOpen}
-        onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={() => {
-          if (confirmModalState.action) {
-            confirmModalState.action();
-          }
-        }}
-        title={confirmModalState.title}
-        message={confirmModalState.message}
-        confirmText="Confirm"
-        cancelText="Cancel"
-        isDestructive={confirmModalState.isDestructive}
-      />
     </motion.div>
   );
 }

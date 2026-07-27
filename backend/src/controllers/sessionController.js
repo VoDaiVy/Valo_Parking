@@ -1087,6 +1087,38 @@ exports.kioskExitScan = async (req, res, next) => {
 };
 
 /**
+ * @desc    Verify if a phone number has past sessions and return the most recent license plate
+ * @route   POST /api/sessions/verify-phone
+ * @access  Public (Kiosk)
+ */
+exports.verifyPhone = async (req, res, next) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Phone is required' });
+    }
+
+    const pastSession = await Session.findOne({ phone: phone }).sort({ checkInTime: -1 }).lean();
+
+    if (pastSession) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          licensePlate: pastSession.licensePlate
+        }
+      });
+    } else {
+      return res.status(200).json({
+        success: false,
+        message: 'No past sessions found for this phone number'
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Xử lý Checkout và thanh toán thực tế tại Kiosk
  * POST /api/sessions/kiosk-checkout
  */

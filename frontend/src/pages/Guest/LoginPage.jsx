@@ -528,6 +528,7 @@ export default function LoginPage() {
             <>
               {/* ── Google Button ── */}
               <button
+                type="button"
                 id="btn-google-auth"
                 onClick={handleGoogleAuth}
                 className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-800 font-bold py-3.5 rounded-xl transition-all duration-200 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 active:scale-95 border border-gray-200 mb-6"
