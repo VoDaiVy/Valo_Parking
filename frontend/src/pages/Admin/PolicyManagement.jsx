@@ -20,6 +20,7 @@ import {
 import RefundRuleEditor from '../../components/policies/RefundRuleEditor';
 import RefundRulePreview from '../../components/policies/RefundRulePreview';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import ConfirmModal from '../../components/Admin/ConfirmModal';
 import {
   archivePolicy,
   createDefaultRefundRule,
@@ -182,6 +183,7 @@ export default function PolicyManagement() {
   const [policies, setPolicies] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState(null);
+  const [confirmModalState, setConfirmModalState] = useState({ isOpen: false, title: '', message: '', isDestructive: false, action: null });
   const [isCreating, setIsCreating] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
   const [metadata, setMetadata] = useState(null);
@@ -425,59 +427,76 @@ export default function PolicyManagement() {
       return;
     }
 
-    const confirmed = window.confirm(
-      selectedPolicy.controlsBookingRefunds
-        ? 'Publish this draft? The policy text and executable refund rules will become immutable together and will apply to newly paid bookings.'
-        : 'Publish this draft? Published versions cannot be edited later.'
-    );
-    if (!confirmed) return;
-
-    setSaving(true);
-    setError('');
-    const res = await publishPolicyVersion(selectedPolicy._id, activeDraft._id);
-    if (res.ok && res.data?.success) {
-      showToast('Policy version published');
-      await fetchPolicies();
-      await loadDetail(selectedPolicy._id);
-      setActiveTab('versions');
-    } else {
-      setError(res.data?.message || 'Unable to publish policy.');
-    }
-    setSaving(false);
+    const message = selectedPolicy.controlsBookingRefunds
+      ? 'Publish this draft? The policy text and executable refund rules will become immutable together and will apply to newly paid bookings.'
+      : 'Publish this draft? Published versions cannot be edited later.';
+    
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Publish Policy',
+      message,
+      isDestructive: false,
+      action: async () => {
+        setSaving(true);
+        setError('');
+        const res = await publishPolicyVersion(selectedPolicy._id, activeDraft._id);
+        if (res.ok && res.data?.success) {
+          showToast('Policy version published');
+          await fetchPolicies();
+          await loadDetail(selectedPolicy._id);
+          setActiveTab('versions');
+        } else {
+          setError(res.data?.message || 'Unable to publish policy.');
+        }
+        setSaving(false);
+      }
+    });
   };
+
 
   const handleArchive = async () => {
     if (!selectedPolicy) return;
-    const confirmed = window.confirm('Archive this policy? It will disappear from public policy pages.');
-    if (!confirmed) return;
-
-    setSaving(true);
-    const res = await archivePolicy(selectedPolicy._id);
-    if (res.ok && res.data?.success) {
-      showToast('Policy archived');
-      await fetchPolicies();
-      await loadDetail(selectedPolicy._id);
-    } else {
-      setError(res.data?.message || 'Unable to archive policy.');
-    }
-    setSaving(false);
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Archive Policy',
+      message: 'Archive this policy? It will disappear from public policy pages.',
+      isDestructive: true,
+      action: async () => {
+        setSaving(true);
+        const res = await archivePolicy(selectedPolicy._id);
+        if (res.ok && res.data?.success) {
+          showToast('Policy archived');
+          await fetchPolicies();
+          await loadDetail(selectedPolicy._id);
+        } else {
+          setError(res.data?.message || 'Unable to archive policy.');
+        }
+        setSaving(false);
+      }
+    });
   };
 
   const handleDelete = async () => {
     if (!selectedPolicy) return;
-    const confirmed = window.confirm('Soft-delete this policy? Published history and acceptances are retained.');
-    if (!confirmed) return;
-
-    setSaving(true);
-    const res = await deletePolicy(selectedPolicy._id);
-    if (res.ok && res.data?.success) {
-      showToast('Policy deleted');
-      setSelectedId('');
-      setDetail(null);
-      await fetchPolicies();
-    } else {
-      setError(res.data?.message || 'Unable to delete policy.');
-    }
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Delete Policy',
+      message: 'Soft-delete this policy? Published history and acceptances are retained.',
+      isDestructive: true,
+      action: async () => {
+        setSaving(true);
+        const res = await deletePolicy(selectedPolicy._id);
+        if (res.ok && res.data?.success) {
+          showToast('Policy deleted');
+          setSelectedId('');
+          setDetail(null);
+          await fetchPolicies();
+        } else {
+          setError(res.data?.message || 'Unable to delete policy.');
+        }
+        setSaving(false);
+      }
+    });
     setSaving(false);
   };
 
@@ -1421,6 +1440,21 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        onClose={() => setConfirmModalState(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={() => {
+          if (confirmModalState.action) {
+            confirmModalState.action();
+          }
+        }}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+        confirmText="Confirm"
+        cancelText="Cancel"
+        isDestructive={confirmModalState.isDestructive}
+      />
     </motion.div>
   );
 }
