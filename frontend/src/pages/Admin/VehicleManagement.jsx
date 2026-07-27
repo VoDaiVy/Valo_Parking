@@ -455,7 +455,7 @@ function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount }
           </button>
         );
       })}
-    </motion.div>
+    </div>
   );
 }
 
