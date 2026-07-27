@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Car, Zap, Check, X, Loader2, RefreshCw, Image } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import ConfirmModal from '../../components/Admin/ConfirmModal';
 
 const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
@@ -14,6 +15,7 @@ export default function VehiclePending() {
   const [processing, setProcessing] = useState({}); // { [id]: true }
   const [toast, setToast] = useState(null);
   const [previewImg, setPreviewImg] = useState(null); // URL for lightbox
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -51,8 +53,14 @@ export default function VehiclePending() {
     }
   };
 
-  const handleReject = async (id) => {
-    if (!window.confirm('Confirm rejection and delete this vehicle?')) return;
+  const handleReject = (id) => {
+    setDeleteModal({ isOpen: true, id });
+  };
+
+  const executeReject = async () => {
+    const { id } = deleteModal;
+    if (!id) return;
+    
     setProcessing((p) => ({ ...p, [id]: true }));
     const res = await apiFetch(`/admin/vehicles/${id}/reject`, {
       method: 'DELETE',
@@ -60,11 +68,12 @@ export default function VehiclePending() {
     });
     setProcessing((p) => ({ ...p, [id]: false }));
     if (res.ok) {
-      showToast('Vehicle rejected');
+      showToast('Vehicle rejected and deleted', 'error');
       setVehicles((v) => v.filter((x) => x._id !== id));
     } else {
-      showToast(res.data?.message || 'Action failed', 'error');
+      showToast(res.data?.message || 'Rejection failed', 'error');
     }
+    setDeleteModal({ isOpen: false, id: null });
   };
 
   return (
@@ -157,7 +166,17 @@ export default function VehiclePending() {
           {toast.msg}
         </div>
       )}
-    </div>
+
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: null })}
+        onConfirm={executeReject}
+        title="Reject Vehicle"
+        message="Confirm rejection and delete this vehicle?"
+        confirmText="Reject & Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
     </div>
   );
 }

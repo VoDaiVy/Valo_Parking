@@ -8,6 +8,7 @@ import { startMaintenance, endMaintenance } from "../../services/maintenanceServ
 import { API_BASE } from "../../services/api";
 import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings } from "../../services/bookingService";
 import StaffCheckoutModal from "../Staff/StaffCheckoutModal";
+import ConfirmModal from "../../components/Admin/ConfirmModal";
 
 const LiveDuration = ({ checkInTime, expectedDurationHours }) => {
   const [now, setNow] = useState(() => Date.now());
@@ -57,6 +58,8 @@ export default function ParkingLots() {
   
   // activeSessions to track live cars
   const [activeSessions, setActiveSessions] = useState([]);
+
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, floorId: null, floorName: "" });
 
   useEffect(() => {
     document.body.classList.add("bg-[#080808]");
@@ -328,16 +331,20 @@ export default function ParkingLots() {
     }
   };
 
-  const handleDeleteFloor = async () => {
+  const handleDeleteFloor = () => {
     if (!currentFloorId) return;
-    const currentIndex = floors.findIndex(f => f._id === currentFloorId);
-    const currentFloor = floors[currentIndex];
+    const currentFloor = floors.find(f => f._id === currentFloorId);
     if (!currentFloor) return;
+    setDeleteModal({ isOpen: true, floorId: currentFloorId, floorName: currentFloor.name });
+  };
 
-    if (window.confirm(`Are you sure you want to delete ${currentFloor.name}?`)) {
-       const res = await deleteFloor(currentFloorId);
+  const executeDeleteFloor = async () => {
+    const { floorId } = deleteModal;
+    if (!floorId) return;
+    const currentIndex = floors.findIndex(f => f._id === floorId);
+    const res = await deleteFloor(floorId);
        if (res.ok) {
-          const updatedFloors = floors.filter(f => f._id !== currentFloorId);
+          const updatedFloors = floors.filter(f => f._id !== floorId);
           setFloors(updatedFloors);
           if (updatedFloors.length > 0) {
              const nextIndex = Math.max(0, currentIndex - 1);
@@ -348,7 +355,7 @@ export default function ParkingLots() {
        } else {
           alert("Failed to delete floor: " + (res.data?.message || "Forbidden or Network error"));
        }
-    }
+       setDeleteModal({ isOpen: false, floorId: null, floorName: "" });
   };
 
   const handleSaveLayout = async (layoutData) => {
@@ -716,6 +723,18 @@ export default function ParkingLots() {
           }}
         />
       )}
+
+
+      <ConfirmModal 
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, floorId: null, floorName: "" })}
+        onConfirm={executeDeleteFloor}
+        title="Delete Floor"
+        message={`Are you sure you want to delete ${deleteModal.floorName}? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
 
     </div>
   );

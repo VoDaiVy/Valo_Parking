@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import ConfirmModal from '../../components/Admin/ConfirmModal';
 import {
   getOperationalValue,
   getOperationalViewState,
@@ -235,6 +236,7 @@ export default function TicketPackages() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   const [showModal, setShowModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, packageId: null });
   const [editingPackage, setEditingPackage] = useState(null);
   const packageState = getOperationalViewState({ loading, error: loadError });
 
@@ -344,10 +346,15 @@ export default function TicketPackages() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this package?')) return;
+  const handleDelete = (id) => {
+    setDeleteModal({ isOpen: true, packageId: id });
+  };
+
+  const executeDelete = async () => {
+    const { packageId } = deleteModal;
+    if (!packageId) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${id}`, {
+      await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${packageId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
       });
@@ -355,6 +362,8 @@ export default function TicketPackages() {
     } catch (err) {
       console.error(err);
       setError('Failed to delete package');
+    } finally {
+      setDeleteModal({ isOpen: false, packageId: null });
     }
   };
 
@@ -671,6 +680,17 @@ export default function TicketPackages() {
           </div>
         )}
       </div>
+
+      <ConfirmModal 
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, packageId: null })}
+        onConfirm={executeDelete}
+        title="Delete Package"
+        message="Are you sure you want to delete this package? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
     </div>
   );
 }

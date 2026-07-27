@@ -9,6 +9,7 @@ import { apiFetch, API_BASE } from '../../services/api';
 import CarViewer from '../../components/CarViewer';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import ConfirmModal from '../../components/Admin/ConfirmModal';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 const authHeader = () => {
@@ -538,6 +539,7 @@ export default function VehicleManagement() {
   const [pending, setPending] = useState([]);
   const [pendingLoading, setPendingLoading] = useState(true);
   const [processing, setProcessing] = useState({});
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null });
   const [previewImg, setPreviewImg] = useState(null);
   const [pendingSearch, setPendingSearch] = useState('');
   const [pendingStatusFilter, setPendingStatusFilter] = useState('all');
@@ -631,8 +633,13 @@ export default function VehicleManagement() {
     }
   };
 
-  const handleReject = async (id) => {
-    if (!window.confirm('Confirm rejection and delete this vehicle?')) return;
+  const handleReject = (id) => {
+    setDeleteModal({ isOpen: true, id });
+  };
+
+  const executeReject = async () => {
+    const { id } = deleteModal;
+    if (!id) return;
     setProcessing((p) => ({ ...p, [id]: true }));
     const res = await apiFetch(`/admin/vehicles/${id}/reject`, {
       method: 'DELETE',
@@ -645,6 +652,7 @@ export default function VehicleManagement() {
     } else {
       showToast(res.data?.message || 'Action failed', 'error');
     }
+    setDeleteModal({ isOpen: false, id: null });
   };
 
   // ── Upload model handler ───────────────────────────────────────────────────
@@ -1130,6 +1138,17 @@ export default function VehicleManagement() {
           {toast.msg}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: null })}
+        onConfirm={executeReject}
+        title="Reject Vehicle"
+        message="Confirm rejection and delete this vehicle?"
+        confirmText="Reject & Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
       </div>
     </div>
   );
