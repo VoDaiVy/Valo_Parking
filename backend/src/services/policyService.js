@@ -561,25 +561,38 @@ const archivePolicy = async (policyId, userId) => {
   return policy;
 };
 
-const softDeletePolicy = async (policyId, userId) => {
+const deletePolicyPermanently = async (policyId) => {
   ensureObjectId(policyId, 'policy id');
 
-  const policy = await Policy.findOneAndUpdate(
-    { _id: policyId, deletedAt: null },
-    {
-      status: 'archived',
-      archivedAt: new Date(),
-      deletedAt: new Date(),
-      updatedBy: userId,
-    },
-    { new: true, runValidators: true }
-  ).populate('currentVersionId');
+  const session = await mongoose.startSession();
+  let deletedPolicy = null;
 
-  if (!policy) {
-    throw Object.assign(new Error('Policy not found'), { statusCode: 404 });
+  try {
+    await session.withTransaction(async () => {
+      deletedPolicy = await Policy.findOne({ _id: policyId, deletedAt: null })
+        .session(session)
+        .lean();
+
+      if (!deletedPolicy) {
+        throw Object.assign(new Error('Policy not found'), { statusCode: 404 });
+      }
+
+      await Promise.all([
+        PolicyAcceptance.deleteMany({ policyId }, { session }),
+        RefundRuleVersion.deleteMany({ policyId }, { session }),
+        PolicyVersion.deleteMany({ policyId }, { session }),
+      ]);
+
+      const result = await Policy.deleteOne({ _id: policyId }, { session });
+      if (result.deletedCount !== 1) {
+        throw Object.assign(new Error('Policy could not be deleted'), { statusCode: 409 });
+      }
+    });
+  } finally {
+    await session.endSession();
   }
 
-  return policy;
+  return deletedPolicy;
 };
 
 const getPolicyAcceptances = async (policyId, { page = 1, limit = 20 } = {}) => {
@@ -622,7 +635,7 @@ module.exports = {
   listAdminPolicies,
   listPublishedPolicies,
   publishVersion,
-  softDeletePolicy,
+  deletePolicyPermanently,
   updateDraftVersion,
   updatePolicyMetadata,
 };
