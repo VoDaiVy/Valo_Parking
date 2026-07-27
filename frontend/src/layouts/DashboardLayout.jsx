@@ -208,6 +208,7 @@ export default function DashboardLayout() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportContent, setReportContent] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
 
   // Hook for notifications
   const {
@@ -232,6 +233,7 @@ export default function DashboardLayout() {
     user.username ||
     "User"
     : "User";
+  const avatarUrl = user?.avatar || user?.profile?.avatar || user?.avatarUrl || "";
 
   // Always dark mode
   useEffect(() => {
@@ -279,7 +281,8 @@ export default function DashboardLayout() {
           const updatedUser = {
             ...user,
             ...data.data,
-            avatar: freshAvatar || user.avatar || user.profile?.avatar || user.avatarUrl || "",
+            avatar: freshAvatar,
+            avatarUrl: freshAvatar,
           };
           sessionStorage.setItem("valo_user", JSON.stringify(updatedUser));
           setUser(updatedUser);
@@ -557,11 +560,12 @@ export default function DashboardLayout() {
                 flex items-center justify-center text-black font-extrabold text-sm cursor-pointer overflow-hidden shrink-0 shadow-sm select-none`}
               title={displayName}
             >
-              {user?.avatar || user?.profile?.avatar || user?.avatarUrl ? (
+              {avatarUrl && failedAvatarUrl !== avatarUrl ? (
                 <img
-                  src={user.avatar || user.profile?.avatar || user.avatarUrl}
+                  src={avatarUrl}
                   alt="Avatar"
                   className="w-full h-full object-cover"
+                  onError={() => setFailedAvatarUrl(avatarUrl)}
                 />
               ) : (
                 <span>{getInitials(displayName)}</span>
