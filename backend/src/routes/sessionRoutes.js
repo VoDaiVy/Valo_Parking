@@ -10,6 +10,9 @@ router.get('/active-status', sessionController.getActiveParkingStatus);
 // POST /api/sessions/verify-plate
 router.post('/verify-plate', sessionController.verifyPlate);
 
+// POST /api/sessions/verify-phone
+router.post('/verify-phone', sessionController.verifyPhone);
+
 // GET /api/sessions/check-full
 router.get('/check-full', sessionController.checkParkingFull);
 

@@ -546,7 +546,7 @@ exports.deleteUser = async (req, res, next) => {
     await BookingHold.deleteMany({ userId: userId });
     await BookingOrder.deleteMany({ userId: userId });
     await BookingTransfer.deleteMany({ $or: [{ fromUserId: userId }, { toUserId: userId }] });
-    await Session.deleteMany({ userId: userId });
+    await Session.updateMany({ userId: userId }, { $set: { userId: null } });
 
     // 3. Subscriptions & VIP Packages
     await Subscription.deleteMany({ user: userId });

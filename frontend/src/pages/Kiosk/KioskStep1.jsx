@@ -174,6 +174,31 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
     }
   }, [formData.licensePlate, activeField]);
 
+  // Auto-verify phone
+  useEffect(() => {
+    const phone = formData.phone || '';
+    // Only auto-verify if they are typing phone and have entered at least 10 digits
+    if (activeField === 'phone' && phone.length >= 10) {
+      const timerId = setTimeout(async () => {
+        try {
+          const response = await fetch(`${API_BASE}/sessions/verify-phone`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: phone.trim() })
+          });
+          const data = await response.json();
+          if (data.success && data.data && data.data.licensePlate) {
+            // Auto-fill the license plate if found
+            updateFormData({ licensePlate: data.data.licensePlate });
+          }
+        } catch (e) {
+          console.error("Phone verify failed", e);
+        }
+      }, 800);
+      return () => clearTimeout(timerId);
+    }
+  }, [formData.phone, activeField]);
+
   const formatVietnamesePlate = (plate) => {
     if (!plate) return null;
     const clean = plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
