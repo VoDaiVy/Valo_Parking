@@ -8,6 +8,7 @@ import { useNotifications } from "../hooks/useNotifications";
 import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
+import { getDashboardDensityClass } from "./staffDensity";
 import {
   LayoutDashboard,
   Users,
@@ -221,6 +222,7 @@ export default function DashboardLayout() {
     useNotifications({ contextRole: user?.role });
 
   const role = user?.role;
+  const densityClass = getDashboardDensityClass(role);
   const navItems = NAV_CONFIG[role] || [];
   const theme = ROLE_THEME[role] || ROLE_THEME.admin;
   const displayName = user
@@ -235,6 +237,18 @@ export default function DashboardLayout() {
   useEffect(() => {
     document.documentElement.classList.add("dark");
   }, []);
+
+  useEffect(() => {
+    if (densityClass) {
+      document.documentElement.classList.add(densityClass);
+    }
+
+    return () => {
+      if (densityClass) {
+        document.documentElement.classList.remove(densityClass);
+      }
+    };
+  }, [densityClass]);
 
   // Listen for auth changes (including profile updates)
   useEffect(() => {
@@ -316,18 +330,19 @@ export default function DashboardLayout() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gray-100 dark:bg-[#0D0D0D] flex font-sans transition-colors duration-300">
+    <div className={`${densityClass} staff-dashboard-shell h-screen overflow-hidden bg-gray-100 dark:bg-[#0D0D0D] flex font-sans transition-colors duration-300`}>
       {/* ══════════ SIDEBAR ══════════ */}
       <aside
         className={`
-          ${collapsed ? "w-[72px]" : "w-60"}
+          ${collapsed ? "w-[4.5rem]" : "w-60"}
+          staff-dashboard-sidebar
           flex-shrink-0 bg-white dark:bg-[#111111] border-r border-gray-200 dark:border-white/5
           flex flex-col transition-all duration-300 ease-in-out relative
           z-40
         `}
       >
         {/* Logo */}
-        <div className="h-[70px] flex items-center px-4 border-b border-gray-200 dark:border-white/5 gap-3 shrink-0">
+        <div className="h-[4.375rem] flex items-center px-4 border-b border-gray-200 dark:border-white/5 gap-3 shrink-0">
           {/* Icon */}
           <img
             src={logoImg}
@@ -379,7 +394,7 @@ export default function DashboardLayout() {
         <button
           onClick={() => setCollapsed((c) => !c)}
           className="
-            absolute -right-3 top-[82px]
+            staff-dashboard-collapse absolute -right-3 top-[5.125rem]
             w-6 h-6 bg-gray-100 dark:bg-[#1C1C1C] border border-gray-200 dark:border-white/10 rounded-full
             flex items-center justify-center
             text-gray-500 hover:text-gray-900 dark:hover:text-white hover:border-gray-300 dark:hover:border-white/30
@@ -397,7 +412,7 @@ export default function DashboardLayout() {
       {/* ══════════ MAIN AREA ══════════ */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="h-[70px] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
+        <header className="staff-dashboard-topbar h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
           {/* Hamburger (mobile) */}
           <button
             className="lg:hidden text-gray-500 hover:text-gray-900 dark:hover:text-white"
@@ -557,7 +572,7 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main
-          className="scrollbar-hidden flex-1 overflow-y-auto bg-gray-100 transition-colors duration-300 dark:bg-[#0D0D0D]"
+          className="dashboard-page-content scrollbar-hidden flex-1 overflow-y-auto bg-gray-100 transition-colors duration-300 dark:bg-[#0D0D0D]"
         >
           <Outlet />
         </main>

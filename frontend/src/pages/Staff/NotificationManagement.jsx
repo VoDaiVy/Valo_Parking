@@ -559,7 +559,7 @@ function ComposeTab({ onSent }) {
                 <div className="rounded-xl border border-white/10 bg-[#101010] p-4">
                   <p className="text-xs font-medium text-gray-300">Select one or more roles</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {["admin", "staff", "customer"].map((role) => {
+                    {["staff", "customer"].map((role) => {
                       const active = selectedRoles.includes(role);
                       return (
                         <button
