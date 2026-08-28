@@ -18,6 +18,7 @@ const bookingRefundService = require('../services/bookingRefundService');
 const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrService');
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const { normalizePhone, getPhoneVariants, claimUserSessionsByPhone } = require('../utils/phoneUtils');
 
 const normalizeSlotCode = (slotCode = '') => String(slotCode || '').trim().toUpperCase();
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
@@ -536,10 +537,11 @@ exports.createKioskSession = async (req, res, next) => {
     // Xác định User
     let userId = null;
     let userEmail = null;
-    let finalPhone = phone;
+    let finalPhone = phone ? normalizePhone(phone) : phone;
 
     if (finalPhone) {
-      const detail = await UserDetail.findOne({ phone: finalPhone }).sort({ createdAt: -1 });
+      const phoneVariants = getPhoneVariants(finalPhone);
+      const detail = await UserDetail.findOne({ phone: { $in: phoneVariants } }).sort({ createdAt: -1 });
       if (detail) {
         const user = await User.findById(detail.userId);
         if (user) {
@@ -1499,13 +1501,24 @@ exports.getMyHistory = async (req, res, next) => {
     const myVehicles = await Vehicle.find({ owner: req.user._id, status: 'approved' }).distinct('licensePlate');
     const myBookings = await Booking.find({ userId: req.user._id }).distinct('_id');
     
+    const userDetail = await UserDetail.findOne({ userId: req.user._id });
+    const orConditions = [
+      { userId: req.user._id },
+      { licensePlate: { $in: myVehicles } },
+      { bookingId: { $in: myBookings } }
+    ];
+
+    if (userDetail?.phone) {
+      const phoneVariants = getPhoneVariants(userDetail.phone);
+      // Auto-claim any orphan session for this user phone
+      await claimUserSessionsByPhone(req.user._id, userDetail.phone);
+      orConditions.push({ phone: { $in: phoneVariants } });
+    }
+
     const sessions = await Session.find({
-      $or: [
-        { userId: req.user._id },
-        { licensePlate: { $in: myVehicles } },
-        { bookingId: { $in: myBookings } }
-      ]
+      $or: orConditions
     }).sort({ checkInTime: -1 });
+
     res.status(200).json({
       success: true,
       data: sessions,
