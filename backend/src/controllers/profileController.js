@@ -120,6 +120,8 @@ const getProfile = async (req, res, next) => {
   }
 };
 
+const { normalizePhone, getPhoneVariants, claimUserSessionsByPhone } = require("../utils/phoneUtils");
+
 /**
  * @desc    Update user profile
  * @route   PUT /api/profile
@@ -128,10 +130,12 @@ const getProfile = async (req, res, next) => {
 const updateProfile = async (req, res, next) => {
   try {
     const { firstName, lastName, phone, dob, gender, avatar } = req.body;
+    const cleanPhone = phone ? normalizePhone(phone) : "";
 
-    if (phone) {
+    if (cleanPhone) {
+      const phoneVariants = getPhoneVariants(cleanPhone);
       const existingUserWithPhone = await UserDetail.findOne({ 
-        phone: phone, 
+        phone: { $in: phoneVariants }, 
         userId: { $ne: req.user._id } 
       });
       
@@ -149,7 +153,7 @@ const updateProfile = async (req, res, next) => {
       {
         firstName,
         lastName,
-        phone,
+        phone: cleanPhone || phone || "",
         dob,
         gender,
         avatar,
@@ -163,15 +167,10 @@ const updateProfile = async (req, res, next) => {
 
     const user = await User.findById(req.user._id);
 
-
     let claimedSessions = 0;
     // Claim History Logic: If phone is provided, link all orphan sessions
-    if (phone) {
-      const result = await Session.updateMany(
-        { phone: phone, userId: { $in: [null, undefined] } },
-        { $set: { userId: req.user._id } }
-      );
-      claimedSessions = result.modifiedCount || 0;
+    if (cleanPhone || phone) {
+      claimedSessions = await claimUserSessionsByPhone(req.user._id, cleanPhone || phone);
     }
 
     const membership = await buildMembershipPayload(user.membership, req.user._id);
