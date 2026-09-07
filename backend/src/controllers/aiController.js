@@ -217,3 +217,30 @@ Do NOT include any explanation, markdown, or code blocks. Return raw JSON only.`
     });
   }
 };
+
+const { getOccupancyForecast } = require('../services/demandForecastingService');
+
+exports.getOccupancyForecast = async (req, res, next) => {
+  try {
+    const { date, hour, vehicleType, floorId } = req.query;
+    const forecast = await getOccupancyForecast({
+      date,
+      hour: hour !== undefined ? Number(hour) : undefined,
+      vehicleType,
+      floorId,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: forecast,
+    });
+  } catch (error) {
+    console.error('[AI Forecast] Error generating occupancy forecast:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate occupancy forecast',
+      error: error.message,
+    });
+  }
+};
+
