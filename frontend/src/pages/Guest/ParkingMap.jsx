@@ -233,7 +233,7 @@ export default function ParkingMap() {
             className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-gold/20 to-amber-400/20 border border-gold/40 text-gray-900 font-bold text-xs hover:bg-gold hover:text-black transition shadow-sm ml-1"
           >
             <Sparkles size={15} className="text-gold" />
-            <span className="hidden sm:inline">AI Dự Báo 24h</span>
+            <span className="hidden sm:inline">AI 24h Forecast</span>
             <span className="sm:hidden">AI 24h</span>
           </button>
         </div>
@@ -345,9 +345,9 @@ export default function ParkingMap() {
                   <Sparkles size={18} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-gray-900 dark:text-white text-base">Dự Báo Mật Độ 24h & Giờ Cao Điểm</h3>
+                  <h3 className="font-extrabold text-gray-900 dark:text-white text-base">24h AI Occupancy &amp; Peak Times Forecast</h3>
                   <p className="text-[11px] font-semibold text-gray-400">
-                    Tổng quan toàn bộ bãi đỗ xe
+                    Full parking lot overview
                   </p>
                 </div>
               </div>

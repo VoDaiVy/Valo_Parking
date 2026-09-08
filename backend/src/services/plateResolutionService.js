@@ -195,10 +195,10 @@ async function resolveUnclearPlate({ image, rawPlate = '', confidence = 50 }) {
       bookings.forEach((b) => {
         addCandidate(b.licensePlate, {
           source: 'BOOKING_TODAY',
-          ownerName: b.userId?.fullName || 'Khách đặt chỗ',
+          ownerName: b.userId?.fullName || 'Booked Customer',
           bookingInfo: {
             slot: b.parkingSlot,
-            time: `${new Date(b.scheduledStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(b.scheduledEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
+            time: `${new Date(b.scheduledStart).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })} - ${new Date(b.scheduledEnd).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`,
           },
           priorityWeight: 1.25,
         });
@@ -220,7 +220,7 @@ async function resolveUnclearPlate({ image, rawPlate = '', confidence = 50 }) {
 
         addCandidate(v.licensePlate, {
           source: 'REGISTERED_VEHICLE',
-          ownerName: v.nickname || v.owner?.fullName || v.brand || 'Xe đã đăng ký',
+          ownerName: v.nickname || v.owner?.fullName || v.brand || 'Registered Vehicle',
           phone,
           priorityWeight: 1.15,
         });
@@ -241,7 +241,7 @@ async function resolveUnclearPlate({ image, rawPlate = '', confidence = 50 }) {
         if (sub.licensePlate) {
           addCandidate(sub.licensePlate, {
             source: 'VIP_MEMBER',
-            ownerName: sub.user?.fullName || 'Thành viên VIP',
+            ownerName: sub.user?.fullName || 'VIP Member',
             priorityWeight: 1.3,
           });
         }
@@ -271,7 +271,7 @@ async function resolveUnclearPlate({ image, rawPlate = '', confidence = 50 }) {
   if (geminiResult?.cleanPlate) {
     addCandidate(geminiResult.cleanPlate, {
       source: 'AI_VISION_ENHANCED',
-      ownerName: 'Phục hồi bởi AI Vision',
+      ownerName: 'AI Vision Enhanced',
       priorityWeight: 1.2,
     });
   }
@@ -311,8 +311,8 @@ async function resolveUnclearPlate({ image, rawPlate = '', confidence = 50 }) {
   const isHighConfidence = bestMatch && bestMatch.similarityScore >= 85;
 
   const resolutionNotice = isHighConfidence
-    ? `AI đã nhận diện độ khớp cao (~${bestMatch.similarityScore}%) với biển số [${bestMatch.formattedPlate}].`
-    : `Biển số đọc thô [${formatLicensePlateDisplay(cleanInputPlate) || 'chưa rõ'}] có độ tin cậy thấp. Vui lòng chọn 1 trong các gợi ý xác suất cao bên dưới.`;
+    ? `AI matched with high confidence (~${bestMatch.similarityScore}%) for license plate [${bestMatch.formattedPlate}].`
+    : `Raw plate read [${formatLicensePlateDisplay(cleanInputPlate) || 'unknown'}] has low confidence. Please select one of the high-probability suggestions below.`;
 
   return {
     originalPlate: rawPlate,

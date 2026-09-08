@@ -254,12 +254,14 @@ const { getOccupancyForecast } = require('../services/demandForecastingService')
 
 exports.getOccupancyForecast = async (req, res, next) => {
   try {
-    const { date, hour, vehicleType, floorId } = req.query;
+    const { date, hour, vehicleType, floorId, timeframe, selectedIndex } = req.query;
     const forecast = await getOccupancyForecast({
       date,
       hour: hour !== undefined ? Number(hour) : undefined,
       vehicleType,
       floorId,
+      timeframe,
+      selectedIndex: selectedIndex !== undefined ? Number(selectedIndex) : undefined,
     });
 
     res.status(200).json({

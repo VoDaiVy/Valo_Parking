@@ -7,9 +7,11 @@ test('demandForecastingService returns valid 24h forecast structure', async () =
     date: '2026-09-08',
     hour: 14,
     vehicleType: 'car',
+    timeframe: 'day',
   });
 
   assert.ok(result, 'Result should exist');
+  assert.equal(result.timeframe, 'day');
   assert.equal(typeof result.date, 'string');
   assert.equal(typeof result.dayOfWeekName, 'string');
   assert.equal(typeof result.totalCapacity, 'number');
@@ -35,6 +37,59 @@ test('demandForecastingService returns valid 24h forecast structure', async () =
   // Peak windows
   assert.ok(Array.isArray(result.peakWindows));
   assert.ok(result.peakWindows.length > 0);
+});
+
+test('demandForecastingService returns valid 7-day weekly forecast structure', async () => {
+  const result = await getOccupancyForecast({
+    date: '2026-09-08',
+    timeframe: 'week',
+    selectedIndex: 2,
+  });
+
+  assert.ok(result, 'Result should exist');
+  assert.equal(result.timeframe, 'week');
+  assert.ok(Array.isArray(result.items));
+  assert.equal(result.items.length, 7);
+  assert.equal(result.items[0].label, 'Mon');
+  assert.equal(result.items[6].label, 'Sun');
+  assert.equal(result.selectedIndex, 2);
+  assert.ok(result.selectedItem);
+  assert.ok(result.insight);
+  assert.ok(result.insight.badgeText);
+  assert.ok(Array.isArray(result.peakWindows));
+});
+
+test('demandForecastingService returns valid monthly forecast structure', async () => {
+  const result = await getOccupancyForecast({
+    date: '2026-09-08',
+    timeframe: 'month',
+    selectedIndex: 1,
+  });
+
+  assert.ok(result, 'Result should exist');
+  assert.equal(result.timeframe, 'month');
+  assert.ok(Array.isArray(result.items));
+  assert.equal(result.items.length, 5);
+  assert.equal(result.items[0].label, 'Week 1');
+  assert.ok(result.selectedItem);
+  assert.ok(result.insight);
+});
+
+test('demandForecastingService returns valid 12-month yearly forecast structure', async () => {
+  const result = await getOccupancyForecast({
+    date: '2026-09-08',
+    timeframe: 'year',
+    selectedIndex: 8,
+  });
+
+  assert.ok(result, 'Result should exist');
+  assert.equal(result.timeframe, 'year');
+  assert.ok(Array.isArray(result.items));
+  assert.equal(result.items.length, 12);
+  assert.equal(result.items[0].label, 'Jan');
+  assert.equal(result.items[11].label, 'Dec');
+  assert.ok(result.selectedItem);
+  assert.ok(result.insight);
 });
 
 test('demandForecastingService gracefully handles undefined or empty params', async () => {

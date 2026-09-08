@@ -33,7 +33,7 @@ export default function AIPlateResolutionModal({
 
   const handleResolve = async (plateToResolve = rawPlate, imageToUse = imagePreview) => {
     if (!plateToResolve && !imageToUse) {
-      setError('Vui lòng nhập biển số đọc thô hoặc tải ảnh lên');
+      setError('Please enter a raw plate or upload an image');
       return;
     }
 
@@ -47,7 +47,7 @@ export default function AIPlateResolutionModal({
       });
       setResult(data);
     } catch (err) {
-      setError(err.message || 'Không thể giải đoán biển số');
+      setError(err.message || 'Failed to resolve plate');
     } finally {
       setLoading(false);
     }
@@ -69,31 +69,31 @@ export default function AIPlateResolutionModal({
     switch (source) {
       case 'BOOKING_TODAY':
         return {
-          label: 'Lịch Đặt Chỗ Hôm Nay',
+          label: "Today's Booking",
           icon: <Calendar size={12} />,
           cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
         };
       case 'VIP_MEMBER':
         return {
-          label: 'Vé Tháng VIP',
+          label: 'VIP Monthly Pass',
           icon: <Crown size={12} />,
           cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
         };
       case 'REGISTERED_VEHICLE':
         return {
-          label: 'Xe Đã Đăng Ký',
+          label: 'Registered Vehicle',
           icon: <Car size={12} />,
           cls: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
         };
       case 'AI_VISION_ENHANCED':
         return {
-          label: 'Phục Hồi AI Vision',
+          label: 'AI Vision Enhanced',
           icon: <Sparkles size={12} />,
           cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
         };
       default:
         return {
-          label: 'Lịch Sử Gửi Xe',
+          label: 'Recent Session',
           icon: <Clock size={12} />,
           cls: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
         };
@@ -120,14 +120,14 @@ export default function AIPlateResolutionModal({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-black tracking-tight text-white">
-                  AI Trợ Lý Xử Lý Biển Số Mờ &amp; Che Khuất
+                  AI Blurred &amp; Occluded Plate Assistant
                 </h3>
                 <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-amber-400 border border-amber-400/20">
                   ALPR Assistant
                 </span>
               </div>
               <p className="text-xs font-medium text-gray-400">
-                Tự động so khớp mờ Fuzzy Matching &amp; Gemini Vision phục hồi ảnh
+                Auto Fuzzy Matching ALPR &amp; Gemini Vision enhancement
               </p>
             </div>
           </div>
@@ -146,7 +146,7 @@ export default function AIPlateResolutionModal({
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
             <div className="sm:col-span-8 flex flex-col justify-between space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                Biển số đọc thô (Từ Camera / OCR)
+                Raw License Plate (From Camera / OCR)
               </label>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -154,7 +154,7 @@ export default function AIPlateResolutionModal({
                     type="text"
                     value={rawPlate}
                     onChange={(e) => setRawPlate(e.target.value.toUpperCase())}
-                    placeholder="VD: 51F-88B12, 30A-9O1.23..."
+                    placeholder="e.g. 51F-88B12, 30A-9O1.23..."
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-4 py-2.5 text-sm font-black tracking-wider text-white uppercase outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 placeholder:text-gray-600"
                   />
                 </div>
@@ -169,7 +169,7 @@ export default function AIPlateResolutionModal({
                   ) : (
                     <Search size={15} />
                   )}
-                  <span>AI Phân Tích</span>
+                  <span>AI Analyze</span>
                 </button>
               </div>
             </div>
@@ -177,18 +177,18 @@ export default function AIPlateResolutionModal({
             {/* Image upload preview */}
             <div className="sm:col-span-4">
               <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-1">
-                Ảnh chụp biển số
+                Plate Image
               </label>
               <label className="flex h-[42px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-3 text-xs font-semibold text-gray-300 hover:border-amber-400 hover:bg-amber-400/5 transition overflow-hidden">
                 {imagePreview ? (
                   <div className="flex items-center gap-2 truncate">
                     <img src={imagePreview} alt="Plate preview" className="h-6 w-10 object-cover rounded" />
-                    <span className="text-[11px] text-amber-400">Đã tải ảnh</span>
+                    <span className="text-[11px] text-amber-400">Image Attached</span>
                   </div>
                 ) : (
                   <>
                     <Upload size={14} className="text-amber-400" />
-                    <span>Tải ảnh mờ</span>
+                    <span>Upload Image</span>
                   </>
                 )}
                 <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
@@ -221,7 +221,7 @@ export default function AIPlateResolutionModal({
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white">
-                      {result.isResolved ? 'Nhận diện chuẩn xác cao' : 'Cần nhân viên xác nhận gợi ý'}
+                      {result.isResolved ? 'High Confidence Match' : 'Staff Verification Required'}
                     </h4>
                     <p className="mt-1 text-xs leading-relaxed opacity-90">
                       {result.resolutionNotice}
@@ -233,13 +233,13 @@ export default function AIPlateResolutionModal({
               {/* Suggestions List */}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gray-400 px-1">
-                  <span>Gợi ý biển số xác suất cao nhất ({result.topSuggestions?.length || 0})</span>
-                  <span>Độ tin cậy</span>
+                  <span>Top Predicted Candidates ({result.topSuggestions?.length || 0})</span>
+                  <span>Confidence</span>
                 </div>
 
                 {result.topSuggestions?.length === 0 ? (
                   <div className="rounded-2xl border border-white/5 bg-black/20 p-8 text-center text-xs text-gray-500">
-                    Không tìm thấy xe nào tương đồng trong cơ sở dữ liệu. Bạn có thể sử dụng biển số nhập tay.
+                    No matching vehicles found in database. You can use manual plate entry.
                   </div>
                 ) : (
                   result.topSuggestions.map((item, idx) => {
@@ -278,7 +278,7 @@ export default function AIPlateResolutionModal({
                               {item.phone && <span>📞 {item.phone}</span>}
                               {item.bookingInfo && (
                                 <span className="text-amber-400/90 font-bold">
-                                  🅿️ Ô {item.bookingInfo.slot} ({item.bookingInfo.time})
+                                  🅿️ Slot {item.bookingInfo.slot} ({item.bookingInfo.time})
                                 </span>
                               )}
                             </div>
@@ -293,7 +293,7 @@ export default function AIPlateResolutionModal({
                             }`}>
                               {item.similarityScore}%
                             </span>
-                            <span className="block text-[10px] text-gray-500 font-semibold">Khớp AI</span>
+                            <span className="block text-[10px] text-gray-500 font-semibold">AI Match</span>
                           </div>
 
                           <button
@@ -305,7 +305,7 @@ export default function AIPlateResolutionModal({
                             className="flex items-center gap-1.5 rounded-xl bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-amber-400 hover:text-black transition shadow-sm group-hover:scale-105"
                           >
                             <CheckCircle2 size={14} className="text-amber-400 group-hover:text-black" />
-                            <span>1-Click Duyệt</span>
+                            <span>1-Click Select</span>
                           </button>
                         </div>
                       </div>
@@ -321,16 +321,15 @@ export default function AIPlateResolutionModal({
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-6 py-4 text-xs text-gray-400">
-          <span>💡 Thuật toán tự động đối soát Levenshtein ALPR + Lịch đặt chỗ thời gian thực</span>
+          <span>💡 Automatic ALPR Levenshtein distance matching against real-time bookings &amp; registered vehicles</span>
           <button
             type="button"
             onClick={onClose}
             className="rounded-xl px-4 py-2 font-bold text-gray-300 hover:bg-white/10 hover:text-white transition"
           >
-            Đóng
+            Close
           </button>
         </div>
-
       </div>
     </div>
   );

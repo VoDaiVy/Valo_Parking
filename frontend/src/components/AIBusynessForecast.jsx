@@ -31,6 +31,7 @@ export default function AIBusynessForecast({
       hour: selectedHour,
       vehicleType,
       floorId,
+      timeframe: 'day',
     })
       .then((res) => {
         if (isMounted) {
@@ -41,7 +42,7 @@ export default function AIBusynessForecast({
       .catch((err) => {
         if (isMounted) {
           console.warn('[AI Forecast] Failed to fetch forecast:', err);
-          setError('Không thể tải dự báo');
+          setError('Failed to load forecast');
           setLoading(false);
         }
       });
@@ -56,7 +57,9 @@ export default function AIBusynessForecast({
       ? hoveredHour
       : selectedHour !== undefined && selectedHour !== null
       ? Number(selectedHour)
-      : data?.selectedHour || 12;
+      : data?.selectedHour !== undefined
+      ? data.selectedHour
+      : 12;
 
   const activeForecast = useMemo(() => {
     if (!data?.hourlyForecast || !Array.isArray(data.hourlyForecast)) return null;
@@ -65,33 +68,33 @@ export default function AIBusynessForecast({
 
   const activeInsight = useMemo(() => {
     if (!activeForecast) return data?.insight || {};
-    if (data?.totalCapacity === 0) return data?.insight || {};
+    const totalCap = data?.totalCapacity || 54;
 
     if (activeForecast.level === 'peak') {
       return {
-        badgeText: '🔥 Giờ cao điểm - Sốt chỗ',
+        badgeText: '🔥 Peak Hours - High Demand',
         badgeType: 'danger',
-        message: `Khung giờ ${activeForecast.timeLabel} có mật độ ~${activeForecast.busynessScore}% (chỉ còn ~${activeForecast.estimatedAvailableSlots}/${data.totalCapacity} slot khả dụng). Bạn nên đặt trước ngay để đảm bảo có vị trí!`,
+        message: `Time slot ${activeForecast.timeLabel} has ~${activeForecast.busynessScore}% occupancy (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots remaining). Booking in advance is recommended!`,
       };
     }
     if (activeForecast.level === 'high') {
       return {
-        badgeText: '⚠️ Khá đông - Slot trống giảm nhanh',
+        badgeText: '⚠️ Busy - Slots Decreasing Fast',
         badgeType: 'warning',
-        message: `Khung giờ ${activeForecast.timeLabel} có mật độ ~${activeForecast.busynessScore}% (còn ~${activeForecast.estimatedAvailableSlots}/${data.totalCapacity} slot khả dụng).`,
+        message: `Time slot ${activeForecast.timeLabel} has ~${activeForecast.busynessScore}% occupancy (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots available).`,
       };
     }
     if (activeForecast.level === 'moderate') {
       return {
-        badgeText: '✨ Ổn định - Nhiều chỗ trống',
+        badgeText: '✨ Moderate - Normal Availability',
         badgeType: 'info',
-        message: `Khung giờ ${activeForecast.timeLabel} mật độ ~${activeForecast.busynessScore}% (còn ~${activeForecast.estimatedAvailableSlots}/${data.totalCapacity} slot khả dụng). Dễ dàng tìm được vị trí đỗ thuận tiện.`,
+        message: `Time slot ${activeForecast.timeLabel} has ~${activeForecast.busynessScore}% occupancy (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots available). Easy parking.`,
       };
     }
     return {
-      badgeText: '⚡ Giờ thấp điểm - Đỗ xe siêu tốc',
+      badgeText: '⚡ Off-Peak - Fast & Open Parking',
       badgeType: 'success',
-      message: `Khung giờ ${activeForecast.timeLabel} rất vắng (còn ~${activeForecast.estimatedAvailableSlots}/${data.totalCapacity} slot khả dụng). Check-in cực nhanh.`,
+      message: `Time slot ${activeForecast.timeLabel} is very quiet (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots available). Lightning-fast check-in.`,
     };
   }, [activeForecast, data]);
 
@@ -158,14 +161,14 @@ export default function AIBusynessForecast({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h4 className="text-sm font-extrabold text-gray-900 dark:text-white tracking-tight">
-                AI Dự Báo Mật Độ & Giờ Cao Điểm
+                AI 24h Occupancy &amp; Peak Times Forecast
               </h4>
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gold/15 text-yellow-800 dark:text-gold border border-gold/30">
                 Popular Times
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
-              Dự báo theo lưu lượng thực tế {data.dayOfWeekName} ({data.date})
+              Forecast based on real historical traffic for {data.dayOfWeekName} ({data.date})
             </p>
           </div>
         </div>
@@ -174,7 +177,7 @@ export default function AIBusynessForecast({
         {data.peakWindows && data.peakWindows.length > 0 && (
           <div className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300">
             <TrendingUp size={13} className="text-rose-500 shrink-0" />
-            <span>Cao điểm: {data.peakWindows.join(' & ')}</span>
+            <span>Peak: {data.peakWindows.join(' & ')}</span>
           </div>
         )}
       </div>
@@ -196,16 +199,12 @@ export default function AIBusynessForecast({
                   isSelected ? 'scale-110 z-10' : 'hover:scale-105 opacity-80 hover:opacity-100'
                 }`}
               >
-                {/* Floating tooltip on hover / select */}
-                <div
-                  className={`absolute -top-9 z-20 pointer-events-none px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-lg transition-all duration-150 ${
-                    isSelected
-                      ? 'bg-gray-900 text-white dark:bg-gold dark:text-charcoal scale-100 opacity-100'
-                      : 'bg-gray-800 text-white opacity-0 group-hover:opacity-100 group-hover:scale-100 scale-75'
-                  }`}
-                >
-                  {item.timeLabel}: {item.busynessScore}% bận
-                </div>
+                {/* Floating tooltip only for selected bar */}
+                {isSelected && (
+                  <div className="absolute -top-9 z-20 pointer-events-none px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-lg bg-gray-900 text-white dark:bg-gold dark:text-charcoal scale-100 opacity-100 transition-all duration-150">
+                    {item.timeLabel}: {item.busynessScore}% busy
+                  </div>
+                )}
 
                 {/* Animated bar */}
                 <div
@@ -255,10 +254,10 @@ export default function AIBusynessForecast({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-black text-sm tracking-tight">
-                  {activeInsight.badgeText || `Khung giờ ${activeForecast.timeLabel}`}
+                  {activeInsight.badgeText || `Time slot ${activeForecast.timeLabel}`}
                 </span>
                 <span className="text-xs font-semibold opacity-75">
-                  (Mật độ ~{activeForecast.busynessScore}%)
+                  (Occupancy ~{activeForecast.busynessScore}%)
                 </span>
               </div>
               <p className="text-xs font-medium mt-0.5 leading-relaxed text-gray-700 dark:text-gray-300">
@@ -269,9 +268,9 @@ export default function AIBusynessForecast({
 
           {/* Quick slot availability count */}
           <div className="flex sm:flex-col items-center sm:items-end justify-between shrink-0 pl-2 border-t sm:border-t-0 sm:border-l border-gray-200/70 dark:border-white/10 pt-2 sm:pt-0">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">Chỗ trống ước tính</span>
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">Estimated Available</span>
             <span className="text-sm font-black text-yellow-700 dark:text-gold">
-              ~{activeForecast.estimatedAvailableSlots} / {data.totalCapacity} slot
+              ~{activeForecast.estimatedAvailableSlots} / {data.totalCapacity || 54} slots
             </span>
           </div>
         </div>
@@ -281,17 +280,17 @@ export default function AIBusynessForecast({
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-3 pt-2 px-1">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Vắng (&lt;35%)
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Low (&lt;35%)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Ổn định
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Moderate
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> Cao điểm (&gt;80%)
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> Peak (&gt;80%)
           </span>
         </div>
         <span className="hidden sm:inline-block text-gray-500 dark:text-gray-400 italic">
-          💡 Click vào cột giờ để chọn thời gian đặt chỗ
+          💡 Click on an hourly bar to select booking time
         </span>
       </div>
     </div>

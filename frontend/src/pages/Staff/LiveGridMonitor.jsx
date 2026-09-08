@@ -150,7 +150,7 @@ export default function LiveGridMonitor() {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition"
         >
           <Sparkles size={14} className="text-amber-400" />
-          <span>AI Biển Số Mờ</span>
+          <span>AI Plate Assistant</span>
         </button>
       </div>
 
