@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import { getAllFloors, getFloorSlots } from "../../services/parkingFloorService";
 import { getActiveSessions } from "../../services/sessionService";
-import { MonitorCheck, X } from "lucide-react";
+import { MonitorCheck, Sparkles, X } from "lucide-react";
 import StaffCheckoutModal from "./StaffCheckoutModal";
 import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings } from "../../services/bookingService";
 import { getRequiredSourcesAvailability } from "../../utils/staffOperationalAvailability";
 import StaffDropdown from "./components/StaffDropdown.jsx";
 import { STAFF_THEME } from "./components/staffTheme.js";
+import AIPlateResolutionModal from "./components/AIPlateResolutionModal.jsx";
 
 export default function LiveGridMonitor() {
   const [floors, setFloors] = useState([]);
@@ -22,6 +23,7 @@ export default function LiveGridMonitor() {
   const [activeBookings, setActiveBookings] = useState([]);
   const [dbSlots, setDbSlots] = useState([]);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showAiModal, setShowAiModal] = useState(false);
 
   useEffect(() => {
     document.body.classList.add("bg-[#080808]");
@@ -99,9 +101,12 @@ export default function LiveGridMonitor() {
     const timerId = window.setTimeout(() => {
       fetchLiveStatus();
     }, 0);
-    const interval = setInterval(fetchLiveStatus, 15000); // refresh every 15s
+    return () => window.clearTimeout(timerId);
+  }, [fetchLiveStatus]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchLiveStatus, 5000);
     return () => {
-      window.clearTimeout(timerId);
       clearInterval(interval);
     };
   }, [fetchLiveStatus]);
@@ -131,12 +136,22 @@ export default function LiveGridMonitor() {
           buttonClassName="bg-black/40 text-xs font-bold uppercase tracking-wide"
           menuClassName="w-full min-w-[220px]"
         />
-        <div className="flex items-center gap-1.5 px-3">
+        <div className="flex items-center gap-1.5 px-3 border-r border-white/10">
             <div className={`w-2 h-2 rounded-full ${liveDataAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
             <span className={`text-[10px] font-mono ${liveDataAvailable ? 'text-gray-400' : 'text-red-400'}`}>
               {liveDataAvailable ? 'LIVE UPDATE' : 'LIVE DATA UNAVAILABLE'}
             </span>
         </div>
+
+        {/* AI Plate Assistant Button */}
+        <button
+          type="button"
+          onClick={() => setShowAiModal(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition"
+        >
+          <Sparkles size={14} className="text-amber-400" />
+          <span>AI Plate Assistant</span>
+        </button>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
@@ -286,6 +301,15 @@ export default function LiveGridMonitor() {
           }}
         />
       )}
+
+      {/* AI Blurred Plate Resolution Modal */}
+      <AIPlateResolutionModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        onSelectPlate={(selectedPlate) => {
+          console.log('[LiveGrid] AI Plate resolved:', selectedPlate);
+        }}
+      />
     </div>
   );
 }

@@ -335,7 +335,8 @@ export default function LoginPage() {
       `&redirect_uri=${redirectUri}` +
       `&response_type=id_token` +
       `&scope=${scope}` +
-      `&nonce=${nonce}`;
+      `&nonce=${nonce}` +
+      `&prompt=select_account`;
 
     const popup = window.open(oauthUrl, 'google-oauth', 'width=500,height=600,left=200,top=100');
 

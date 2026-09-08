@@ -18,7 +18,7 @@ const bookingRefundService = require('../services/bookingRefundService');
 const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrService');
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
-const { normalizePhone, getPhoneVariants, claimUserSessionsByPhone } = require('../utils/phoneUtils');
+const { normalizePhone, getPhoneRegex, getPhoneVariants, getPhoneSearchConditions, claimUserSessionsByPhone } = require('../utils/phoneUtils');
 
 const normalizeSlotCode = (slotCode = '') => String(slotCode || '').trim().toUpperCase();
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
@@ -1100,7 +1100,10 @@ exports.verifyPhone = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Phone is required' });
     }
 
-    const pastSession = await Session.findOne({ phone: phone }).sort({ checkInTime: -1 }).lean();
+    const phoneConditions = getPhoneSearchConditions(phone);
+    const phoneQuery = phoneConditions.length === 1 ? phoneConditions[0] : { $or: phoneConditions };
+
+    const pastSession = await Session.findOne(phoneQuery).sort({ checkInTime: -1 }).lean();
 
     if (pastSession) {
       return res.status(200).json({
@@ -1508,11 +1511,14 @@ exports.getMyHistory = async (req, res, next) => {
       { bookingId: { $in: myBookings } }
     ];
 
-    if (userDetail?.phone) {
-      const phoneVariants = getPhoneVariants(userDetail.phone);
-      // Auto-claim any orphan session for this user phone
-      await claimUserSessionsByPhone(req.user._id, userDetail.phone);
-      orConditions.push({ phone: { $in: phoneVariants } });
+    const userPhone = userDetail?.phone || req.user?.phone;
+    if (userPhone && String(userPhone).trim() !== '') {
+      // Auto-claim any orphan/unclaimed session for this user phone
+      await claimUserSessionsByPhone(req.user._id, userPhone);
+      const phoneConditions = getPhoneSearchConditions(userPhone);
+      if (phoneConditions.length) {
+        orConditions.push(...phoneConditions);
+      }
     }
 
     const sessions = await Session.find({

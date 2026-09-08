@@ -20,6 +20,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
+import AIBusynessForecast from '../../components/AIBusynessForecast';
 
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
@@ -1523,6 +1524,22 @@ export default function CreateBookingPage() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* AI 24h Busyness & Popular Times Forecast */}
+              <div className="mt-4">
+                <AIBusynessForecast
+                  selectedDate={startDate}
+                  selectedHour={parseInt(startTimeStr?.split(':')[0] || 12, 10)}
+                  vehicleType={
+                    vehicles.find((v) => v._id === vehicleId)?.type ||
+                    'car'
+                  }
+                  onSelectHour={(hour) => {
+                    const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
+                    handleStartChange(startDate, nextTimeStr);
+                  }}
+                />
               </div>
 
               <div className="mt-4">

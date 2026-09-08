@@ -93,6 +93,11 @@ export default function ParkingHistory() {
     return `${diffHrs}h ${diffMins}m`;
   };
 
+  const formatMoney = (value) => {
+    if (value === undefined || value === null) return "—";
+    return `${Number(value || 0).toLocaleString("vi-VN")} VND`;
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString("en-US", {
       month: "short",
@@ -260,7 +265,7 @@ export default function ParkingHistory() {
                       <span className="text-[10px] font-bold uppercase tracking-wider">TOTAL</span>
                     </div>
                     <p className="text-sm font-bold text-yellow-400">
-                      {session.totalPrice ? `$${session.totalPrice.toFixed(2)}` : "—"}
+                      {formatMoney(session.totalPrice)}
                     </p>
                   </div>
                 </div>
@@ -302,8 +307,8 @@ export default function ParkingHistory() {
                 </h2>
                 <p className="text-sm text-gray-400 mt-2">
                   Slot {selectedSession.parkingSlot || "Unassigned"} •{" "}
-                  {selectedSession.totalPrice
-                    ? `$${selectedSession.totalPrice.toFixed(2)}`
+                  {selectedSession.totalPrice !== undefined && selectedSession.totalPrice !== null
+                    ? formatMoney(selectedSession.totalPrice)
                     : "No charge"}
                 </p>
               </div>

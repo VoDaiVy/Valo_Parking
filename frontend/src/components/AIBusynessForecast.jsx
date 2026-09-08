@@ -1,0 +1,298 @@
+import { useEffect, useState, useMemo } from 'react';
+import {
+  Sparkles,
+  TrendingUp,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
+import { getOccupancyForecast } from '../services/aiForecastService';
+
+export default function AIBusynessForecast({
+  selectedDate,
+  selectedHour,
+  vehicleType = 'car',
+  floorId,
+  onSelectHour,
+  compact = false,
+}) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [hoveredHour, setHoveredHour] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+    setError(null);
+
+    getOccupancyForecast({
+      date: selectedDate,
+      hour: selectedHour,
+      vehicleType,
+      floorId,
+      timeframe: 'day',
+    })
+      .then((res) => {
+        if (isMounted) {
+          setData(res);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          console.warn('[AI Forecast] Failed to fetch forecast:', err);
+          setError('Failed to load forecast');
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedDate, selectedHour, vehicleType, floorId]);
+
+  const activeHour =
+    hoveredHour !== null
+      ? hoveredHour
+      : selectedHour !== undefined && selectedHour !== null
+      ? Number(selectedHour)
+      : data?.selectedHour !== undefined
+      ? data.selectedHour
+      : 12;
+
+  const activeForecast = useMemo(() => {
+    if (!data?.hourlyForecast || !Array.isArray(data.hourlyForecast)) return null;
+    return data.hourlyForecast.find((f) => f.hour === activeHour) || data.selectedForecast;
+  }, [data, activeHour]);
+
+  const activeInsight = useMemo(() => {
+    if (!activeForecast) return data?.insight || {};
+    const totalCap = data?.totalCapacity || 54;
+
+    if (activeForecast.level === 'peak') {
+      return {
+        badgeText: '🔥 Peak Hours - High Demand',
+        badgeType: 'danger',
+        message: `Time slot ${activeForecast.timeLabel} has ~${activeForecast.busynessScore}% occupancy (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots remaining). Booking in advance is recommended!`,
+      };
+    }
+    if (activeForecast.level === 'high') {
+      return {
+        badgeText: '⚠️ Busy - Slots Decreasing Fast',
+        badgeType: 'warning',
+        message: `Time slot ${activeForecast.timeLabel} has ~${activeForecast.busynessScore}% occupancy (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots available).`,
+      };
+    }
+    if (activeForecast.level === 'moderate') {
+      return {
+        badgeText: '✨ Moderate - Normal Availability',
+        badgeType: 'info',
+        message: `Time slot ${activeForecast.timeLabel} has ~${activeForecast.busynessScore}% occupancy (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots available). Easy parking.`,
+      };
+    }
+    return {
+      badgeText: '⚡ Off-Peak - Fast & Open Parking',
+      badgeType: 'success',
+      message: `Time slot ${activeForecast.timeLabel} is very quiet (~${activeForecast.estimatedAvailableSlots}/${totalCap} slots available). Lightning-fast check-in.`,
+    };
+  }, [activeForecast, data]);
+
+  // Color mapping based on busyness score
+  const getBarColor = (score, isSelected) => {
+    if (score >= 80)
+      return isSelected
+        ? 'bg-rose-500 shadow-md shadow-rose-500/30 ring-2 ring-rose-400'
+        : 'bg-rose-400/80 hover:bg-rose-500';
+    if (score >= 60)
+      return isSelected
+        ? 'bg-amber-500 shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
+        : 'bg-amber-400/80 hover:bg-amber-500';
+    if (score >= 35)
+      return isSelected
+        ? 'bg-yellow-400 shadow-md shadow-yellow-400/30 ring-2 ring-yellow-300'
+        : 'bg-yellow-300/80 hover:bg-yellow-400';
+    return isSelected
+      ? 'bg-emerald-500 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
+      : 'bg-emerald-400/80 hover:bg-emerald-500';
+  };
+
+  const getBadgeStyle = (type) => {
+    switch (type) {
+      case 'danger':
+        return 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/40 text-rose-800 dark:text-rose-300';
+      case 'warning':
+        return 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/40 text-amber-800 dark:text-amber-300';
+      case 'success':
+        return 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300';
+      default:
+        return 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/40 text-blue-800 dark:text-blue-300';
+    }
+  };
+
+  if (loading && !data) {
+    return (
+      <div className="bg-white dark:bg-charcoal border border-gray-200 dark:border-white/10 rounded-2xl p-5 shadow-sm animate-pulse">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-5 h-5 rounded-full bg-gold/20" />
+          <div className="h-4 w-48 bg-gray-200 dark:bg-white/10 rounded" />
+        </div>
+        <div className="h-28 bg-gray-100 dark:bg-white/5 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (error || !data || !Array.isArray(data.hourlyForecast)) {
+    return null;
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#15161A] border border-gray-200 dark:border-white/10 p-4 sm:p-5 shadow-sm dark:shadow-xl transition-colors duration-200">
+      
+      {/* Background ambient decorative gold glow */}
+      <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 rounded-full bg-gold/10 blur-3xl pointer-events-none" />
+
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3.5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gold/15 dark:bg-gold/20 flex items-center justify-center text-yellow-700 dark:text-gold font-bold shadow-sm">
+            <Sparkles size={16} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm font-extrabold text-gray-900 dark:text-white tracking-tight">
+                AI 24h Occupancy &amp; Peak Times Forecast
+              </h4>
+              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gold/15 text-yellow-800 dark:text-gold border border-gold/30">
+                Popular Times
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
+              Forecast based on real historical traffic for {data.dayOfWeekName} ({data.date})
+            </p>
+          </div>
+        </div>
+
+        {/* Peak windows badge */}
+        {data.peakWindows && data.peakWindows.length > 0 && (
+          <div className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300">
+            <TrendingUp size={13} className="text-rose-500 shrink-0" />
+            <span>Peak: {data.peakWindows.join(' & ')}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── 24h Interactive Bar Chart ── */}
+      <div className="bg-gray-50 dark:bg-black/30 border border-gray-100 dark:border-white/5 rounded-xl p-3 sm:p-4 mb-3.5">
+        <div className="flex items-end justify-between gap-1 h-24 sm:h-28 pt-4 px-1">
+          {data.hourlyForecast.map((item) => {
+            const isSelected = item.hour === activeHour;
+            const barHeight = `${Math.max(12, item.busynessScore)}%`;
+
+            return (
+              <div
+                key={item.hour}
+                onClick={() => onSelectHour && onSelectHour(item.hour)}
+                onMouseEnter={() => setHoveredHour(item.hour)}
+                onMouseLeave={() => setHoveredHour(null)}
+                className={`group relative flex-1 flex flex-col items-center justify-end h-full cursor-pointer transition-all duration-150 ${
+                  isSelected ? 'scale-110 z-10' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                }`}
+              >
+                {/* Floating tooltip only for selected bar */}
+                {isSelected && (
+                  <div className="absolute -top-9 z-20 pointer-events-none px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-lg bg-gray-900 text-white dark:bg-gold dark:text-charcoal scale-100 opacity-100 transition-all duration-150">
+                    {item.timeLabel}: {item.busynessScore}% busy
+                  </div>
+                )}
+
+                {/* Animated bar */}
+                <div
+                  style={{ height: barHeight }}
+                  className={`w-full max-w-[14px] rounded-t-md transition-all duration-300 ${getBarColor(
+                    item.busynessScore,
+                    isSelected
+                  )}`}
+                />
+
+                {/* Selected active indicator */}
+                {isSelected && (
+                  <div className="absolute -bottom-1.5 w-1.5 h-1.5 rounded-full bg-gold animate-ping" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* X-axis time labels */}
+        <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 font-bold px-1 mt-2.5 pt-1.5 border-t border-gray-200/60 dark:border-white/5">
+          <span>00:00</span>
+          <span>06:00</span>
+          <span>12:00</span>
+          <span>18:00</span>
+          <span>23:00</span>
+        </div>
+      </div>
+
+      {/* ── Active Hour AI Insight Card ── */}
+      {activeForecast && (
+        <div
+          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border transition-all duration-200 ${getBadgeStyle(
+            activeInsight.badgeType
+          )}`}
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-white/80 dark:bg-white/10 shadow-sm shrink-0">
+              {activeForecast.level === 'peak' ? (
+                <ShieldAlert size={18} className="text-rose-600 dark:text-rose-400" />
+              ) : activeForecast.level === 'high' ? (
+                <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400" />
+              ) : (
+                <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-black text-sm tracking-tight">
+                  {activeInsight.badgeText || `Time slot ${activeForecast.timeLabel}`}
+                </span>
+                <span className="text-xs font-semibold opacity-75">
+                  (Occupancy ~{activeForecast.busynessScore}%)
+                </span>
+              </div>
+              <p className="text-xs font-medium mt-0.5 leading-relaxed text-gray-700 dark:text-gray-300">
+                {activeInsight.message}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick slot availability count */}
+          <div className="flex sm:flex-col items-center sm:items-end justify-between shrink-0 pl-2 border-t sm:border-t-0 sm:border-l border-gray-200/70 dark:border-white/10 pt-2 sm:pt-0">
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">Estimated Available</span>
+            <span className="text-sm font-black text-yellow-700 dark:text-gold">
+              ~{activeForecast.estimatedAvailableSlots} / {data.totalCapacity || 54} slots
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Legend & Advice */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-3 pt-2 px-1">
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Low (&lt;35%)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Moderate
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> Peak (&gt;80%)
+          </span>
+        </div>
+        <span className="hidden sm:inline-block text-gray-500 dark:text-gray-400 italic">
+          💡 Click on an hourly bar to select booking time
+        </span>
+      </div>
+    </div>
+  );
+}

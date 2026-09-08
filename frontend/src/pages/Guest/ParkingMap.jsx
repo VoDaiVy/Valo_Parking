@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
 import ParkingMapGrid from '../../components/ParkingMapGrid';
 import { getLiveMapData, getAllFloors } from '../../services/parkingFloorService';
-import { Car, ChevronDown, X, LayoutDashboard } from 'lucide-react';
+import { Car, ChevronDown, X, LayoutDashboard, Sparkles } from 'lucide-react';
+import AIBusynessForecast from '../../components/AIBusynessForecast';
 
 const MapFloorPicker = ({ floors, value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -103,6 +104,7 @@ export default function ParkingMap() {
   const [liveData, setLiveData] = useState([]);
   
   const [showGuestModal, setShowGuestModal] = useState(false);
+  const [showForecastModal, setShowForecastModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [dbSlots, setDbSlots] = useState([]);
 
@@ -223,6 +225,17 @@ export default function ParkingMap() {
             <span className="text-sm font-black text-amber-600">{maintenanceSlotsCount}</span>
             <span className="text-[9px] font-bold text-amber-600 uppercase tracking-widest">Maintenance</span>
           </div>
+
+          {/* AI 24h Forecast Button */}
+          <button
+            type="button"
+            onClick={() => setShowForecastModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-gold/20 to-amber-400/20 border border-gold/40 text-gray-900 font-bold text-xs hover:bg-gold hover:text-black transition shadow-sm ml-1"
+          >
+            <Sparkles size={15} className="text-gold" />
+            <span className="hidden sm:inline">AI 24h Forecast</span>
+            <span className="sm:hidden">AI 24h</span>
+          </button>
         </div>
       </div>
 
@@ -313,6 +326,40 @@ export default function ParkingMap() {
               >
                 Go to Login
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI 24h Forecast Modal */}
+      {showForecastModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity"
+            onClick={() => setShowForecastModal(false)}
+          />
+          <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-charcoal rounded-3xl overflow-hidden shadow-2xl border border-gray-200 dark:border-white/10 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-4 px-6 border-b border-gray-100 dark:border-white/10 bg-gray-50/70 dark:bg-transparent">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gold/15 dark:bg-gold/20 flex items-center justify-center text-yellow-700 dark:text-gold shadow-sm">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-gray-900 dark:text-white text-base">24h AI Occupancy &amp; Peak Times Forecast</h3>
+                  <p className="text-[11px] font-semibold text-gray-400">
+                    Full parking lot overview
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowForecastModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6 max-h-[80vh] overflow-y-auto time-scrollbar">
+              <AIBusynessForecast vehicleType="all" />
             </div>
           </div>
         </div>
