@@ -218,6 +218,38 @@ Do NOT include any explanation, markdown, or code blocks. Return raw JSON only.`
   }
 };
 
+const { resolveUnclearPlate } = require('../services/plateResolutionService');
+
+exports.resolveUnclearPlate = async (req, res) => {
+  try {
+    const { image, rawPlate, confidence } = req.body;
+    if (!image && !rawPlate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either image or rawPlate is required',
+      });
+    }
+
+    const resolution = await resolveUnclearPlate({
+      image,
+      rawPlate,
+      confidence: confidence !== undefined ? Number(confidence) : 50,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: resolution,
+    });
+  } catch (error) {
+    console.error('[AI Plate Resolution] Error resolving plate:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resolve license plate',
+      error: error.message,
+    });
+  }
+};
+
 const { getOccupancyForecast } = require('../services/demandForecastingService');
 
 exports.getOccupancyForecast = async (req, res, next) => {

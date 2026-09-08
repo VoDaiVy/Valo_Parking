@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
+import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 
 export default function SessionManagement() {
   const [sessions, setSessions] = useState([]);
@@ -13,6 +14,9 @@ export default function SessionManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiInitialPlate, setAiInitialPlate] = useState('');
+  const [aiInitialImage, setAiInitialImage] = useState(null);
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -76,11 +80,25 @@ export default function SessionManagement() {
 
   return (
     <div className="min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mb-7 flex items-center justify-between">
+      <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#ffd555]">Session Management</h1>
           <p className="mt-0.5 text-sm font-medium text-white/40">Monitor vehicle entry/exit and security images.</p>
         </div>
+
+        {/* AI Blurred Plate Assistant Button */}
+        <button
+          type="button"
+          onClick={() => {
+            setAiInitialPlate(searchQuery || '');
+            setAiInitialImage(null);
+            setShowAiModal(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-lg shadow-yellow-500/10 shrink-0"
+        >
+          <Sparkles size={16} className="text-amber-400 animate-pulse" />
+          <span>AI Trợ Lý Biển Số Mờ</span>
+        </button>
       </div>
 
       <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0b0b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -358,6 +376,18 @@ export default function SessionManagement() {
           </div>
         </div>
       )}
+
+      {/* AI Blurred Plate Resolution Modal */}
+      <AIPlateResolutionModal
+        isOpen={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        initialPlate={aiInitialPlate}
+        initialImage={aiInitialImage}
+        onSelectPlate={(selectedPlate) => {
+          setSearchQuery(selectedPlate);
+          setCurrentPage(1);
+        }}
+      />
     </div>
   );
 }
