@@ -29,15 +29,15 @@ export default function StaffDropdown({
             type="button"
             disabled={disabled || normalizedOptions.length === 0}
             aria-label={ariaLabel}
-            className={`flex h-11 w-full items-center gap-2 rounded-xl border bg-[#111] px-3 text-sm font-semibold text-white/75 shadow-sm outline-none transition-all hover:bg-white/[0.04] hover:text-white focus:ring-2 focus:ring-[#ffd555]/20 disabled:cursor-not-allowed disabled:opacity-50 ${
-              open ? 'border-[#ffd555]/55 text-white ring-1 ring-[#ffd555]/20' : 'border-white/[0.10] hover:border-[#ffd555]/30'
+            className={`flex h-11 w-full items-center gap-2 rounded-xl border bg-[#111] px-3 text-sm font-semibold text-white/75 shadow-sm outline-none transition-all hover:bg-white/[0.04] hover:text-white focus:ring-2 focus:ring-[#34d399]/20 disabled:cursor-not-allowed disabled:opacity-50 ${
+              open ? 'border-[#34d399]/55 text-white ring-1 ring-[#34d399]/20' : 'border-white/[0.10] hover:border-[#34d399]/30'
             } ${buttonClassName}`}
           >
-            {Icon && <Icon size={16} className="shrink-0 text-[#d7b94a]/75" />}
+            {Icon && <Icon size={16} className="shrink-0 text-[#7ee7c2]/75" />}
             <span className="min-w-0 flex-1 truncate text-left">{selectedOption?.label || 'Select option'}</span>
             <ChevronDown
               size={15}
-              className={`shrink-0 text-white/40 transition-transform duration-200 ${open ? 'rotate-180 text-[#d7b94a]' : ''}`}
+              className={`shrink-0 text-white/40 transition-transform duration-200 ${open ? 'rotate-180 text-[#7ee7c2]' : ''}`}
             />
           </Menu.Button>
 
@@ -51,7 +51,7 @@ export default function StaffDropdown({
             leaveTo="scale-95 opacity-0 -translate-y-1"
           >
             <Menu.Items
-              className={`absolute z-[90] max-h-64 min-w-full overflow-y-auto rounded-xl border border-[#ffd555]/20 bg-[#111]/[0.98] p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl outline-none [scrollbar-color:rgba(255,213,85,.25)_transparent] [scrollbar-width:thin] ${horizontalPosition} ${verticalPosition} ${menuClassName}`}
+              className={`absolute z-[90] max-h-64 min-w-full overflow-y-auto rounded-xl border border-[#34d399]/20 bg-[#111]/[0.98] p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl outline-none [scrollbar-color:rgba(52,211,153,.25)_transparent] [scrollbar-width:thin] ${horizontalPosition} ${verticalPosition} ${menuClassName}`}
             >
               {normalizedOptions.map((option) => (
                 <Menu.Item key={String(option.value)} disabled={option.disabled}>
@@ -60,11 +60,11 @@ export default function StaffDropdown({
                       type="button"
                       onClick={() => onChange(option.value)}
                       className={`flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                        focus ? 'bg-[#ffd555]/10 text-[#ffe58a]' : 'text-white/70'
+                        focus ? 'bg-[#34d399]/10 text-[#d1fae5]' : 'text-white/70'
                       } ${itemDisabled ? 'cursor-not-allowed opacity-35' : ''}`}
                     >
                       {value === option.value
-                        ? <Check size={14} className="shrink-0 text-[#ffd555]" />
+                        ? <Check size={14} className="shrink-0 text-[#34d399]" />
                         : <span className="h-3.5 w-3.5 shrink-0" />}
                       <span className="font-medium">{option.label}</span>
                     </button>

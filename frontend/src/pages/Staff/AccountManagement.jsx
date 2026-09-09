@@ -17,12 +17,12 @@ import {
 const ROLES = {
   customer: {
     label: 'Customer',
-    gradient: 'from-[#ffd555] to-amber-500',
-    bg: 'bg-[#ffd555]/15',
-    border: 'border-[#ffd555]/40',
-    text: 'text-[#ffd555]',
-    glow: 'rgba(255,213,85,0.4)',
-    dot: 'bg-[#ffd555]',
+    gradient: 'from-[#34d399] to-emerald-500',
+    bg: 'bg-[#34d399]/15',
+    border: 'border-[#34d399]/40',
+    text: 'text-[#34d399]',
+    glow: 'rgba(52,211,153,0.4)',
+    dot: 'bg-[#34d399]',
     permissions: ['View parking spots', 'Create reservations', 'Manage own bookings', 'Payment history'],
   },
   staff: {
@@ -90,8 +90,8 @@ function StatusBadge({ status }) {
     );
   if (status === 'pending')
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 border border-amber-400/30 text-amber-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />Pending
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Pending
       </span>
     );
   return (
@@ -418,17 +418,17 @@ export default function AccountManagement() {
         ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
         .row-hover { transition: background 0.18s, transform 0.18s, box-shadow 0.18s; }
         .row-hover:hover { background: rgba(255,255,255,0.035); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-        .btn-glow-gold:hover { box-shadow: 0 0 20px rgba(255,213,85,0.45); }
+        .btn-glow-gold:hover { box-shadow: 0 0 20px rgba(52,211,153,0.45); }
         .btn-glow-red:hover  { box-shadow: 0 0 20px rgba(239,68,68,0.4); }
         .btn-glow-green:hover{ box-shadow: 0 0 20px rgba(16,185,129,0.4); }
         .header-sweep {
-          background: linear-gradient(135deg, #0d0d0d 0%, #111 40%, #161410 70%, #0d0d0d 100%);
+          background: linear-gradient(135deg, #0d0d0d 0%, #111 40%, #0d1c18 70%, #0d0d0d 100%);
           position: relative; overflow: hidden;
         }
         .header-sweep::before {
           content: '';
           position: absolute; inset: 0;
-          background: linear-gradient(105deg, transparent 30%, rgba(255,213,85,0.04) 50%, transparent 70%);
+          background: linear-gradient(105deg, transparent 30%, rgba(52,211,153,0.04) 50%, transparent 70%);
           animation: sweepAnim 4s ease-in-out infinite;
         }
         @keyframes sweepAnim {
@@ -444,8 +444,8 @@ export default function AccountManagement() {
         <div className="bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-[#ffd555] tracking-tight">Customer Management</h1>
-              <p className="text-sm text-white/40 mt-0.5">Manage customer accounts and access permissions</p>
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Customer Management</h1>
+              <p className="mt-1 text-sm font-medium text-white/40">Manage customer accounts and access permissions</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
@@ -457,7 +457,7 @@ export default function AccountManagement() {
             <StatCard icon={Users} label="Total Customers" value={totalAccounts} gradient="from-cyan-400 to-blue-500" glow="rgba(6,182,212,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
             <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
             <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} gradient="from-rose-500 to-red-600" glow="rgba(239,68,68,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} gradient="from-amber-400 to-orange-500" glow="rgba(251,191,36,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} gradient="from-emerald-400 to-teal-500" glow="rgba(52,211,153,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
           </div>
         </div>
 
@@ -468,7 +468,7 @@ export default function AccountManagement() {
             <input
               value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
               placeholder="Search name, email, phone..."
-              className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
+              className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#34d399]/50 focus:ring-1 focus:ring-[#34d399]/30 transition-all shadow-inner"
             />
           </div>
 
@@ -477,25 +477,28 @@ export default function AccountManagement() {
             
             {/* Status Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
-                <Eye size={14} className="text-white/40" />
+              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#34d399]/25 bg-[#0d1715] text-sm text-white hover:border-[#34d399]/40 hover:bg-[#11231d] hover:text-white transition-all shadow-[0_0_20px_rgba(52,211,153,0.08)]">
+                <Eye size={14} className="text-[#34d399]" />
                 <span className="font-medium">{filterStatus === 'all' ? 'All Status' : filterStatus === 'active' ? 'Active' : 'Blocked'}</span>
-                <ChevronDown size={14} className="text-white/40" />
+                <ChevronDown size={14} className="text-white/60" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
-                <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
+                <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl border border-white/10 bg-[#111] shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => (
-                      <Menu.Item key={v}>
-                        {({ active }) => (
-                          <button onClick={() => { setFilterStatus(v); setPage(1); }}
-                            className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
-                            {filterStatus === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
-                          </button>
-                        )}
-                      </Menu.Item>
-                    ))}
+                    {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => {
+                      const selected = filterStatus === v;
+                      return (
+                        <Menu.Item key={v}>
+                          {({ active }) => (
+                            <button onClick={() => { setFilterStatus(v); setPage(1); }}
+                              className={`${selected ? 'bg-[#34d399]/10 text-white border border-[#34d399]/20' : active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
+                              {selected ? <Check size={14} className="text-[#34d399]" /> : <div className="w-3.5" />}
+                              {l}
+                            </button>
+                          )}
+                        </Menu.Item>
+                      );
+                    })}
                   </div>
                 </Menu.Items>
               </Transition>
@@ -503,25 +506,28 @@ export default function AccountManagement() {
 
             {/* Sort Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
-                <Clock size={14} className="text-white/40" />
+              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#34d399]/25 bg-[#0d1715] text-sm text-white hover:border-[#34d399]/40 hover:bg-[#11231d] hover:text-white transition-all shadow-[0_0_20px_rgba(52,211,153,0.08)]">
+                <Clock size={14} className="text-[#34d399]" />
                 <span className="font-medium"> {sortOrder === 'newest' ? 'Newest' : 'Oldest'}</span>
-                <ChevronDown size={14} className="text-white/40" />
+                <ChevronDown size={14} className="text-white/60" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
-                <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
+                <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl border border-white/10 bg-[#111] shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => (
-                      <Menu.Item key={v}>
-                        {({ active }) => (
-                          <button onClick={() => { setSortOrder(v); setPage(1); }}
-                            className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
-                            {sortOrder === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
-                          </button>
-                        )}
-                      </Menu.Item>
-                    ))}
+                    {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => {
+                      const selected = sortOrder === v;
+                      return (
+                        <Menu.Item key={v}>
+                          {({ active }) => (
+                            <button onClick={() => { setSortOrder(v); setPage(1); }}
+                              className={`${selected ? 'bg-[#34d399]/10 text-white border border-[#34d399]/20' : active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
+                              {selected ? <Check size={14} className="text-[#34d399]" /> : <div className="w-3.5" />}
+                              {l}
+                            </button>
+                          )}
+                        </Menu.Item>
+                      );
+                    })}
                   </div>
                 </Menu.Items>
               </Transition>
@@ -539,14 +545,14 @@ export default function AccountManagement() {
         <div className="flex-1 overflow-auto min-h-0">
           <table className="w-full min-w-[800px] border-collapse">
             <thead className="sticky top-0 z-20">
-              <tr className="bg-[#14120c] border-b border-[#ffd555]/20">
+              <tr className="bg-[#14120c] border-b border-[#34d399]/20">
                 <th className="w-6"></th>
                 {['Account','Email','Phone','Role','Status','Joined Date'].map(label => (
                   <th key={label} className="px-4 py-4 text-left">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{label}</span>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#34d399]/70">{label}</span>
                   </th>
                 ))}
-                <th className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
+                <th className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-widest text-[#34d399]/70">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -571,7 +577,7 @@ export default function AccountManagement() {
               {!loading && pageUsers.map(u => {
                 const isActive = panelUser?._id === u._id;
                 return (
-                  <tr key={u._id} className={`group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
+                  <tr key={u._id} className={`group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#34d399]/[0.04]' : 'even:bg-white/[0.01]'}`}
                     onClick={() => openPanel(u)}>
                     <td className="w-4"></td>
                     <td className="px-4 py-3">
@@ -597,7 +603,7 @@ export default function AccountManagement() {
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" className="w-8 h-8 rounded-xl border border-[#ffd555]/10 bg-[#ffd555]/[0.02] hover:bg-[#ffd555]/10 hover:border-[#ffd555]/30 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
+                          title="Edit account" className="w-8 h-8 rounded-xl border border-[#34d399]/10 bg-[#34d399]/[0.02] hover:bg-[#34d399]/10 hover:border-[#34d399]/30 hover:text-[#34d399] text-[#34d399]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
                           <Edit3 size={14} />
                         </button>
                       </div>
@@ -623,7 +629,7 @@ export default function AccountManagement() {
               const p = i + 1;
               return (
                 <button key={p} onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${p === page ? 'bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>
+                  className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${p === page ? 'bg-[#34d399] text-black shadow-[0_0_12px_rgba(52,211,153,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>
                   {p}
                 </button>
               );
@@ -687,14 +693,14 @@ export default function AccountManagement() {
                   {!isEditing ? (
                     <div className="space-y-4">
                       <div className="bg-[#171B20] rounded-2xl p-4 border border-white/[0.03] space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Basic Info</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#34d399]/80 mb-1">Basic Info</h4>
                         {[
                           { icon: Mail, label: 'Email Address', val: panelUser.email },
                           { icon: Phone, label: 'Phone Number', val: panelUser.profile?.phone || 'Not provided' },
                           { icon: Calendar, label: 'Join Date', val: formatDate(panelUser.createdAt) },
                         ].map(({ icon: Ic, label, val }) => (
                           <div key={label} className="flex items-center gap-3 group">
-                            <div className="w-8 h-8 rounded-lg bg-white/[0.03] flex items-center justify-center text-white/40 group-hover:bg-[#ffd555]/10 group-hover:text-[#ffd555] transition-colors">
+                            <div className="w-8 h-8 rounded-lg bg-white/[0.03] flex items-center justify-center text-white/40 group-hover:bg-[#34d399]/10 group-hover:text-[#34d399] transition-colors">
                               <Ic size={14} />
                             </div>
                             <div>
@@ -706,11 +712,11 @@ export default function AccountManagement() {
                       </div>
 
                       <div className="bg-[#171B20] rounded-2xl p-4 border border-white/[0.03]">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-3">Account Activity</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#34d399]/80 mb-3">Account Activity</h4>
                         <div className="relative pl-3 border-l border-white/10 space-y-4">
                           {[
                             { label: 'Account Created', date: panelUser.createdAt, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-                            { label: 'Last Updated', date: panelUser.updatedAt, color: 'text-[#ffd555]', bg: 'bg-[#ffd555]/10' },
+                            { label: 'Last Updated', date: panelUser.updatedAt, color: 'text-[#34d399]', bg: 'bg-[#34d399]/10' },
                           ].map(({ label, date, color, bg }, i) => (
                             <div key={i} className="relative">
                               <div className={`absolute -left-[21px] w-6 h-6 rounded-full border-[3px] border-[#1B2027] flex items-center justify-center ${bg}`}>
@@ -728,35 +734,35 @@ export default function AccountManagement() {
                   ) : (
                     <div className="space-y-4">
                       <div className="space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Edit Basic Info</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#34d399]/80 mb-1">Edit Basic Info</h4>
                         <div className="grid grid-cols-1 gap-3">
                           <div>
                             <label className="block text-[10px] font-medium text-white/50 mb-1">Full Name</label>
                             <div className="relative group">
-                              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#ffd555] transition-colors" />
+                              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#34d399] transition-colors" />
                               <input type="text" value={editForm.fullName || ''} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} placeholder="e.g. John Doe"
-                                className="w-full bg-[#171B20] border border-white/[0.05] rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all" />
+                                className="w-full bg-[#171B20] border border-white/[0.05] rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#34d399]/50 focus:ring-1 focus:ring-[#34d399]/30 focus:shadow-[0_0_15px_rgba(52,211,153,0.15)] transition-all" />
                             </div>
                           </div>
                         </div>
                         <div>
                           <label className="block text-[10px] font-medium text-white/50 mb-1">Phone Number</label>
                           <div className="relative group">
-                            <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#ffd555] transition-colors" />
+                            <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#34d399] transition-colors" />
                             <input type="text" value={editForm.phone || ''} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="e.g. 0901234567"
-                              className="w-full bg-[#171B20] border border-white/[0.05] rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all" />
+                              className="w-full bg-[#171B20] border border-white/[0.05] rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#34d399]/50 focus:ring-1 focus:ring-[#34d399]/30 focus:shadow-[0_0_15px_rgba(52,211,153,0.15)] transition-all" />
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-3 pt-3 border-t border-white/[0.05]">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Role & Access</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#34d399]/80 mb-1">Role & Access</h4>
                         <div>
                           <label className="block text-[10px] font-medium text-white/50 mb-1">User Role</label>
                           {/* Frontend Validation: Role dropdown completely removed. Replaced with a hardcoded, uneditable disabled display to prevent privilege escalation. */}
                           <div className="w-full bg-[#171B20]/50 border border-white/[0.05] rounded-xl px-3 py-2.5 flex items-center justify-between text-sm text-white/60 cursor-not-allowed">
                             <div className="flex items-center gap-2">
-                              <Shield size={14} className="text-[#ffd555]/60" />
+                              <Shield size={14} className="text-[#34d399]/60" />
                               <span className="capitalize">customer</span>
                             </div>
                             <Lock size={14} className="text-white/20" />
@@ -791,7 +797,7 @@ export default function AccountManagement() {
                           Cancel
                         </button>
                         <button onClick={handleSave} disabled={saveState === 'saving'}
-                          className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#ffd555] to-[#f59e0b] text-black text-sm font-bold shadow-[0_0_20px_rgba(255,213,85,0.2)] hover:shadow-[0_0_25px_rgba(255,213,85,0.4)] transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 relative overflow-hidden group">
+                          className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#34d399] to-[#14b8a6] text-black text-sm font-bold shadow-[0_0_20px_rgba(52,211,153,0.2)] hover:shadow-[0_0_25px_rgba(52,211,153,0.4)] transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 relative overflow-hidden group">
                           {saveState === 'saving' ? (
                             <><RefreshCw size={16} className="animate-spin" /> Saving...</>
                           ) : (
@@ -805,7 +811,7 @@ export default function AccountManagement() {
                     ) : (
                       <>
                         <button onClick={startEdit}
-                          className="flex-1 py-2.5 rounded-xl border border-[#ffd555]/30 text-[#ffd555] text-sm font-medium hover:bg-[#ffd555]/10 hover:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all active:scale-95">
+                          className="flex-1 py-2.5 rounded-xl border border-[#34d399]/30 text-[#34d399] text-sm font-medium hover:bg-[#34d399]/10 hover:shadow-[0_0_15px_rgba(52,211,153,0.15)] transition-all active:scale-95">
                           Edit Customer
                         </button>
                         {panelUser.status ? (
@@ -852,7 +858,7 @@ export default function AccountManagement() {
             transition-all duration-300
             ${
               toast.type === "saving"
-                ? "bg-yellow-500/15 text-yellow-300 border-yellow-500/30"
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                 : toast.type === "success"
                   ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                   : "bg-red-500/15 text-red-300 border-red-500/30"

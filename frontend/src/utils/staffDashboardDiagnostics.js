@@ -110,8 +110,11 @@ export const buildStaffDashboardMetrics = ({
   sessions = [],
   bookings = [],
   now = new Date(),
+  selectedFloorId = null,
 }) => {
-  const activeFloor = floors[0] || null;
+  const activeFloor = floors.find((floor) =>
+    objectId(floor?._id) === objectId(selectedFloorId)
+  ) || floors[0] || null;
   const activeFloorSlots = slotElements(activeFloor);
   const totalSlots = floors.reduce(
     (count, floor) => count + slotElements(floor).length,

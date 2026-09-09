@@ -131,13 +131,13 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
-      <div className="flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] shadow-2xl">
+      <div className="flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#34d399]/15 bg-[#111111] shadow-2xl">
         
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd555]/30 bg-[#ffd555]/15">
-              <Check size={16} className="text-[#ffd555]" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#34d399]/30 bg-[#34d399]/15">
+              <Check size={16} className="text-[#34d399]" />
             </div>
             <div>
               <h3 className="text-white font-bold tracking-wide uppercase text-sm">Process Check-out</h3>
@@ -163,7 +163,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
             <div className="flex flex-col flex-1">
               <div className="relative flex-1 bg-black rounded-xl overflow-hidden border border-white/10 flex items-center justify-center min-h-[300px]">
                 <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
-                <div className="pointer-events-none absolute inset-0 m-8 rounded-xl border-2 border-dashed border-[#ffd555]/50" />
+                <div className="pointer-events-none absolute inset-0 m-8 rounded-xl border-2 border-dashed border-[#34d399]/50" />
                 <div className="absolute bottom-4 left-0 right-0 text-center">
                   <span className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-white tracking-wider border border-white/10">
                     ALIGN VEHICLE & CAPTURE
@@ -172,7 +172,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
               </div>
               <button 
                 onClick={capturePhoto}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#34d399] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(52,211,153,0.18)] transition-all hover:bg-[#6ee7b7] active:scale-[0.98]"
               >
                 <Camera size={20} />
                 Capture Photo
@@ -182,7 +182,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'scanning' && (
             <div className="flex flex-col items-center justify-center flex-1 py-12">
-              <Loader2 size={48} className="mb-4 animate-spin text-[#ffd555]" />
+              <Loader2 size={48} className="mb-4 animate-spin text-[#34d399]" />
               <h3 className="text-xl font-bold text-white mb-2">Calculating Price</h3>
               <p className="text-sm text-gray-400">Verifying session duration and pricing...</p>
             </div>
@@ -222,7 +222,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-gray-300 font-bold uppercase tracking-wide">Final Amount</span>
-                  <span className="text-3xl font-black text-[#ffd555]">{(invoiceData.amountToPay || 0).toLocaleString()} VND</span>
+                  <span className="text-3xl font-black text-[#34d399]">{(invoiceData.amountToPay || 0).toLocaleString()} VND</span>
                 </div>
               </div>
 
@@ -246,7 +246,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
               <button 
                 onClick={handleConfirmCheckout}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#34d399] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(52,211,153,0.18)] transition-all hover:bg-[#6ee7b7] active:scale-[0.98]"
               >
                 Confirm Payment & Checkout
                 <ArrowRight size={18} />
@@ -256,7 +256,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'submitting' && (
             <div className="flex flex-col items-center justify-center flex-1 py-12">
-              <Loader2 size={48} className="mb-4 animate-spin text-[#ffd555]" />
+              <Loader2 size={48} className="mb-4 animate-spin text-[#34d399]" />
               <h3 className="text-xl font-bold text-white mb-2">Processing</h3>
               <p className="text-sm text-gray-400">Finalizing checkout and opening gate...</p>
             </div>
