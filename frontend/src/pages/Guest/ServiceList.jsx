@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Sparkles, Clock, DollarSign, CheckCircle, Star, CircleDollarSign, CalendarDays, ChevronRight } from 'lucide-react';
 import { getServices } from '../../services/extraServiceApi';
 import { buildBookingUrl } from '../../utils/bookingNavigation';
@@ -157,6 +157,7 @@ const ServiceNavCard = ({ service, isActive, onClick, style }) => (
 /* ── Main Page ────────────────────────────────────────────── */
 const ServiceList = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [services, setServices] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -173,7 +174,14 @@ const ServiceList = () => {
         if (res.ok && res.data.success) {
           const list = res.data.data;
           setServices(list);
-          if (list.length > 0) setSelectedId(list[0]._id);
+          if (list.length > 0) {
+            const initialId = location.state?.selectedServiceId;
+            if (initialId && list.some(s => s._id === initialId)) {
+              setSelectedId(initialId);
+            } else {
+              setSelectedId(list[0]._id);
+            }
+          }
         } else {
           throw new Error(res.data.message || 'Failed to fetch services');
         }
