@@ -5,51 +5,24 @@ export const formatLicensePlateDisplay = (plate = '') => {
   const clean = normalizeLicensePlate(plate);
   if (!clean) return '';
 
-  let province;
-  let series;
-  let numbers;
-
-  if (clean.length === 9) {
-    if (/^\d{2}[A-Z]\d\d{5}$/.test(clean)) {
-      province = clean.slice(0, 2);
-      series = clean.slice(2, 4);
-      numbers = clean.slice(4);
-    } else if (/^\d{2}[A-Z]{2}\d{5}$/.test(clean)) {
-      province = clean.slice(0, 2);
-      series = clean.slice(2, 4);
-      numbers = clean.slice(4);
-    }
-  } else if (clean.length === 8) {
-    if (/^\d{2}[A-Z]\d{5}$/.test(clean)) {
-      province = clean.slice(0, 2);
-      series = clean.slice(2, 3);
-      numbers = clean.slice(3);
-    } else if (/^\d{2}[A-Z]\d\d{4}$/.test(clean)) {
-      province = clean.slice(0, 2);
-      series = clean.slice(2, 4);
-      numbers = clean.slice(4);
-    } else if (/^\d{2}[A-Z]{2}\d{4}$/.test(clean)) {
-      province = clean.slice(0, 2);
-      series = clean.slice(2, 4);
-      numbers = clean.slice(4);
-    }
-  } else if (clean.length === 7) {
-    if (/^\d{2}[A-Z]\d{4}$/.test(clean)) {
-      province = clean.slice(0, 2);
-      series = clean.slice(2, 3);
-      numbers = clean.slice(3);
-    }
+  if (/^\d{2}[A-Z]\d{5}$/.test(clean)) {
+    return `${clean.slice(0, 2)}${clean.slice(2, 3)}-${clean.slice(3, 6)}.${clean.slice(6)}`;
   }
 
-  if (province && series && numbers) {
-    let formattedNumbers = numbers;
-    if (numbers.length === 5) {
-      formattedNumbers = `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
-    }
-    const isMotorbike = /\d/.test(series);
-    return isMotorbike
-      ? `${province}-${series} ${formattedNumbers}`
-      : `${province}${series} - ${formattedNumbers}`;
+  if (/^\d{2}[A-Z]\d{4}$/.test(clean)) {
+    return `${clean.slice(0, 2)}${clean.slice(2, 3)}-${clean.slice(3)}`;
+  }
+
+  if (/^\d{2}[A-Z]{2}\d{4}$/.test(clean)) {
+    return `${clean.slice(0, 2)}${clean.slice(2, 4)}-${clean.slice(4, 6)}.${clean.slice(6)}`;
+  }
+
+  if (/^\d{2}[A-Z]{2}\d{5}$/.test(clean)) {
+    return `${clean.slice(0, 2)}${clean.slice(2, 4)}-${clean.slice(4, 7)}.${clean.slice(7)}`;
+  }
+
+  if (/^\d{2}[A-Z]{1}\d{6}$/.test(clean)) {
+    return `${clean.slice(0, 2)}${clean.slice(2, 3)}-${clean.slice(3, 6)}.${clean.slice(6)}`;
   }
 
   return clean;
