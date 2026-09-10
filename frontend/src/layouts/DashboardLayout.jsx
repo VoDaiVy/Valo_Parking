@@ -52,14 +52,14 @@ const NAV_CONFIG = {
       to: "/admin/dashboard",
     },
     {
-      label: "Account Management",
-      icon: <Users size={18} />,
-      to: "/admin/accounts",
-    },
-    {
       label: "Parking Lots",
       icon: <ParkingCircle size={18} />,
       to: "/admin/parking-lots",
+    },
+    {
+      label: "Account Management",
+      icon: <Users size={18} />,
+      to: "/admin/accounts",
     },
     {
       label: "Session Management",

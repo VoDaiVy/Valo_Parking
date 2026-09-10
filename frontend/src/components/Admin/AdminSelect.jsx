@@ -25,13 +25,13 @@ export default function AdminSelect({
       <Menu.Button
         aria-label={ariaLabel}
         disabled={disabled}
-        className={`inline-flex h-12 w-full items-center justify-between gap-3 rounded-[14px] border border-emerald-500/20 bg-[#0d1715] px-4 text-sm font-bold text-slate-100 shadow-[0_0_18px_rgba(16,185,129,0.08)] transition hover:border-emerald-400/35 hover:bg-[#11221d] focus:outline-none focus:ring-2 focus:ring-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-60 ${buttonClassName}`}
+        className={`inline-flex h-12 w-full items-center justify-between gap-3 rounded-[14px] border border-white/[0.08] bg-[#111111] px-4 text-sm font-bold text-slate-200 shadow-sm transition hover:border-white/15 hover:bg-[#151515] focus:outline-none focus:ring-2 focus:ring-yellow-400/25 disabled:cursor-not-allowed disabled:opacity-60 ${buttonClassName}`}
       >
         <span className="flex min-w-0 items-center gap-2">
-          {Icon && <Icon size={16} className="shrink-0 text-emerald-300" />}
+          {Icon && <Icon size={16} className="shrink-0 text-slate-500" />}
           <span className="truncate">{selected?.label || 'Select'}</span>
         </span>
-        <ChevronDown size={15} className="shrink-0 text-slate-300 transition group-data-[headlessui-state=open]:rotate-180" />
+        <ChevronDown size={15} className="shrink-0 text-slate-500 transition group-data-[headlessui-state=open]:rotate-180" />
       </Menu.Button>
 
       <Transition
@@ -44,7 +44,7 @@ export default function AdminSelect({
         leaveTo="opacity-0 scale-95"
       >
         <Menu.Items
-          className={`absolute z-50 mt-2 min-w-full overflow-hidden rounded-[14px] border border-white/10 bg-[#111111] py-1 shadow-2xl shadow-black/70 backdrop-blur-xl [scrollbar-color:rgba(255,255,255,.18)_transparent] [scrollbar-width:thin] focus:outline-none [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/15 hover:[&::-webkit-scrollbar-thumb]:bg-emerald-400/40 ${menuAlign} ${menuClassName}`}
+          className={`absolute z-50 mt-2 min-w-full overflow-hidden rounded-[14px] border border-white/10 bg-[#111111] py-1 shadow-2xl shadow-black/70 backdrop-blur-xl [scrollbar-color:rgba(255,255,255,.18)_transparent] [scrollbar-width:thin] focus:outline-none [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/15 hover:[&::-webkit-scrollbar-thumb]:bg-yellow-400/40 ${menuAlign} ${menuClassName}`}
           style={maxMenuHeight ? { maxHeight: maxMenuHeight, overflowY: 'auto' } : undefined}
         >
           {options.map((option) => (
@@ -55,11 +55,11 @@ export default function AdminSelect({
                   onClick={() => onChange(option.value)}
                   disabled={itemDisabled}
                   className={`flex h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold transition ${
-                    active ? 'bg-emerald-500/10 text-white' : 'text-slate-400'
+                    active ? 'bg-white/[0.04] text-white' : 'text-slate-400'
                   } ${itemDisabled ? 'cursor-not-allowed opacity-45' : ''}`}
                 >
                   {value === option.value ? (
-                    <Check size={15} className="shrink-0 text-emerald-300" />
+                    <Check size={15} className="shrink-0 text-yellow-300" />
                   ) : (
                     <span className="h-[15px] w-[15px] shrink-0" />
                   )}

@@ -452,20 +452,20 @@ export default function StaffProfile() {
     if (magneticRef.current) magneticRef.current.style.transform = "translate(0, 0)";
   };
 
-  // ── Shared Staff accent: VALO green ─────────────────────────────────────
-  const ACCENT = "#34d399";
-  const ACCENT_DIM = "rgba(52,211,153,0.7)";
-  const ACCENT_GLOW = "rgba(52,211,153,0.25)";
-  const ACCENT_BG = "rgba(52,211,153,0.08)";
-  const ACCENT_BORDER = "rgba(52,211,153,0.25)";
-  const ACCENT_TEXT = "#a7f3d0";
+  // ── Shared Staff accent: VALO gold ─────────────────────────────────────
+  const ACCENT = "#ffd555";
+  const ACCENT_DIM = "rgba(255,213,85,0.7)";
+  const ACCENT_GLOW = "rgba(255,213,85,0.25)";
+  const ACCENT_BG = "rgba(255,213,85,0.08)";
+  const ACCENT_BORDER = "rgba(255,213,85,0.25)";
+  const ACCENT_TEXT = "#ffe58a";
 
-  // ── Green Accent for Content Sections ─────────────────────────────────────
-  const GOLD = "#10b981";
-  const GOLD_DIM = "rgba(16,185,129,0.7)";
-  const GOLD_GLOW = "rgba(16,185,129,0.3)";
-  const GOLD_BG = "rgba(16,185,129,0.08)";
-  const GOLD_TEXT = "#d1fae5";
+  // ── Gold Accent for Content Sections ─────────────────────────────────────
+  const GOLD = "#EAB308";
+  const GOLD_DIM = "rgba(234,179,8,0.7)";
+  const GOLD_GLOW = "rgba(234,179,8,0.3)";
+  const GOLD_BG = "rgba(234,179,8,0.08)";
+  const GOLD_TEXT = "#ffdea8";
 
   // ───────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -496,14 +496,14 @@ export default function StaffProfile() {
         <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-10 w-full">
           {/* ── 3D Avatar Orb ── */}
           <div ref={orbRef} className="relative flex-shrink-0" style={{ width: 150, height: 150, perspective: "1000px", transition: "transform 0.1s ease-out" }}>
-            <div className="absolute inset-0 rounded-full border border-[#34d399]" style={{ opacity: 0.55, animation: "valo-rotateRing 8s linear infinite" }} />
+            <div className="absolute inset-0 rounded-full border border-[#ffd555]" style={{ opacity: 0.55, animation: "valo-rotateRing 8s linear infinite" }} />
             <div className="absolute rounded-full border" style={{ inset: "8px", borderColor: "#bbf7d0", opacity: 0.35, animation: "valo-rotateRing 5s linear infinite reverse" }} />
 
             <div className="w-full h-full rounded-full overflow-hidden" style={{ border: `2px solid ${ACCENT}`, padding: "3px", background: "#1a1b22", boxShadow: `0 0 36px ${ACCENT_GLOW}, 0 0 80px rgba(16,185,129,0.1)` }}>
               {profile.avatar ? (
                 <img src={profile.avatar} alt={profile.name} className="w-full h-full rounded-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-full bg-[#34d399] text-2xl font-extrabold text-[#080808]">
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-[#ffd555] text-2xl font-extrabold text-[#080808]">
                   {getInitials(profile.name)}
                 </div>
               )}
@@ -523,8 +523,8 @@ export default function StaffProfile() {
                 </svg>
               ) : (
                 <>
-                  <Camera size={22} className="text-[#34d399] opacity-0 transition-opacity group-hover:opacity-100" />
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#34d399] opacity-0 transition-opacity group-hover:opacity-100">Change</span>
+                  <Camera size={22} className="text-[#ffd555] opacity-0 transition-opacity group-hover:opacity-100" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#ffd555] opacity-0 transition-opacity group-hover:opacity-100">Change</span>
                 </>
               )}
             </label>

@@ -54,9 +54,9 @@ const TYPE_META = {
   monthly: {
     label: 'Monthly',
     Icon: Crown,
-    rowAccent: 'from-emerald-300 to-teal-500',
-    badge: 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300',
-    icon: 'border-emerald-400/15 bg-emerald-500/10 text-emerald-300',
+    rowAccent: 'from-yellow-300 to-amber-500',
+    badge: 'border-yellow-400/25 bg-yellow-400/10 text-yellow-300',
+    icon: 'border-yellow-400/15 bg-yellow-400/10 text-yellow-300',
     unit: 'monthly rate',
   },
   yearly: {
@@ -91,10 +91,10 @@ const getTypeMeta = (type) => {
   };
 };
 
-function SummaryItem({ icon: Icon, label, value, support, tone = 'text-emerald-300' }) {
+function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300' }) {
   return (
     <div className="flex min-w-0 items-center gap-4 px-5 py-4 md:border-l md:border-white/10 md:first:border-l-0">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 ${tone}`}>
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white/[0.03] ${tone}`}>
         <Icon size={18} />
       </div>
       <div className="min-w-0">
@@ -109,7 +109,8 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-emerald-3
 function LoadingSkeleton({ isAdmin }) {
   return (
     <div className="relative min-h-[calc(100vh-70px)] overflow-hidden bg-[#050505] px-4 py-6 sm:px-6 md:px-8">
-      <div className="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-emerald-400/5 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
+      <div className="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-yellow-400/5 blur-3xl" />
       <div className="mx-auto max-w-7xl animate-pulse motion-reduce:animate-none">
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
@@ -117,7 +118,7 @@ function LoadingSkeleton({ isAdmin }) {
             <div className="h-10 w-72 rounded bg-white/10" />
             <div className="mt-3 h-4 w-80 max-w-full rounded bg-white/10" />
           </div>
-          {isAdmin && <div className="h-12 w-40 rounded-2xl bg-emerald-500/15" />}
+          {isAdmin && <div className="h-12 w-40 rounded-2xl bg-yellow-300/20" />}
         </div>
         <div className="mb-6 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-3">
           {[0, 1, 2].map((item) => (
@@ -206,7 +207,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, index }) {
               onClick={() => onEdit(pkg)}
               aria-label={`Edit ${pkg.name || 'package'}`}
               title={`Edit ${pkg.name || 'package'}`}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-emerald-300 transition hover:border-emerald-400/40 hover:bg-emerald-500/10 hover:text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-300/50 motion-reduce:transition-none"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-400 transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-300/60 motion-reduce:transition-none"
             >
               <Edit2 size={16} className="transition group-hover:scale-105 motion-reduce:transition-none" />
             </button>
@@ -409,16 +410,17 @@ export default function TicketPackages() {
 
   return (
     <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-emerald-400/[0.06] blur-3xl" />
-      <div className="pointer-events-none absolute right-24 top-16 h-px w-96 max-w-[70vw] bg-gradient-to-r from-transparent via-emerald-300/20 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
+      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
+      <div className="pointer-events-none absolute right-24 top-16 h-px w-96 max-w-[70vw] bg-gradient-to-r from-transparent via-yellow-300/20 to-transparent" />
 
       <div className="relative mx-auto max-w-7xl">
         <header className="mb-8 flex animate-[fadeIn_420ms_ease-out_both] flex-col justify-between gap-4 motion-reduce:animate-none md:flex-row md:items-end">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-300">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <Tag size={12} /> Packages
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Ticket Packages</h1>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Ticket Packages</h1>
             <p className="mt-2 text-sm font-medium text-slate-400">Manage parking rates and ticket packages.</p>
           </div>
 
@@ -426,7 +428,7 @@ export default function TicketPackages() {
             <button
               type="button"
               onClick={() => openModal()}
-              className="group inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600 px-6 text-sm font-black text-[#07110d] shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:shadow-emerald-500/30 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-emerald-200/80 motion-reduce:transform-none motion-reduce:transition-none"
+              className="group inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-500 px-6 text-sm font-black text-[#111111] shadow-lg shadow-yellow-500/20 transition hover:-translate-y-0.5 hover:shadow-yellow-500/30 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-yellow-200/80 motion-reduce:transform-none motion-reduce:transition-none"
             >
               <Plus size={18} className="transition group-hover:rotate-90 motion-reduce:transition-none" />
               Add Package
@@ -451,7 +453,7 @@ export default function TicketPackages() {
           </div>
         )}
 
-        <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-[#0d1111] shadow-xl shadow-black/20 sm:grid-cols-3">
+        <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-2xl shadow-black/20 sm:grid-cols-3">
           <SummaryItem
             icon={Package}
             label="Total Packages"
@@ -482,14 +484,14 @@ export default function TicketPackages() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search packages by name..."
-              className="h-12 w-full rounded-xl border border-white/10 bg-white/[0.04] pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-500/10"
+              className="h-12 w-full rounded-xl border border-white/10 bg-white/[0.04] pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-300/50 focus:ring-2 focus:ring-yellow-300/10"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
                 aria-label="Clear package search"
-                className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+                className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
               >
                 <X size={15} />
               </button>
@@ -553,7 +555,7 @@ export default function TicketPackages() {
             </div>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-10 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">
                 <Package size={22} />
               </div>
               <h2 className="text-lg font-black text-white">{packages.length ? 'No matching packages' : 'No ticket packages yet'}</h2>
@@ -564,7 +566,7 @@ export default function TicketPackages() {
                 <button
                   type="button"
                   onClick={() => openModal()}
-                  className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 px-5 text-sm font-black text-[#07110d] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-200/80"
+                  className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-yellow-300 px-5 text-sm font-black text-[#111111] transition hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-200/80"
                 >
                   <Plus size={16} /> Add Package
                 </button>
@@ -573,12 +575,12 @@ export default function TicketPackages() {
           )}
         </section>
 
-        <aside className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-400/15 bg-gradient-to-r from-emerald-500/[0.08] via-white/[0.025] to-transparent px-4 py-4 text-sm">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
+        <aside className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-300/15 bg-gradient-to-r from-yellow-300/[0.08] via-white/[0.025] to-transparent px-4 py-4 text-sm">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-yellow-300/20 bg-yellow-300/10 text-yellow-300">
             <Info size={17} />
           </div>
           <div>
-            <p className="font-black text-emerald-200">Package management</p>
+            <p className="font-black text-yellow-200">Package management</p>
             <p className="mt-1 font-medium text-slate-400">Review package changes carefully before saving.</p>
           </div>
         </aside>
@@ -602,7 +604,7 @@ export default function TicketPackages() {
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30"
+                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
                     placeholder="e.g. Standard Hourly"
                   />
                 </div>
@@ -631,7 +633,7 @@ export default function TicketPackages() {
                       min="0"
                       value={formData.price}
                       onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30"
+                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
                       placeholder="e.g. 10000"
                     />
                   </div>
@@ -642,7 +644,7 @@ export default function TicketPackages() {
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="min-h-[80px] w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30"
+                    className="min-h-[80px] w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
                     placeholder="Optional description"
                   />
                 </div>
@@ -655,7 +657,7 @@ export default function TicketPackages() {
                       checked={formData.isActive}
                       onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                     />
-                    <div className="peer h-6 w-11 rounded-full bg-white/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-emerald-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
+                    <div className="peer h-6 w-11 rounded-full bg-white/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-gold peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
                     <span className="ml-3 text-sm font-bold text-white">Active Package</span>
                   </label>
                 </div>
@@ -670,7 +672,7 @@ export default function TicketPackages() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 px-4 py-3 font-bold text-[#07110d] shadow-lg shadow-emerald-500/20 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-emerald-200/80"
+                    className="flex-1 rounded-xl bg-gold px-4 py-3 font-bold text-[#0B0E17] shadow-lg shadow-gold/20 transition hover:bg-gold/90 focus:outline-none focus:ring-2 focus:ring-yellow-200/80"
                   >
                     Save Package
                   </button>
