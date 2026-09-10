@@ -73,6 +73,8 @@ def main():
                 msg = ser.readline().decode('utf-8', errors='ignore').strip()
                 if msg:
                     print(f"   [ESP32]: {msg}")
+                    if "GATE_CLOSED" in msg:
+                        is_currently_open = False
 
             # 2. Đồng bộ trạng thái mở/đóng Barrier từ Kiosk Backend
             res = requests.get(BACKEND_STATUS_URL, timeout=2)
@@ -86,7 +88,7 @@ def main():
                     slot = info.get('slotCode', 'N/A')
                     gate = info.get('gate', 'ENTRY_1')
 
-                    # A. LỆNH MỞ CỔNG KHI KIOSK XÁC NHẬN
+                    # LỆNH MỞ CỔNG KHI KIOSK XÁC NHẬN
                     if should_open and (not is_currently_open or trigger_id != last_trigger_id):
                         last_trigger_id = trigger_id
                         is_currently_open = True
@@ -95,14 +97,6 @@ def main():
                         cmd = f"OPEN|{plate}|{slot}|{gate}\n"
                         print(f"👉 Gửi lệnh: {cmd.strip()} -> ESP32...")
                         ser.write(cmd.encode('utf-8'))
-                        ser.flush()
-
-                    # B. LỆNH ĐÓNG CỔNG KHI KIOSK QUAY VỀ MÀN HÌNH CHÍNH
-                    elif not should_open and is_currently_open:
-                        is_currently_open = False
-                        print("\n🔒 [KIOSK] Kiosk đã quay về màn hình chính -> ĐÓNG CỔNG")
-                        print("👉 Gửi lệnh: CLOSE -> ESP32...")
-                        ser.write(b"CLOSE\n")
                         ser.flush()
 
         except requests.exceptions.RequestException as req_err:

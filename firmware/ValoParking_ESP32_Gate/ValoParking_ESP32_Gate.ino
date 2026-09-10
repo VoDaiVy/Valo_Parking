@@ -6,11 +6,11 @@
 
 // ====================================================================
 // VALO PARKING - CỔNG BARRIER THÔNG MINH TÍCH HỢP CẢM BIẾN QUANG E3F-DS30C4
-// HIỆU ỨNG CHỮ CHẠY DYNAMIC CHO CẢ WELCOME, CHECK-IN & CHECK-OUT (TAM BIET)
+// KHÔNG ĐÓNG KHI BẤM DONE - CHỈ ĐÓNG KHI XE QUA CẢM BIẾN (HOẶC HẾT THỜI GIAN)
 // --------------------------------------------------------------------
 // MÀN HÌNH LCD I2C : SDA -> G21, SCL -> G22
 // SERVO BARRIER    : SIGNAL -> G18
-// CẢM BIẾN QUANG   : DÂY ĐEN (OUT) -> G19, NÂU -> VIN(5V), XANH -> GND
+// CẢM BIẾN QUANG   : DÂY ĐEN (OUT) -> G19, NÂU -> VIN(5V)/9V, XANH -> GND
 // ====================================================================
 
 LiquidCrystal_I2C* lcd = nullptr;
@@ -21,13 +21,13 @@ Servo barrierServo;
 
 bool isBarrierOpen = false;
 unsigned long barrierOpenedAt = 0;
-const unsigned long SAFETY_TIMEOUT_MS = 30000; // Timeout 30s nếu xe không đi qua
+const unsigned long AUTO_CLOSE_TIMEOUT_MS = 10000; // Tự đóng sau 10s nếu không phát hiện cảm biến
 
 // Trạng thái theo dõi xe đi qua cảm biến
 bool vehicleDetectedUnderGate = false;
 bool vehicleHasPassed = false;
 unsigned long vehiclePassedTime = 0;
-const unsigned long CLOSE_DELAY_AFTER_PASS_MS = 1500; // Đợi 1.5s sau khi xe qua hẳn mới đóng
+const unsigned long CLOSE_DELAY_AFTER_PASS_MS = 1000; // Đợi 1.0s sau khi xe qua hẳn mới đóng
 
 // --- CẤU HÌNH HIỆU ỨNG CHỮ CHẠY ĐA NĂNG (DYNAMIC MARQUEE) ---
 String currentLine1 = "  VALO PARKING  ";
@@ -132,6 +132,7 @@ void closeBarrier() {
   vehicleHasPassed = false;
   
   Serial.println("[ESP32] >> BARRIER DA DONG HOAN TOAN!");
+  Serial.println("GATE_CLOSED"); // Báo về cho Python Bridge biết cổng đã đóng
   delay(1000);
   showDefaultScreen();
 }
@@ -208,15 +209,15 @@ void loop() {
       Serial.println("[ESP32-SENSOR] >> XE DA QUA KHOI CONG! CHUAN BI DONG BARRIER...");
     }
 
-    // Giai đoạn 3: Đợi 1.5 giây an toàn sau khi xe qua hẳn -> Tự động đóng barrier
+    // Giai đoạn 3: Đợi 1.0 giây sau khi xe qua hẳn -> Tự động đóng barrier
     if (vehicleHasPassed && (millis() - vehiclePassedTime >= CLOSE_DELAY_AFTER_PASS_MS)) {
       Serial.println("[ESP32] >> XE QUA HOAN TAT -> DONG CONG!");
       closeBarrier();
     }
 
-    // Giai đoạn dự phòng: Tự động đóng an toàn sau 30s nếu xe kẹt hoặc không vào
-    if (millis() - barrierOpenedAt > SAFETY_TIMEOUT_MS) {
-      Serial.println("[ESP32] >> TIMEOUT 30S: TU DONG DONG CONG AN TOAN");
+    // Giai đoạn dự phòng: Tự động đóng sau 10s nếu không phát hiện xe qua cảm biến
+    if (millis() - barrierOpenedAt > AUTO_CLOSE_TIMEOUT_MS) {
+      Serial.println("[ESP32] >> HET 10S CHO -> TU DONG DONG CONG AN TOAN");
       closeBarrier();
     }
   }
@@ -281,7 +282,9 @@ void loop() {
       openBarrier("  TAM BIET!  ", "TAM BIET QUY KHACH - CHUC BAN THUONG LO BINH AN - HEN GAP LAI!");
     } 
     else if (command.startsWith("CLOSE")) {
-      // Khi web gửi CLOSE, cảm biến sẽ quyết định đóng khi xe qua hẳn
+      // TUYỆT ĐỐI KHÔNG ĐÓNG NGAY KHI KHÁCH BẤM DONE TRÊN KIOSK
+      // Cổng chỉ đóng khi xe qua cảm biến (hoặc hết timeout an toàn)
+      Serial.println("[ESP32] >> KIOSK DONE NHUNG GIU CONG CHO XE QUA CAM BIEN...");
     }
   }
 }
