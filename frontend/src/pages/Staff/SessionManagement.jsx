@@ -97,9 +97,9 @@ export default function SessionManagement() {
             setAiInitialImage(null);
             setShowAiModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-black transition shadow-lg shadow-violet-500/10 shrink-0"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-lg shadow-yellow-500/10 shrink-0"
         >
-          <Sparkles size={16} className="text-violet-400 animate-pulse" />
+          <Sparkles size={16} className="text-amber-400 animate-pulse" />
           <span>AI Plate Assistant</span>
         </button>
       </div>
@@ -118,7 +118,7 @@ export default function SessionManagement() {
                   setCurrentPage(1);
                 }}
                 placeholder="Search license plate or phone..."
-                className="h-11 w-full rounded-xl border border-white/10 bg-[#080808] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-[#34d399]/40 focus:ring-2 focus:ring-[#34d399]/10"
+                className="h-11 w-full rounded-xl border border-white/10 bg-[#080808] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-[#ffd555]/40 focus:ring-2 focus:ring-[#ffd555]/10"
               />
             </label>
 
@@ -164,7 +164,7 @@ export default function SessionManagement() {
 
         {loading ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-14 text-center text-slate-500">
-            <Loader2 size={24} className="animate-spin text-[#7ee7c2]" />
+            <Loader2 size={24} className="animate-spin text-[#d7b94a]" />
             <p className="text-sm font-semibold">Loading sessions...</p>
           </div>
         ) : error ? (
@@ -179,17 +179,17 @@ export default function SessionManagement() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto [scrollbar-color:rgba(52,211,153,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#34d399]/25">
+            <div className="overflow-x-auto [scrollbar-color:rgba(255,213,85,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#d7b94a]/25">
               <table className="w-full border-collapse text-left text-sm whitespace-nowrap">
               <thead className="bg-[#14120c]">
                 <tr>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">License Plate</th>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">Phone</th>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">Status</th>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">Check In</th>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">Check Out</th>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">Price</th>
-                  <th className="border-b border-[#34d399]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#7ee7c2]">Actions</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">License Plate</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Phone</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Status</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check In</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check Out</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Price</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Actions</th>
                 </tr>
               </thead>
                 <tbody>
@@ -209,11 +209,11 @@ export default function SessionManagement() {
                     </td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkInTime)}</td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkOutTime)}</td>
-                    <td className="px-4 py-3 font-black tabular-nums text-[#7ee7c2]">{formatPrice(session.totalPrice)}</td>
+                    <td className="px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => setSelectedSession(session)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#34d399]/15 bg-[#34d399]/[0.04] px-3 py-1.5 text-xs font-black text-[#7ee7c2] transition-all duration-200 hover:border-[#34d399]/35 hover:bg-[#34d399]/10 hover:text-[#d1fae5] focus:outline-none focus:ring-2 focus:ring-[#34d399]/30 active:scale-[0.98]"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
                         <ShieldCheck size={14} /> View Details
                       </button>
@@ -248,7 +248,7 @@ export default function SessionManagement() {
                   {pagination.totalItems !== sessions.length && (
                     <span className="ml-1 text-slate-600">({sessions.length} total)</span>
                   )}
-                  <span className="ml-2 text-[#7ee7c2]/70">15 per page</span>
+                  <span className="ml-2 text-[#d7b94a]/70">15 per page</span>
                 </p>
 
                 <nav className="flex items-center gap-1.5" aria-label="Session pagination">
@@ -256,7 +256,7 @@ export default function SessionManagement() {
                     type="button"
                     onClick={() => setCurrentPage(pagination.currentPage - 1)}
                     disabled={pagination.currentPage === 1}
-                    className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-[#34d399]/30 hover:bg-[#34d399]/10 hover:text-[#d1fae5] focus:outline-none focus:ring-2 focus:ring-[#34d399]/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-white/10 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-white/10 disabled:hover:bg-transparent disabled:hover:text-slate-400"
                     aria-label="Previous page"
                   >
                     <ChevronLeft size={16} />
@@ -268,10 +268,10 @@ export default function SessionManagement() {
                         key={page}
                         type="button"
                         onClick={() => setCurrentPage(page)}
-                        className={`h-9 min-w-9 rounded-lg border px-2 text-xs font-black transition-colors focus:outline-none focus:ring-2 focus:ring-[#34d399]/30 ${
-                            page === pagination.currentPage
-                            ? 'border-[#34d399]/60 bg-[#34d399] text-[#080808]'
-                            : 'border-white/10 text-slate-400 hover:border-[#34d399]/30 hover:bg-[#34d399]/10 hover:text-[#d1fae5]'
+                        className={`h-9 min-w-9 rounded-lg border px-2 text-xs font-black transition-colors focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 ${
+                          page === pagination.currentPage
+                            ? 'border-[#ffd555]/60 bg-[#d7b94a] text-[#080808]'
+                            : 'border-white/10 text-slate-400 hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a]'
                         }`}
                         aria-current={page === pagination.currentPage ? 'page' : undefined}
                         aria-label={`Page ${page}`}
@@ -289,7 +289,7 @@ export default function SessionManagement() {
                     type="button"
                     onClick={() => setCurrentPage(pagination.currentPage + 1)}
                     disabled={pagination.currentPage === pagination.totalPages}
-                    className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-[#34d399]/30 hover:bg-[#34d399]/10 hover:text-[#d1fae5] focus:outline-none focus:ring-2 focus:ring-[#34d399]/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-white/10 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-white/10 disabled:hover:bg-transparent disabled:hover:text-slate-400"
                     aria-label="Next page"
                   >
                     <ChevronRight size={16} />
@@ -304,15 +304,15 @@ export default function SessionManagement() {
       {/* Detail Modal */}
       {selectedSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#34d399]/15 bg-[#111111] text-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#34d399]/15 bg-[#14120c] p-6">
+          <div className="flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#ffd555]/15 bg-[#14120c] p-6">
               <div>
-                <h3 className="text-xl font-bold text-[#34d399]">Session Details</h3>
+                <h3 className="text-xl font-bold text-[#ffd555]">Session Details</h3>
                 <p className="text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
               </div>
               <button 
                 onClick={() => setSelectedSession(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#34d399]/30 hover:bg-[#34d399]/10 hover:text-[#34d399]"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffd555]"
               >
                 <X size={18} />
               </button>
@@ -322,7 +322,7 @@ export default function SessionManagement() {
               {/* Entry Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#34d399]/15 text-[#34d399]">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
                   <h4 className="font-bold text-lg">Entry Record</h4>
@@ -346,7 +346,7 @@ export default function SessionManagement() {
               {/* Exit Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#34d399]/15 text-[#34d399]">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
                   <h4 className="font-bold text-lg">Exit Record</h4>
@@ -371,7 +371,7 @@ export default function SessionManagement() {
             <div className="flex justify-end border-t border-white/[0.07] bg-[#0d0d0d] p-6">
               <button 
                 onClick={() => setSelectedSession(null)}
-                className="rounded-xl bg-[#34d399] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#6ee7b7]"
+                className="rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
               >
                 Close
               </button>
