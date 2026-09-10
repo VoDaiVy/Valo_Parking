@@ -416,6 +416,7 @@ export default function AccountManagement() {
       `}</style>
 
       {/* Main panel */}
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className={`flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300`}>
 
         {/* -- Header -- */}
@@ -425,7 +426,7 @@ export default function AccountManagement() {
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
                 <Users size={12} /> User Management
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Account Management</h1>
+              <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Account Management</h1>
               <p className="text-gray-400 text-sm mt-1">Manage user accounts, roles, and access permissions</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">

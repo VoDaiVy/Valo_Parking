@@ -466,13 +466,14 @@ export default function SubscriptionManagement() {
   return (
     <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="relative mx-auto max-w-[1400px]">
         <header className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <Crown size={12} /> VIP Subscriptions
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">VIP Memberships</h1>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">VIP Memberships</h1>
             <p className="mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
           </div>
 
