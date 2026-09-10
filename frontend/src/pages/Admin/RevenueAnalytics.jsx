@@ -300,7 +300,7 @@ export default function RevenueAnalytics() {
               <BarChart3 size={13} />
               Analytics
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-white lg:text-[42px]">
+            <h1 className="text-4xl font-black tracking-tight text-white lg:text-[42px] sm:text-5xl">
               Revenue Analytics
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">

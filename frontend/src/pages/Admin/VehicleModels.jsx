@@ -221,7 +221,7 @@ export default function VehicleModels() {
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
             <Car size={12} /> Models
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">3D Vehicle Models</h1>
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">3D Vehicle Models</h1>
           <p className="text-gray-400 text-sm mt-1">Upload file <code className="font-mono bg-white/10 px-1 rounded">.glb</code> for each vehicle brand. The backend will match automatically when the user adds a vehicle.</p>
         </div>
         <div className="flex items-center gap-2">

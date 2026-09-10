@@ -82,8 +82,8 @@ export default function SessionManagement() {
     <div className="min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#ffd555]">Session Management</h1>
-          <p className="mt-0.5 text-sm font-medium text-white/40">Monitor vehicle entry/exit and security images.</p>
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>
+          <p className="mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
         </div>
 
         {/* AI Blurred Plate Assistant Button */}

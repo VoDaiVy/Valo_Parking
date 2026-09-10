@@ -134,7 +134,7 @@ function PricingHeader({ status }) {
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
           <Edit2 size={12} /> Pricing
         </div>
-        <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Pricing Management</h1>
+        <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Pricing Management</h1>
         <p className="mt-1 text-sm font-medium text-blue-100/65">Configure time blocks and price caps for parking sessions.</p>
       </div>
       <div className={`group inline-flex h-9 w-fit items-center gap-2 rounded-full border px-3 text-xs font-black transition hover:shadow-[0_0_22px_rgba(34,197,94,0.14)] ${
@@ -638,6 +638,7 @@ export default function PricingManagement() {
 
   return (
     <div className="min-h-[calc(100vh-70px)] overflow-auto bg-[#080808] px-6 py-7 md:px-8">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="mx-auto max-w-7xl">
         <PricingHeader status={scheduleStatus} config={config} />
 

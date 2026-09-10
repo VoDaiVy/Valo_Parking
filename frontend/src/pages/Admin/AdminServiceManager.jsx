@@ -487,6 +487,7 @@ const AdminServiceManager = () => {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,213,85,0.48); }
       `}</style>
       <div className="absolute inset-0 pointer-events-none bg-[#080808]" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       
       <Toaster position="top-right" toastOptions={{ 
         style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } 
@@ -502,7 +503,7 @@ const AdminServiceManager = () => {
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
                 <Wrench size={12} /> Service Manager
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Services</h1>
+              <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Services</h1>
               <p className="text-sm text-gray-400 mt-1">Manage extra parking services, pricing, time cost, and availability.</p>
             </div>
             <button

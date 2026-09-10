@@ -190,16 +190,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
         </div>
       </fieldset>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <NumberField
-          id="refund-no-show"
-          label="No-show parking refund"
-          value={rule.noShowRefundPercent}
-          onChange={(noShowRefundPercent) => onChange({ ...rule, noShowRefundPercent })}
-          error={errors.noShowRefundPercent}
-          max={100}
-          suffix="%"
-        />
+      <div>
         <NumberField
           id="refund-minimum-billable"
           label="Minimum billable time"
@@ -211,66 +202,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
         />
       </div>
 
-      <fieldset className="rounded-2xl border border-white/10 bg-black/30 p-4">
-        <legend className="px-2 text-sm font-black text-white">Early checkout</legend>
-        <div className="grid gap-4 md:grid-cols-3">
-          <label htmlFor="early-checkout-mode" className="block">
-            <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-gray-500">
-              Refund mode
-            </span>
-            <AdminSelect
-              value={rule.earlyCheckout.mode}
-              onChange={(nextMode) =>
-                onChange({
-                  ...rule,
-                  earlyCheckout: {
-                    ...rule.earlyCheckout,
-                    mode: nextMode,
-                    fixedRefundPercent:
-                      nextMode === 'fixed_refund_percent'
-                        ? rule.earlyCheckout.fixedRefundPercent
-                        : 0,
-                  },
-                })
-              }
-              options={earlyCheckoutModeOptions}
-              icon={RotateCcw}
-              className="w-full"
-              ariaLabel="Select early checkout refund mode"
-            />
-            {errors['earlyCheckout-mode'] && <p className={errorClass}>{errors['earlyCheckout-mode']}</p>}
-          </label>
-          <NumberField
-            id="early-checkout-fixed-refund"
-            label="Unused parking refund"
-            value={rule.earlyCheckout.fixedRefundPercent}
-            onChange={(fixedRefundPercent) =>
-              onChange({
-                ...rule,
-                earlyCheckout: { ...rule.earlyCheckout, fixedRefundPercent },
-              })
-            }
-            error={errors['earlyCheckout-fixedRefundPercent']}
-            max={100}
-            suffix="%"
-            disabled={rule.earlyCheckout.mode !== 'fixed_refund_percent'}
-          />
-          <NumberField
-            id="early-checkout-fee"
-            label="Fee on parking refund"
-            value={rule.earlyCheckout.feePercent}
-            onChange={(feePercent) =>
-              onChange({
-                ...rule,
-                earlyCheckout: { ...rule.earlyCheckout, feePercent },
-              })
-            }
-            error={errors['earlyCheckout-feePercent']}
-            max={100}
-            suffix="%"
-          />
-        </div>
-      </fieldset>
+      {/* Early checkout UI removed as requested */}
 
     </div>
   );

@@ -283,6 +283,7 @@ function DashboardShell({ children }) {
         }
       `}</style>
       <div className="pointer-events-none absolute right-[-18%] top-20 h-[460px] w-[460px] rounded-full bg-yellow-500/5 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="relative mx-auto flex w-full max-w-[1680px] flex-col gap-5">
         {children}
       </div>
@@ -298,7 +299,7 @@ function DashboardHeader({ loading, refreshing, onRefresh }) {
           <Settings2 size={12} />
           Dashboard
         </div>
-        <h1 className="mt-3 text-3xl font-black leading-tight tracking-tight text-white sm:text-4xl">
+        <h1 className="mt-3 text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl">
           Admin Overview
         </h1>
         <p className="mt-1 text-sm font-medium text-blue-100/70">
