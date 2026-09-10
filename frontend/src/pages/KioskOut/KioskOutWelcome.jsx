@@ -15,6 +15,9 @@ export default function KioskOutWelcome({ onScanSuccess }) {
 
   // Start webcam
   useEffect(() => {
+    // Đảm bảo Barrier luôn đóng khi đang ở màn hình chính
+    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
+
     let stream = null;
     const startCamera = async () => {
       try {

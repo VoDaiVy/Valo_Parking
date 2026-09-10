@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
+import { API_BASE } from '../../services/api';
 import KioskOutWelcome from './KioskOutWelcome';
 import KioskOutInvoice from './KioskOutInvoice';
 import KioskOutSuccess from './KioskOutSuccess';
@@ -20,6 +21,7 @@ export default function KioskOutFlow() {
   };
 
   const handleRestart = () => {
+    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     setSessionData(null);
     setExitImage(null);
     navigate('/kiosk-out');
@@ -28,24 +30,24 @@ export default function KioskOutFlow() {
   return (
     <div className="w-screen h-[100dvh] overflow-hidden bg-[#0a0a0a] text-white selection:bg-gold/30">
       <Routes>
-        <Route 
-          path="/" 
-          element={<KioskOutWelcome onScanSuccess={handleScanSuccess} />} 
+        <Route
+          path="/"
+          element={<KioskOutWelcome onScanSuccess={handleScanSuccess} />}
         />
-        <Route 
-          path="invoice" 
+        <Route
+          path="invoice"
           element={
-            <KioskOutInvoice 
-              sessionData={sessionData} 
+            <KioskOutInvoice
+              sessionData={sessionData}
               exitImage={exitImage}
               onCheckoutSuccess={handleCheckoutSuccess}
               onBack={handleRestart}
             />
-          } 
+          }
         />
-        <Route 
-          path="success" 
-          element={<KioskOutSuccess onFinish={handleRestart} />} 
+        <Route
+          path="success"
+          element={<KioskOutSuccess onFinish={handleRestart} />}
         />
       </Routes>
     </div>

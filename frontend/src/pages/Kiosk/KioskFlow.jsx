@@ -192,6 +192,8 @@ export default function KioskFlow() {
   };
 
   const resetKioskFlow = () => {
+    // Đóng barrier khi quay về màn hình chính
+    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
     navigate('/kiosk', { replace: true });
@@ -202,6 +204,7 @@ export default function KioskFlow() {
   };
 
   const handleFastPassComplete = () => {
+    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
     window.location.replace('/kiosk');

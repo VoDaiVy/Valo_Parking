@@ -48,6 +48,8 @@ export default function KioskWelcome({ onStart, updateFormData }) {
   };
 
   useEffect(() => {
+    // Đảm bảo Barrier luôn đóng khi đang ở màn hình chính
+    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     return () => stopCamera();
   }, []);
 

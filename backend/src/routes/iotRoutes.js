@@ -21,7 +21,7 @@ router.get('/barrier-status', (req, res) => {
 // API kích hoạt mở Barrier (Dùng cho Kiosk hoặc nút bấm test)
 router.post('/open-barrier', (req, res) => {
   const { licensePlate = 'TEST-VEHICLE', slotCode = 'A-01', gate = 'ENTRY_1' } = req.body;
-  
+
   latestBarrierState = {
     open: true,
     triggerId: Date.now(),

@@ -1,74 +1,124 @@
 import time
 import serial
+import serial.tools.list_ports
 import requests
 
 # ====================================================
-# 1. CẤU HÌNH CỔNG SERIAL VÀ BACKEND
+# VALO PARKING - PYTHON IOT BARRIER CONTROLLER
+# Fix triệt để lỗi DTR/RTS gây Reset ESP32 vào Download Boot
 # ====================================================
-SERIAL_PORT = '/dev/cu.SLAB_USBtoUART'  # Cổng ESP32 trên Mac
-BAUD_RATE = 115200
-BACKEND_URL = 'http://localhost:5001/api/iot/barrier-status'
 
-def init_serial():
+SERIAL_PORT = '/dev/cu.usbserial-0001'
+BAUD_RATE = 115200
+BACKEND_STATUS_URL = 'http://localhost:5001/api/iot/barrier-status'
+
+def find_esp32_port():
+    ports = list(serial.tools.list_ports.comports())
+    for p in ports:
+        dev = p.device
+        if 'SLAB_USBtoUART' in dev or 'usbserial' in dev or 'CH340' in dev or 'CP210' in dev or 'ttyUSB' in dev:
+            return dev
+    return SERIAL_PORT
+
+def connect_serial():
+    port = find_esp32_port()
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2) # Chờ kết nối ổn định
-        print(f"✅ Đã kết nối thành công với ESP32 tại cổng: {SERIAL_PORT}")
+        # Cấu hình tắt DTR và RTS để Mac không kích hoạt mạch tự nạp (Bootloader) của ESP32
+        ser = serial.Serial()
+        ser.port = port
+        ser.baudrate = BAUD_RATE
+        ser.timeout = 0.1
+        ser.dtr = False
+        ser.rts = False
+        ser.open()
+        
+        # Đảm bảo DTR/RTS ở mức LOW
+        ser.setDTR(False)
+        ser.setRTS(False)
+
+        time.sleep(2) # Chờ ESP32 ổn định
+        
+        # Xóa sạch dữ liệu rác ban đầu trong buffer
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+
+        print(f"✅ ĐÃ KẾT NỐI THÀNH CÔNG VỚI ESP32 TẠI: {port}")
         return ser
     except Exception as e:
-        print(f"❌ Không thể kết nối với ESP32 tại {SERIAL_PORT}: {e}")
         return None
 
 def main():
-    print("=" * 55)
-    print("🚗 VALO PARKING - PYTHON IOT BARRIER CONTROLLER 🚗")
-    print("=" * 55)
-    
-    ser = init_serial()
-    if not ser:
-        print("⚠️ Vui lòng kiểm tra lại cáp USB kết nối ESP32.")
-        return
+    print("=" * 60)
+    print("🚗 VALO PARKING - BỘ ĐIỀU KHIỂN CỔNG BARRIER IOT 🚗")
+    print("=" * 60)
 
+    ser = None
+    is_currently_open = False
     last_trigger_id = 0
-    print("📡 Đang lắng nghe sự kiện Check-in / Check-out từ Kiosk Web...\n")
 
     while True:
-        try:
-            response = requests.get(BACKEND_URL, timeout=2)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success'):
-                    barrier_info = data.get('data', {})
-                    should_open = barrier_info.get('open', False)
-                    trigger_id = barrier_info.get('triggerId', 0)
-                    plate = barrier_info.get('licensePlate', 'N/A')
-                    slot = barrier_info.get('slotCode', 'N/A')
-                    gate = barrier_info.get('gate', 'ENTRY_1')
+        # Tự động kết nối nếu chưa kết nối
+        if ser is None or not ser.is_open:
+            ser = connect_serial()
+            if ser is None or not ser.is_open:
+                print("⏳ Đang chờ cắm cáp ESP32 vào cổng USB...")
+                time.sleep(2)
+                continue
+            else:
+                print("📡 Sẵn sàng lắng nghe sự kiện từ Kiosk Web...\n")
 
-                    # Phát hiện lệnh mở mới từ Backend Kiosk
-                    if should_open and trigger_id != 0 and trigger_id != last_trigger_id:
+        try:
+            # 1. Đọc log phản hồi từ ESP32
+            while ser.in_waiting:
+                msg = ser.readline().decode('utf-8', errors='ignore').strip()
+                if msg:
+                    print(f"   [ESP32]: {msg}")
+
+            # 2. Đồng bộ trạng thái mở/đóng Barrier từ Kiosk Backend
+            res = requests.get(BACKEND_STATUS_URL, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get('success'):
+                    info = data.get('data', {})
+                    should_open = info.get('open', False)
+                    trigger_id = info.get('triggerId', 0)
+                    plate = info.get('licensePlate', 'N/A')
+                    slot = info.get('slotCode', 'N/A')
+
+                    # A. LỆNH MỞ CỔNG KHI KIOSK XÁC NHẬN
+                    if should_open and not is_currently_open:
                         last_trigger_id = trigger_id
-                        print(f"\n🎉 [KIOSK EVENT] Xe hợp lệ! Biển số: {plate} | Slot: {slot} | Cổng: {gate}")
-                        print("👉 Python gửi lệnh: 'OPEN' -> ESP32...")
-                        
+                        is_currently_open = True
+                        print(f"\n🎉 [KIOSK] Xe hợp lệ! Biển số: {plate} | Ô đỗ: {slot}")
+                        print("👉 Gửi lệnh: OPEN -> ESP32...")
                         ser.write(b"OPEN\n")
                         ser.flush()
-                        
-                        # Đọc phản hồi từ ESP32
-                        time.sleep(0.5)
-                        while ser.in_waiting:
-                            esp_msg = ser.readline().decode('utf-8', errors='ignore').strip()
-                            if esp_msg:
-                                print(f"   [ESP32]: {esp_msg}")
-                        
-                        print("✅ Đã hoàn tất chu trình mở/đóng Barrier.\n")
 
+                    # B. LỆNH ĐÓNG CỔNG KHI KIOSK QUAY VỀ MÀN HÌNH CHÍNH
+                    elif not should_open and is_currently_open:
+                        is_currently_open = False
+                        print("\n🔒 [KIOSK] Kiosk đã quay về màn hình chính -> ĐÓNG CỔNG")
+                        print("👉 Gửi lệnh: CLOSE -> ESP32...")
+                        ser.write(b"CLOSE\n")
+                        ser.flush()
+
+        except (serial.SerialException, OSError) as se:
+            print(f"⚠️ Mất kết nối USB ({se}). Đang tự động kết nối lại...")
+            if ser:
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+            ser = None
+            time.sleep(1.5)
         except requests.exceptions.RequestException:
-            pass # Backend đang khởi động hoặc tạm thời chưa sẵn sàng
+            pass
         except Exception as e:
             print(f"⚠️ Lỗi: {e}")
+            if "device not configured" in str(e).lower() or "bad file descriptor" in str(e).lower():
+                ser = None
 
-        time.sleep(1) # Quét mỗi 1 giây
+        time.sleep(0.5)
 
 if __name__ == '__main__':
     main()
