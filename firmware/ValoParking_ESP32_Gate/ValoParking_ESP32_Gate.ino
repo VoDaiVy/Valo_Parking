@@ -5,12 +5,12 @@
 #include "soc/rtc_cntl_reg.h"
 
 // ====================================================================
-// VALO PARKING - CỔNG BARRIER THÔNG MINH TÍCH HỢP CẢM BIẾN QUANG E3F-DS30C4
-// KHÔNG ĐÓNG KHI BẤM DONE - CHỈ ĐÓNG KHI XE QUA CẢM BIẾN (HOẶC HẾT THỜI GIAN)
+// VALO PARKING - CỔNG BARRIER THÔNG MINH (FSM & MAINTENANCE HOLD)
 // --------------------------------------------------------------------
-// MÀN HÌNH LCD I2C : SDA -> G21, SCL -> G22
-// SERVO BARRIER    : SIGNAL -> G18
-// CẢM BIẾN QUANG   : DÂY ĐEN (OUT) -> G19, NÂU -> VIN(5V)/9V, XANH -> GND
+// 1. CHỈ MỞ khi nhận lệnh từ Kiosk Web hoặc Nút bấm Staff
+// 2. CHỈ ĐÓNG khi xe đã qua khỏi cảm biến hồng ngoại (hoặc hết 25s an toàn)
+// 3. KHI ĐÃ ĐÓNG: Vô hiệu hóa cảm biến 100%, có quẹt tay cũng KHÔNG tự mở/đóng
+// 4. CHẾ ĐỘ BẢO TRÌ (HOLD): Giữ cổng mở cố định, TẮT cảm biến để bảo trì/vệ sinh
 // ====================================================================
 
 LiquidCrystal_I2C* lcd = nullptr;
@@ -19,24 +19,32 @@ Servo barrierServo;
 #define SERVO_PIN 18
 #define SENSOR_PIN 19 // Chân tín hiệu cảm biến quang E3F-DS30C4
 
-bool isBarrierOpen = false;
-unsigned long barrierOpenedAt = 0;
-const unsigned long AUTO_CLOSE_TIMEOUT_MS = 10000; // Tự đóng sau 10s nếu không phát hiện cảm biến
+enum GateState {
+  GATE_IDLE_CLOSED,      // 0. Cổng đang đóng, chờ lệnh mở từ Kiosk/Staff (Cảm biến KHÔNG kích hoạt)
+  GATE_OPEN_WAITING,     // 1. Cổng đã mở lên 90 độ, đang chờ xe tiến vào cảm biến
+  GATE_CAR_UNDER,        // 2. Xe đang ở dưới thanh chắn (đang cắt tia hồng ngoại)
+  GATE_CAR_PASSED,       // 3. Xe đã vượt qua khỏi tia hồng ngoại -> Chuẩn bị đóng cổng
+  GATE_HOLD_MAINTENANCE  // 4. Chế độ bảo trì / giữ cổng: Mở đứng yên, TẮT CẢM BIẾN, không tự đóng
+};
 
-// Trạng thái theo dõi xe đi qua cảm biến
-bool vehicleDetectedUnderGate = false;
-bool vehicleHasPassed = false;
-unsigned long vehiclePassedTime = 0;
-const unsigned long CLOSE_DELAY_AFTER_PASS_MS = 1000; // Đợi 1.0s sau khi xe qua hẳn mới đóng
+GateState currentGateState = GATE_IDLE_CLOSED;
+unsigned long barrierOpenedAt = 0;
+unsigned long carPassedAt = 0;
+unsigned long obstacleDetectedStart = 0;
+unsigned long obstacleClearStart = 0;
+unsigned long lastSensorLogTime = 0;
+const unsigned long SETTLE_DELAY_MS = 500;    // 0.5s sau khi mở là sẵn sàng nhận diện
+const unsigned long OBSTACLE_CONFIRM_MS = 80; // Nhạy: cắt tia 80ms là nhận diện ngay
+const unsigned long CLEAR_CONFIRM_MS = 150;   // Hết che tia 150ms là nhận diện đã qua xong
+const unsigned long CLOSE_DELAY_MS = 1000;    // Đợi 1s sau khi xe qua hẳn mới đóng
 
 // --- CẤU HÌNH HIỆU ỨNG CHỮ CHẠY ĐA NĂNG (DYNAMIC MARQUEE) ---
 String currentLine1 = "  VALO PARKING  ";
 String currentMarqueeMsg = "   WELCOME TO VALO PARKING - CHUC QUY KHACH MOT NGAY TOT LANH!   ";
 int marqueeIndex = 0;
 unsigned long lastMarqueeUpdate = 0;
-const unsigned long MARQUEE_SPEED_MS = 250; // Tốc độ chạy chữ mượt mà (250ms/ký tự)
+const unsigned long MARQUEE_SPEED_MS = 250;
 
-// Đổi nội dung chữ chạy
 void setMarqueeContent(String line1, String marqueeMsg) {
   currentLine1 = line1;
   currentMarqueeMsg = "   " + marqueeMsg + "   ";
@@ -49,12 +57,10 @@ void setMarqueeContent(String line1, String marqueeMsg) {
   }
 }
 
-// Khởi tạo lại màn hình chờ mặc định
 void showDefaultScreen() {
   setMarqueeContent("  VALO PARKING  ", "WELCOME TO VALO PARKING - CHUC QUY KHACH MOT NGAY TOT LANH!");
 }
 
-// Xử lý chạy chữ dòng 2 (Non-blocking)
 void handleMarqueeEffect() {
   if (!lcd) return;
 
@@ -77,38 +83,82 @@ void handleMarqueeEffect() {
   }
 }
 
-// Mở barrier
+int currentServoAngle = 0;
+GateState stateBeforePause = GATE_IDLE_CLOSED;
+
+// Mở barrier thông thường
 void openBarrier(String line1, String marqueeText) {
-  if (isBarrierOpen) return;
-
-  // Cập nhật chữ chạy cho sự kiện mở cổng (Check-in hoặc Check-out)
   setMarqueeContent(line1, marqueeText);
-
   Serial.println("[ESP32] >> BAT DAU NANG CAN BARRIER (90 DO)...");
 
   barrierServo.attach(SERVO_PIN, 500, 2400);
-  for (int angle = 0; angle <= 90; angle += 10) {
+  for (int angle = currentServoAngle; angle <= 90; angle += 10) {
     barrierServo.write(angle);
+    currentServoAngle = angle;
     delay(20);
   }
   delay(100);
-  barrierServo.detach(); // Ngắt giữ chống sụt áp
+  barrierServo.detach();
+  currentServoAngle = 90;
 
-  isBarrierOpen = true;
+  currentGateState = GATE_OPEN_WAITING;
   barrierOpenedAt = millis();
-  
-  // Reset trạng thái cảm biến cho lượt xe mới
-  vehicleDetectedUnderGate = false;
-  vehicleHasPassed = false;
-  vehiclePassedTime = 0;
+  obstacleDetectedStart = 0;
+  obstacleClearStart = 0;
+  lastSensorLogTime = millis();
 
   Serial.println("[ESP32] >> BARRIER DA MO! DANG CHO XE DI QUA CAM BIEN...");
 }
 
+// Kích hoạt chế độ Tạm dừng (Vô hiệu hóa cảm biến & Timeout, giữ nguyên vị trí thanh chắn)
+void pauseBarrier() {
+  if (currentGateState != GATE_HOLD_MAINTENANCE) {
+    stateBeforePause = currentGateState;
+  }
+  barrierServo.detach();
+  currentGateState = GATE_HOLD_MAINTENANCE;
+  setMarqueeContent("  VALO PARKING  ", "* DANG TAM DUNG BARRIER (TAT CAM BIEN) *");
+  Serial.println("[ESP32] >> BAT CHE DO TAM DUNG (VO HIEU HOA CAM BIEN)!");
+}
+
+// Tiếp tục hoạt động thông minh theo vị trí thực tế
+void resumeBarrier() {
+  Serial.println("[ESP32] >> TIEP TUC HOAT DONG BINH THUONG...");
+  if (currentGateState == GATE_HOLD_MAINTENANCE) {
+    // 1. Nếu tạm dừng khi đang đóng (ở 0 độ) -> giữ nguyên 0 độ và về trạng thái sẵn sàng
+    if (currentServoAngle == 0 || stateBeforePause == GATE_IDLE_CLOSED) {
+      currentGateState = GATE_IDLE_CLOSED;
+      showDefaultScreen();
+      Serial.println("[ESP32] >> CONG DANG DONG: GIU NGUYEN VI TRI DONG!");
+    }
+    // 2. Nếu tạm dừng khi đã mở lên 90 độ -> giữ nguyên 90 độ và bật lại cảm biến
+    else if (currentServoAngle >= 90 || stateBeforePause == GATE_OPEN_WAITING || stateBeforePause == GATE_CAR_UNDER || stateBeforePause == GATE_CAR_PASSED) {
+      currentGateState = GATE_OPEN_WAITING;
+      barrierOpenedAt = millis();
+      setMarqueeContent("  VALO PARKING  ", "TIEP TUC HOAT DONG - VALO PARKING");
+      Serial.println("[ESP32] >> CONG DANG MO: GIU NGUYEN VI TRI MO & BAT LAI CAM BIEN!");
+    }
+    // 3. Nếu tạm dừng giữa chừng khi đang nâng -> nâng tiếp cho hết lên 90 độ
+    else {
+      Serial.println("[ESP32] >> DANG O LUNG CHUNG: NANG TIEP LEN 90 DO...");
+      barrierServo.attach(SERVO_PIN, 500, 2400);
+      for (int angle = currentServoAngle; angle <= 90; angle += 10) {
+        barrierServo.write(angle);
+        currentServoAngle = angle;
+        delay(20);
+      }
+      delay(100);
+      barrierServo.detach();
+      currentServoAngle = 90;
+      currentGateState = GATE_OPEN_WAITING;
+      barrierOpenedAt = millis();
+      setMarqueeContent("  VALO PARKING  ", "TIEP TUC HOAT DONG - VALO PARKING");
+    }
+  }
+}
+
 // Đóng barrier
 void closeBarrier() {
-  if (!isBarrierOpen) return;
-
   if (lcd) {
     lcd->clear();
     lcd->setCursor(0, 0);
@@ -120,24 +170,22 @@ void closeBarrier() {
   Serial.println("[ESP32] >> BAT DAU HA CAN BARRIER (0 DO)...");
 
   barrierServo.attach(SERVO_PIN, 500, 2400);
-  for (int angle = 90; angle >= 0; angle -= 10) {
+  for (int angle = currentServoAngle; angle >= 0; angle -= 10) {
     barrierServo.write(angle);
+    currentServoAngle = angle;
     delay(20);
   }
   delay(100);
   barrierServo.detach();
+  currentServoAngle = 0;
 
-  isBarrierOpen = false;
-  vehicleDetectedUnderGate = false;
-  vehicleHasPassed = false;
-  
+  currentGateState = GATE_IDLE_CLOSED;
   Serial.println("[ESP32] >> BARRIER DA DONG HOAN TOAN!");
-  Serial.println("GATE_CLOSED"); // Báo về cho Python Bridge biết cổng đã đóng
-  delay(1000);
+  Serial.println("GATE_CLOSED");
+  delay(500);
   showDefaultScreen();
 }
 
-// Tự động dò địa chỉ I2C của LCD
 byte scanI2C() {
   byte foundAddress = 0;
   for (byte address = 1; address < 127; address++) {
@@ -156,10 +204,8 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  // 1. Cấu hình chân Cảm biến quang E3F-DS30C4
   pinMode(SENSOR_PIN, INPUT_PULLUP);
 
-  // 2. Khởi tạo LCD I2C
   Wire.begin(21, 22);
   delay(200);
   byte lcdAddr = scanI2C();
@@ -175,54 +221,59 @@ void setup() {
   lcd->print(" KHOI DONG HE THONG");
   delay(1000);
 
-  // 3. Khởi tạo Servo
   ESP32PWM::allocateTimer(0);
   barrierServo.setPeriodHertz(50);
   barrierServo.attach(SERVO_PIN, 500, 2400);
   barrierServo.write(0);
   delay(300);
   barrierServo.detach();
-  isBarrierOpen = false;
-
+  
+  currentGateState = GATE_IDLE_CLOSED;
   showDefaultScreen();
   Serial.println("ESP32_BARRIER_READY");
 }
 
 void loop() {
-  // 1. Luôn duy trì hiệu ứng chạy chữ mượt mà (cả khi chờ, checkin hoặc checkout)
+  // 1. Luôn duy trì hiệu ứng chạy chữ
   handleMarqueeEffect();
 
-  // 2. ĐỌC TÍN HIỆU CẢM BIẾN QUANG KHI BARRIER ĐANG MỞ
-  if (isBarrierOpen) {
-    bool isObstaclePresent = (digitalRead(SENSOR_PIN) == LOW);
+  // 2. QUẢN LÝ TIẾN TRÌNH CẢM BIẾN XE QUA CỔNG (CHỈ KHI ĐANG Ở CHẾ ĐỘ TỰ ĐỘNG)
+  if (currentGateState != GATE_IDLE_CLOSED && currentGateState != GATE_HOLD_MAINTENANCE) {
+    // Chỉ đọc cảm biến sau khi mở xong 1.5s để loại trừ rung giật/nhiễu dòng điện của servo
+    if (millis() - barrierOpenedAt >= SETTLE_DELAY_MS) {
+      bool isObstacle = (digitalRead(SENSOR_PIN) == LOW);
 
-    // Giai đoạn 1: Xe bắt đầu đi vào phạm vi cảm biến
-    if (isObstaclePresent && !vehicleDetectedUnderGate) {
-      vehicleDetectedUnderGate = true;
-      Serial.println("[ESP32-SENSOR] >> PHAT HIEN XE DANG DI QUA CONG BARRIER...");
-    }
+      // Giai đoạn 1: Cổng đang mở, xe bắt đầu tiến vào cắt tia hồng ngoại
+      if (currentGateState == GATE_OPEN_WAITING) {
+        if (isObstacle) {
+          currentGateState = GATE_CAR_UNDER;
+          Serial.println("\n🚗 [ESP32-SENSOR] >> ĐÃ CẮT TIA HỒNG NGOẠI: XE ĐANG QUA CỔNG!");
+        }
+      }
 
-    // Giai đoạn 2: Xe đã đi qua khỏi cảm biến (từ LOW chuyển lại thành HIGH)
-    if (!isObstaclePresent && vehicleDetectedUnderGate && !vehicleHasPassed) {
-      vehicleHasPassed = true;
-      vehiclePassedTime = millis();
-      Serial.println("[ESP32-SENSOR] >> XE DA QUA KHOI CONG! CHUAN BI DONG BARRIER...");
-    }
+      // Giai đoạn 2: Xe đang ở dưới thanh chắn -> chờ xe đi qua hẳn (hết vật cản)
+      else if (currentGateState == GATE_CAR_UNDER) {
+        if (!isObstacle) {
+          currentGateState = GATE_CAR_PASSED;
+          carPassedAt = millis();
+          Serial.println("\n✅ [ESP32-SENSOR] >> XE ĐÃ QUA KHỎI TIA HỒNG NGOẠI! ĐÓNG SAU 1 GIÂY...");
+        }
+      }
 
-    // Giai đoạn 3: Đợi 1.0 giây sau khi xe qua hẳn -> Tự động đóng barrier
-    if (vehicleHasPassed && (millis() - vehiclePassedTime >= CLOSE_DELAY_AFTER_PASS_MS)) {
-      Serial.println("[ESP32] >> XE QUA HOAN TAT -> DONG CONG!");
-      closeBarrier();
-    }
-
-    // Giai đoạn dự phòng: Tự động đóng sau 10s nếu không phát hiện xe qua cảm biến
-    if (millis() - barrierOpenedAt > AUTO_CLOSE_TIMEOUT_MS) {
-      Serial.println("[ESP32] >> HET 10S CHO -> TU DONG DONG CONG AN TOAN");
-      closeBarrier();
+      // Giai đoạn 3: Đang đếm 1s để đóng -> nếu có vật cản lại thì giữ cổng, nếu hết 1s thì đóng dứt khoát
+      else if (currentGateState == GATE_CAR_PASSED) {
+        if (isObstacle) {
+          currentGateState = GATE_CAR_UNDER;
+          Serial.println("\n⚠️ [ESP32-SENSOR] >> CÓ VẬT CẢN TRỞ LẠI -> GIỮ NGUYÊN CỔNG MỞ AN TOÀN!");
+        } else if (millis() - carPassedAt >= CLOSE_DELAY_MS) {
+          Serial.println("\n🔒 [ESP32] >> TIẾN HÀNH ĐÓNG CỔNG BARRIER!");
+          closeBarrier();
+        }
+      }
     }
   }
 
-  // 3. LẮNG NGHE LỆNH SERIAL TỪ KIOSK / PYTHON
+  // 3. LẮNG NGHE LỆNH TỪ KIOSK HOẶC STAFF PANEL
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
     command.trim();
@@ -230,8 +281,16 @@ void loop() {
     if (command.length() == 0) return;
     Serial.println("[ESP32 REC]: " + command);
 
-    // Format lệnh mở: OPEN|<plate>|<slot>|<gate>
-    if (command.startsWith("OPEN")) {
+    // Lệnh tạm dừng / bảo trì (VÔ HIỆU HÓA CẢM BIẾN, GIỮ NGUYÊN VỊ TRÍ)
+    if (command.startsWith("HOLD") || command.startsWith("PAUSE")) {
+      pauseBarrier();
+    }
+    // Lệnh tiếp tục hoạt động
+    else if (command.startsWith("RESUME")) {
+      resumeBarrier();
+    }
+    // Lệnh mở tự động: OPEN|<plate>|<slot>|<gate>
+    else if (command.startsWith("OPEN")) {
       String plate = "";
       String slot = "";
       String gate = "";
@@ -257,15 +316,12 @@ void loop() {
       String scrollMsg = "MO CONG XE VAO - CHAO MUNG QUY KHACH!";
 
       if (plate.length() > 0) {
-        // TRƯỜNG HỢP CHECK-OUT (XE RA): Chạy chữ TẠM BIỆT QUÝ KHÁCH
         if (gate.indexOf("EXIT") != -1 || command.indexOf("CHECKOUT") != -1) {
           line1 = "RA: " + plate;
           scrollMsg = "TAM BIET QUY KHACH - CHUC BAN THUONG LO BINH AN - HEN GAP LAI!";
-        } 
-        // TRƯỜNG HỢP CHECK-IN (XE VÀO): Chạy chữ CHÀO MỪNG + Ô ĐỖ
-        else {
+        } else {
           line1 = "VAO: " + plate;
-          if (slot.length() > 0) {
+          if (slot.length() > 0 && slot != "STAFF") {
             scrollMsg = "XIN CHAO! O DO CUA BAN LA: " + slot + " - VUI LONG DO DUNG VI TRI - CHUC MOT NGAY TOT LANH!";
           } else {
             scrollMsg = "XIN CHAO QUY KHACH - MO CONG CHECK-IN - CHUC MOT NGAY TOT LANH!";
@@ -281,10 +337,8 @@ void loop() {
     else if (command.startsWith("CHECKOUT")) {
       openBarrier("  TAM BIET!  ", "TAM BIET QUY KHACH - CHUC BAN THUONG LO BINH AN - HEN GAP LAI!");
     } 
-    else if (command.startsWith("CLOSE")) {
-      // TUYỆT ĐỐI KHÔNG ĐÓNG NGAY KHI KHÁCH BẤM DONE TRÊN KIOSK
-      // Cổng chỉ đóng khi xe qua cảm biến (hoặc hết timeout an toàn)
-      Serial.println("[ESP32] >> KIOSK DONE NHUNG GIU CONG CHO XE QUA CAM BIEN...");
+    else if (command.startsWith("FORCE_CLOSE") || command.startsWith("CLOSE")) {
+      closeBarrier();
     }
   }
 }

@@ -4,9 +4,12 @@ import {
   MonitorCheck, Car, FileWarning, ClipboardList,
   TrendingUp, CheckCircle2, AlertTriangle, DoorOpen,
   ArrowRightCircle, QrCode, Activity, PlayCircle, Crown,
-  CircleDollarSign, CalendarCheck2, Wrench
+  CircleDollarSign, CalendarCheck2, Wrench, LogIn, LogOut,
+  Radio, Lock, Unlock, Pause, Play
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { getAllFloors, getFloorSlots } from '../../services/parkingFloorService';
 import { getAllBookings } from '../../services/bookingService';
 import { getAllSessions } from '../../services/sessionService';
@@ -201,7 +204,11 @@ const AlertPill = ({ icon, text, time, level }) => (
 
 export default function StaffDashboard() {
   const navigate = useNavigate();
+  const socket = useSocket();
   const [gateOpen, setGateOpen] = useState(false);
+  const [selectedGate, setSelectedGate] = useState('ENTRY_1'); // 'ENTRY_1' | 'EXIT_1'
+  const [isTriggeringGate, setIsTriggeringGate] = useState(false);
+  const [gateState, setGateState] = useState({ open: false, holdOpen: false, gate: 'ENTRY_1', licensePlate: '' });
   const [floors, setFloors] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -214,6 +221,139 @@ export default function StaffDashboard() {
     getStaffDashboardSyncStatus()
   );
   const [loading, setLoading] = useState(true);
+
+  // Lắng nghe trạng thái Barrier real-time từ Socket + Polling dự phòng mỗi 1s
+  useEffect(() => {
+    const fetchBarrierStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/iot/barrier-status`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          setGateOpen(Boolean(data.data.open));
+          setGateState((prev) => ({
+            ...prev,
+            ...data.data,
+            open: Boolean(data.data.open),
+            holdOpen: Boolean(data.data.holdOpen)
+          }));
+        }
+      } catch (e) {
+        // bỏ qua lỗi mạng
+      }
+    };
+
+    fetchBarrierStatus();
+    const interval = setInterval(fetchBarrierStatus, 1000);
+
+    const handleBarrierControl = (data) => {
+      if (data) {
+        setGateOpen(Boolean(data.open));
+        setGateState((prev) => ({
+          ...prev,
+          ...data,
+          open: Boolean(data.open),
+          holdOpen: Boolean(data.holdOpen)
+        }));
+      }
+    };
+
+    if (socket) {
+      socket.on('gate:barrier_control', handleBarrierControl);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.off('gate:barrier_control', handleBarrierControl);
+      }
+    };
+  }, [socket]);
+
+  // Xử lý mở cổng Barrier (Cổng Vào hoặc Cổng Ra)
+  const handleOpenGate = async (gateType = selectedGate) => {
+    setIsTriggeringGate(true);
+    try {
+      const fallbackPlate = gateType === 'ENTRY_1' ? 'STAFF-IN' : 'STAFF-OUT';
+      const res = await fetch(`${API_BASE}/iot/open-barrier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gate: gateType,
+          licensePlate: fallbackPlate,
+          slotCode: 'STAFF'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGateOpen(true);
+        setGateState((prev) => ({
+          ...prev,
+          open: true,
+          holdOpen: false,
+          gate: gateType,
+          licensePlate: fallbackPlate
+        }));
+        const label = gateType === 'ENTRY_1' ? 'Entry Gate' : 'Exit Gate';
+        toast.success(`🎉 ${label} opened successfully!`);
+      } else {
+        toast.error('Failed to trigger gate open!');
+      }
+    } catch (err) {
+      toast.error('IoT Barrier connection error!');
+    } finally {
+      setIsTriggeringGate(false);
+    }
+  };
+
+  // Xử lý đóng cổng Barrier bằng nút bấm
+  const handleCloseGate = async () => {
+    setIsTriggeringGate(true);
+    try {
+      const res = await fetch(`${API_BASE}/iot/close-barrier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gate: selectedGate })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGateOpen(false);
+        setGateState((prev) => ({ ...prev, open: false, holdOpen: false }));
+        toast.success('🔒 Gate closed successfully!');
+      } else {
+        toast.error('Failed to close gate!');
+      }
+    } catch (err) {
+      toast.error('IoT Barrier connection error!');
+    } finally {
+      setIsTriggeringGate(false);
+    }
+  };
+
+  // Xử lý chế độ Tạm dừng Barrier (Tắt cảm biến & Giữ nguyên vị trí)
+  const handleToggleHoldGate = async () => {
+    setIsTriggeringGate(true);
+    const newHold = !gateState.holdOpen;
+    try {
+      const res = await fetch(`${API_BASE}/iot/hold-barrier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hold: newHold, gate: selectedGate })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGateState((prev) => ({ ...prev, holdOpen: newHold }));
+        if (newHold) {
+          toast('⏸️ Barrier Paused: IR sensor disabled & position locked!', { icon: '⏸️' });
+        } else {
+          toast.success('▶️ Barrier Resumed: Normal operation active!');
+        }
+      }
+    } catch (err) {
+      toast.error('IoT Barrier connection error!');
+    } finally {
+      setIsTriggeringGate(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -644,35 +784,143 @@ export default function StaffDashboard() {
         <div className="relative flex flex-col gap-4 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111111] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
           <div className="absolute -top-40 -left-40 w-80 h-80 bg-sky-500/5 rounded-full blur-[100px] pointer-events-none" />
           
-          <h3 className="text-white font-extrabold text-lg relative z-10">Gate & Actions</h3>
-
-          {/* Open Gate Manually */}
-          <div className={`mt-2 rounded-2xl border p-5 flex flex-col items-center gap-4 transition-all duration-500 relative z-10 overflow-hidden ${
-            gateOpen ? 'bg-emerald-900/40 border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.15)]' : 'bg-black/40 border-white/10'
-          }`}>
-            <div className={`absolute inset-0 bg-gradient-to-t from-emerald-500/10 to-transparent opacity-0 transition-opacity duration-500 ${gateOpen ? 'opacity-100' : ''}`} />
-            
-            <DoorOpen size={36} className={`transition-all duration-500 relative z-10 ${gateOpen ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'text-gray-500'}`} />
-            <p className="text-xs text-gray-400 text-center font-bold tracking-widest uppercase relative z-10">Gate A-01</p>
-            
-            <button
-              onClick={() => setGateOpen((o) => !o)}
-              className={`w-full py-3 rounded-xl text-sm font-black tracking-wide transition-all duration-300 relative z-10 shadow-lg ${
+          <div className="flex items-center justify-between relative z-10">
+            <h3 className="text-white font-extrabold text-lg flex items-center gap-2">
+              <Radio size={18} className={gateOpen ? "text-emerald-400 animate-pulse" : "text-gray-500"} />
+              Gate & Actions
+            </h3>
+            <span
+              key={gateOpen ? 'status-open' : 'status-standby'}
+              className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border select-none transition-colors duration-200 ${
                 gateOpen
-                  ? 'bg-emerald-500 text-black hover:bg-emerald-400 hover:shadow-[0_0_20px_rgba(52,211,153,0.4)]'
-                  : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10 hover:border-white/20'
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : "bg-white/5 text-gray-400 border-white/10"
               }`}
             >
-              <div className="flex items-center justify-center gap-2">
-                {gateOpen ? <><PlayCircle size={16}/> GATE OPEN</> : 'OPEN GATE MANUALLY'}
-              </div>
+              {gateOpen ? "BARRIER OPEN" : "STANDBY"}
+            </span>
+          </div>
+
+          {/* Gate Selector: Entry or Exit */}
+          <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-xl border border-white/5 relative z-10">
+            <button
+              onClick={() => setSelectedGate('ENTRY_1')}
+              className={`py-2 px-3 rounded-lg text-xs font-black tracking-wide flex items-center justify-center gap-1.5 transition-all ${
+                selectedGate === 'ENTRY_1'
+                  ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <LogIn size={14} />
+              ENTRY GATE (IN)
             </button>
+            <button
+              onClick={() => setSelectedGate('EXIT_1')}
+              className={`py-2 px-3 rounded-lg text-xs font-black tracking-wide flex items-center justify-center gap-1.5 transition-all ${
+                selectedGate === 'EXIT_1'
+                  ? 'bg-sky-500 text-black shadow-[0_0_15px_rgba(14,165,233,0.3)]'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <LogOut size={14} />
+              EXIT GATE (OUT)
+            </button>
+          </div>
+
+          {/* Active Gate Controller Card */}
+          <div className={`mt-1 rounded-2xl border p-4 flex flex-col items-center gap-3 transition-all duration-500 relative z-10 overflow-hidden ${
+            gateOpen 
+              ? (selectedGate === 'ENTRY_1' ? 'bg-emerald-950/40 border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.15)]' : 'bg-sky-950/40 border-sky-500/50 shadow-[0_0_30px_rgba(14,165,233,0.15)]')
+              : 'bg-black/40 border-white/10'
+          }`}>
+            <div className={`absolute inset-0 bg-gradient-to-t opacity-0 transition-opacity duration-500 ${
+              gateOpen ? (selectedGate === 'ENTRY_1' ? 'from-emerald-500/10 opacity-100' : 'from-sky-500/10 opacity-100') : ''
+            }`} />
             
-            {gateOpen && (
-              <p className="text-[10px] text-emerald-400 text-center animate-pulse font-bold tracking-widest uppercase relative z-10">
-                Auto-closing in 30s...
-              </p>
-            )}
+            <div className="flex items-center gap-3 relative z-10 w-full justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl ${
+                  gateOpen
+                    ? (selectedGate === 'ENTRY_1' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-sky-500/20 text-sky-400')
+                    : 'bg-white/5 text-gray-400'
+                }`}>
+                  <DoorOpen size={24} />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-white uppercase tracking-wider">
+                    {selectedGate === 'ENTRY_1' ? 'ENTRY GATE (ENTRY_1)' : 'EXIT GATE (EXIT_1)'}
+                  </p>
+                  <p className="text-[10px] text-gray-400 font-medium">
+                    {gateOpen ? 'Barrier is Open' : 'Barrier is Closed'}
+                  </p>
+                </div>
+              </div>
+
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                gateOpen ? 'bg-emerald-400 animate-ping shadow-[0_0_8px_#34d399]' : 'bg-gray-600'
+              }`} />
+            </div>
+
+            {/* ACTION BUTTONS: OPEN / CLOSE & PAUSE / RESUME */}
+            <div className="w-full grid grid-cols-1 gap-2.5 mt-2 relative z-10">
+              <button
+                disabled={isTriggeringGate}
+                onClick={() => {
+                  if (gateOpen) {
+                    handleCloseGate();
+                  } else {
+                    handleOpenGate(selectedGate);
+                  }
+                }}
+                className={`w-full py-3.5 rounded-xl text-xs font-black tracking-wider transition-all duration-300 shadow-lg flex items-center justify-center gap-2 ${
+                  gateOpen
+                    ? 'bg-rose-500 text-white hover:bg-rose-600 hover:shadow-[0_0_20px_rgba(244,63,94,0.4)] active:scale-[0.98]'
+                    : selectedGate === 'ENTRY_1'
+                    ? 'bg-emerald-500 text-black hover:bg-emerald-400 hover:shadow-[0_0_20px_rgba(52,211,153,0.4)] active:scale-[0.98]'
+                    : 'bg-sky-500 text-black hover:bg-sky-400 hover:shadow-[0_0_20px_rgba(14,165,233,0.4)] active:scale-[0.98]'
+                } ${isTriggeringGate ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {gateOpen ? (
+                  <>
+                    <Lock size={16} />
+                    CLOSE GATE
+                  </>
+                ) : selectedGate === 'ENTRY_1' ? (
+                  <>
+                    <LogIn size={16} />
+                    OPEN ENTRY GATE
+                  </>
+                ) : (
+                  <>
+                    <LogOut size={16} />
+                    OPEN EXIT GATE
+                  </>
+                )}
+              </button>
+
+              {/* SECONDARY BUTTON: PAUSE / RESUME */}
+              <button
+                disabled={isTriggeringGate}
+                onClick={handleToggleHoldGate}
+                className={`w-full py-2.5 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-2 border ${
+                  gateState.holdOpen
+                    ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] animate-pulse'
+                    : 'bg-white/5 text-amber-300/80 border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/40'
+                }`}
+              >
+                {gateState.holdOpen ? (
+                  <>
+                    <Play size={13} className="fill-current" />
+                    RESUME BARRIER
+                  </>
+                ) : (
+                  <>
+                    <Pause size={13} className="fill-current" />
+                    PAUSE BARRIER
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3 mt-2 relative z-10">

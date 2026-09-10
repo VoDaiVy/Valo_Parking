@@ -54,6 +54,7 @@ def main():
 
     ser = None
     is_currently_open = False
+    was_hold = False
     last_trigger_id = 0
 
     while True:
@@ -75,8 +76,22 @@ def main():
                     print(f"   [ESP32]: {msg}")
                     if "GATE_CLOSED" in msg:
                         is_currently_open = False
+                        # Đồng bộ ngược lại cho Backend & Web App biết cổng đã đóng xong
+                        print("🔒 [BRIDGE] Cổng đã đóng -> Gửi tín hiệu đóng về Backend & Web App...")
+                        try:
+                            res_close = requests.post(
+                                'http://localhost:5001/api/iot/close-barrier',
+                                json={'fromBridge': True},
+                                timeout=2
+                            )
+                            if res_close.status_code == 200:
+                                data_close = res_close.json()
+                                last_trigger_id = data_close.get('data', {}).get('triggerId', last_trigger_id)
+                                print("✅ [BRIDGE SYNC] Đã đồng bộ trạng thái ĐÓNG CỔNG về Web App thành công!")
+                        except Exception as e_close:
+                            print(f"⚠️ Lỗi gửi close-barrier: {e_close}")
 
-            # 2. Đồng bộ trạng thái mở/đóng Barrier từ Kiosk Backend
+            # 2. Đồng bộ trạng thái mở/đóng Barrier từ Backend
             res = requests.get(BACKEND_STATUS_URL, timeout=2)
             if res.status_code == 200:
                 data = res.json()
@@ -87,16 +102,45 @@ def main():
                     plate = info.get('licensePlate', 'N/A')
                     slot = info.get('slotCode', 'N/A')
                     gate = info.get('gate', 'ENTRY_1')
+                    is_hold = info.get('holdOpen', False)
 
-                    # LỆNH MỞ CỔNG KHI KIOSK XÁC NHẬN
-                    if should_open and (not is_currently_open or trigger_id != last_trigger_id):
+                    # Lần đầu khởi động bridge: Ghi nhớ triggerId hiện tại để không chạy lại lệnh cũ
+                    if last_trigger_id == 0:
+                        last_trigger_id = trigger_id
+
+                    # A. LỆNH TẠM DỪNG / BẢO TRÌ (VÔ HIỆU HÓA CẢM BIẾN, GIỮ NGUYÊN VỊ TRÍ)
+                    if is_hold and trigger_id != last_trigger_id:
+                        last_trigger_id = trigger_id
+                        was_hold = True
+                        print(f"\n⏸️ [PAUSE] Bật chế độ TẠM DỪNG (Vô hiệu hóa cảm biến hồng ngoại) tại {gate}...")
+                        ser.write(b"PAUSE\n")
+                        ser.flush()
+
+                    # B. LỆNH ĐÓNG CỔNG TỪ STAFF (CHỈ GỬI KHI CỔNG ĐANG MỞ VÀ CÓ LỆNH MỚI)
+                    elif (not should_open) and info.get('forceClose', False) and is_currently_open and trigger_id != last_trigger_id:
+                        last_trigger_id = trigger_id
+                        is_currently_open = False
+                        print(f"\n🔒 [CLOSE GATE] Gửi lệnh đóng cổng -> FORCE_CLOSE tại {gate}")
+                        ser.write(b"FORCE_CLOSE\n")
+                        ser.flush()
+
+                    # C. LỆNH MỞ CỔNG TỪ KIOSK HOẶC STAFF PANEL
+                    elif should_open and trigger_id != last_trigger_id:
                         last_trigger_id = trigger_id
                         is_currently_open = True
-                        print(f"\n🎉 [KIOSK] Xe hợp lệ! Biển số: {plate} | Ô đỗ: {slot} | Cổng: {gate}")
-                        
+                        was_hold = False
+                        print(f"\n🎉 [GATE OPEN] Mở cổng từ Web/App! Biển số: {plate} | Ô: {slot} | Cổng: {gate}")
                         cmd = f"OPEN|{plate}|{slot}|{gate}\n"
                         print(f"👉 Gửi lệnh: {cmd.strip()} -> ESP32...")
                         ser.write(cmd.encode('utf-8'))
+                        ser.flush()
+
+                    # D. LỆNH TIẾP TỤC HOẠT ĐỘNG (CHỈ KHI TRƯỚC ĐÓ ĐANG TẠM DỪNG)
+                    elif (not is_hold) and was_hold and trigger_id != last_trigger_id:
+                        last_trigger_id = trigger_id
+                        was_hold = False
+                        print(f"\n▶️ [RESUME] Tiếp tục hoạt động bình thường tại {gate}...")
+                        ser.write(b"RESUME\n")
                         ser.flush()
 
         except requests.exceptions.RequestException as req_err:
