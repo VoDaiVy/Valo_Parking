@@ -84,14 +84,17 @@ def main():
                     trigger_id = info.get('triggerId', 0)
                     plate = info.get('licensePlate', 'N/A')
                     slot = info.get('slotCode', 'N/A')
+                    gate = info.get('gate', 'ENTRY_1')
 
                     # A. LỆNH MỞ CỔNG KHI KIOSK XÁC NHẬN
-                    if should_open and not is_currently_open:
+                    if should_open and (not is_currently_open or trigger_id != last_trigger_id):
                         last_trigger_id = trigger_id
                         is_currently_open = True
-                        print(f"\n🎉 [KIOSK] Xe hợp lệ! Biển số: {plate} | Ô đỗ: {slot}")
-                        print("👉 Gửi lệnh: OPEN -> ESP32...")
-                        ser.write(b"OPEN\n")
+                        print(f"\n🎉 [KIOSK] Xe hợp lệ! Biển số: {plate} | Ô đỗ: {slot} | Cổng: {gate}")
+                        
+                        cmd = f"OPEN|{plate}|{slot}|{gate}\n"
+                        print(f"👉 Gửi lệnh: {cmd.strip()} -> ESP32...")
+                        ser.write(cmd.encode('utf-8'))
                         ser.flush()
 
                     # B. LỆNH ĐÓNG CỔNG KHI KIOSK QUAY VỀ MÀN HÌNH CHÍNH
@@ -102,6 +105,9 @@ def main():
                         ser.write(b"CLOSE\n")
                         ser.flush()
 
+        except requests.exceptions.RequestException as req_err:
+            # Backend chua bat, bo qua va tiep tuc lang nghe Serial, khong duoc ngat USB
+            pass
         except (serial.SerialException, OSError) as se:
             print(f"⚠️ Mất kết nối USB ({se}). Đang tự động kết nối lại...")
             if ser:
@@ -111,8 +117,6 @@ def main():
                     pass
             ser = None
             time.sleep(1.5)
-        except requests.exceptions.RequestException:
-            pass
         except Exception as e:
             print(f"⚠️ Lỗi: {e}")
             if "device not configured" in str(e).lower() or "bad file descriptor" in str(e).lower():
