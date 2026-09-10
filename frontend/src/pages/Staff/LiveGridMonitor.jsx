@@ -116,10 +116,10 @@ export default function LiveGridMonitor() {
          style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
       
       {/* Top Toolbar */}
-      <div className="absolute left-8 top-4 z-50 flex items-center gap-4 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur">
+      <div className="absolute left-8 top-4 z-50 flex items-center gap-4 rounded-xl border border-[#34d399]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur">
         <div className="flex items-center gap-2 px-3 border-r border-white/10">
-            <MonitorCheck size={18} className="text-[#ffd555]" />
-            <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">Live Monitor</span>
+            <MonitorCheck size={18} className="text-[#34d399]" />
+            <span className="text-xs font-bold uppercase tracking-widest text-[#34d399]">Live Monitor</span>
         </div>
         <StaffDropdown
           value={currentFloorId || ""}
@@ -147,9 +147,9 @@ export default function LiveGridMonitor() {
         <button
           type="button"
           onClick={() => setShowAiModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-black transition"
         >
-          <Sparkles size={14} className="text-amber-400" />
+          <Sparkles size={14} className="text-violet-400" />
           <span>AI Plate Assistant</span>
         </button>
       </div>
@@ -181,14 +181,14 @@ export default function LiveGridMonitor() {
 
       {/* Slide-over panel for slots */}
       <div className={`absolute inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${selectedSlot ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setSelectedSlot(null)}></div>
-      <div className={`absolute bottom-0 right-0 top-0 z-50 flex w-[420px] transform flex-col border-l border-[#ffd555]/20 bg-[#111111]/[0.98] p-8 text-slate-200 shadow-[-20px_0_50px_rgba(0,0,0,0.38)] backdrop-blur-3xl transition-transform duration-300 ease-in-out ${selectedSlot ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`absolute bottom-0 right-0 top-0 z-50 flex w-[420px] transform flex-col border-l border-[#34d399]/20 bg-[#111111]/[0.98] p-8 text-slate-200 shadow-[-20px_0_50px_rgba(0,0,0,0.38)] backdrop-blur-3xl transition-transform duration-300 ease-in-out ${selectedSlot ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedSlot && (
            <>
               <div className="flex justify-between items-start mb-6 flex-shrink-0">
                 <div>
-                    <span className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-[#d7b94a]">{selectedSlot.type} TICKET</span>
+                    <span className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-[#7ee7c2]">{selectedSlot.type} TICKET</span>
                     <h2 className="text-4xl font-extrabold text-white flex items-center gap-2">
-                        SLOT <span className="text-[#ffd555]">{selectedSlot.id}</span>
+                        SLOT <span className="text-[#34d399]">{selectedSlot.id}</span>
                     </h2>
                 </div>
                 <button onClick={() => setSelectedSlot(null)} className="text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 w-8 h-8 rounded-full flex items-center justify-center transition-all border border-white/5 flex-shrink-0">
@@ -279,7 +279,7 @@ export default function LiveGridMonitor() {
               <div className="mt-auto flex-shrink-0 pt-2 pb-2">
                  <button 
                     onClick={() => setShowCheckoutModal(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]">
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#34d399] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(52,211,153,0.18)] transition-all hover:bg-[#6ee7b7] focus:outline-none focus:ring-2 focus:ring-[#34d399]/30 active:scale-[0.98]">
                     <X size={18} />
                     Process Check-out
                  </button>

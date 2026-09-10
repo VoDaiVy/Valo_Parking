@@ -40,9 +40,9 @@ const STAT_CARD_TONES = {
     value: 'text-sky-300',
   },
   gold: {
-    icon: 'border-amber-400/25 bg-amber-500/15 text-amber-300',
-    glow: 'bg-amber-500/10',
-    value: 'text-amber-300',
+    icon: 'border-emerald-400/25 bg-emerald-500/15 text-emerald-300',
+    glow: 'bg-emerald-500/10',
+    value: 'text-emerald-300',
   },
 };
 
@@ -432,7 +432,7 @@ export default function BookingManagement() {
     <div className={`${STAFF_THEME.page} relative flex min-h-[calc(100vh-70px)] flex-col overflow-hidden p-4 font-sans md:p-8`}
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '40px 40px' }}>
 
-      <div className="pointer-events-none absolute left-[20%] top-0 h-[600px] w-[600px] rounded-full bg-[#ffd555]/[0.035] blur-[120px]" />
+      <div className="pointer-events-none absolute left-[20%] top-0 h-[600px] w-[600px] rounded-full bg-[#34d399]/[0.035] blur-[120px]" />
 
       <Toaster position="top-right" toastOptions={{ className: 'bg-[#18181b] text-white border border-white/10 shadow-2xl' }} />
 
@@ -454,7 +454,7 @@ export default function BookingManagement() {
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Upcoming</span>
-              <span className="text-amber-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]">{getOperationalValue(bookingState, upcoming.length)}</span>
+              <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]">{getOperationalValue(bookingState, upcoming.length)}</span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
@@ -474,7 +474,7 @@ export default function BookingManagement() {
               className="relative flex min-w-[140px] cursor-pointer flex-col items-center justify-center px-4"
               title="Choose booking date"
             >
-              <span className="mb-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#d7b94a]">{format(currentDate, 'EEEE')}</span>
+              <span className="mb-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#7ee7c2]">{format(currentDate, 'EEEE')}</span>
               <span className="text-lg font-bold leading-none text-white">{format(currentDate, 'MMM dd, yyyy')}</span>
               <input
                 type="date"
@@ -498,12 +498,12 @@ export default function BookingManagement() {
       </div>
 
       {/* --- BOOKING PERFORMANCE --- */}
-      <section className="relative z-10 mb-5 shrink-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] md:p-5">
-        <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#ffd555]/[0.05] blur-[90px]" />
+      <section className="relative z-10 mb-5 shrink-0 overflow-hidden p-4 md:p-5">
+        <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#34d399]/[0.05] blur-[90px]" />
         <div className="relative flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#ffd555]/25 bg-[#ffd555]/15 text-[#ffd555]">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#34d399]/25 bg-[#34d399]/15 text-[#34d399]">
                 <BarChart3 size={16} />
               </div>
               <div>
@@ -516,9 +516,6 @@ export default function BookingManagement() {
                     {statisticsError ? 'Data unavailable' : statisticsLoading ? 'Updating' : 'Live'}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[11px] font-medium text-white/40">
-                  Completed booking outcomes and realized revenue only.
-                </p>
               </div>
             </div>
 
@@ -549,7 +546,7 @@ export default function BookingManagement() {
                 onClick={() => setStatisticsRange(option.value)}
                 className={`rounded-xl border px-3 py-1.5 text-[10px] font-bold transition ${
                   statisticsRange === option.value
-                    ? 'border-[#ffd555]/35 bg-[#ffd555]/15 text-[#ffd555] shadow-[0_0_16px_rgba(255,213,85,0.08)]'
+                    ? 'border-[#34d399]/35 bg-[#34d399]/15 text-[#34d399] shadow-[0_0_16px_rgba(52,211,153,0.08)]'
                     : 'border-white/[0.08] bg-white/[0.03] text-white/40 hover:border-white/15 hover:text-white/70'
                 }`}
               >
@@ -560,7 +557,7 @@ export default function BookingManagement() {
               type="button"
               onClick={() => setStatisticsRefreshKey((value) => value + 1)}
               disabled={statisticsLoading}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-white/40 transition hover:border-[#ffd555]/25 hover:text-[#ffd555] disabled:cursor-wait disabled:opacity-50"
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-white/40 transition hover:border-[#34d399]/25 hover:text-[#34d399] disabled:cursor-wait disabled:opacity-50"
               title="Refresh booking statistics"
             >
               <RefreshCw size={14} className={statisticsLoading ? 'animate-spin' : ''} />
@@ -618,13 +615,13 @@ export default function BookingManagement() {
       {/* --- CONTROLS --- */}
       <div className="relative z-30 mb-6 flex shrink-0 flex-wrap items-center gap-4">
         <div className="relative w-full md:w-[350px] group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition-colors group-focus-within:text-[#ffd555]" size={18} />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition-colors group-focus-within:text-[#34d399]" size={18} />
           <input
             type="text"
             placeholder="Search plate, name, slot..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full rounded-full border border-white/[0.08] bg-[#111] py-3.5 pl-12 pr-4 text-sm font-medium text-white shadow-inner outline-none transition-all placeholder:text-white/30 focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30"
+            className="w-full rounded-full border border-white/[0.08] bg-[#111] py-3.5 pl-12 pr-4 text-sm font-medium text-white shadow-inner outline-none transition-all placeholder:text-white/30 focus:border-[#34d399]/50 focus:ring-1 focus:ring-[#34d399]/30"
           />
         </div>
 

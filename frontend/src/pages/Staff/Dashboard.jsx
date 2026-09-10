@@ -203,6 +203,7 @@ export default function StaffDashboard() {
   const navigate = useNavigate();
   const [gateOpen, setGateOpen] = useState(false);
   const [floors, setFloors] = useState([]);
+  const [selectedFloorId, setSelectedFloorId] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [dbSlots, setDbSlots] = useState([]);
@@ -300,14 +301,57 @@ export default function StaffDashboard() {
     };
   }, [fetchData]);
 
+  useEffect(() => {
+    if (!floors.length) {
+      setSelectedFloorId(null);
+      return;
+    }
+
+    const floorExists = floors.some((floor) => String(floor._id) === String(selectedFloorId));
+    if (!floorExists) {
+      setSelectedFloorId(floors[0]._id);
+    }
+  }, [floors, selectedFloorId]);
+
   const dashboardMetrics = useMemo(
-    () => buildStaffDashboardMetrics({ floors, dbSlots, sessions, bookings }),
-    [floors, dbSlots, sessions, bookings]
+    () => buildStaffDashboardMetrics({
+      floors,
+      dbSlots,
+      sessions,
+      bookings,
+      selectedFloorId,
+    }),
+    [floors, dbSlots, sessions, bookings, selectedFloorId]
   );
+
+  const activeFloor = useMemo(
+    () => floors.find((floor) => String(floor._id) === String(selectedFloorId)) || floors[0] || null,
+    [floors, selectedFloorId]
+  );
+
+  const activeFloorSlots = useMemo(() => {
+    if (!activeFloor?.layoutData?.elements) return [];
+
+    return (activeFloor.layoutData.elements || [])
+      .filter((element) => element?.type?.startsWith('slot'))
+      .map((element) => ({
+        id: element.id,
+        name: element.name || '',
+        type: element.type,
+      }))
+      .sort((firstSlot, secondSlot) => {
+        const firstLabel = firstSlot.name || firstSlot.id;
+        const secondLabel = secondSlot.name || secondSlot.id;
+
+        return firstLabel.localeCompare(secondLabel, undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        });
+      });
+  }, [activeFloor]);
+
   const {
     totalSlots,
-    activeFloor,
-    activeFloorSlots,
     vehiclesInside,
     cancellationsToday,
     recentBookings,
@@ -542,8 +586,22 @@ export default function StaffDashboard() {
           
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 relative z-10">
             <div>
-              <h3 className="text-white font-extrabold text-lg flex items-center gap-2">
-                Live Grid <span className="text-gray-500 font-normal">—</span> <span className="text-[#ffd555]">{activeFloor ? activeFloor.name : 'Loading...'}</span>
+              <h3 className="text-white font-extrabold text-lg flex items-center gap-2 flex-wrap">
+                Live Grid
+                {floors.length > 0 && (
+                  <select
+                    value={selectedFloorId || ''}
+                    onChange={(event) => setSelectedFloorId(event.target.value || null)}
+                    className="ml-1 rounded-full border border-white/10 bg-[#141414] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#34d399] outline-none transition-colors hover:border-[#34d399]/40 focus:border-[#34d399]/60 focus:ring-1 focus:ring-[#34d399]/20"
+                    aria-label="Select floor"
+                  >
+                    {floors.map((floor) => (
+                      <option key={floor._id} value={floor._id} className="bg-[#111111] text-white">
+                        {floor.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </h3>
               <p className="text-gray-400 text-xs mt-1 font-medium tracking-wide uppercase">Real-time slot telemetry</p>
             </div>
@@ -592,7 +650,7 @@ export default function StaffDashboard() {
                       <div className="h-px flex-1 bg-gradient-to-r from-transparent to-emerald-400/25" />
                       <h4
                         id={`dashboard-zone-${zone.key}`}
-                        className="shrink-0 text-xs font-black uppercase tracking-[0.2em] text-[#d7b94a]"
+                        className="shrink-0 text-xs font-black uppercase tracking-[0.2em] text-[#7ee7c2]"
                       >
                         {zone.label}
                       </h4>
