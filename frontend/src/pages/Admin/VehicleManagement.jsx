@@ -807,7 +807,7 @@ export default function VehicleManagement() {
             className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
           >
             <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
-            Refresh
+            Sync
           </button>
         </motion.header>
 
@@ -908,9 +908,8 @@ export default function VehicleManagement() {
                 {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
                 Sync
               </button>
-              <button type="button" onClick={loadModels} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
+              <button type="button" onClick={loadModels} className="inline-flex h-12 items-center justify-center gap-0 rounded-[14px] border border-white/[0.08] px-3 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200" title="Refresh list">
                 <RefreshCw size={15} className={modelsLoading ? 'animate-spin' : ''} />
-                Refresh
               </button>
             </div>
           )}

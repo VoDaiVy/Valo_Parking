@@ -109,6 +109,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
 function LoadingSkeleton({ isAdmin }) {
   return (
     <div className="relative min-h-[calc(100vh-70px)] overflow-hidden bg-[#050505] px-4 py-6 sm:px-6 md:px-8">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-yellow-400/5 blur-3xl" />
       <div className="mx-auto max-w-7xl animate-pulse motion-reduce:animate-none">
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
@@ -409,6 +410,7 @@ export default function TicketPackages() {
 
   return (
     <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
       <div className="pointer-events-none absolute right-24 top-16 h-px w-96 max-w-[70vw] bg-gradient-to-r from-transparent via-yellow-300/20 to-transparent" />
 
@@ -418,7 +420,7 @@ export default function TicketPackages() {
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <Tag size={12} /> Packages
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Ticket Packages</h1>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Ticket Packages</h1>
             <p className="mt-2 text-sm font-medium text-slate-400">Manage parking rates and ticket packages.</p>
           </div>
 

@@ -287,7 +287,7 @@ export default function NotificationManagement() {
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <Bell size={12} /> Notifications
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Manage notifications</h1>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Manage notifications</h1>
           </div>
           <button
             type="button"

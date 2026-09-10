@@ -85,7 +85,7 @@ export default function VehiclePending() {
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
             <Car size={12} /> Pending
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Pending vehicles</h1>
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Pending vehicles</h1>
           <p className="text-gray-400 text-sm mt-1">
             {vehicles.length > 0 ? `${vehicles.length} vehicles pending approval` : 'No vehicles pending approval'}
           </p>
