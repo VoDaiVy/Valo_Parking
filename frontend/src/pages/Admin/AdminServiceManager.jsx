@@ -50,34 +50,35 @@ function AnimatedCounter({ target, duration = 1200, isCurrency, isTime }) {
 }
 
 // --- Stat Card ----------------------------------------------------------------
-function StatCard({ icon: Icon, label, value, gradient, glow, loading, isCurrency, isTime }) {
-  return (
-    <div
-      className="relative rounded-2xl p-4 overflow-hidden cursor-default group transition-all duration-500 hover:-translate-y-1 hover:scale-[1.015]"
-      style={{
-        background: 'linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035) 45%, rgba(255,213,85,0.055))',
-        border: '1px solid rgba(255,255,255,0.14)',
-        boxShadow: '0 16px 45px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 18px 55px ${glow}, 0 0 0 1px rgba(255,255,255,0.18), inset 0 1px 0 rgba(255,255,255,0.12)`; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 16px 45px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)'; }}
-    >
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-        style={{ background: 'linear-gradient(105deg, transparent 32%, rgba(255,255,255,0.12) 48%, transparent 66%)' }} />
-      <div className={`absolute -top-8 -right-8 w-28 h-28 rounded-full bg-gradient-to-br ${gradient} opacity-20 group-hover:opacity-35 transition-opacity duration-300 blur-2xl`} />
-      <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-emerald-300', loading, index, isCurrency, isTime }) {
+  const dividerClass = [
+    index > 0 ? 'border-t border-white/10' : '',
+    index % 2 === 1 ? 'sm:border-l sm:border-white/10' : '',
+    index > 1 ? 'sm:border-t sm:border-white/10' : 'sm:border-t-0',
+    index > 0 ? 'xl:border-l xl:border-white/10' : '',
+    'xl:border-t-0',
+  ].join(' ');
 
-      <div className="relative flex items-center justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] text-white/[0.65] uppercase tracking-widest font-bold mb-1 truncate">{label}</p>
-          <div className="text-2xl xl:text-[26px] font-extrabold text-white drop-shadow-[0_2px_14px_rgba(255,255,255,0.08)] truncate leading-tight">
-            {loading ? <span className="inline-block w-12 h-6 rounded bg-white/10 animate-skeleton" /> : (
-              <AnimatedCounter target={value} isCurrency={isCurrency} isTime={isTime} />
-            )}
+  return (
+    <div className={dividerClass}>
+      <div className="group min-w-0 px-0 py-4 transition hover:bg-white/[0.018] sm:px-5">
+        <div className="flex items-start gap-3">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition group-hover:brightness-125 ${toneClass}`}>
+            <Icon size={18} />
           </div>
-        </div>
-        <div className={`shrink-0 w-11 h-11 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg shadow-black/25 ring-1 ring-white/20 transition-transform duration-500 group-hover:rotate-3 group-hover:scale-110`}>
-          <Icon size={18} className="text-white" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold uppercase tracking-wide text-blue-200/55">{label}</p>
+            {loading ? (
+              <div className="mt-3 h-8 w-20 animate-pulse rounded bg-white/10" />
+            ) : (
+              <p className="mt-2 truncate font-mono text-3xl font-black leading-none text-white">
+                <AnimatedCounter target={value} isCurrency={isCurrency} isTime={isTime} />
+              </p>
+            )}
+            <p className={`mt-2 truncate text-sm font-semibold ${subTone}`}>
+              {sub}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -518,11 +519,13 @@ const AdminServiceManager = () => {
           </div>
 
           {/* ── KPI Cards ── */}
-          <div className="grid grid-cols-4 gap-4 mt-6">
-            <StatCard icon={Package} label="Total Services" value={totalServices} gradient="from-cyan-400 to-blue-500" glow="rgba(6,182,212,0.3)" loading={loading} />
-            <StatCard icon={CheckCircle} label="Active Services" value={activeServices} gradient="from-emerald-400 to-green-600" glow="rgba(16,185,129,0.3)" loading={loading} />
-            <StatCard icon={DollarSign} label="Average Price" value={avgPrice} gradient="from-violet-400 to-purple-600" glow="rgba(168,85,247,0.3)" loading={loading} isCurrency />
-            <StatCard icon={Clock} label="Average Time" value={avgTime} gradient="from-amber-400 to-orange-500" glow="rgba(245,158,11,0.3)" loading={loading} isTime />
+          <div className="mt-6 border-y border-white/10 bg-[#080808]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard index={0} icon={Package} label="Total Services" value={totalServices} sub="All created services" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
+              <StatCard index={1} icon={CheckCircle} label="Active Services" value={activeServices} sub="Currently available" toneClass="bg-emerald-500/10 text-emerald-300" loading={loading} />
+              <StatCard index={2} icon={DollarSign} label="Average Price" value={avgPrice} sub="Per service" toneClass="bg-purple-500/10 text-purple-300" loading={loading} isCurrency />
+              <StatCard index={3} icon={Clock} label="Average Time" value={avgTime} sub="Per service" toneClass="bg-orange-500/10 text-orange-300" loading={loading} isTime />
+            </div>
           </div>
         </div>
 
