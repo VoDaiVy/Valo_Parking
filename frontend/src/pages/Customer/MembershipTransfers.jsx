@@ -357,9 +357,9 @@ export default function MembershipTransfers({ embedded = false }) {
                 <Loader2 size={24} className="animate-spin" />
               </div>
             ) : filteredTransfers.length === 0 ? (
-              <div className="py-16 text-center text-white/40 flex flex-col items-center">
-                <FileText size={48} className="mb-4 text-white/20" />
-                <p className="text-lg font-bold text-white/60 mb-2">
+              <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center">
+                <FileText size={26} className="mx-auto text-white/20" />
+                <p className="mt-3 text-sm font-bold text-white/50">
                   No {filter === "all" ? "" : `${filter} `}transfer requests
                 </p>
               </div>

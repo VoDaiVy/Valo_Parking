@@ -173,10 +173,10 @@ export default function ParkingHistory() {
           <p className="text-red-400 font-medium">{error}</p>
         </div>
       ) : sessions.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-16 text-white/40">
-          <History size={48} className="mb-4 text-white/20" />
-          <h3 className="text-lg font-bold text-white/60 mb-2">No History Found</h3>
-          <p className="text-sm max-w-sm">
+        <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 px-4">
+          <History size={64} className="text-gray-500 mb-4" />
+          <h3 className="text-xl font-bold text-gray-300">No History Found</h3>
+          <p className="text-gray-500 mt-2 text-sm">
             You don't have any parking sessions yet.
           </p>
         </div>

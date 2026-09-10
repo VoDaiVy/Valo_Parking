@@ -893,8 +893,8 @@ export default function MyVehicles() {
             <Car size={32} className="text-yellow-400" />
           </div>
           <div>
-            <p className="text-lg font-bold text-white/60 mb-2">No vehicles yet</p>
-            <p className="text-sm text-white/40 max-w-sm">Add a vehicle to use the 3D garage feature</p>
+            <p className="font-bold text-white text-lg mb-1">No vehicles yet</p>
+            <p className="text-white/50 text-sm">Add a vehicle to use the 3D garage feature</p>
           </div>
           <button onClick={openAdd}
             className="flex items-center gap-2 px-6 py-3 rounded-xl

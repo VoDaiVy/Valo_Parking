@@ -1,5 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Menu, Transition } from "@headlessui/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import {
@@ -7,7 +6,6 @@ import {
   BellRing,
   Check,
   CheckCircle2,
-  ChevronDown,
   Globe2,
   History,
   Info,
@@ -155,7 +153,7 @@ export default function NotificationManagement() {
               onClick={() => setTab(t.id)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.id
-                  ? "border-[#34d399] text-[#34d399]"
+                  ? "border-[#ffd555] text-[#ffd555]"
                   : "border-transparent text-gray-400 hover:text-white"
               }`}
             >
@@ -292,12 +290,12 @@ function FeedTab({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search title or content..."
-          className="w-72 max-w-full rounded-full border border-white/[0.08] bg-[#111] px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-[#34d399]/50 focus:ring-1 focus:ring-[#34d399]/30"
+          className="w-72 max-w-full rounded-full border border-white/[0.08] bg-[#111] px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30"
         />
         <button
           onClick={onRefresh}
           disabled={loading || loadingMore}
-          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-white/60 transition hover:border-[#34d399]/30 hover:bg-[#34d399]/10 hover:text-[#d1fae5]"
+          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-white/60 transition hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a]"
         >
           {loading ? "Loading..." : "Refresh"}
         </button>
@@ -354,7 +352,7 @@ function FilterChip({ label, active, onClick, tone }) {
         active
           ? toneCls
             ? `${toneCls.bg} ${toneCls.color} ${toneCls.border}`
-            : "border-[#34d399]/40 bg-[#34d399]/15 text-[#34d399]"
+            : "border-[#ffd555]/40 bg-[#ffd555]/15 text-[#ffd555]"
           : "border-white/10 text-gray-400 hover:text-white"
       }`}
     >
@@ -499,9 +497,9 @@ function ComposeTab({ onSent }) {
 
   return (
     <div className="max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-      <div className="flex flex-col gap-3 border-b border-[#34d399]/15 bg-gradient-to-r from-[#34d399]/[0.06] to-transparent px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+      <div className="flex flex-col gap-3 border-b border-[#ffd555]/15 bg-gradient-to-r from-[#ffd555]/[0.06] to-transparent px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl border border-[#34d399]/20 bg-[#34d399]/10 text-[#34d399]">
+          <span className="grid h-10 w-10 place-items-center rounded-xl border border-[#ffd555]/20 bg-[#ffd555]/10 text-[#ffd555]">
             <BellRing size={19} />
           </span>
           <div>
@@ -522,75 +520,38 @@ function ComposeTab({ onSent }) {
         <div className="space-y-7 p-5 sm:p-7 lg:border-r lg:border-white/5">
           <section>
             <StepHeading number="1" title="Choose audience" description="Select exactly who should receive this message." />
-            <div className="mt-4">
-              <Menu as="div" className="relative w-full text-left">
-                <Menu.Button className="flex h-14 w-full items-center justify-between gap-3 rounded-xl border border-[#34d399]/25 bg-[#0d1715] px-4 text-left text-white shadow-[0_0_18px_rgba(16,185,129,0.08)] transition hover:border-[#34d399]/40 hover:bg-[#11231d] focus:outline-none focus:ring-2 focus:ring-[#34d399]/30">
-                  <span className="flex min-w-0 items-center gap-3">
-                    {(() => {
-                      const selectedOption = audienceOptions.find((option) => option.id === audienceKind) || audienceOptions[0];
-                      const SelectedIcon = selectedOption.icon;
-                      return (
-                        <>
-                          <span className="grid h-9 w-9 place-items-center rounded-lg border border-[#34d399]/20 bg-[#34d399]/10 text-[#34d399]">
-                            <SelectedIcon size={17} />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold text-white">{selectedOption.label}</span>
-                            <span className="mt-0.5 block truncate text-xs text-gray-400">{selectedOption.description}</span>
-                          </span>
-                        </>
-                      );
-                    })()}
-                  </span>
-                  <ChevronDown className="shrink-0 text-gray-400" size={18} />
-                </Menu.Button>
-
-                <Transition
-                  as={Fragment}
-                  enter="transition ease-out duration-120"
-                  enterFrom="opacity-0 scale-95 -translate-y-1"
-                  enterTo="opacity-100 scale-100 translate-y-0"
-                  leave="transition ease-in duration-90"
-                  leaveFrom="opacity-100 scale-100"
-                  leaveTo="opacity-0 scale-95"
-                >
-                  <Menu.Items className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#111111] py-1 shadow-2xl shadow-black/70 backdrop-blur-xl focus:outline-none">
-                    {audienceOptions.map((option) => {
-                      const Icon = option.icon;
-                      const active = audienceKind === option.id;
-
-                      return (
-                        <Menu.Item key={option.id}>
-                          {({ active: itemActive }) => (
-                            <button
-                              type="button"
-                              onClick={() => changeAudience(option.id)}
-                              className={`flex w-full items-center gap-3 px-3 py-3 text-left transition ${
-                                itemActive || active ? "bg-[#34d399]/10 text-white" : "text-gray-300"
-                              }`}
-                            >
-                              <span className={`grid h-9 w-9 place-items-center rounded-lg ${
-                                active ? "bg-[#34d399]/15 text-[#34d399]" : "bg-white/5 text-gray-500"
-                              }`}>
-                                <Icon size={17} />
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="block text-sm font-medium">{option.label}</span>
-                                <span className="mt-0.5 block text-xs text-gray-500">{option.description}</span>
-                              </span>
-                              <span className={`grid h-5 w-5 place-items-center rounded-full border ${
-                                active ? "border-[#34d399] bg-[#34d399] text-black" : "border-white/15 text-transparent"
-                              }`}>
-                                <Check size={12} strokeWidth={3} />
-                              </span>
-                            </button>
-                          )}
-                        </Menu.Item>
-                      );
-                    })}
-                  </Menu.Items>
-                </Transition>
-              </Menu>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {audienceOptions.map((option) => {
+                const Icon = option.icon;
+                const active = audienceKind === option.id;
+                return (
+                  <button
+                    type="button"
+                    key={option.id}
+                    onClick={() => changeAudience(option.id)}
+                    className={`group flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all ${
+                      active
+                        ? "border-[#ffd555]/50 bg-[#ffd555]/10"
+                        : "border-white/10 bg-[#101010] hover:border-white/20 hover:bg-white/[0.03]"
+                    }`}
+                  >
+                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
+                      active ? "bg-[#ffd555]/15 text-[#ffd555]" : "bg-white/5 text-gray-500"
+                    }`}>
+                      <Icon size={18} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-sm font-medium ${active ? "text-[#ffe58a]" : "text-gray-200"}`}>{option.label}</span>
+                      <span className="mt-0.5 block text-xs text-gray-500">{option.description}</span>
+                    </span>
+                    <span className={`grid h-5 w-5 place-items-center rounded-full border ${
+                      active ? "border-[#ffd555] bg-[#ffd555] text-black" : "border-white/15 text-transparent"
+                    }`}>
+                      <Check size={12} strokeWidth={3} />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="mt-4">
@@ -653,7 +614,7 @@ function ComposeTab({ onSent }) {
                   onChange={(event) => setTitle(event.target.value)}
                   maxLength={200}
                   placeholder="Example: Scheduled maintenance tonight"
-                  className="h-12 w-full rounded-xl border border-white/10 bg-[#0b0b0b] px-4 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#34d399]/50 focus:ring-4 focus:ring-[#34d399]/[0.06]"
+                  className="h-12 w-full rounded-xl border border-white/10 bg-[#0b0b0b] px-4 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#ffd555]/50 focus:ring-4 focus:ring-[#ffd555]/[0.06]"
                 />
               </Field>
               <Field label="Content" hint={`${message.length}/2000`}>
@@ -663,7 +624,7 @@ function ComposeTab({ onSent }) {
                   maxLength={2000}
                   rows={6}
                   placeholder="Explain what happened, when it applies, and what the recipient should do..."
-                  className="w-full resize-y rounded-xl border border-white/10 bg-[#0b0b0b] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/25 focus:border-[#34d399]/50 focus:ring-4 focus:ring-[#34d399]/[0.06]"
+                  className="w-full resize-y rounded-xl border border-white/10 bg-[#0b0b0b] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/25 focus:border-[#ffd555]/50 focus:ring-4 focus:ring-[#ffd555]/[0.06]"
                 />
               </Field>
             </div>
@@ -704,7 +665,7 @@ function ComposeTab({ onSent }) {
                 </span>
               </div>
               <div className="flex gap-3 p-4">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#34d399]/15 text-[#34d399]">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#ffd555]/15 text-[#ffd555]">
                   <BellRing size={18} />
                 </span>
                 <div className="min-w-0">
@@ -746,7 +707,7 @@ function ComposeTab({ onSent }) {
               type="button"
               onClick={submit}
               disabled={!canSubmit}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#34d399] px-5 text-sm font-black text-[#080808] shadow-[0_10px_30px_rgba(52,211,153,0.14)] transition hover:bg-[#6ee7b7] focus:outline-none focus:ring-2 focus:ring-[#34d399]/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-600 disabled:shadow-none"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] px-5 text-sm font-black text-[#080808] shadow-[0_10px_30px_rgba(255,213,85,0.14)] transition hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-600 disabled:shadow-none"
             >
               {isSubmitting ? (
                 <><Loader2 className="animate-spin" size={17} />Sending...</>
@@ -764,7 +725,7 @@ function ComposeTab({ onSent }) {
 function StepHeading({ number, title, description, compact = false }) {
   return (
     <div className="flex items-start gap-3">
-      <span className={`grid shrink-0 place-items-center rounded-lg bg-[#34d399]/10 text-xs font-bold text-[#34d399] ${compact ? "h-7 w-7" : "h-8 w-8"}`}>
+      <span className={`grid shrink-0 place-items-center rounded-lg bg-[#ffd555]/10 text-xs font-bold text-[#ffd555] ${compact ? "h-7 w-7" : "h-8 w-8"}`}>
         {number}
       </span>
       <div>
@@ -844,7 +805,7 @@ function UserPicker({ multi, value, onChange }) {
             value={q}
             onChange={(event) => setQ(event.target.value)}
             placeholder="Search by username or email..."
-            className="h-11 w-full rounded-lg border border-white/10 bg-[#111] pl-10 pr-10 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#34d399]/40"
+            className="h-11 w-full rounded-lg border border-white/10 bg-[#111] pl-10 pr-10 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#ffd555]/40"
           />
           {q && (
             <button
@@ -861,12 +822,12 @@ function UserPicker({ multi, value, onChange }) {
           <div className="mt-3 flex items-start gap-2">
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
               {value.map((user) => (
-                <span key={user._id} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-[#34d399]/10 px-2 py-1 text-xs text-[#a7f3d0]">
+                <span key={user._id} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-[#ffd555]/10 px-2 py-1 text-xs text-[#ffe58a]">
                   <span className="max-w-40 truncate">{user.username}</span>
                   <button
                     type="button"
                     onClick={() => onChange(value.filter((item) => item._id !== user._id))}
-                    className="text-[#6ee7b7] hover:text-[#d1fae5]"
+                    className="text-[#d7b94a] hover:text-[#ffe58a]"
                     aria-label={`Remove ${user.username}`}
                   >
                     <X size={12} />
@@ -912,16 +873,16 @@ function UserPicker({ multi, value, onChange }) {
                 type="button"
                 onClick={() => toggle(user)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                  selected ? "bg-[#34d399]/10" : "hover:bg-white/[0.04]"
+                  selected ? "bg-[#ffd555]/10" : "hover:bg-white/[0.04]"
                 }`}
               >
                 <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold ${
-                  selected ? "bg-[#34d399]/20 text-[#34d399]" : "bg-white/5 text-gray-500"
+                  selected ? "bg-[#ffd555]/20 text-[#ffd555]" : "bg-white/5 text-gray-500"
                 }`}>
                   {initials}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={`block truncate text-sm font-medium ${selected ? "text-[#a7f3d0]" : "text-gray-200"}`}>
+                  <span className={`block truncate text-sm font-medium ${selected ? "text-[#ffe58a]" : "text-gray-200"}`}>
                     {user.username}
                   </span>
                   <span className="block truncate text-xs text-gray-600">{user.email}</span>
@@ -930,7 +891,7 @@ function UserPicker({ multi, value, onChange }) {
                   {user.role}
                 </span>
                 <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
-                  selected ? "border-[#34d399] bg-[#34d399] text-black" : "border-white/15 text-transparent"
+                  selected ? "border-[#ffd555] bg-[#ffd555] text-black" : "border-white/15 text-transparent"
                 }`}>
                   <Check size={11} strokeWidth={3} />
                 </span>

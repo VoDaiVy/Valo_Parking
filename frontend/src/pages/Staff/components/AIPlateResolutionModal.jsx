@@ -114,7 +114,7 @@ export default function AIPlateResolutionModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-fuchsia-600 text-white shadow-lg shadow-violet-500/20">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-600 text-black shadow-lg shadow-yellow-500/20">
               <Sparkles size={20} className="animate-pulse" />
             </div>
             <div>
@@ -122,7 +122,7 @@ export default function AIPlateResolutionModal({
                 <h3 className="text-base font-black tracking-tight text-white">
                   AI Blurred &amp; Occluded Plate Assistant
                 </h3>
-                <span className="rounded-full bg-violet-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-violet-300 border border-violet-400/20">
+                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-amber-400 border border-amber-400/20">
                   ALPR Assistant
                 </span>
               </div>
@@ -162,7 +162,7 @@ export default function AIPlateResolutionModal({
                   type="button"
                   onClick={() => handleResolve()}
                   disabled={loading}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-600 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-violet-500/20 hover:from-violet-400 hover:to-fuchsia-500 disabled:opacity-50 transition"
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-4 py-2.5 text-xs font-black text-black shadow-lg shadow-yellow-500/20 hover:from-amber-300 hover:to-yellow-400 disabled:opacity-50 transition"
                 >
                   {loading ? (
                     <span className="animate-spin text-sm">⏳</span>
@@ -179,15 +179,15 @@ export default function AIPlateResolutionModal({
               <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-1">
                 Plate Image
               </label>
-              <label className="flex h-[42px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-3 text-xs font-semibold text-gray-300 hover:border-violet-400 hover:bg-violet-400/5 transition overflow-hidden">
+              <label className="flex h-[42px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-3 text-xs font-semibold text-gray-300 hover:border-amber-400 hover:bg-amber-400/5 transition overflow-hidden">
                 {imagePreview ? (
                   <div className="flex items-center gap-2 truncate">
                     <img src={imagePreview} alt="Plate preview" className="h-6 w-10 object-cover rounded" />
-                    <span className="text-[11px] text-violet-400">Image Attached</span>
+                    <span className="text-[11px] text-amber-400">Image Attached</span>
                   </div>
                 ) : (
                   <>
-                    <Upload size={14} className="text-violet-400" />
+                    <Upload size={14} className="text-amber-400" />
                     <span>Upload Image</span>
                   </>
                 )}
