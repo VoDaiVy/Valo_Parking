@@ -205,10 +205,12 @@ const AlertPill = ({ icon, text, time, level }) => (
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const socket = useSocket();
-  const [gateOpen, setGateOpen] = useState(false);
   const [selectedGate, setSelectedGate] = useState('ENTRY_1'); // 'ENTRY_1' | 'EXIT_1'
   const [isTriggeringGate, setIsTriggeringGate] = useState(false);
-  const [gateState, setGateState] = useState({ open: false, holdOpen: false, gate: 'ENTRY_1', licensePlate: '' });
+  const [gatesState, setGatesState] = useState({
+    ENTRY_1: { open: false, holdOpen: false, gate: 'ENTRY_1', licensePlate: '' },
+    EXIT_1: { open: false, holdOpen: false, gate: 'EXIT_1', licensePlate: '' }
+  });
   const [floors, setFloors] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -222,19 +224,16 @@ export default function StaffDashboard() {
   );
   const [loading, setLoading] = useState(true);
 
-  // Lắng nghe trạng thái Barrier real-time từ Socket + Polling dự phòng mỗi 1s
+  // Lắng nghe trạng thái độc lập của từng Barrier real-time từ Socket + Polling
   useEffect(() => {
     const fetchBarrierStatus = async () => {
       try {
         const res = await fetch(`${API_BASE}/iot/barrier-status`);
         const data = await res.json();
-        if (data.success && data.data) {
-          setGateOpen(Boolean(data.data.open));
-          setGateState((prev) => ({
+        if (data.success && data.gates) {
+          setGatesState(prev => ({
             ...prev,
-            ...data.data,
-            open: Boolean(data.data.open),
-            holdOpen: Boolean(data.data.holdOpen)
+            ...data.gates
           }));
         }
       } catch (e) {
@@ -246,13 +245,16 @@ export default function StaffDashboard() {
     const interval = setInterval(fetchBarrierStatus, 1000);
 
     const handleBarrierControl = (data) => {
-      if (data) {
-        setGateOpen(Boolean(data.open));
-        setGateState((prev) => ({
+      if (data && data.gate) {
+        const normGate = (data.gate || 'ENTRY_1').toUpperCase();
+        setGatesState(prev => ({
           ...prev,
-          ...data,
-          open: Boolean(data.open),
-          holdOpen: Boolean(data.holdOpen)
+          [normGate]: {
+            ...(prev[normGate] || {}),
+            ...data,
+            open: Boolean(data.open),
+            holdOpen: Boolean(data.holdOpen)
+          }
         }));
       }
     };
@@ -269,7 +271,16 @@ export default function StaffDashboard() {
     };
   }, [socket]);
 
-  // Xử lý mở cổng Barrier (Cổng Vào hoặc Cổng Ra)
+  const activeGateState = gatesState[selectedGate] || {
+    open: false,
+    holdOpen: false,
+    gate: selectedGate,
+    licensePlate: ''
+  };
+  const gateOpen = Boolean(activeGateState.open);
+  const gateHold = Boolean(activeGateState.holdOpen);
+
+  // Xử lý mở cổng Barrier độc lập theo cổng được chọn
   const handleOpenGate = async (gateType = selectedGate) => {
     setIsTriggeringGate(true);
     try {
@@ -285,15 +296,17 @@ export default function StaffDashboard() {
       });
       const data = await res.json();
       if (data.success) {
-        setGateOpen(true);
-        setGateState((prev) => ({
+        setGatesState(prev => ({
           ...prev,
-          open: true,
-          holdOpen: false,
-          gate: gateType,
-          licensePlate: fallbackPlate
+          [gateType]: {
+            ...(prev[gateType] || {}),
+            open: true,
+            holdOpen: false,
+            gate: gateType,
+            licensePlate: fallbackPlate
+          }
         }));
-        const label = gateType === 'ENTRY_1' ? 'Entry Gate' : 'Exit Gate';
+        const label = gateType === 'ENTRY_1' ? 'Entry Gate (IN)' : 'Exit Gate (OUT)';
         toast.success(`🎉 ${label} opened successfully!`);
       } else {
         toast.error('Failed to trigger gate open!');
@@ -305,20 +318,27 @@ export default function StaffDashboard() {
     }
   };
 
-  // Xử lý đóng cổng Barrier bằng nút bấm
-  const handleCloseGate = async () => {
+  // Xử lý đóng cổng Barrier độc lập theo cổng được chọn
+  const handleCloseGate = async (gateType = selectedGate) => {
     setIsTriggeringGate(true);
     try {
       const res = await fetch(`${API_BASE}/iot/close-barrier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gate: selectedGate })
+        body: JSON.stringify({ gate: gateType })
       });
       const data = await res.json();
       if (data.success) {
-        setGateOpen(false);
-        setGateState((prev) => ({ ...prev, open: false, holdOpen: false }));
-        toast.success('🔒 Gate closed successfully!');
+        setGatesState(prev => ({
+          ...prev,
+          [gateType]: {
+            ...(prev[gateType] || {}),
+            open: false,
+            holdOpen: false
+          }
+        }));
+        const label = gateType === 'ENTRY_1' ? 'Entry Gate (IN)' : 'Exit Gate (OUT)';
+        toast.success(`🔒 ${label} closed successfully!`);
       } else {
         toast.error('Failed to close gate!');
       }
@@ -329,23 +349,31 @@ export default function StaffDashboard() {
     }
   };
 
-  // Xử lý chế độ Tạm dừng Barrier (Tắt cảm biến & Giữ nguyên vị trí)
-  const handleToggleHoldGate = async () => {
+  // Xử lý chế độ Tạm dừng Barrier độc lập theo cổng được chọn
+  const handleToggleHoldGate = async (gateType = selectedGate) => {
     setIsTriggeringGate(true);
-    const newHold = !gateState.holdOpen;
+    const targetGate = gatesState[gateType] || {};
+    const newHold = !targetGate.holdOpen;
     try {
       const res = await fetch(`${API_BASE}/iot/hold-barrier`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hold: newHold, gate: selectedGate })
+        body: JSON.stringify({ hold: newHold, gate: gateType })
       });
       const data = await res.json();
       if (data.success) {
-        setGateState((prev) => ({ ...prev, holdOpen: newHold }));
+        setGatesState(prev => ({
+          ...prev,
+          [gateType]: {
+            ...(prev[gateType] || {}),
+            holdOpen: newHold
+          }
+        }));
+        const label = gateType === 'ENTRY_1' ? 'Entry Gate' : 'Exit Gate';
         if (newHold) {
-          toast('⏸️ Barrier Paused: IR sensor disabled & position locked!', { icon: '⏸️' });
+          toast(`⏸️ ${label} Paused: IR sensor disabled & position locked!`, { icon: '⏸️' });
         } else {
-          toast.success('▶️ Barrier Resumed: Normal operation active!');
+          toast.success(`▶️ ${label} Resumed: Normal operation active!`);
         }
       }
     } catch (err) {
@@ -867,7 +895,7 @@ export default function StaffDashboard() {
                 disabled={isTriggeringGate}
                 onClick={() => {
                   if (gateOpen) {
-                    handleCloseGate();
+                    handleCloseGate(selectedGate);
                   } else {
                     handleOpenGate(selectedGate);
                   }
@@ -901,14 +929,14 @@ export default function StaffDashboard() {
               {/* SECONDARY BUTTON: PAUSE / RESUME */}
               <button
                 disabled={isTriggeringGate}
-                onClick={handleToggleHoldGate}
+                onClick={() => handleToggleHoldGate(selectedGate)}
                 className={`w-full py-2.5 rounded-xl text-[11px] font-bold transition-all duration-300 flex items-center justify-center gap-2 border ${
-                  gateState.holdOpen
+                  gateHold
                     ? 'bg-amber-500 text-black border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)] animate-pulse'
                     : 'bg-white/5 text-amber-300/80 border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/40'
                 }`}
               >
-                {gateState.holdOpen ? (
+                {gateHold ? (
                   <>
                     <Play size={13} className="fill-current" />
                     RESUME BARRIER

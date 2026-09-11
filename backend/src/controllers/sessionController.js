@@ -963,7 +963,7 @@ exports.createKioskSession = async (req, res, next) => {
     }
 
     // Trigger IoT ESP32 Barrier Open
-    triggerBarrierOpen(cleanPlate, normalizedFinalSlot || 'N/A', entryGate || 'ENTRY_1');
+    triggerBarrierOpen(cleanPlate, normalizedFinalSlot || 'N/A', entryGate || 'ENTRY_1', req.app);
 
     res.status(201).json({
       success: true,
@@ -1462,7 +1462,7 @@ exports.kioskCheckout = async (req, res, next) => {
     }
 
     // Trigger IoT ESP32 Barrier Open on Exit
-    triggerBarrierOpen(session.licensePlate, session.parkingSlot || 'N/A', exitGate || 'EXIT_1');
+    triggerBarrierOpen(session.licensePlate, session.parkingSlot || 'N/A', exitGate || 'EXIT_1', req.app);
 
     res.status(200).json({
       success: true,

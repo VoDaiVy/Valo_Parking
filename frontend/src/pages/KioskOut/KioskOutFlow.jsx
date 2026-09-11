@@ -21,7 +21,6 @@ export default function KioskOutFlow() {
   };
 
   const handleRestart = () => {
-    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     setSessionData(null);
     setExitImage(null);
     navigate('/kiosk-out');

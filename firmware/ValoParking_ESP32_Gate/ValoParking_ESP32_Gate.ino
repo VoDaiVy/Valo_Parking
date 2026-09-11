@@ -33,10 +33,13 @@ unsigned long carPassedAt = 0;
 unsigned long obstacleDetectedStart = 0;
 unsigned long obstacleClearStart = 0;
 unsigned long lastSensorLogTime = 0;
-const unsigned long SETTLE_DELAY_MS = 500;    // 0.5s sau khi mở là sẵn sàng nhận diện
-const unsigned long OBSTACLE_CONFIRM_MS = 80; // Nhạy: cắt tia 80ms là nhận diện ngay
-const unsigned long CLEAR_CONFIRM_MS = 150;   // Hết che tia 150ms là nhận diện đã qua xong
-const unsigned long CLOSE_DELAY_MS = 1000;    // Đợi 1s sau khi xe qua hẳn mới đóng
+const unsigned long SETTLE_DELAY_MS = 1500;  // Đợi 1.5s sau khi mở để triệt tiêu 100% xung nhiễu điện của Servo
+const unsigned long OBSTACLE_CONFIRM_MS = 100; // Che tia liên tục 100ms (0.1s) để tránh nhiễu xung kim
+const unsigned long CLEAR_CONFIRM_MS = 150;    // Rút tay/xe qua thông thoáng liên tục 150ms
+const unsigned long CLOSE_DELAY_MS = 1000;    // Đợi 1s sau khi xe qua hẳn mới hạ cổng
+
+unsigned long obstacleDetectionStart = 0;
+unsigned long clearDetectionStart = 0;
 
 // --- CẤU HÌNH HIỆU ỨNG CHỮ CHẠY ĐA NĂNG (DYNAMIC MARQUEE) ---
 String currentLine1 = "  VALO PARKING  ";
@@ -64,18 +67,18 @@ void showDefaultScreen() {
 void handleMarqueeEffect() {
   if (!lcd) return;
 
+  int msgLen = currentMarqueeMsg.length();
+  if (msgLen < 16) return;
+
   if (millis() - lastMarqueeUpdate >= MARQUEE_SPEED_MS) {
     lastMarqueeUpdate = millis();
 
     String displayStr = "";
-    int msgLen = currentMarqueeMsg.length();
     for (int i = 0; i < 16; i++) {
       int charPos = (marqueeIndex + i) % msgLen;
       displayStr += currentMarqueeMsg[charPos];
     }
 
-    lcd->setCursor(0, 0);
-    lcd->print(currentLine1);
     lcd->setCursor(0, 1);
     lcd->print(displayStr);
 
@@ -85,26 +88,30 @@ void handleMarqueeEffect() {
 
 int currentServoAngle = 0;
 GateState stateBeforePause = GATE_IDLE_CLOSED;
+int sensorBaseline = -1;
 
-// Mở barrier thông thường
 void openBarrier(String line1, String marqueeText) {
   setMarqueeContent(line1, marqueeText);
   Serial.println("[ESP32] >> BAT DAU NANG CAN BARRIER (90 DO)...");
 
-  barrierServo.attach(SERVO_PIN, 500, 2400);
-  for (int angle = currentServoAngle; angle <= 90; angle += 10) {
+  if (!barrierServo.attached()) {
+    barrierServo.attach(SERVO_PIN, 500, 2400);
+  }
+  for (int angle = currentServoAngle; angle <= 90; angle += 5) {
     barrierServo.write(angle);
     currentServoAngle = angle;
-    delay(20);
+    delay(15);
   }
-  delay(100);
-  barrierServo.detach();
+  barrierServo.write(90);
   currentServoAngle = 90;
+  delay(150);
 
   currentGateState = GATE_OPEN_WAITING;
   barrierOpenedAt = millis();
-  obstacleDetectedStart = 0;
-  obstacleClearStart = 0;
+  obstacleDetectionStart = 0;
+  clearDetectionStart = 0;
+  carPassedAt = 0;
+  sensorBaseline = -1;
   lastSensorLogTime = millis();
 
   Serial.println("[ESP32] >> BARRIER DA MO! DANG CHO XE DI QUA CAM BIEN...");
@@ -115,7 +122,6 @@ void pauseBarrier() {
   if (currentGateState != GATE_HOLD_MAINTENANCE) {
     stateBeforePause = currentGateState;
   }
-  barrierServo.detach();
   currentGateState = GATE_HOLD_MAINTENANCE;
   setMarqueeContent("  VALO PARKING  ", "* DANG TAM DUNG BARRIER (TAT CAM BIEN) *");
   Serial.println("[ESP32] >> BAT CHE DO TAM DUNG (VO HIEU HOA CAM BIEN)!");
@@ -141,15 +147,17 @@ void resumeBarrier() {
     // 3. Nếu tạm dừng giữa chừng khi đang nâng -> nâng tiếp cho hết lên 90 độ
     else {
       Serial.println("[ESP32] >> DANG O LUNG CHUNG: NANG TIEP LEN 90 DO...");
-      barrierServo.attach(SERVO_PIN, 500, 2400);
-      for (int angle = currentServoAngle; angle <= 90; angle += 10) {
+      if (!barrierServo.attached()) {
+        barrierServo.attach(SERVO_PIN, 500, 2400);
+      }
+      for (int angle = currentServoAngle; angle <= 90; angle += 5) {
         barrierServo.write(angle);
         currentServoAngle = angle;
-        delay(20);
+        delay(15);
       }
-      delay(100);
-      barrierServo.detach();
+      barrierServo.write(90);
       currentServoAngle = 90;
+      delay(150);
       currentGateState = GATE_OPEN_WAITING;
       barrierOpenedAt = millis();
       setMarqueeContent("  VALO PARKING  ", "TIEP TUC HOAT DONG - VALO PARKING");
@@ -169,15 +177,17 @@ void closeBarrier() {
 
   Serial.println("[ESP32] >> BAT DAU HA CAN BARRIER (0 DO)...");
 
-  barrierServo.attach(SERVO_PIN, 500, 2400);
-  for (int angle = currentServoAngle; angle >= 0; angle -= 10) {
+  if (!barrierServo.attached()) {
+    barrierServo.attach(SERVO_PIN, 500, 2400);
+  }
+  for (int angle = currentServoAngle; angle >= 0; angle -= 5) {
     barrierServo.write(angle);
     currentServoAngle = angle;
-    delay(20);
+    delay(15);
   }
-  delay(100);
-  barrierServo.detach();
+  barrierServo.write(0);
   currentServoAngle = 0;
+  delay(150);
 
   currentGateState = GATE_IDLE_CLOSED;
   Serial.println("[ESP32] >> BARRIER DA DONG HOAN TOAN!");
@@ -207,6 +217,8 @@ void setup() {
   pinMode(SENSOR_PIN, INPUT_PULLUP);
 
   Wire.begin(21, 22);
+  Wire.setClock(100000);
+  Wire.setTimeOut(25);
   delay(200);
   byte lcdAddr = scanI2C();
   if (lcdAddr == 0) lcdAddr = 0x27;
@@ -221,12 +233,17 @@ void setup() {
   lcd->print(" KHOI DONG HE THONG");
   delay(1000);
 
+  // Cấp phát tất cả 4 Timer PWM cho ESP32Servo để tránh cạn kiệt kênh PWM
   ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
   barrierServo.setPeriodHertz(50);
   barrierServo.attach(SERVO_PIN, 500, 2400);
   barrierServo.write(0);
+  currentServoAngle = 0;
   delay(300);
-  barrierServo.detach();
   
   currentGateState = GATE_IDLE_CLOSED;
   showDefaultScreen();
@@ -239,24 +256,50 @@ void loop() {
 
   // 2. QUẢN LÝ TIẾN TRÌNH CẢM BIẾN XE QUA CỔNG (CHỈ KHI ĐANG Ở CHẾ ĐỘ TỰ ĐỘNG)
   if (currentGateState != GATE_IDLE_CLOSED && currentGateState != GATE_HOLD_MAINTENANCE) {
-    // Chỉ đọc cảm biến sau khi mở xong 1.5s để loại trừ rung giật/nhiễu dòng điện của servo
-    if (millis() - barrierOpenedAt >= SETTLE_DELAY_MS) {
-      bool isObstacle = (digitalRead(SENSOR_PIN) == LOW);
+    // Đợi 800ms sau khi mở để triệt tiêu dao động servo ban đầu
+    if (millis() - barrierOpenedAt >= 800) {
+      int pinVal = digitalRead(SENSOR_PIN);
+      bool isObstacle = (pinVal == LOW); // LOW (0) = đang che tia / có vật cản, HIGH (1) = thông thoáng
 
-      // Giai đoạn 1: Cổng đang mở, xe bắt đầu tiến vào cắt tia hồng ngoại
+      static int lastReportedPin = -1;
+      if (pinVal != lastReportedPin) {
+        lastReportedPin = pinVal;
+        Serial.printf("   ⚡ [SENSOR PIN 19 THAY ĐỔI]: Mức = %d -> %s\n",
+                      pinVal, isObstacle ? "🚗 [ĐANG CHE TIA / CÓ VẬT CẢN]" : "✅ [ĐÃ RÚT TAY / THÔNG THOÁNG]");
+      }
+
+      // In log định kỳ mỗi 1.5 giây để theo dõi chân cảm biến
+      if (millis() - lastSensorLogTime >= 1500) {
+        lastSensorLogTime = millis();
+        const char* stateStr = "CHO XE QUA";
+        if (currentGateState == GATE_CAR_UNDER) stateStr = "XE DANG DUOI CONG";
+        else if (currentGateState == GATE_CAR_PASSED) stateStr = "XE DA QUA - DANG DEM DONG";
+
+        Serial.printf("   [SENSOR PIN 19]: Muc = %d | Vat can = %s | Trang thai = %s\n",
+                      pinVal, isObstacle ? "CO" : "KHONG", stateStr);
+      }
+
+      // Giai đoạn 1: Cổng đang mở, chờ xe tiến vào che tia hồng ngoại
       if (currentGateState == GATE_OPEN_WAITING) {
         if (isObstacle) {
           currentGateState = GATE_CAR_UNDER;
+          clearDetectionStart = 0;
           Serial.println("\n🚗 [ESP32-SENSOR] >> ĐÃ CẮT TIA HỒNG NGOẠI: XE ĐANG QUA CỔNG!");
         }
       }
 
-      // Giai đoạn 2: Xe đang ở dưới thanh chắn -> chờ xe đi qua hẳn (hết vật cản)
+      // Giai đoạn 2: Xe đang ở dưới thanh chắn -> chờ xe đi qua hẳn (hết che tia)
       else if (currentGateState == GATE_CAR_UNDER) {
         if (!isObstacle) {
-          currentGateState = GATE_CAR_PASSED;
-          carPassedAt = millis();
-          Serial.println("\n✅ [ESP32-SENSOR] >> XE ĐÃ QUA KHỎI TIA HỒNG NGOẠI! ĐÓNG SAU 1 GIÂY...");
+          if (clearDetectionStart == 0) {
+            clearDetectionStart = millis();
+          } else if (millis() - clearDetectionStart >= 80) { // 80ms thông thoáng liên tục
+            currentGateState = GATE_CAR_PASSED;
+            carPassedAt = millis();
+            Serial.println("\n✅ [ESP32-SENSOR] >> XE ĐÃ QUA KHỎI TIA HỒNG NGOẠI! ĐÓNG SAU 1 GIÂY...");
+          }
+        } else {
+          clearDetectionStart = 0;
         }
       }
 
@@ -264,8 +307,9 @@ void loop() {
       else if (currentGateState == GATE_CAR_PASSED) {
         if (isObstacle) {
           currentGateState = GATE_CAR_UNDER;
+          clearDetectionStart = 0;
           Serial.println("\n⚠️ [ESP32-SENSOR] >> CÓ VẬT CẢN TRỞ LẠI -> GIỮ NGUYÊN CỔNG MỞ AN TOÀN!");
-        } else if (millis() - carPassedAt >= CLOSE_DELAY_MS) {
+        } else if (millis() - carPassedAt >= 1000) {
           Serial.println("\n🔒 [ESP32] >> TIẾN HÀNH ĐÓNG CỔNG BARRIER!");
           closeBarrier();
         }

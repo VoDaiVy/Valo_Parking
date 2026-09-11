@@ -54,6 +54,7 @@ def main():
 
     ser = None
     is_currently_open = False
+    current_open_gate = 'ENTRY_1'
     was_hold = False
     last_trigger_id = 0
 
@@ -77,17 +78,17 @@ def main():
                     if "GATE_CLOSED" in msg:
                         is_currently_open = False
                         # Đồng bộ ngược lại cho Backend & Web App biết cổng đã đóng xong
-                        print("🔒 [BRIDGE] Cổng đã đóng -> Gửi tín hiệu đóng về Backend & Web App...")
+                        print(f"🔒 [BRIDGE] Cổng {current_open_gate} đã đóng -> Gửi tín hiệu đóng về Backend & Web App...")
                         try:
                             res_close = requests.post(
                                 'http://localhost:5001/api/iot/close-barrier',
-                                json={'fromBridge': True},
+                                json={'fromBridge': True, 'gate': current_open_gate},
                                 timeout=2
                             )
                             if res_close.status_code == 200:
                                 data_close = res_close.json()
                                 last_trigger_id = data_close.get('data', {}).get('triggerId', last_trigger_id)
-                                print("✅ [BRIDGE SYNC] Đã đồng bộ trạng thái ĐÓNG CỔNG về Web App thành công!")
+                                print(f"✅ [BRIDGE SYNC] Đã đồng bộ trạng thái ĐÓNG CỔNG ({current_open_gate}) về Web App thành công!")
                         except Exception as e_close:
                             print(f"⚠️ Lỗi gửi close-barrier: {e_close}")
 
@@ -104,14 +105,18 @@ def main():
                     gate = info.get('gate', 'ENTRY_1')
                     is_hold = info.get('holdOpen', False)
 
-                    # Lần đầu khởi động bridge: Ghi nhớ triggerId hiện tại để không chạy lại lệnh cũ
+                    # Lần đầu khởi động bridge: Nếu backend đang yêu cầu mở thì mở ngay ESP32
                     if last_trigger_id == 0:
-                        last_trigger_id = trigger_id
+                        if should_open:
+                            last_trigger_id = -1
+                        else:
+                            last_trigger_id = trigger_id
 
                     # A. LỆNH TẠM DỪNG / BẢO TRÌ (VÔ HIỆU HÓA CẢM BIẾN, GIỮ NGUYÊN VỊ TRÍ)
                     if is_hold and trigger_id != last_trigger_id:
                         last_trigger_id = trigger_id
                         was_hold = True
+                        current_open_gate = gate
                         print(f"\n⏸️ [PAUSE] Bật chế độ TẠM DỪNG (Vô hiệu hóa cảm biến hồng ngoại) tại {gate}...")
                         ser.write(b"PAUSE\n")
                         ser.flush()
@@ -120,6 +125,7 @@ def main():
                     elif (not should_open) and info.get('forceClose', False) and is_currently_open and trigger_id != last_trigger_id:
                         last_trigger_id = trigger_id
                         is_currently_open = False
+                        current_open_gate = gate
                         print(f"\n🔒 [CLOSE GATE] Gửi lệnh đóng cổng -> FORCE_CLOSE tại {gate}")
                         ser.write(b"FORCE_CLOSE\n")
                         ser.flush()
@@ -128,6 +134,7 @@ def main():
                     elif should_open and trigger_id != last_trigger_id:
                         last_trigger_id = trigger_id
                         is_currently_open = True
+                        current_open_gate = gate
                         was_hold = False
                         print(f"\n🎉 [GATE OPEN] Mở cổng từ Web/App! Biển số: {plate} | Ô: {slot} | Cổng: {gate}")
                         cmd = f"OPEN|{plate}|{slot}|{gate}\n"

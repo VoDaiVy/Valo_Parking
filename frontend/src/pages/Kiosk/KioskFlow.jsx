@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
 import KioskWelcome from './KioskWelcome';
 import KioskStep1 from './KioskStep1';
 import KioskStep2 from './KioskStep2';
@@ -8,7 +7,6 @@ import KioskStep3 from './KioskStep3';
 import KioskLayout from './KioskLayout';
 import { API_BASE } from '../../services/api';
 import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
-import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 
 const createEmptyKioskFormData = () => ({
   licensePlate: '',
@@ -172,14 +170,8 @@ export default function KioskFlow() {
       const data = await response.json();
       if (data.success) {
         clearCurrentHoldState();
-
-        // Show success screen
+        // Cập nhật session thành công để chuyển sang màn hình chào đón & chỉ ô đỗ
         setSuccessSession(data.data);
-
-        // Auto close after 10 seconds
-        setTimeout(() => {
-          handleCloseSuccess();
-        }, 10000);
       } else {
         alert(data.message || 'Something went wrong.');
       }
@@ -192,19 +184,12 @@ export default function KioskFlow() {
   };
 
   const resetKioskFlow = () => {
-    // Đóng barrier khi quay về màn hình chính
-    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
     navigate('/kiosk', { replace: true });
   };
 
-  const handleCloseSuccess = () => {
-    resetKioskFlow();
-  };
-
   const handleFastPassComplete = () => {
-    fetch(`${API_BASE}/iot/close-barrier`, { method: 'POST' }).catch(() => null);
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
     window.location.replace('/kiosk');
@@ -245,49 +230,6 @@ export default function KioskFlow() {
         </div>
       )}
 
-      {/* Success Modal */}
-      {successSession && (
-        <div className="fixed inset-0 bg-[#0f172a] z-[200] flex flex-col items-center justify-center text-white">
-          <div className="bg-white text-[#0f172a] p-10 rounded-[32px] shadow-2xl flex flex-col items-center max-w-[500px] w-full text-center">
-            <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center mb-6">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-
-            <h2 className="text-3xl font-black mb-2 uppercase tracking-tight">Booking Confirmed</h2>
-            <p className="text-gray-500 font-medium mb-6">Please proceed to your slot.</p>
-
-            <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl p-6 w-full flex flex-col items-center mb-6">
-              <QRCodeSVG value={successSession._id || successSession.sessionId || 'UNKNOWN'} size={200} className="mb-4" />
-              <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-1">Scan at Exit</p>
-              <div className="text-sm font-mono bg-gray-200 px-3 py-1 rounded text-gray-600 font-bold">{successSession._id || successSession.sessionId}</div>
-            </div>
-
-            <div className="flex justify-between w-full text-left mb-6 border-t border-gray-100 pt-4">
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">License Plate</p>
-                <p className="text-xl font-black text-[#0f172a]">
-                  {formatLicensePlateDisplay(successSession.licensePlate || formData.licensePlate)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Slot</p>
-                <p className="text-xl font-black text-blue-600">{successSession.parkingSlot || formData.selectedSlot}</p>
-              </div>
-            </div>
-
-            <button
-              onClick={handleCloseSuccess}
-              className="bg-[#FFDF00] text-[#0f172a] font-bold text-lg w-full py-4 rounded-xl hover:bg-[#e6c800] active:scale-95 transition-all"
-            >
-              Done
-            </button>
-          </div>
-          <p className="mt-8 text-gray-400 text-sm">This screen will close automatically in 10 seconds.</p>
-        </div>
-      )}
-
       <Routes>
         {/* Step 0: Welcome Screen (Full width, no split layout) */}
         <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} />} />
@@ -311,6 +253,7 @@ export default function KioskFlow() {
                 onBack={() => handleBack(formData.step3Mode === 'fastpass' ? 0 : 2)}
                 onAutoCheckIn={handleFastPassEntry}
                 onComplete={handleFastPassComplete}
+                successSession={successSession}
               />
             }
           />
