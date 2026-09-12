@@ -23,9 +23,11 @@ import {
   updateBookingVehicle,
 } from '../../services/bookingService';
 import { getMyVehicles } from '../../services/vehicleService';
+import { getAllFloors } from '../../services/parkingFloorService';
 import { useSocket } from '../../hooks/useSocket';
 import CustomerPageHeader from '../../components/Customer/CustomerPageHeader';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
+import { buildFloorLookup, getBookingFloorLabel } from '../../utils/bookingFloor';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
@@ -88,6 +90,7 @@ const getBookingTiming = (booking) => {
 export default function BookingPage() {
   const socket = useSocket();
   const [bookings, setBookings] = useState([]);
+  const [floorsById, setFloorsById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -108,12 +111,14 @@ export default function BookingPage() {
     setError('');
 
     try {
-      const [bookingRes, vehicleRes] = await Promise.all([
+      const [bookingRes, vehicleRes, floorRes] = await Promise.all([
         getMyBookings(),
-        getMyVehicles()
+        getMyVehicles(),
+        getAllFloors(),
       ]);
       if (bookingRes.ok) setBookings(bookingRes.data?.data || []);
       if (vehicleRes.ok) setVehicles(vehicleRes.data?.data || []);
+      if (floorRes.ok) setFloorsById(buildFloorLookup(floorRes.data?.data || []));
     } catch {
       setError('Could not load data.');
     } finally {
@@ -368,7 +373,7 @@ export default function BookingPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-xl font-black text-white">{getBookingSlot(booking)}</span>
-                        <span className="text-sm text-[#a9c1bc]">{booking.floorId?.name || 'Floor'}</span>
+                        <span className="text-sm text-[#a9c1bc]">{getBookingFloorLabel(booking, floorsById)}</span>
                         {timing.isNearExpiry && (
                           <span className="px-2.5 py-1 rounded-full border border-amber-400/30 bg-amber-400/10 text-xs font-bold uppercase text-amber-200">
                             {timing.minutesToEnd} min left
@@ -490,7 +495,7 @@ export default function BookingPage() {
                   {dialog.type === 'plate' ? 'Change License Plate' : 'Extend Parking'}
                 </h3>
                 <p className="text-sm text-white/45 mt-1">
-                  Slot {getBookingSlot(dialog.booking)} - {dialog.booking.floorId?.name || 'Floor'}
+                  Slot {getBookingSlot(dialog.booking)} - {getBookingFloorLabel(dialog.booking, floorsById)}
                 </p>
               </div>
               <button
