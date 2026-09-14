@@ -53,6 +53,9 @@ const bookingSchema = new mongoose.Schema(
         enum: ['calculated', 'legacy-derived'],
         default: null,
       },
+      dynamicMultiplier: { type: Number, min: 0.5, max: 3, default: 1 },
+      busynessScore: { type: Number, min: 0, max: 100, default: null },
+      adjustedTotal: { type: Number, min: 0, default: null },
     },
     refundPolicySnapshot: {
       source: {

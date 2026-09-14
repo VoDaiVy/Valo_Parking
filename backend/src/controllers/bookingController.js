@@ -14,6 +14,7 @@ const Slot = require('../models/Slot');
 const payos = require('../config/payos');
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
+const dynamicPricingEngine = require('../services/dynamicPricingEngine');
 const notifTriggers = require('../services/notificationTriggers');
 const contractService = require('../services/contractService');
 const bookingRefundService = require('../services/bookingRefundService');
@@ -593,6 +594,22 @@ exports.createBooking = async (req, res, next) => {
     // 4. Tính toán phí trước dựa trên pricingEngine
     const pricing = await pricingEngine.calculatePrice(start, end);
     let prepaidAmount = pricing.finalTotal;
+    let dynamicPricing = {
+      multiplier: 1,
+      busynessScore: null,
+      adjustedPrice: pricing.finalTotal,
+    };
+    try {
+      dynamicPricing = await dynamicPricingEngine.getEffectivePrice({
+        date: start.toISOString().slice(0, 10),
+        hour: start.getHours(),
+        priceType: 'hourly',
+      });
+      prepaidAmount = Math.ceil((pricing.finalTotal * (dynamicPricing.multiplier || 1)) / 1000) * 1000;
+    } catch (dynamicError) {
+      console.error('[DynamicPricing] Booking price fallback:', dynamicError.message);
+      prepaidAmount = pricing.finalTotal;
+    }
 
     if (subscriptionInfo && subscriptionInfo.user.toString() === userId.toString()) {
       prepaidAmount = 0;
@@ -614,6 +631,11 @@ exports.createBooking = async (req, res, next) => {
       prepaidAmount,
       paymentMethod,
       status: 'PENDING',
+      paymentBreakdownSnapshot: {
+        dynamicMultiplier: dynamicPricing.multiplier || 1,
+        busynessScore: dynamicPricing.busynessScore,
+        adjustedTotal: prepaidAmount,
+      },
     });
 
     if (paymentMethod === 'wallet') {
@@ -644,6 +666,9 @@ exports.createBooking = async (req, res, next) => {
           parkingAmount: prepaidAmount,
           serviceAmount: 0,
           source: 'calculated',
+          dynamicMultiplier: dynamicPricing.multiplier || 1,
+          busynessScore: dynamicPricing.busynessScore,
+          adjustedTotal: prepaidAmount,
           session: paymentSession,
         });
         await paymentSession.commitTransaction();
@@ -1013,7 +1038,10 @@ exports.modifyBookingTime = async (req, res, next) => {
 
     // Tính phí lại
     const pricing = await pricingEngine.calculatePrice(start, end);
-    const newPrice = pricing.finalTotal;
+    const capturedDynamicMultiplier = Number(
+      booking.paymentBreakdownSnapshot?.dynamicMultiplier || 1
+    );
+    const newPrice = Math.ceil((pricing.finalTotal * capturedDynamicMultiplier) / 1000) * 1000;
     const diff = newPrice - booking.prepaidAmount;
     const expectedModificationCount = booking.modificationCount;
 
@@ -1067,11 +1095,15 @@ exports.modifyBookingTime = async (req, res, next) => {
         Math.max(0, Number(booking.paymentBreakdownSnapshot.serviceAmount) || 0),
         newPrice
       );
+      const existingPaymentSnapshot = booking.paymentBreakdownSnapshot.toObject?.()
+        || booking.paymentBreakdownSnapshot;
       booking.paymentBreakdownSnapshot = {
+        ...existingPaymentSnapshot,
         parkingAmount: Math.max(0, newPrice - serviceAmount),
         serviceAmount,
         totalAmount: newPrice,
         source: booking.paymentBreakdownSnapshot.source,
+        adjustedTotal: newPrice,
       };
     }
     const updatedBooking = await Booking.findOneAndUpdate(
@@ -1942,6 +1974,16 @@ exports.quoteBulkBooking = async (req, res, next) => {
       if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
+      const dynamicResult = pricing.finalTotal > 0
+        ? await dynamicPricingEngine.getEffectivePrice({
+          date: start.toISOString().slice(0, 10),
+          hour: start.getHours(),
+          priceType: 'hourly',
+        })
+        : { multiplier: 1, busynessScore: null, level: null };
+      const adjustedParkingTotal = Math.floor(
+        (pricing.finalTotal * (dynamicResult.multiplier || 1)) / 1000
+      ) * 1000;
       
       // Services pricing
       let servicesTotal = 0;
@@ -1952,7 +1994,7 @@ exports.quoteBulkBooking = async (req, res, next) => {
         }
       }
 
-      const itemTotal = pricing.finalTotal + servicesTotal;
+      const itemTotal = adjustedParkingTotal + servicesTotal;
       grandTotal += itemTotal;
 
       quotedItems.push({
@@ -1960,7 +2002,14 @@ exports.quoteBulkBooking = async (req, res, next) => {
         parkingSlot,
         vehicleId,
         totalAmount: itemTotal,
-        pricingPreview: pricing,
+        pricingPreview: {
+          ...pricing,
+          dynamicMultiplier: dynamicResult.multiplier || 1,
+          busynessScore: dynamicResult.busynessScore,
+          level: dynamicResult.level,
+          adjustedTotal: adjustedParkingTotal,
+        },
+        dynamicMultiplier: dynamicResult.multiplier || 1,
         servicesTotal
       });
       } catch (err) {
@@ -2192,6 +2241,16 @@ exports.createBulkBooking = async (req, res, next) => {
       if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
+      const dynamicResult = pricing.finalTotal > 0
+        ? await dynamicPricingEngine.getEffectivePrice({
+          date: start.toISOString().slice(0, 10),
+          hour: start.getHours(),
+          priceType: 'hourly',
+        })
+        : { multiplier: 1, busynessScore: null, level: null };
+      const adjustedParkingTotal = Math.floor(
+        (pricing.finalTotal * (dynamicResult.multiplier || 1)) / 1000
+      ) * 1000;
       
       // Services pricing
       let itemServices = [];
@@ -2209,7 +2268,7 @@ exports.createBulkBooking = async (req, res, next) => {
         }
       }
 
-      grandTotal += (pricing.finalTotal + servicesTotal);
+      grandTotal += (adjustedParkingTotal + servicesTotal);
 
       bookingsToCreate.push({
         userId,
@@ -2220,9 +2279,12 @@ exports.createBulkBooking = async (req, res, next) => {
         scheduledStart: start,
         scheduledEnd: end,
         durationHours: pricing.durationHours,
-        prepaidAmount: pricing.finalTotal + servicesTotal,
-        parkingAmount: pricing.finalTotal,
+        prepaidAmount: adjustedParkingTotal + servicesTotal,
+        parkingAmount: adjustedParkingTotal,
         serviceAmount: servicesTotal,
+        dynamicMultiplier: dynamicResult.multiplier || 1,
+        busynessScore: dynamicResult.busynessScore,
+        adjustedTotal: adjustedParkingTotal,
         paymentMethod: 'wallet',
         status: 'PAID',
         servicesData: itemServices,
@@ -2271,7 +2333,12 @@ exports.createBulkBooking = async (req, res, next) => {
         durationHours: bData.durationHours,
         prepaidAmount: bData.prepaidAmount,
         paymentMethod: bData.paymentMethod,
-        status: bData.status
+        status: bData.status,
+        paymentBreakdownSnapshot: {
+          dynamicMultiplier: bData.dynamicMultiplier,
+          busynessScore: bData.busynessScore,
+          adjustedTotal: bData.adjustedTotal,
+        },
       });
       await newBooking.save({ session });
 
@@ -2289,6 +2356,9 @@ exports.createBulkBooking = async (req, res, next) => {
         parkingAmount: bData.parkingAmount,
         serviceAmount: bData.serviceAmount,
         source: 'calculated',
+        dynamicMultiplier: bData.dynamicMultiplier,
+        busynessScore: bData.busynessScore,
+        adjustedTotal: bData.adjustedTotal,
         refundPolicySnapshot: bulkRefundPolicySnapshot,
         session,
       });

@@ -77,6 +77,15 @@ const buildPaymentBreakdown = (booking, input = {}) => {
     serviceAmount,
     totalAmount,
     source: input.source || 'calculated',
+    dynamicMultiplier: Number(input.dynamicMultiplier
+      ?? booking.paymentBreakdownSnapshot?.dynamicMultiplier
+      ?? 1),
+    busynessScore: input.busynessScore
+      ?? booking.paymentBreakdownSnapshot?.busynessScore
+      ?? null,
+    adjustedTotal: Number(input.adjustedTotal
+      ?? booking.paymentBreakdownSnapshot?.adjustedTotal
+      ?? totalAmount),
   };
 };
 

@@ -4,10 +4,17 @@ const notifTriggers = require('./notificationTriggers');
 const contractService = require('./contractService');
 const bookingRefundService = require('./bookingRefundService');
 const { isEnabled } = require('../utils/featureFlags');
-const { emitToUser } = require('../sockets/notificationSocket');
+const { emitToUser, broadcastNotification } = require('../sockets/notificationSocket');
+const DynamicPricingConfig = require('../models/DynamicPricingConfig');
+const PricingSuggestion = require('../models/PricingSuggestion');
+const TicketPackage = require('../models/TicketPackage');
+const dynamicPricingEngine = require('./dynamicPricingEngine');
+const { getOccupancyForecast } = require('./demandForecastingService');
+const notificationService = require('./notificationService');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
 const CONTRACT_EXPIRATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DYNAMIC_PRICING_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const LOW_BALANCE_THRESHOLD = 30000; // 30,000 VND
 const NO_SHOW_GRACE_MS = 15 * 60 * 1000;
 const CHECKIN_REMINDER_MINUTES = [15, 30];
@@ -15,6 +22,95 @@ const BOOKING_END_REMINDER_MINUTES = [5, 15, 30];
 
 let schedulerInterval = null;
 let contractSchedulerInterval = null;
+let dynamicPricingInterval = null;
+
+async function checkExpiredSuggestions() {
+  return PricingSuggestion.updateMany(
+    { status: 'pending', validUntil: { $lt: new Date() } },
+    { $set: { status: 'expired' } }
+  );
+}
+
+async function notifyAdminsOfPricingFailure(app) {
+  try {
+    const result = await notificationService.createForRole('admin', {
+      title: 'Dynamic pricing disabled',
+      content: 'Dynamic pricing failed for 3 consecutive cycles and was switched to manual mode.',
+      type: 'SYSTEM',
+      priority: 'WARNING',
+      metadata: { feature: 'dynamic-pricing', reason: 'consecutive-failures' },
+    });
+    const io = app?.get?.('io');
+    if (io) broadcastNotification(io, result.notification, result.userIds);
+  } catch (error) {
+    console.error('[DynamicPricing] Failed to notify administrators:', error.message);
+  }
+}
+
+async function checkDynamicPricing(app) {
+  try {
+    await checkExpiredSuggestions();
+    const config = await dynamicPricingEngine.getActiveConfig({ create: true });
+    if (!config.isEnabled || config.pricingMode === 'manual') return null;
+
+    const now = new Date();
+    const forecast = await getOccupancyForecast({
+      date: now.toISOString().slice(0, 10),
+      hour: now.getHours(),
+      timeframe: 'day',
+    });
+    const selected = forecast.selectedForecast || forecast.selectedItem;
+    if (!selected || !Number.isFinite(Number(selected.busynessScore))) {
+      throw new Error('Forecast did not return a busynessScore');
+    }
+
+    const input = { busynessScore: selected.busynessScore, priceType: 'hourly' };
+    const firstResult = config.pricingMode === 'semi-auto'
+      ? await dynamicPricingEngine.generateSuggestion(input)
+      : await dynamicPricingEngine.applyAutoAdjustment(input);
+
+    if (firstResult) {
+      const packages = await TicketPackage.find({ isActive: true }).select('_id').lean();
+      await Promise.all(packages.map((ticketPackage) => {
+        const packageInput = {
+          busynessScore: selected.busynessScore,
+          priceType: 'package',
+          packageId: ticketPackage._id,
+          force: true,
+        };
+        return config.pricingMode === 'semi-auto'
+          ? dynamicPricingEngine.generateSuggestion(packageInput)
+          : dynamicPricingEngine.applyAutoAdjustment(packageInput);
+      }));
+    }
+
+    if (config.pricingMode === 'auto') {
+      await DynamicPricingConfig.updateOne(
+        { _id: config._id },
+        { $set: { consecutiveFailures: 0 } }
+      );
+    }
+    return firstResult;
+  } catch (error) {
+    console.error('[DynamicPricing] Scheduler check failed:', error.message);
+    try {
+      const config = await dynamicPricingEngine.getActiveConfig({ create: true });
+      if (config.pricingMode === 'auto') {
+        config.consecutiveFailures += 1;
+        if (config.consecutiveFailures >= 3) {
+          config.pricingMode = 'manual';
+          await config.save();
+          await notifyAdminsOfPricingFailure(app);
+        } else {
+          await config.save();
+        }
+      }
+    } catch (configError) {
+      console.error('[DynamicPricing] Could not record scheduler failure:', configError.message);
+    }
+    return null;
+  }
+}
 
 function getUpcomingMilestone(targetTime, now = new Date(), milestones = []) {
   const target = new Date(targetTime);
@@ -630,6 +726,9 @@ function startScheduler(app) {
   checkPendingSubscriptions().catch((err) =>
     console.error('[ParkingScheduler] Initial pending subscriptions check error:', err.message)
   );
+  checkDynamicPricing(app).catch((err) =>
+    console.error('[DynamicPricing] Initial check error:', err.message)
+  );
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
@@ -655,6 +754,12 @@ function startScheduler(app) {
       console.error('[ParkingScheduler] VIP subscription interval error:', err.message)
     );
   }, CONTRACT_EXPIRATION_INTERVAL_MS);
+
+  dynamicPricingInterval = setInterval(() => {
+    checkDynamicPricing(app).catch((err) =>
+      console.error('[DynamicPricing] Interval check error:', err.message)
+    );
+  }, DYNAMIC_PRICING_INTERVAL_MS);
 }
 
 /**
@@ -669,6 +774,10 @@ function stopScheduler() {
     clearInterval(contractSchedulerInterval);
     contractSchedulerInterval = null;
   }
+  if (dynamicPricingInterval) {
+    clearInterval(dynamicPricingInterval);
+    dynamicPricingInterval = null;
+  }
   console.log('[ParkingScheduler] Scheduler stopped.');
 }
 
@@ -681,6 +790,8 @@ module.exports = {
   checkExpiredMembershipTransfers,
   checkVIPSubscriptions,
   checkPendingSubscriptions,
+  checkDynamicPricing,
+  checkExpiredSuggestions,
   getUpcomingMilestone,
   LOW_BALANCE_THRESHOLD,
 };

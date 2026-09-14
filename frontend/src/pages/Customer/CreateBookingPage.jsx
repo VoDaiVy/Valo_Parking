@@ -3,7 +3,6 @@ import { useLocation } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
-  Car,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -21,10 +20,11 @@ import {
 } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
+import PriceBadge from '../../components/PriceBadge';
+import { useDynamicPricing } from '../../hooks/useDynamicPricing';
 
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
-import { getPolicyAcceptanceStatus } from '../../services/policyService';
 import { getServices } from '../../services/extraServiceApi';
 import { isValidLicensePlate } from '../../utils/licensePlate';
 import { getMyVehicles } from '../../services/vehicleService';
@@ -557,6 +557,7 @@ export default function CreateBookingPage() {
 
   const startTime = `${startDate}T${startTimeStr}`;
   const endTime = `${endDate}T${endTimeStr}`;
+  const dynamicPricing = useDynamicPricing(startTime, endTime);
 
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState('');
@@ -584,6 +585,7 @@ export default function CreateBookingPage() {
   const [topUpSuccess, setTopUpSuccess] = useState(false);
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
   const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(4);
 
@@ -616,7 +618,8 @@ export default function CreateBookingPage() {
   }, [currentFloorId]);
 
   useEffect(() => {
-    fetchDbSlots();
+    const timer = setTimeout(() => { fetchDbSlots(); }, 0);
+    return () => clearTimeout(timer);
   }, [fetchDbSlots]);
 
   const fetchActiveHoldsData = async () => {
@@ -670,14 +673,19 @@ export default function CreateBookingPage() {
   };
 
   useEffect(() => {
-    fetchActiveSessions();
-    fetchActiveHoldsData();
+    const initialTimer = setTimeout(() => {
+      fetchActiveSessions();
+      fetchActiveHoldsData();
+    }, 0);
     const intervalId = setInterval(() => {
       fetchActiveSessions();
       fetchActiveHoldsData();
       fetchDbSlots();
     }, 30000); // 30s
-    return () => clearInterval(intervalId);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalId);
+    };
   }, [fetchDbSlots]);
 
   const handleManualPlateChange = (event) => {
@@ -816,7 +824,10 @@ export default function CreateBookingPage() {
     }),
     [endTime, selectedSlotIsOwnVipSlot, startTime, pricingConfig]
   );
-  const parkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
+  const baseParkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
+  const parkingTotal = selectedSlotIsOwnVipSlot
+    ? 0
+    : dynamicPricing.computeAdjustedTotal(pricePreview.usageAmount);
   const grandTotal = parkingTotal + serviceTotal;
   const walletBalance = Number(wallet?.balance || 0);
   const walletShortfall = Math.max(grandTotal - walletBalance, 0);
@@ -837,6 +848,14 @@ export default function CreateBookingPage() {
   const cartGrandTotal = Number(
     cartQuote?.grandTotal ?? cartItems.reduce((total, item) => total + Number(item.totalAmount || 0), 0)
   );
+  const cartBaseGrandTotal = cartItems.reduce(
+    (total, item) => total + Number(item.baseTotalAmount ?? item.totalAmount ?? 0),
+    0
+  );
+  const cartHasDynamicPricing = cartItems.some((item) => {
+    const quotedItem = cartQuote?.items?.find((quote) => quote.clientItemId === item.clientItemId);
+    return Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1) !== 1;
+  });
   const cartWalletShortfall = Math.max(cartGrandTotal - walletBalance, 0);
   const hasActiveCheckoutHold = false;
 
@@ -1150,6 +1169,10 @@ export default function CreateBookingPage() {
       parkingAmount: parkingTotal,
       serviceAmount: serviceTotal,
       totalAmount: grandTotal,
+      baseTotalAmount: baseParkingTotal + serviceTotal,
+      dynamicMultiplier: dynamicPricing.multiplier,
+      priceLabel: dynamicPricing.priceLabel,
+      busynessScore: dynamicPricing.busynessScore,
       pricingDetails: pricePreview,
       holdId: holdRes.data?.data?._id,
       holdExpiresAt: holdRes.data?.data?.expiresAt,
@@ -1325,7 +1348,7 @@ export default function CreateBookingPage() {
       setError('Fix highlighted booking items before checkout.');
       return;
     }
-    executeCheckoutCart();
+    setShowCheckoutConfirm(true);
   };
 
   const executeCheckoutCart = async () => {
@@ -1630,7 +1653,14 @@ export default function CreateBookingPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> Parking</span>
                   <span className="font-bold text-gray-900 text-right">
-                    {formatMoney(parkingTotal)}
+                    {dynamicPricing.loading ? (
+                      <span className="inline-block h-4 w-24 animate-pulse rounded bg-gray-200" />
+                    ) : dynamicPricing.multiplier !== 1 && !dynamicPricing.error ? (
+                      <span className="flex flex-col items-end gap-1">
+                        <span className="text-xs text-gray-400 line-through">{formatMoney(baseParkingTotal)}</span>
+                        <span>{formatMoney(parkingTotal)}</span>
+                      </span>
+                    ) : formatMoney(baseParkingTotal)}
                     {pricePreview.capApplied && (
                       <span className="block text-[10px] text-emerald-600">Cap {pricePreview.capHours}h applied</span>
                     )}
@@ -1645,8 +1675,16 @@ export default function CreateBookingPage() {
                   <span className={`font-bold ${hasEnoughWallet ? 'text-emerald-600' : 'text-rose-600'}`}>{formatMoney(walletBalance)}</span>
                 </div>
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
-                  <span className="font-black text-gray-900">Wallet charge</span>
-                  <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
+                  <span className="flex items-center gap-2 font-black text-gray-900">
+                    Wallet charge
+                    {!dynamicPricing.error && <PriceBadge multiplier={dynamicPricing.multiplier} label={dynamicPricing.priceLabel} />}
+                  </span>
+                  <span className="text-right">
+                    {dynamicPricing.multiplier !== 1 && !dynamicPricing.error && (
+                      <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(baseParkingTotal + serviceTotal)}</span>
+                    )}
+                    <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
+                  </span>
                 </div>
 
                 {selectedSlot && hasEnoughWallet && (
@@ -1691,6 +1729,8 @@ export default function CreateBookingPage() {
                     const itemError = cartItemErrors[item.clientItemId];
                     const quotedItem = cartQuote?.items?.find((quoteItem) => quoteItem.clientItemId === item.clientItemId);
                     const itemTotal = quotedItem?.totalAmount ?? item.totalAmount;
+                    const itemMultiplier = Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1);
+                    const baseItemTotal = Number(item.baseTotalAmount ?? item.totalAmount ?? 0);
 
                     return (
                       <div
@@ -1742,7 +1782,11 @@ export default function CreateBookingPage() {
                           <span className={`text-xs font-black ${itemError ? 'text-rose-600' : 'text-emerald-600'}`}>
                             {itemError ? itemError.message : 'Ready'}
                           </span>
-                          <span className="text-sm font-black text-gray-900">{formatMoney(itemTotal)}</span>
+                          <span className="flex flex-col items-end gap-1 text-sm font-black text-gray-900">
+                            {itemMultiplier !== 1 && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
+                            <span>{formatMoney(itemTotal)}</span>
+                            <PriceBadge multiplier={itemMultiplier} />
+                          </span>
                         </div>
                       </div>
                     );
@@ -1759,7 +1803,12 @@ export default function CreateBookingPage() {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500 font-semibold">Cart total</span>
-                      <span className="font-black text-gold text-lg">{formatMoney(cartGrandTotal)}</span>
+                      <span className="text-right">
+                        {cartHasDynamicPricing && cartBaseGrandTotal !== cartGrandTotal && (
+                          <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(cartBaseGrandTotal)}</span>
+                        )}
+                        <span className="font-black text-gold text-lg">{formatMoney(cartGrandTotal)}</span>
+                      </span>
                     </div>
                     {cartWalletShortfall > 0 && (
                       <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
@@ -1886,6 +1935,35 @@ export default function CreateBookingPage() {
           </section>
         </div>
       </div>
+
+      {showCheckoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[28px] border border-gray-100 bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
+              <Wallet size={22} />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900">Confirm booking payment</h2>
+            <p className="mt-2 text-sm font-medium text-gray-500">
+              Review the final demand-adjusted amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
+            </p>
+            <div className="my-5 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+              {cartHasDynamicPricing && cartBaseGrandTotal !== cartGrandTotal && (
+                <div className="mb-1 flex items-center justify-between text-sm text-gray-400">
+                  <span>Base total</span><span className="font-bold line-through">{formatMoney(cartBaseGrandTotal)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-600">Final wallet charge</span>
+                <span className="text-2xl font-black text-gold">{formatMoney(cartGrandTotal)}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">Confirm & pay</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUCCESS MODAL */}
       {showSuccessModal && bookingInfo && (
