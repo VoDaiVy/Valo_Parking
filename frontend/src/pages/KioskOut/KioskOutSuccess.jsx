@@ -5,27 +5,39 @@ import { API_BASE } from '../../services/api';
 
 export default function KioskOutSuccess({ onFinish }) {
   const socket = useSocket();
-  const hasFinishedRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
+  const hasSeenOpenRef = useRef(false);
+  const isRedirectingRef = useRef(false);
 
   useEffect(() => {
-    let hasSeenOpen = false;
-
     const handleDone = () => {
-      if (hasFinishedRef.current) return;
-      hasFinishedRef.current = true;
-      onFinish();
+      if (isRedirectingRef.current) return;
+      isRedirectingRef.current = true;
+      try {
+        onFinish();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        window.location.replace('/kiosk-out');
+      }
     };
 
     // 1. Polling trạng thái đóng của Barrier EXIT_1
     const checkBarrier = async () => {
       try {
-        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=EXIT_1`);
+        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=EXIT_1&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
         const data = await res.json();
         if (data.success && data.data) {
-          if (data.data.open) {
-            hasSeenOpen = true;
-          } else if (hasSeenOpen && !data.data.open) {
-            handleDone();
+          const isOpen = Boolean(data.data.open);
+          if (isOpen) {
+            hasSeenOpenRef.current = true;
+          } else {
+            const elapsed = Date.now() - mountTimeRef.current;
+            if (hasSeenOpenRef.current || data.data.forceClose || elapsed >= 2500) {
+              handleDone();
+            }
           }
         }
       } catch (err) {
@@ -33,15 +45,23 @@ export default function KioskOutSuccess({ onFinish }) {
       }
     };
 
-    const interval = setInterval(checkBarrier, 500);
+    const interval = setInterval(checkBarrier, 300);
+
+    // Safety timeout
+    const safetyTimer = setTimeout(handleDone, 12000);
 
     // 2. Lắng nghe qua Socket.IO (chỉ nhận sự kiện của cổng EXIT_1)
     const handleBarrierControl = (data) => {
       if (data && (data.gate === 'EXIT_1' || !data.gate)) {
         if (data.open) {
-          hasSeenOpen = true;
-        } else if (hasSeenOpen && !data.open) {
-          handleDone();
+          hasSeenOpenRef.current = true;
+        } else if (!data.open) {
+          const elapsed = Date.now() - mountTimeRef.current;
+          if (elapsed >= 1500) {
+            handleDone();
+          } else {
+            setTimeout(handleDone, 1500 - elapsed);
+          }
         }
       }
     };
@@ -52,6 +72,7 @@ export default function KioskOutSuccess({ onFinish }) {
 
     return () => {
       clearInterval(interval);
+      clearTimeout(safetyTimer);
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }

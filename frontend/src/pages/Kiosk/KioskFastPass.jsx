@@ -34,43 +34,49 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const [vipRedirectInfo, setVipRedirectInfo] = useState(null);
   const [currentSlot, setCurrentSlot] = useState(successSession?.parkingSlot || formData.selectedSlot);
   const hasStartedRef = useRef(false);
-  const hasCompletedRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
+  const hasSeenOpenRef = useRef(false);
+  const isRedirectingRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
-  // Màn hình chỉ thực sự đóng và quay trở lại màn hình chính khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
+  const returnToStart = () => {
+    if (isRedirectingRef.current) return;
+    isRedirectingRef.current = true;
+
+    try {
+      onCompleteRef.current?.();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      window.location.replace('/kiosk');
+    }
+  };
+
+  // Màn hình tự động quay trở lại màn hình chính (Click to start) khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
   useEffect(() => {
     if (status !== 'ready') return undefined;
-
-    let hasSeenOpen = false; // Bắt đầu là false, chỉ kích hoạt khi cổng ENTRY_1 đã được xác nhận mở
-
-    const returnToStart = () => {
-      if (hasCompletedRef.current) return;
-      hasCompletedRef.current = true;
-
-      try {
-        onCompleteRef.current?.();
-      } finally {
-        window.setTimeout(() => {
-          window.location.assign('/kiosk');
-        }, 150);
-      }
-    };
 
     // Kiểm tra trạng thái đóng của Barrier ENTRY_1 qua Polling
     const checkBarrier = async () => {
       try {
-        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=ENTRY_1`);
+        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=ENTRY_1&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
         const data = await res.json();
         if (data.success && data.data) {
-          if (data.data.open) {
-            hasSeenOpen = true;
-          } else if (hasSeenOpen && !data.data.open) {
-            // Cổng ENTRY_1 đã đóng sau khi xe qua -> hoàn tất và quay về màn hình chính
-            returnToStart();
+          const isOpen = Boolean(data.data.open);
+          if (isOpen) {
+            hasSeenOpenRef.current = true;
+          } else {
+            const elapsed = Date.now() - mountTimeRef.current;
+            // Cổng đang đóng: nếu xe đã qua (hasSeenOpen) hoặc staff force close hoặc đã hiển thị quá 2.5s
+            if (hasSeenOpenRef.current || data.data.forceClose || elapsed >= 2500) {
+              returnToStart();
+            }
           }
         }
       } catch (err) {
@@ -78,14 +84,27 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
       }
     };
 
-    const interval = setInterval(checkBarrier, 500);
+    // Initial check immediately
+    checkBarrier();
+    const interval = setInterval(checkBarrier, 300);
+
+    // Auto-return safety timer after 15s if no sensor triggers
+    const safetyTimer = setTimeout(() => {
+      returnToStart();
+    }, 15000);
 
     const handleBarrierControl = (data) => {
       if (data && (data.gate === 'ENTRY_1' || !data.gate)) {
         if (data.open) {
-          hasSeenOpen = true;
-        } else if (hasSeenOpen && !data.open) {
-          returnToStart();
+          hasSeenOpenRef.current = true;
+        } else if (!data.open) {
+          // Xe đã qua cổng hoặc staff đóng -> tự động quay về trang chủ
+          const elapsed = Date.now() - mountTimeRef.current;
+          if (elapsed >= 1500) {
+            returnToStart();
+          } else {
+            setTimeout(returnToStart, 1500 - elapsed);
+          }
         }
       }
     };
@@ -96,6 +115,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
 
     return () => {
       clearInterval(interval);
+      clearTimeout(safetyTimer);
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }
@@ -208,7 +228,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
             </div>
           </div>
         )}
-        
+
         <div className="bg-white rounded-[26px] border border-gray-100 shadow-[0_20px_40px_rgba(15,23,42,0.08)] px-5 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-3 min-w-0 flex-1">

@@ -9,11 +9,13 @@ const onlineUsers = new Map();
  * @param {import('socket.io').Server} io
  */
 function setupNotificationSocket(io) {
-  // Auth middleware — verify JWT before allowing connection
+  // Auth middleware — optional JWT verification
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
-      return next(new Error('Authentication required'));
+      socket.userId = null;
+      socket.userRole = 'guest';
+      return next();
     }
 
     try {
@@ -22,26 +24,33 @@ function setupNotificationSocket(io) {
       socket.userRole = decoded.role;
       next();
     } catch (err) {
-      return next(new Error('Invalid token'));
+      // Allow fallback as guest if token is invalid/expired
+      socket.userId = null;
+      socket.userRole = 'guest';
+      next();
     }
   });
 
   io.on('connection', async (socket) => {
     const userId = socket.userId;
-    console.log(`🔌 Socket connected: ${userId} (${socket.id})`);
+    if (userId) {
+      console.log(`🔌 Socket connected: ${userId} (${socket.id})`);
 
-    // Track online user
-    if (!onlineUsers.has(userId)) {
-      onlineUsers.set(userId, new Set());
-    }
-    onlineUsers.get(userId).add(socket.id);
+      // Track online user
+      if (!onlineUsers.has(userId)) {
+        onlineUsers.set(userId, new Set());
+      }
+      onlineUsers.get(userId).add(socket.id);
 
-    // Send initial unread count
-    try {
-      const unreadCount = await notificationService.getUnreadCount(userId, socket.userRole);
-      socket.emit('notification:unreadCount', { count: unreadCount });
-    } catch (err) {
-      console.error('Error fetching unread count on connect:', err.message);
+      // Send initial unread count
+      try {
+        const unreadCount = await notificationService.getUnreadCount(userId, socket.userRole);
+        socket.emit('notification:unreadCount', { count: unreadCount });
+      } catch (err) {
+        console.error('Error fetching unread count on connect:', err.message);
+      }
+    } else {
+      console.log(`🔌 Anonymous / Kiosk Socket connected (${socket.id})`);
     }
 
     // ── Handle: mark single notification as read ──

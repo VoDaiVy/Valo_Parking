@@ -16,19 +16,8 @@ export function SocketProvider({ children }) {
   useEffect(() => {
     const connect = () => {
       const token = localStorage.getItem('accessToken');
-      const raw = sessionStorage.getItem('valo_user');
 
-      // Don't connect if not logged in
-      if (!token || !raw) {
-        if (socketRef.current) {
-          socketRef.current.disconnect();
-          socketRef.current = null;
-          setSocket(null);
-        }
-        return;
-      }
-
-      // Don't reconnect if already connected with same token
+      // If already connected with same token status
       if (socketRef.current?.connected) {
         return;
       }
@@ -42,7 +31,7 @@ export function SocketProvider({ children }) {
         .replace('/api', '');
 
       const newSocket = io(serverUrl, {
-        auth: { token },
+        auth: token ? { token } : {},
         reconnection: true,
         reconnectionAttempts: 10,
         reconnectionDelay: 1000,

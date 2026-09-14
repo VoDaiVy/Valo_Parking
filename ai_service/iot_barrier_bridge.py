@@ -67,30 +67,32 @@ def main():
                 time.sleep(2)
                 continue
             else:
-                print("📡 Sẵn sàng lắng nghe sự kiện từ Kiosk Web...\n")
+                print("📡 Sẵn sàng lắng nghe sự kiện từ Kiosk Web & Staff Panel...\n")
 
         try:
             # 1. Đọc log phản hồi từ ESP32
             while ser.in_waiting:
-                msg = ser.readline().decode('utf-8', errors='ignore').strip()
-                if msg:
-                    print(f"   [ESP32]: {msg}")
-                    if "GATE_CLOSED" in msg:
-                        is_currently_open = False
-                        # Đồng bộ ngược lại cho Backend & Web App biết cổng đã đóng xong
-                        print(f"🔒 [BRIDGE] Cổng {current_open_gate} đã đóng -> Gửi tín hiệu đóng về Backend & Web App...")
-                        try:
-                            res_close = requests.post(
-                                'http://localhost:5001/api/iot/close-barrier',
-                                json={'fromBridge': True, 'gate': current_open_gate},
-                                timeout=2
-                            )
-                            if res_close.status_code == 200:
-                                data_close = res_close.json()
-                                last_trigger_id = data_close.get('data', {}).get('triggerId', last_trigger_id)
-                                print(f"✅ [BRIDGE SYNC] Đã đồng bộ trạng thái ĐÓNG CỔNG ({current_open_gate}) về Web App thành công!")
-                        except Exception as e_close:
-                            print(f"⚠️ Lỗi gửi close-barrier: {e_close}")
+                raw_line = ser.readline()
+                if raw_line:
+                    msg = raw_line.decode('utf-8', errors='ignore').strip()
+                    if msg:
+                        print(f"   [ESP32]: {msg}")
+                        if "GATE_CLOSED" in msg:
+                            is_currently_open = False
+                            # Đồng bộ ngược lại cho Backend & Web App biết cổng đã đóng xong
+                            print(f"🔒 [BRIDGE] Cổng {current_open_gate} đã đóng -> Gửi tín hiệu đóng về Backend & Web App...")
+                            try:
+                                res_close = requests.post(
+                                    'http://localhost:5001/api/iot/close-barrier',
+                                    json={'fromBridge': True, 'gate': current_open_gate},
+                                    timeout=2
+                                )
+                                if res_close.status_code == 200:
+                                    data_close = res_close.json()
+                                    last_trigger_id = data_close.get('data', {}).get('triggerId', last_trigger_id)
+                                    print(f"✅ [BRIDGE SYNC] Đã đồng bộ trạng thái ĐÓNG CỔNG ({current_open_gate}) về Web App thành công!")
+                            except Exception as e_close:
+                                print(f"⚠️ Lỗi gửi close-barrier: {e_close}")
 
             # 2. Đồng bộ trạng thái mở/đóng Barrier từ Backend
             res = requests.get(BACKEND_STATUS_URL, timeout=2)
@@ -104,54 +106,62 @@ def main():
                     slot = info.get('slotCode', 'N/A')
                     gate = info.get('gate', 'ENTRY_1')
                     is_hold = info.get('holdOpen', False)
+                    force_close = info.get('forceClose', False)
 
-                    # Lần đầu khởi động bridge: Nếu backend đang yêu cầu mở thì mở ngay ESP32
+                    # Lần đầu khởi động bridge
                     if last_trigger_id == 0:
                         if should_open:
                             last_trigger_id = -1
                         else:
                             last_trigger_id = trigger_id
 
-                    # A. LỆNH TẠM DỪNG / BẢO TRÌ (VÔ HIỆU HÓA CẢM BIẾN, GIỮ NGUYÊN VỊ TRÍ)
-                    if is_hold and trigger_id != last_trigger_id:
-                        last_trigger_id = trigger_id
-                        was_hold = True
-                        current_open_gate = gate
-                        print(f"\n⏸️ [PAUSE] Bật chế độ TẠM DỪNG (Vô hiệu hóa cảm biến hồng ngoại) tại {gate}...")
-                        ser.write(b"PAUSE\n")
-                        ser.flush()
+                    # Kiểm tra xem có lệnh mới không (trigger_id thay đổi)
+                    if trigger_id != last_trigger_id:
+                        # A. LỆNH TẠM DỪNG / BẢO TRÌ (VÔ HIỆU HÓA CẢM BIẾN, GIỮ NGUYÊN VỊ TRÍ)
+                        if is_hold:
+                            last_trigger_id = trigger_id
+                            was_hold = True
+                            current_open_gate = gate
+                            print(f"\n⏸️ [PAUSE] Bật chế độ TẠM DỪNG (Vô hiệu hóa cảm biến hồng ngoại) tại {gate}...")
+                            ser.write(b"PAUSE\n")
+                            ser.flush()
 
-                    # B. LỆNH ĐÓNG CỔNG TỪ STAFF (CHỈ GỬI KHI CỔNG ĐANG MỞ VÀ CÓ LỆNH MỚI)
-                    elif (not should_open) and info.get('forceClose', False) and is_currently_open and trigger_id != last_trigger_id:
-                        last_trigger_id = trigger_id
-                        is_currently_open = False
-                        current_open_gate = gate
-                        print(f"\n🔒 [CLOSE GATE] Gửi lệnh đóng cổng -> FORCE_CLOSE tại {gate}")
-                        ser.write(b"FORCE_CLOSE\n")
-                        ser.flush()
+                        # B. LỆNH TIẾP TỤC HOẠT ĐỘNG SAU KHI TẠM DỪNG
+                        elif was_hold and not is_hold and not force_close:
+                            last_trigger_id = trigger_id
+                            was_hold = False
+                            print(f"\n▶️ [RESUME] Tiếp tục hoạt động bình thường tại {gate}...")
+                            ser.write(b"RESUME\n")
+                            ser.flush()
 
-                    # C. LỆNH MỞ CỔNG TỪ KIOSK HOẶC STAFF PANEL
-                    elif should_open and trigger_id != last_trigger_id:
-                        last_trigger_id = trigger_id
-                        is_currently_open = True
-                        current_open_gate = gate
-                        was_hold = False
-                        print(f"\n🎉 [GATE OPEN] Mở cổng từ Web/App! Biển số: {plate} | Ô: {slot} | Cổng: {gate}")
-                        cmd = f"OPEN|{plate}|{slot}|{gate}\n"
-                        print(f"👉 Gửi lệnh: {cmd.strip()} -> ESP32...")
-                        ser.write(cmd.encode('utf-8'))
-                        ser.flush()
+                        # C. LỆNH ĐÓNG CỔNG CƯỠNG CHẾ TỪ STAFF
+                        elif (not should_open) and force_close:
+                            last_trigger_id = trigger_id
+                            is_currently_open = False
+                            was_hold = False
+                            current_open_gate = gate
+                            print(f"\n🔒 [FORCE CLOSE] Gửi lệnh đóng cổng -> FORCE_CLOSE tại {gate}...")
+                            ser.write(b"FORCE_CLOSE\n")
+                            ser.flush()
 
-                    # D. LỆNH TIẾP TỤC HOẠT ĐỘNG (CHỈ KHI TRƯỚC ĐÓ ĐANG TẠM DỪNG)
-                    elif (not is_hold) and was_hold and trigger_id != last_trigger_id:
-                        last_trigger_id = trigger_id
-                        was_hold = False
-                        print(f"\n▶️ [RESUME] Tiếp tục hoạt động bình thường tại {gate}...")
-                        ser.write(b"RESUME\n")
-                        ser.flush()
+                        # D. LỆNH MỞ CỔNG TỪ KIOSK HOẶC STAFF PANEL
+                        elif should_open:
+                            last_trigger_id = trigger_id
+                            is_currently_open = True
+                            current_open_gate = gate
+                            was_hold = False
+                            print(f"\n🎉 [GATE OPEN] Mở cổng từ Web/App! Biển số: {plate} | Ô: {slot} | Cổng: {gate}")
+                            cmd = f"OPEN|{plate}|{slot}|{gate}\n"
+                            print(f"👉 Gửi lệnh: {cmd.strip()} -> ESP32...")
+                            ser.write(cmd.encode('utf-8'))
+                            ser.flush()
 
-        except requests.exceptions.RequestException as req_err:
-            # Backend chua bat, bo qua va tiep tuc lang nghe Serial, khong duoc ngat USB
+                        # E. Trạng thái khác (đồng bộ triggerId)
+                        else:
+                            last_trigger_id = trigger_id
+
+        except requests.exceptions.RequestException:
+            # Backend chưa bật hoặc đang khởi động lại
             pass
         except (serial.SerialException, OSError) as se:
             print(f"⚠️ Mất kết nối USB ({se}). Đang tự động kết nối lại...")
@@ -167,7 +177,8 @@ def main():
             if "device not configured" in str(e).lower() or "bad file descriptor" in str(e).lower():
                 ser = None
 
-        time.sleep(0.5)
+        time.sleep(0.3)
 
 if __name__ == '__main__':
     main()
+

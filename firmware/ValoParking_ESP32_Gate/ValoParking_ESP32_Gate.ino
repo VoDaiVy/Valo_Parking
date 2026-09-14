@@ -97,14 +97,15 @@ void openBarrier(String line1, String marqueeText) {
   if (!barrierServo.attached()) {
     barrierServo.attach(SERVO_PIN, 500, 2400);
   }
+  
+  // Nâng cần dứt khoát và mượt mà lên 90 độ
   for (int angle = currentServoAngle; angle <= 90; angle += 5) {
     barrierServo.write(angle);
-    currentServoAngle = angle;
-    delay(15);
+    delay(10);
   }
   barrierServo.write(90);
   currentServoAngle = 90;
-  delay(150);
+  delay(100);
 
   currentGateState = GATE_OPEN_WAITING;
   barrierOpenedAt = millis();
@@ -182,17 +183,16 @@ void closeBarrier() {
   }
   for (int angle = currentServoAngle; angle >= 0; angle -= 5) {
     barrierServo.write(angle);
-    currentServoAngle = angle;
-    delay(15);
+    delay(10);
   }
   barrierServo.write(0);
   currentServoAngle = 0;
-  delay(150);
+  delay(100);
 
   currentGateState = GATE_IDLE_CLOSED;
   Serial.println("[ESP32] >> BARRIER DA DONG HOAN TOAN!");
   Serial.println("GATE_CLOSED");
-  delay(500);
+  delay(400);
   showDefaultScreen();
 }
 
@@ -285,6 +285,9 @@ void loop() {
           currentGateState = GATE_CAR_UNDER;
           clearDetectionStart = 0;
           Serial.println("\n🚗 [ESP32-SENSOR] >> ĐÃ CẮT TIA HỒNG NGOẠI: XE ĐANG QUA CỔNG!");
+        } else if (millis() - barrierOpenedAt >= 25000) { // 25s an toàn tự đóng nếu không có xe vào
+          Serial.println("\n⏳ [ESP32] >> HẾT 25S CHỜ - TỰ ĐỘNG ĐÓNG CỔNG AN TOÀN!");
+          closeBarrier();
         }
       }
 
