@@ -4,6 +4,7 @@ import KioskQrScannerModal from './KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
 import { isValidLicensePlate } from '../../utils/licensePlate';
 import ParkingFullModal from './ParkingFullModal';
+import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 export default function KioskStep1({ formData, updateFormData, onNext }) {
   const [activeField, setActiveField] = useState('plate'); // Default to plate
@@ -45,6 +46,8 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       alert('Network error while verifying QR code.');
     }
   };
+
+  useQrScannerListener(handleQrScan, !isVerifying);
 
   // Auto-verify logic
   useEffect(() => {
@@ -549,7 +552,16 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       </div>
 
       {/* Actions Row */}
-      <div className="flex items-center justify-center mt-4 mb-1">
+      <div className="flex items-center justify-center gap-4 mt-4 mb-1">
+        <button
+          type="button"
+          onClick={() => setShowQrModal(true)}
+          className="flex items-center gap-2 font-bold text-[16px] px-8 h-[52px] rounded-full transition-all border-2 border-[#0f172a] bg-white text-[#0f172a] hover:bg-slate-50 shadow-sm active:scale-95"
+        >
+          <ScanLine size={20} />
+          <span>Scan QR</span>
+        </button>
+
         <button
           onClick={handleManualNext}
           disabled={isVerifying || !(formData.licensePlate || '') || !isValidLicensePlate(formData.licensePlate || '')}

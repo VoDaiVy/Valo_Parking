@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { Camera, ScanLine, Car, AlertCircle } from 'lucide-react';
 import { API_BASE } from '../../services/api';
+import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 export default function KioskOutWelcome({ onScanSuccess }) {
   const videoRef = useRef(null);
@@ -65,6 +66,30 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       setErrorMessage('System error while verifying license plate.');
     }
   };
+
+  const handleHardwareQrScan = async (qrPayload) => {
+    if (!qrPayload) return;
+    try {
+      setErrorMessage('');
+      setAlarmState(false);
+      const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qrPayload })
+      });
+      const data = await res.json();
+      if (data.success) {
+        onScanSuccess(data.data, null);
+      } else {
+        setErrorMessage(data.message || 'Mã QR không hợp lệ hoặc phiên đỗ xe đã kết thúc.');
+      }
+    } catch (err) {
+      console.error('API error', err);
+      setErrorMessage('Lỗi hệ thống khi xác thực mã QR.');
+    }
+  };
+
+  useQrScannerListener(handleHardwareQrScan, true);
 
   const formatVietnamesePlate = (clean) => {
     let province, series, numbers;
@@ -135,7 +160,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
             if (result && result.plate) {
               const cleaned = result.plate.replace(/[^A-Z0-9]/g, '');
               const formatted = formatVietnamesePlate(cleaned) || cleaned; // Fallback to raw string if format fails
-              
+
               if (formatted) {
                 setRecognizedText(formatted);
                 // Only process if it's a NEW plate to avoid spamming the backend
@@ -170,27 +195,27 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     const raw = e.target.value.toUpperCase();
     const clean = raw.replace(/[^A-Z0-9]/g, '');
     let formatted = formatVietnamesePlate(clean);
-    
+
     if (!formatted) {
-       if (clean.length >= 3) {
-          const seriesMatch = clean.substring(2).match(/^[A-Z][A-Z0-9]?/);
-          if (seriesMatch) {
-             const series = seriesMatch[0];
-             const numbers = clean.substring(2 + series.length);
-             if (numbers.length > 0) {
-               formatted = `${clean.substring(0, 2)}${series}-${numbers}`;
-               if (numbers.length > 3) {
-                 formatted = `${clean.substring(0, 2)}${series}-${numbers.substring(0,3)}.${numbers.substring(3)}`;
-               }
-             } else {
-               formatted = clean;
-             }
+      if (clean.length >= 3) {
+        const seriesMatch = clean.substring(2).match(/^[A-Z][A-Z0-9]?/);
+        if (seriesMatch) {
+          const series = seriesMatch[0];
+          const numbers = clean.substring(2 + series.length);
+          if (numbers.length > 0) {
+            formatted = `${clean.substring(0, 2)}${series}-${numbers}`;
+            if (numbers.length > 3) {
+              formatted = `${clean.substring(0, 2)}${series}-${numbers.substring(0, 3)}.${numbers.substring(3)}`;
+            }
           } else {
-             formatted = clean;
+            formatted = clean;
           }
-       } else {
+        } else {
           formatted = clean;
-       }
+        }
+      } else {
+        formatted = clean;
+      }
     }
     setManualInput(formatted);
   };
@@ -272,9 +297,8 @@ export default function KioskOutWelcome({ onScanSuccess }) {
 
         {/* Error Message for Tailgating / Invalid Sessions */}
         {errorMessage && (
-          <div className={`mt-6 rounded-lg p-4 text-center animate-pulse ${
-            alarmState ? 'bg-red-600/25 border border-red-500/70' : 'bg-red-500/20 border border-red-500/50'
-          }`}>
+          <div className={`mt-6 rounded-lg p-4 text-center animate-pulse ${alarmState ? 'bg-red-600/25 border border-red-500/70' : 'bg-red-500/20 border border-red-500/50'
+            }`}>
             <p className="text-red-400 font-bold">{errorMessage}</p>
             <p className="text-gray-300 text-sm mt-1">
               {alarmState

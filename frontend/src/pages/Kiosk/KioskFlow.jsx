@@ -222,6 +222,14 @@ export default function KioskFlow() {
     return data;
   };
 
+  const handleDirectFastPass = (sessionData, newFormData) => {
+    if (newFormData) {
+      setFormData(prev => ({ ...prev, ...newFormData }));
+    }
+    setSuccessSession(sessionData);
+    navigate('/kiosk/step3');
+  };
+
   return (
     <div className="w-screen h-screen overflow-hidden bg-white selection:bg-gold/30">
       {isSubmitting && (
@@ -232,7 +240,7 @@ export default function KioskFlow() {
 
       <Routes>
         {/* Step 0: Welcome Screen (Full width, no split layout) */}
-        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} />} />
+        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} onDirectFastPass={handleDirectFastPass} />} />
 
         {/* Steps 1-3 use the Split-Screen KioskLayout */}
         <Route element={<KioskLayout />}>

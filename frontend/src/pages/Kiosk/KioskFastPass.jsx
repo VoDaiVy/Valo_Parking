@@ -58,9 +58,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
 
   // Màn hình tự động quay trở lại màn hình chính (Click to start) khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
   useEffect(() => {
-    if (status !== 'ready') return undefined;
-
-    // Kiểm tra trạng thái đóng của Barrier ENTRY_1 qua Polling
+    // 1. Kiểm tra trạng thái đóng của Barrier ENTRY_1 qua Polling
     const checkBarrier = async () => {
       try {
         const res = await fetch(`${API_BASE}/iot/barrier-status?gate=ENTRY_1&_t=${Date.now()}`, {
@@ -71,12 +69,9 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
           const isOpen = Boolean(data.data.open);
           if (isOpen) {
             hasSeenOpenRef.current = true;
-          } else {
-            const elapsed = Date.now() - mountTimeRef.current;
-            // Cổng đang đóng: nếu xe đã qua (hasSeenOpen) hoặc staff force close hoặc đã hiển thị quá 2.5s
-            if (hasSeenOpenRef.current || data.data.forceClose || elapsed >= 2500) {
-              returnToStart();
-            }
+          } else if (hasSeenOpenRef.current || data.data.forceClose) {
+            // Cổng đã đóng lại sau khi mở -> tự động chuyển về Welcome
+            returnToStart();
           }
         }
       } catch (err) {
@@ -88,23 +83,19 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     checkBarrier();
     const interval = setInterval(checkBarrier, 300);
 
-    // Auto-return safety timer after 15s if no sensor triggers
-    const safetyTimer = setTimeout(() => {
+    // Bộ đếm an toàn 35s chỉ kích hoạt nếu ESP32 mất kết nối hoàn toàn
+    const maxTimeoutTimer = setTimeout(() => {
       returnToStart();
-    }, 15000);
+    }, 35000);
 
+    // 2. Lắng nghe real-time qua Socket.IO
     const handleBarrierControl = (data) => {
       if (data && (data.gate === 'ENTRY_1' || !data.gate)) {
         if (data.open) {
           hasSeenOpenRef.current = true;
-        } else if (!data.open) {
-          // Xe đã qua cổng hoặc staff đóng -> tự động quay về trang chủ
-          const elapsed = Date.now() - mountTimeRef.current;
-          if (elapsed >= 1500) {
-            returnToStart();
-          } else {
-            setTimeout(returnToStart, 1500 - elapsed);
-          }
+        } else if (!data.open && hasSeenOpenRef.current) {
+          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ
+          returnToStart();
         }
       }
     };
@@ -115,12 +106,12 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
 
     return () => {
       clearInterval(interval);
-      clearTimeout(safetyTimer);
+      clearTimeout(maxTimeoutTimer);
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }
     };
-  }, [status, socket]);
+  }, [socket]);
 
   useEffect(() => {
     if (successSession) {

@@ -6,6 +6,7 @@ import ParkingFullModal from './ParkingFullModal';
 import { API_BASE } from '../../services/api';
 import { getAvailableBookingSlots } from '../../services/bookingService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
+import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 const SCAN_ATTEMPTS = 20;
 const SCAN_RETRY_DELAY_MS = 800;
@@ -30,10 +31,10 @@ const plateFingerprint = (plate) => {
   return `${clean.slice(0, 4)}-${clean.slice(-4)}`;
 };
 
-export default function KioskWelcome({ onStart, updateFormData }) {
+export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass }) {
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
-  const [, setScanMessage] = useState('Scanning Plate...');
+  const [scanMessage, setScanMessage] = useState('Scanning Plate...');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showAlreadyInsideModal, setShowAlreadyInsideModal] = useState(false);
   const videoRef = useRef(null);
@@ -224,7 +225,7 @@ export default function KioskWelcome({ onStart, updateFormData }) {
     const formatted = formatVietnamesePlate(plate);
     if (!formatted) return false;
 
-    setScanMessage(`Detected ${formatted}. Checking registration...`);
+    setScanMessage('Checking registration...');
 
     const response = await fetch(`${API_BASE}/sessions/verify-plate`, {
       method: 'POST',
@@ -391,13 +392,128 @@ export default function KioskWelcome({ onStart, updateFormData }) {
       onStart(1);
     } catch (error) {
       console.error('Welcome camera scan error:', error);
-      
+
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
       stopCamera();
       setIsScanning(false);
       onStart(1);
     }
   };
+
+  // Quét mã QR trực tiếp từ mắt đọc GM65 (USB / UART) ngay tại màn hình Welcome
+  const handleHardwareQrScan = async (qrPayload) => {
+    if (!qrPayload || isScanning) return;
+    setIsScanning(true);
+    setScanMessage('Verifying QR Code...');
+
+    try {
+      // 1. Thử lấy ảnh nhanh từ camera nếu camera đang khả dụng
+      let entryImage = null;
+      try {
+        if (videoRef.current && videoRef.current.videoWidth) {
+          entryImage = await buildScanImageBase64();
+        }
+      } catch (e) { }
+
+      // 2. Xác thực mã QR qua API
+      const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qrPayload })
+      });
+      const qrData = await response.json();
+
+      if (!qrData.success) {
+        setIsScanning(false);
+        setScanMessage('Scanning Plate...');
+        alert(qrData.message || 'Invalid QR code!');
+        return;
+      }
+
+      const cleanPlate = (qrData.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const phone = qrData.phone || '';
+
+      // 3. Kiểm tra thông tin xe / đặt chỗ / VIP
+      const verifyRes = await fetch(`${API_BASE}/sessions/verify-plate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licensePlate: cleanPlate })
+      });
+      const verifyJson = await verifyRes.json();
+      const verifyData = verifyJson.success ? verifyJson.data : null;
+
+      if (verifyData?.isActive) {
+        setIsScanning(false);
+        setScanMessage('Scanning Plate...');
+        setShowAlreadyInsideModal(true);
+        return;
+      }
+
+      // 4. Nếu là Khách VIP hoặc Đặt trước -> Tự động tạo phiên check-in & Mở barrier & Chuyển thẳng đến màn hình chỉ ô đỗ
+      if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation) {
+        setScanMessage('Opening Barrier & Assigning Slot...');
+        const entryPayload = {
+          licensePlate: cleanPlate,
+          phone: phone || verifyData.phone || '',
+          parkingSlot: verifyData.assignedSlot,
+          floorId: verifyData.assignedFloorId,
+          durationHours: 1,
+          entryImageBase64: entryImage,
+          ticketPackageId: verifyData.pricingPackage?._id || null,
+          bookingMode: 'hourly',
+          bookingId: verifyData.bookingId || null,
+          bookingHoldId: null,
+        };
+
+        const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entryPayload)
+        });
+        const entryData = await entryRes.json();
+
+        if (entryData.success) {
+          stopCamera();
+          setIsScanning(false);
+          onDirectFastPass?.(entryData.data, {
+            licensePlate: cleanPlate,
+            phone: phone || verifyData.phone || '',
+            selectedSlot: verifyData.assignedSlot,
+            floorId: verifyData.assignedFloorId,
+            step3Mode: 'fastpass',
+            isMonthly: verifyData.isMonthly,
+            hasPreBooking: verifyData.hasPreBooking,
+            entryImageBase64: entryImage
+          });
+          return;
+        }
+      }
+
+      // 5. Nếu xe cần chọn ô đỗ hoặc cần duyệt lại
+      updateFormData({
+        licensePlate: cleanPlate,
+        phone: phone || verifyData?.phone || '',
+        entryImageBase64: entryImage,
+        step3Mode: verifyData?.requiresSlotReallocation ? 'policy' : (verifyData?.hasPreBooking || verifyData?.isMonthly ? 'fastpass' : 'policy'),
+        isMonthly: verifyData?.isMonthly || false,
+        hasPreBooking: verifyData?.hasPreBooking || false,
+        selectedSlot: verifyData?.assignedSlot || null,
+        floorId: verifyData?.assignedFloorId || null,
+        bookingId: verifyData?.bookingId || null,
+      });
+
+      stopCamera();
+      setIsScanning(false);
+      onStart(verifyData?.assignedSlot ? 3 : 2);
+
+    } catch (err) {
+      console.error('Error during QR hardware scan:', err);
+      setIsScanning(false);
+      alert('Lỗi khi xử lý mã QR từ máy quét!');
+    }
+  };
+
+  useQrScannerListener(handleHardwareQrScan, !isScanning);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-gray-900 overflow-hidden font-sans">
@@ -409,7 +525,7 @@ export default function KioskWelcome({ onStart, updateFormData }) {
 
       {/* Main Card */}
       <div className="relative z-10 bg-white/95 backdrop-blur-md w-[85%] max-w-[1000px] rounded-[32px] shadow-[0_30px_60px_rgba(0,0,0,0.3)] p-16 flex flex-col items-center">
-        
+
         <div className="absolute top-5 right-0 w-44">
           <img src={logoImage} alt="Valo Parking" className="w-full h-auto object-contain" />
         </div>
@@ -430,9 +546,9 @@ export default function KioskWelcome({ onStart, updateFormData }) {
         <button
           onClick={handleStart}
           disabled={isScanning}
-          className="mt-12 bg-[#FFEB00] hover:bg-[#FFE000] text-[#0f172a] font-black text-3xl px-16 py-6 rounded-full flex items-center gap-4 transition-all shadow-[0_15px_30px_rgba(255,235,0,0.4)] border border-[#F2D600] group min-w-[400px] justify-center hover:shadow-[0_20px_40px_rgba(255,235,0,0.6)] active:scale-95 active:shadow-md"
+          className="mt-12 bg-[#FFEB00] hover:bg-[#FFE000] text-[#0f172a] font-black text-3xl px-16 py-6 rounded-full flex items-center gap-4 transition-all shadow-[0_15px_30px_rgba(255,235,0,0.4)] border border-[#F2D600] group min-w-[400px] justify-center hover:shadow-[0_20px_40px_rgba(255,235,0,0.6)] active:scale-95 active:shadow-md cursor-pointer"
         >
-          {isScanning ? 'Please wait...' : 'Click to start'}
+          {isScanning ? 'Scanning...' : 'Click to start'}
           {isScanning ? (
             <Loader2 size={36} className="animate-spin" strokeWidth={2.5} />
           ) : (
@@ -455,22 +571,22 @@ export default function KioskWelcome({ onStart, updateFormData }) {
         aria-hidden="true"
       />
 
-      <ParkingFullModal 
-        isOpen={showFullModal} 
+      <ParkingFullModal
+        isOpen={showFullModal}
         onClose={() => {
           setShowFullModal(false);
           window.location.replace('/kiosk');
-        }} 
+        }}
       />
 
-      <ParkingFullModal 
-        isOpen={showAlreadyInsideModal} 
+      <ParkingFullModal
+        isOpen={showAlreadyInsideModal}
         title="ALREADY INSIDE"
         message="This vehicle is already inside the parking lot!"
         onClose={() => {
           setShowAlreadyInsideModal(false);
           window.location.replace('/kiosk');
-        }} 
+        }}
       />
     </div>
   );
