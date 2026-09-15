@@ -120,6 +120,8 @@ const startServer = async () => {
       // Start parking session scheduler
       startScheduler(app);
       require('./services/aiCopilot/monitor').startMonitor(app);
+      require('./services/aiCopilot/floorFullMonitor').startFloorMonitor(app);
+      require('./services/aiCopilot/refundCompletedMonitor').startRefundMonitor(app);
 
       // Seed default notification rules (upsert, won't overwrite existing)
       seedRules().catch(err => {

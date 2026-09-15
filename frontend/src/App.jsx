@@ -149,6 +149,7 @@ export default function App() {
             <Route path="/admin/services" element={<AdminServiceManager />} />
             <Route path="/admin/policies" element={<PolicyManagement />} />
             <Route path="/admin/parking-lots" element={<ParkingLots />} />
+            <Route path="/admin/bookings" element={<BookingManagement />} />
             <Route path="/admin/sessions" element={<StaffSessionManagement />} />
             <Route path="/admin/pricing" element={<PricingManagement />} />
             <Route path="/admin/tickets" element={<TicketPackages />} />

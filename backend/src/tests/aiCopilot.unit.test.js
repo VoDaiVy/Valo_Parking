@@ -56,8 +56,11 @@ test('chat sends a function-role tool response before final synthesis', async ()
   AIAuditLog.create = async () => ({});
   GoogleGenerativeAI.prototype.getGenerativeModel = () => ({ generateContent: async (request) => {
     requests.push(request);
-    if (requests.length === 1) return { response: { functionCalls: () => [{ name: 'check_system_health', args: {} }] } };
-    assert.equal(request.contents.at(-1).role, 'function');
+    if (requests.length === 1) {
+      const modelContent = { role: 'model', parts: [{ functionCall: { name: 'check_system_health', args: {} } }] };
+      return { response: { functionCalls: () => [{ name: 'check_system_health', args: {} }], candidates: [{ content: modelContent }] } };
+    }
+    assert.equal(request.contents.at(-1).role, 'user');
     assert.equal(request.contents.at(-1).parts[0].functionResponse.name, 'check_system_health');
     assert.equal(request.contents.at(-1).parts[0].functionResponse.response.result.data.activeSessions, 2);
     return { response: { functionCalls: () => [], text: () => 'Hệ thống đã kết nối, có 2 phiên đang hoạt động.' } };
@@ -96,12 +99,16 @@ test('Gemini 429 is classified at the exact failed call without business writes'
   }
 });
 
-test('phase 1 read allowlist contains exactly the audited tools', () => {
+test('read allowlist contains the 11 original aggregate tools plus 12 drill-down read tools', () => {
   assert.deepEqual(tools.map((tool) => tool.name), [
     'get_revenue_metrics', 'get_session_statistics', 'get_parking_occupancy',
     'get_user_summary', 'get_pricing_config', 'get_package_list',
     'get_subscription_stats', 'get_service_catalog', 'get_policy_summary',
     'check_system_health', 'get_ai_notifications',
+    'get_active_sessions', 'search_sessions', 'get_session_detail',
+    'search_users', 'get_user_detail', 'search_vehicles',
+    'search_bookings', 'get_booking_detail', 'get_parking_floors',
+    'get_parking_slots', 'search_transactions', 'get_subscription_members',
   ]);
   assert.rejects(execute('delete_user', {}), /allowlist/);
 });
@@ -121,6 +128,22 @@ test('package draft accepts only supported operations and valid fields', () => {
   assert.equal(cleanPayload('CREATE_TICKET_PACKAGE', { name: 'Gói tháng', type: 'monthly', price: 500000 }).price, 500000);
   assert.throws(() => cleanPayload('DELETE_TICKET_PACKAGE', {}));
   assert.throws(() => cleanPayload('CREATE_TICKET_PACKAGE', { name: 'X', type: 'monthly', price: -1 }));
+  assert.throws(() => cleanPayload('UPDATE_TICKET_PACKAGE', {}), /không hợp lệ/);
+  assert.doesNotThrow(() => cleanPayload('UPDATE_TICKET_PACKAGE', { name: 'A', type: 'daily', price: 100, maxSlots: 3, isActive: true }));
+});
+test('draft service supports Phase 2A allowlist validation', () => {
+  assert.doesNotThrow(() => cleanPayload('UPDATE_USER_STATUS', { status: true }));
+  assert.throws(() => cleanPayload('UPDATE_USER_STATUS', { status: 'true' }), /không hợp lệ/);
+  
+  assert.doesNotThrow(() => cleanPayload('APPROVE_VEHICLE', {}));
+  assert.doesNotThrow(() => cleanPayload('ARCHIVE_POLICY', {}));
+
+  assert.doesNotThrow(() => cleanPayload('CHANGE_USER_ROLE', { role: 'customer' }));
+  assert.throws(() => cleanPayload('CHANGE_USER_ROLE', { role: 'superadmin' }), /không hợp lệ/);
+
+  assert.doesNotThrow(() => cleanPayload('CREATE_POLICY_DRAFT', { title: 'Test', category: 'general', summary: 'S', content: 'C' }));
+  assert.throws(() => cleanPayload('CREATE_POLICY_DRAFT', { title: ' ' }), /Thiếu tiêu đề/);
+  assert.throws(() => cleanPayload('REJECT_VEHICLE', {}), /Thao tác này chưa được hỗ trợ/); // Ensure REJECT_VEHICLE is absent
 });
 test('monitor requires comparable history before creating candidates', () => {
   assert.equal(candidateFromSeries('sessions', 100, [0, 0, 0, 0], new Date().toISOString()).candidate, false);

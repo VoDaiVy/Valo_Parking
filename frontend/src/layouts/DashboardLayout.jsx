@@ -9,7 +9,7 @@ import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
-import ValoAICopilot from "../components/ValoAICopilot";
+import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import {
   LayoutDashboard,
   Users,

@@ -14,6 +14,7 @@ const PricingConfig = require('../../models/PricingConfig');
 const AINotification = require('../../models/AINotification');
 const pricingEngine = require('../pricingEngine');
 const { startOfVietnamDay, parseVietnamCalendarDate } = require('../../utils/bookingDateRange');
+const readTools = require('./readTools');
 
 const dateProperties = {
   startDate: { type: 'string', description: 'ISO date, inclusive' },
@@ -37,8 +38,14 @@ function noArgs(args = {}) {
   if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length) throw new Error('Công cụ này không nhận tham số.');
   return {};
 }
+/* passthrough validator: returns args as-is so readTools functions handle their own validation */
+function passArgs(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tham số không hợp lệ.');
+  return args;
+}
 const define = (name, description, parameters, validate, run) => ({ name, description, parameters, validate, run });
 const tools = [
+  /* ── 11 existing aggregate / summary tools (untouched) ─────────────── */
   define('get_revenue_metrics', 'Doanh thu nền tảng từ booking, gói vé, gia hạn và phí chuyển nhượng; không chỉ tiền phạt.', dateSchema, validateDates, async (p) => statistics.getAdminPlatformRevenueStatistics(p)),
   define('get_session_statistics', 'Thống kê phiên xe theo trạng thái trong khoảng thời gian.', dateSchema, validateDates, async (p) => {
     const match = p.startDate ? { checkInTime: { $gte: new Date(p.startDate), $lte: new Date(p.endDate) } } : { checkInTime: { $gte: startOfVietnamDay(new Date()) } };
@@ -69,6 +76,118 @@ const tools = [
   }),
   define('check_system_health', 'Chỉ số sức khỏe có thể xác minh: kết nối DB và số phiên đang hoạt động.', emptySchema, noArgs, async () => ({ databaseConnected: mongoose.connection.readyState === 1, activeSessions: await Session.countDocuments({ status: 'active' }), checkedAt: new Date().toISOString() })),
   define('get_ai_notifications', 'Cảnh báo AI mới nhất có bằng chứng.', emptySchema, noArgs, async () => AINotification.find({ status: 'OPEN' }).sort({ detectedAt: -1 }).limit(10).select('title summary severity evidence detectedAt').lean()),
+
+  /* ── 12 new drill-down read tools ──────────────────────────────────── */
+
+  define('get_active_sessions',
+    'Danh sách phiên xe đang hoạt động (status=active) với biển số, tầng, người dùng. Dùng khi Admin hỏi "phiên nào đang hoạt động", "xe nào đang trong bãi".',
+    { type: 'object', properties: {
+      floorId: { type: 'string', description: 'ObjectId tầng, tuỳ chọn.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p) => readTools.getActiveSessions(p)),
+
+  define('search_sessions',
+    'Tìm kiếm phiên xe theo biển số, trạng thái, ngày, hoặc userId. Nếu không truyền tham số nào, trả các phiên hôm nay (Asia/Ho_Chi_Minh).',
+    { type: 'object', properties: {
+      plateNumber: { type: 'string', description: 'Biển số xe (có thể nhập một phần).' },
+      status: { type: 'string', enum: ['active', 'completed', 'cancelled'], description: 'Trạng thái phiên.' },
+      startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
+      endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      userId: { type: 'string', description: 'ObjectId người dùng.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p) => readTools.searchSessions(p)),
+
+  define('get_session_detail',
+    'Chi tiết một phiên xe cụ thể: biển số, trạng thái, tầng, người dùng, thời gian check-in/out, giá.',
+    { type: 'object', properties: {
+      sessionId: { type: 'string', description: 'ObjectId của phiên cần xem.' },
+    }, required: ['sessionId'] },
+    passArgs, async (p) => readTools.getSessionDetail(p)),
+
+  define('search_users',
+    'Tìm người dùng theo tên (username), email, hoặc vai trò. Không trả password/token.',
+    { type: 'object', properties: {
+      query: { type: 'string', description: 'Từ khoá tìm theo username hoặc email.' },
+      role: { type: 'string', enum: ['guest', 'customer', 'staff', 'admin'], description: 'Lọc theo vai trò.' },
+      status: { type: 'boolean', description: 'true=active, false=inactive.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10).' },
+    } },
+    passArgs, async (p) => readTools.searchUsers(p)),
+
+  define('get_user_detail',
+    'Thông tin profile/account an toàn của một người dùng cụ thể. Không trả password/token/OTP.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId của người dùng.' },
+    }, required: ['userId'] },
+    passArgs, async (p) => readTools.getUserDetail(p)),
+
+  define('search_vehicles',
+    'Tìm xe theo biển số, chủ xe (userId), loại xe, hoặc trạng thái duyệt.',
+    { type: 'object', properties: {
+      plateNumber: { type: 'string', description: 'Biển số xe (có thể nhập một phần).' },
+      userId: { type: 'string', description: 'ObjectId chủ xe.' },
+      vehicleType: { type: 'string', enum: ['car', 'electric_car'], description: 'Loại xe.' },
+      status: { type: 'string', enum: ['pending', 'approved', 'rejected'], description: 'Trạng thái duyệt.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10).' },
+    } },
+    passArgs, async (p) => readTools.searchVehicles(p)),
+
+  define('search_bookings',
+    'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Nếu không có filter, trả booking gần nhất.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId người đặt.' },
+      plateNumber: { type: 'string', description: 'Biển số xe.' },
+      status: { type: 'string', enum: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED', 'EXPIRED', 'COMPLETED', 'CANCELLED'], description: 'Trạng thái booking.' },
+      startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
+      endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p) => readTools.searchBookings(p)),
+
+  define('get_booking_detail',
+    'Chi tiết một booking cụ thể: slot, tầng, người đặt, xe, thanh toán, trạng thái.',
+    { type: 'object', properties: {
+      bookingId: { type: 'string', description: 'ObjectId của booking.' },
+    }, required: ['bookingId'] },
+    passArgs, async (p) => readTools.getBookingDetail(p)),
+
+  define('get_parking_floors',
+    'Danh sách tất cả tầng đỗ xe với tên và số tầng. Dùng để resolve floorId trước khi xem slot.',
+    emptySchema, noArgs, async () => readTools.getParkingFloors()),
+
+  define('get_parking_slots',
+    'Danh sách slot ở tầng cụ thể, có thể lọc theo trạng thái (available/occupied/maintenance/booked) hoặc loại slot.',
+    { type: 'object', properties: {
+      floorId: { type: 'string', description: 'ObjectId tầng.' },
+      status: { type: 'string', enum: ['available', 'occupied', 'maintenance', 'booked'], description: 'Trạng thái slot.' },
+      slotType: { type: 'string', description: 'Loại slot (hourly, monthly, ...).' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 50).' },
+    } },
+    passArgs, async (p) => readTools.getParkingSlots(p)),
+
+  define('search_transactions',
+    'Tìm giao dịch ví theo userId, loại (TOP_UP/PAYMENT/REFUND/TRANSFER_OUT/TRANSFER_IN/TRANSFER_FEE), trạng thái, khoảng ngày.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId người dùng.' },
+      type: { type: 'string', enum: ['TOP_UP', 'PAYMENT', 'REFUND', 'TRANSFER_OUT', 'TRANSFER_IN', 'TRANSFER_FEE'], description: 'Loại giao dịch.' },
+      status: { type: 'string', enum: ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'], description: 'Trạng thái.' },
+      startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
+      endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p) => readTools.searchTransactions(p)),
+
+  define('get_subscription_members',
+    'Danh sách đăng ký/membership theo userId, packageId hoặc trạng thái. Mặc định trả active.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId người dùng.' },
+      packageId: { type: 'string', description: 'ObjectId gói vé.' },
+      status: { type: 'string', enum: ['pending', 'active', 'expired', 'cancelled', 'failed'], description: 'Trạng thái đăng ký.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 15).' },
+    } },
+    passArgs, async (p) => readTools.getSubscriptionMembers(p)),
 ];
 const registry = new Map(tools.map((tool) => [tool.name, tool]));
 async function execute(name, args) {

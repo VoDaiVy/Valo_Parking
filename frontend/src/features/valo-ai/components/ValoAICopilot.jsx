@@ -1,16 +1,19 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import SocketContext from '../contexts/SocketProvider';
+import { useNavigate } from 'react-router-dom';
+import SocketContext from '../../../contexts/SocketProvider';
 import ValoAICopilotView from './ValoAICopilotView';
 import { sendAIMessage, getAINotifications, getAINotification, markAINotificationRead, dismissAINotification, approveAIDraft, rejectAIDraft } from '../services/aiCopilotService';
+import { notificationTarget } from '../utils/notificationTarget';
 
 const STORAGE_KEY = 'valo-ai-position-v1';
 const WIDGET_WIDTH = 92;
 const WIDGET_HEIGHT = 100;
 const clamp = (x, y) => ({ x: Math.max(0, Math.min(x, window.innerWidth - WIDGET_WIDTH)), y: Math.max(0, Math.min(y, window.innerHeight - WIDGET_HEIGHT)) });
-const suggestions = ['Kiểm tra hệ thống', 'Có rủi ro nào không?', 'Gợi ý điều chỉnh giá', 'Xem lượt xe hôm nay'];
+const suggestions = ['Có rủi ro nào không?', 'Gợi ý điều chỉnh giá', 'Xem lượt xe hôm nay'];
 const filters = [['all', 'Tất cả'], ['unread', 'Chưa đọc'], ['warning', 'Cảnh báo'], ['critical', 'Nghiêm trọng']];
 
 export default function ValoAICopilot() {
+  const navigate = useNavigate();
   const socket = useContext(SocketContext);
   const [position, setPosition] = useState(() => {
     try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (Number.isFinite(saved.x) && Number.isFinite(saved.y)) return clamp(saved.x, saved.y); } catch { /* invalid saved position */ }
@@ -25,6 +28,7 @@ export default function ValoAICopilot() {
   const [busy, setBusy] = useState(false);
   const [noticeBusy, setNoticeBusy] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [notificationError, setNotificationError] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -37,12 +41,13 @@ export default function ValoAICopilot() {
 
   const refresh = useCallback(async (nextFilter = filter) => {
     const response = await getAINotifications(nextFilter);
-    if (response.ok) { setNotifications(response.data.data.notifications || []); setUnreadCount(response.data.data.unreadCount || 0); }
+    if (response.ok) { setNotifications(response.data.data.notifications || []); setUnreadCount(response.data.data.unreadCount || 0); setNotificationError(''); }
+    else setNotificationError(response.data?.message || 'Không thể tải thông báo VALO AI.');
   }, [filter]);
   useEffect(() => { const onResize = () => setPosition((p) => clamp(p.x, p.y)); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, []);
   useEffect(() => {
     let active = true;
-    getAINotifications(filter).then((response) => { if (active && response.ok) { setNotifications(response.data.data.notifications || []); setUnreadCount(response.data.data.unreadCount || 0); if (filter === 'all' && !seenNotificationIds.current) seenNotificationIds.current = new Set((response.data.data.notifications || []).map((item) => String(item._id))); } });
+    getAINotifications(filter).then((response) => { if (active && response.ok) { setNotifications(response.data.data.notifications || []); setUnreadCount(response.data.data.unreadCount || 0); setNotificationError(''); if (filter === 'all' && !seenNotificationIds.current) seenNotificationIds.current = new Set((response.data.data.notifications || []).map((item) => String(item._id))); } else if (active) setNotificationError(response.data?.message || 'Không thể tải thông báo VALO AI.'); });
     return () => { active = false; };
   }, [filter]);
   useEffect(() => {
@@ -97,6 +102,16 @@ export default function ValoAICopilot() {
     const response = await getAINotification(id);
     if (response.ok) { setSelected(response.data.data); await markAINotificationRead(id); refresh(); }
   };
+  const onNotificationClick = async (item) => {
+    const target = notificationTarget(item.targetRoute);
+    if (!target) return openNotice(item._id);
+    setPreview(null);
+    try { await markAINotificationRead(item._id); }
+    catch (error) { console.error('[VALO AI Notification] mark read:', error); }
+    refresh();
+    setOpen(false);
+    navigate(target);
+  };
   const submit = async (value = input) => {
     const message = value.trim(); if (!message || busy) return;
     setInput(''); setMessages((rows) => [...rows, { role: 'user', message, at: Date.now() }]); setBusy(true); setOpen(true); setTab('chat');
@@ -128,9 +143,9 @@ export default function ValoAICopilot() {
   return <ValoAICopilotView
     position={position} open={open} setOpen={setOpen} tab={tab} setTab={setTab}
     messages={messages} busy={busy} noticeBusy={noticeBusy} input={input} setInput={setInput}
-    submit={submit} decide={decide} notifications={notifications} unreadCount={unreadCount}
+    submit={submit} decide={decide} notifications={notifications} unreadCount={unreadCount} notificationError={notificationError}
     filter={filter} setFilter={setFilter} selected={selected} setSelected={setSelected}
-    preview={preview} openNotice={openNotice} refresh={refresh} dismissNotice={dismissNotice}
+    preview={preview} openNotice={openNotice} onNotificationClick={onNotificationClick} refresh={refresh} dismissNotice={dismissNotice}
     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
     onTriggerClick={onTriggerClick} bottomRef={bottomRef} suggestions={suggestions} filters={filters}
     dragging={dragging}

@@ -1,4 +1,4 @@
-import { apiFetch } from './api';
+import { apiFetch } from '../../../services/api';
 
 const request = (path, options = {}) => apiFetch(`/ai-copilot${path}`, {
   ...options,

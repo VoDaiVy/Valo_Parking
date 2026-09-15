@@ -41,6 +41,11 @@
 .valo-ai-message-stack { max-width: 80%; display: flex; flex-direction: column; }
 .valo-ai-message-bubble { padding: 9px 12px; border-radius: 18px; background: #f1f2f5; font-size: 12px; line-height: 1.5; word-break: break-word; }
 .valo-ai-message-bubble > p { margin: 0; white-space: pre-wrap; }
+.valo-ai-markdown p { margin: 0 0 7px; }
+.valo-ai-markdown p:last-child, .valo-ai-markdown ul:last-child, .valo-ai-markdown ol:last-child { margin-bottom: 0; }
+.valo-ai-markdown ul, .valo-ai-markdown ol { margin: 0 0 7px; padding-left: 19px; }
+.valo-ai-markdown li { margin: 2px 0; }
+.valo-ai-markdown code { padding: 1px 3px; border-radius: 3px; background: #e2e5eb; font-size: .95em; }
 .is-user .valo-ai-message-bubble { border-radius: 18px 18px 4px 18px; background: linear-gradient(120deg, #ffe494, #ffca49); color: #272722; }
 .is-ai .valo-ai-message-bubble { border-radius: 18px 18px 18px 4px; }
 .valo-ai-message-stack time { margin: 3px 6px 0; color: #9a9fac; font-size: 10px; }
@@ -48,6 +53,10 @@
 .valo-ai-evidence { margin-top: 8px; padding-top: 7px; border-top: 1px solid #dadde3; color: #596782; font-size: 11px; }
 .valo-ai-evidence summary { cursor: pointer; color: #3162a8; font-weight: 650; }
 .valo-ai-evidence p { margin: 4px 0 0; }
+.valo-ai-evidence > strong { display: block; margin-top: 6px; }
+.valo-ai-evidence ul { margin: 5px 0 0; padding-left: 17px; }
+.valo-ai-evidence li { margin: 4px 0; }
+.valo-ai-evidence small { display: block; margin-top: 3px; color: #758198; }
 .valo-ai-thinking { display: flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 13px; border-radius: 16px; background: #f1f2f5; }
 .valo-ai-thinking i { width: 5px; height: 5px; border-radius: 50%; background: #b5bac4; animation: valo-dot 1.1s ease-in-out infinite; }
 .valo-ai-thinking i:nth-child(2) { animation-delay: .12s; }.valo-ai-thinking i:nth-child(3) { animation-delay: .24s; }
@@ -79,7 +88,8 @@
 .valo-ai-draft summary { color: #926917; cursor: pointer; font-size: 11px; margin: 6px 0 3px; }.valo-ai-draft-actions { display: flex; gap: 6px; margin-top: 10px; }.valo-ai-draft-actions button { flex: 1; padding: 7px; border: 1px solid #d7d9e0; border-radius: 9px; background: #fff; font-size: 12px; }.valo-ai-draft-actions button:last-child { border-color: #f3bd3d; background: #ffd56c; font-weight: 700; }.valo-ai-draft-actions button:hover:not(:disabled) { filter: brightness(.96); }
 .valo-ai-notification-view { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
 .valo-ai-filters { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }.valo-ai-filters button { padding: 5px 8px; border: 1px solid #dce0e8; border-radius: 999px; background: #fff; color: #535b69; font-size: 11px; }.valo-ai-filters button.active { border-color: #eabc3c; background: #fff4d4; color: #71520b; }
-.valo-ai-notification { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 7px; padding: 10px; border: 1px solid #ebedf0; border-radius: 12px; background: #fff; }.valo-ai-notification > button:first-child { flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; }.valo-ai-notification > button:last-child { flex: none; border: 0; background: transparent; color: #8e96a2; }.valo-ai-notification small { color: #bf8215; font-size: 10px; }.valo-ai-notification small.critical { color: #d84242; }.valo-ai-notification strong { display: block; margin-top: 3px; font-size: 12px; }.valo-ai-notification p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin: 3px 0; color: #747d8a; font-size: 11px; }.valo-ai-notification em { color: #287754; font-size: 10px; font-style: normal; }
+.valo-ai-notification { display: flex; align-items: stretch; gap: 0; margin-bottom: 7px; border: 1px solid #ebedf0; border-radius: 12px; background: #fff; overflow: hidden; }.valo-ai-notification > button:first-child { flex: 1; min-width: 0; padding: 10px; border: 0; background: transparent; text-align: left; }.valo-ai-notification > button:last-child { flex: none; padding: 10px; border: 0; background: transparent; color: #8e96a2; }.valo-ai-notification small { color: #bf8215; font-size: 10px; }.valo-ai-notification small.critical { color: #d84242; }.valo-ai-notification strong { display: block; margin-top: 3px; font-size: 12px; }.valo-ai-notification p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin: 3px 0; color: #747d8a; font-size: 11px; }.valo-ai-notification em { color: #287754; font-size: 10px; font-style: normal; }
+.valo-ai-notification.has-target { transition: border-color .18s, background .18s; }.valo-ai-notification.has-target:hover { border-color: #edc14e; background: #fffaf0; }.valo-ai-notification.is-unread { border-color: #eacb79; }.valo-ai-notification.is-read { opacity: .82; }.valo-ai-notification.has-target > button:first-child { cursor: pointer; }.valo-ai-notification small { display: flex; align-items: center; gap: 4px; }.valo-ai-notification time { display: block; margin-top: 5px; color: #8b929e; font-size: 10px; }.valo-ai-notification-error { padding: 8px; border-radius: 8px; background: #fff1f0; color: #a93232; font-size: 11px; }
 .valo-ai-notification-detail { padding: 12px; border: 1px solid #e9eaf0; border-radius: 12px; background: #fff; font-size: 12px; }.valo-ai-notification-detail > button { border: 0; background: none; color: #a37412; }.valo-ai-notification-detail h3 { margin: 10px 0 5px; font-size: 15px; }.valo-ai-notification-detail h4 { margin: 13px 0 5px; }.valo-ai-notification-detail p { line-height: 1.5; }.valo-ai-notification-detail small { color: #8b929e; }.valo-ai-notification-detail pre { overflow: auto; max-height: 190px; padding: 8px; border-radius: 8px; background: #f5f6f8; font-size: 10px; }.valo-ai-notification-detail .resolved { display: flex; gap: 4px; color: #237554; }.valo-ai-empty { padding: 35px 8px; color: #888f9b; font-size: 12px; text-align: center; }
 @keyframes valo-car-idle { 0%,100% { transform: translateY(0) rotateZ(-.8deg); } 50% { transform: translateY(-4px) rotateZ(.8deg); } }
 @keyframes valo-platform-pulse { 50% { opacity: .55; transform: scale(1.23); } }

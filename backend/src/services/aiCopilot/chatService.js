@@ -13,9 +13,9 @@ const draftDeclaration = {
   name: 'prepare_draft',
   description: 'Prepare a pending proposal only, never execute it. Use after read tools supplied evidence.',
   parameters: { type: 'object', properties: {
-    type: { type: 'string', enum: ['MODIFY_PRICING', 'CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'] },
-    payloadJson: { type: 'string', description: 'JSON with complete proposed pricing config or package fields.' },
-    targetId: { type: 'string', description: 'Required for package update.' },
+    type: { type: 'string', enum: ['MODIFY_PRICING', 'CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'CHANGE_USER_ROLE', 'APPROVE_VEHICLE', 'CREATE_POLICY_DRAFT', 'ARCHIVE_POLICY'] },
+    payloadJson: { type: 'string', description: 'JSON with complete proposed payload. For UPDATE_USER_STATUS send {"status":boolean}. For CHANGE_USER_ROLE send {"role":string}. For CREATE_POLICY_DRAFT send {"title","category","summary","content","effectiveDate"}. For APPROVE_VEHICLE/ARCHIVE_POLICY send {}.' },
+    targetId: { type: 'string', description: 'Required for UPDATE_TICKET_PACKAGE, UPDATE_USER_STATUS, CHANGE_USER_ROLE, APPROVE_VEHICLE, ARCHIVE_POLICY.' },
     notificationId: { type: 'string', description: 'Optional open AI notification ID.' },
     reason: { type: 'string' },
   }, required: ['type', 'payloadJson', 'reason'] },
@@ -47,8 +47,11 @@ async function chat({ message, conversationId, adminUserId }) {
     `Thời điểm hiện tại tại Việt Nam (UTC+7): ${vietnamNow}. Khi Admin nói "hôm nay", "hôm qua" hoặc bất kỳ mốc thời gian tương đối nào, hãy tính theo ngày/giờ Việt Nam này, KHÔNG dùng UTC.`,
     'Bạn là trợ lý Admin VALO. Hiểu tiếng Việt có dấu/không dấu, viết tắt như dt hn, co rui ro k, check ht và câu hỏi nối tiếp.',
     'Chỉ dùng công cụ được cung cấp để biết số liệu. Không bịa dữ liệu, phần trăm, nguyên nhân, ngưỡng hay confidence. Nếu chưa đủ dữ liệu, nói rõ: Hiện chưa đủ dữ liệu để kết luận.',
-    'Không truy vấn DB trực tiếp. Không tự thay đổi dữ liệu. prepare_draft chỉ tạo bản nháp cần Admin duyệt. Chỉ soạn draft giá hoặc gói vé sau khi đã gọi công cụ đọc thích hợp.',
+    'Không truy vấn DB trực tiếp. Không tự thay đổi dữ liệu. prepare_draft chỉ tạo bản nháp cần Admin duyệt. Hãy gọi công cụ đọc (search/get) để lấy thông tin mục tiêu (user, vehicle, policy, ticket) TRƯỚC KHI tạo draft. KHÔNG tạo draft cho các hành động: REJECT_VEHICLE, START_SLOT_MAINTENANCE vì chưa được hỗ trợ.',
     'Trả lời ngắn gọn bằng tiếng Việt, nêu nguồn và thời điểm nếu có số liệu. Không nhắc tên model hoặc thông tin kỹ thuật nội bộ.',
+    'Viết cho Admin vận hành: kết luận trước, số liệu quan trọng sau, đề xuất nếu có. Diễn đạt trạng thái và thời lượng bằng tiếng Việt tự nhiên (active: đang hoạt động, unpaid: chưa thanh toán, paid: đã thanh toán, expectedDurationHours: thời lượng dự kiến); tránh tên tool, tên trường code và giá trị enum trong câu trả lời. Chỉ mô tả đúng trạng thái đã có, không suy diễn nguyên nhân.',
+    'Giữ ObjectId trong ngữ cảnh để gọi công cụ chính xác ở lượt tiếp theo, nhưng chỉ hiển thị ID nội bộ khi Admin hỏi trực tiếp ID; ưu tiên tên, biển số, email hoặc vị trí để nhận diện.',
+    'Khi user dùng đại từ (người này, xe này, xe đầu tiên, booking đó...), hãy resolve chính xác identifier (ObjectId) từ kết quả tool/message gần nhất và gọi tool tiếp theo. Chỉ hỏi lại khi thực sự ambiguous. Không tự bịa identifier.',
   ].join('\n') });
   const contents = [...history, { role: 'user', parts: [{ text: message.trim() }] }];
   const evidence = [];
@@ -74,7 +77,9 @@ async function chat({ message, conversationId, adminUserId }) {
         trace(stage, { evidenceCount: evidence.length, hasDraft: !!draft });
         const answer = response.text?.().trim() || 'Hiện chưa đủ dữ liệu để kết luận.';
         const safeAnswer = evidence.length || draft ? answer : 'Hiện chưa đủ dữ liệu để kết luận. Hãy hỏi về một chỉ số cụ thể của VALO.';
-        conversations.set(key, { expiresAt: Date.now() + TTL_MS, messages: [...contents.filter((c) => c.parts?.some((p) => p.text)).slice(-2 * MAX_TURNS), { role: 'model', parts: [{ text: safeAnswer }] }].slice(-2 * MAX_TURNS) });
+        const allMsg = [...contents, { role: 'model', parts: [{ text: safeAnswer }] }];
+        const starts = allMsg.map((m, i) => m.role === 'user' && m.parts?.some(p => p.text) ? i : -1).filter(i => i !== -1);
+        conversations.set(key, { expiresAt: Date.now() + TTL_MS, messages: starts.length > MAX_TURNS ? allMsg.slice(starts[starts.length - MAX_TURNS]) : allMsg });
         return { type: draft ? 'draft' : 'analysis', message: safeAnswer, evidence, suggestedActions: [], draft, conversationId: id };
       }
       const modelContent = response.candidates?.[0]?.content;
@@ -89,10 +94,13 @@ async function chat({ message, conversationId, adminUserId }) {
           if (call.name === 'prepare_draft') {
             if (draft) throw new Error('Đã tạo một bản nháp trong lượt trả lời này.');
             const used = new Set(evidence.map((item) => item.tool));
-            const grounded = call.args.type === 'MODIFY_PRICING'
-              ? used.has('get_pricing_config') && ['get_session_statistics', 'get_parking_occupancy', 'get_revenue_metrics'].some((name) => used.has(name))
-              : used.has('get_package_list') && used.has('get_subscription_stats');
-            if (!grounded) throw new Error('Cần kiểm tra dữ liệu giá/gói và hoạt động thực tế trước khi tạo bản nháp.');
+            let grounded = true;
+            if (call.args.type === 'MODIFY_PRICING') grounded = used.has('get_pricing_config') && ['get_session_statistics', 'get_parking_occupancy', 'get_revenue_metrics'].some((name) => used.has(name));
+            else if (call.args.type.includes('PACKAGE')) grounded = used.has('get_package_list') && used.has('get_subscription_stats');
+            else if (call.args.type === 'UPDATE_USER_STATUS' || call.args.type === 'CHANGE_USER_ROLE') grounded = used.has('search_users') || used.has('get_user_detail');
+            else if (call.args.type === 'APPROVE_VEHICLE') grounded = used.has('search_vehicles');
+            else if (call.args.type === 'ARCHIVE_POLICY') grounded = used.has('list_admin_policies') || used.has('get_admin_policy');
+            if (!grounded) throw new Error('Cần kiểm tra dữ liệu/thực trạng trước khi tạo bản nháp.');
             output = await createDraft({ adminUserId, type: call.args.type, payload: JSON.parse(call.args.payloadJson), targetId: call.args.targetId, notificationId: call.args.notificationId, reason: call.args.reason, evidence });
             draft = { id: output._id, type: output.type, payload: output.payload, current: output.current, reason: output.reason, evidence: output.evidence, expiresAt: output.expiresAt };
             output = { draftId: String(output._id), status: 'PENDING' };
