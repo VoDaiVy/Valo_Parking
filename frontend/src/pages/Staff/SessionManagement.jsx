@@ -97,9 +97,9 @@ export default function SessionManagement() {
             setAiInitialImage(null);
             setShowAiModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-lg shadow-yellow-500/10 shrink-0"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
         >
-          <Sparkles size={16} className="text-amber-400 animate-pulse" />
+          <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>AI Plate Assistant</span>
         </button>
       </div>

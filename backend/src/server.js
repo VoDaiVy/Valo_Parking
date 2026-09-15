@@ -55,6 +55,7 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/wallet", require("./routes/walletRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/ai", require("./routes/aiRoutes"));
+app.use('/api/ai-copilot', require('./routes/aiCopilotRoutes'));
 app.use("/api/vehicles", require("./routes/vehicleRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/policies", policyRoutes);
@@ -118,6 +119,7 @@ const startServer = async () => {
 
       // Start parking session scheduler
       startScheduler(app);
+      require('./services/aiCopilot/monitor').startMonitor(app);
 
       // Seed default notification rules (upsert, won't overwrite existing)
       seedRules().catch(err => {

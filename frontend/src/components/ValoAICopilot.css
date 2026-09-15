@@ -1,0 +1,91 @@
+.valo-ai-anchor { position: fixed; z-index: 85; width: 92px; height: 100px; touch-action: none; user-select: none; }
+.valo-ai-trigger { position: relative; width: 92px; height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; border: 0; background: transparent; cursor: grab; perspective: 480px; transform-style: preserve-3d; }
+.valo-ai-trigger:active { cursor: grabbing; }
+.valo-ai-car { position: relative; z-index: 2; display: block; transform-style: preserve-3d; filter: drop-shadow(0 7px 5px rgba(31, 16, 0, .38)); transition: transform .28s cubic-bezier(.2,.8,.2,1), filter .28s; }
+.valo-ai-car svg { display: block; animation: valo-car-idle 3.15s ease-in-out infinite; }
+.valo-ai-trigger:hover .valo-ai-car { filter: drop-shadow(0 11px 8px rgba(31, 16, 0, .48)) drop-shadow(0 0 10px rgba(255, 191, 58, .24)); scale: 1.02; }
+.valo-ai-trigger.is-dragging .valo-ai-car { scale: 1.04; filter: drop-shadow(0 13px 10px rgba(31, 16, 0, .55)); }
+.valo-ai-trigger.is-dragging .valo-ai-car svg { animation-play-state: paused; }
+.valo-ai-trigger.has-notification .valo-ai-car { animation: valo-notice-hop .42s ease-in-out 2; }
+.valo-ai-platform { position: absolute; z-index: 1; left: 6px; right: 6px; bottom: 19px; height: 22px; border-radius: 50%; background: radial-gradient(ellipse, rgba(255,188,42,.55) 0%, rgba(255,188,42,.16) 44%, transparent 73%); filter: blur(5px); transition: opacity .25s, transform .25s; }
+.valo-ai-trigger:hover .valo-ai-platform, .valo-ai-trigger.is-open .valo-ai-platform { opacity: 1; transform: scale(1.17); }
+.valo-ai-trigger.is-thinking .valo-ai-platform { animation: valo-platform-pulse 1.7s ease-in-out infinite; }
+.valo-ai-label { position: relative; z-index: 3; margin-top: -3px; color: #ffc84c; font: 700 12px/1.3 system-ui, sans-serif; letter-spacing: .05em; text-shadow: 0 1px 7px rgba(0,0,0,.7); }
+.valo-ai-badge { position: absolute; z-index: 4; top: 1px; right: 1px; min-width: 23px; padding: 3px 5px; border-radius: 999px; background: #e94a49; box-shadow: 0 2px 7px rgba(0,0,0,.3); color: #fff; font: 700 12px/1.2 system-ui, sans-serif; animation: valo-badge-pop .26s ease-out; }
+.valo-ai-preview { position: absolute; z-index: 5; right: 0; bottom: calc(100% + 5px); display: flex; gap: 8px; align-items: flex-start; width: 245px; padding: 12px; border: 1px solid #e6b54b; border-radius: 15px; color: #282c34; background: #fffefa; box-shadow: 0 12px 30px rgba(0,0,0,.23); text-align: left; font: 500 12px/1.4 system-ui, sans-serif; animation: valo-message-in .2s ease-out; }
+.valo-ai-preview svg { flex: none; color: #d18a08; }
+.valo-ai-preview small { display: block; margin-top: 5px; color: #ad750b; font-weight: 700; }
+.valo-ai-panel { position: fixed; z-index: 90; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #ecc458; border-radius: 22px; background: #fcfcfd; color: #252936; box-shadow: 0 19px 55px rgba(0,0,0,.36), 0 0 0 2px rgba(255,205,75,.12); opacity: 0; pointer-events: none; transform: translateY(12px) scale(.88); transition: opacity .22s ease, transform .22s cubic-bezier(.2,.8,.2,1); font-family: system-ui, sans-serif; }
+.valo-ai-panel.is-open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+.valo-ai-panel button { cursor: pointer; }
+.valo-ai-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.valo-ai-header { display: flex; align-items: center; gap: 9px; min-height: 64px; padding: 9px 13px; border-bottom: 1px solid #eceef2; background: #fff; }
+.valo-ai-header-avatar { width: 43px; flex: none; }
+.valo-ai-header h2 { margin: 0; font-size: 16px; line-height: 1.2; font-weight: 800; }
+.valo-ai-header p { margin: 3px 0 0; font-size: 11px; color: #777d89; }
+.valo-ai-header > button { display: grid; place-items: center; width: 29px; height: 29px; margin-left: auto; border: 0; border-radius: 50%; background: #f3f4f7; color: #454b58; }
+.valo-ai-header > button:hover { background: #ebeef2; }
+.valo-ai-tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8e9ee; background: #fff; }
+.valo-ai-tabs button { display: inline-flex; justify-content: center; align-items: center; gap: 5px; flex: 1; min-height: 40px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #707583; font-size: 12px; }
+.valo-ai-tabs button.active { border-color: #f5b800; color: #242936; font-weight: 700; }
+.valo-ai-tabs b { display: inline-grid; place-items: center; min-width: 17px; height: 17px; border-radius: 50%; background: #e74d4b; color: #fff; font-size: 10px; }
+.valo-ai-conversation { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 12px; background: #fcfcfd; }
+.valo-ai-welcome { display: flex; align-items: flex-start; gap: 8px; max-width: 90%; margin-bottom: 16px; font-size: 12px; }
+.valo-ai-welcome > svg { flex: none; }
+.valo-ai-welcome > div { padding: 11px 13px; border-radius: 17px; background: #f1f2f5; }
+.valo-ai-welcome strong { font-weight: 750; }
+.valo-ai-welcome p { margin: 5px 0 0; line-height: 1.45; }
+.valo-ai-message-row { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 12px; animation: valo-message-in .18s ease-out both; }
+.valo-ai-message-row.is-user { justify-content: flex-end; }
+.valo-ai-message-avatar { flex: none; width: 31px; }
+.valo-ai-message-stack { max-width: 80%; display: flex; flex-direction: column; }
+.valo-ai-message-bubble { padding: 9px 12px; border-radius: 18px; background: #f1f2f5; font-size: 12px; line-height: 1.5; word-break: break-word; }
+.valo-ai-message-bubble > p { margin: 0; white-space: pre-wrap; }
+.is-user .valo-ai-message-bubble { border-radius: 18px 18px 4px 18px; background: linear-gradient(120deg, #ffe494, #ffca49); color: #272722; }
+.is-ai .valo-ai-message-bubble { border-radius: 18px 18px 18px 4px; }
+.valo-ai-message-stack time { margin: 3px 6px 0; color: #9a9fac; font-size: 10px; }
+.is-user .valo-ai-message-stack time { text-align: right; }
+.valo-ai-evidence { margin-top: 8px; padding-top: 7px; border-top: 1px solid #dadde3; color: #596782; font-size: 11px; }
+.valo-ai-evidence summary { cursor: pointer; color: #3162a8; font-weight: 650; }
+.valo-ai-evidence p { margin: 4px 0 0; }
+.valo-ai-thinking { display: flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 13px; border-radius: 16px; background: #f1f2f5; }
+.valo-ai-thinking i { width: 5px; height: 5px; border-radius: 50%; background: #b5bac4; animation: valo-dot 1.1s ease-in-out infinite; }
+.valo-ai-thinking i:nth-child(2) { animation-delay: .12s; }.valo-ai-thinking i:nth-child(3) { animation-delay: .24s; }
+.valo-ai-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 12px 5px; background: #fff; }
+.valo-ai-suggestions button { padding: 5px 9px; border: 1px solid #dedfe6; border-radius: 999px; background: #fff; color: #404552; font-size: 11px; }
+.valo-ai-suggestions button:hover { border-color: #edc14e; background: #fff8e6; }
+.valo-ai-compose { display: flex; align-items: center; gap: 7px; margin: 6px 10px 12px; padding: 4px 4px 4px 9px; border: 1px solid #dadfe9; border-radius: 19px; background: #fff; transition: border-color .2s, box-shadow .2s; }
+.valo-ai-compose:focus-within { border-color: #eebd3d; box-shadow: 0 0 0 3px rgba(245,184,0,.13); }
+.valo-ai-compose > svg { flex: none; color: #858c9a; }
+.valo-ai-compose input { flex: 1; width: 0; min-width: 0; border: 0; outline: 0; background: transparent; color: #202331; font-size: 12px; }
+.valo-ai-compose input::placeholder { color: #9ba2af; }
+.valo-ai-compose button { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 0; border-radius: 11px; background: #ffca4b; color: #1d2631; transition: filter .2s, transform .12s; }
+.valo-ai-compose button:hover { filter: brightness(1.05); }.valo-ai-compose button:active { transform: scale(.96); }
+.valo-ai-panel footer { padding: 7px 12px 10px; color: #969ba5; background: #fff; font-size: 10px; text-align: center; }
+.valo-ai-draft { margin-top: 9px; padding: 10px 11px; border: 1.5px solid #edcf81; border-radius: 13px; background: #fffdf6; }
+.valo-ai-draft.is-approved { border-color: #7ecba1; background: #f4fdf7; }
+.valo-ai-draft.is-rejected { border-color: #d9a0a0; background: #fff6f6; opacity: .85; }
+.valo-ai-draft-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 7px; }
+.valo-ai-draft-header > strong { font-size: 11px; letter-spacing: .04em; color: #84600d; }
+.valo-ai-draft-badge { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.valo-ai-draft-badge.badge-pending { background: #fff2cc; color: #936b0b; border: 1px solid #edcf81; }
+.valo-ai-draft-badge.badge-approved { background: #d4f2e2; color: #1a6e44; border: 1px solid #7ecba1; }
+.valo-ai-draft-badge.badge-rejected { background: #fde4e4; color: #932020; border: 1px solid #d9a0a0; }
+.valo-ai-draft-type { margin: 0 0 4px; font-size: 11px; color: #404552; }
+.valo-ai-draft-reason { margin: 4px 0; font-size: 11px; color: #404552; line-height: 1.45; }
+.valo-ai-draft-evidence-hint { margin: 6px 0 2px; font-size: 10px; color: #7a8394; }
+.valo-ai-draft > strong { color: #84600d; }.valo-ai-draft > p { margin: 4px 0; }
+.valo-ai-draft dl { margin: 7px 0; }.valo-ai-draft dl > div { display: flex; gap: 8px; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #eee8d7; }.valo-ai-draft dt { color: #68707e; font-size: 11px; }.valo-ai-draft dd { margin: 0; text-align: right; font-weight: 650; font-size: 11px; }
+.valo-ai-draft summary { color: #926917; cursor: pointer; font-size: 11px; margin: 6px 0 3px; }.valo-ai-draft-actions { display: flex; gap: 6px; margin-top: 10px; }.valo-ai-draft-actions button { flex: 1; padding: 7px; border: 1px solid #d7d9e0; border-radius: 9px; background: #fff; font-size: 12px; }.valo-ai-draft-actions button:last-child { border-color: #f3bd3d; background: #ffd56c; font-weight: 700; }.valo-ai-draft-actions button:hover:not(:disabled) { filter: brightness(.96); }
+.valo-ai-notification-view { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+.valo-ai-filters { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }.valo-ai-filters button { padding: 5px 8px; border: 1px solid #dce0e8; border-radius: 999px; background: #fff; color: #535b69; font-size: 11px; }.valo-ai-filters button.active { border-color: #eabc3c; background: #fff4d4; color: #71520b; }
+.valo-ai-notification { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 7px; padding: 10px; border: 1px solid #ebedf0; border-radius: 12px; background: #fff; }.valo-ai-notification > button:first-child { flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; }.valo-ai-notification > button:last-child { flex: none; border: 0; background: transparent; color: #8e96a2; }.valo-ai-notification small { color: #bf8215; font-size: 10px; }.valo-ai-notification small.critical { color: #d84242; }.valo-ai-notification strong { display: block; margin-top: 3px; font-size: 12px; }.valo-ai-notification p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin: 3px 0; color: #747d8a; font-size: 11px; }.valo-ai-notification em { color: #287754; font-size: 10px; font-style: normal; }
+.valo-ai-notification-detail { padding: 12px; border: 1px solid #e9eaf0; border-radius: 12px; background: #fff; font-size: 12px; }.valo-ai-notification-detail > button { border: 0; background: none; color: #a37412; }.valo-ai-notification-detail h3 { margin: 10px 0 5px; font-size: 15px; }.valo-ai-notification-detail h4 { margin: 13px 0 5px; }.valo-ai-notification-detail p { line-height: 1.5; }.valo-ai-notification-detail small { color: #8b929e; }.valo-ai-notification-detail pre { overflow: auto; max-height: 190px; padding: 8px; border-radius: 8px; background: #f5f6f8; font-size: 10px; }.valo-ai-notification-detail .resolved { display: flex; gap: 4px; color: #237554; }.valo-ai-empty { padding: 35px 8px; color: #888f9b; font-size: 12px; text-align: center; }
+@keyframes valo-car-idle { 0%,100% { transform: translateY(0) rotateZ(-.8deg); } 50% { transform: translateY(-4px) rotateZ(.8deg); } }
+@keyframes valo-platform-pulse { 50% { opacity: .55; transform: scale(1.23); } }
+@keyframes valo-notice-hop { 50% { transform: translateY(-5px); } }
+@keyframes valo-badge-pop { 0% { transform: scale(.5); opacity: .3; } 70% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes valo-message-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes valo-dot { 50% { transform: translateY(-3px); opacity: .5; } }
+@media (max-width: 639px) { .valo-ai-panel { border-radius: 19px; }.valo-ai-message-stack { max-width: 83%; }.valo-ai-preview { width: min(245px, calc(100vw - 28px)); } }
+@media (prefers-reduced-motion: reduce) { .valo-ai-car svg, .valo-ai-trigger.has-notification .valo-ai-car, .valo-ai-trigger.is-thinking .valo-ai-platform, .valo-ai-badge, .valo-ai-message-row, .valo-ai-thinking i { animation: none; }.valo-ai-panel, .valo-ai-car { transition: none; } }

@@ -122,9 +122,10 @@ async function getOccupancyForecast({
   let activeSubsCount = 0;
   if (isDbConnected) {
     activeSubsCount = await Subscription.countDocuments({
-      status: { $in: ['active', 'paid'] },
-      startDate: { $lte: targetDate },
-      endDate: { $gte: targetDate },
+      status: 'active',
+      paymentStatus: 'paid',
+      validFrom: { $lte: targetDate },
+      expireAt: { $gte: targetDate },
     }).catch(() => 0);
   }
 
@@ -187,17 +188,18 @@ async function getOccupancyForecast({
     const hourlyBookings = Array(24).fill(0);
     if (isDbConnected) {
       const bookings = await Booking.find({
-        startTime: { $gte: startOfDay, $lte: endOfDay },
-        status: { $in: ['confirmed', 'paid', 'active', 'holding_slot', 'completed'] },
+        scheduledStart: { $lte: endOfDay },
+        scheduledEnd: { $gte: startOfDay },
+        status: { $in: ['PAID', 'ACTIVE', 'PAUSED', 'COMPLETED'] },
       })
-        .select('startTime endTime')
+        .select('scheduledStart scheduledEnd')
         .lean()
         .catch(() => []);
 
       bookings.forEach((b) => {
-        if (b.startTime) {
-          const startH = new Date(b.startTime).getHours();
-          const endH = b.endTime ? new Date(b.endTime).getHours() : startH + 1;
+        if (b.scheduledStart) {
+          const startH = Math.max(0, new Date(b.scheduledStart).getHours());
+          const endH = b.scheduledEnd ? new Date(b.scheduledEnd).getHours() : startH + 1;
           for (let h = startH; h <= Math.min(23, endH); h++) {
             hourlyBookings[h] = (hourlyBookings[h] || 0) + 1;
           }
@@ -264,10 +266,6 @@ async function getOccupancyForecast({
     if (windowStart !== null) {
       peakWindows.push(`${String(windowStart).padStart(2, '0')}:00 - 23:59`);
     }
-    if (peakWindows.length === 0) {
-      peakWindows.push('14:00 - 16:00');
-    }
-
     const selectedForecast = hourlyForecast[currentSelectedHour] || hourlyForecast[12];
     const insight = buildInsight({
       label: `Time slot ${selectedForecast.timeLabel}`,
@@ -292,6 +290,12 @@ async function getOccupancyForecast({
       selectedItem: selectedForecast,
       insight,
       peakWindows,
+      dataQuality: {
+        dataSource: totalHistoricalSessionsFound > 0 ? 'historical_sessions' : 'fallback_baseline',
+        usesFallbackBaseline: totalHistoricalSessionsFound === 0,
+        historicalSessionCount: totalHistoricalSessionsFound,
+        scheduledBookingCount: hourlyBookings.reduce((sum, count) => sum + count, 0),
+      },
       items: hourlyForecast,
       hourlyForecast,
     };
@@ -405,7 +409,12 @@ async function getOccupancyForecast({
       selectedIndex: currentSelectedIndex,
       selectedItem,
       insight,
-      peakWindows: peakDays.length > 0 ? [`Peak: ${peakDays.join(', ')}`] : ['Peak: Friday, Saturday'],
+      peakWindows: peakDays.length > 0 ? [`Peak: ${peakDays.join(', ')}`] : [],
+      dataQuality: {
+        dataSource: totalSessions > 0 ? 'historical_sessions' : 'fallback_baseline',
+        usesFallbackBaseline: totalSessions === 0,
+        historicalSessionCount: totalSessions,
+      },
       items,
       hourlyForecast: items, // for fallback compatibility
     };
@@ -534,7 +543,12 @@ async function getOccupancyForecast({
       selectedIndex: currentSelectedIndex,
       selectedItem,
       insight,
-      peakWindows: peakWeeks.length > 0 ? [`Peak: ${peakWeeks.join(', ')}`] : ['Peak: Week 4, Week 5'],
+      peakWindows: peakWeeks.length > 0 ? [`Peak: ${peakWeeks.join(', ')}`] : [],
+      dataQuality: {
+        dataSource: totalMonthSessions > 0 ? 'historical_sessions' : 'fallback_baseline',
+        usesFallbackBaseline: totalMonthSessions === 0,
+        historicalSessionCount: totalMonthSessions,
+      },
       items,
       hourlyForecast: items,
     };
@@ -644,7 +658,12 @@ async function getOccupancyForecast({
       selectedIndex: currentSelectedIndex,
       selectedItem,
       insight,
-      peakWindows: peakMonths.length > 0 ? [`Peak: ${peakMonths.join(', ')}`] : ['Peak: Jun, Jul, Dec'],
+      peakWindows: peakMonths.length > 0 ? [`Peak: ${peakMonths.join(', ')}`] : [],
+      dataQuality: {
+        dataSource: totalYearSessions > 0 ? 'historical_sessions' : 'fallback_baseline',
+        usesFallbackBaseline: totalYearSessions === 0,
+        historicalSessionCount: totalYearSessions,
+      },
       items,
       hourlyForecast: items,
     };

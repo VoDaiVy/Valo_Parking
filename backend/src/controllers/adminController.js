@@ -645,59 +645,11 @@ exports.getPricingConfig = async (req, res, next) => {
  */
 exports.updatePricingConfig = async (req, res, next) => {
   try {
-    const { timeBlocks, cap12h, cap24h } = req.body;
-
-    if (!Array.isArray(timeBlocks)) {
-      return res.status(400).json({ success: false, message: 'Invalid time blocks format' });
-    }
-
-    // Validate coverage of 24 hours (no gaps, no overlaps)
-    const hours = new Array(24).fill(false);
-    for (let i = 0; i < timeBlocks.length; i++) {
-      const b = timeBlocks[i];
-      const start = Number(b.startHour);
-      const end = Number(b.endHour);
-
-      if (start === end) {
-        return res.status(400).json({ success: false, message: 'A time block cannot have the same start and end time.' });
-      }
-
-      const markHour = (h) => {
-        if (hours[h]) {
-          throw new Error(`Overlap detected at hour ${h}:00`);
-        }
-        hours[h] = true;
-      };
-
-      try {
-        if (start < end) {
-          for (let h = start; h < end; h++) markHour(h);
-        } else {
-          for (let h = start; h < 24; h++) markHour(h);
-          for (let h = 0; h < end; h++) markHour(h);
-        }
-      } catch (e) {
-        return res.status(400).json({ success: false, message: e.message });
-      }
-    }
-
-    const missingHour = hours.findIndex(h => !h);
-    if (missingHour !== -1) {
-      return res.status(400).json({ success: false, message: `Gap detected in schedule. Time block missing for hour ${missingHour}:00` });
-    }
-
-    // Vô hiệu hóa cấu hình cũ
-    await PricingConfig.updateMany({ isActive: true }, { isActive: false });
-
-    // Tạo cấu hình mới
-    const newConfig = await PricingConfig.create({
-      timeBlocks,
-      cap12h: Number(cap12h),
-      cap24h: Number(cap24h),
-      isActive: true
-    });
-
-    res.status(200).json({ success: true, data: newConfig });
+    const { cleanPayload } = require('../services/aiCopilot/draftService');
+    const { applyPricing } = require('../services/adminCatalogWriteService');
+    const payload = cleanPayload('MODIFY_PRICING', req.body);
+    const config = await applyPricing(payload);
+    res.status(200).json({ success: true, data: config });
   } catch (err) {
     next(err);
   }

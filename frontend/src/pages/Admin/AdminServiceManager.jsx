@@ -61,23 +61,25 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
   return (
     <div className={dividerClass}>
-      <div className="group min-w-0 px-0 py-4 transition hover:bg-white/[0.018] sm:px-5">
-        <div className="flex items-start gap-3">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition group-hover:brightness-125 ${toneClass}`}>
-            <Icon size={18} />
+      <div className="group min-w-0 px-0 py-2.5 transition hover:bg-white/[0.018] sm:px-3">
+        <div className="flex items-center gap-2.5">
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition group-hover:brightness-125 ${toneClass}`}>
+            <Icon size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-wide text-blue-200/55">{label}</p>
+            <p className="text-[9px] font-bold uppercase tracking-wider text-blue-200/55 leading-none">{label}</p>
             {loading ? (
-              <div className="mt-3 h-8 w-20 animate-pulse rounded bg-white/10" />
+              <div className="mt-1 h-5 w-16 animate-pulse rounded bg-white/10" />
             ) : (
-              <p className="mt-2 truncate font-mono text-3xl font-black leading-none text-white">
-                <AnimatedCounter target={value} isCurrency={isCurrency} isTime={isTime} />
-              </p>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <p className="truncate font-mono text-xl font-black leading-none text-white">
+                  <AnimatedCounter target={value} isCurrency={isCurrency} isTime={isTime} />
+                </p>
+                <p className={`truncate text-[10px] font-bold ${subTone}`}>
+                  {sub}
+                </p>
+              </div>
             )}
-            <p className={`mt-2 truncate text-sm font-semibold ${subTone}`}>
-              {sub}
-            </p>
           </div>
         </div>
       </div>

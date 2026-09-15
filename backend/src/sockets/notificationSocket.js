@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const notificationService = require('../services/notificationService');
+const User = require('../models/User');
 
 // Map of userId -> Set of socket IDs
 const onlineUsers = new Map();
@@ -28,6 +29,10 @@ function setupNotificationSocket(io) {
 
   io.on('connection', async (socket) => {
     const userId = socket.userId;
+    if (socket.userRole === 'admin') {
+      const currentAdmin = await User.exists({ _id: userId, role: 'admin', status: true }).catch(() => null);
+      if (currentAdmin) socket.join('valo-ai-admins');
+    }
     console.log(`🔌 Socket connected: ${userId} (${socket.id})`);
 
     // Track online user

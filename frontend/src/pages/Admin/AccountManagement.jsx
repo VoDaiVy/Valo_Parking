@@ -122,23 +122,25 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
   return (
     <div className={dividerClass}>
-      <div className="group min-w-0 px-0 py-4 transition hover:bg-white/[0.018] sm:px-5">
-        <div className="flex items-start gap-3">
+      <div className="group min-w-0 px-0 py-3 transition hover:bg-white/[0.018] sm:px-4">
+        <div className="flex items-center gap-3">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition group-hover:brightness-125 ${toneClass}`}>
             <Icon size={18} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-wide text-blue-200/55">{label}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-200/55 leading-none">{label}</p>
             {loading ? (
-              <div className="mt-3 h-8 w-20 animate-pulse rounded bg-white/10" />
+              <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" />
             ) : (
-              <p className="mt-2 truncate font-mono text-3xl font-black leading-none text-white">
-                <AnimatedCounter target={value} />
-              </p>
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <p className="truncate font-mono text-2xl font-black leading-none text-white">
+                  <AnimatedCounter target={value} />
+                </p>
+                <p className={`truncate text-[10px] font-bold ${subTone}`}>
+                  {sub}
+                </p>
+              </div>
             )}
-            <p className={`mt-2 truncate text-sm font-semibold ${subTone}`}>
-              {sub}
-            </p>
           </div>
         </div>
       </div>
@@ -430,7 +432,7 @@ export default function AccountManagement() {
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
                 <Users size={12} /> User Management
               </div>
-              <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Account Management</h1>
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Account Management</h1>
               <p className="text-gray-400 text-sm mt-1">Manage user accounts, roles, and access permissions</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
@@ -550,11 +552,11 @@ export default function AccountManagement() {
               <tr className="bg-[#171717] border-b border-white/10">
                 <th className="w-6"></th>
                 {['Account','Email','Phone','Role','Status','Joined Date'].map(label => (
-                  <th key={label} className="px-4 py-4 text-left">
+                  <th key={label} className="px-4 py-2.5 text-left">
                     <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{label}</span>
                   </th>
                 ))}
-                <th className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
               </tr>
             </thead>
             <tbody>

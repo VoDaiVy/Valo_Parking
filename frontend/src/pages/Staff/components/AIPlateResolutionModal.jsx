@@ -114,7 +114,7 @@ export default function AIPlateResolutionModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-600 text-black shadow-lg shadow-yellow-500/20">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-400 to-violet-600 text-white shadow-lg shadow-violet-500/20">
               <Sparkles size={20} className="animate-pulse" />
             </div>
             <div>
@@ -122,7 +122,7 @@ export default function AIPlateResolutionModal({
                 <h3 className="text-base font-black tracking-tight text-white">
                   AI Blurred &amp; Occluded Plate Assistant
                 </h3>
-                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-amber-400 border border-amber-400/20">
+                <span className="rounded-full bg-violet-400/10 px-2 py-0.5 text-[10px] font-black uppercase text-violet-400 border border-violet-400/20">
                   ALPR Assistant
                 </span>
               </div>
@@ -155,14 +155,14 @@ export default function AIPlateResolutionModal({
                     value={rawPlate}
                     onChange={(e) => setRawPlate(e.target.value.toUpperCase())}
                     placeholder="e.g. 51F-88B12, 30A-9O1.23..."
-                    className="w-full rounded-xl border border-white/15 bg-black/40 px-4 py-2.5 text-sm font-black tracking-wider text-white uppercase outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 placeholder:text-gray-600"
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-4 py-2.5 text-sm font-black tracking-wider text-white uppercase outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 placeholder:text-gray-600"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={() => handleResolve()}
                   disabled={loading}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-4 py-2.5 text-xs font-black text-black shadow-lg shadow-yellow-500/20 hover:from-amber-300 hover:to-yellow-400 disabled:opacity-50 transition"
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-violet-500/20 hover:from-fuchsia-400 hover:to-violet-400 disabled:opacity-50 transition"
                 >
                   {loading ? (
                     <span className="animate-spin text-sm">⏳</span>
@@ -179,15 +179,15 @@ export default function AIPlateResolutionModal({
               <label className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-1">
                 Plate Image
               </label>
-              <label className="flex h-[42px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-3 text-xs font-semibold text-gray-300 hover:border-amber-400 hover:bg-amber-400/5 transition overflow-hidden">
+              <label className="flex h-[42px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/[0.02] px-3 text-xs font-semibold text-gray-300 hover:border-violet-400 hover:bg-violet-400/5 transition overflow-hidden">
                 {imagePreview ? (
                   <div className="flex items-center gap-2 truncate">
                     <img src={imagePreview} alt="Plate preview" className="h-6 w-10 object-cover rounded" />
-                    <span className="text-[11px] text-amber-400">Image Attached</span>
+                    <span className="text-[11px] text-violet-400">Image Attached</span>
                   </div>
                 ) : (
                   <>
-                    <Upload size={14} className="text-amber-400" />
+                    <Upload size={14} className="text-violet-400" />
                     <span>Upload Image</span>
                   </>
                 )}
@@ -211,11 +211,11 @@ export default function AIPlateResolutionModal({
               <div className={`rounded-2xl border p-4 ${
                 result.isResolved
                   ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-200'
-                  : 'border-amber-500/30 bg-amber-950/20 text-amber-200'
+                  : 'border-fuchsia-500/30 bg-fuchsia-950/20 text-fuchsia-200'
               }`}>
                 <div className="flex items-start gap-3">
                   <div className={`mt-0.5 rounded-xl p-2 ${
-                    result.isResolved ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                    result.isResolved ? 'bg-emerald-500/20 text-emerald-400' : 'bg-fuchsia-500/20 text-fuchsia-400'
                   }`}>
                     {result.isResolved ? <ShieldCheck size={20} /> : <AlertTriangle size={20} />}
                   </div>
@@ -249,13 +249,13 @@ export default function AIPlateResolutionModal({
                     return (
                       <div
                         key={item.plate}
-                        className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 rounded-2xl border border-white/10 bg-white/[0.02] p-4 hover:border-amber-400/50 hover:bg-white/[0.05] transition-all duration-200"
+                        className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 rounded-2xl border border-white/10 bg-white/[0.02] p-4 hover:border-violet-400/50 hover:bg-white/[0.05] transition-all duration-200"
                       >
                         <div className="flex items-center gap-3.5">
                           {/* Rank number */}
                           <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-black text-xs ${
                             idx === 0
-                              ? 'bg-amber-400 text-black shadow-md shadow-yellow-500/30'
+                              ? 'bg-violet-400 text-white shadow-md shadow-violet-500/30'
                               : 'bg-white/10 text-gray-400'
                           }`}>
                             #{idx + 1}
@@ -277,7 +277,7 @@ export default function AIPlateResolutionModal({
                               {item.ownerName && <span>👤 {item.ownerName}</span>}
                               {item.phone && <span>📞 {item.phone}</span>}
                               {item.bookingInfo && (
-                                <span className="text-amber-400/90 font-bold">
+                                <span className="text-violet-400/90 font-bold">
                                   🅿️ Slot {item.bookingInfo.slot} ({item.bookingInfo.time})
                                 </span>
                               )}
@@ -289,7 +289,7 @@ export default function AIPlateResolutionModal({
                         <div className="flex items-center gap-3 justify-between sm:justify-end shrink-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
                           <div className="text-right">
                             <span className={`text-sm font-black ${
-                              item.similarityScore >= 85 ? 'text-emerald-400' : 'text-amber-400'
+                              item.similarityScore >= 85 ? 'text-emerald-400' : 'text-violet-400'
                             }`}>
                               {item.similarityScore}%
                             </span>
@@ -302,9 +302,9 @@ export default function AIPlateResolutionModal({
                               onSelectPlate && onSelectPlate(item.plate, item);
                               onClose();
                             }}
-                            className="flex items-center gap-1.5 rounded-xl bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-amber-400 hover:text-black transition shadow-sm group-hover:scale-105"
+                            className="flex items-center gap-1.5 rounded-xl bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-violet-400 hover:text-white transition shadow-sm group-hover:scale-105"
                           >
-                            <CheckCircle2 size={14} className="text-amber-400 group-hover:text-black" />
+                            <CheckCircle2 size={14} className="text-violet-400 group-hover:text-white" />
                             <span>1-Click Select</span>
                           </button>
                         </div>

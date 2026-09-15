@@ -9,6 +9,7 @@ import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
+import ValoAICopilot from "../components/ValoAICopilot";
 import {
   LayoutDashboard,
   Users,
@@ -581,6 +582,7 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+      {role === 'admin' && <ValoAICopilot />}
 
       {/* Report Modal */}
       {reportModalOpen && (

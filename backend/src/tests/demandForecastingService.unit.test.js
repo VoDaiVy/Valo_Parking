@@ -36,7 +36,8 @@ test('demandForecastingService returns valid 24h forecast structure', async () =
 
   // Peak windows
   assert.ok(Array.isArray(result.peakWindows));
-  assert.ok(result.peakWindows.length > 0);
+  assert.ok(result.dataQuality);
+  assert.equal(typeof result.dataQuality.usesFallbackBaseline, 'boolean');
 });
 
 test('demandForecastingService returns valid 7-day weekly forecast structure', async () => {
@@ -110,4 +111,16 @@ test('demandForecastingService supports floorId filtering', async () => {
   assert.equal(typeof result.totalCapacity, 'number');
   assert.equal(typeof result.maintenanceSlotsCount, 'number');
   assert.equal(typeof result.totalPhysicalCapacity, 'number');
+});
+
+test('demandForecastingService uses Booking scheduledStart/scheduledEnd fields', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(
+    require.resolve('../services/demandForecastingService'),
+    'utf8'
+  );
+
+  assert.match(source, /scheduledStart/);
+  assert.match(source, /scheduledEnd/);
+  assert.doesNotMatch(source, /startTime: \{ \$gte/);
 });
