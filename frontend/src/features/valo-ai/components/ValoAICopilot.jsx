@@ -108,7 +108,14 @@ export default function ValoAICopilot() {
     if (response.ok) { setSelected(response.data.data); await markAINotificationRead(id); refresh(); }
   };
   const onNotificationClick = async (item) => {
-    const target = notificationTarget(item.targetRoute);
+    let rawRoute = item.targetRoute;
+    if (rawRoute === '/admin/bookings' && item.entityType === 'booking' && item.entityId) {
+      rawRoute = `/admin/parking-lots?bookingId=${item.entityId}`;
+    }
+    let target = notificationTarget(rawRoute);
+    if (target && userRole === 'staff') {
+      target = target.replace(/^\/admin\//, '/staff/');
+    }
     if (!target) return openNotice(item._id);
     setPreview(null);
     try { await markAINotificationRead(item._id); }

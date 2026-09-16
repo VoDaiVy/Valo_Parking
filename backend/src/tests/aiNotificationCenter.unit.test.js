@@ -57,11 +57,11 @@ test('floor full creates one open event per full period and rearms after recover
     assert.equal(store.rows[0].status, 'CLEARED');
     available = 0;
     await runFloorMonitorNow({ app, snapshot });
-    assert.equal(store.rows.length, 2);
-    assert.equal(emitted.length, 2);
+    assert.equal(store.rows.length, 3);
+    assert.equal(emitted.length, 3); // 2 FLOOR_FULL, 1 FLOOR_AVAILABLE_AGAIN
     available = 0;
     await runFloorMonitorNow({ app, snapshot: async () => [{ floorId: 'empty', name: 'Empty', capacity: 0, available }] });
-    assert.equal(store.rows.length, 2);
+    assert.equal(store.rows.length, 3);
   } finally { store.restore(); }
 });
 
@@ -79,7 +79,7 @@ test('paid booking notification is idempotent and pending booking is ignored', a
     assert.equal(store.rows.length, 1);
     assert.equal(emitted.length, 1);
     assert.equal(store.rows[0].deduplicationKey, 'new-booking:booking-1');
-    assert.equal(store.rows[0].targetRoute, '/admin/bookings');
+    assert.equal(store.rows[0].targetRoute, '/admin/parking-lots?bookingId=booking-1');
   } finally { store.restore(); }
 });
 

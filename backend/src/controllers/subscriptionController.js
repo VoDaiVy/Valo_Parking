@@ -28,6 +28,7 @@ const {
 const {
   buildAdminSubscriptionProjection,
 } = require('../services/adminSubscriptionProjectionService');
+const { notifySubscriptionActivatedSafely } = require('../services/aiCopilot/notificationEvents');
 
 const buildExpirationDate = (packageType, fromDate = new Date()) => {
   const expireAt = new Date(fromDate);
@@ -208,6 +209,11 @@ exports.verifyPayment = async (req, res, next) => {
         } finally {
           activationSession.endSession();
         }
+        
+        if (subscription.status === 'active') {
+          const tp = await TicketPackage.findById(subscription.ticketPackage).lean();
+          notifySubscriptionActivatedSafely(subscription, tp, req.app);
+        }
       }
 
       return res.status(200).json({ success: true, message: isRenewal ? 'Subscription renewed successfully!' : 'Subscription activated successfully!' });
@@ -298,6 +304,10 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       });
     } finally {
       dbSession.endSession();
+    }
+    
+    if (subscription.status === 'active') {
+      notifySubscriptionActivatedSafely(subscription, ticketPackage, req.app);
     }
 
     return res.status(200).json({ success: true, message: 'Subscription activated successfully via Valo Wallet!' });

@@ -17,7 +17,7 @@ const pricingEngine = require('../services/pricingEngine');
 const notifTriggers = require('../services/notificationTriggers');
 const contractService = require('../services/contractService');
 const bookingRefundService = require('../services/bookingRefundService');
-const { notifyBookingPaidSafely } = require('../services/aiCopilot/notificationEvents');
+const { notifyBookingPaidSafely, notifyBookingCancelledSafely } = require('../services/aiCopilot/notificationEvents');
 const {
   getBookingFinancialSummaryMap,
 } = require('../services/bookingFinancialService');
@@ -932,6 +932,8 @@ exports.cancelBooking = async (req, res, next) => {
       slotInfo: booking.parkingSlot,
       reason: 'Khách yêu cầu hủy đặt chỗ'
     }).catch(err => console.error('Failed to notify cancel:', err));
+    
+    notifyBookingCancelledSafely(booking, req.app);
 
     const payoutSuppressed = settled.settlement.payoutStatus === 'suppressed';
     res.status(200).json({
@@ -2364,7 +2366,7 @@ exports.createBulkBooking = async (req, res, next) => {
 
 exports.getAllBookings = async (req, res, next) => {
   try {
-    const { date, floorId } = req.query;
+    const { date, floorId, bookingId } = req.query;
     const Booking = require('../models/Booking');
     const {
       resolveVietnamCalendarDay,
@@ -2379,6 +2381,10 @@ exports.getAllBookings = async (req, res, next) => {
 
     if (floorId) {
       filter.floorId = floorId;
+    }
+
+    if (bookingId) {
+      filter._id = bookingId;
     }
 
     const bookings = await Booking.find(filter)

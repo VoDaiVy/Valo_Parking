@@ -122,6 +122,7 @@ const startServer = async () => {
       startScheduler(app);
       require('./services/aiCopilot/monitor').startMonitor(app);
       require('./services/aiCopilot/floorFullMonitor').startFloorMonitor(app);
+      require('./services/aiCopilot/sessionOverdueMonitor').startSessionOverdueMonitor(app);
       require('./services/aiCopilot/refundCompletedMonitor').startRefundMonitor(app);
 
       // Seed default notification rules (upsert, won't overwrite existing)
