@@ -3,6 +3,7 @@ const Policy = require('../models/Policy');
 const RefundRuleVersion = require('../models/RefundRuleVersion');
 const { cloneLegacyRefundRule } = require('./refundLegacyDefaults');
 const { normalizeRule } = require('./refundEngine');
+const voucherService = require('./voucherService');
 
 const withSession = (query, session) => (session ? query.session(session) : query);
 
@@ -86,6 +87,15 @@ const buildPaymentBreakdown = (booking, input = {}) => {
     adjustedTotal: Number(input.adjustedTotal
       ?? booking.paymentBreakdownSnapshot?.adjustedTotal
       ?? totalAmount),
+    voucherId: input.voucherId
+      ?? booking.paymentBreakdownSnapshot?.voucherId
+      ?? null,
+    voucherDiscount: input.voucherDiscount
+      ?? booking.paymentBreakdownSnapshot?.voucherDiscount
+      ?? null,
+    discountedTotal: input.discountedTotal
+      ?? booking.paymentBreakdownSnapshot?.discountedTotal
+      ?? null,
   };
 };
 
@@ -128,6 +138,7 @@ const transitionPendingBookingToPaid = async (booking, input = {}) => {
 
   const updated = await query;
   if (updated) {
+    await voucherService.markVoucherUsed({ bookingId: updated._id, session: input.session });
     return { booking: updated, transitioned: true };
   }
 

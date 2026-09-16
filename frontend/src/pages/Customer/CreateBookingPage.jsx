@@ -48,6 +48,7 @@ import {
   writeBookingCart,
 } from '../../utils/bookingCartStorage';
 import { findRequestedService } from '../../utils/bookingNavigation';
+import { getMyVouchers } from '../../services/loyaltyService';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
@@ -565,6 +566,8 @@ export default function CreateBookingPage() {
   const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
   const [selectedServices, setSelectedServices] = useState([]);
+  const [vouchers, setVouchers] = useState([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState('');
   const [wallet, setWallet] = useState(null);
   const [slots, setSlots] = useState([]);
   const [selectedSlotKey, setSelectedSlotKey] = useState('');
@@ -775,12 +778,28 @@ export default function CreateBookingPage() {
     ? getMinEndTimeStr(startTimeStr) 
     : (endDate < startDate ? '24:00' : (endDate === todayDateStr ? currentTimeStr : (endDate < todayDateStr ? '24:00' : null)));
 
+  const selectedVoucher = vouchers.find((voucher) => voucher._id === selectedVoucherId);
+  const freeServiceId = selectedVoucher?.benefitSnapshot?.type === 'FREE_SERVICE'
+    ? String(selectedVoucher.benefitSnapshot?.serviceId?._id || selectedVoucher.benefitSnapshot?.serviceId || '')
+    : '';
+  const effectiveSelectedServices = useMemo(() => {
+    if (!freeServiceId || selectedServices.includes(freeServiceId)) return selectedServices;
+    return [...selectedServices, freeServiceId];
+  }, [freeServiceId, selectedServices]);
+  const grossServiceTotal = useMemo(
+    () => services
+      .filter((service) => effectiveSelectedServices.includes(service._id))
+      .reduce((total, service) => total + Number(service.price || 0), 0),
+    [effectiveSelectedServices, services]
+  );
   const serviceTotal = useMemo(
     () =>
       services
-        .filter((service) => selectedServices.includes(service._id))
+        .filter((service) => (
+          effectiveSelectedServices.includes(service._id) && String(service._id) !== freeServiceId
+        ))
         .reduce((total, service) => total + Number(service.price || 0), 0),
-    [services, selectedServices]
+    [effectiveSelectedServices, freeServiceId, services]
   );
 
   const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey);
@@ -828,7 +847,10 @@ export default function CreateBookingPage() {
   const parkingTotal = selectedSlotIsOwnVipSlot
     ? 0
     : dynamicPricing.computeAdjustedTotal(pricePreview.usageAmount);
-  const grandTotal = parkingTotal + serviceTotal;
+  const baseGrandTotal = parkingTotal + serviceTotal;
+  const grandTotal = selectedVoucher?.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
+    ? Math.floor(baseGrandTotal * (1 - Number(selectedVoucher.benefitSnapshot.discountPercent || 0) / 100))
+    : baseGrandTotal;
   const walletBalance = Number(wallet?.balance || 0);
   const walletShortfall = Math.max(grandTotal - walletBalance, 0);
   const hasEnoughWallet = walletShortfall <= 0;
@@ -842,6 +864,7 @@ export default function CreateBookingPage() {
       startTime: item.startTime,
       endTime: item.endTime,
       serviceIds: item.serviceIds,
+      voucherId: item.voucherId || undefined,
     })),
     [cartItems]
   );
@@ -856,7 +879,9 @@ export default function CreateBookingPage() {
     const quotedItem = cartQuote?.items?.find((quote) => quote.clientItemId === item.clientItemId);
     return Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1) !== 1;
   });
+  const cartHasVoucher = cartItems.some((item) => Boolean(item.voucherId));
   const cartWalletShortfall = Math.max(cartGrandTotal - walletBalance, 0);
+  const hasCartErrors = Object.keys(cartItemErrors).length > 0;
   const hasActiveCheckoutHold = false;
 
   const loadData = () => {
@@ -869,7 +894,8 @@ export default function CreateBookingPage() {
       getServices().then(res => res.ok ? res.data?.data : []).catch(() => []),
       fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(res => res.json().catch(() => ({}))),
       fetch(`${import.meta.env.VITE_API_BASE_URL}/pricing-config`).then(res => res.json().catch(() => ({}))),
-    ]).then(([walletData, vehiclesData, profileData, servicesData, floorsData, pricingData]) => {
+      getMyVouchers('available').then(res => res.ok ? res.data?.data : []).catch(() => []),
+    ]).then(([walletData, vehiclesData, profileData, servicesData, floorsData, pricingData, voucherData]) => {
       if (walletData) setWallet(walletData);
       if (profileData) setProfile(profileData);
       if (vehiclesData) {
@@ -885,6 +911,7 @@ export default function CreateBookingPage() {
       if (pricingData && pricingData.success) {
         setPricingConfig(pricingData.data);
       }
+      setVouchers((voucherData || []).filter((voucher) => !voucher.bookingId));
     }).finally(() => {
       setLoading(false);
     });
@@ -1102,6 +1129,13 @@ export default function CreateBookingPage() {
       return;
     }
 
+    if (selectedVoucherId && cartItems.some((item) => (
+      item.clientItemId !== editingClientItemId && item.voucherId === selectedVoucherId
+    ))) {
+      setError('This voucher is already assigned to another booking item.');
+      return;
+    }
+
     const hasOverlap = (startA, endA, startB, endB) => startA < endB && endA > startB;
 
     const isDuplicate = cartItems.some((item) => {
@@ -1162,14 +1196,16 @@ export default function CreateBookingPage() {
       slotCode: selectedSlot.slotCode,
       startTime: startObj.toISOString(),
       endTime: endObj.toISOString(),
-      serviceIds: selectedServices,
+      serviceIds: effectiveSelectedServices,
       serviceNames: services
-        .filter((service) => selectedServices.includes(service._id))
+        .filter((service) => effectiveSelectedServices.includes(service._id))
         .map((service) => service.name),
+      voucherId: selectedVoucherId || '',
+      voucherName: selectedVoucher?.benefitSnapshot?.name || '',
       parkingAmount: parkingTotal,
       serviceAmount: serviceTotal,
       totalAmount: grandTotal,
-      baseTotalAmount: baseParkingTotal + serviceTotal,
+      baseTotalAmount: baseParkingTotal + grossServiceTotal,
       dynamicMultiplier: dynamicPricing.multiplier,
       priceLabel: dynamicPricing.priceLabel,
       busynessScore: dynamicPricing.busynessScore,
@@ -1191,6 +1227,7 @@ export default function CreateBookingPage() {
     fetchActiveHoldsData();
 
     setSelectedServices([]);
+    setSelectedVoucherId('');
     handleFindSlots();
     } finally {
       setSubmitting(false);
@@ -1209,6 +1246,7 @@ export default function CreateBookingPage() {
     setVehicleId(item.vehicleId || '');
     setManualPlate(item.vehicleId ? '' : item.licensePlate);
     setSelectedServices(item.serviceIds || []);
+    setSelectedVoucherId(item.voucherId || '');
     setSelectedSlotKey(`${item.floorId}:${item.slotCode}`);
     setSuccess('');
     setError('');
@@ -1325,7 +1363,7 @@ export default function CreateBookingPage() {
             items: data.items,
           });
         }
-        setCartItemErrors(res.ok ? {} : toItemErrorMap(data.itemErrors || []));
+        setCartItemErrors(toItemErrorMap(data.itemErrors || []));
       } catch (err) {
         console.error('Bulk quote failed', err);
       }
@@ -1619,29 +1657,68 @@ export default function CreateBookingPage() {
                       <button
                         key={service._id}
                         type="button"
-                        onClick={() => toggleService(service._id)}
+                        onClick={() => {
+                          if (String(service._id) !== freeServiceId) toggleService(service._id);
+                        }}
                         className={`w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between ${
-                          selectedServices.includes(service._id)
+                          effectiveSelectedServices.includes(service._id)
                             ? 'bg-gold/10 border-gold shadow-sm'
                             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            selectedServices.includes(service._id) ? 'bg-gold border-gold text-white' : 'border-gray-300 bg-white'
+                            effectiveSelectedServices.includes(service._id) ? 'bg-gold border-gold text-white' : 'border-gray-300 bg-white'
                           }`}>
-                            {selectedServices.includes(service._id) && <Check size={12} strokeWidth={4} />}
+                            {effectiveSelectedServices.includes(service._id) && <Check size={12} strokeWidth={4} />}
                           </div>
                           <div>
                             <div className="font-bold text-[13px] text-gray-900 leading-tight">{service.name}</div>
                             <div className="text-[10px] font-medium text-gray-400 leading-tight">{service.timeCost || 30} mins</div>
                           </div>
                         </div>
-                        <div className="text-[13px] font-black text-gray-900">{formatMoney(service.price)}</div>
+                        {String(service._id) === freeServiceId ? (
+                          <div className="text-right">
+                            <div className="text-[10px] font-bold text-gray-400 line-through">{formatMoney(service.price)}</div>
+                            <div className="text-[13px] font-black text-emerald-600">0 VND</div>
+                          </div>
+                        ) : (
+                          <div className="text-[13px] font-black text-gray-900">{formatMoney(service.price)}</div>
+                        )}
                       </button>
                     ))
                   )}
                 </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Loyalty voucher</span>
+                  {selectedVoucher && <span className="text-xs font-black text-emerald-600">Applied</span>}
+                </div>
+                <select
+                  value={selectedVoucherId}
+                  onChange={(event) => setSelectedVoucherId(event.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold"
+                >
+                  <option value="">No voucher</option>
+                  {vouchers
+                    .filter((voucher) => !cartItems.some((item) => (
+                      item.clientItemId !== editingClientItemId && item.voucherId === voucher._id
+                    )))
+                    .map((voucher) => (
+                      <option key={voucher._id} value={voucher._id}>
+                        {voucher.benefitSnapshot?.name} · expires {new Date(voucher.expiresAt).toLocaleDateString('vi-VN')}
+                      </option>
+                    ))}
+                </select>
+                {selectedVoucher && (
+                  <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                    {selectedVoucher.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
+                      ? `Discount ${selectedVoucher.benefitSnapshot.discountPercent}%: -${formatMoney(baseGrandTotal - grandTotal)}`
+                      : `Free service: ${selectedVoucher.benefitSnapshot?.serviceId?.name || 'included service'}`}
+                  </p>
+                )}
               </div>
 
               <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2 shadow-inner">
@@ -1681,7 +1758,7 @@ export default function CreateBookingPage() {
                   </span>
                   <span className="text-right">
                     {dynamicPricing.multiplier !== 1 && !dynamicPricing.error && (
-                      <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(baseParkingTotal + serviceTotal)}</span>
+                      <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(baseParkingTotal + grossServiceTotal)}</span>
                     )}
                     <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
                   </span>
@@ -1730,6 +1807,7 @@ export default function CreateBookingPage() {
                     const quotedItem = cartQuote?.items?.find((quoteItem) => quoteItem.clientItemId === item.clientItemId);
                     const itemTotal = quotedItem?.totalAmount ?? item.totalAmount;
                     const itemMultiplier = Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1);
+                    const itemVoucherDiscount = Number(quotedItem?.voucherDiscount || 0);
                     const baseItemTotal = Number(item.baseTotalAmount ?? item.totalAmount ?? 0);
 
                     return (
@@ -1777,13 +1855,16 @@ export default function CreateBookingPage() {
                             Services: {item.serviceNames.join(', ')}
                           </div>
                         )}
+                        {item.voucherName && (
+                          <div className="mt-2 text-xs font-bold text-emerald-600">Voucher: {item.voucherName}</div>
+                        )}
 
                         <div className="mt-3 flex items-center justify-between">
                           <span className={`text-xs font-black ${itemError ? 'text-rose-600' : 'text-emerald-600'}`}>
                             {itemError ? itemError.message : 'Ready'}
                           </span>
                           <span className="flex flex-col items-end gap-1 text-sm font-black text-gray-900">
-                            {itemMultiplier !== 1 && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
+                            {(itemMultiplier !== 1 || itemVoucherDiscount > 0) && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
                             <span>{formatMoney(itemTotal)}</span>
                             <PriceBadge multiplier={itemMultiplier} />
                           </span>
@@ -1804,7 +1885,7 @@ export default function CreateBookingPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500 font-semibold">Cart total</span>
                       <span className="text-right">
-                        {cartHasDynamicPricing && cartBaseGrandTotal !== cartGrandTotal && (
+                        {(cartHasDynamicPricing || cartHasVoucher) && cartBaseGrandTotal !== cartGrandTotal && (
                           <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(cartBaseGrandTotal)}</span>
                         )}
                         <span className="font-black text-gold text-lg">{formatMoney(cartGrandTotal)}</span>
@@ -1820,7 +1901,7 @@ export default function CreateBookingPage() {
                   <button
                     type="button"
                     onClick={handleBookingClick}
-                    disabled={submitting || topUpLoading  || cartItems.length === 0}
+                    disabled={submitting || topUpLoading || cartItems.length === 0 || hasCartErrors}
                     className="w-full rounded-2xl bg-gray-900 hover:bg-black disabled:opacity-50 text-white px-4 py-4 font-black transition flex items-center justify-center gap-2 shadow-sm active:scale-[0.98]"
                   >
                     {(submitting || topUpLoading ) ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
@@ -1947,7 +2028,7 @@ export default function CreateBookingPage() {
               Review the final demand-adjusted amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
             </p>
             <div className="my-5 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-              {cartHasDynamicPricing && cartBaseGrandTotal !== cartGrandTotal && (
+              {(cartHasDynamicPricing || cartHasVoucher) && cartBaseGrandTotal !== cartGrandTotal && (
                 <div className="mb-1 flex items-center justify-between text-sm text-gray-400">
                   <span>Base total</span><span className="font-bold line-through">{formatMoney(cartBaseGrandTotal)}</span>
                 </div>

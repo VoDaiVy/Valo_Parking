@@ -145,6 +145,14 @@ const NOTIFICATION_TEMPLATES = {
     priority: 'WARNING',
   },
 
+  // LOYALTY
+  LOYALTY_POINTS_EARNED: {
+    title: 'You earned {points} loyalty points',
+    content: 'Your reward balance is now {balance} points. Tap this notification to view and redeem rewards.',
+    type: 'PROMOTION',
+    priority: 'SUCCESS',
+  },
+
   // PAYMENT
   PAYMENT_SUCCESS: {
     title: 'Payment successful',

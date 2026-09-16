@@ -34,6 +34,7 @@ import AccountManagement from "./pages/Admin/AccountManagement";
 import PolicyManagement from "./pages/Admin/PolicyManagement";
 import SubscriptionManagement from "./pages/Admin/SubscriptionManagement";
 import RevenueAnalytics from "./pages/Admin/RevenueAnalytics";
+import VoucherManagement from "./pages/Admin/VoucherManagement";
 
 // Pages – Staff
 import StaffDashboard from "./pages/Staff/Dashboard";
@@ -54,6 +55,7 @@ import ParkingHistory from "./pages/Customer/ParkingHistory";
 import CustomerNotifications from "./pages/Customer/CustomerNotifications";
 import BookingPage from "./pages/Customer/BookingPage";
 import CreateBookingPage from "./pages/Customer/CreateBookingPage";
+import LoyaltyRewards from "./pages/Customer/LoyaltyRewards";
 
 // Misc
 import UnauthorizedPage from "./pages/UnauthorizedPage";
@@ -156,6 +158,7 @@ export default function App() {
             <Route path="/admin/tickets" element={<TicketPackages />} />
             <Route path="/admin/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/admin/revenue" element={<RevenueAnalytics />} />
+            <Route path="/admin/vouchers" element={<VoucherManagement />} />
             <Route path="/admin/profile" element={<AdminProfile />} />
             <Route
               path="/admin/notifications"
@@ -226,6 +229,7 @@ export default function App() {
             />
             <Route path="/customer/vehicles" element={<MyVehicles />} />
             <Route path="/customer/wallet" element={<WalletPage />} />
+            <Route path="/customer/rewards" element={<LoyaltyRewards />} />
             <Route path="/customer/history" element={<ParkingHistory />} />
             <Route path="/customer/booking" element={<BookingPage />} />
             <Route

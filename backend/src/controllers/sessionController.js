@@ -15,6 +15,7 @@ const notifTriggers = require('../services/notificationTriggers');
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
+const loyaltyService = require('../services/loyaltyService');
 const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrService');
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
@@ -1399,6 +1400,13 @@ exports.kioskCheckout = async (req, res, next) => {
             },
           });
           booking = settled.booking;
+          loyaltyService.earnPoints({
+            userId: booking.userId,
+            amount: booking.prepaidAmount,
+            refSource: 'booking',
+            refSourceId: booking._id,
+            app: req.app,
+          }).catch((error) => console.error('[Loyalty] kiosk checkout earn failed:', error.message));
           payoutStatus = settled.settlement.payoutStatus;
           suppressionReason = settled.settlement.suppressionReason;
           sessionFinalizedAtomically = true;

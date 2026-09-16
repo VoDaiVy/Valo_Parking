@@ -16,6 +16,7 @@ const {
 } = require('../services/membershipQrService');
 const { validationResult } = require('express-validator');
 const dynamicPricingEngine = require('../services/dynamicPricingEngine');
+const loyaltyService = require('../services/loyaltyService');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const {
   activateSubscriptionEntitlements,
@@ -39,6 +40,14 @@ const buildExpirationDate = (packageType, fromDate = new Date()) => {
   }
   return expireAt;
 };
+
+const awardSubscriptionPoints = (subscription, app) => loyaltyService.earnPoints({
+  userId: subscription.user,
+  amount: subscription.amount,
+  refSource: 'subscription',
+  refSourceId: subscription._id,
+  app,
+}).catch((error) => console.error('[Loyalty] earnPoints (subscription) failed:', error.message));
 
 // Create payment order for subscription
 exports.createSubscriptionPayment = async (req, res, next) => {
@@ -138,6 +147,7 @@ exports.verifyPayment = async (req, res, next) => {
     const isRenewal = subscription.pendingRenewal && subscription.pendingRenewal.orderCode == orderCode;
 
     if (!isRenewal && subscription.paymentStatus === 'paid') {
+      awardSubscriptionPoints(subscription, req.app);
       const entitlementCount = await MembershipSlotEntitlement.countDocuments({
         sourceSubscriptionId: subscription._id,
       });
@@ -216,6 +226,8 @@ exports.verifyPayment = async (req, res, next) => {
           activationSession.endSession();
         }
       }
+
+      if (!isRenewal) awardSubscriptionPoints(subscription, req.app);
 
       return res.status(200).json({ success: true, message: isRenewal ? 'Subscription renewed successfully!' : 'Subscription activated successfully!' });
     } else {
@@ -298,6 +310,7 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       }
       await activateSubscriptionEntitlements(subscription, { session: dbSession });
       await dbSession.commitTransaction();
+      awardSubscriptionPoints(subscription, req.app);
     } catch (err) {
       await dbSession.abortTransaction();
       subscription.paymentStatus = 'failed';
