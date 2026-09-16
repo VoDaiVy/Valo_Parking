@@ -15,6 +15,7 @@ import {
   MapPin,
   Plus,
   Sparkles,
+  Ticket,
   Trash2,
   Wallet,
 } from 'lucide-react';
@@ -543,6 +544,140 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
   );
 };
 
+const getVoucherBenefitLabel = (voucher) => {
+  const benefit = voucher?.benefitSnapshot || {};
+  if (benefit.type === 'PERCENT_DISCOUNT') {
+    return `${Number(benefit.discountPercent || 0)}% off this booking`;
+  }
+  if (benefit.type === 'FREE_SERVICE') {
+    return `Free ${benefit.serviceId?.name || 'included service'}`;
+  }
+  return benefit.description || 'Loyalty reward';
+};
+
+const getVoucherExpiryLabel = (voucher) => {
+  const expiresAt = new Date(voucher?.expiresAt);
+  if (Number.isNaN(expiresAt.getTime())) return 'No expiry date';
+  return `Expires ${expiresAt.toLocaleDateString('vi-VN')}`;
+};
+
+const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const selectedVoucher = vouchers.find((voucher) => voucher._id === value);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const selectVoucher = (voucherId) => {
+    onChange(voucherId);
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        onClick={() => setIsOpen((current) => !current)}
+        className={`group flex min-h-12 w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left outline-none transition duration-200 active:scale-[0.995] ${
+          selectedVoucher
+            ? 'border-emerald-200 bg-emerald-50/70 shadow-[0_8px_24px_rgba(5,150,105,0.08)] hover:border-emerald-300'
+            : 'border-gray-200 bg-white hover:border-gold/60 hover:bg-amber-50/30'
+        } focus:border-gold focus:ring-2 focus:ring-gold/20`}
+      >
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${selectedVoucher ? 'bg-emerald-600 text-white' : 'bg-amber-50 text-amber-600'}`}>
+          <Ticket size={16} strokeWidth={2.2} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-extrabold text-gray-900">
+            {selectedVoucher?.benefitSnapshot?.name || 'No voucher'}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] font-medium text-gray-500">
+            {selectedVoucher
+              ? `${getVoucherBenefitLabel(selectedVoucher)} · ${getVoucherExpiryLabel(selectedVoucher)}`
+              : vouchers.length > 0 ? `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'} available` : 'No available rewards'}
+          </span>
+        </span>
+        {selectedVoucher && (
+          <span className="hidden rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 sm:inline-flex">
+            Applied
+          </span>
+        )}
+        <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold' : 'group-hover:text-gray-600'}`} />
+      </button>
+
+      {isOpen && (
+        <div role="listbox" className="time-scrollbar absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_24px_60px_rgba(31,41,55,0.18)]">
+          <div className="flex items-center justify-between px-2 pb-2 pt-1">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Choose a reward</p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-500">One voucher per booking</p>
+            </div>
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{vouchers.length} available</span>
+          </div>
+
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            onClick={() => selectVoucher('')}
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition duration-150 active:scale-[0.99] ${!value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+          >
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${!value ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-500'}`}><Ticket size={15} /></span>
+            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">No voucher</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>Continue without a reward</span></span>
+            {!value && <Check size={16} className="shrink-0 text-gold" strokeWidth={3} />}
+          </button>
+
+          {vouchers.length > 0 && <div className="my-2 h-px bg-gray-100" />}
+          {vouchers.map((voucher) => {
+            const isSelected = value === voucher._id;
+            return (
+              <button
+                key={voucher._id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => selectVoucher(voucher._id)}
+                className={`mb-1 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition duration-150 last:mb-0 active:scale-[0.99] ${
+                  isSelected
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+                    : 'border-transparent text-gray-700 hover:border-amber-100 hover:bg-amber-50/60'
+                }`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}><Ticket size={17} strokeWidth={2.2} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Loyalty voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
+                  <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher)}</span>
+                  <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher)}</span>
+                </span>
+                {isSelected && <Check size={17} className="shrink-0 text-emerald-600" strokeWidth={3} />}
+              </button>
+            );
+          })}
+
+          {vouchers.length === 0 && (
+            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Redeem loyalty points to receive a reward.</p></div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function CreateBookingPage() {
   const location = useLocation();
   const requestedServiceId = useMemo(
@@ -558,7 +693,49 @@ export default function CreateBookingPage() {
 
   const startTime = `${startDate}T${startTimeStr}`;
   const endTime = `${endDate}T${endTimeStr}`;
-  const dynamicPricing = useDynamicPricing(startTime, endTime);
+  const forecastHourSelection = useMemo(() => {
+    if (!startDate || !endDate || startDate !== endDate) {
+      return {
+        allowed: false,
+        reason: 'Hour selection is available only when start and end are on the same day.',
+      };
+    }
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      return { allowed: false, reason: 'Choose a valid end time after the start time.' };
+    }
+    if (end <= now) {
+      return {
+        allowed: false,
+        reason: 'This booking range has already ended. Choose a future end time to select from the chart.',
+      };
+    }
+    if (start > horizonEnd || end > horizonEnd) {
+      return {
+        allowed: false,
+        reason: 'Both start and end must be within the next 24 hours to select an hour from this chart.',
+      };
+    }
+    return { allowed: true, reason: '' };
+  }, [endDate, endTime, startDate, startTime]);
+  const isForecastHourSelectable = useCallback((hour) => {
+    if (!forecastHourSelection.allowed) return false;
+    const candidateStart = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
+    const currentEnd = new Date(endTime);
+    const minimumEnd = new Date(candidateStart.getTime() + 30 * 60 * 1000);
+    const candidateEnd = currentEnd >= minimumEnd ? currentEnd : minimumEnd;
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const candidateEndDate = `${candidateEnd.getFullYear()}-${String(candidateEnd.getMonth() + 1).padStart(2, '0')}-${String(candidateEnd.getDate()).padStart(2, '0')}`;
+    return candidateStart >= now
+      && candidateStart <= horizonEnd
+      && candidateEnd <= horizonEnd
+      && candidateEndDate === startDate;
+  }, [endTime, forecastHourSelection.allowed, startDate]);
 
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState('');
@@ -600,6 +777,7 @@ export default function CreateBookingPage() {
   const [floors, setFloors] = useState([]);
   const [pricingConfig, setPricingConfig] = useState(null);
   const [currentFloorId, setCurrentFloorId] = useState(null);
+  const dynamicPricing = useDynamicPricing(startTime, endTime, currentFloorId);
   const [dbSlots, setDbSlots] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [activeHolds, setActiveHolds] = useState([]);
@@ -779,6 +957,12 @@ export default function CreateBookingPage() {
     : (endDate < startDate ? '24:00' : (endDate === todayDateStr ? currentTimeStr : (endDate < todayDateStr ? '24:00' : null)));
 
   const selectedVoucher = vouchers.find((voucher) => voucher._id === selectedVoucherId);
+  const selectableVouchers = useMemo(
+    () => vouchers.filter((voucher) => !cartItems.some((item) => (
+      item.clientItemId !== editingClientItemId && item.voucherId === voucher._id
+    ))),
+    [cartItems, editingClientItemId, vouchers]
+  );
   const freeServiceId = selectedVoucher?.benefitSnapshot?.type === 'FREE_SERVICE'
     ? String(selectedVoucher.benefitSnapshot?.serviceId?._id || selectedVoucher.benefitSnapshot?.serviceId || '')
     : '';
@@ -1596,6 +1780,10 @@ export default function CreateBookingPage() {
                     vehicles.find((v) => v._id === vehicleId)?.type ||
                     'car'
                   }
+                  floorId={currentFloorId}
+                  canSelectHour={forecastHourSelection.allowed}
+                  isHourSelectable={isForecastHourSelectable}
+                  selectionDisabledReason={forecastHourSelection.reason}
                   onSelectHour={(hour) => {
                     const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
                     handleStartChange(startDate, nextTimeStr);
@@ -1696,22 +1884,11 @@ export default function CreateBookingPage() {
                   <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Loyalty voucher</span>
                   {selectedVoucher && <span className="text-xs font-black text-emerald-600">Applied</span>}
                 </div>
-                <select
+                <CustomVoucherPicker
                   value={selectedVoucherId}
-                  onChange={(event) => setSelectedVoucherId(event.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold"
-                >
-                  <option value="">No voucher</option>
-                  {vouchers
-                    .filter((voucher) => !cartItems.some((item) => (
-                      item.clientItemId !== editingClientItemId && item.voucherId === voucher._id
-                    )))
-                    .map((voucher) => (
-                      <option key={voucher._id} value={voucher._id}>
-                        {voucher.benefitSnapshot?.name} · expires {new Date(voucher.expiresAt).toLocaleDateString('vi-VN')}
-                      </option>
-                    ))}
-                </select>
+                  vouchers={selectableVouchers}
+                  onChange={setSelectedVoucherId}
+                />
                 {selectedVoucher && (
                   <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
                     {selectedVoucher.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
@@ -1724,7 +1901,12 @@ export default function CreateBookingPage() {
               <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2 shadow-inner">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> Duration</span>
-                  <span className="font-bold text-gray-900">{pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)</span>
+                  <span className="text-right font-bold text-gray-900">
+                    {pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)
+                    {pricePreview.durationMinutes > 0 && pricePreview.durationMinutes < 60 && (
+                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">Discounts apply from 60 minutes</span>
+                    )}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
@@ -1732,7 +1914,7 @@ export default function CreateBookingPage() {
                   <span className="font-bold text-gray-900 text-right">
                     {dynamicPricing.loading ? (
                       <span className="inline-block h-4 w-24 animate-pulse rounded bg-gray-200" />
-                    ) : dynamicPricing.multiplier !== 1 && !dynamicPricing.error ? (
+                    ) : dynamicPricing.effectiveMultiplier !== 1 && !dynamicPricing.error ? (
                       <span className="flex flex-col items-end gap-1">
                         <span className="text-xs text-gray-400 line-through">{formatMoney(baseParkingTotal)}</span>
                         <span>{formatMoney(parkingTotal)}</span>
@@ -1754,10 +1936,10 @@ export default function CreateBookingPage() {
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
                   <span className="flex items-center gap-2 font-black text-gray-900">
                     Wallet charge
-                    {!dynamicPricing.error && <PriceBadge multiplier={dynamicPricing.multiplier} label={dynamicPricing.priceLabel} />}
+                    {!dynamicPricing.error && <PriceBadge multiplier={dynamicPricing.effectiveMultiplier} label={dynamicPricing.promotion?.label || dynamicPricing.priceLabel} />}
                   </span>
                   <span className="text-right">
-                    {dynamicPricing.multiplier !== 1 && !dynamicPricing.error && (
+                    {dynamicPricing.effectiveMultiplier !== 1 && !dynamicPricing.error && (
                       <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(baseParkingTotal + grossServiceTotal)}</span>
                     )}
                     <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>

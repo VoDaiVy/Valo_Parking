@@ -6,6 +6,11 @@ const PriceHistory = require('../models/PriceHistory');
 const TicketPackage = require('../models/TicketPackage');
 const pricingEngine = require('./pricingEngine');
 const demandForecastingService = require('./demandForecastingService');
+const { calculateEarlyBookingPromotion } = require('./earlyBookingPromotionService');
+const {
+  DEFAULT_FORECAST_HORIZON_HOURS,
+  buildForecastHorizonMetadata,
+} = require('../utils/pricingHorizon');
 
 const FORECAST_TIMEOUT_MS = 3000;
 const DEFAULT_DYNAMIC_CONFIG = Object.freeze({
@@ -14,6 +19,12 @@ const DEFAULT_DYNAMIC_CONFIG = Object.freeze({
   triggerThreshold: 10,
   rejectionCooldownMinutes: 30,
   suggestionExpiryMinutes: 60,
+  forecastHorizonHours: DEFAULT_FORECAST_HORIZON_HOURS,
+  earlyBookingPromotion: {
+    isEnabled: false,
+    minimumLeadHours: 72,
+    discountPercent: 5,
+  },
   lastEvaluatedScore: null,
   consecutiveFailures: 0,
 });
@@ -111,17 +122,28 @@ async function forecastWithTimeout(options) {
   }
 }
 
-function fallbackResult(basePrice, pricingMode = 'manual') {
+function fallbackResult(basePrice, pricingMode = 'manual', metadata = {}, promotionResult = null) {
+  const promotion = promotionResult || { multiplier: 1, adjustedPrice: basePrice, promotion: null };
   return {
     basePrice,
-    adjustedPrice: basePrice,
+    adjustedPrice: promotion.adjustedPrice,
     multiplier: 1.0,
+    promotionMultiplier: promotion.multiplier,
+    effectiveMultiplier: promotion.multiplier,
+    promotion: promotion.promotion,
     busynessScore: null,
     level: null,
     pricingMode,
     changePercent: 0,
     appliedRuleId: null,
+    ...metadata,
   };
+}
+
+function isShortHourlyBooking(options) {
+  return options.priceType === 'hourly'
+    && Number.isFinite(Number(options.durationMinutes))
+    && Number(options.durationMinutes) < 60;
 }
 
 async function getEffectivePrice(options = {}) {
@@ -131,12 +153,35 @@ async function getEffectivePrice(options = {}) {
     basePrice = await resolveBasePrice(options);
     const config = await getActiveConfig();
     pricingMode = config.pricingMode;
+    const horizonMetadata = buildForecastHorizonMetadata({
+      date: options.date,
+      hour: options.hour,
+      horizonHours: config.forecastHorizonHours,
+    });
+    const promotionResult = calculateEarlyBookingPromotion({
+      basePrice,
+      priceType: options.priceType,
+      leadTimeHours: horizonMetadata.leadTimeHours,
+      durationMinutes: options.durationMinutes,
+      promotionConfig: config.earlyBookingPromotion,
+    });
+    if (horizonMetadata.isReferenceOnly) {
+      return fallbackResult(basePrice, config.pricingMode, {
+        ...horizonMetadata,
+        pricingReason: 'OUTSIDE_FORECAST_HORIZON',
+      }, promotionResult);
+    }
     if (!config.isEnabled || config.pricingMode === 'manual') {
-      return fallbackResult(basePrice, config.pricingMode);
+      return fallbackResult(basePrice, config.pricingMode, horizonMetadata, promotionResult);
     }
 
     const forecast = options.busynessScore === undefined
-      ? await forecastWithTimeout({ date: options.date, hour: options.hour })
+      ? await forecastWithTimeout({
+        date: options.date,
+        hour: options.hour,
+        floorId: options.floorId,
+        forecastHorizonHours: config.forecastHorizonHours,
+      })
       : null;
     const selected = forecast
       ? forecast.selectedForecast || forecast.selectedItem
@@ -146,30 +191,44 @@ async function getEffectivePrice(options = {}) {
 
     if (config.pricingMode === 'semi-auto' && !options.forSuggestion) {
       const now = new Date();
-      const approvedSuggestion = await PricingSuggestion.findOne({
-        ...targetFilter(options.priceType, options.packageId),
+      const approvedSuggestion = options.date !== undefined && options.hour !== undefined && options.floorId
+        ? await PricingSuggestion.findOne({
+        ...targetFilter(options.priceType, options.packageId, options),
         status: 'approved',
         validFrom: { $lte: now },
         validUntil: { $gt: now },
-      }).sort({ reviewedAt: -1, createdAt: -1 }).lean();
+      }).sort({ reviewedAt: -1, createdAt: -1 }).lean()
+        : null;
       if (!approvedSuggestion) {
         return {
-          ...fallbackResult(basePrice, config.pricingMode),
+          ...fallbackResult(basePrice, config.pricingMode, horizonMetadata, promotionResult),
           busynessScore,
           level,
         };
       }
       const adjustedPrice = Number(approvedSuggestion.suggestedPrice);
+      if (Number(approvedSuggestion.multiplier) < 1 && isShortHourlyBooking(options)) {
+        return {
+          ...fallbackResult(basePrice, config.pricingMode, horizonMetadata),
+          busynessScore,
+          level,
+          pricingReason: 'DISCOUNT_REQUIRES_60_MINUTES',
+        };
+      }
       return {
         basePrice,
         adjustedPrice,
         multiplier: Number(approvedSuggestion.multiplier),
+        promotionMultiplier: 1,
+        effectiveMultiplier: Number(approvedSuggestion.multiplier),
+        promotion: null,
         busynessScore,
         level,
         pricingMode: config.pricingMode,
         changePercent: basePrice === 0 ? 0 : Number((((adjustedPrice - basePrice) / basePrice) * 100).toFixed(2)),
         appliedRuleId: approvedSuggestion.appliedRuleId || null,
         suggestionId: approvedSuggestion._id,
+        ...horizonMetadata,
       };
     }
 
@@ -187,15 +246,27 @@ async function getEffectivePrice(options = {}) {
       return rightSpecific - leftSpecific || (left.maxScore - left.minScore) - (right.maxScore - right.minScore);
     });
     const result = computeAdjustedPrice(basePrice, busynessScore, rules);
+    if (result.multiplier < 1 && isShortHourlyBooking(options)) {
+      return {
+        ...fallbackResult(basePrice, config.pricingMode, horizonMetadata),
+        busynessScore,
+        level,
+        pricingReason: 'DISCOUNT_REQUIRES_60_MINUTES',
+      };
+    }
     return {
       basePrice,
       adjustedPrice: result.adjustedPrice,
       multiplier: result.multiplier,
+      promotionMultiplier: 1,
+      effectiveMultiplier: result.multiplier,
+      promotion: null,
       busynessScore,
       level,
       pricingMode: config.pricingMode,
       changePercent: basePrice === 0 ? 0 : Number((((result.adjustedPrice - basePrice) / basePrice) * 100).toFixed(2)),
       appliedRuleId: result.rule?._id || null,
+      ...horizonMetadata,
     };
   } catch (error) {
     console.error('[DynamicPricing] Forecast timeout or pricing failure:', error.message);
@@ -203,13 +274,19 @@ async function getEffectivePrice(options = {}) {
   }
 }
 
-function targetFilter(priceType, packageId) {
-  return priceType === 'package'
+function targetFilter(priceType, packageId, scope = {}) {
+  const target = priceType === 'package'
     ? { priceType, packageId }
     : { priceType, packageId: null };
+  if (scope.targetDate || scope.date) target.targetDate = scope.targetDate || scope.date;
+  if (scope.targetHour !== undefined || scope.hour !== undefined) {
+    target.targetHour = Number(scope.targetHour ?? scope.hour);
+  }
+  if (scope.floorId) target.floorId = scope.floorId;
+  return target;
 }
 
-async function generateSuggestion({ busynessScore, priceType, packageId, force = false }) {
+async function generateSuggestion({ busynessScore, priceType, packageId, targetDate, targetHour, floorId, force = false }) {
   const config = await getActiveConfig({ create: true });
   if (!config.isEnabled || config.pricingMode !== 'semi-auto') return null;
 
@@ -219,21 +296,33 @@ async function generateSuggestion({ busynessScore, priceType, packageId, force =
 
   const cooldownStart = new Date(Date.now() - config.rejectionCooldownMinutes * 60 * 1000);
   const rejected = await PricingSuggestion.exists({
-    ...targetFilter(priceType, packageId),
+    ...targetFilter(priceType, packageId, { targetDate, targetHour, floorId }),
     status: 'rejected',
     rejectedAt: { $gte: cooldownStart },
   });
   if (rejected) return null;
+  if (!targetDate || targetHour === undefined || targetHour === null || !floorId) {
+    throw new Error('Pricing suggestions require targetDate, targetHour, and floorId');
+  }
+  const existing = await PricingSuggestion.exists({
+    ...targetFilter(priceType, packageId, { targetDate, targetHour, floorId }),
+    status: { $in: ['pending', 'approved'] },
+    validUntil: { $gt: new Date() },
+  });
+  if (existing) return null;
 
   const price = await getEffectivePrice({
     priceType,
     packageId,
     busynessScore: score,
+    date: targetDate,
+    hour: targetHour,
+    floorId,
     forSuggestion: true,
   });
   const now = new Date();
   const suggestion = await PricingSuggestion.create({
-    ...targetFilter(priceType, packageId),
+    ...targetFilter(priceType, packageId, { targetDate, targetHour, floorId }),
     basePrice: price.basePrice,
     suggestedPrice: price.adjustedPrice,
     multiplier: price.multiplier,
@@ -250,16 +339,21 @@ async function generateSuggestion({ busynessScore, priceType, packageId, force =
   return suggestion;
 }
 
-async function applyAutoAdjustment({ busynessScore, priceType, packageId, force = false }) {
+async function applyAutoAdjustment({ busynessScore, priceType, packageId, targetDate, targetHour, floorId, force = false }) {
   const config = await getActiveConfig({ create: true });
   if (!config.isEnabled || config.pricingMode !== 'auto') return null;
   const score = clampScore(busynessScore);
   if (!force && config.lastEvaluatedScore !== null
       && Math.abs(score - config.lastEvaluatedScore) <= config.triggerThreshold) return null;
 
-  const price = await getEffectivePrice({ priceType, packageId, busynessScore: score });
+  const price = await getEffectivePrice({
+    priceType, packageId, busynessScore: score, date: targetDate, hour: targetHour, floorId,
+  });
   const history = await PriceHistory.create({
     ...targetFilter(priceType, packageId),
+    targetDate: targetDate || null,
+    targetHour: targetHour ?? null,
+    floorId: floorId || null,
     oldPrice: price.basePrice,
     newPrice: price.adjustedPrice,
     busynessScore: score,

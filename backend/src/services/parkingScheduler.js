@@ -9,11 +9,13 @@ const { emitToUser, broadcastNotification } = require('../sockets/notificationSo
 const DynamicPricingConfig = require('../models/DynamicPricingConfig');
 const PricingSuggestion = require('../models/PricingSuggestion');
 const TicketPackage = require('../models/TicketPackage');
+const ParkingFloor = require('../models/ParkingFloor');
 const dynamicPricingEngine = require('./dynamicPricingEngine');
 const { getOccupancyForecast } = require('./demandForecastingService');
 const notificationService = require('./notificationService');
 const loyaltyService = require('./loyaltyService');
 const voucherService = require('./voucherService');
+const { bangkokDateParts } = require('../utils/pricingHorizon');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
 const CONTRACT_EXPIRATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -57,35 +59,44 @@ async function checkDynamicPricing(app) {
     if (!config.isEnabled || config.pricingMode === 'manual') return null;
 
     const now = new Date();
-    const forecast = await getOccupancyForecast({
-      date: now.toISOString().slice(0, 10),
-      hour: now.getHours(),
-      timeframe: 'day',
-    });
-    const selected = forecast.selectedForecast || forecast.selectedItem;
-    if (!selected || !Number.isFinite(Number(selected.busynessScore))) {
-      throw new Error('Forecast did not return a busynessScore');
-    }
+    const { date: targetDate, hour: targetHour } = bangkokDateParts(now);
+    const floors = await ParkingFloor.find({}).select('_id').lean();
+    const packages = await TicketPackage.find({ isActive: true }).select('_id').lean();
+    const results = [];
 
-    const input = { busynessScore: selected.busynessScore, priceType: 'hourly' };
-    const firstResult = config.pricingMode === 'semi-auto'
-      ? await dynamicPricingEngine.generateSuggestion(input)
-      : await dynamicPricingEngine.applyAutoAdjustment(input);
+    for (const floor of floors) {
+      const forecast = await getOccupancyForecast({
+        date: targetDate,
+        hour: targetHour,
+        floorId: floor._id,
+        timeframe: 'day',
+        forecastHorizonHours: config.forecastHorizonHours,
+      });
+      const selected = forecast.selectedForecast || forecast.selectedItem;
+      if (!selected || !Number.isFinite(Number(selected.busynessScore))) {
+        throw new Error(`Forecast did not return a busynessScore for floor ${floor._id}`);
+      }
 
-    if (firstResult) {
-      const packages = await TicketPackage.find({ isActive: true }).select('_id').lean();
+      const scopedInput = {
+        busynessScore: selected.busynessScore,
+        targetDate,
+        targetHour,
+        floorId: floor._id,
+        force: true,
+      };
+      const hourlyInput = { ...scopedInput, priceType: 'hourly' };
+      results.push(config.pricingMode === 'semi-auto'
+        ? await dynamicPricingEngine.generateSuggestion(hourlyInput)
+        : await dynamicPricingEngine.applyAutoAdjustment(hourlyInput));
+
       await Promise.all(packages.map((ticketPackage) => {
-        const packageInput = {
-          busynessScore: selected.busynessScore,
-          priceType: 'package',
-          packageId: ticketPackage._id,
-          force: true,
-        };
+        const packageInput = { ...scopedInput, priceType: 'package', packageId: ticketPackage._id };
         return config.pricingMode === 'semi-auto'
           ? dynamicPricingEngine.generateSuggestion(packageInput)
           : dynamicPricingEngine.applyAutoAdjustment(packageInput);
       }));
     }
+    const firstResult = results.find(Boolean) || null;
 
     if (config.pricingMode === 'auto') {
       await DynamicPricingConfig.updateOne(

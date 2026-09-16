@@ -11,6 +11,12 @@ const dynamicPricingConfigSchema = new mongoose.Schema(
     triggerThreshold: { type: Number, default: 10, min: 1, max: 50 },
     rejectionCooldownMinutes: { type: Number, default: 30, min: 1 },
     suggestionExpiryMinutes: { type: Number, default: 60, min: 1 },
+    forecastHorizonHours: { type: Number, default: 24, min: 1, max: 168 },
+    earlyBookingPromotion: {
+      isEnabled: { type: Boolean, default: false },
+      minimumLeadHours: { type: Number, default: 72, min: 25, max: 8760 },
+      discountPercent: { type: Number, default: 5, min: 0, max: 30 },
+    },
     lastEvaluatedScore: { type: Number, default: null, min: 0, max: 100 },
     lastEvaluatedAt: { type: Date, default: null },
     consecutiveFailures: { type: Number, default: 0, min: 0 },

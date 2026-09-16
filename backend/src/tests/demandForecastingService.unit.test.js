@@ -111,3 +111,15 @@ test('demandForecastingService supports floorId filtering', async () => {
   assert.equal(typeof result.maintenanceSlotsCount, 'number');
   assert.equal(typeof result.totalPhysicalCapacity, 'number');
 });
+
+test('far-date daily forecast is explicitly reference-only', async () => {
+  const result = await getOccupancyForecast({
+    date: '2099-01-01',
+    hour: 10,
+    timeframe: 'day',
+    forecastHorizonHours: 24,
+  });
+  assert.equal(result.isReferenceOnly, true);
+  assert.equal(result.isDynamicPricingEligible, false);
+  assert.equal(result.forecastHorizonHours, 24);
+});

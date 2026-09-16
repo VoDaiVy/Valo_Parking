@@ -17,12 +17,15 @@ const dateParts = (value) => {
   };
 };
 
-export function useDynamicPricing(startTime, endTime) {
+export function useDynamicPricing(startTime, endTime, floorId) {
   const [state, setState] = useState({
     multiplier: 1,
+    effectiveMultiplier: 1,
     busynessScore: null,
     level: null,
     priceLabel: null,
+    promotion: null,
+    dynamicPricingEligible: true,
     loading: false,
     error: false,
   });
@@ -35,27 +38,37 @@ export function useDynamicPricing(startTime, endTime) {
 
     if (!startTime || !endTime || new Date(startTime) >= new Date(endTime)) {
       const resetTimer = setTimeout(() => {
-        setState({ multiplier: 1, busynessScore: null, level: null, priceLabel: null, loading: false, error: false });
+        setState({ multiplier: 1, effectiveMultiplier: 1, busynessScore: null, level: null, priceLabel: null, promotion: null, dynamicPricingEligible: true, loading: false, error: false });
       }, 0);
       return () => clearTimeout(resetTimer);
     }
 
     let active = true;
     const loadingTimer = setTimeout(() => {
-      if (active) setState((current) => ({ ...current, multiplier: 1, priceLabel: null, loading: true, error: false }));
+      if (active) setState((current) => ({ ...current, multiplier: 1, effectiveMultiplier: 1, priceLabel: null, loading: true, error: false }));
     }, 0);
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       controllerRef.current = controller;
-      const result = await getCurrentPricing({ ...dateParts(startTime), signal: controller.signal });
+      const durationMinutes = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
+      const result = await getCurrentPricing({
+        ...dateParts(startTime),
+        floorId,
+        durationMinutes,
+        signal: controller.signal,
+      });
       if (!active || controller.signal.aborted) return;
       const hourly = result.ok ? result.data?.data?.hourly : null;
       if (!hourly) {
-        setState({ multiplier: 1, busynessScore: null, level: null, priceLabel: null, loading: false, error: true });
+        setState({ multiplier: 1, effectiveMultiplier: 1, busynessScore: null, level: null, priceLabel: null, promotion: null, dynamicPricingEligible: true, loading: false, error: true });
         return;
       }
       setState({
         multiplier: Number(hourly.multiplier) || 1,
+        effectiveMultiplier: Number(hourly.effectiveMultiplier) || 1,
+        promotionMultiplier: Number(hourly.promotionMultiplier) || 1,
+        promotion: hourly.promotion || null,
+        dynamicPricingEligible: hourly.isDynamicPricingEligible !== false,
         busynessScore: hourly.busynessScore ?? null,
         level: hourly.level ?? null,
         priceLabel: hourly.priceLabel ?? null,
@@ -70,11 +83,11 @@ export function useDynamicPricing(startTime, endTime) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (controllerRef.current) controllerRef.current.abort();
     };
-  }, [startTime, endTime]);
+  }, [startTime, endTime, floorId]);
 
   const calculate = useCallback(
-    (usageAmount) => computeAdjustedTotal(usageAmount, state.multiplier),
-    [state.multiplier]
+    (usageAmount) => computeAdjustedTotal(usageAmount, state.effectiveMultiplier),
+    [state.effectiveMultiplier]
   );
 
   return { ...state, computeAdjustedTotal: calculate };

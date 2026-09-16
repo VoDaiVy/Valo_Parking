@@ -4,6 +4,9 @@ const priceHistorySchema = new mongoose.Schema(
   {
     priceType: { type: String, enum: ['hourly', 'package'], required: true },
     packageId: { type: mongoose.Schema.Types.ObjectId, ref: 'TicketPackage', default: null },
+    targetDate: { type: String, default: null },
+    targetHour: { type: Number, default: null, min: 0, max: 23 },
+    floorId: { type: mongoose.Schema.Types.ObjectId, ref: 'ParkingFloor', default: null },
     oldPrice: { type: Number, required: true, min: 0 },
     newPrice: { type: Number, required: true, min: 0 },
     busynessScore: { type: Number, required: true, min: 0, max: 100 },

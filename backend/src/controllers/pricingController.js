@@ -12,6 +12,8 @@ const configFields = [
   'triggerThreshold',
   'rejectionCooldownMinutes',
   'suggestionExpiryMinutes',
+  'forecastHorizonHours',
+  'earlyBookingPromotion',
 ];
 
 const validationMessage = (error) => Object.values(error.errors || {})
@@ -148,6 +150,13 @@ function validateCurrentQuery(query) {
       || Number(query.hour) < 0 || Number(query.hour) > 23)) {
     return 'hour must be an integer from 0 to 23';
   }
+  if (query.floorId !== undefined && !mongoose.Types.ObjectId.isValid(query.floorId)) {
+    return 'floorId must be a valid ObjectId';
+  }
+  if (query.durationMinutes !== undefined && (!/^\d+$/.test(String(query.durationMinutes))
+      || Number(query.durationMinutes) <= 0)) {
+    return 'durationMinutes must be a positive integer';
+  }
   return null;
 }
 
@@ -164,6 +173,8 @@ exports.getCurrentPricing = async (req, res) => {
     const options = {
       date: req.query.date,
       hour: req.query.hour === undefined ? undefined : Number(req.query.hour),
+      floorId: req.query.floorId,
+      durationMinutes: req.query.durationMinutes === undefined ? undefined : Number(req.query.durationMinutes),
     };
     const packages = await TicketPackage.find({ isActive: true }).lean();
     const hourly = await dynamicPricingEngine.getEffectivePrice({ ...options, priceType: 'hourly' });
@@ -198,7 +209,9 @@ exports.getSuggestions = async (req, res) => {
       }
       query.status = req.query.status;
     }
-    const suggestions = await PricingSuggestion.find(query).sort({ createdAt: -1 });
+    const suggestions = await PricingSuggestion.find(query)
+      .populate('floorId', 'name floorNumber')
+      .sort({ targetDate: -1, targetHour: -1, createdAt: -1 });
     return res.json({ success: true, data: suggestions });
   } catch (error) {
     return sendControllerError(res, error);
@@ -222,6 +235,9 @@ exports.approveSuggestion = async (req, res) => {
     const history = await PriceHistory.create({
       priceType: suggestion.priceType,
       packageId: suggestion.packageId,
+      targetDate: suggestion.targetDate,
+      targetHour: suggestion.targetHour,
+      floorId: suggestion.floorId,
       oldPrice: suggestion.basePrice,
       newPrice: suggestion.suggestedPrice,
       busynessScore: suggestion.busynessScore,

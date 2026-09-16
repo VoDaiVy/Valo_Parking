@@ -63,6 +63,10 @@ function ConfigTab() {
       setError('Cooldown and expiry must be at least 1 minute.');
       return;
     }
+    if (form.forecastHorizonHours < 1 || form.forecastHorizonHours > 168) {
+      setError('Forecast horizon must be between 1 and 168 hours.');
+      return;
+    }
     setSaving(true);
     const response = await updatePricingConfig({
       isEnabled: form.isEnabled,
@@ -70,6 +74,12 @@ function ConfigTab() {
       triggerThreshold: Number(form.triggerThreshold),
       rejectionCooldownMinutes: Number(form.rejectionCooldownMinutes),
       suggestionExpiryMinutes: Number(form.suggestionExpiryMinutes),
+      forecastHorizonHours: Number(form.forecastHorizonHours || 24),
+      earlyBookingPromotion: {
+        isEnabled: Boolean(form.earlyBookingPromotion?.isEnabled),
+        minimumLeadHours: Number(form.earlyBookingPromotion?.minimumLeadHours || 72),
+        discountPercent: Number(form.earlyBookingPromotion?.discountPercent || 5),
+      },
     });
     if (response.ok && response.data?.data) {
       setForm(response.data.data);
@@ -81,6 +91,10 @@ function ConfigTab() {
   if (loading) return <LoadingState />;
   if (!form) return <Notice error={error} />;
   const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const setPromotionField = (field, value) => setForm((current) => ({
+    ...current,
+    earlyBookingPromotion: { ...current.earlyBookingPromotion, [field]: value },
+  }));
 
   return (
     <div>
@@ -108,6 +122,11 @@ function ConfigTab() {
             <option value="semi-auto">Semi-auto</option>
             <option value="auto">Auto</option>
           </select>
+          <label className="mt-4 block text-xs font-black uppercase tracking-wider text-blue-100/55">Forecast horizon</label>
+          <div className="mt-2 flex items-center gap-3">
+            <input type="number" min="1" max="168" value={form.forecastHorizonHours || 24} onChange={(event) => setField('forecastHorizonHours', Number(event.target.value))} className={inputClass} />
+            <span className="shrink-0 text-xs font-bold text-blue-100/45">hours (max 7 days)</span>
+          </div>
         </section>
 
         <section className={`${panelClass} grid gap-4 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3`}>
@@ -124,6 +143,21 @@ function ConfigTab() {
           ))}
         </section>
       </div>
+      <section className={`${panelClass} mt-5`}>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-black text-white">Early Booking Promotion</h2>
+            <p className="mt-1 text-sm text-blue-100/55">Independent promotion for advance bookings. It does not change the Dynamic Pricing multiplier.</p>
+          </div>
+          <button type="button" role="switch" aria-checked={Boolean(form.earlyBookingPromotion?.isEnabled)} onClick={() => setPromotionField('isEnabled', !form.earlyBookingPromotion?.isEnabled)} className={`relative h-7 w-14 rounded-full transition ${form.earlyBookingPromotion?.isEnabled ? 'bg-gold' : 'bg-white/15'}`}>
+            <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${form.earlyBookingPromotion?.isEnabled ? 'left-7' : 'left-1'}`} />
+          </button>
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label><span className="text-xs font-black uppercase tracking-wider text-blue-100/55">Minimum lead time</span><input type="number" min="25" value={form.earlyBookingPromotion?.minimumLeadHours || 72} onChange={(event) => setPromotionField('minimumLeadHours', Number(event.target.value))} className={`${inputClass} mt-2`} /><span className="mt-1 block text-[11px] text-blue-100/40">hours before arrival</span></label>
+          <label><span className="text-xs font-black uppercase tracking-wider text-blue-100/55">Discount</span><input type="number" min="0" max="30" value={form.earlyBookingPromotion?.discountPercent || 5} onChange={(event) => setPromotionField('discountPercent', Number(event.target.value))} className={`${inputClass} mt-2`} /><span className="mt-1 block text-[11px] text-blue-100/40">percent, capped at 30%</span></label>
+        </div>
+      </section>
       <div className="mt-5 flex justify-end">
         <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-gold px-5 py-3 text-sm font-black text-black disabled:opacity-50">
           {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{saving ? 'Saving...' : 'Save configuration'}
@@ -260,7 +294,7 @@ function SuggestionsTab() {
     <div>
       <Notice error={error} />
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-black text-white">AI suggestions</h2><p className="text-sm text-blue-100/55">Review proposed prices generated in semi-auto mode.</p></div><label><span className="mb-1 block text-xs font-bold text-blue-100/50">Status</span><select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}><option value="">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="expired">Expired</option></select></label></div>
-      {loading ? <LoadingState /> : <div className="overflow-x-auto rounded-2xl border border-white/10"><table className="w-full text-left text-sm"><thead className="bg-white/5 text-xs uppercase text-blue-100/50"><tr><th className="p-4">Type</th><th>Price</th><th>Demand</th><th>Status</th><th>Valid until</th><th className="pr-4 text-right">Actions</th></tr></thead><tbody>{items.map((item) => <tr key={item._id} className="border-t border-white/10 text-white"><td className="p-4 capitalize">{item.priceType}</td><td><span className="text-white/40 line-through">{money(item.basePrice)}</span><span className="ml-2 font-black text-gold">{money(item.suggestedPrice)}</span></td><td>{item.busynessScore}/100 <span className="capitalize text-blue-100/50">· {item.level}</span></td><td className={`capitalize font-bold ${statusTone[item.status]}`}>{item.status}</td><td>{new Date(item.validUntil).toLocaleString('vi-VN')}</td><td className="pr-4"><div className="flex justify-end gap-2"><button disabled={item.status !== 'pending'} onClick={() => review(item, 'approve')} className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300 disabled:opacity-30">Approve</button><button disabled={item.status !== 'pending'} onClick={() => review(item, 'reject')} className="rounded-lg bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 disabled:opacity-30">Reject</button></div></td></tr>)}</tbody></table>{items.length === 0 && <p className="p-8 text-center text-blue-100/45">No suggestions found.</p>}</div>}
+      {loading ? <LoadingState /> : <div className="overflow-x-auto rounded-2xl border border-white/10"><table className="w-full text-left text-sm"><thead className="bg-white/5 text-xs uppercase text-blue-100/50"><tr><th className="p-4">Type</th><th>Target</th><th>Price</th><th>Demand</th><th>Status</th><th>Valid until</th><th className="pr-4 text-right">Actions</th></tr></thead><tbody>{items.map((item) => <tr key={item._id} className="border-t border-white/10 text-white"><td className="p-4 capitalize">{item.priceType}</td><td><div className="font-bold">{item.targetDate} · {String(item.targetHour ?? 0).padStart(2, '0')}:00</div><div className="mt-0.5 text-xs text-blue-100/45">{item.floorId?.name || `Floor ${item.floorId?.floorNumber || '—'}`}</div></td><td><span className="text-white/40 line-through">{money(item.basePrice)}</span><span className="ml-2 font-black text-gold">{money(item.suggestedPrice)}</span></td><td>{item.busynessScore}/100 <span className="capitalize text-blue-100/50">· {item.level}</span></td><td className={`capitalize font-bold ${statusTone[item.status]}`}>{item.status}</td><td>{new Date(item.validUntil).toLocaleString('vi-VN')}</td><td className="pr-4"><div className="flex justify-end gap-2"><button disabled={item.status !== 'pending'} onClick={() => review(item, 'approve')} className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-300 disabled:opacity-30">Approve</button><button disabled={item.status !== 'pending'} onClick={() => review(item, 'reject')} className="rounded-lg bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 disabled:opacity-30">Reject</button></div></td></tr>)}</tbody></table>{items.length === 0 && <p className="p-8 text-center text-blue-100/45">No suggestions found.</p>}</div>}
     </div>
   );
 }

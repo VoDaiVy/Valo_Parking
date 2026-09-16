@@ -237,8 +237,130 @@ test('semi-auto mode keeps base price until an approved suggestion exists', asyn
   }
 });
 
+test('dynamic pricing is neutral outside the configured forecast horizon', async () => {
+  const originalFindOne = DynamicPricingConfig.findOne;
+  DynamicPricingConfig.findOne = () => ({
+    lean: async () => ({
+      isEnabled: true,
+      pricingMode: 'auto',
+      forecastHorizonHours: 24,
+      earlyBookingPromotion: { isEnabled: false },
+    }),
+  });
+  try {
+    const result = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'hourly',
+      basePrice: 10000,
+      date: '2099-01-01',
+      hour: 10,
+      durationMinutes: 60,
+      floorId: new mongoose.Types.ObjectId(),
+      busynessScore: 95,
+    });
+    assert.equal(result.multiplier, 1);
+    assert.equal(result.adjustedPrice, 10000);
+    assert.equal(result.isDynamicPricingEligible, false);
+    assert.equal(result.pricingReason, 'OUTSIDE_FORECAST_HORIZON');
+  } finally {
+    DynamicPricingConfig.findOne = originalFindOne;
+  }
+});
+
+test('early booking promotion remains separate from the dynamic multiplier', async () => {
+  const originalFindOne = DynamicPricingConfig.findOne;
+  DynamicPricingConfig.findOne = () => ({
+    lean: async () => ({
+      isEnabled: true,
+      pricingMode: 'auto',
+      forecastHorizonHours: 24,
+      earlyBookingPromotion: { isEnabled: true, minimumLeadHours: 72, discountPercent: 10 },
+    }),
+  });
+  try {
+    const result = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'hourly',
+      basePrice: 10000,
+      date: '2099-01-01',
+      hour: 10,
+      durationMinutes: 60,
+    });
+    assert.equal(result.multiplier, 1);
+    assert.equal(result.promotionMultiplier, 0.9);
+    assert.equal(result.effectiveMultiplier, 0.9);
+    assert.equal(result.adjustedPrice, 9000);
+    assert.equal(result.promotion.type, 'EARLY_BOOKING_DISCOUNT');
+    const shortResult = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'hourly',
+      basePrice: 10000,
+      date: '2099-01-01',
+      hour: 10,
+      durationMinutes: 30,
+    });
+    assert.equal(shortResult.multiplier, 1);
+    assert.equal(shortResult.promotionMultiplier, 1);
+    assert.equal(shortResult.adjustedPrice, 10000);
+  } finally {
+    DynamicPricingConfig.findOne = originalFindOne;
+  }
+});
+
+test('hourly discounts require at least 60 minutes while peak surcharges remain eligible', async () => {
+  const originalFindOne = DynamicPricingConfig.findOne;
+  const originalRuleFind = PricingRule.find;
+  DynamicPricingConfig.findOne = () => ({
+    lean: async () => ({
+      isEnabled: true,
+      pricingMode: 'auto',
+      forecastHorizonHours: 24,
+      earlyBookingPromotion: { isEnabled: false },
+    }),
+  });
+  try {
+    PricingRule.find = () => ({
+      lean: async () => [{ minScore: 0, maxScore: 100, multiplier: 0.8, isActive: true }],
+    });
+    const shortDiscount = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'hourly', basePrice: 10000, busynessScore: 20, durationMinutes: 30,
+    });
+    const fullHourDiscount = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'hourly', basePrice: 10000, busynessScore: 20, durationMinutes: 60,
+    });
+    assert.equal(shortDiscount.multiplier, 1);
+    assert.equal(shortDiscount.adjustedPrice, 10000);
+    assert.equal(shortDiscount.pricingReason, 'DISCOUNT_REQUIRES_60_MINUTES');
+    assert.equal(fullHourDiscount.multiplier, 0.8);
+    assert.equal(fullHourDiscount.adjustedPrice, 8000);
+
+    PricingRule.find = () => ({
+      lean: async () => [{ minScore: 0, maxScore: 100, multiplier: 1.2, isActive: true }],
+    });
+    const shortSurcharge = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'hourly', basePrice: 10000, busynessScore: 90, durationMinutes: 30,
+    });
+    assert.equal(shortSurcharge.multiplier, 1.2);
+    assert.equal(shortSurcharge.adjustedPrice, 12000);
+  } finally {
+    DynamicPricingConfig.findOne = originalFindOne;
+    PricingRule.find = originalRuleFind;
+  }
+});
+
+test('pricing suggestion schema requires date, hour, and floor scope', async () => {
+  const suggestion = new PricingSuggestion({
+    priceType: 'hourly',
+    basePrice: 10000,
+    suggestedPrice: 12000,
+    multiplier: 1.2,
+    busynessScore: 80,
+    level: 'peak',
+    validUntil: new Date(Date.now() + 60000),
+  });
+  await assert.rejects(suggestion.validate(), /targetDate|targetHour|floorId/);
+});
+
 test('pricing current query validation reports invalid date and hour', () => {
   assert.match(pricingController.validateCurrentQuery({ date: '2026-02-30' }), /valid calendar date/);
   assert.match(pricingController.validateCurrentQuery({ hour: '24' }), /0 to 23/);
+  assert.match(pricingController.validateCurrentQuery({ durationMinutes: '0' }), /positive integer/);
   assert.equal(pricingController.validateCurrentQuery({ date: '2026-09-14', hour: '0' }), null);
 });

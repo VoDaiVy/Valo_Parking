@@ -14,7 +14,9 @@ export default function AIBusynessForecast({
   vehicleType = 'car',
   floorId,
   onSelectHour,
-  compact = false,
+  canSelectHour = true,
+  isHourSelectable,
+  selectionDisabledReason = '',
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23,8 +25,12 @@ export default function AIBusynessForecast({
 
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
-    setError(null);
+    const loadingTimer = setTimeout(() => {
+      if (isMounted) {
+        setLoading(true);
+        setError(null);
+      }
+    }, 0);
 
     getOccupancyForecast({
       date: selectedDate,
@@ -49,11 +55,15 @@ export default function AIBusynessForecast({
 
     return () => {
       isMounted = false;
+      clearTimeout(loadingTimer);
     };
   }, [selectedDate, selectedHour, vehicleType, floorId]);
 
+  const hoveredHourIsEnabled = hoveredHour !== null
+    && canSelectHour
+    && (!isHourSelectable || isHourSelectable(hoveredHour));
   const activeHour =
-    hoveredHour !== null
+    hoveredHourIsEnabled
       ? hoveredHour
       : selectedHour !== undefined && selectedHour !== null
       ? Number(selectedHour)
@@ -161,7 +171,7 @@ export default function AIBusynessForecast({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h4 className="text-sm font-extrabold text-gray-900 dark:text-white tracking-tight">
-                AI 24h Occupancy &amp; Peak Times Forecast
+                AI Occupancy &amp; Peak Times Forecast
               </h4>
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gold/15 text-yellow-800 dark:text-gold border border-gold/30">
                 Popular Times
@@ -171,9 +181,9 @@ export default function AIBusynessForecast({
               Forecast based on real historical traffic for {data.dayOfWeekName} ({data.date})
             </p>
           </div>
-        </div>
+      </div>
 
-        {/* Peak windows badge */}
+      {/* Peak windows badge */}
         {data.peakWindows && data.peakWindows.length > 0 && (
           <div className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300">
             <TrendingUp size={13} className="text-rose-500 shrink-0" />
@@ -182,25 +192,53 @@ export default function AIBusynessForecast({
         )}
       </div>
 
+      {data.isReferenceOnly && (
+        <div className="relative mb-3 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-extrabold">Reference forecast only</p>
+            <p className="mt-0.5 text-[11px] font-medium opacity-80">
+              This booking is outside the {data.forecastHorizonHours || 24}-hour pricing horizon. Dynamic Pricing is not applied; the chart is for planning only.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── 24h Interactive Bar Chart ── */}
       <div className="bg-gray-50 dark:bg-black/30 border border-gray-100 dark:border-white/5 rounded-xl p-3 sm:p-4 mb-3.5">
         <div className="flex items-end justify-between gap-1 h-24 sm:h-28 pt-4 px-1">
           {data.hourlyForecast.map((item) => {
             const isSelected = item.hour === activeHour;
+            const hourCanBeSelected = canSelectHour && (isHourSelectable ? isHourSelectable(item.hour) : true);
+            const isInteractiveSelected = isSelected && hourCanBeSelected;
             const barHeight = `${Math.max(12, item.busynessScore)}%`;
 
             return (
               <div
                 key={item.hour}
-                onClick={() => onSelectHour && onSelectHour(item.hour)}
-                onMouseEnter={() => setHoveredHour(item.hour)}
+                onClick={() => hourCanBeSelected && onSelectHour && onSelectHour(item.hour)}
+                onKeyDown={(event) => {
+                  if (hourCanBeSelected && onSelectHour && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    onSelectHour(item.hour);
+                  }
+                }}
+                onMouseEnter={() => {
+                  if (hourCanBeSelected) setHoveredHour(item.hour);
+                }}
                 onMouseLeave={() => setHoveredHour(null)}
-                className={`group relative flex-1 flex flex-col items-center justify-end h-full cursor-pointer transition-all duration-150 ${
-                  isSelected ? 'scale-110 z-10' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                role="button"
+                tabIndex={hourCanBeSelected ? 0 : -1}
+                aria-disabled={!hourCanBeSelected}
+                aria-label={`${item.timeLabel}: ${item.busynessScore}% busy${hourCanBeSelected ? ', select this start time' : ', unavailable for this booking range'}`}
+                className={`group relative flex-1 flex flex-col items-center justify-end h-full transition-all duration-150 ${
+                  hourCanBeSelected ? 'cursor-pointer' : 'cursor-not-allowed'
+                } ${
+                  isInteractiveSelected ? 'scale-110 z-10' : hourCanBeSelected ? 'hover:scale-105 opacity-80 hover:opacity-100' : 'opacity-40 grayscale'
                 }`}
               >
                 {/* Floating tooltip only for selected bar */}
-                {isSelected && (
+                {isInteractiveSelected && (
                   <div className="absolute -top-9 z-20 pointer-events-none px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-lg bg-gray-900 text-white dark:bg-gold dark:text-charcoal scale-100 opacity-100 transition-all duration-150">
                     {item.timeLabel}: {item.busynessScore}% busy
                   </div>
@@ -211,12 +249,12 @@ export default function AIBusynessForecast({
                   style={{ height: barHeight }}
                   className={`w-full max-w-[14px] rounded-t-md transition-all duration-300 ${getBarColor(
                     item.busynessScore,
-                    isSelected
+                    isInteractiveSelected
                   )}`}
                 />
 
                 {/* Selected active indicator */}
-                {isSelected && (
+                {isInteractiveSelected && (
                   <div className="absolute -bottom-1.5 w-1.5 h-1.5 rounded-full bg-gold animate-ping" />
                 )}
               </div>
@@ -276,6 +314,15 @@ export default function AIBusynessForecast({
         </div>
       )}
 
+      {!canSelectHour && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <p className="text-[11px] font-semibold leading-relaxed">
+            {selectionDisabledReason || 'Select a valid start and end time on the same day within the next 24 hours to choose an hour from this chart.'}
+          </p>
+        </div>
+      )}
+
       {/* Legend & Advice */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-3 pt-2 px-1">
         <div className="flex items-center gap-3">
@@ -290,7 +337,7 @@ export default function AIBusynessForecast({
           </span>
         </div>
         <span className="hidden sm:inline-block text-gray-500 dark:text-gray-400 italic">
-          💡 Click on an hourly bar to select booking time
+          {canSelectHour ? 'Click on an hourly bar to select booking time' : 'Hour selection is disabled for this booking range'}
         </span>
       </div>
     </div>

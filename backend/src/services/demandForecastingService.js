@@ -3,6 +3,7 @@ const Session = require('../models/Session');
 const Booking = require('../models/Booking');
 const Slot = require('../models/Slot');
 const Subscription = require('../models/Subscription');
+const { buildForecastHorizonMetadata } = require('../utils/pricingHorizon');
 
 /**
  * Baseline hourly curve (used if DB has 0 historical sessions)
@@ -92,6 +93,7 @@ async function getOccupancyForecast({
   floorId,
   timeframe = 'day',
   selectedIndex,
+  forecastHorizonHours = 24,
 } = {}) {
   const normalizedTimeframe = ['day', '24h', 'week', 'month', 'year'].includes(timeframe)
     ? timeframe === '24h'
@@ -151,12 +153,16 @@ async function getOccupancyForecast({
     let totalHistoricalSessionsFound = 0;
 
     if (isDbConnected) {
+      const historyMatch = {
+        status: { $in: ['completed', 'active'] },
+        checkInTime: { $exists: true, $ne: null },
+      };
+      if (floorId && mongoose.Types.ObjectId.isValid(floorId)) {
+        historyMatch.floorId = new mongoose.Types.ObjectId(floorId);
+      }
       const sessionStats = await Session.aggregate([
         {
-          $match: {
-            status: { $in: ['completed', 'active'] },
-            checkInTime: { $exists: true, $ne: null },
-          },
+          $match: historyMatch,
         },
         {
           $project: {
@@ -187,17 +193,18 @@ async function getOccupancyForecast({
     const hourlyBookings = Array(24).fill(0);
     if (isDbConnected) {
       const bookings = await Booking.find({
-        startTime: { $gte: startOfDay, $lte: endOfDay },
-        status: { $in: ['confirmed', 'paid', 'active', 'holding_slot', 'completed'] },
+        scheduledStart: { $gte: startOfDay, $lte: endOfDay },
+        status: { $in: ['CONFIRMED', 'PAID', 'ACTIVE', 'HOLDING_SLOT', 'COMPLETED'] },
+        ...(floorId ? { floorId } : {}),
       })
-        .select('startTime endTime')
+        .select('scheduledStart scheduledEnd')
         .lean()
         .catch(() => []);
 
       bookings.forEach((b) => {
-        if (b.startTime) {
-          const startH = new Date(b.startTime).getHours();
-          const endH = b.endTime ? new Date(b.endTime).getHours() : startH + 1;
+        if (b.scheduledStart) {
+          const startH = new Date(b.scheduledStart).getHours();
+          const endH = b.scheduledEnd ? new Date(b.scheduledEnd).getHours() : startH + 1;
           for (let h = startH; h <= Math.min(23, endH); h++) {
             hourlyBookings[h] = (hourlyBookings[h] || 0) + 1;
           }
@@ -278,6 +285,11 @@ async function getOccupancyForecast({
     });
 
     return {
+      ...buildForecastHorizonMetadata({
+        date: targetDate.toISOString().split('T')[0],
+        hour: currentSelectedHour,
+        horizonHours: forecastHorizonHours,
+      }),
       timeframe: 'day',
       date: targetDate.toISOString().split('T')[0],
       dayOfWeekName: DAY_NAMES[dayOfWeek],

@@ -32,6 +32,7 @@ const {
   transitionPendingBookingToPaid,
 } = require('../services/paidBookingPolicyService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const { bangkokDateParts } = require('../utils/pricingHorizon');
 const { emitToUser } = require('../sockets/notificationSocket');
 const {
   buildBookingQrPayload,
@@ -602,12 +603,15 @@ exports.createBooking = async (req, res, next) => {
       adjustedPrice: pricing.finalTotal,
     };
     try {
+      const pricingTarget = bangkokDateParts(start);
       dynamicPricing = await dynamicPricingEngine.getEffectivePrice({
-        date: start.toISOString().slice(0, 10),
-        hour: start.getHours(),
+        date: pricingTarget.date,
+        hour: pricingTarget.hour,
+        floorId,
+        durationMinutes: Math.round((end.getTime() - start.getTime()) / 60000),
         priceType: 'hourly',
       });
-      prepaidAmount = Math.ceil((pricing.finalTotal * (dynamicPricing.multiplier || 1)) / 1000) * 1000;
+      prepaidAmount = Math.ceil((pricing.finalTotal * (dynamicPricing.effectiveMultiplier || 1)) / 1000) * 1000;
     } catch (dynamicError) {
       console.error('[DynamicPricing] Booking price fallback:', dynamicError.message);
       prepaidAmount = pricing.finalTotal;
@@ -635,6 +639,8 @@ exports.createBooking = async (req, res, next) => {
       status: 'PENDING',
       paymentBreakdownSnapshot: {
         dynamicMultiplier: dynamicPricing.multiplier || 1,
+        promotionMultiplier: dynamicPricing.promotionMultiplier || 1,
+        promotion: dynamicPricing.promotion || null,
         busynessScore: dynamicPricing.busynessScore,
         adjustedTotal: prepaidAmount,
       },
@@ -2041,13 +2047,14 @@ exports.quoteBulkBooking = async (req, res, next) => {
       }
       const dynamicResult = pricing.finalTotal > 0
         ? await dynamicPricingEngine.getEffectivePrice({
-          date: start.toISOString().slice(0, 10),
-          hour: start.getHours(),
+          ...bangkokDateParts(start),
+          floorId,
+          durationMinutes: Math.round((end.getTime() - start.getTime()) / 60000),
           priceType: 'hourly',
         })
         : { multiplier: 1, busynessScore: null, level: null };
       const adjustedParkingTotal = Math.floor(
-        (pricing.finalTotal * (dynamicResult.multiplier || 1)) / 1000
+        (pricing.finalTotal * (dynamicResult.effectiveMultiplier || 1)) / 1000
       ) * 1000;
       
       // Services pricing
@@ -2083,6 +2090,8 @@ exports.quoteBulkBooking = async (req, res, next) => {
         pricingPreview: {
           ...pricing,
           dynamicMultiplier: dynamicResult.multiplier || 1,
+          promotionMultiplier: dynamicResult.promotionMultiplier || 1,
+          promotion: dynamicResult.promotion || null,
           busynessScore: dynamicResult.busynessScore,
           level: dynamicResult.level,
           adjustedTotal: adjustedParkingTotal,
@@ -2325,13 +2334,14 @@ exports.createBulkBooking = async (req, res, next) => {
       }
       const dynamicResult = pricing.finalTotal > 0
         ? await dynamicPricingEngine.getEffectivePrice({
-          date: start.toISOString().slice(0, 10),
-          hour: start.getHours(),
+          ...bangkokDateParts(start),
+          floorId,
+          durationMinutes: Math.round((end.getTime() - start.getTime()) / 60000),
           priceType: 'hourly',
         })
         : { multiplier: 1, busynessScore: null, level: null };
       const adjustedParkingTotal = Math.floor(
-        (pricing.finalTotal * (dynamicResult.multiplier || 1)) / 1000
+        (pricing.finalTotal * (dynamicResult.effectiveMultiplier || 1)) / 1000
       ) * 1000;
       
       // Services pricing
@@ -2381,6 +2391,8 @@ exports.createBulkBooking = async (req, res, next) => {
         parkingAmount: adjustedParkingTotal,
         serviceAmount: chargeableServicesTotal,
         dynamicMultiplier: dynamicResult.multiplier || 1,
+        promotionMultiplier: dynamicResult.promotionMultiplier || 1,
+        promotion: dynamicResult.promotion || null,
         busynessScore: dynamicResult.busynessScore,
         adjustedTotal: adjustedParkingTotal,
         paymentMethod: 'wallet',

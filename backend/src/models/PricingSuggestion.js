@@ -4,6 +4,9 @@ const pricingSuggestionSchema = new mongoose.Schema(
   {
     priceType: { type: String, enum: ['hourly', 'package'], required: true },
     packageId: { type: mongoose.Schema.Types.ObjectId, ref: 'TicketPackage', default: null },
+    targetDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+    targetHour: { type: Number, required: true, min: 0, max: 23 },
+    floorId: { type: mongoose.Schema.Types.ObjectId, ref: 'ParkingFloor', required: true },
     basePrice: { type: Number, required: true, min: 0 },
     suggestedPrice: { type: Number, required: true, min: 0 },
     multiplier: { type: Number, required: true, min: 0.5, max: 3.0 },
@@ -26,7 +29,7 @@ const pricingSuggestionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-pricingSuggestionSchema.index({ priceType: 1, packageId: 1, status: 1, createdAt: -1 });
+pricingSuggestionSchema.index({ priceType: 1, packageId: 1, targetDate: 1, targetHour: 1, floorId: 1, status: 1, createdAt: -1 });
 pricingSuggestionSchema.index({ status: 1, validUntil: 1 });
 
 module.exports = mongoose.model('PricingSuggestion', pricingSuggestionSchema);
