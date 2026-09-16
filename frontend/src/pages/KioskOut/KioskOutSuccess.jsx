@@ -1,14 +1,62 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
+import { useSocket } from '../../hooks/useSocket';
+import { API_BASE } from '../../services/api';
 
 export default function KioskOutSuccess({ onFinish }) {
+  const socket = useSocket();
+  const hasFinishedRef = useRef(false);
+
   useEffect(() => {
-    // Auto return to welcome after 5 seconds
-    const timer = setTimeout(() => {
+    let hasSeenOpen = false;
+
+    const handleDone = () => {
+      if (hasFinishedRef.current) return;
+      hasFinishedRef.current = true;
       onFinish();
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [onFinish]);
+    };
+
+    // 1. Polling trạng thái đóng của Barrier EXIT_1
+    const checkBarrier = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=EXIT_1`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          if (data.data.open) {
+            hasSeenOpen = true;
+          } else if (hasSeenOpen && !data.data.open) {
+            handleDone();
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    const interval = setInterval(checkBarrier, 500);
+
+    // 2. Lắng nghe qua Socket.IO (chỉ nhận sự kiện của cổng EXIT_1)
+    const handleBarrierControl = (data) => {
+      if (data && (data.gate === 'EXIT_1' || !data.gate)) {
+        if (data.open) {
+          hasSeenOpen = true;
+        } else if (hasSeenOpen && !data.open) {
+          handleDone();
+        }
+      }
+    };
+
+    if (socket) {
+      socket.on('gate:barrier_control', handleBarrierControl);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.off('gate:barrier_control', handleBarrierControl);
+      }
+    };
+  }, [onFinish, socket]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-black relative overflow-hidden">
@@ -26,16 +74,14 @@ export default function KioskOutSuccess({ onFinish }) {
         </h1>
         
         <p className="text-xl text-yellow-400 font-semibold mb-8 flex items-center gap-2">
-          <ShieldCheck /> BARRIER OPENING
+          <ShieldCheck /> BARRIER OPEN
         </p>
 
         <p className="text-gray-400 text-lg">
-          Have a safe trip!
+          Vui lòng lái xe qua cổng. Chúc quý khách thượng lộ bình an!
         </p>
       </div>
-
-      {/* Progress Bar */}
-      <div className="absolute bottom-0 left-0 h-1 bg-yellow-500 animate-[scan_5s_linear_forwards]" style={{ width: '100%' }} />
     </div>
   );
 }
+

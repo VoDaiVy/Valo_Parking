@@ -21,8 +21,7 @@ router.get('/active-for-map', protect, authorize('staff', 'admin'), bookingContr
 router.get('/all', protect, authorize('staff', 'admin'), bookingController.getAllBookings);
 router.get(
   '/available-slots',
-  protect,
-  authorize('customer', 'staff', 'admin'),
+  softProtect,
   bookingController.getAvailableSlots
 );
 

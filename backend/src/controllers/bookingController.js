@@ -30,6 +30,10 @@ const {
   transitionPendingBookingToPaid,
 } = require('../services/paidBookingPolicyService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const {
+  ACTIVE_BOOKING_STATUSES: BOOKING_STATUSES_THAT_BLOCK_SLOT,
+  buildVehicleBookingOverlapQuery,
+} = require('../utils/bookingVehicleOverlap');
 const { emitToUser } = require('../sockets/notificationSocket');
 const {
   buildBookingQrPayload,
@@ -38,8 +42,6 @@ const {
 const {
   findActiveSlotOwnership,
 } = require('../services/membershipSlotOwnershipService');
-
-const BOOKING_STATUSES_THAT_BLOCK_SLOT = ['PAID', 'ACTIVE', 'PAUSED'];
 
 const normalizeSlotCode = (slotCode = '') => String(slotCode).trim().toUpperCase();
 
@@ -1159,7 +1161,7 @@ exports.getMyBookings = async (req, res, next) => {
         { userId: req.user._id },
         { licensePlate: { $in: myVehicles } }
       ]
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).populate('floorId', 'name floorNumber');
     res.status(200).json({ success: true, data: bookings });
   } catch (error) {
     console.error('Error getMyBookings:', error);
@@ -1921,16 +1923,12 @@ exports.quoteBulkBooking = async (req, res, next) => {
       }
 
       // Check overlapping for vehicle
-      const vehicleQuery = vehicle._id 
-        ? { vehicleId: vehicle._id } 
-        : { licensePlate: vehicle.licensePlate };
-        
-      const overlappingBooking = await Booking.findOne({
-        ...vehicleQuery,
-        status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] },
-        scheduledStart: { $lt: end },
-        scheduledEnd: { $gt: start }
-      });
+      const overlappingBooking = await Booking.findOne(buildVehicleBookingOverlapQuery({
+        vehicleId: vehicle._id,
+        licensePlate: vehicle.licensePlate,
+        start,
+        end,
+      }));
       if (overlappingBooking) throw new Error(`Vehicle ${vehicle.licensePlate} already has another booking overlapping with this time`);
 
       // Check slot occupation
@@ -2115,7 +2113,8 @@ exports.createBulkBooking = async (req, res, next) => {
 
       // Check internal overlap for vehicle within the same request
       const internalVehicleOverlap = internalVehicleReservations.find(res => {
-        const isSameVehicle = vehicle._id ? res.vehicleId === vehicle._id.toString() : res.licensePlate === vehicle.licensePlate;
+        const isSameVehicle = (vehicle._id && res.vehicleId === vehicle._id.toString())
+          || res.licensePlate === normalizeLicensePlate(vehicle.licensePlate);
         return isSameVehicle && res.start < end && res.end > start;
       });
       if (internalVehicleOverlap) throw new Error(`Vehicle ${vehicle.licensePlate} has overlapping bookings within the same cart`);
@@ -2135,16 +2134,12 @@ exports.createBulkBooking = async (req, res, next) => {
       internalSlotReservations.push({ parkingSlot, start, end });
 
       // Check overlapping for vehicle in Database
-      const vehicleQuery = vehicle._id 
-        ? { vehicleId: vehicle._id } 
-        : { licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate };
-
-      const overlappingBooking = await Booking.findOne({
-        ...vehicleQuery,
-        status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] },
-        scheduledStart: { $lt: end },
-        scheduledEnd: { $gt: start }
-      }).session(session);
+      const overlappingBooking = await Booking.findOne(buildVehicleBookingOverlapQuery({
+        vehicleId: vehicle._id,
+        licensePlate: vehicle.licensePlate,
+        start,
+        end,
+      })).session(session);
       if (overlappingBooking) throw new Error(`Vehicle ${vehicle.licensePlate} already has another booking overlapping with this time`);
 
       // Check slot occupation
