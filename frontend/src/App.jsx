@@ -43,6 +43,7 @@ import StaffAccountManagement from "./pages/Staff/AccountManagement";
 import NotificationManagement from "./pages/Staff/NotificationManagement";
 import LiveGridMonitor from "./pages/Staff/LiveGridMonitor";
 import BookingManagement from "./pages/Staff/BookingManagement";
+import GateControl from "./pages/Staff/GateControl";
 
 // Pages – Customer
 import CustomerProfile from "./pages/Customer/CustomerProfile";
@@ -197,6 +198,7 @@ export default function App() {
               element={<CustomerNotifications contextRole="staff" />}
             />
             <Route path="/staff/live-grid" element={<LiveGridMonitor />} />
+            <Route path="/staff/gate" element={<GateControl />} />
             <Route path="/staff/parking-lots" element={<ParkingLots />} />
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
