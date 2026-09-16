@@ -32,6 +32,9 @@ function setupNotificationSocket(io) {
     if (socket.userRole === 'admin') {
       const currentAdmin = await User.exists({ _id: userId, role: 'admin', status: true }).catch(() => null);
       if (currentAdmin) socket.join('valo-ai-admins');
+    } else if (socket.userRole === 'staff') {
+      const currentStaff = await User.exists({ _id: userId, role: 'staff', status: true }).catch(() => null);
+      if (currentStaff) socket.join('valo-ai-staffs');
     }
     console.log(`🔌 Socket connected: ${userId} (${socket.id})`);
 

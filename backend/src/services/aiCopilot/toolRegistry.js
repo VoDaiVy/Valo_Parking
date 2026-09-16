@@ -85,7 +85,7 @@ const tools = [
       floorId: { type: 'string', description: 'ObjectId tầng, tuỳ chọn.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
     } },
-    passArgs, async (p) => readTools.getActiveSessions(p)),
+    passArgs, async (p, actorRole) => readTools.getActiveSessions(p, actorRole)),
 
   define('search_sessions',
     'Tìm kiếm phiên xe theo biển số, trạng thái, ngày, hoặc userId. Nếu không truyền tham số nào, trả các phiên hôm nay (Asia/Ho_Chi_Minh).',
@@ -97,31 +97,41 @@ const tools = [
       userId: { type: 'string', description: 'ObjectId người dùng.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
     } },
-    passArgs, async (p) => readTools.searchSessions(p)),
+    passArgs, async (p, actorRole) => readTools.searchSessions(p, actorRole)),
 
   define('get_session_detail',
     'Chi tiết một phiên xe cụ thể: biển số, trạng thái, tầng, người dùng, thời gian check-in/out, giá.',
     { type: 'object', properties: {
       sessionId: { type: 'string', description: 'ObjectId của phiên cần xem.' },
     }, required: ['sessionId'] },
-    passArgs, async (p) => readTools.getSessionDetail(p)),
+    passArgs, async (p, actorRole) => readTools.getSessionDetail(p, actorRole)),
 
   define('search_users',
-    'Tìm người dùng theo tên (username), email, hoặc vai trò. Không trả password/token.',
+    'Tìm người dùng theo tên, email, hoặc vai trò. Trả về cấu trúc { items, total }. Khi được hỏi có bao nhiêu/số lượng, hãy lấy giá trị từ trường "total", TUYỆT ĐỐI KHÔNG đếm mảng "items" vì danh sách này đã bị giới hạn (limit).',
     { type: 'object', properties: {
       query: { type: 'string', description: 'Từ khoá tìm theo username hoặc email.' },
       role: { type: 'string', enum: ['guest', 'customer', 'staff', 'admin'], description: 'Lọc theo vai trò.' },
       status: { type: 'boolean', description: 'true=active, false=inactive.' },
-      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10).' },
+      limit: { type: 'number', description: 'Số kết quả tối đa cho mảng items (mặc định 10).' },
     } },
-    passArgs, async (p) => readTools.searchUsers(p)),
+    passArgs, async (p, actorRole) => readTools.searchUsers(p, actorRole)),
 
   define('get_user_detail',
     'Thông tin profile/account an toàn của một người dùng cụ thể. Không trả password/token/OTP.',
     { type: 'object', properties: {
       userId: { type: 'string', description: 'ObjectId của người dùng.' },
     }, required: ['userId'] },
-    passArgs, async (p) => readTools.getUserDetail(p)),
+    passArgs, async (p, actorRole) => readTools.getUserDetail(p, actorRole)),
+
+  define('search_notification_recipients',
+    'Chỉ dùng để chọn người nhận khi Staff chuẩn bị SEND_NOTIFICATION. Tìm tài khoản active theo username/email với cùng quyền của Notification Management. Nếu có nhiều kết quả và không có exactMatchUserId, phải hỏi Staff chọn lại; không được tự đoán.',
+    { type: 'object', properties: {
+      query: { type: 'string', description: 'Username hoặc email cần tìm, từ 1 đến 100 ký tự.' },
+    }, required: ['query'] },
+    passArgs, async (p, actorRole) => {
+      if (actorRole !== 'staff') throw new Error('Công cụ này chỉ dành cho Staff Notification Management.');
+      return readTools.searchNotificationRecipients(p, actorRole);
+    }),
 
   define('search_vehicles',
     'Tìm xe theo biển số, chủ xe (userId), loại xe, hoặc trạng thái duyệt.',
@@ -132,7 +142,7 @@ const tools = [
       status: { type: 'string', enum: ['pending', 'approved', 'rejected'], description: 'Trạng thái duyệt.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10).' },
     } },
-    passArgs, async (p) => readTools.searchVehicles(p)),
+    passArgs, async (p, actorRole) => readTools.searchVehicles(p, actorRole)),
 
   define('search_bookings',
     'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Nếu không có filter, trả booking gần nhất.',
@@ -144,14 +154,14 @@ const tools = [
       endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
     } },
-    passArgs, async (p) => readTools.searchBookings(p)),
+    passArgs, async (p, actorRole) => readTools.searchBookings(p, actorRole)),
 
   define('get_booking_detail',
     'Chi tiết một booking cụ thể: slot, tầng, người đặt, xe, thanh toán, trạng thái.',
     { type: 'object', properties: {
       bookingId: { type: 'string', description: 'ObjectId của booking.' },
     }, required: ['bookingId'] },
-    passArgs, async (p) => readTools.getBookingDetail(p)),
+    passArgs, async (p, actorRole) => readTools.getBookingDetail(p, actorRole)),
 
   define('get_parking_floors',
     'Danh sách tất cả tầng đỗ xe với tên và số tầng. Dùng để resolve floorId trước khi xem slot.',
@@ -165,7 +175,7 @@ const tools = [
       slotType: { type: 'string', description: 'Loại slot (hourly, monthly, ...).' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 50).' },
     } },
-    passArgs, async (p) => readTools.getParkingSlots(p)),
+    passArgs, async (p, actorRole) => readTools.getParkingSlots(p, actorRole)),
 
   define('search_transactions',
     'Tìm giao dịch ví theo userId, loại (TOP_UP/PAYMENT/REFUND/TRANSFER_OUT/TRANSFER_IN/TRANSFER_FEE), trạng thái, khoảng ngày.',
@@ -177,7 +187,7 @@ const tools = [
       endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
     } },
-    passArgs, async (p) => readTools.searchTransactions(p)),
+    passArgs, async (p, actorRole) => readTools.searchTransactions(p, actorRole)),
 
   define('get_subscription_members',
     'Danh sách đăng ký/membership theo userId, packageId hoặc trạng thái. Mặc định trả active.',
@@ -187,14 +197,47 @@ const tools = [
       status: { type: 'string', enum: ['pending', 'active', 'expired', 'cancelled', 'failed'], description: 'Trạng thái đăng ký.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 15).' },
     } },
-    passArgs, async (p) => readTools.getSubscriptionMembers(p)),
+    passArgs, async (p, actorRole) => readTools.getSubscriptionMembers(p, actorRole)),
 ];
+const STAFF_TOOLS = [
+  'get_active_sessions',
+  'search_sessions',
+  'get_session_detail',
+  'search_bookings',
+  'get_booking_detail',
+  'get_parking_floors',
+  'get_parking_slots',
+  'get_parking_occupancy',
+  'get_subscription_members',
+  'search_users',
+  'get_user_detail',
+  'search_notification_recipients',
+  'search_vehicles'
+];
+const STAFF_ONLY_TOOLS = new Set(['search_notification_recipients']);
+
+function getToolsForRole(role) {
+  if (role === 'staff') {
+    return tools.filter(t => STAFF_TOOLS.includes(t.name));
+  }
+  return tools.filter((tool) => !STAFF_ONLY_TOOLS.has(tool.name));
+}
+
 const registry = new Map(tools.map((tool) => [tool.name, tool]));
-async function execute(name, args) {
+async function execute(name, args, actorRole = 'admin') {
   const tool = registry.get(name);
   if (!tool) throw new Error('Công cụ không nằm trong allowlist.');
+  
+  if (actorRole === 'staff' && !STAFF_TOOLS.includes(name)) {
+    throw new Error('Bạn không có quyền sử dụng công cụ này.');
+  }
+  if (actorRole !== 'staff' && STAFF_ONLY_TOOLS.has(name)) {
+    throw new Error('Công cụ này chỉ dành cho Staff Notification Management.');
+  }
+
   const params = tool.validate(args);
-  const data = await tool.run(params);
+  // Pass actorRole down to the tool run function
+  const data = await tool.run(params, actorRole);
   return { tool: name, source: name, timestamp: new Date().toISOString(), parameters: params, data };
 }
-module.exports = { tools, execute, validateDates };
+module.exports = { tools, getToolsForRole, execute, validateDates };

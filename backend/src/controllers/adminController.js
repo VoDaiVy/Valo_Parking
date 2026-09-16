@@ -55,25 +55,8 @@ const syncVehiclesForModel = async (brand, model, secureUrl) => {
 exports.searchUsers = async (req, res, next) => {
   try {
     const q = req.query.q || "";
-    const User = require("../models/User"); // Import here to avoid circular dependencies if any
-    const escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-    const filter = {
-      status: true,
-      ...(q
-        ? {
-          $or: [
-            { username: { $regex: escapedQuery, $options: "i" } },
-            { email: { $regex: escapedQuery, $options: "i" } },
-          ],
-        }
-        : {}),
-    };
-
-    const users = await User.find(filter)
-      .select("username email role status")
-      .limit(20)
-      .lean();
+    const notificationService = require("../services/notificationService");
+    const { items: users } = await notificationService.searchEligibleRecipients(q, 20);
 
     res.status(200).json({ success: true, data: users });
   } catch (err) {

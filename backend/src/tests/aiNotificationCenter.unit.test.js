@@ -39,7 +39,7 @@ function fakeStore() {
 test('floor full creates one open event per full period and rearms after recovery', async () => {
   const store = fakeStore();
   const emitted = [];
-  const app = { get: () => ({ to: () => ({ emit: (_, event) => emitted.push(event) }) }) };
+  const app = { get: () => ({ to: (room) => ({ emit: (_, event) => { if (room === 'valo-ai-admins') emitted.push(event); } }) }) };
   let available = 1;
   const snapshot = async () => [{ floorId: 'floor-1', name: 'Floor 1', capacity: 2, available }];
   try {
@@ -68,7 +68,7 @@ test('floor full creates one open event per full period and rearms after recover
 test('paid booking notification is idempotent and pending booking is ignored', async () => {
   const store = fakeStore();
   const emitted = [];
-  const app = { get: () => ({ to: () => ({ emit: (_, event) => emitted.push(event) }) }) };
+  const app = { get: () => ({ to: (room) => ({ emit: (_, event) => { if (room === 'valo-ai-admins') emitted.push(event); } }) }) };
   const booking = { _id: 'booking-1', status: 'PENDING', licensePlate: '51A-12345', parkingSlot: 'A01' };
   try {
     assert.equal(await notifyBookingPaid(booking, app), false);
@@ -98,7 +98,7 @@ test('booking notification failure does not escape the safe side effect', async 
 test('completed, credited booking refund notifies once; other payout states do not', async () => {
   const store = fakeStore();
   const emitted = [];
-  const app = { get: () => ({ to: () => ({ emit: (_, event) => emitted.push(event) }) }) };
+  const app = { get: () => ({ to: (room) => ({ emit: (_, event) => { if (room === 'valo-ai-admins') emitted.push(event); } }) }) };
   const transaction = { _id: 'refund-1', type: 'REFUND', status: 'COMPLETED', refSource: 'booking', refSourceId: 'booking-1', amount: 25000, createdAt: new Date() };
   const booking = { refundSettlements: [{ payoutStatus: 'credited', walletTransactionId: 'refund-1' }] };
   try {

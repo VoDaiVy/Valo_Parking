@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
-  type: { type: String, enum: ['MODIFY_PRICING', 'CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'APPROVE_VEHICLE', 'CREATE_POLICY_DRAFT', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'], required: true },
+  type: { type: String, enum: ['MODIFY_PRICING', 'CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'CREATE_POLICY_DRAFT', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'], required: true },
   payload: { type: mongoose.Schema.Types.Mixed, required: true },
   current: mongoose.Schema.Types.Mixed,
   evidence: { type: [mongoose.Schema.Types.Mixed], default: [] },

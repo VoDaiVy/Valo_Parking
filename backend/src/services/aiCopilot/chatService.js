@@ -1,6 +1,6 @@
 const { randomUUID } = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { tools, execute } = require('./toolRegistry');
+const { tools, getToolsForRole, execute } = require('./toolRegistry');
 const { createDraft } = require('./draftService');
 const AIAuditLog = require('../../models/AIAuditLog');
 
@@ -34,25 +34,34 @@ function classifyError(error, stage) {
 }
 function trace(stage, details = {}) { console.info('[VALO_AI_CHAT]', JSON.stringify({ stage, ...details })); }
 
-async function chat({ message, conversationId, adminUserId }) {
+async function chat({ message, conversationId, adminUserId, actorId, actorRole = 'admin' }) {
+  const currentActorId = actorId || adminUserId;
   if (typeof message !== 'string' || !message.trim() || message.length > 2000) { const error = new Error('Câu hỏi phải dài từ 1 đến 2000 ký tự.'); error.statusCode = 400; throw error; }
   const id = conversationId && /^[a-f\d-]{36}$/i.test(conversationId) ? conversationId : randomUUID();
-  const key = `${adminUserId}:${id}`;
+  const key = `${currentActorId}:${id}`;
   const saved = conversations.get(key);
   const history = saved && saved.expiresAt > Date.now() ? saved.messages : [];
   if (!process.env.GEMINI_API_KEY) return { type: 'error', message: 'VALO AI hiện chưa được cấu hình. Vui lòng thử lại sau.', evidence: [], suggestedActions: [], draft: null, conversationId: id };
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const vietnamNow = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction: [
-    `Thời điểm hiện tại tại Việt Nam (UTC+7): ${vietnamNow}. Khi Admin nói "hôm nay", "hôm qua" hoặc bất kỳ mốc thời gian tương đối nào, hãy tính theo ngày/giờ Việt Nam này, KHÔNG dùng UTC.`,
-    'Bạn là trợ lý Admin VALO. Hiểu tiếng Việt có dấu/không dấu, viết tắt như dt hn, co rui ro k, check ht và câu hỏi nối tiếp.',
+  const baseInstruction = [
+    `Thời điểm hiện tại tại Việt Nam (UTC+7): ${vietnamNow}. Khi người dùng nói "hôm nay", "hôm qua" hoặc bất kỳ mốc thời gian tương đối nào, hãy tính theo ngày/giờ Việt Nam này, KHÔNG dùng UTC.`,
+    actorRole === 'staff' 
+      ? 'Bạn là trợ lý Staff VALO. Nhiệm vụ của bạn là hỗ trợ tra cứu bãi đỗ, phiên xe và khách hàng. TỪ CHỐI các câu hỏi về tài chính, doanh thu, Admin, và các thao tác vượt quyền. Không bịa số liệu. Luôn hành xử đúng mực như một nhân viên bãi xe.'
+      : 'Bạn là trợ lý Admin VALO. Hiểu tiếng Việt có dấu/không dấu, viết tắt như dt hn, co rui ro k, check ht và câu hỏi nối tiếp.',
     'Chỉ dùng công cụ được cung cấp để biết số liệu. Không bịa dữ liệu, phần trăm, nguyên nhân, ngưỡng hay confidence. Nếu chưa đủ dữ liệu, nói rõ: Hiện chưa đủ dữ liệu để kết luận.',
-    'Không truy vấn DB trực tiếp. Không tự thay đổi dữ liệu. prepare_draft chỉ tạo bản nháp cần Admin duyệt. Hãy gọi công cụ đọc (search/get) để lấy thông tin mục tiêu (user, vehicle, policy, ticket) TRƯỚC KHI tạo draft. KHÔNG tạo draft cho các hành động: REJECT_VEHICLE, START_SLOT_MAINTENANCE vì chưa được hỗ trợ.',
+    'Không truy vấn DB trực tiếp. Không tự thay đổi dữ liệu. prepare_draft chỉ tạo bản nháp cần duyệt. Hãy gọi công cụ đọc (search/get) để lấy thông tin mục tiêu (user, vehicle, policy, ticket) TRƯỚC KHI tạo draft. KHÔNG tạo draft cho các hành động: REJECT_VEHICLE, START_SLOT_MAINTENANCE vì chưa được hỗ trợ.',
     'Trả lời ngắn gọn bằng tiếng Việt, nêu nguồn và thời điểm nếu có số liệu. Không nhắc tên model hoặc thông tin kỹ thuật nội bộ.',
-    'Viết cho Admin vận hành: kết luận trước, số liệu quan trọng sau, đề xuất nếu có. Diễn đạt trạng thái và thời lượng bằng tiếng Việt tự nhiên (active: đang hoạt động, unpaid: chưa thanh toán, paid: đã thanh toán, expectedDurationHours: thời lượng dự kiến); tránh tên tool, tên trường code và giá trị enum trong câu trả lời. Chỉ mô tả đúng trạng thái đã có, không suy diễn nguyên nhân.',
-    'Giữ ObjectId trong ngữ cảnh để gọi công cụ chính xác ở lượt tiếp theo, nhưng chỉ hiển thị ID nội bộ khi Admin hỏi trực tiếp ID; ưu tiên tên, biển số, email hoặc vị trí để nhận diện.',
+    actorRole === 'staff'
+      ? 'Viết cho Staff vận hành: kết luận trước, số liệu quan trọng sau, đề xuất nếu có. Diễn đạt trạng thái bằng tiếng Việt tự nhiên; tránh tên tool, tên trường code.'
+      : 'Viết cho Admin vận hành: kết luận trước, số liệu quan trọng sau, đề xuất nếu có. Diễn đạt trạng thái và thời lượng bằng tiếng Việt tự nhiên (active: đang hoạt động, unpaid: chưa thanh toán, paid: đã thanh toán, expectedDurationHours: thời lượng dự kiến); tránh tên tool, tên trường code và giá trị enum trong câu trả lời. Chỉ mô tả đúng trạng thái đã có, không suy diễn nguyên nhân.',
+    'Giữ ObjectId trong ngữ cảnh để gọi công cụ chính xác ở lượt tiếp theo, nhưng chỉ hiển thị ID nội bộ khi người dùng hỏi trực tiếp ID; ưu tiên tên, biển số, email hoặc vị trí để nhận diện.',
     'Khi user dùng đại từ (người này, xe này, xe đầu tiên, booking đó...), hãy resolve chính xác identifier (ObjectId) từ kết quả tool/message gần nhất và gọi tool tiếp theo. Chỉ hỏi lại khi thực sự ambiguous. Không tự bịa identifier.',
-  ].join('\n') });
+    actorRole === 'staff'
+      ? 'Khi Staff yêu cầu gửi thông báo, chỉ dùng search_notification_recipients để tìm người nhận. Nếu không có exact username match và có nhiều kết quả, hãy hỏi Staff chọn lại. Chỉ chuẩn bị SEND_NOTIFICATION draft với title và content; tuyệt đối không gửi trực tiếp.'
+      : '',
+  ].join('\n');
+  const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction: baseInstruction });
   const contents = [...history, { role: 'user', parts: [{ text: message.trim() }] }];
   const evidence = [];
   let draft = null;
@@ -62,11 +71,24 @@ async function chat({ message, conversationId, adminUserId }) {
     for (let step = 0; step < 5; step++) {
       stage = step === 0 ? 'GEMINI_TOOL_SELECTION_START' : 'GEMINI_FINAL_SYNTHESIS_START';
       trace(stage, { step });
+      const allowedTools = getToolsForRole(actorRole);
+      const roleDraftDecl = actorRole === 'staff' ? {
+        name: 'prepare_draft',
+        description: 'Prepare a pending proposal only, never execute it. Use after read tools supplied evidence.',
+        parameters: { type: 'object', properties: {
+          type: { type: 'string', enum: ['UPDATE_USER_STATUS', 'SEND_NOTIFICATION'] },
+          payloadJson: { type: 'string', description: 'JSON with complete proposed payload. For UPDATE_USER_STATUS send {"status":boolean}. For SEND_NOTIFICATION send {"title":string,"content":string,"expectedRecipientRole":string}; propose both title and content.' },
+          targetId: { type: 'string', description: 'Required for UPDATE_USER_STATUS and SEND_NOTIFICATION. For SEND_NOTIFICATION it must come from search_notification_recipients.' },
+          notificationId: { type: 'string', description: 'Optional open AI notification ID.' },
+          reason: { type: 'string' },
+        }, required: ['type', 'payloadJson', 'targetId', 'reason'] }
+      } : draftDeclaration;
+
       const generated = await model.generateContent({
         contents,
-        tools: [{ functionDeclarations: [...tools.map(({ name, description, parameters }) => ({ name, description, parameters })), draftDeclaration] }],
+        tools: [{ functionDeclarations: [...allowedTools.map(({ name, description, parameters }) => ({ name, description, parameters })), roleDraftDecl] }],
         toolConfig: { functionCallingConfig: step === 0
-          ? { mode: 'ANY', allowedFunctionNames: tools.map((tool) => tool.name) }
+          ? { mode: 'ANY', allowedFunctionNames: allowedTools.map((tool) => tool.name) }
           : { mode: 'AUTO' } },
       });
       const response = generated.response;
@@ -98,16 +120,17 @@ async function chat({ message, conversationId, adminUserId }) {
             if (call.args.type === 'MODIFY_PRICING') grounded = used.has('get_pricing_config') && ['get_session_statistics', 'get_parking_occupancy', 'get_revenue_metrics'].some((name) => used.has(name));
             else if (call.args.type.includes('PACKAGE')) grounded = used.has('get_package_list') && used.has('get_subscription_stats');
             else if (call.args.type === 'UPDATE_USER_STATUS' || call.args.type === 'CHANGE_USER_ROLE') grounded = used.has('search_users') || used.has('get_user_detail');
+            else if (call.args.type === 'SEND_NOTIFICATION') grounded = used.has('search_notification_recipients');
             else if (call.args.type === 'APPROVE_VEHICLE') grounded = used.has('search_vehicles');
             else if (call.args.type === 'ARCHIVE_POLICY') grounded = used.has('list_admin_policies') || used.has('get_admin_policy');
             if (!grounded) throw new Error('Cần kiểm tra dữ liệu/thực trạng trước khi tạo bản nháp.');
-            output = await createDraft({ adminUserId, type: call.args.type, payload: JSON.parse(call.args.payloadJson), targetId: call.args.targetId, notificationId: call.args.notificationId, reason: call.args.reason, evidence });
+            output = await createDraft({ adminUserId: currentActorId, actorRole, type: call.args.type, payload: JSON.parse(call.args.payloadJson), targetId: call.args.targetId, notificationId: call.args.notificationId, reason: call.args.reason, evidence });
             draft = { id: output._id, type: output.type, payload: output.payload, current: output.current, reason: output.reason, evidence: output.evidence, expiresAt: output.expiresAt };
             output = { draftId: String(output._id), status: 'PENDING' };
           } else {
-            output = await execute(call.name, call.args || {});
+            output = await execute(call.name, call.args || {}, actorRole);
             evidence.push({ tool: output.tool, source: output.source, timestamp: output.timestamp, data: output.data });
-            await AIAuditLog.create({ actorId: adminUserId, action: 'TOOL_EXECUTION', toolName: call.name, metadata: { parameters: output.parameters } });
+            await AIAuditLog.create({ actorId: currentActorId, action: 'TOOL_EXECUTION', toolName: call.name, metadata: { parameters: output.parameters } });
           }
           trace('TOOL_EXECUTION_SUCCESS', { tool: call.name });
           responses.push({ functionResponse: { name: call.name, response: { result: output } } });
@@ -115,7 +138,7 @@ async function chat({ message, conversationId, adminUserId }) {
           const blocked = call.name === 'prepare_draft' || !tools.some((tool) => tool.name === call.name);
           const category = blocked ? 'TOOL_NOT_FOUND' : /valid|tham số|ngày|khoảng/i.test(error.message || '') ? 'TOOL_VALIDATION_ERROR' : /mongo|database|connection|server selection/i.test(error.message || '') ? 'DATABASE_ERROR' : 'TOOL_EXECUTION_ERROR';
           trace('TOOL_EXECUTION_FAILED', { tool: call.name, category, errorName: error.name });
-          await AIAuditLog.create({ actorId: adminUserId, action: blocked ? 'OPERATION_REFUSED' : 'TOOL_ERROR', toolName: call.name, errorCode: blocked ? 'NOT_ALLOWED_OR_INVALID' : 'TOOL_FAILED' }).catch(() => {});
+          await AIAuditLog.create({ actorId: currentActorId, action: blocked ? 'OPERATION_REFUSED' : 'TOOL_ERROR', toolName: call.name, errorCode: blocked ? 'NOT_ALLOWED_OR_INVALID' : 'TOOL_FAILED' }).catch(() => {});
           responses.push({ functionResponse: { name: call.name, response: { error: error.message } } });
         }
       }
@@ -125,7 +148,7 @@ async function chat({ message, conversationId, adminUserId }) {
   } catch (error) {
     const category = classifyError(error, stage);
     trace('CHAT_FAILED', { failedStage: stage, category, errorName: error.name, httpStatus: Number(error.status || error.response?.status) || null });
-    await AIAuditLog.create({ actorId: adminUserId, action: 'GEMINI_ERROR', errorCode: category }).catch(() => {});
+    await AIAuditLog.create({ actorId: currentActorId, action: 'GEMINI_ERROR', errorCode: category }).catch(() => {});
     return { type: 'error', message: 'VALO AI đang tạm gián đoạn. Vui lòng thử lại sau.', evidence: [], suggestedActions: [], draft: null, conversationId: id };
   }
 }

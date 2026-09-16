@@ -15,9 +15,12 @@ async function insertEvent({ app, deduplicationKey, ...fields }) {
   }
   if (!result.upsertedCount) return false;
   const io = app?.get?.('io');
-  if (io) io.to('valo-ai-admins').emit('ai:notification', {
-    id: result.upsertedId, title: fields.title, severity: fields.severity,
-  });
+  if (io) {
+    const roles = fields.targetRoles || ['admin'];
+    const payload = { id: result.upsertedId, title: fields.title, severity: fields.severity };
+    if (roles.includes('admin')) io.to('valo-ai-admins').emit('ai:notification', payload);
+    if (roles.includes('staff')) io.to('valo-ai-staffs').emit('ai:notification', payload);
+  }
   return true;
 }
 
@@ -27,6 +30,7 @@ async function notifyBookingPaid(booking, app) {
     app,
     deduplicationKey: `new-booking:${booking._id}`,
     notificationType: 'NEW_BOOKING', severity: 'NOTICE',
+    targetRoles: ['admin'],
     title: 'Có booking mới',
     summary: `Booking xe ${booking.licensePlate} tại vị trí ${booking.parkingSlot} đã được thanh toán.`,
     entityType: 'booking', entityId: booking._id, targetRoute: '/admin/bookings',

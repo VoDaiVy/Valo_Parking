@@ -582,7 +582,7 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
-      {role === 'admin' && <ValoAICopilot />}
+      {(role === 'admin' || role === 'staff') && <ValoAICopilot />}
 
       {/* Report Modal */}
       {reportModalOpen && (

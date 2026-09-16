@@ -9,6 +9,7 @@ const Vehicle = require('../../models/Vehicle');
 const Policy = require('../../models/Policy');
 const catalogWrites = require('../adminCatalogWriteService');
 const policyService = require('../policyService');
+const notificationDispatch = require('../notificationDispatchService');
 
 const fail = (message, statusCode = 400) => { const error = new Error(message); error.statusCode = statusCode; throw error; };
 function cleanPayload(type, input) {
@@ -30,6 +31,19 @@ function cleanPayload(type, input) {
     if (typeof input.status !== 'boolean') fail('Trạng thái không hợp lệ.');
     return { status: input.status };
   }
+  if (type === 'SEND_NOTIFICATION') {
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    const content = typeof input.content === 'string' ? input.content.trim() : '';
+    if (!title || title.length > 200) fail('Tiêu đề thông báo phải dài từ 1 đến 200 ký tự.');
+    if (!content || content.length > 2000) fail('Nội dung thông báo phải dài từ 1 đến 2000 ký tự.');
+    return {
+      title,
+      content,
+      expectedRecipientRole: typeof input.expectedRecipientRole === 'string'
+        ? input.expectedRecipientRole.toLowerCase()
+        : '',
+    };
+  }
   if (type === 'CHANGE_USER_ROLE') {
     if (!['guest', 'customer', 'staff', 'admin'].includes(input.role)) fail('Vai trò không hợp lệ.');
     return { role: input.role };
@@ -49,9 +63,12 @@ function cleanPayload(type, input) {
   if (typeof name !== 'string' || !name.trim() || name.length > 120 || !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) || !Number.isFinite(price) || price < 0 || typeof description !== 'string' || description.length > 1000 || !Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 10 || typeof isActive !== 'boolean') fail('Thông tin gói vé không hợp lệ.');
   return { name: name.trim(), type: packageType, price, description: description.trim(), maxSlots, isActive };
 }
-async function createDraft({ adminUserId, type, payload, targetId, notificationId, reason, evidence = [] }) {
-  const clean = cleanPayload(type, payload);
-  if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
+async function createDraft({ adminUserId, type, payload, targetId, notificationId, reason, evidence = [], actorRole = 'admin' }) {
+  if (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'SEND_NOTIFICATION'].includes(type)) {
+    fail('Hành động không được phép đối với Staff.', 403);
+  }
+  let clean = cleanPayload(type, payload);
+  if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
   if (notificationId && !mongoose.isValidObjectId(notificationId)) fail('Cảnh báo không hợp lệ.');
   
   let current = null;
@@ -63,6 +80,19 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
   } else if (type === 'UPDATE_USER_STATUS' || type === 'CHANGE_USER_ROLE') {
     current = await User.findById(targetId).select('status username email role').lean();
     if (!current) fail('Không tìm thấy người dùng.', 404);
+    if (actorRole === 'staff' && current.role !== 'customer') fail('Không có quyền thao tác trên người dùng này.', 403);
+  } else if (type === 'SEND_NOTIFICATION') {
+    if (actorRole !== 'staff') fail('Hành động này chỉ dành cho Staff Notification Management.', 403);
+    const recipientEvidence = [...evidence].reverse().find((entry) => entry.tool === 'search_notification_recipients');
+    const items = Array.isArray(recipientEvidence?.data?.items) ? recipientEvidence.data.items : [];
+    const exactMatchUserId = recipientEvidence?.data?.exactMatchUserId;
+    const resolvedTargetId = exactMatchUserId || (recipientEvidence?.data?.total === 1 ? items[0]?._id : null);
+    if (!resolvedTargetId || String(resolvedTargetId) !== String(targetId)) {
+      fail('Người nhận chưa được xác định duy nhất từ công cụ tìm người nhận. Vui lòng chọn lại.', 400);
+    }
+    current = await User.findOne({ _id: targetId, status: true }).select('status username email role').lean();
+    if (!current) fail('Người nhận không tồn tại hoặc không còn hoạt động.', 404);
+    clean = { ...clean, expectedRecipientRole: current.role };
   } else if (type === 'APPROVE_VEHICLE') {
     current = await Vehicle.findById(targetId).select('status licensePlate').lean();
     if (!current) fail('Không tìm thấy phương tiện.', 404);
@@ -83,17 +113,97 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     const seen = evidence.some((entry) => entry.tool === 'get_ai_notifications' && Array.isArray(entry.data) && entry.data.some((row) => String(row._id) === String(notificationId)));
     if (!seen) fail('Cần kiểm tra cảnh báo trước khi gắn bản nháp.');
   }
-  const hasTargetId = ['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'].includes(type);
+  const hasTargetId = ['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'].includes(type);
   const draft = await AIDraft.create({ adminUserId, type, payload: clean, targetId: hasTargetId ? targetId : undefined, notificationId, current, reason: String(reason || '').slice(0, 1000), evidence: Array.isArray(evidence) ? evidence.slice(0, 10) : [], expiresAt: new Date(Date.now() + 3600000) });
   await AIAuditLog.create({ actorId: adminUserId, action: 'DRAFT_CREATED', subjectId: draft._id, metadata: { type } });
   return draft;
 }
-async function approveDraft(id, adminUserId) {
+
+async function approveSendNotification(draft, staffUserId, app) {
+  const payload = cleanPayload('SEND_NOTIFICATION', draft.payload);
+  if (draft.status === 'PENDING') {
+    const claimed = await AIDraft.findOneAndUpdate(
+      { _id: draft._id, adminUserId: staffUserId, status: 'PENDING', expiresAt: { $gt: new Date() } },
+      { $set: { status: 'EXECUTING' } },
+      { new: true }
+    );
+    if (!claimed) fail('Bản nháp đã được xử lý.', 409);
+  } else if (draft.status !== 'EXECUTING') {
+    fail('Bản nháp đã được xử lý.', 409);
+  }
+
+  try {
+    const liveRecipient = await User.findOne({ _id: draft.targetId, status: true })
+      .select('_id username email role status')
+      .lean();
+    if (!liveRecipient) fail('Người nhận không tồn tại hoặc không còn hoạt động.', 404);
+
+    const { notification } = await notificationDispatch.sendSingleUserNotification({
+      io: app?.get?.('io'),
+      targetUserId: liveRecipient._id,
+      title: payload.title,
+      content: payload.content,
+      type: 'SYSTEM',
+      priority: 'INFO',
+      createdBy: staffUserId,
+      aiDraftId: draft._id,
+    });
+    const result = {
+      id: notification._id,
+      notificationId: notification._id,
+      type: draft.type,
+      recipientId: liveRecipient._id,
+      recipientRole: liveRecipient.role,
+    };
+    await AIDraft.updateOne(
+      { _id: draft._id, adminUserId: staffUserId, status: 'EXECUTING' },
+      { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: result } }
+    );
+    await AIAuditLog.create({ actorId: staffUserId, action: 'DRAFT_EXECUTED', subjectId: draft._id, metadata: result }).catch(() => {});
+    return result;
+  } catch (error) {
+    const existing = await notificationDispatch.findDraftNotification(draft._id).catch(() => null);
+    if (existing) {
+      const result = {
+        id: existing._id,
+        notificationId: existing._id,
+        type: draft.type,
+        recipientId: draft.targetId,
+      };
+      await AIDraft.updateOne(
+        { _id: draft._id, adminUserId: staffUserId, status: 'EXECUTING' },
+        { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: result } }
+      );
+      return result;
+    }
+    await AIDraft.updateOne(
+      { _id: draft._id, adminUserId: staffUserId, status: 'EXECUTING' },
+      { $set: { status: 'PENDING' } }
+    ).catch(() => {});
+    throw error;
+  }
+}
+
+async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
   if (!mongoose.isValidObjectId(id)) fail('Bản nháp không hợp lệ.');
   const draft = await AIDraft.findOne({ _id: id, adminUserId });
   if (!draft) fail('Không tìm thấy bản nháp của bạn.', 404);
+  if (draft.type === 'SEND_NOTIFICATION') {
+    if (actorRole !== 'staff') fail('Hành động không được phép.', 403);
+    if (draft.status === 'PENDING' && draft.expiresAt <= new Date()) fail('Bản nháp đã hết hạn.', 409);
+    return approveSendNotification(draft, adminUserId, app);
+  }
   if (draft.status !== 'PENDING') fail('Bản nháp đã được xử lý.', 409);
   if (draft.expiresAt <= new Date()) fail('Bản nháp đã hết hạn.', 409);
+
+  if (actorRole === 'staff') {
+    if (draft.type !== 'UPDATE_USER_STATUS') fail('Hành động không được phép đối với Staff.', 403);
+    const liveTarget = await User.findById(draft.targetId).select('role status').lean();
+    if (!liveTarget) fail('Mục tiêu không tồn tại.', 404);
+    if (liveTarget.role !== 'customer') fail('Không có quyền thao tác trên người dùng này.', 403);
+    if (liveTarget.status !== draft.current?.status) fail('Trạng thái của người dùng đã thay đổi, vui lòng tạo đề xuất mới.', 409);
+  }
+
   const payload = cleanPayload(draft.type, draft.payload);
   // A transaction is mandatory for multi-document pricing changes. A standalone
   // deployment still supports package writes below because each is one atomic document.

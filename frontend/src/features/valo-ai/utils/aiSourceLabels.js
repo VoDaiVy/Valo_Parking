@@ -5,6 +5,7 @@ export const sourceLabels = {
   get_session_detail: 'Chi tiết phiên xe',
   search_users: 'Tài khoản người dùng',
   get_user_detail: 'Thông tin người dùng',
+  search_notification_recipients: 'Người nhận thông báo',
   search_vehicles: 'Thông tin phương tiện',
   search_bookings: 'Danh sách đặt chỗ',
   get_booking_detail: 'Chi tiết đặt chỗ',

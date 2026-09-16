@@ -9,10 +9,15 @@ const STORAGE_KEY = 'valo-ai-position-v1';
 const WIDGET_WIDTH = 92;
 const WIDGET_HEIGHT = 100;
 const clamp = (x, y) => ({ x: Math.max(0, Math.min(x, window.innerWidth - WIDGET_WIDTH)), y: Math.max(0, Math.min(y, window.innerHeight - WIDGET_HEIGHT)) });
-const suggestions = ['Có rủi ro nào không?', 'Gợi ý điều chỉnh giá', 'Xem lượt xe hôm nay'];
+const getRole = () => { try { return JSON.parse(sessionStorage.getItem('valo_user') || '{}').role || 'admin'; } catch { return 'admin'; } };
+
+const adminSuggestions = ['Có rủi ro nào không?', 'Gợi ý điều chỉnh giá', 'Xem lượt xe hôm nay'];
+const staffSuggestions = ['Xe nào đang đỗ trong bãi?', 'Tìm booking gần đây', 'Các vị trí còn trống'];
 const filters = [['all', 'Tất cả'], ['unread', 'Chưa đọc'], ['warning', 'Cảnh báo'], ['critical', 'Nghiêm trọng']];
 
 export default function ValoAICopilot() {
+  const userRole = getRole();
+  const suggestions = userRole === 'staff' ? staffSuggestions : adminSuggestions;
   const navigate = useNavigate();
   const socket = useContext(SocketContext);
   const [position, setPosition] = useState(() => {
@@ -121,11 +126,12 @@ export default function ValoAICopilot() {
     setBusy(false);
   };
   const decide = async (draft, approve) => {
-    if (noticeBusy) return; setNoticeBusy(true);
+    if (noticeBusy) return false; setNoticeBusy(true);
     const response = approve ? await approveAIDraft(draft.id) : await rejectAIDraft(draft.id);
     if (response.ok) setMessages((rows) => rows.map((row) => row.draft?.id === draft.id ? { ...row, draft: null } : row));
-    setMessages((rows) => [...rows, { role: 'ai', type: response.ok ? 'analysis' : 'error', message: response.ok ? (approve ? 'Đã áp dụng bản nháp.' : 'Đã từ chối bản nháp.') : response.data?.message || 'Không xử lý được bản nháp.', at: Date.now() }]);
+    setMessages((rows) => [...rows, { role: 'ai', type: response.ok ? 'analysis' : 'error', message: response.ok ? (approve ? (draft.type === 'SEND_NOTIFICATION' ? 'Đã gửi thông báo.' : 'Đã áp dụng bản nháp.') : 'Đã từ chối bản nháp.') : response.data?.message || 'Không xử lý được bản nháp.', at: Date.now() }]);
     if (response.ok) refresh(); setNoticeBusy(false);
+    return response.ok;
   };
 
   const onTriggerClick = () => {
@@ -148,6 +154,7 @@ export default function ValoAICopilot() {
     preview={preview} openNotice={openNotice} onNotificationClick={onNotificationClick} refresh={refresh} dismissNotice={dismissNotice}
     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
     onTriggerClick={onTriggerClick} bottomRef={bottomRef} suggestions={suggestions} filters={filters}
-    dragging={dragging}
+    dragging={dragging} userRole={userRole}
   />;
 }
+

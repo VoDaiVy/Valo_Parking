@@ -16,6 +16,7 @@ async function processRefundTransaction(transaction, booking, app) {
   return insertEvent({
     app, deduplicationKey: `refund-completed:${transaction._id}`,
     notificationType: 'REFUND_COMPLETED', severity: 'NOTICE',
+    targetRoles: ['admin'],
     title: 'Đã phát sinh giao dịch hoàn tiền',
     summary: `Đã hoàn ${Number(transaction.amount).toLocaleString('vi-VN')} đ cho booking ${transaction.refSourceId}.`,
     entityType: 'walletTransaction', entityId: transaction._id,

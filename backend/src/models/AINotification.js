@@ -23,6 +23,7 @@ const schema = new mongoose.Schema({
   detectedAt: { type: Date, default: Date.now },
   lastDetectedAt: { type: Date, default: Date.now },
   clearedAt: Date,
+  targetRoles: { type: [String], default: ['admin'] },
 }, { timestamps: true });
 
 schema.index({ deduplicationKey: 1, status: 1 }, { unique: true, partialFilterExpression: { status: 'OPEN' } });

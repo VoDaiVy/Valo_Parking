@@ -20,6 +20,7 @@ const WalletTransaction = require('../../models/WalletTransaction');
 const Subscription = require('../../models/Subscription');
 const { startOfVietnamDay, parseVietnamCalendarDate } = require('../../utils/bookingDateRange');
 const { normalizeLicensePlate } = require('../../utils/licensePlateUtils');
+const notificationService = require('../notificationService');
 
 /* ── helpers ──────────────────────────────────────────────────────────── */
 
@@ -84,14 +85,18 @@ async function getActiveSessions({ floorId, limit } = {}) {
     if (!isObjectId(floorId)) throw new Error('floorId không hợp lệ.');
     filter.floorId = floorId;
   }
-  const rows = await Session.find(filter)
-    .sort({ checkInTime: -1 })
-    .limit(clampLimit(limit, 20))
-    .select(SESSION_SAFE_SELECT)
-    .populate('floorId', 'name floorNumber')
-    .populate('userId', 'username email')
-    .lean();
-  return rows;
+  const actualLimit = clampLimit(limit, 20);
+  const [items, total] = await Promise.all([
+    Session.find(filter)
+      .sort({ checkInTime: -1 })
+      .limit(actualLimit)
+      .select(SESSION_SAFE_SELECT)
+      .populate('floorId', 'name floorNumber')
+      .populate('userId', 'username email')
+      .lean(),
+    Session.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 2. search_sessions ──────────────────────────────────────────────── */
@@ -117,14 +122,18 @@ async function searchSessions({ plateNumber, status, startDate, endDate, userId,
   if (!startDate && !endDate && !plateNumber && !status && !userId) {
     filter.checkInTime = { $gte: startOfVietnamDay(new Date()) };
   }
-  const rows = await Session.find(filter)
-    .sort({ checkInTime: -1 })
-    .limit(clampLimit(limit, 20))
-    .select(SESSION_SAFE_SELECT)
-    .populate('floorId', 'name floorNumber')
-    .populate('userId', 'username email')
-    .lean();
-  return rows;
+  const actualLimit = clampLimit(limit, 20);
+  const [items, total] = await Promise.all([
+    Session.find(filter)
+      .sort({ checkInTime: -1 })
+      .limit(actualLimit)
+      .select(SESSION_SAFE_SELECT)
+      .populate('floorId', 'name floorNumber')
+      .populate('userId', 'username email')
+      .lean(),
+    Session.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 3. get_session_detail ───────────────────────────────────────────── */
@@ -142,8 +151,15 @@ async function getSessionDetail({ sessionId }) {
 
 /* ── 4. search_users ─────────────────────────────────────────────────── */
 
-async function searchUsers({ query, role, status, limit } = {}) {
+async function searchUsers({ query, role, status, limit } = {}, actorRole = 'admin') {
   const filter = {};
+  if (actorRole === 'staff') {
+    filter.role = 'customer';
+  } else if (role) {
+    const allowed = ['guest', 'customer', 'staff', 'admin'];
+    if (!allowed.includes(role)) throw new Error(`role phải là: ${allowed.join(', ')}.`);
+    filter.role = role;
+  }
   if (query) {
     const escaped = escapeRegex(query);
     filter.$or = [
@@ -151,28 +167,31 @@ async function searchUsers({ query, role, status, limit } = {}) {
       { email: new RegExp(escaped, 'i') },
     ];
   }
-  if (role) {
-    const allowed = ['guest', 'customer', 'staff', 'admin'];
-    if (!allowed.includes(role)) throw new Error(`role phải là: ${allowed.join(', ')}.`);
-    filter.role = role;
-  }
   if (status !== undefined && status !== null) {
     filter.status = status === true || status === 'true';
   }
-  if (!query && !role && status === undefined) throw new Error('Cần ít nhất query, role hoặc status để tìm kiếm user.');
-  const rows = await User.find(filter)
-    .sort({ createdAt: -1 })
-    .limit(clampLimit(limit, 10))
-    .select(USER_SAFE_SELECT)
-    .lean();
-  return rows;
+  if (!query && !filter.role && status === undefined) throw new Error('Cần ít nhất query, role hoặc status để tìm kiếm user.');
+  const actualLimit = clampLimit(limit, 10);
+  const [items, total] = await Promise.all([
+    User.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(actualLimit)
+      .select(USER_SAFE_SELECT)
+      .lean(),
+    User.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 5. get_user_detail ──────────────────────────────────────────────── */
 
-async function getUserDetail({ userId }) {
+async function getUserDetail({ userId } = {}, actorRole = 'admin') {
   if (!userId || !isObjectId(userId)) throw new Error('userId không hợp lệ.');
-  const user = await User.findById(userId)
+  const filter = { _id: userId };
+  if (actorRole === 'staff') {
+    filter.role = 'customer';
+  }
+  const user = await User.findOne(filter)
     .select(USER_SAFE_SELECT)
     .lean();
   if (!user) throw new Error('Không tìm thấy người dùng.');
@@ -181,13 +200,22 @@ async function getUserDetail({ userId }) {
 
 /* ── 6. search_vehicles ──────────────────────────────────────────────── */
 
-async function searchVehicles({ plateNumber, userId, vehicleType, status, limit } = {}) {
+async function searchVehicles({ plateNumber, userId, vehicleType, status, limit } = {}, actorRole = 'admin') {
   const filter = {};
   if (plateNumber) filter.licensePlate = new RegExp(escapeRegex(normalizeLicensePlate(plateNumber)), 'i');
+  
   if (userId) {
     if (!isObjectId(userId)) throw new Error('userId không hợp lệ.');
+    if (actorRole === 'staff') {
+      const isCustomer = await User.exists({ _id: userId, role: 'customer' });
+      if (!isCustomer) return { items: [], total: 0, returned: 0, limit: clampLimit(limit, 10) };
+    }
     filter.owner = userId;
+  } else if (actorRole === 'staff') {
+    const customerIds = await User.distinct('_id', { role: 'customer' });
+    filter.owner = { $in: customerIds };
   }
+  
   if (vehicleType) {
     const allowed = ['car', 'electric_car'];
     if (!allowed.includes(vehicleType)) throw new Error(`vehicleType phải là: ${allowed.join(', ')}.`);
@@ -198,14 +226,19 @@ async function searchVehicles({ plateNumber, userId, vehicleType, status, limit 
     if (!allowed.includes(status)) throw new Error(`status phải là: ${allowed.join(', ')}.`);
     filter.status = status;
   }
-  if (!plateNumber && !userId && !vehicleType && !status) throw new Error('Cần ít nhất plateNumber, userId, vehicleType hoặc status.');
-  const rows = await Vehicle.find(filter)
-    .sort({ createdAt: -1 })
-    .limit(clampLimit(limit, 10))
-    .select(VEHICLE_SAFE_SELECT)
-    .populate('owner', 'username email')
-    .lean();
-  return rows;
+  if (!plateNumber && !userId && !vehicleType && !status && actorRole !== 'staff') throw new Error('Cần ít nhất plateNumber, userId, vehicleType hoặc status.');
+  const actualLimit = clampLimit(limit, 10);
+  let [items, total] = await Promise.all([
+    Vehicle.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(actualLimit)
+      .select(VEHICLE_SAFE_SELECT)
+      .populate('owner', 'username email role')
+      .lean(),
+    Vehicle.countDocuments(filter)
+  ]);
+  
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 7. search_bookings ──────────────────────────────────────────────── */
@@ -228,15 +261,19 @@ async function searchBookings({ userId, plateNumber, status, startDate, endDate,
     if (start) filter.scheduledStart.$gte = start;
     if (end) filter.scheduledStart.$lte = end;
   }
-  const rows = await Booking.find(filter)
-    .sort({ scheduledStart: -1 })
-    .limit(clampLimit(limit, 20))
-    .select(BOOKING_SAFE_SELECT)
-    .populate('floorId', 'name floorNumber')
-    .populate('userId', 'username email')
-    .populate('vehicleId', 'licensePlate vehicleType brand')
-    .lean();
-  return rows;
+  const actualLimit = clampLimit(limit, 20);
+  const [items, total] = await Promise.all([
+    Booking.find(filter)
+      .sort({ scheduledStart: -1 })
+      .limit(actualLimit)
+      .select(BOOKING_SAFE_SELECT)
+      .populate('floorId', 'name floorNumber')
+      .populate('userId', 'username email')
+      .populate('vehicleId', 'licensePlate vehicleType brand')
+      .lean(),
+    Booking.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 8. get_booking_detail ───────────────────────────────────────────── */
@@ -278,13 +315,17 @@ async function getParkingSlots({ floorId, status, slotType, limit } = {}) {
   }
   if (slotType) filter.slotType = slotType;
   if (!floorId && !status && !slotType) throw new Error('Cần ít nhất floorId, status hoặc slotType.');
-  const rows = await Slot.find(filter)
-    .sort({ slotNumber: 1 })
-    .limit(clampLimit(limit, 50))
-    .select('_id slotNumber slotType status maintenanceReason floorID')
-    .populate('floorID', 'name floorNumber')
-    .lean();
-  return rows;
+  const actualLimit = clampLimit(limit, 50);
+  const [items, total] = await Promise.all([
+    Slot.find(filter)
+      .sort({ slotNumber: 1 })
+      .limit(actualLimit)
+      .select('_id slotNumber slotType status maintenanceReason floorID')
+      .populate('floorID', 'name floorNumber')
+      .lean(),
+    Slot.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 11. search_transactions ─────────────────────────────────────────── */
@@ -311,13 +352,17 @@ async function searchTransactions({ userId, type, status, startDate, endDate, li
     if (start) filter.createdAt.$gte = start;
     if (end) filter.createdAt.$lte = end;
   }
-  const rows = await WalletTransaction.find(filter)
-    .sort({ createdAt: -1 })
-    .limit(clampLimit(limit, 20))
-    .select(WALLET_TX_SAFE_SELECT)
-    .populate('userId', 'username email')
-    .lean();
-  return rows;
+  const actualLimit = clampLimit(limit, 20);
+  const [items, total] = await Promise.all([
+    WalletTransaction.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(actualLimit)
+      .select(WALLET_TX_SAFE_SELECT)
+      .populate('userId', 'username email')
+      .lean(),
+    WalletTransaction.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
 }
 
 /* ── 12. get_subscription_members ────────────────────────────────────── */
@@ -340,14 +385,37 @@ async function getSubscriptionMembers({ userId, packageId, status, limit } = {})
   if (!userId && !packageId && !status) {
     filter.status = 'active';
   }
-  const rows = await Subscription.find(filter)
-    .sort({ expireAt: -1 })
-    .limit(clampLimit(limit, 15))
-    .select(SUBSCRIPTION_SAFE_SELECT)
-    .populate('user', 'username email')
-    .populate('ticketPackage', 'name type price')
-    .lean();
-  return rows;
+  const actualLimit = clampLimit(limit, 15);
+  const [items, total] = await Promise.all([
+    Subscription.find(filter)
+      .sort({ expireAt: -1 })
+      .limit(actualLimit)
+      .select(SUBSCRIPTION_SAFE_SELECT)
+      .populate('user', 'username email')
+      .populate('ticketPackage', 'name type price')
+      .lean(),
+    Subscription.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
+}
+
+async function searchNotificationRecipients(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).some((key) => key !== 'query')) {
+    throw new Error('Tham số tìm người nhận không hợp lệ.');
+  }
+  const query = typeof args.query === 'string' ? args.query.trim() : '';
+  if (!query || query.length > 100) throw new Error('query phải dài từ 1 đến 100 ký tự.');
+  const result = await notificationService.searchEligibleRecipients(query, 20);
+  const exact = result.items.find((user) =>
+    String(user.username || '').toLocaleLowerCase('vi-VN') === query.toLocaleLowerCase('vi-VN')
+  );
+  return {
+    query,
+    items: result.items,
+    total: result.total,
+    returned: result.items.length,
+    exactMatchUserId: exact ? String(exact._id) : null,
+  };
 }
 
 const exportsList = {
@@ -363,11 +431,12 @@ const exportsList = {
   getParkingSlots,
   searchTransactions,
   getSubscriptionMembers,
+  searchNotificationRecipients,
 };
 
 module.exports = Object.fromEntries(
   Object.entries(exportsList).map(([name, fn]) => [
     name,
-    async (args) => serializeForAI(await fn(args)),
+    async (args, actorRole = 'admin') => serializeForAI(await fn(args, actorRole)),
   ])
 );

@@ -1,6 +1,14 @@
 import { apiFetch } from '../../../services/api';
 
-const request = (path, options = {}) => apiFetch(`/ai-copilot${path}`, {
+const getBasePrefix = () => {
+  try {
+    const user = JSON.parse(sessionStorage.getItem('valo_user') || '{}');
+    if (user.role === 'staff') return '/ai-copilot/staff';
+  } catch (e) {}
+  return '/ai-copilot';
+};
+
+const request = (path, options = {}) => apiFetch(`${getBasePrefix()}${path}`, {
   ...options,
   headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}`, ...options.headers },
 });

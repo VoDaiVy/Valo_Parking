@@ -35,6 +35,7 @@ async function runFloorMonitorNow({ app, now = new Date(), snapshot = collectFlo
       const floorLabel = /^floor\b/i.test(floor.name) ? floor.name : `Floor ${floor.name}`;
       await insertEvent({
         app, deduplicationKey, notificationType: 'FLOOR_FULL', severity: 'WARNING',
+        targetRoles: ['admin', 'staff'],
         title: `${floorLabel} đã đầy`,
         summary: 'Hiện không còn vị trí đặt chỗ chung khả dụng.',
         entityType: 'parkingFloor', entityId: floor.floorId,
