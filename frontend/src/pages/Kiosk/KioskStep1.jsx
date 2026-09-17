@@ -4,6 +4,7 @@ import KioskQrScannerModal from './KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
 import { isValidLicensePlate } from '../../utils/licensePlate';
 import ParkingFullModal from './ParkingFullModal';
+import PlateMismatchModal from './PlateMismatchModal';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 export default function KioskStep1({ formData, updateFormData, onNext }) {
@@ -16,6 +17,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
   const [modalTitle, setModalTitle] = useState(undefined);
   const [modalMessage, setModalMessage] = useState(undefined);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [mismatchData, setMismatchData] = useState(null);
 
   const handleQrScan = async (qrPayload) => {
     setShowQrModal(false);
@@ -24,30 +26,49 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrPayload })
+        body: JSON.stringify({
+          qrPayload,
+          entryImageBase64: formData.entryImageBase64 || null,
+        }),
       });
       const data = await response.json();
-      if (data.success) {
-        updateFormData({
-          licensePlate: data.licensePlate,
-          phone: data.phone
-        });
-        // Immediately trigger normal license plate verification with the scanned data
-        setTimeout(() => {
-          setActiveField('plate');
-        }, 100);
-      } else {
+
+      if (!data.success) {
         setIsVerifying(false);
-        alert(data.message || 'Invalid QR code');
+        alert(data.message || 'Mã QR không hợp lệ');
+        return;
       }
+
+      // Check anti-fraud plate mismatch
+      if (data.isPlateMatched === false) {
+        setIsVerifying(false);
+        setMismatchData({
+          qrPlate: data.licensePlate,
+          detectedPlate: data.detectedPlate,
+          reason: data.mismatchReason,
+          entryImageBase64: formData.entryImageBase64 || null,
+        });
+        return;
+      }
+
+      updateFormData({
+        licensePlate: data.licensePlate,
+        phone: data.phone,
+      });
+      setIsVerifying(false);
+      // Trigger auto-verify with new plate
+      setTimeout(() => {
+        setActiveField('plate');
+      }, 100);
     } catch (err) {
       console.error(err);
       setIsVerifying(false);
-      alert('Network error while verifying QR code.');
+      alert('Lỗi kết nối khi xác thực mã QR.');
     }
   };
 
   useQrScannerListener(handleQrScan, !isVerifying);
+
 
   // Auto-verify logic
   useEffect(() => {
@@ -612,6 +633,19 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
           </div>
         </div>
       )}
+
+      {/* Plate Mismatch & Anti-Fraud Alert Modal */}
+      <PlateMismatchModal
+        isOpen={!!mismatchData}
+        qrPlate={mismatchData?.qrPlate || ''}
+        detectedPlate={mismatchData?.detectedPlate || ''}
+        entryImageBase64={mismatchData?.entryImageBase64 || null}
+        reason={mismatchData?.reason || ''}
+        onClose={() => {
+          setMismatchData(null);
+        }}
+      />
     </div>
   );
 }
+

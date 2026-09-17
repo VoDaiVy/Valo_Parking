@@ -1,3 +1,4 @@
+const axios = require('axios');
 const Session = require('../models/Session');
 const UserDetail = require('../models/UserDetail');
 const User = require('../models/User');
@@ -17,9 +18,10 @@ const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
 const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrService');
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
-const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const { normalizeLicensePlate, arePlatesMatching } = require('../utils/licensePlateUtils');
 const { normalizePhone, getPhoneRegex, getPhoneVariants, getPhoneSearchConditions, claimUserSessionsByPhone } = require('../utils/phoneUtils');
 const { triggerBarrierOpen } = require('../routes/iotRoutes');
+
 
 const normalizeSlotCode = (slotCode = '') => String(slotCode || '').trim().toUpperCase();
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
@@ -403,12 +405,15 @@ exports.checkParkingFull = async (req, res, next) => {
  */
 exports.kioskVerifyQr = async (req, res) => {
   try {
-    const { qrPayload } = req.body;
+    const { qrPayload, entryImageBase64 } = req.body;
+    let detectedPlate = req.body.detectedPlate ? normalizeLicensePlate(req.body.detectedPlate) : null;
+
     if (!qrPayload) {
       return res.status(400).json({ success: false, message: 'QR Payload is required' });
     }
 
     const trimmedPayload = String(qrPayload).trim();
+    let resolved = null;
 
     // 1. Mã QR Đặt trước có chữ ký (VALO_BOOKING:...)
     if (trimmedPayload.startsWith('VALO_BOOKING')) {
@@ -416,16 +421,19 @@ exports.kioskVerifyQr = async (req, res) => {
       const booking = await Booking.findById(parsed.bookingId).populate('vehicleId userId');
       if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
       
-      return res.status(200).json({
-        success: true,
+      resolved = {
         type: 'BOOKING',
         licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
         phone: booking.userId?.phone || booking.phone || '',
-      });
+        bookingId: booking._id,
+        booking,
+        assignedSlot: booking.parkingSlot,
+        assignedFloorId: booking.floorId,
+      };
     } 
     
     // 2. Mã QR Thành viên VIP / Thuê bao có chữ ký (VALO_MEMBERSHIP:...)
-    if (trimmedPayload.startsWith('VALO_MEMBERSHIP')) {
+    if (!resolved && trimmedPayload.startsWith('VALO_MEMBERSHIP')) {
       const parsed = parseAndVerifyAnyMembershipQr(trimmedPayload);
       let userId = parsed.userId;
 
@@ -439,162 +447,274 @@ exports.kioskVerifyQr = async (req, res) => {
       if (!user) return res.status(404).json({ success: false, message: 'VIP account not found' });
 
       const vehicle = await Vehicle.findOne({ ownerId: userId, status: 'active' });
+      const entitlement = await MembershipSlotEntitlement.findOne({
+        ownerId: userId,
+        status: { $in: ['active', 'transfer_locked'] },
+        expireAt: { $gt: new Date() },
+      });
 
-      return res.status(200).json({
-        success: true,
+      resolved = {
         type: 'MEMBERSHIP',
         licensePlate: vehicle?.licensePlate || '',
         phone: user.phone || '',
-      });
+        userId: user._id,
+        assignedSlot: entitlement?.slotCode || null,
+        assignedFloorId: entitlement?.floorId || null,
+      };
     }
 
-    // 2.5. Trích xuất bất kỳ ObjectId 24 ký tự Hex nào nằm trong chuỗi (Hỗ trợ cả trường hợp bị gõ Tiếng Việt hoặc thiếu prefix)
-    const objectIdMatch = trimmedPayload.match(/[0-9a-fA-F]{24}/);
-    if (objectIdMatch) {
-      const extractedId = objectIdMatch[0];
+    // 2.5. Trích xuất bất kỳ ObjectId 24 ký tự Hex nào nằm trong chuỗi
+    if (!resolved) {
+      const objectIdMatch = trimmedPayload.match(/[0-9a-fA-F]{24}/);
+      if (objectIdMatch) {
+        const extractedId = objectIdMatch[0];
 
-      // A. Tìm Booking theo ID
-      const booking = await Booking.findById(extractedId).populate('vehicleId userId');
-      if (booking) {
-        return res.status(200).json({
-          success: true,
-          type: 'BOOKING',
-          licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
-          phone: booking.userId?.phone || booking.phone || '',
-        });
-      }
+        // A. Tìm Booking theo ID
+        const booking = await Booking.findById(extractedId).populate('vehicleId userId');
+        if (booking) {
+          resolved = {
+            type: 'BOOKING',
+            licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
+            phone: booking.userId?.phone || booking.phone || '',
+            bookingId: booking._id,
+            booking,
+            assignedSlot: booking.parkingSlot,
+            assignedFloorId: booking.floorId,
+          };
+        }
 
-      // B. Tìm Subscription theo ID
-      const sub = await Subscription.findById(extractedId);
-      if (sub) {
-        const user = await User.findById(sub.user);
-        const vehicle = await Vehicle.findOne({ ownerId: sub.user, status: 'active' });
-        return res.status(200).json({
-          success: true,
-          type: 'MEMBERSHIP',
-          licensePlate: vehicle?.licensePlate || '',
-          phone: user?.phone || '',
-        });
-      }
+        // B. Tìm Subscription theo ID
+        if (!resolved) {
+          const sub = await Subscription.findById(extractedId);
+          if (sub) {
+            const user = await User.findById(sub.user);
+            const vehicle = await Vehicle.findOne({ ownerId: sub.user, status: 'active' });
+            const entitlement = await MembershipSlotEntitlement.findOne({
+              ownerId: sub.user,
+              status: { $in: ['active', 'transfer_locked'] },
+              expireAt: { $gt: new Date() },
+            });
+            resolved = {
+              type: 'MEMBERSHIP',
+              licensePlate: vehicle?.licensePlate || '',
+              phone: user?.phone || '',
+              userId: user?._id,
+              assignedSlot: entitlement?.slotCode || null,
+              assignedFloorId: entitlement?.floorId || null,
+            };
+          }
+        }
 
-      // C. Tìm User theo ID
-      const user = await User.findById(extractedId);
-      if (user) {
-        const vehicle = await Vehicle.findOne({ ownerId: user._id, status: 'active' });
-        return res.status(200).json({
-          success: true,
-          type: 'MEMBERSHIP',
-          licensePlate: vehicle?.licensePlate || '',
-          phone: user.phone || '',
-        });
-      }
+        // C. Tìm User theo ID
+        if (!resolved) {
+          const user = await User.findById(extractedId);
+          if (user) {
+            const vehicle = await Vehicle.findOne({ ownerId: user._id, status: 'active' });
+            const entitlement = await MembershipSlotEntitlement.findOne({
+              ownerId: user._id,
+              status: { $in: ['active', 'transfer_locked'] },
+              expireAt: { $gt: new Date() },
+            });
+            resolved = {
+              type: 'MEMBERSHIP',
+              licensePlate: vehicle?.licensePlate || '',
+              phone: user.phone || '',
+              userId: user._id,
+              assignedSlot: entitlement?.slotCode || null,
+              assignedFloorId: entitlement?.floorId || null,
+            };
+          }
+        }
 
-      // D. Tìm Session theo ID
-      const session = await Session.findById(extractedId);
-      if (session) {
-        return res.status(200).json({
-          success: true,
-          type: 'SESSION',
-          licensePlate: session.licensePlate || '',
-          phone: session.phone || '',
-        });
+        // D. Tìm Session theo ID
+        if (!resolved) {
+          const session = await Session.findById(extractedId);
+          if (session) {
+            resolved = {
+              type: 'SESSION',
+              licensePlate: session.licensePlate || '',
+              phone: session.phone || '',
+              assignedSlot: session.parkingSlot || null,
+              assignedFloorId: session.floorId || null,
+            };
+          }
+        }
       }
     }
 
     // 3. Trực tiếp là 1 MongoDB ObjectId (24 ký tự hex)
-    if (mongoose.Types.ObjectId.isValid(trimmedPayload)) {
-      // A. Tìm Booking
+    if (!resolved && mongoose.Types.ObjectId.isValid(trimmedPayload)) {
       const booking = await Booking.findById(trimmedPayload).populate('vehicleId userId');
       if (booking) {
-        return res.status(200).json({
-          success: true,
+        resolved = {
           type: 'BOOKING',
           licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
           phone: booking.userId?.phone || booking.phone || '',
-        });
+          bookingId: booking._id,
+          booking,
+          assignedSlot: booking.parkingSlot,
+          assignedFloorId: booking.floorId,
+        };
       }
 
-      // B. Tìm Subscription
-      const sub = await Subscription.findById(trimmedPayload);
-      if (sub) {
-        const user = await User.findById(sub.user);
-        const vehicle = await Vehicle.findOne({ ownerId: sub.user, status: 'active' });
-        return res.status(200).json({
-          success: true,
-          type: 'MEMBERSHIP',
-          licensePlate: vehicle?.licensePlate || '',
-          phone: user?.phone || '',
-        });
+      if (!resolved) {
+        const sub = await Subscription.findById(trimmedPayload);
+        if (sub) {
+          const user = await User.findById(sub.user);
+          const vehicle = await Vehicle.findOne({ ownerId: sub.user, status: 'active' });
+          const entitlement = await MembershipSlotEntitlement.findOne({
+            ownerId: sub.user,
+            status: { $in: ['active', 'transfer_locked'] },
+            expireAt: { $gt: new Date() },
+          });
+          resolved = {
+            type: 'MEMBERSHIP',
+            licensePlate: vehicle?.licensePlate || '',
+            phone: user?.phone || '',
+            userId: user?._id,
+            assignedSlot: entitlement?.slotCode || null,
+            assignedFloorId: entitlement?.floorId || null,
+          };
+        }
       }
 
-      // C. Tìm User
-      const user = await User.findById(trimmedPayload);
-      if (user) {
-        const vehicle = await Vehicle.findOne({ ownerId: user._id, status: 'active' });
-        return res.status(200).json({
-          success: true,
-          type: 'MEMBERSHIP',
-          licensePlate: vehicle?.licensePlate || '',
-          phone: user.phone || '',
-        });
+      if (!resolved) {
+        const user = await User.findById(trimmedPayload);
+        if (user) {
+          const vehicle = await Vehicle.findOne({ ownerId: user._id, status: 'active' });
+          const entitlement = await MembershipSlotEntitlement.findOne({
+            ownerId: user._id,
+            status: { $in: ['active', 'transfer_locked'] },
+            expireAt: { $gt: new Date() },
+          });
+          resolved = {
+            type: 'MEMBERSHIP',
+            licensePlate: vehicle?.licensePlate || '',
+            phone: user.phone || '',
+            userId: user._id,
+            assignedSlot: entitlement?.slotCode || null,
+            assignedFloorId: entitlement?.floorId || null,
+          };
+        }
       }
 
-      // D. Tìm Session
-      const session = await Session.findById(trimmedPayload);
-      if (session) {
-        return res.status(200).json({
-          success: true,
-          type: 'SESSION',
-          licensePlate: session.licensePlate || '',
-          phone: session.phone || '',
-        });
+      if (!resolved) {
+        const session = await Session.findById(trimmedPayload);
+        if (session) {
+          resolved = {
+            type: 'SESSION',
+            licensePlate: session.licensePlate || '',
+            phone: session.phone || '',
+            assignedSlot: session.parkingSlot || null,
+            assignedFloorId: session.floorId || null,
+          };
+        }
       }
     }
 
     // 4. Nếu là JSON string
-    if (trimmedPayload.startsWith('{') && trimmedPayload.endsWith('}')) {
+    if (!resolved && trimmedPayload.startsWith('{') && trimmedPayload.endsWith('}')) {
       try {
         const json = JSON.parse(trimmedPayload);
         if (json.bookingId && mongoose.Types.ObjectId.isValid(json.bookingId)) {
           const booking = await Booking.findById(json.bookingId).populate('vehicleId userId');
           if (booking) {
-            return res.status(200).json({
-              success: true,
+            resolved = {
               type: 'BOOKING',
               licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
               phone: booking.userId?.phone || booking.phone || '',
-            });
+              bookingId: booking._id,
+              booking,
+              assignedSlot: booking.parkingSlot,
+              assignedFloorId: booking.floorId,
+            };
           }
         }
-        if (json.licensePlate) {
-          return res.status(200).json({
-            success: true,
+        if (!resolved && json.licensePlate) {
+          resolved = {
             type: 'PLATE',
             licensePlate: normalizeLicensePlate(json.licensePlate),
             phone: json.phone || '',
-          });
+          };
         }
       } catch (e) {}
     }
 
-    // 5. Nếu chuỗi quét là Biển số xe trực tiếp (hoặc có định dạng biển số)
-    const cleanPlate = normalizeLicensePlate(trimmedPayload);
-    if (cleanPlate && cleanPlate.length >= 6 && cleanPlate.length <= 12) {
-      return res.status(200).json({
-        success: true,
-        type: 'PLATE',
-        licensePlate: cleanPlate,
-        phone: '',
-      });
+    // 5. Nếu chuỗi quét là Biển số xe trực tiếp
+    if (!resolved) {
+      const cleanPlate = normalizeLicensePlate(trimmedPayload);
+      if (cleanPlate && cleanPlate.length >= 6 && cleanPlate.length <= 12) {
+        resolved = {
+          type: 'PLATE',
+          licensePlate: cleanPlate,
+          phone: '',
+        };
+      }
     }
 
-    return res.status(400).json({ success: false, message: 'Mã QR không thuộc hệ thống Valo Parking' });
+    if (!resolved) {
+      return res.status(400).json({ success: false, message: 'Mã QR không thuộc hệ thống Valo Parking' });
+    }
+
+    // -------------------------------------------------------------
+    // AI ALPR Image Plate Scan & Cross-Check Verification
+    // -------------------------------------------------------------
+    if (entryImageBase64 && !detectedPlate) {
+      try {
+        const base64Data = entryImageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+        const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
+          image: base64Data
+        }, {
+          timeout: 4000
+        });
+        if (pythonRes.data && pythonRes.data.success && pythonRes.data.plate) {
+          detectedPlate = normalizeLicensePlate(pythonRes.data.plate);
+        }
+      } catch (aiErr) {
+        console.warn('[kioskVerifyQr] AI camera plate scan failed/timeout:', aiErr.message);
+      }
+    }
+
+    const qrCleanPlate = normalizeLicensePlate(resolved.licensePlate);
+    let isPlateMatched = null;
+    let mismatchReason = null;
+    let hasDetectedPlate = !!detectedPlate;
+
+    if (detectedPlate) {
+      const isMatched = arePlatesMatching(qrCleanPlate, detectedPlate);
+      if (isMatched) {
+        isPlateMatched = true;
+      } else {
+        isPlateMatched = false;
+        mismatchReason = `Biển số xe thực tế (${detectedPlate}) không khớp với thông tin trên Mã QR (${qrCleanPlate})!`;
+      }
+    } else if (entryImageBase64) {
+      // Có chụp ảnh nhưng AI chưa thấy biển số rõ
+      isPlateMatched = false;
+      mismatchReason = 'Không phát hiện thấy biển số xe trước camera! Vui lòng dừng xe ngay ngắn trước camera rồi quét lại.';
+    }
+
+    return res.status(200).json({
+      success: true,
+      type: resolved.type,
+      licensePlate: qrCleanPlate,
+      detectedPlate: detectedPlate || null,
+      hasDetectedPlate,
+      isPlateMatched,
+      mismatchReason,
+      phone: resolved.phone || '',
+      bookingId: resolved.bookingId || null,
+      assignedSlot: resolved.assignedSlot || null,
+      assignedFloorId: resolved.assignedFloorId || null,
+    });
 
   } catch (error) {
     console.error('kioskVerifyQr error:', error);
     res.status(400).json({ success: false, message: error.message || 'Lỗi xác thực mã QR' });
   }
 };
+
 
 
 /**
