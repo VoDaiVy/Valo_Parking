@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import { getAllFloors, getFloorSlots } from "../../services/parkingFloorService";
 import { getActiveSessions } from "../../services/sessionService";
@@ -24,6 +25,22 @@ export default function LiveGridMonitor() {
   const [dbSlots, setDbSlots] = useState([]);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryFloorId = searchParams.get("floorId");
+
+  useEffect(() => {
+    if (floors.length > 0 && queryFloorId) {
+      const targetFloor = floors.find((f) => String(f._id) === queryFloorId);
+      if (targetFloor) {
+        setTimeout(() => {
+          setCurrentFloorId(queryFloorId);
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete("floorId");
+          setSearchParams(newParams, { replace: true });
+        }, 0);
+      }
+    }
+  }, [floors, queryFloorId, searchParams, setSearchParams]);
 
   useEffect(() => {
     document.body.classList.add("bg-[#080808]");

@@ -63,7 +63,7 @@ describe('AI Notification Operational Events', () => {
     const n = notifs[0];
     
     assert.strictEqual(n.severity, 'NOTICE');
-    assert.deepStrictEqual(n.targetRoles, ['admin']);
+    assert.deepStrictEqual(n.targetRoles, ['admin', 'staff']);
     assert.strictEqual(n.targetRoute, `/admin/accounts?userId=${user._id}`);
     
     // 10. Không leak sensitive data

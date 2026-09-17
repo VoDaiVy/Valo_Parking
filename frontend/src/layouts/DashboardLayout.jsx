@@ -9,6 +9,7 @@ import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
+import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import {
   LayoutDashboard,
@@ -497,9 +498,19 @@ export default function DashboardLayout() {
                       notifications.map((n) => (
                         <div
                           key={n._id || n.notificationId}
-                          onClick={() =>
-                            !n.isRead && markAsRead(n.notificationId || n._id)
-                          }
+                          onClick={() => {
+                            if (!n.isRead) markAsRead(n.notificationId || n._id);
+
+                            let dest = null;
+                            if (role === 'staff') {
+                              dest = getSafeStaffDeepLink(n);
+                            }
+                            
+                            if (dest) {
+                              setNotifOpen(false);
+                              navigate(dest);
+                            }
+                          }}
                           className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 cursor-pointer transition-colors ${!n.isRead ? "bg-emerald-50/50 dark:bg-emerald-500/5" : ""}`}
                         >
                           <div

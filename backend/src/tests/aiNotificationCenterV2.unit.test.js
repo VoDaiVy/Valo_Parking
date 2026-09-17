@@ -118,7 +118,7 @@ test('NEW_SUBSCRIPTION notification triggers on first activation', async () => {
     
     assert.equal(store.rows.length, 1);
     assert.equal(store.rows[0].notificationType, 'NEW_SUBSCRIPTION');
-    assert.equal(store.rows[0].targetRoles.includes('staff'), false); // admin only
+    assert.equal(store.rows[0].targetRoles.includes('staff'), true); // admin and staff
     
     // Ignore non-active
     sub.status = 'pending';
