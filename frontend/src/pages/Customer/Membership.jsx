@@ -8,6 +8,7 @@ import {
   paySubscriptionWithWallet,
   getMembershipStatus,
 } from '../../services/subscriptionService';
+import { getCurrentPricing } from '../../services/pricingService';
 import { getWalletInfo } from '../../services/walletService';
 import { getMyVehicles } from '../../services/vehicleService';
 import { apiFetch } from '../../services/api';
@@ -101,6 +102,7 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
 export default function Membership() {
   const navigate = useNavigate();
   const [packages, setPackages] = useState([]);
+  const [packagePriceMap, setPackagePriceMap] = useState(() => new Map());
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
@@ -232,8 +234,9 @@ export default function Membership() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes] = await Promise.all([
+        const [pkgRes, pricingRes, vRes, floorRes, profileRes, walletRes, membershipRes] = await Promise.all([
           getTicketPackages(),
+          getCurrentPricing(),
           getMyVehicles(),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(r => r.json()),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/profile`, {
@@ -246,6 +249,14 @@ export default function Membership() {
         if (pkgRes.ok && pkgRes.data?.data) {
           const pkgs = pkgRes.data.data;
           setPackages(pkgs);
+        }
+        if (pricingRes.ok && pricingRes.data?.data?.packages) {
+          setPackagePriceMap(new Map(pricingRes.data.data.packages.map((pkg) => [
+            String(pkg._id),
+            { adjustedPrice: Number(pkg.adjustedPrice), priceLabel: pkg.priceLabel },
+          ])));
+        } else {
+          setPackagePriceMap(new Map());
         }
         if (vRes.ok) {
           setVehicles(vRes.data?.data || []);
@@ -279,6 +290,11 @@ export default function Membership() {
     setSelectedPackage(pkg);
     setSelectedSlots([]);
     setShowSlotModal(true);
+  };
+
+  const getEffectivePackagePrice = (pkg) => {
+    const dynamicPrice = packagePriceMap.get(String(pkg?._id))?.adjustedPrice;
+    return Number.isFinite(dynamicPrice) ? dynamicPrice : Number(pkg?.price || 0);
   };
 
   const cardShellClass = "group relative z-10 flex min-h-[430px] w-full flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_22px_46px_rgba(15,23,42,0.14)] md:p-6";
@@ -383,7 +399,8 @@ export default function Membership() {
       return;
     }
 
-    const totalPrice = selectedPackage ? selectedPackage.price * Math.max(1, selectedSlots.length) : 0;
+    const effectivePackagePrice = selectedPackage ? getEffectivePackagePrice(selectedPackage) : 0;
+    const totalPrice = effectivePackagePrice * Math.max(1, selectedSlots.length);
 
     if (paymentMethod === 'wallet' && selectedPackage && walletBalance < totalPrice) {
       toast.error("Số dư ví không đủ. Hệ thống sẽ chuyển hướng bạn đến trang Nạp Tiền.");
@@ -399,7 +416,7 @@ export default function Membership() {
       setVerifying(true); // Show the processing state
 
       if (paymentMethod === 'wallet') {
-        const res = await paySubscriptionWithWallet(selectedPackage._id, selectedSlots);
+        const res = await paySubscriptionWithWallet(selectedPackage._id, selectedSlots, effectivePackagePrice);
         if (res.ok && res.data?.success) {
           await syncCurrentUserProfile();
           setSuccess(true);
@@ -413,7 +430,7 @@ export default function Membership() {
         }
         setVerifying(false);
       } else {
-        const res = await createSubscriptionPayment(selectedPackage._id, selectedSlots);
+        const res = await createSubscriptionPayment(selectedPackage._id, selectedSlots, effectivePackagePrice);
         if (res.ok && res.data?.data?.checkoutUrl) {
           // Redirect directly to the PayOS page
           window.location.href = res.data.data.checkoutUrl;
@@ -510,6 +527,10 @@ export default function Membership() {
             const presentation = getPackagePresentation(pkg, index);
             const buttonState = getPackageButton(pkg);
             const Icon = presentation.Icon;
+            const dynamicEntry = packagePriceMap.get(String(pkg._id));
+            const effectivePrice = getEffectivePackagePrice(pkg);
+            const hasAdjustedPrice = Number.isFinite(dynamicEntry?.adjustedPrice)
+              && effectivePrice !== Number(pkg.price);
 
             return (
               <div
@@ -536,8 +557,22 @@ export default function Membership() {
                   <h3 className="font-black text-gray-900 tracking-widest text-xs mt-2.5 uppercase">{presentation.title}</h3>
                 </div>
                 <div className={`relative text-center py-4 rounded-2xl border mb-5 shadow-inner ${presentation.priceBox}`}>
+                  {hasAdjustedPrice && (
+                    <div className={`mb-2 inline-flex rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${
+                      effectivePrice < Number(pkg.price)
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-orange-200 bg-orange-50 text-orange-700'
+                    }`}>
+                      {dynamicEntry.priceLabel || (effectivePrice < Number(pkg.price) ? 'Giá ưu đãi' : 'Giá cao điểm')}
+                    </div>
+                  )}
+                  {hasAdjustedPrice && (
+                    <div className="text-xs font-bold text-gray-400 line-through">
+                      {(pkg.price || 0).toLocaleString('vi-VN')} VND
+                    </div>
+                  )}
                   <div className={`text-xl font-black ${presentation.priceText}`}>
-                    {(pkg.price || 0).toLocaleString('vi-VN')} VND
+                    {effectivePrice.toLocaleString('vi-VN')} VND
                   </div>
                   <div className="text-xs font-medium text-gray-500 mt-1">{presentation.subtitle}</div>
                 </div>
@@ -688,7 +723,7 @@ export default function Membership() {
                     </button>
                   </div>
                   
-                  {paymentMethod === 'wallet' && selectedPackage && walletBalance < (selectedPackage.price * Math.max(1, selectedSlots.length)) && (
+                  {paymentMethod === 'wallet' && selectedPackage && walletBalance < (getEffectivePackagePrice(selectedPackage) * Math.max(1, selectedSlots.length)) && (
                     <div className="bg-rose-50 text-rose-600 text-xs p-3 rounded-xl border border-rose-100 flex gap-2 mt-4 font-medium items-start">
                       <AlertCircle className="shrink-0 w-4 h-4" />
                       <p>Insufficient balance. Please top up or use PayOS.</p>
@@ -714,7 +749,7 @@ export default function Membership() {
                 </div>
                 
                 <button
-                  disabled={selectedSlots.length === 0 || verifying || (paymentMethod === 'wallet' && walletBalance < (selectedPackage?.price * Math.max(1, selectedSlots.length)))}
+                  disabled={selectedSlots.length === 0 || verifying || (paymentMethod === 'wallet' && walletBalance < (getEffectivePackagePrice(selectedPackage) * Math.max(1, selectedSlots.length)))}
                   onClick={handleConfirmSlots}
                   className="w-full bg-gray-900 hover:bg-black text-white font-bold py-3.5 px-8 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
                 >
@@ -725,7 +760,7 @@ export default function Membership() {
                     </span>
                   ) : (
                     <>
-                      Pay now {selectedPackage && selectedSlots.length > 0 ? `(${(selectedPackage.price * selectedSlots.length).toLocaleString('vi-VN')} VND)` : ''} <ArrowRight size={18} />
+                      Pay now {selectedPackage && selectedSlots.length > 0 ? `(${(getEffectivePackagePrice(selectedPackage) * selectedSlots.length).toLocaleString('vi-VN')} VND)` : ''} <ArrowRight size={18} />
                     </>
                   )}
                 </button>

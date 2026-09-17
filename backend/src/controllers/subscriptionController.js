@@ -15,6 +15,8 @@ const {
   isMembershipQrAvailable,
 } = require('../services/membershipQrService');
 const { validationResult } = require('express-validator');
+const dynamicPricingEngine = require('../services/dynamicPricingEngine');
+const loyaltyService = require('../services/loyaltyService');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const {
   activateSubscriptionEntitlements,
@@ -40,6 +42,14 @@ const buildExpirationDate = (packageType, fromDate = new Date()) => {
   return expireAt;
 };
 
+const awardSubscriptionPoints = (subscription, app) => loyaltyService.earnPoints({
+  userId: subscription.user,
+  amount: subscription.amount,
+  refSource: 'subscription',
+  refSourceId: subscription._id,
+  app,
+}).catch((error) => console.error('[Loyalty] earnPoints (subscription) failed:', error.message));
+
 // Create payment order for subscription
 exports.createSubscriptionPayment = async (req, res, next) => {
   try {
@@ -57,8 +67,14 @@ exports.createSubscriptionPayment = async (req, res, next) => {
       slots,
     });
 
-    // Amount to pay (price * number of slots)
-    const amount = ticketPackage.price * Math.max(1, slots.length);
+    // Always resolve the authoritative adjusted price on the server. The client-provided
+    // adjustedPrice is informational only and is never trusted for payment calculation.
+    const dynamicPrice = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'package',
+      packageId: ticketPackage._id,
+      basePrice: ticketPackage.price,
+    });
+    const amount = dynamicPrice.adjustedPrice * Math.max(1, slots.length);
 
     // Generate Order Code for PayOS
     const orderCode = Number(String(Date.now()).slice(-6) + Math.floor(Math.random() * 100));
@@ -132,6 +148,7 @@ exports.verifyPayment = async (req, res, next) => {
     const isRenewal = subscription.pendingRenewal && subscription.pendingRenewal.orderCode == orderCode;
 
     if (!isRenewal && subscription.paymentStatus === 'paid') {
+      awardSubscriptionPoints(subscription, req.app);
       const entitlementCount = await MembershipSlotEntitlement.countDocuments({
         sourceSubscriptionId: subscription._id,
       });
@@ -216,6 +233,8 @@ exports.verifyPayment = async (req, res, next) => {
         }
       }
 
+      if (!isRenewal) awardSubscriptionPoints(subscription, req.app);
+
       return res.status(200).json({ success: true, message: isRenewal ? 'Subscription renewed successfully!' : 'Subscription activated successfully!' });
     } else {
       const payosInfo = await payos.paymentRequests.get(parseInt(orderCode)).catch(() => null);
@@ -253,8 +272,12 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       slots,
     });
 
-    // Amount to pay (price * number of slots)
-    const amount = ticketPackage.price * Math.max(1, slots.length);
+    const dynamicPrice = await dynamicPricingEngine.getEffectivePrice({
+      priceType: 'package',
+      packageId: ticketPackage._id,
+      basePrice: ticketPackage.price,
+    });
+    const amount = dynamicPrice.adjustedPrice * Math.max(1, slots.length);
 
     // Calculate expiration date
     const expireAt = buildExpirationDate(ticketPackage.type);
@@ -293,6 +316,7 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       }
       await activateSubscriptionEntitlements(subscription, { session: dbSession });
       await dbSession.commitTransaction();
+      awardSubscriptionPoints(subscription, req.app);
     } catch (err) {
       await dbSession.abortTransaction();
       subscription.paymentStatus = 'failed';

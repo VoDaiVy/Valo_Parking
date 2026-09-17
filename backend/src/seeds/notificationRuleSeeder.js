@@ -125,6 +125,17 @@ const DEFAULT_RULES = [
 
   // ─── Parking ────────────────────────────────────────────
   {
+    eventKey: 'loyalty.points_earned',
+    group: 'Loyalty',
+    name: 'Loyalty points earned',
+    description: 'When a customer earns loyalty points from a completed booking or paid subscription.',
+    priority: 'SUCCESS',
+    enabled: true,
+    channels: ['In-app'],
+    throttleMinutes: 0,
+  },
+
+  {
     eventKey: 'parking.entry',
     group: 'Parking',
     name: 'Vehicle entry',

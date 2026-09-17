@@ -123,4 +123,14 @@ test('demandForecastingService uses Booking scheduledStart/scheduledEnd fields',
   assert.match(source, /scheduledStart/);
   assert.match(source, /scheduledEnd/);
   assert.doesNotMatch(source, /startTime: \{ \$gte/);
+test('far-date daily forecast is explicitly reference-only', async () => {
+  const result = await getOccupancyForecast({
+    date: '2099-01-01',
+    hour: 10,
+    timeframe: 'day',
+    forecastHorizonHours: 24,
+  });
+  assert.equal(result.isReferenceOnly, true);
+  assert.equal(result.isDynamicPricingEligible, false);
+  assert.equal(result.forecastHorizonHours, 24);
 });

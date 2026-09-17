@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, Loader2, AlertCircle, Save, CheckCircle2, RotateCcw, Clock3 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import DynamicPricingAdminTabs from '../../components/Admin/DynamicPricingAdminTabs';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
 
@@ -457,6 +458,7 @@ function PricingSaveBar({ saving, onSave, onReset, error, success, hasUnsavedCha
 }
 
 export default function PricingManagement() {
+  const [activeTab, setActiveTab] = useState('time-blocks');
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -641,29 +643,54 @@ export default function PricingManagement() {
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="mx-auto max-w-7xl">
         <PricingHeader status={scheduleStatus} config={config} />
+        <nav className="mb-7 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.035] p-1.5" aria-label="Pricing sections">
+          {[
+            ['time-blocks', 'Time Blocks'],
+            ['dynamic', 'Dynamic Pricing'],
+            ['rules', 'Pricing Rules'],
+            ['suggestions', 'Suggestions'],
+            ['history', 'History & Stats'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setActiveTab(value)}
+              className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-black transition ${
+                activeTab === value ? 'bg-gold text-black shadow-lg shadow-gold/10' : 'text-blue-100/55 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
 
-        <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} />
-
-        <TimeBlockEditor
-          timeBlocks={timeBlocks}
-          onAdd={handleAddTimeBlock}
-          onChange={handleTimeBlockChange}
-          onRemove={handleRemoveTimeBlock}
-        />
-
-        <PriceCapsSection caps={caps} setCaps={handleCapsChange} />
-
-        <PricingSummary timeBlocks={timeBlocks} caps={caps} status={scheduleStatus} />
+        {activeTab === 'time-blocks' ? (
+          <>
+            <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} />
+            <TimeBlockEditor
+              timeBlocks={timeBlocks}
+              onAdd={handleAddTimeBlock}
+              onChange={handleTimeBlockChange}
+              onRemove={handleRemoveTimeBlock}
+            />
+            <PriceCapsSection caps={caps} setCaps={handleCapsChange} />
+            <PricingSummary timeBlocks={timeBlocks} caps={caps} status={scheduleStatus} />
+          </>
+        ) : (
+          <DynamicPricingAdminTabs activeTab={activeTab} />
+        )}
       </div>
 
-      <PricingSaveBar
-        saving={saving}
-        onSave={handleSave}
-        onReset={handleResetChanges}
-        error={error}
-        success={success}
-        hasUnsavedChanges={hasUnsavedChanges}
-      />
+      {activeTab === 'time-blocks' && (
+        <PricingSaveBar
+          saving={saving}
+          onSave={handleSave}
+          onReset={handleResetChanges}
+          error={error}
+          success={success}
+          hasUnsavedChanges={hasUnsavedChanges}
+        />
+      )}
     </div>
   );
 }

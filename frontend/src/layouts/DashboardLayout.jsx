@@ -11,6 +11,7 @@ import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
 import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
+import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
 import {
   LayoutDashboard,
   Users,
@@ -43,6 +44,7 @@ import {
   X,
   Send,
   Loader2,
+  Gift,
 } from "lucide-react";
 
 // ─── Nav configs per role ─────────────────────────────────────────────────────
@@ -95,6 +97,7 @@ const NAV_CONFIG = {
       icon: <BarChart2 size={18} />,
       to: "/admin/revenue",
     },
+    { label: "Vouchers", icon: <Gift size={18} />, to: "/admin/vouchers" },
   ],
   staff: [
     {
@@ -155,6 +158,7 @@ const NAV_CONFIG = {
     },
     { label: "History", icon: <History size={18} />, to: "/customer/history" },
     { label: "Wallet", icon: <Wallet size={18} />, to: "/customer/wallet" },
+    { label: "Rewards", icon: <Gift size={18} />, to: "/customer/rewards" },
     {
       label: "Settings",
       icon: <Settings size={18} />,
@@ -509,6 +513,12 @@ export default function DashboardLayout() {
                             if (dest) {
                               setNotifOpen(false);
                               navigate(dest);
+                            if (role === "customer") {
+                              const destination = getSafeCustomerNotificationLink(n);
+                              if (destination) {
+                                setNotifOpen(false);
+                                navigate(destination);
+                              }
                             }
                           }}
                           className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 cursor-pointer transition-colors ${!n.isRead ? "bg-emerald-50/50 dark:bg-emerald-500/5" : ""}`}

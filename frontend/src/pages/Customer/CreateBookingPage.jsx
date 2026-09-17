@@ -15,12 +15,18 @@ import {
   MapPin,
   Plus,
   Sparkles,
+  Ticket,
   Trash2,
   Wallet,
 } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
+
 import AiBookingPanel from '../../components/Customer/AiBookingPanel';
+
+import PriceBadge from '../../components/PriceBadge';
+import { useDynamicPricing } from '../../hooks/useDynamicPricing';
+
 
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
@@ -47,6 +53,7 @@ import {
   writeBookingCart,
 } from '../../utils/bookingCartStorage';
 import { findRequestedService } from '../../utils/bookingNavigation';
+import { getMyVouchers } from '../../services/loyaltyService';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
@@ -541,6 +548,140 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
   );
 };
 
+const getVoucherBenefitLabel = (voucher) => {
+  const benefit = voucher?.benefitSnapshot || {};
+  if (benefit.type === 'PERCENT_DISCOUNT') {
+    return `${Number(benefit.discountPercent || 0)}% off this booking`;
+  }
+  if (benefit.type === 'FREE_SERVICE') {
+    return `Free ${benefit.serviceId?.name || 'included service'}`;
+  }
+  return benefit.description || 'Loyalty reward';
+};
+
+const getVoucherExpiryLabel = (voucher) => {
+  const expiresAt = new Date(voucher?.expiresAt);
+  if (Number.isNaN(expiresAt.getTime())) return 'No expiry date';
+  return `Expires ${expiresAt.toLocaleDateString('vi-VN')}`;
+};
+
+const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const selectedVoucher = vouchers.find((voucher) => voucher._id === value);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const selectVoucher = (voucherId) => {
+    onChange(voucherId);
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        onClick={() => setIsOpen((current) => !current)}
+        className={`group flex min-h-12 w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left outline-none transition duration-200 active:scale-[0.995] ${
+          selectedVoucher
+            ? 'border-emerald-200 bg-emerald-50/70 shadow-[0_8px_24px_rgba(5,150,105,0.08)] hover:border-emerald-300'
+            : 'border-gray-200 bg-white hover:border-gold/60 hover:bg-amber-50/30'
+        } focus:border-gold focus:ring-2 focus:ring-gold/20`}
+      >
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${selectedVoucher ? 'bg-emerald-600 text-white' : 'bg-amber-50 text-amber-600'}`}>
+          <Ticket size={16} strokeWidth={2.2} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-extrabold text-gray-900">
+            {selectedVoucher?.benefitSnapshot?.name || 'No voucher'}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] font-medium text-gray-500">
+            {selectedVoucher
+              ? `${getVoucherBenefitLabel(selectedVoucher)} · ${getVoucherExpiryLabel(selectedVoucher)}`
+              : vouchers.length > 0 ? `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'} available` : 'No available rewards'}
+          </span>
+        </span>
+        {selectedVoucher && (
+          <span className="hidden rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 sm:inline-flex">
+            Applied
+          </span>
+        )}
+        <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold' : 'group-hover:text-gray-600'}`} />
+      </button>
+
+      {isOpen && (
+        <div role="listbox" className="time-scrollbar absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_24px_60px_rgba(31,41,55,0.18)]">
+          <div className="flex items-center justify-between px-2 pb-2 pt-1">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Choose a reward</p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-500">One voucher per booking</p>
+            </div>
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{vouchers.length} available</span>
+          </div>
+
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            onClick={() => selectVoucher('')}
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition duration-150 active:scale-[0.99] ${!value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+          >
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${!value ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-500'}`}><Ticket size={15} /></span>
+            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">No voucher</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>Continue without a reward</span></span>
+            {!value && <Check size={16} className="shrink-0 text-gold" strokeWidth={3} />}
+          </button>
+
+          {vouchers.length > 0 && <div className="my-2 h-px bg-gray-100" />}
+          {vouchers.map((voucher) => {
+            const isSelected = value === voucher._id;
+            return (
+              <button
+                key={voucher._id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => selectVoucher(voucher._id)}
+                className={`mb-1 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition duration-150 last:mb-0 active:scale-[0.99] ${
+                  isSelected
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+                    : 'border-transparent text-gray-700 hover:border-amber-100 hover:bg-amber-50/60'
+                }`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}><Ticket size={17} strokeWidth={2.2} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Loyalty voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
+                  <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher)}</span>
+                  <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher)}</span>
+                </span>
+                {isSelected && <Check size={17} className="shrink-0 text-emerald-600" strokeWidth={3} />}
+              </button>
+            );
+          })}
+
+          {vouchers.length === 0 && (
+            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Redeem loyalty points to receive a reward.</p></div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function CreateBookingPage() {
   const [bookingMode, setBookingMode] = useState('manual');
   const location = useLocation();
@@ -557,6 +698,56 @@ export default function CreateBookingPage() {
 
   const startTime = `${startDate}T${startTimeStr}`;
   const endTime = `${endDate}T${endTimeStr}`;
+  const forecastHourSelection = useMemo(() => {
+    if (!startDate || !endDate || startDate !== endDate) {
+      return {
+        allowed: false,
+        reason: 'Hour selection is available only when start and end are on the same day.',
+      };
+    }
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      return { allowed: false, reason: 'Choose a valid end time after the start time.' };
+    }
+    if (end <= now) {
+      return {
+        allowed: false,
+        reason: 'This booking range has already ended. Choose a future end time to select from the chart.',
+      };
+    }
+    if (start > horizonEnd || end > horizonEnd) {
+      return {
+        allowed: false,
+        reason: 'Both start and end must be within the next 24 hours to select an hour from this chart.',
+      };
+    }
+    return { allowed: true, reason: '' };
+  }, [endDate, endTime, startDate, startTime]);
+  const isForecastHourSelectable = useCallback((hour) => {
+    if (!forecastHourSelection.allowed) return false;
+    const candidateStart = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
+    const currentEnd = new Date(endTime);
+    const minimumEnd = new Date(candidateStart.getTime() + 30 * 60 * 1000);
+    const candidateEnd = currentEnd >= minimumEnd ? currentEnd : minimumEnd;
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const candidateEndDate = `${candidateEnd.getFullYear()}-${String(candidateEnd.getMonth() + 1).padStart(2, '0')}-${String(candidateEnd.getDate()).padStart(2, '0')}`;
+    return candidateStart >= now
+      && candidateStart <= horizonEnd
+      && candidateEnd <= horizonEnd
+      && candidateEndDate === startDate;
+  }, [endTime, forecastHourSelection.allowed, startDate]);
+  const isForecastEndHourSelectable = useCallback((hour) => {
+    if (!forecastHourSelection.allowed) return false;
+    const candidateEnd = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    return candidateEnd > now && candidateEnd <= horizonEnd;
+  }, [forecastHourSelection.allowed, startDate]);
 
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState('');
@@ -564,6 +755,8 @@ export default function CreateBookingPage() {
   const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
   const [selectedServices, setSelectedServices] = useState([]);
+  const [vouchers, setVouchers] = useState([]);
+  const [selectedVoucherId, setSelectedVoucherId] = useState('');
   const [wallet, setWallet] = useState(null);
   const [slots, setSlots] = useState([]);
   const [selectedSlotKey, setSelectedSlotKey] = useState('');
@@ -584,6 +777,7 @@ export default function CreateBookingPage() {
   const [topUpSuccess, setTopUpSuccess] = useState(false);
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
   const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(4);
 
@@ -595,6 +789,7 @@ export default function CreateBookingPage() {
   const [floors, setFloors] = useState([]);
   const [pricingConfig, setPricingConfig] = useState(null);
   const [currentFloorId, setCurrentFloorId] = useState(null);
+  const dynamicPricing = useDynamicPricing(startTime, endTime, currentFloorId);
   const [dbSlots, setDbSlots] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [activeHolds, setActiveHolds] = useState([]);
@@ -618,6 +813,8 @@ export default function CreateBookingPage() {
   useEffect(() => {
     const timerId = window.setTimeout(fetchDbSlots, 0);
     return () => window.clearTimeout(timerId);
+    const timer = setTimeout(() => { fetchDbSlots(); }, 0);
+    return () => clearTimeout(timer);
   }, [fetchDbSlots]);
 
   const fetchActiveHoldsData = async () => {
@@ -672,6 +869,7 @@ export default function CreateBookingPage() {
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
+    const initialTimer = setTimeout(() => {
       fetchActiveSessions();
       fetchActiveHoldsData();
     }, 0);
@@ -682,6 +880,7 @@ export default function CreateBookingPage() {
     }, 30000); // 30s
     return () => {
       window.clearTimeout(timerId);
+      clearTimeout(initialTimer);
       clearInterval(intervalId);
     };
   }, [fetchDbSlots]);
@@ -773,12 +972,34 @@ export default function CreateBookingPage() {
     ? getMinEndTimeStr(startTimeStr) 
     : (endDate < startDate ? '24:00' : (endDate === todayDateStr ? currentTimeStr : (endDate < todayDateStr ? '24:00' : null)));
 
+  const selectedVoucher = vouchers.find((voucher) => voucher._id === selectedVoucherId);
+  const selectableVouchers = useMemo(
+    () => vouchers.filter((voucher) => !cartItems.some((item) => (
+      item.clientItemId !== editingClientItemId && item.voucherId === voucher._id
+    ))),
+    [cartItems, editingClientItemId, vouchers]
+  );
+  const freeServiceId = selectedVoucher?.benefitSnapshot?.type === 'FREE_SERVICE'
+    ? String(selectedVoucher.benefitSnapshot?.serviceId?._id || selectedVoucher.benefitSnapshot?.serviceId || '')
+    : '';
+  const effectiveSelectedServices = useMemo(() => {
+    if (!freeServiceId || selectedServices.includes(freeServiceId)) return selectedServices;
+    return [...selectedServices, freeServiceId];
+  }, [freeServiceId, selectedServices]);
+  const grossServiceTotal = useMemo(
+    () => services
+      .filter((service) => effectiveSelectedServices.includes(service._id))
+      .reduce((total, service) => total + Number(service.price || 0), 0),
+    [effectiveSelectedServices, services]
+  );
   const serviceTotal = useMemo(
     () =>
       services
-        .filter((service) => selectedServices.includes(service._id))
+        .filter((service) => (
+          effectiveSelectedServices.includes(service._id) && String(service._id) !== freeServiceId
+        ))
         .reduce((total, service) => total + Number(service.price || 0), 0),
-    [services, selectedServices]
+    [effectiveSelectedServices, freeServiceId, services]
   );
 
   const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey);
@@ -822,8 +1043,14 @@ export default function CreateBookingPage() {
     }),
     [endTime, selectedSlotIsOwnVipSlot, startTime, pricingConfig]
   );
-  const parkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
-  const grandTotal = parkingTotal + serviceTotal;
+  const baseParkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
+  const parkingTotal = selectedSlotIsOwnVipSlot
+    ? 0
+    : dynamicPricing.computeAdjustedTotal(pricePreview.usageAmount);
+  const baseGrandTotal = parkingTotal + serviceTotal;
+  const grandTotal = selectedVoucher?.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
+    ? Math.floor(baseGrandTotal * (1 - Number(selectedVoucher.benefitSnapshot.discountPercent || 0) / 100))
+    : baseGrandTotal;
   const walletBalance = Number(wallet?.balance || 0);
   const walletShortfall = Math.max(grandTotal - walletBalance, 0);
   const hasEnoughWallet = walletShortfall <= 0;
@@ -837,13 +1064,24 @@ export default function CreateBookingPage() {
       startTime: item.startTime,
       endTime: item.endTime,
       serviceIds: item.serviceIds,
+      voucherId: item.voucherId || undefined,
     })),
     [cartItems]
   );
   const cartGrandTotal = Number(
     cartQuote?.grandTotal ?? cartItems.reduce((total, item) => total + Number(item.totalAmount || 0), 0)
   );
+  const cartBaseGrandTotal = cartItems.reduce(
+    (total, item) => total + Number(item.baseTotalAmount ?? item.totalAmount ?? 0),
+    0
+  );
+  const cartHasDynamicPricing = cartItems.some((item) => {
+    const quotedItem = cartQuote?.items?.find((quote) => quote.clientItemId === item.clientItemId);
+    return Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1) !== 1;
+  });
+  const cartHasVoucher = cartItems.some((item) => Boolean(item.voucherId));
   const cartWalletShortfall = Math.max(cartGrandTotal - walletBalance, 0);
+  const hasCartErrors = Object.keys(cartItemErrors).length > 0;
   const hasActiveCheckoutHold = false;
 
   const loadData = () => {
@@ -856,7 +1094,8 @@ export default function CreateBookingPage() {
       getServices().then(res => res.ok ? res.data?.data : []).catch(() => []),
       fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(res => res.json().catch(() => ({}))),
       fetch(`${import.meta.env.VITE_API_BASE_URL}/pricing-config`).then(res => res.json().catch(() => ({}))),
-    ]).then(([walletData, vehiclesData, profileData, servicesData, floorsData, pricingData]) => {
+      getMyVouchers('available').then(res => res.ok ? res.data?.data : []).catch(() => []),
+    ]).then(([walletData, vehiclesData, profileData, servicesData, floorsData, pricingData, voucherData]) => {
       if (walletData) setWallet(walletData);
       if (profileData) setProfile(profileData);
       if (vehiclesData) {
@@ -872,6 +1111,7 @@ export default function CreateBookingPage() {
       if (pricingData && pricingData.success) {
         setPricingConfig(pricingData.data);
       }
+      setVouchers((voucherData || []).filter((voucher) => !voucher.bookingId));
     }).finally(() => {
       setLoading(false);
     });
@@ -1089,6 +1329,13 @@ export default function CreateBookingPage() {
       return;
     }
 
+    if (selectedVoucherId && cartItems.some((item) => (
+      item.clientItemId !== editingClientItemId && item.voucherId === selectedVoucherId
+    ))) {
+      setError('This voucher is already assigned to another booking item.');
+      return;
+    }
+
     const hasOverlap = (startA, endA, startB, endB) => startA < endB && endA > startB;
 
     const isDuplicate = cartItems.some((item) => {
@@ -1149,13 +1396,19 @@ export default function CreateBookingPage() {
       slotCode: selectedSlot.slotCode,
       startTime: startObj.toISOString(),
       endTime: endObj.toISOString(),
-      serviceIds: selectedServices,
+      serviceIds: effectiveSelectedServices,
       serviceNames: services
-        .filter((service) => selectedServices.includes(service._id))
+        .filter((service) => effectiveSelectedServices.includes(service._id))
         .map((service) => service.name),
+      voucherId: selectedVoucherId || '',
+      voucherName: selectedVoucher?.benefitSnapshot?.name || '',
       parkingAmount: parkingTotal,
       serviceAmount: serviceTotal,
       totalAmount: grandTotal,
+      baseTotalAmount: baseParkingTotal + grossServiceTotal,
+      dynamicMultiplier: dynamicPricing.multiplier,
+      priceLabel: dynamicPricing.priceLabel,
+      busynessScore: dynamicPricing.busynessScore,
       pricingDetails: pricePreview,
       holdId: holdRes.data?.data?._id,
       holdExpiresAt: holdRes.data?.data?.expiresAt,
@@ -1174,6 +1427,7 @@ export default function CreateBookingPage() {
     fetchActiveHoldsData();
 
     setSelectedServices([]);
+    setSelectedVoucherId('');
     handleFindSlots();
     } finally {
       setSubmitting(false);
@@ -1192,6 +1446,7 @@ export default function CreateBookingPage() {
     setVehicleId(item.vehicleId || '');
     setManualPlate(item.vehicleId ? '' : item.licensePlate);
     setSelectedServices(item.serviceIds || []);
+    setSelectedVoucherId(item.voucherId || '');
     setSelectedSlotKey(`${item.floorId}:${item.slotCode}`);
     setSuccess('');
     setError('');
@@ -1308,7 +1563,7 @@ export default function CreateBookingPage() {
             items: data.items,
           });
         }
-        setCartItemErrors(res.ok ? {} : toItemErrorMap(data.itemErrors || []));
+        setCartItemErrors(toItemErrorMap(data.itemErrors || []));
       } catch (err) {
         console.error('Bulk quote failed', err);
       }
@@ -1331,7 +1586,7 @@ export default function CreateBookingPage() {
       setError('Fix highlighted booking items before checkout.');
       return;
     }
-    executeCheckoutCart();
+    setShowCheckoutConfirm(true);
   };
 
   const executeCheckoutCart = async () => {
@@ -1546,9 +1801,15 @@ export default function CreateBookingPage() {
                     vehicles.find((v) => v._id === vehicleId)?.type ||
                     'car'
                   }
-                  onSelectHour={(hour) => {
+                  floorId={currentFloorId}
+                  canSelectHour={forecastHourSelection.allowed}
+                  isHourSelectable={isForecastHourSelectable}
+                  isEndHourSelectable={isForecastEndHourSelectable}
+                  selectionDisabledReason={forecastHourSelection.reason}
+                  onSelectHour={(hour, rangePoint = 'start') => {
                     const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
-                    handleStartChange(startDate, nextTimeStr);
+                    if (rangePoint === 'end') handleEndChange(startDate, nextTimeStr);
+                    else handleStartChange(startDate, nextTimeStr);
                   }}
                 />
               </div>
@@ -1607,41 +1868,81 @@ export default function CreateBookingPage() {
                       <button
                         key={service._id}
                         type="button"
-                        onClick={() => toggleService(service._id)}
+                        onClick={() => {
+                          if (String(service._id) !== freeServiceId) toggleService(service._id);
+                        }}
                         className={`w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between ${
-                          selectedServices.includes(service._id)
+                          effectiveSelectedServices.includes(service._id)
                             ? 'bg-gold/10 border-gold shadow-sm'
                             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            selectedServices.includes(service._id) ? 'bg-gold border-gold text-white' : 'border-gray-300 bg-white'
+                            effectiveSelectedServices.includes(service._id) ? 'bg-gold border-gold text-white' : 'border-gray-300 bg-white'
                           }`}>
-                            {selectedServices.includes(service._id) && <Check size={12} strokeWidth={4} />}
+                            {effectiveSelectedServices.includes(service._id) && <Check size={12} strokeWidth={4} />}
                           </div>
                           <div>
                             <div className="font-bold text-[13px] text-gray-900 leading-tight">{service.name}</div>
                             <div className="text-[10px] font-medium text-gray-400 leading-tight">{service.timeCost || 30} mins</div>
                           </div>
                         </div>
-                        <div className="text-[13px] font-black text-gray-900">{formatMoney(service.price)}</div>
+                        {String(service._id) === freeServiceId ? (
+                          <div className="text-right">
+                            <div className="text-[10px] font-bold text-gray-400 line-through">{formatMoney(service.price)}</div>
+                            <div className="text-[13px] font-black text-emerald-600">0 VND</div>
+                          </div>
+                        ) : (
+                          <div className="text-[13px] font-black text-gray-900">{formatMoney(service.price)}</div>
+                        )}
                       </button>
                     ))
                   )}
                 </div>
               </div>
 
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Loyalty voucher</span>
+                  {selectedVoucher && <span className="text-xs font-black text-emerald-600">Applied</span>}
+                </div>
+                <CustomVoucherPicker
+                  value={selectedVoucherId}
+                  vouchers={selectableVouchers}
+                  onChange={setSelectedVoucherId}
+                />
+                {selectedVoucher && (
+                  <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                    {selectedVoucher.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
+                      ? `Discount ${selectedVoucher.benefitSnapshot.discountPercent}%: -${formatMoney(baseGrandTotal - grandTotal)}`
+                      : `Free service: ${selectedVoucher.benefitSnapshot?.serviceId?.name || 'included service'}`}
+                  </p>
+                )}
+              </div>
+
               <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2 shadow-inner">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> Duration</span>
-                  <span className="font-bold text-gray-900">{pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)</span>
+                  <span className="text-right font-bold text-gray-900">
+                    {pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)
+                    {pricePreview.durationMinutes > 0 && pricePreview.durationMinutes < 60 && (
+                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">Discounts apply from 60 minutes</span>
+                    )}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> Parking</span>
                   <span className="font-bold text-gray-900 text-right">
-                    {formatMoney(parkingTotal)}
+                    {dynamicPricing.loading ? (
+                      <span className="inline-block h-4 w-24 animate-pulse rounded bg-gray-200" />
+                    ) : dynamicPricing.effectiveMultiplier !== 1 && !dynamicPricing.error ? (
+                      <span className="flex flex-col items-end gap-1">
+                        <span className="text-xs text-gray-400 line-through">{formatMoney(baseParkingTotal)}</span>
+                        <span>{formatMoney(parkingTotal)}</span>
+                      </span>
+                    ) : formatMoney(baseParkingTotal)}
                     {pricePreview.capApplied && (
                       <span className="block text-[10px] text-emerald-600">Cap {pricePreview.capHours}h applied</span>
                     )}
@@ -1656,8 +1957,16 @@ export default function CreateBookingPage() {
                   <span className={`font-bold ${hasEnoughWallet ? 'text-emerald-600' : 'text-rose-600'}`}>{formatMoney(walletBalance)}</span>
                 </div>
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
-                  <span className="font-black text-gray-900">Wallet charge</span>
-                  <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
+                  <span className="flex items-center gap-2 font-black text-gray-900">
+                    Wallet charge
+                    {!dynamicPricing.error && <PriceBadge multiplier={dynamicPricing.effectiveMultiplier} label={dynamicPricing.promotion?.label || dynamicPricing.priceLabel} />}
+                  </span>
+                  <span className="text-right">
+                    {dynamicPricing.effectiveMultiplier !== 1 && !dynamicPricing.error && (
+                      <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(baseParkingTotal + grossServiceTotal)}</span>
+                    )}
+                    <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
+                  </span>
                 </div>
 
                 {selectedSlot && hasEnoughWallet && (
@@ -1702,6 +2011,9 @@ export default function CreateBookingPage() {
                     const itemError = cartItemErrors[item.clientItemId];
                     const quotedItem = cartQuote?.items?.find((quoteItem) => quoteItem.clientItemId === item.clientItemId);
                     const itemTotal = quotedItem?.totalAmount ?? item.totalAmount;
+                    const itemMultiplier = Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1);
+                    const itemVoucherDiscount = Number(quotedItem?.voucherDiscount || 0);
+                    const baseItemTotal = Number(item.baseTotalAmount ?? item.totalAmount ?? 0);
 
                     return (
                       <div
@@ -1748,12 +2060,19 @@ export default function CreateBookingPage() {
                             Services: {item.serviceNames.join(', ')}
                           </div>
                         )}
+                        {item.voucherName && (
+                          <div className="mt-2 text-xs font-bold text-emerald-600">Voucher: {item.voucherName}</div>
+                        )}
 
                         <div className="mt-3 flex items-center justify-between">
                           <span className={`text-xs font-black ${itemError ? 'text-rose-600' : 'text-emerald-600'}`}>
                             {itemError ? itemError.message : 'Ready'}
                           </span>
-                          <span className="text-sm font-black text-gray-900">{formatMoney(itemTotal)}</span>
+                          <span className="flex flex-col items-end gap-1 text-sm font-black text-gray-900">
+                            {(itemMultiplier !== 1 || itemVoucherDiscount > 0) && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
+                            <span>{formatMoney(itemTotal)}</span>
+                            <PriceBadge multiplier={itemMultiplier} />
+                          </span>
                         </div>
                       </div>
                     );
@@ -1770,7 +2089,12 @@ export default function CreateBookingPage() {
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500 font-semibold">Cart total</span>
-                      <span className="font-black text-gold text-lg">{formatMoney(cartGrandTotal)}</span>
+                      <span className="text-right">
+                        {(cartHasDynamicPricing || cartHasVoucher) && cartBaseGrandTotal !== cartGrandTotal && (
+                          <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(cartBaseGrandTotal)}</span>
+                        )}
+                        <span className="font-black text-gold text-lg">{formatMoney(cartGrandTotal)}</span>
+                      </span>
                     </div>
                     {cartWalletShortfall > 0 && (
                       <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
@@ -1782,7 +2106,7 @@ export default function CreateBookingPage() {
                   <button
                     type="button"
                     onClick={handleBookingClick}
-                    disabled={submitting || topUpLoading  || cartItems.length === 0}
+                    disabled={submitting || topUpLoading || cartItems.length === 0 || hasCartErrors}
                     className="w-full rounded-2xl bg-gray-900 hover:bg-black disabled:opacity-50 text-white px-4 py-4 font-black transition flex items-center justify-center gap-2 shadow-sm active:scale-[0.98]"
                   >
                     {(submitting || topUpLoading ) ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
@@ -1897,6 +2221,35 @@ export default function CreateBookingPage() {
           </section>
         </div>}
       </div>
+
+      {showCheckoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[28px] border border-gray-100 bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
+              <Wallet size={22} />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900">Confirm booking payment</h2>
+            <p className="mt-2 text-sm font-medium text-gray-500">
+              Review the final demand-adjusted amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
+            </p>
+            <div className="my-5 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+              {(cartHasDynamicPricing || cartHasVoucher) && cartBaseGrandTotal !== cartGrandTotal && (
+                <div className="mb-1 flex items-center justify-between text-sm text-gray-400">
+                  <span>Base total</span><span className="font-bold line-through">{formatMoney(cartBaseGrandTotal)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-600">Final wallet charge</span>
+                <span className="text-2xl font-black text-gold">{formatMoney(cartGrandTotal)}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">Confirm & pay</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUCCESS MODAL */}
       {showSuccessModal && bookingInfo && (
