@@ -131,8 +131,26 @@ async function revokePoints({ userId, refSource, refSourceId, session }) {
 async function redeemPoints({ userId, templateId }) {
   try {
     return await runAtomic(null, async (session) => {
-      const template = await VoucherTemplate.findById(templateId).session(session);
-      if (!template || !template.isActive) {
+      const template = await VoucherTemplate.findOneAndUpdate(
+        {
+          _id: templateId,
+          isActive: true,
+          $or: [
+            { redemptionLimit: null },
+            { redemptionLimit: { $exists: false } },
+            { $expr: { $lt: [{ $ifNull: ['$redeemedCount', 0] }, '$redemptionLimit'] } },
+          ],
+        },
+        { $inc: { redeemedCount: 1 } },
+        { new: true, session }
+      );
+      if (!template) {
+        const existingTemplate = await VoucherTemplate.findById(templateId).session(session);
+        if (existingTemplate?.isActive
+          && existingTemplate.redemptionLimit !== null
+          && Number(existingTemplate.redeemedCount || 0) >= existingTemplate.redemptionLimit) {
+          throw businessError('This limited voucher is sold out', 409, 'VOUCHER_SOLD_OUT');
+        }
         throw businessError('Voucher template is not available', 400, 'VOUCHER_TEMPLATE_UNAVAILABLE');
       }
 

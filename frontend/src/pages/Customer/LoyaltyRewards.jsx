@@ -56,14 +56,17 @@ export default function LoyaltyRewards() {
       await load();
     } else {
       setMessage({ type: 'error', text: response.data?.message || 'Không thể đổi voucher.' });
+      if (response.data?.code === 'VOUCHER_SOLD_OUT') await load();
     }
     setRedeeming('');
   };
 
   const balance = Number(data.account?.balance || 0);
-  const redeemableCount = catalog.filter((template) => balance >= template.pointCost).length;
+  const hasStock = (template) => template.redemptionLimit == null
+    || Number(template.redeemedCount || 0) < Number(template.redemptionLimit);
+  const redeemableCount = catalog.filter((template) => hasStock(template) && balance >= template.pointCost).length;
   const nextReward = [...catalog]
-    .filter((template) => template.pointCost > balance)
+    .filter((template) => hasStock(template) && template.pointCost > balance)
     .sort((first, second) => first.pointCost - second.pointCost)[0];
   const progressTarget = nextReward?.pointCost || Math.max(balance, 1);
   const rewardProgress = Math.min(100, Math.round((balance / progressTarget) * 100));
@@ -128,7 +131,11 @@ export default function LoyaltyRewards() {
 
         <section id="reward-catalog" className="mb-8 scroll-mt-6"><div className="mb-4 flex items-center gap-2"><Gift className="text-yellow-400" size={20} /><h2 className="text-xl font-black">Đổi điểm</h2></div><div className="grid gap-4 md:grid-cols-2">{catalog.map((template) => {
           const enough = balance >= template.pointCost;
-          return <article key={template._id} className="group flex min-h-60 flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-5 transition duration-200 hover:-translate-y-0.5 hover:border-yellow-400/20 hover:bg-white/[0.055]"><div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-400 transition-transform duration-200 group-hover:scale-105">{template.type === 'PERCENT_DISCOUNT' ? <Sparkles /> : <Award />}</div><span className="rounded-lg border border-white/[0.06] bg-white/[0.04] px-3 py-1 text-xs font-black text-yellow-300">{template.pointCost} điểm</span></div><h3 className="mt-4 text-lg font-black">{template.name}</h3><p className="mt-1 min-h-10 text-sm text-white/45">{template.description || (template.type === 'PERCENT_DISCOUNT' ? `Giảm ${template.discountPercent}% cho booking` : `Miễn phí ${template.serviceId?.name || 'dịch vụ'}`)}</p><button onClick={() => redeem(template)} disabled={!enough || redeeming === template._id} className="mt-auto w-full rounded-xl bg-yellow-400 px-4 py-2.5 text-sm font-black text-black transition duration-200 hover:bg-yellow-300 focus:outline-none focus:ring-4 focus:ring-yellow-400/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-35">{redeeming === template._id ? 'Đang đổi...' : enough ? 'Đổi voucher' : `Cần thêm ${(template.pointCost - balance).toLocaleString('vi-VN')} điểm`}</button></article>;
+          const available = hasStock(template);
+          const remaining = template.redemptionLimit == null
+            ? null
+            : Math.max(0, Number(template.redemptionLimit) - Number(template.redeemedCount || 0));
+          return <article key={template._id} className={`group flex min-h-60 flex-col rounded-2xl border bg-white/[0.04] p-5 transition duration-200 ${available ? 'border-white/10 hover:-translate-y-0.5 hover:border-yellow-400/20 hover:bg-white/[0.055]' : 'border-white/[0.06] opacity-60'}`}><div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-400 transition-transform duration-200 group-hover:scale-105">{template.type === 'PERCENT_DISCOUNT' ? <Sparkles /> : <Award />}</div><div className="flex flex-col items-end gap-1.5"><span className="rounded-lg border border-white/[0.06] bg-white/[0.04] px-3 py-1 text-xs font-black text-yellow-300">{template.pointCost} điểm</span>{remaining !== null && <span className={`text-[10px] font-black uppercase tracking-wide ${remaining > 0 ? 'text-amber-300' : 'text-rose-300'}`}>{remaining > 0 ? `Còn ${remaining} voucher` : 'Hết voucher'}</span>}</div></div><h3 className="mt-4 text-lg font-black">{template.name}</h3><p className="mt-1 min-h-10 text-sm text-white/45">{template.description || (template.type === 'PERCENT_DISCOUNT' ? `Giảm ${template.discountPercent}% cho booking` : `Miễn phí ${template.serviceId?.name || 'dịch vụ'}`)}</p><button onClick={() => redeem(template)} disabled={!available || !enough || redeeming === template._id} className="mt-auto w-full rounded-xl bg-yellow-400 px-4 py-2.5 text-sm font-black text-black transition duration-200 hover:bg-yellow-300 focus:outline-none focus:ring-4 focus:ring-yellow-400/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-35">{redeeming === template._id ? 'Đang đổi...' : !available ? 'Hết voucher' : enough ? 'Đổi voucher' : `Cần thêm ${(template.pointCost - balance).toLocaleString('vi-VN')} điểm`}</button></article>;
         })}{catalog.length === 0 && <p className="text-sm text-white/40">Chưa có phần thưởng đang hoạt động.</p>}</div></section>
 
         <div className="grid gap-7 xl:grid-cols-2">

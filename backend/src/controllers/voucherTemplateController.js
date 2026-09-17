@@ -1,6 +1,8 @@
 const Service = require('../models/Service');
 const UserVoucher = require('../models/UserVoucher');
 const VoucherTemplate = require('../models/VoucherTemplate');
+const notificationService = require('../services/notificationService');
+const { broadcastNotification } = require('../sockets/notificationSocket');
 
 const allowedFields = [
   'name',
@@ -9,6 +11,7 @@ const allowedFields = [
   'pointCost',
   'discountPercent',
   'serviceId',
+  'redemptionLimit',
   'isActive',
 ];
 
@@ -25,6 +28,27 @@ async function validateActiveService(template) {
       code: 'VOUCHER_SERVICE_UNAVAILABLE',
     });
   }
+}
+
+async function notifyCustomersOfRelease(req, template) {
+  const remainingText = template.redemptionLimit
+    ? ` Only ${template.redemptionLimit} vouchers are available.`
+    : '';
+  const result = await notificationService.createForRole('customer', {
+    title: `New reward: ${template.name}`,
+    content: `${template.description || 'A new loyalty reward is now available.'}${remainingText}`,
+    type: 'PROMOTION',
+    priority: 'INFO',
+    metadata: {
+      deepLink: '/customer/rewards',
+      voucherTemplateId: template._id,
+      redemptionLimit: template.redemptionLimit,
+    },
+  }, req.user?._id || null);
+
+  const io = req.app.get('io');
+  if (io) broadcastNotification(io, result.notification, result.userIds);
+  return result.userIds.length;
 }
 
 exports.listTemplates = async (_req, res, next) => {
@@ -45,7 +69,22 @@ exports.createTemplate = async (req, res, next) => {
     await validateActiveService(template);
     await template.save();
     await template.populate('serviceId', 'name price timeCost isActive');
-    res.status(201).json({ success: true, data: template });
+    let notifiedCustomers = 0;
+    let notificationWarning = null;
+    if (req.body.notifyCustomers === true) {
+      try {
+        notifiedCustomers = await notifyCustomersOfRelease(req, template);
+      } catch (notificationError) {
+        notificationWarning = 'Voucher was created, but customer notifications could not be sent';
+        console.error('[VoucherTemplate] Release notification failed:', notificationError.message);
+      }
+    }
+    res.status(201).json({
+      success: true,
+      data: template,
+      notification: { requested: req.body.notifyCustomers === true, sentTo: notifiedCustomers },
+      ...(notificationWarning ? { warning: notificationWarning } : {}),
+    });
   } catch (error) {
     next(error);
   }
@@ -56,6 +95,13 @@ exports.updateTemplate = async (req, res, next) => {
     const template = await VoucherTemplate.findById(req.params.id);
     if (!template) return res.status(404).json({ success: false, message: 'Voucher template not found' });
     Object.assign(template, pickUpdates(req.body));
+    if (template.redemptionLimit !== null && template.redemptionLimit < template.redeemedCount) {
+      return res.status(400).json({
+        success: false,
+        code: 'VOUCHER_LIMIT_BELOW_REDEEMED',
+        message: `Redemption limit cannot be lower than ${template.redeemedCount}`,
+      });
+    }
     await template.validate();
     await validateActiveService(template);
     await template.save();

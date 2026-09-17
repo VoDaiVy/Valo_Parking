@@ -32,6 +32,24 @@ const voucherTemplateSchema = new mongoose.Schema(
       default: null,
       required: function requireService() { return this.type === 'FREE_SERVICE'; },
     },
+    redemptionLimit: {
+      type: Number,
+      default: null,
+      min: 1,
+      validate: {
+        validator: function validateRedemptionLimit(value) {
+          return value === null
+            || (Number.isInteger(value) && value >= Number(this.redeemedCount || 0));
+        },
+        message: 'redemptionLimit must be a positive integer and cannot be lower than redeemedCount',
+      },
+    },
+    redeemedCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: { validator: Number.isInteger, message: 'redeemedCount must be an integer' },
+    },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

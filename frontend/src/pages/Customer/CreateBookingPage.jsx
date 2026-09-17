@@ -736,6 +736,13 @@ export default function CreateBookingPage() {
       && candidateEnd <= horizonEnd
       && candidateEndDate === startDate;
   }, [endTime, forecastHourSelection.allowed, startDate]);
+  const isForecastEndHourSelectable = useCallback((hour) => {
+    if (!forecastHourSelection.allowed) return false;
+    const candidateEnd = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    return candidateEnd > now && candidateEnd <= horizonEnd;
+  }, [forecastHourSelection.allowed, startDate]);
 
   const [vehicles, setVehicles] = useState([]);
   const [vehicleId, setVehicleId] = useState('');
@@ -1783,10 +1790,12 @@ export default function CreateBookingPage() {
                   floorId={currentFloorId}
                   canSelectHour={forecastHourSelection.allowed}
                   isHourSelectable={isForecastHourSelectable}
+                  isEndHourSelectable={isForecastEndHourSelectable}
                   selectionDisabledReason={forecastHourSelection.reason}
-                  onSelectHour={(hour) => {
+                  onSelectHour={(hour, rangePoint = 'start') => {
                     const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
-                    handleStartChange(startDate, nextTimeStr);
+                    if (rangePoint === 'end') handleEndChange(startDate, nextTimeStr);
+                    else handleStartChange(startDate, nextTimeStr);
                   }}
                 />
               </div>

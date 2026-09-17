@@ -37,3 +37,26 @@ test('percentage template requires an integer percentage', () => {
   });
   assert.ok(template.validateSync()?.errors?.discountPercent);
 });
+
+test('limited voucher requires a positive integer quantity', () => {
+  const template = new VoucherTemplate({
+    name: 'Holiday reward',
+    type: 'PERCENT_DISCOUNT',
+    pointCost: 100,
+    discountPercent: 20,
+    redemptionLimit: 2.5,
+  });
+  assert.ok(template.validateSync()?.errors?.redemptionLimit);
+});
+
+test('voucher limit cannot be lower than the number already redeemed', () => {
+  const template = new VoucherTemplate({
+    name: 'Limited reward',
+    type: 'PERCENT_DISCOUNT',
+    pointCost: 100,
+    discountPercent: 20,
+    redemptionLimit: 4,
+    redeemedCount: 5,
+  });
+  assert.ok(template.validateSync()?.errors?.redemptionLimit);
+});

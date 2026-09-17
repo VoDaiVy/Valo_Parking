@@ -13,10 +13,6 @@ export default function AIBusynessForecast({
   selectedHour,
   vehicleType = 'car',
   floorId,
-  onSelectHour,
-  canSelectHour = true,
-  isHourSelectable,
-  selectionDisabledReason = '',
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -59,11 +55,8 @@ export default function AIBusynessForecast({
     };
   }, [selectedDate, selectedHour, vehicleType, floorId]);
 
-  const hoveredHourIsEnabled = hoveredHour !== null
-    && canSelectHour
-    && (!isHourSelectable || isHourSelectable(hoveredHour));
   const activeHour =
-    hoveredHourIsEnabled
+    hoveredHour !== null
       ? hoveredHour
       : selectedHour !== undefined && selectedHour !== null
       ? Number(selectedHour)
@@ -113,18 +106,18 @@ export default function AIBusynessForecast({
     if (score >= 80)
       return isSelected
         ? 'bg-rose-500 shadow-md shadow-rose-500/30 ring-2 ring-rose-400'
-        : 'bg-rose-400/80 hover:bg-rose-500';
+        : 'bg-rose-400/80';
     if (score >= 60)
       return isSelected
         ? 'bg-amber-500 shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
-        : 'bg-amber-400/80 hover:bg-amber-500';
+        : 'bg-amber-400/80';
     if (score >= 35)
       return isSelected
         ? 'bg-yellow-400 shadow-md shadow-yellow-400/30 ring-2 ring-yellow-300'
-        : 'bg-yellow-300/80 hover:bg-yellow-400';
+        : 'bg-yellow-300/80';
     return isSelected
       ? 'bg-emerald-500 shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
-      : 'bg-emerald-400/80 hover:bg-emerald-500';
+      : 'bg-emerald-400/80';
   };
 
   const getBadgeStyle = (type) => {
@@ -204,66 +197,44 @@ export default function AIBusynessForecast({
         </div>
       )}
 
-      {/* ── 24h Interactive Bar Chart ── */}
+      {/* ── Read-only 24-hour forecast ── */}
       <div className="bg-gray-50 dark:bg-black/30 border border-gray-100 dark:border-white/5 rounded-xl p-3 sm:p-4 mb-3.5">
         <div className="flex items-end justify-between gap-1 h-24 sm:h-28 pt-4 px-1">
           {data.hourlyForecast.map((item) => {
-            const isSelected = item.hour === activeHour;
-            const hourCanBeSelected = canSelectHour && (isHourSelectable ? isHourSelectable(item.hour) : true);
-            const isInteractiveSelected = isSelected && hourCanBeSelected;
+            const isHovered = hoveredHour === item.hour;
             const barHeight = `${Math.max(12, item.busynessScore)}%`;
 
             return (
               <div
                 key={item.hour}
-                onClick={() => hourCanBeSelected && onSelectHour && onSelectHour(item.hour)}
-                onKeyDown={(event) => {
-                  if (hourCanBeSelected && onSelectHour && (event.key === 'Enter' || event.key === ' ')) {
-                    event.preventDefault();
-                    onSelectHour(item.hour);
-                  }
-                }}
-                onMouseEnter={() => {
-                  if (hourCanBeSelected) setHoveredHour(item.hour);
-                }}
+                onMouseEnter={() => setHoveredHour(item.hour)}
                 onMouseLeave={() => setHoveredHour(null)}
-                role="button"
-                tabIndex={hourCanBeSelected ? 0 : -1}
-                aria-disabled={!hourCanBeSelected}
-                aria-label={`${item.timeLabel}: ${item.busynessScore}% busy${hourCanBeSelected ? ', select this start time' : ', unavailable for this booking range'}`}
-                className={`group relative flex-1 flex flex-col items-center justify-end h-full transition-all duration-150 ${
-                  hourCanBeSelected ? 'cursor-pointer' : 'cursor-not-allowed'
-                } ${
-                  isInteractiveSelected ? 'scale-110 z-10' : hourCanBeSelected ? 'hover:scale-105 opacity-80 hover:opacity-100' : 'opacity-40 grayscale'
+                aria-label={`${item.timeLabel}: ${item.busynessScore}% busy`}
+                className={`relative flex h-full flex-1 cursor-default flex-col items-center justify-end transition-transform duration-150 ${
+                  isHovered ? 'z-10 scale-110' : ''
                 }`}
               >
-                {/* Floating tooltip only for selected bar */}
-                {isInteractiveSelected && (
-                  <div className="absolute -top-9 z-20 pointer-events-none px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-lg bg-gray-900 text-white dark:bg-gold dark:text-charcoal scale-100 opacity-100 transition-all duration-150">
+                {isHovered && (
+                  <div className="pointer-events-none absolute -top-9 z-20 whitespace-nowrap rounded-md bg-gray-900 px-2 py-0.5 text-[10px] font-bold text-white shadow-lg dark:bg-gold dark:text-charcoal">
                     {item.timeLabel}: {item.busynessScore}% busy
                   </div>
                 )}
 
-                {/* Animated bar */}
                 <div
                   style={{ height: barHeight }}
-                  className={`w-full max-w-[14px] rounded-t-md transition-all duration-300 ${getBarColor(
-                    item.busynessScore,
-                    isInteractiveSelected
-                  )}`}
+                  className={`w-full max-w-[14px] rounded-t-md ${getBarColor(item.busynessScore, isHovered)}`}
                 />
 
-                {/* Selected active indicator */}
-                {isInteractiveSelected && (
-                  <div className="absolute -bottom-1.5 w-1.5 h-1.5 rounded-full bg-gold animate-ping" />
+                {isHovered && (
+                  <div className="absolute -bottom-1.5 h-1 w-1 rounded-full bg-gold shadow-[0_0_6px_rgba(251,191,36,0.75)]" />
                 )}
               </div>
             );
           })}
         </div>
 
-        {/* X-axis time labels */}
-        <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 font-bold px-1 mt-2.5 pt-1.5 border-t border-gray-200/60 dark:border-white/5">
+        {/* Main time markers; all 24 hourly bars remain visible above. */}
+        <div className="mt-2.5 flex justify-between border-t border-gray-200/60 px-1 pt-1.5 text-[10px] font-bold text-gray-500 dark:border-white/5 dark:text-gray-400">
           <span>00:00</span>
           <span>06:00</span>
           <span>12:00</span>
@@ -314,17 +285,8 @@ export default function AIBusynessForecast({
         </div>
       )}
 
-      {!canSelectHour && (
-        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <p className="text-[11px] font-semibold leading-relaxed">
-            {selectionDisabledReason || 'Select a valid start and end time on the same day within the next 24 hours to choose an hour from this chart.'}
-          </p>
-        </div>
-      )}
-
-      {/* Legend & Advice */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-500 dark:text-gray-400 font-medium mt-3 pt-2 px-1">
+      {/* Legend */}
+      <div className="mt-3 flex flex-wrap items-center gap-3 px-1 pt-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Low (&lt;35%)
@@ -336,9 +298,6 @@ export default function AIBusynessForecast({
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> Peak (&gt;80%)
           </span>
         </div>
-        <span className="hidden sm:inline-block text-gray-500 dark:text-gray-400 italic">
-          {canSelectHour ? 'Click on an hourly bar to select booking time' : 'Hour selection is disabled for this booking range'}
-        </span>
       </div>
     </div>
   );
