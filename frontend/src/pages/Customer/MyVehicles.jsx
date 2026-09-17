@@ -30,7 +30,7 @@ const EMPTY_FORM = {
 };
 
 // ─── Vehicle Card ─────────────────────────────────────────────────────────────
-function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
+export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
   const [loading, setLoading] = useState(false);
   const typeObj = VEHICLE_TYPES.find((t) => t.value === vehicle.vehicleType);
 

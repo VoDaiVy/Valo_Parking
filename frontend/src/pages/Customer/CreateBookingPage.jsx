@@ -92,7 +92,8 @@ const getInitialTimeRange = () => {
   // Round up to the next 15-minute block (example: 9:07 -> 9:15)
   const minutes = start.getMinutes();
   const remainder = minutes % 15;
-  const addMinutes = remainder === 0 ? 0 : 15 - remainder;
+  const hasPartialMinute = start.getSeconds() > 0 || start.getMilliseconds() > 0;
+  const addMinutes = remainder === 0 ? (hasPartialMinute ? 15 : 0) : 15 - remainder;
   
   start.setMinutes(minutes + addMinutes);
   start.setSeconds(0, 0);
@@ -690,6 +691,9 @@ export default function CreateBookingPage() {
     [location.search],
   );
   const handledRequestedServiceId = useRef('');
+  const slotsRequestIdRef = useRef(0);
+  const quoteRequestIdRef = useRef(0);
+  const checkoutIdempotencyKeyRef = useRef(createClientItemId());
   const [initialRange] = useState(() => getInitialTimeRange());
   const [startDate, setStartDate] = useState(() => initialRange.startTime.split('T')[0]);
   const [startTimeStr, setStartTimeStr] = useState(() => initialRange.startTime.split('T')[1]);
@@ -813,8 +817,6 @@ export default function CreateBookingPage() {
   useEffect(() => {
     const timerId = window.setTimeout(fetchDbSlots, 0);
     return () => window.clearTimeout(timerId);
-    const timer = setTimeout(() => { fetchDbSlots(); }, 0);
-    return () => clearTimeout(timer);
   }, [fetchDbSlots]);
 
   const fetchActiveHoldsData = async () => {
@@ -868,20 +870,17 @@ export default function CreateBookingPage() {
   };
 
   useEffect(() => {
-    const timerId = window.setTimeout(() => {
-    const initialTimer = setTimeout(() => {
+    const initialTimer = window.setTimeout(() => {
       fetchActiveSessions();
       fetchActiveHoldsData();
     }, 0);
-    const intervalId = setInterval(() => {
-      fetchActiveSessions();
+    const intervalId = window.setInterval(() => {
       fetchActiveHoldsData();
       fetchDbSlots();
     }, 30000); // 30s
     return () => {
-      window.clearTimeout(timerId);
-      clearTimeout(initialTimer);
-      clearInterval(intervalId);
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalId);
     };
   }, [fetchDbSlots]);
 
@@ -1239,6 +1238,7 @@ export default function CreateBookingPage() {
   }, [showSuccessModal, bookingInfo]);
 
   const handleFindSlots = async () => {
+    const requestId = ++slotsRequestIdRef.current;
     setCheckingSlots(true);
     setError('');
     setSuccess('');
@@ -1249,6 +1249,8 @@ export default function CreateBookingPage() {
         startTime: new Date(startTime).toISOString(),
         endTime: new Date(endTime).toISOString(),
       });
+
+      if (requestId !== slotsRequestIdRef.current) return;
 
       if (!res.ok) {
         if (isPolicyAcceptanceRequired(res.data)) {
@@ -1273,11 +1275,14 @@ export default function CreateBookingPage() {
         }
       }
     } catch (err) {
+      if (requestId !== slotsRequestIdRef.current) return;
       console.error('Error finding slots:', err);
       setError(`Network error while checking slots: ${err.message}`);
       setSelectedSlotKey('');
     } finally {
-      setCheckingSlots(false);
+      if (requestId === slotsRequestIdRef.current) {
+        setCheckingSlots(false);
+      }
     }
   };
 
@@ -1364,12 +1369,9 @@ export default function CreateBookingPage() {
 
     setSubmitting(true);
     try {
-      if (editingClientItemId) {
-        const oldItem = cartItems.find(i => i.clientItemId === editingClientItemId);
-        if (oldItem && oldItem.holdId) {
-          await releaseBookingHold(oldItem.holdId).catch(() => {});
-        }
-      }
+      const oldItem = editingClientItemId
+        ? cartItems.find((item) => item.clientItemId === editingClientItemId)
+        : null;
 
       const holdRes = await createBookingHold({
         floorId: selectedSlot.floorId,
@@ -1377,6 +1379,7 @@ export default function CreateBookingPage() {
         licensePlate: vehicleId ? selectedVehicle?.licensePlate : rawManualPlate,
         startTime: startObj.toISOString(),
         endTime: endObj.toISOString(),
+        replaceHoldId: oldItem?.holdId || undefined,
       });
 
       if (!holdRes.ok) {
@@ -1544,6 +1547,7 @@ export default function CreateBookingPage() {
 
   useEffect(() => {
     if (cartItems.length === 0) {
+      quoteRequestIdRef.current += 1;
       const timer = setTimeout(() => {
         setCartQuote(null);
         setCartItemErrors({});
@@ -1551,9 +1555,23 @@ export default function CreateBookingPage() {
       return () => clearTimeout(timer);
     }
 
+    const requestId = ++quoteRequestIdRef.current;
     const timer = setTimeout(async () => {
       try {
         const res = await quoteBulkBooking({ items: cartApiItems });
+        if (requestId !== quoteRequestIdRef.current) return;
+
+        if (!res.ok) {
+          setCartQuote(null);
+          const quoteMessage = res.data?.message || 'Could not refresh the booking quote.';
+          const nextErrors = toItemErrorMap(res.data?.data?.itemErrors || []);
+          setCartItemErrors(Object.keys(nextErrors).length > 0
+            ? nextErrors
+            : { __quote: { message: quoteMessage } });
+          setError(quoteMessage);
+          return;
+        }
+
         const data = res.data?.data || {};
         if (data.items || data.grandTotal !== undefined) {
           setCartQuote({
@@ -1565,11 +1583,21 @@ export default function CreateBookingPage() {
         }
         setCartItemErrors(toItemErrorMap(data.itemErrors || []));
       } catch (err) {
+        if (requestId !== quoteRequestIdRef.current) return;
         console.error('Bulk quote failed', err);
+        setCartQuote(null);
+        const quoteMessage = 'Network error while refreshing the booking quote.';
+        setCartItemErrors({ __quote: { message: quoteMessage } });
+        setError(quoteMessage);
       }
     }, 250);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (quoteRequestIdRef.current === requestId) {
+        quoteRequestIdRef.current += 1;
+      }
+    };
   }, [cartApiItems, cartItems.length]);
 
 
@@ -1622,7 +1650,7 @@ export default function CreateBookingPage() {
       }));
 
       const res = await createBulkBooking({
-        idempotencyKey: createClientItemId(),
+        idempotencyKey: checkoutIdempotencyKeyRef.current,
         items: checkoutItems,
       });
 
@@ -1657,6 +1685,7 @@ export default function CreateBookingPage() {
 
       setSuccess(`Booking order created. Wallet charged ${formatMoney(res.data?.data?.grandTotal || cartGrandTotal)}.`);
       setCartItems([]);
+      checkoutIdempotencyKeyRef.current = createClientItemId();
       setCartQuote(null);
       setCartItemErrors({});
       setSelectedServices([]);

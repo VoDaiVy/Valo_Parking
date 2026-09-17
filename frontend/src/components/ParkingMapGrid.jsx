@@ -191,7 +191,7 @@ export default function ParkingMapGrid({
         const user = JSON.parse(raw);
         return user.role === 'admin' || user.role === 'staff';
       }
-    } catch (e) {
+    } catch {
       return false;
     }
     return false;

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Sparkles, Clock, DollarSign, CheckCircle, Star, CircleDollarSign, CalendarDays, ChevronRight } from 'lucide-react';
+import { Sparkles, Clock, CheckCircle, Star, CircleDollarSign, CalendarDays, ChevronRight } from 'lucide-react';
 import { getServices } from '../../services/extraServiceApi';
 import { buildBookingUrl } from '../../utils/bookingNavigation';
 
@@ -162,9 +162,7 @@ const ServiceList = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [imgLoaded, setImgLoaded] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
-  const prevServiceRef = useRef(null);
 
   /* Fetch services */
   useEffect(() => {

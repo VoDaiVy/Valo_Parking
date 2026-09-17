@@ -3,9 +3,9 @@ import { format } from 'date-fns';
 import {
   MonitorCheck, Car, FileWarning, ClipboardList,
   TrendingUp, CheckCircle2, AlertTriangle, DoorOpen,
-  ArrowRightCircle, QrCode, Activity, PlayCircle, Crown,
+  ArrowRightCircle, QrCode, Activity, Crown,
   CircleDollarSign, CalendarCheck2, Wrench, LogIn, LogOut,
-  Radio, Lock, Unlock, Pause, Play
+  Radio, Lock, Pause, Play
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../../services/api';
@@ -236,7 +236,7 @@ export default function StaffDashboard() {
             ...data.gates
           }));
         }
-      } catch (e) {
+      } catch {
         // bỏ qua lỗi mạng
       }
     };
@@ -311,7 +311,7 @@ export default function StaffDashboard() {
       } else {
         toast.error('Failed to trigger gate open!');
       }
-    } catch (err) {
+    } catch {
       toast.error('IoT Barrier connection error!');
     } finally {
       setIsTriggeringGate(false);
@@ -342,7 +342,7 @@ export default function StaffDashboard() {
       } else {
         toast.error('Failed to close gate!');
       }
-    } catch (err) {
+    } catch {
       toast.error('IoT Barrier connection error!');
     } finally {
       setIsTriggeringGate(false);
@@ -376,7 +376,7 @@ export default function StaffDashboard() {
           toast.success(`▶️ ${label} Resumed: Normal operation active!`);
         }
       }
-    } catch (err) {
+    } catch {
       toast.error('IoT Barrier connection error!');
     } finally {
       setIsTriggeringGate(false);

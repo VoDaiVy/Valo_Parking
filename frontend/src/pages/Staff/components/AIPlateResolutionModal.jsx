@@ -6,8 +6,6 @@ import {
   AlertTriangle,
   X,
   Upload,
-  Camera,
-  ArrowRight,
   ShieldCheck,
   Calendar,
   Crown,

@@ -183,12 +183,6 @@ export default function KioskFlow() {
     }
   };
 
-  const resetKioskFlow = () => {
-    setSuccessSession(null);
-    setFormData(createEmptyKioskFormData());
-    navigate('/kiosk', { replace: true });
-  };
-
   const handleFastPassComplete = () => {
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());

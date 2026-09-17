@@ -550,8 +550,8 @@ exports.createBooking = async (req, res, next) => {
     }
 
     const durationHours = durationMs / (1000 * 60 * 60);
-    if (durationHours <= 0) {
-      return res.status(400).json({ success: false, message: 'Invalid duration' });
+    if (durationMs < 30 * 60 * 1000) {
+      return res.status(400).json({ success: false, message: 'Booking duration must be at least 30 minutes' });
     }
     if (durationHours > 24) {
       return res.status(400).json({ success: false, message: 'Thời lượng tối đa cho mỗi đặt chỗ là 24 giờ' });
@@ -1780,7 +1780,7 @@ exports.getActiveHolds = async (req, res, next) => {
  */
 exports.createBookingHold = async (req, res, next) => {
   try {
-    const { floorId, slotCode, licensePlate, startTime, endTime } = req.body;
+    const { floorId, slotCode, licensePlate, startTime, endTime, replaceHoldId } = req.body;
     
     if (!floorId || !slotCode || !startTime || !endTime) {
       return res.status(400).json({ success: false, message: 'Please provide floorId, slotCode, startTime, endTime' });
@@ -1791,26 +1791,44 @@ exports.createBookingHold = async (req, res, next) => {
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
       return res.status(400).json({ success: false, message: 'Invalid booking time' });
     }
+    if (end.getTime() - start.getTime() < 30 * 60 * 1000) {
+      return res.status(400).json({ success: false, message: 'Booking duration must be at least 30 minutes' });
+    }
 
     const BookingHold = require('../models/BookingHold');
     const Session = require('../models/Session');
     const now = new Date();
+    if (start < now) {
+      return res.status(400).json({ success: false, message: 'Start time must be in the future' });
+    }
+
+    let replacementHold = null;
+    if (replaceHoldId) {
+      replacementHold = await BookingHold.findOne({
+        _id: replaceHoldId,
+        userId: req.user?._id,
+        status: 'active',
+        expiresAt: { $gt: now },
+      });
+      if (!replacementHold) {
+        return res.status(400).json({ success: false, message: 'The booking item being edited no longer has a valid hold.' });
+      }
+    }
 
     // Kiểm tra xem ô có đang bị ai đó hold trong thời gian này không
-    const existingHold = await BookingHold.findOne({
+    const holdOverlapQuery = {
       floorId,
       slotCode,
       status: 'active',
       expiresAt: { $gt: now },
       endTime: { $gt: start },
       startTime: { $lt: end },
-    });
+    };
+    if (replacementHold) holdOverlapQuery._id = { $ne: replacementHold._id };
+    const existingHold = await BookingHold.findOne(holdOverlapQuery);
 
     if (existingHold) {
-      const isOwner = req.user && existingHold.userId && existingHold.userId.toString() === req.user._id.toString();
-      if (!isOwner) {
-        return res.status(400).json({ success: false, message: 'This slot is temporarily held by someone else. Please select another slot.' });
-      }
+      return res.status(400).json({ success: false, message: 'This slot is temporarily held. Please select another slot.' });
     }
 
     // Kiểm tra xem ô đỗ có đang có xe đỗ không (active session), 
@@ -1856,7 +1874,8 @@ exports.createBookingHold = async (req, res, next) => {
       const activeHoldsCount = await BookingHold.countDocuments({
         userId: req.user._id,
         status: 'active',
-        expiresAt: { $gt: now }
+        expiresAt: { $gt: now },
+        ...(replacementHold ? { _id: { $ne: replacementHold._id } } : {}),
       });
       if (activeHoldsCount >= 5) {
         return res.status(400).json({ success: false, message: 'You can only hold a maximum of 5 slots at a time. Please pay or cancel some of your selected slots.' });
@@ -1884,6 +1903,17 @@ exports.createBookingHold = async (req, res, next) => {
       expiresAt: new Date(now.getTime() + holdDurationMs),
       status: 'active'
     });
+
+    if (replacementHold) {
+      const replacementResult = await BookingHold.updateOne(
+        { _id: replacementHold._id, status: 'active' },
+        { $set: { status: 'released' } },
+      );
+      if (replacementResult.modifiedCount !== 1) {
+        await BookingHold.updateOne({ _id: newHold._id }, { $set: { status: 'released' } });
+        return res.status(409).json({ success: false, message: 'The previous hold changed while this item was being updated. Please try again.' });
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -2011,8 +2041,10 @@ exports.quoteBulkBooking = async (req, res, next) => {
       }
       if (!vehicle) throw new Error(`No valid vehicle found for parking slot ${parkingSlot}`);
 
-      const durationHours = (end - start) / (1000 * 60 * 60);
-      if (durationHours <= 0) throw new Error('Invalid duration');
+      const durationMs = end.getTime() - start.getTime();
+      if (!Number.isFinite(durationMs) || durationMs < 30 * 60 * 1000) {
+        throw new Error('Booking duration must be at least 30 minutes');
+      }
       // Check VIP Restriction
       if (vehicle.licensePlate) {
         const restriction = await findVipRegisteredVehicleBookingRestriction({
@@ -2237,8 +2269,11 @@ exports.createBulkBooking = async (req, res, next) => {
       }
       if (!vehicle) throw new Error(`No valid vehicle found for parking slot ${parkingSlot}`);
 
-      const durationHours = (end - start) / (1000 * 60 * 60);
-      if (durationHours <= 0) throw new Error('Invalid duration');
+      const durationMs = end.getTime() - start.getTime();
+      if (!Number.isFinite(durationMs) || durationMs < 30 * 60 * 1000) {
+        throw new Error('Booking duration must be at least 30 minutes');
+      }
+      const normalizedItemPlate = normalizeLicensePlate(vehicle.licensePlate || licensePlate || '');
       // Check VIP Restriction
       if (vehicle.licensePlate) {
         const restriction = await findVipRegisteredVehicleBookingRestriction({
@@ -2264,7 +2299,10 @@ exports.createBulkBooking = async (req, res, next) => {
 
       // Check internal overlap for slot within the same request
       const internalSlotOverlap = internalSlotReservations.find(res => {
-        return res.parkingSlot === parkingSlot && res.start < end && res.end > start;
+        return String(res.floorId) === String(floorId)
+          && res.parkingSlot === parkingSlot
+          && res.start < end
+          && res.end > start;
       });
       if (internalSlotOverlap) throw new Error(`Parking slot ${parkingSlot} has overlapping bookings within the same cart`);
 
@@ -2274,7 +2312,7 @@ exports.createBulkBooking = async (req, res, next) => {
         licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate, 
         start, end 
       });
-      internalSlotReservations.push({ parkingSlot, start, end });
+      internalSlotReservations.push({ floorId, parkingSlot, start, end });
 
       // Check overlapping for vehicle in Database
       const overlappingBooking = await Booking.findOne(buildVehicleBookingOverlapQuery({
@@ -2334,11 +2372,17 @@ exports.createBulkBooking = async (req, res, next) => {
       const bookingHold = await BookingHold.findOne({
         _id: holdId,
         userId: userId,
+        floorId,
         slotCode: parkingSlot,
+        status: 'active',
         expiresAt: { $gt: new Date() }
       }).session(session);
       if (!bookingHold) {
         throw new Error(`Phiên giữ chỗ cho ô đỗ ${parkingSlot} không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.`);
+      }
+      if (bookingHold.startTime.getTime() !== start.getTime()
+        || bookingHold.endTime.getTime() !== end.getTime()) {
+        throw new Error(`The hold for parking slot ${parkingSlot} does not match the selected booking time.`);
       }
 
       // Pricing

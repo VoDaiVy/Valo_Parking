@@ -134,7 +134,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
         const user = JSON.parse(raw);
         return user.role === 'admin' || user.role === 'staff';
       }
-    } catch (e) {
+    } catch {
       return false;
     }
     return false;
@@ -301,7 +301,6 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       // SLOT LOGIC
       if (el.type && el.type.startsWith('slot')) {
         const hasName = !!el.name && el.name.trim() !== '';
-        const slotName = hasName ? el.name : el.id;
         const slotCode = hasName ? el.name : el.id;
         const sessionKey = `${floorId}-${slotCode}`;
         const occupiedSession = sessionMap[sessionKey];

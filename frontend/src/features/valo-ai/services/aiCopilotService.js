@@ -4,7 +4,9 @@ const getBasePrefix = () => {
   try {
     const user = JSON.parse(sessionStorage.getItem('valo_user') || '{}');
     if (user.role === 'staff') return '/ai-copilot/staff';
-  } catch (e) {}
+  } catch {
+    return '/ai-copilot';
+  }
   return '/ai-copilot';
 };
 

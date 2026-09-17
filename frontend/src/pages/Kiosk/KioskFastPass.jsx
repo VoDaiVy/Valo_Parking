@@ -73,7 +73,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
             returnToStart();
           }
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };
@@ -104,8 +104,8 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
 
   useEffect(() => {
     if (successSession) {
-      setStatus('ready');
-      return undefined;
+      const timerId = window.setTimeout(() => setStatus('ready'), 0);
+      return () => window.clearTimeout(timerId);
     }
 
     if (hasStartedRef.current) return undefined;

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, CreditCard, Wallet, Loader2, AlertCircle, CalendarClock } from 'lucide-react';
-import { apiFetch, API_BASE } from '../../services/api';
+import { API_BASE } from '../../services/api';
 
 export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
   const [paymentMethod, setPaymentMethod] = useState('PAYOS');

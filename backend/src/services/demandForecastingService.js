@@ -207,7 +207,6 @@ async function getOccupancyForecast({
       bookings.forEach((b) => {
         if (b.scheduledStart) {
           const startH = Math.max(0, new Date(b.scheduledStart).getHours());
-          const startH = new Date(b.scheduledStart).getHours();
           const endH = b.scheduledEnd ? new Date(b.scheduledEnd).getHours() : startH + 1;
           for (let h = startH; h <= Math.min(23, endH); h++) {
             hourlyBookings[h] = (hourlyBookings[h] || 0) + 1;

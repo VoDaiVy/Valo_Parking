@@ -1,4 +1,3 @@
-import React from 'react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import { X } from 'lucide-react';
 

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
-import { API_BASE } from '../../services/api';
 import KioskOutWelcome from './KioskOutWelcome';
 import KioskOutInvoice from './KioskOutInvoice';
 import KioskOutSuccess from './KioskOutSuccess';

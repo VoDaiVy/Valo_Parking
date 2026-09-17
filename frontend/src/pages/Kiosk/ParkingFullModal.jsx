@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 export default function ParkingFullModal({ isOpen, onClose, title = "PARKING FULL", message = "We apologize, but the parking lot is currently full. Please come back again later!" }) {
@@ -6,8 +6,8 @@ export default function ParkingFullModal({ isOpen, onClose, title = "PARKING FUL
 
   useEffect(() => {
     if (!isOpen) {
-      setTimeLeft(20);
-      return;
+      const resetTimer = window.setTimeout(() => setTimeLeft(20), 0);
+      return () => window.clearTimeout(resetTimer);
     }
 
     const timer = setInterval(() => {

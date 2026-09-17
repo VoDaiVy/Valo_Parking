@@ -28,7 +28,7 @@ export default function KioskOutSuccess({ onFinish }) {
             handleDone();
           }
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };

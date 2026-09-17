@@ -513,6 +513,8 @@ export default function DashboardLayout() {
                             if (dest) {
                               setNotifOpen(false);
                               navigate(dest);
+                            }
+
                             if (role === "customer") {
                               const destination = getSafeCustomerNotificationLink(n);
                               if (destination) {

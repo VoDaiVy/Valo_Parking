@@ -177,6 +177,7 @@ export default function VehiclePending() {
         cancelText="Cancel"
         isDestructive={true}
       />
+      </div>
     </div>
   );
 }

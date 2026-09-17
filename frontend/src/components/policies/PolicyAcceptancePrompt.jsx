@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { ShieldCheck, CheckCircle2, ChevronDown, ChevronUp, FileText, Loader2, X, Info } from 'lucide-react';
 import { acceptPolicy } from '../../services/policyService';
 
@@ -10,38 +10,20 @@ export default function PolicyAcceptancePrompt({
 }) {
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState('');
-  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedPolicyIds, setExpandedPolicyIds] = useState(new Set());
-  
-  const scrollRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
-      setHasScrolledToBottom(false);
+    if (!open) return undefined;
+
+    const timerId = window.setTimeout(() => {
       setExpandedId(null);
       setExpandedPolicyIds(new Set());
       setError('');
-      
-      // If content is very short, they might not need to scroll
-      setTimeout(() => {
-        if (scrollRef.current) {
-          const { scrollHeight, clientHeight } = scrollRef.current;
-          if (scrollHeight <= clientHeight + 10) {
-            setHasScrolledToBottom(true);
-          }
-        }
-      }, 100);
-    }
-  }, [open]);
+    }, 0);
 
-  const handleScroll = (e) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.target;
-    // Allow a small threshold (e.g. 5px) to account for fractional pixels
-    if (scrollTop + clientHeight >= scrollHeight - 5) {
-      setHasScrolledToBottom(true);
-    }
-  };
+    return () => window.clearTimeout(timerId);
+  }, [open]);
 
   if (!open) return null;
 
@@ -103,11 +85,7 @@ export default function PolicyAcceptancePrompt({
         </div>
 
         {/* Content Body */}
-        <div 
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className="relative max-h-[55vh] overflow-y-auto px-6 py-6 sm:px-8 scroll-smooth"
-        >
+        <div className="relative max-h-[55vh] overflow-y-auto px-6 py-6 sm:px-8 scroll-smooth">
           {items.length === 0 ? (
             <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 text-emerald-400">
               <CheckCircle2 size={24} />

@@ -1,6 +1,5 @@
-import { ArrowDown, ArrowUp, Plus, Trash2, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { normalizeRefundRule } from '../../services/policyService';
-import AdminSelect from '../Admin/AdminSelect';
 
 const asNumber = (value) => {
   if (value === '') return '';
@@ -13,12 +12,6 @@ const fieldClass =
 const numberFieldClass =
   '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 const errorClass = 'mt-1 text-xs font-semibold text-red-300';
-const earlyCheckoutModeOptions = [
-  { value: 'actual_usage', label: 'Actual usage' },
-  { value: 'fixed_refund_percent', label: 'Fixed refund percent' },
-  { value: 'no_refund', label: 'No parking refund' },
-];
-
 function NumberField({
   id,
   label,

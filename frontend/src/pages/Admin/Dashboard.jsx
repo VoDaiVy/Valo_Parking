@@ -881,11 +881,10 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
+    // These callbacks start the initial asynchronous dashboard synchronization.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStats();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchFinanceSummary();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchServices();
   }, [fetchFinanceSummary, fetchServices, fetchStats]);
 
