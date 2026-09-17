@@ -309,6 +309,38 @@ test('standalone pricing approval refuses multi-document write and keeps draft p
   }
 });
 
-
-
-
+test('get_revenue_metrics correctly branches between platform and parking scope and combines timelines', async () => {
+  const originalPlatform = statistics.getAdminPlatformRevenueStatistics;
+  const originalBooking = statistics.getAdminBookingStatistics;
+  const originalSubscription = statistics.getAdminSubscriptionStatistics;
+  
+  statistics.getAdminPlatformRevenueStatistics = async () => ({
+    period: { range: 'today' },
+    booking: { revenue: 362000, completedCount: 5 }
+  });
+  
+  statistics.getAdminBookingStatistics = async () => ({
+    money: { walletBookingCharges: 200000, walletBookingRefunds: 0 },
+    timeline: { points: [{ period: '2026-09-17', bookingCharges: 200000, bookingRefunds: 0 }] }
+  });
+  
+  statistics.getAdminSubscriptionStatistics = async () => ({
+    summary: { grossAmount: 257000, renewalAmount: 0 },
+    timeline: { points: [{ period: '2026-09-17', packageSales: 257000, renewalSales: 0 }] }
+  });
+  
+  try {
+    const parkingResult = await execute('get_revenue_metrics', { scope: 'parking', startDate: '2026-09-17', endDate: '2026-09-17' });
+    assert.equal(parkingResult.data.scope, 'parking');
+    assert.equal(parkingResult.data.parkingRevenue, 362000);
+    
+    const platformResult = await execute('get_revenue_metrics', { scope: 'platform', startDate: '2026-09-17', endDate: '2026-09-17' });
+    assert.equal(platformResult.data.scope, 'platform');
+    assert.equal(platformResult.data.recordedSales, 457000);
+    assert.equal(platformResult.data.timeline[0].recordedSales, 457000);
+  } finally {
+    statistics.getAdminPlatformRevenueStatistics = originalPlatform;
+    statistics.getAdminBookingStatistics = originalBooking;
+    statistics.getAdminSubscriptionStatistics = originalSubscription;
+  }
+});

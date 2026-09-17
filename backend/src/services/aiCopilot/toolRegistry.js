@@ -46,7 +46,69 @@ function passArgs(args = {}) {
 const define = (name, description, parameters, validate, run) => ({ name, description, parameters, validate, run });
 const tools = [
   /* ── 11 existing aggregate / summary tools (untouched) ─────────────── */
-  define('get_revenue_metrics', 'Doanh thu nền tảng từ booking, gói vé, gia hạn và phí chuyển nhượng; không chỉ tiền phạt.', dateSchema, validateDates, async (p) => statistics.getAdminPlatformRevenueStatistics(p)),
+  define(
+    'get_revenue_metrics', 
+    'QUAN TRỌNG: Từ khóa "doanh thu hệ thống", "tổng doanh thu", "platform revenue" => dùng scope="platform". Từ khóa "doanh thu bãi đỗ xe", "doanh thu booking", "tiền đặt chỗ" => dùng scope="parking". Trả về tổng doanh thu và breakdown theo từng ngày (timeline) trong khoảng thời gian.', 
+    {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string', description: 'ISO date hoặc YYYY-MM-DD, inclusive' },
+        endDate: { type: 'string', description: 'ISO date hoặc YYYY-MM-DD, inclusive' },
+        scope: { type: 'string', enum: ['platform', 'parking'], description: 'platform (Recorded Sales) hay parking (Parking Revenue).' }
+      }
+    }, 
+    (args = {}) => {
+      const datesArgs = {};
+      if (args.startDate) datesArgs.startDate = args.startDate;
+      if (args.endDate) datesArgs.endDate = args.endDate;
+      return { ...validateDates(datesArgs), scope: args.scope || 'platform' };
+    }, 
+    async (p) => {
+      if (p.scope === 'parking') {
+        const stats = await statistics.getAdminPlatformRevenueStatistics(p);
+        return {
+          period: stats.period,
+          scope: 'parking',
+          parkingRevenue: stats.booking.revenue,
+          completedBookingCount: stats.booking.completedCount
+        };
+      } else {
+        const [bookingStats, subStats] = await Promise.all([
+          statistics.getAdminBookingStatistics(p),
+          statistics.getAdminSubscriptionStatistics(p)
+        ]);
+        
+        const recordedSales = 
+          Number(bookingStats.money.walletBookingCharges || 0) +
+          Number(subStats.summary.grossAmount || 0) +
+          Number(subStats.summary.renewalAmount || 0);
+        const refunds = Number(bookingStats.money.walletBookingRefunds || 0);
+        
+        const timelineMap = new Map();
+        for (const pt of bookingStats.timeline.points) {
+          timelineMap.set(pt.period, { 
+            date: pt.period, 
+            recordedSales: Number(pt.bookingCharges || 0), 
+            refunds: Number(pt.bookingRefunds || 0) 
+          });
+        }
+        for (const pt of subStats.timeline.points) {
+          const current = timelineMap.get(pt.period) || { date: pt.period, recordedSales: 0, refunds: 0 };
+          current.recordedSales += Number(pt.packageSales || 0) + Number(pt.renewalSales || 0);
+          timelineMap.set(pt.period, current);
+        }
+
+        return {
+          period: p.range ? { range: p.range } : { startDate: p.startDate, endDate: p.endDate },
+          scope: 'platform',
+          recordedSales,
+          refunds,
+          netSales: recordedSales - refunds,
+          timeline: [...timelineMap.values()].sort((a, b) => a.date.localeCompare(b.date))
+        };
+      }
+    }
+  ),
   define('get_session_statistics', 'Thống kê phiên xe theo trạng thái trong khoảng thời gian.', dateSchema, validateDates, async (p) => {
     const match = p.startDate ? { checkInTime: { $gte: new Date(p.startDate), $lte: new Date(p.endDate) } } : { checkInTime: { $gte: startOfVietnamDay(new Date()) } };
     const rows = await Session.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 }, averageDurationHours: { $avg: '$expectedDurationHours' } } }]);
@@ -145,13 +207,14 @@ const tools = [
     passArgs, async (p, actorRole) => readTools.searchVehicles(p, actorRole)),
 
   define('search_bookings',
-    'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Nếu không có filter, trả booking gần nhất.',
+    'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Hỗ trợ tìm kiếm theo dateType (tạo trong khoảng, bắt đầu trong khoảng, hoặc có hiệu lực giao với khoảng này). Mặc định tìm các booking đang có hiệu lực / overlap.',
     { type: 'object', properties: {
       userId: { type: 'string', description: 'ObjectId người đặt.' },
       plateNumber: { type: 'string', description: 'Biển số xe.' },
       status: { type: 'string', enum: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED', 'EXPIRED', 'COMPLETED', 'CANCELLED'], description: 'Trạng thái booking.' },
       startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
       endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      dateType: { type: 'string', enum: ['overlap', 'start', 'create'], description: '"overlap" = đang có hiệu lực / giao nhau với khoảng (ví dụ: "booking hôm nay"). "start" = có lịch bắt đầu trong khoảng. "create" = tạo trong khoảng. Mặc định là "overlap".' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
     } },
     passArgs, async (p, actorRole) => readTools.searchBookings(p, actorRole)),

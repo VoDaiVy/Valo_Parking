@@ -244,7 +244,7 @@ async function searchVehicles({ plateNumber, userId, vehicleType, status, limit 
 
 /* ── 7. search_bookings ──────────────────────────────────────────────── */
 
-async function searchBookings({ userId, plateNumber, status, startDate, endDate, limit } = {}) {
+async function searchBookings({ userId, plateNumber, status, startDate, endDate, dateType = 'overlap', limit } = {}) {
   const filter = {};
   if (userId) {
     if (!isObjectId(userId)) throw new Error('userId không hợp lệ.');
@@ -258,9 +258,25 @@ async function searchBookings({ userId, plateNumber, status, startDate, endDate,
   }
   const { start, end } = parseDateRange({ startDate, endDate });
   if (start || end) {
-    filter.scheduledStart = {};
-    if (start) filter.scheduledStart.$gte = start;
-    if (end) filter.scheduledStart.$lte = end;
+    if (dateType === 'create') {
+      filter.createdAt = {};
+      if (start) filter.createdAt.$gte = start;
+      if (end) filter.createdAt.$lte = end;
+    } else if (dateType === 'start') {
+      filter.scheduledStart = {};
+      if (start) filter.scheduledStart.$gte = start;
+      if (end) filter.scheduledStart.$lte = end;
+    } else {
+      // overlap semantics: bookingStart <= end AND bookingEnd >= start
+      if (start && end) {
+        filter.scheduledStart = { $lte: end };
+        filter.scheduledEnd = { $gte: start };
+      } else if (start) {
+        filter.scheduledEnd = { $gte: start };
+      } else if (end) {
+        filter.scheduledStart = { $lte: end };
+      }
+    }
   }
   const actualLimit = clampLimit(limit, 20);
   const [items, total] = await Promise.all([

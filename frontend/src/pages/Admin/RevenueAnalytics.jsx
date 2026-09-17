@@ -435,6 +435,7 @@ function FinancialOverviewStrip({ metrics, reduceMotion }) {
 }
 
 function SalesTrendChart({ points, granularity, reduceMotion }) {
+  const [hoveredIndex, setHoveredIndex] = useState(null);
   const width = 1000;
   const height = 340;
   const padding = { top: 24, right: 26, bottom: 42, left: 76 };
@@ -468,6 +469,7 @@ function SalesTrendChart({ points, granularity, reduceMotion }) {
     0
   );
   const totalRefunds = points.reduce((sum, point) => sum + point.refunds, 0);
+  const bandWidth = points.length > 1 ? plotWidth / (points.length - 1) : plotWidth;
 
   return (
     <motion.section
@@ -553,34 +555,42 @@ function SalesTrendChart({ points, granularity, reduceMotion }) {
             />
 
             {points.map((point, index) => (
-              <g key={point.period}>
+              <g 
+                key={point.period}
+                onMouseEnter={() => setHoveredIndex(index)}
+                onMouseLeave={() => setHoveredIndex(null)}
+              >
+                <rect
+                  x={xForIndex(index) - bandWidth / 2}
+                  y={padding.top}
+                  width={bandWidth}
+                  height={plotHeight}
+                  fill="transparent"
+                  cursor="crosshair"
+                />
                 {point.recordedSales > 0 && (
                   <circle
                     cx={xForIndex(index)}
                     cy={yForValue(point.recordedSales)}
-                    r="4.2"
+                    r={hoveredIndex === index ? "5.5" : "4.2"}
                     fill="#111111"
                     stroke="#FACC15"
                     strokeWidth="2.5"
-                  >
-                    <title>
-                      {`${point.period}: recorded sales sources ${formatCurrency(point.recordedSales)}; refunds ${formatCurrency(point.refunds)}; net visualization value ${formatCurrency(point.netSales)}`}
-                    </title>
-                  </circle>
+                    style={{ transition: 'all 0.2s ease' }}
+                    className="pointer-events-none"
+                  />
                 )}
                 {point.refunds > 0 && (
                   <circle
                     cx={xForIndex(index)}
                     cy={yForValue(point.refunds)}
-                    r="3.8"
+                    r={hoveredIndex === index ? "5" : "3.8"}
                     fill="#111111"
                     stroke="#FB7185"
                     strokeWidth="2.2"
-                  >
-                    <title>
-                      {`${point.period}: refunds ${formatCurrency(point.refunds)}`}
-                    </title>
-                  </circle>
+                    style={{ transition: 'all 0.2s ease' }}
+                    className="pointer-events-none"
+                  />
                 )}
                 {labelIndexes.has(index) && (
                   <text
@@ -591,17 +601,53 @@ function SalesTrendChart({ points, granularity, reduceMotion }) {
                     }
                     fill="rgba(148,163,184,0.82)"
                     fontSize="12"
+                    className="pointer-events-none"
                   >
                     {granularity === 'month'
                       ? point.period
                       : new Date(`${point.period}T00:00:00+07:00`).toLocaleDateString(
-                        'vi-VN',
-                        { day: '2-digit', month: '2-digit' }
+                        'en-GB'
                       )}
                   </text>
                 )}
               </g>
             ))}
+
+            {hoveredIndex !== null && points[hoveredIndex] && (
+              <g className="pointer-events-none">
+                <line
+                  x1={xForIndex(hoveredIndex)}
+                  x2={xForIndex(hoveredIndex)}
+                  y1={padding.top}
+                  y2={padding.top + plotHeight}
+                  stroke="rgba(255,255,255,0.15)"
+                  strokeWidth="1"
+                  strokeDasharray="4 4"
+                />
+                <foreignObject
+                  x={xForIndex(hoveredIndex) < width / 2 ? xForIndex(hoveredIndex) + 15 : xForIndex(hoveredIndex) - 215}
+                  y={Math.max(padding.top, Math.min(yForValue(points[hoveredIndex].recordedSales), yForValue(points[hoveredIndex].refunds)) - 20)}
+                  width="200"
+                  height="110"
+                >
+                  <div className="rounded-xl border border-white/10 bg-[#151515]/95 p-3.5 shadow-2xl backdrop-blur-md">
+                    <p className="mb-2 text-[13px] font-bold text-white">
+                      {granularity === 'month' 
+                         ? points[hoveredIndex].period 
+                         : new Date(`${points[hoveredIndex].period}T00:00:00+07:00`).toLocaleDateString('en-GB')}
+                    </p>
+                    <p className="text-[11px] text-slate-300 flex justify-between items-center">
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-yellow-400" />Recorded Sales:</span>
+                      <span className="font-bold text-white">{formatCurrency(points[hoveredIndex].recordedSales)}</span>
+                    </p>
+                    <p className="mt-1.5 text-[11px] text-slate-300 flex justify-between items-center">
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-400" />Refunds:</span>
+                      <span className="font-bold text-white">{formatCurrency(points[hoveredIndex].refunds)}</span>
+                    </p>
+                  </div>
+                </foreignObject>
+              </g>
+            )}
           </svg>
         </div>
       ) : (
