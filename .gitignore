@@ -2,3 +2,9 @@
 
 docs/*
 plans/*
+
+node_modules/
+.kiro/
+
+__pycache__/
+*.pyc

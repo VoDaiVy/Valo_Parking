@@ -12,5 +12,11 @@ test('revenue analytics omits booking and package summary blocks', () => {
 test('revenue analytics preserves the detailed sections', () => {
   assert.match(source, />\s*Status Distribution\s*</);
   assert.match(source, />\s*Value by Package\s*</);
-  assert.match(source, /<SourceSummaryStrip items=\{sourceSummary\}/);
+  assert.match(source, /<SalesTrendChart/);
+});
+
+test('revenue analytics omits the legacy AI insights strip', () => {
+  assert.doesNotMatch(source, />\s*AI Insights\s*</);
+  assert.doesNotMatch(source, /getAdminAIAnalyticsSummary/);
+  assert.doesNotMatch(source, /\/admin\/revenue\/ai\//);
 });

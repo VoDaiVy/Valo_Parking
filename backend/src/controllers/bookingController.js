@@ -20,6 +20,7 @@ const voucherService = require('../services/voucherService');
 const notifTriggers = require('../services/notificationTriggers');
 const contractService = require('../services/contractService');
 const bookingRefundService = require('../services/bookingRefundService');
+const { notifyBookingPaidSafely, notifyBookingCancelledSafely, notifySessionCreatedSafely } = require('../services/aiCopilot/notificationEvents');
 const {
   getBookingFinancialSummaryMap,
 } = require('../services/bookingFinancialService');
@@ -32,6 +33,10 @@ const {
   transitionPendingBookingToPaid,
 } = require('../services/paidBookingPolicyService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const {
+  ACTIVE_BOOKING_STATUSES: BOOKING_STATUSES_THAT_BLOCK_SLOT,
+  buildVehicleBookingOverlapQuery,
+} = require('../utils/bookingVehicleOverlap');
 const { bangkokDateParts } = require('../utils/pricingHorizon');
 const { emitToUser } = require('../sockets/notificationSocket');
 const {
@@ -41,8 +46,6 @@ const {
 const {
   findActiveSlotOwnership,
 } = require('../services/membershipSlotOwnershipService');
-
-const BOOKING_STATUSES_THAT_BLOCK_SLOT = ['PAID', 'ACTIVE', 'PAUSED'];
 
 const normalizeSlotCode = (slotCode = '') => String(slotCode).trim().toUpperCase();
 
@@ -155,6 +158,59 @@ const getAllBookableSlots = async () => {
   });
 };
 
+const getDedicatedSlotKeys = async (userId = null) => {
+  const activeMembershipSlotsPromise = MembershipSlotEntitlement.find({
+    status: { $in: ['active', 'transfer_locked'] },
+    expireAt: { $gt: new Date() },
+  })
+    .select('floorId slotCode sourceSubscriptionId')
+    .lean()
+    .then(async (entitlements) => {
+      const Subscription = require('../models/Subscription');
+      const coveredSubscriptionIds = entitlements.map(
+        (item) => item.sourceSubscriptionId
+      );
+      const legacySubscriptions = await Subscription.find({
+        _id: { $nin: coveredSubscriptionIds },
+        status: 'active',
+        paymentStatus: 'paid',
+        expireAt: { $gt: new Date() },
+      })
+        .select('slots')
+        .lean();
+      return [
+        ...entitlements.map((item) => ({
+          floorId: item.floorId,
+          slotCode: item.slotCode,
+        })),
+        ...legacySubscriptions.flatMap((subscription) => subscription.slots || []),
+      ];
+    });
+
+  const reservedSlotsQuery = { reservedFor: { $ne: null } };
+  if (userId) {
+    reservedSlotsQuery.reservedFor = { $nin: [null, userId] };
+  }
+  const reservedSlotsPromise = Slot.find(reservedSlotsQuery)
+    .select('floorID slotNumber')
+    .lean();
+
+  const [reservedSlots, activeMembershipSlots] = await Promise.all([
+    reservedSlotsPromise, activeMembershipSlotsPromise,
+  ]);
+  return new Set([
+    ...reservedSlots.map((slot) => buildSlotKey(slot.floorID, slot.slotNumber)),
+    ...activeMembershipSlots.map((slot) => buildSlotKey(slot.floorId, slot.slotCode)),
+  ]);
+};
+
+const getGeneralBookableSlots = async () => {
+  const [slots, dedicatedKeys] = await Promise.all([
+    getAllBookableSlots(), getDedicatedSlotKeys(),
+  ]);
+  return slots.filter((slot) => !dedicatedKeys.has(buildSlotKey(slot.floorId, slot.slotCode)));
+};
+
 const getUnavailableSlotKeys = async (start, end, userId = null) => {
   const now = new Date();
   const overlappingBookingsPromise = Booking.find({
@@ -194,57 +250,18 @@ const getUnavailableSlotKeys = async (start, end, userId = null) => {
     .select('floorId slotCode')
     .lean();
 
-  const activeMembershipSlotsPromise = MembershipSlotEntitlement.find({
-    status: { $in: ['active', 'transfer_locked'] },
-    expireAt: { $gt: new Date() },
-  })
-    .select('floorId slotCode sourceSubscriptionId')
-    .lean()
-    .then(async (entitlements) => {
-      const Subscription = require('../models/Subscription');
-      const coveredSubscriptionIds = entitlements.map(
-        (item) => item.sourceSubscriptionId
-      );
-      const legacySubscriptions = await Subscription.find({
-        _id: { $nin: coveredSubscriptionIds },
-        status: 'active',
-        paymentStatus: 'paid',
-        expireAt: { $gt: new Date() },
-      })
-        .select('slots')
-        .lean();
-      return [
-        ...entitlements.map((item) => ({
-          floorId: item.floorId,
-          slotCode: item.slotCode,
-        })),
-        ...legacySubscriptions.flatMap((subscription) => subscription.slots || []),
-      ];
-    });
-
-  // Find slots reserved for other users
-  const reservedSlotsQuery = { reservedFor: { $ne: null } };
-  if (userId) {
-    reservedSlotsQuery.reservedFor = { $nin: [null, userId] };
-  }
-  const reservedSlotsPromise = Slot.find(reservedSlotsQuery)
-    .select('floorID slotNumber')
-    .lean();
-
   const [
     overlappingBookings,
     activeSessions,
     maintenanceSlots,
     activeHolds,
-    reservedSlots,
-    activeMembershipSlots
+    dedicatedKeys
   ] = await Promise.all([
     overlappingBookingsPromise,
     activeSessionsPromise,
     maintenanceSlotsPromise,
     activeHoldsPromise,
-    reservedSlotsPromise,
-    activeMembershipSlotsPromise
+    getDedicatedSlotKeys(userId),
   ]);
 
   const unavailable = new Set();
@@ -265,14 +282,7 @@ const getUnavailableSlotKeys = async (start, end, userId = null) => {
     unavailable.add(buildSlotKey(hold.floorId, hold.slotCode));
   });
 
-  reservedSlots.forEach((slot) => {
-    unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
-  });
-
-  activeMembershipSlots.forEach((slot) => {
-    const key = buildSlotKey(slot.floorId, slot.slotCode);
-    unavailable.add(key);
-  });
+  dedicatedKeys.forEach((key) => unavailable.add(key));
 
   return unavailable;
 };
@@ -285,6 +295,11 @@ const getAvailableSlotsForRange = async (start, end, userId = null) => {
 
   return slots.filter((slot) => !unavailableSlotKeys.has(buildSlotKey(slot.floorId, slot.slotCode)));
 };
+
+// Read-only availability helpers shared with the VALO AI floor monitor.
+exports.getAllBookableSlots = getAllBookableSlots;
+exports.getGeneralBookableSlots = getGeneralBookableSlots;
+exports.getAvailableSlotsForRange = getAvailableSlotsForRange;
 
 const resolveLicensePlate = async (userId, { vehicleId, licensePlate }) => {
   if (vehicleId) {
@@ -687,6 +702,7 @@ exports.createBooking = async (req, res, next) => {
           session: paymentSession,
         });
         await paymentSession.commitTransaction();
+        notifyBookingPaidSafely(newBooking, req.app);
       } catch (error) {
         await paymentSession.abortTransaction();
         throw error;
@@ -874,6 +890,7 @@ exports.checkVietQRStatus = async (req, res, next) => {
               bookingId: paidBooking._id.toString(),
               slotInfo: `${paidBooking.parkingSlot}`
             }).catch(err => console.error('Error sending notifyBookingSuccess:', err));
+            notifyBookingPaidSafely(paidBooking, req.app);
           }
 
           return res.status(200).json({
@@ -936,6 +953,7 @@ exports.handleBookingWebhook = async (req, res, next) => {
             bookingId: paidBooking._id.toString(),
             slotInfo: `${paidBooking.parkingSlot}`
           }).catch(err => console.error('Failed to notify success:', err));
+          notifyBookingPaidSafely(paidBooking, req.app);
         }
 
         console.log(`✅ Webhook: Booking ${paidBooking._id} paid successfully.`);
@@ -1001,6 +1019,8 @@ exports.cancelBooking = async (req, res, next) => {
       slotInfo: booking.parkingSlot,
       reason: 'Khách yêu cầu hủy đặt chỗ'
     }).catch(err => console.error('Failed to notify cancel:', err));
+    
+    notifyBookingCancelledSafely(booking, req.app);
 
     const payoutSuppressed = settled.settlement.payoutStatus === 'suppressed';
     res.status(200).json({
@@ -1237,7 +1257,7 @@ exports.getMyBookings = async (req, res, next) => {
         { userId: req.user._id },
         { licensePlate: { $in: myVehicles } }
       ]
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).populate('floorId', 'name floorNumber');
     res.status(200).json({ success: true, data: bookings });
   } catch (error) {
     console.error('Error getMyBookings:', error);
@@ -1470,6 +1490,7 @@ exports.checkInBooking = async (req, res, next) => {
           }
         : {}),
     });
+    notifySessionCreatedSafely(session, req.app);
 
     await recordStaffBookingAction({
       req,
@@ -2008,16 +2029,12 @@ exports.quoteBulkBooking = async (req, res, next) => {
       }
 
       // Check overlapping for vehicle
-      const vehicleQuery = vehicle._id 
-        ? { vehicleId: vehicle._id } 
-        : { licensePlate: vehicle.licensePlate };
-        
-      const overlappingBooking = await Booking.findOne({
-        ...vehicleQuery,
-        status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] },
-        scheduledStart: { $lt: end },
-        scheduledEnd: { $gt: start }
-      });
+      const overlappingBooking = await Booking.findOne(buildVehicleBookingOverlapQuery({
+        vehicleId: vehicle._id,
+        licensePlate: vehicle.licensePlate,
+        start,
+        end,
+      }));
       if (overlappingBooking) throw new Error(`Vehicle ${vehicle.licensePlate} already has another booking overlapping with this time`);
 
       // Check slot occupation
@@ -2239,7 +2256,8 @@ exports.createBulkBooking = async (req, res, next) => {
 
       // Check internal overlap for vehicle within the same request
       const internalVehicleOverlap = internalVehicleReservations.find(res => {
-        const isSameVehicle = vehicle._id ? res.vehicleId === vehicle._id.toString() : res.licensePlate === vehicle.licensePlate;
+        const isSameVehicle = (vehicle._id && res.vehicleId === vehicle._id.toString())
+          || res.licensePlate === normalizeLicensePlate(vehicle.licensePlate);
         return isSameVehicle && res.start < end && res.end > start;
       });
       if (internalVehicleOverlap) throw new Error(`Vehicle ${vehicle.licensePlate} has overlapping bookings within the same cart`);
@@ -2259,16 +2277,12 @@ exports.createBulkBooking = async (req, res, next) => {
       internalSlotReservations.push({ parkingSlot, start, end });
 
       // Check overlapping for vehicle in Database
-      const vehicleQuery = vehicle._id 
-        ? { vehicleId: vehicle._id } 
-        : { licensePlate: vehicle.licensePlate ? vehicle.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : normalizedItemPlate };
-
-      const overlappingBooking = await Booking.findOne({
-        ...vehicleQuery,
-        status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] },
-        scheduledStart: { $lt: end },
-        scheduledEnd: { $gt: start }
-      }).session(session);
+      const overlappingBooking = await Booking.findOne(buildVehicleBookingOverlapQuery({
+        vehicleId: vehicle._id,
+        licensePlate: vehicle.licensePlate,
+        start,
+        end,
+      })).session(session);
       if (overlappingBooking) throw new Error(`Vehicle ${vehicle.licensePlate} already has another booking overlapping with this time`);
 
       // Check slot occupation
@@ -2431,6 +2445,7 @@ exports.createBulkBooking = async (req, res, next) => {
     }
 
     const createdBookingsResponse = [];
+    const paidBookings = [];
     const bulkRefundPolicySnapshot = await getEffectiveRefundPolicySnapshot({ session });
 
     // Create Bookings
@@ -2518,10 +2533,12 @@ exports.createBulkBooking = async (req, res, next) => {
         totalAmount: newBooking.prepaidAmount,
         status: newBooking.status,
       });
+      if (newBooking.status === 'PAID') paidBookings.push(newBooking);
     }
 
     await session.commitTransaction();
     session.endSession();
+    paidBookings.forEach((booking) => notifyBookingPaidSafely(booking, req.app));
 
     res.status(201).json({
       success: true,
@@ -2542,7 +2559,7 @@ exports.createBulkBooking = async (req, res, next) => {
 
 exports.getAllBookings = async (req, res, next) => {
   try {
-    const { date, floorId } = req.query;
+    const { date, floorId, bookingId } = req.query;
     const Booking = require('../models/Booking');
     const {
       resolveVietnamCalendarDay,
@@ -2557,6 +2574,10 @@ exports.getAllBookings = async (req, res, next) => {
 
     if (floorId) {
       filter.floorId = floorId;
+    }
+
+    if (bookingId) {
+      filter._id = bookingId;
     }
 
     const bookings = await Booking.find(filter)

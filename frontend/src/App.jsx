@@ -13,7 +13,6 @@ import GuestHome from "./pages/Guest/GuestHome";
 import LoginPage from "./pages/Guest/LoginPage";
 import ParkingMap from "./pages/Guest/ParkingMap";
 import ServiceList from "./pages/Guest/ServiceList";
-import ServiceDetail from "./pages/Guest/ServiceDetail";
 import PolicyList from "./pages/Guest/PolicyList";
 import PolicyDetail from "./pages/Guest/PolicyDetail";
 import OAuthCallback from "./pages/OAuthCallback";
@@ -105,7 +104,6 @@ export default function App() {
             <Route path="/" element={<GuestHome />} />
             <Route path="/parking-map" element={<ParkingMap />} />
             <Route path="/services" element={<ServiceList />} />
-            <Route path="/services/:id" element={<ServiceDetail />} />
             <Route path="/policies" element={<PolicyList />} />
             <Route path="/policies/:slug" element={<PolicyDetail />} />
             <Route path="/policy" element={<Navigate to="/policies" replace />} />
@@ -153,6 +151,7 @@ export default function App() {
             <Route path="/admin/services" element={<AdminServiceManager />} />
             <Route path="/admin/policies" element={<PolicyManagement />} />
             <Route path="/admin/parking-lots" element={<ParkingLots />} />
+            <Route path="/admin/bookings" element={<BookingManagement />} />
             <Route path="/admin/sessions" element={<StaffSessionManagement />} />
             <Route path="/admin/pricing" element={<PricingManagement />} />
             <Route path="/admin/tickets" element={<TicketPackages />} />

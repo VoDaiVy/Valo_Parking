@@ -9,6 +9,7 @@ const { getVehicleCapacity } = require('../services/vehicleCapacityService');
 const {
   findVehicleDeletionBlocker,
 } = require('../services/vehicleDeletionService');
+const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 
 // ─── Cloudinary 3D model auto-discovery ──────────────────────────────────────
 const normalizeSlug = (str = '') =>
@@ -160,6 +161,7 @@ const addVehicle = async (req, res) => {
       registrationCardImage: cardImageUrl,
       status: 'pending',
     });
+    aiNotificationEvents.notifyVehiclePendingSafely(vehicle, req.app);
 
     res.status(201).json({
       success: true,

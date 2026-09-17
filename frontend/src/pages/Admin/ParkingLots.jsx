@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Edit, Copy, Trash2, X } from "lucide-react";
 import ParkingLotsBuilder from "./ParkingLotsBuilder/ParkingLotsBuilder";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
@@ -6,7 +7,7 @@ import AdminSelect from "../../components/Admin/AdminSelect";
 import { getAllFloors, createFloor, updateFloorLayout, deleteFloor, getFloorSlots } from "../../services/parkingFloorService";
 import { startMaintenance, endMaintenance } from "../../services/maintenanceService";
 import { API_BASE } from "../../services/api";
-import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings } from "../../services/bookingService";
+import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings, getAllBookings } from "../../services/bookingService";
 import StaffCheckoutModal from "../Staff/StaffCheckoutModal";
 import ConfirmModal from "../../components/Admin/ConfirmModal";
 
@@ -60,6 +61,10 @@ export default function ParkingLots() {
   const [activeSessions, setActiveSessions] = useState([]);
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, floorId: null, floorName: "" });
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const bookingIdParam = searchParams.get("bookingId");
+  const hasProcessedDeepLink = useRef(false);
 
   useEffect(() => {
     document.body.classList.add("bg-[#080808]");
@@ -168,6 +173,46 @@ export default function ParkingLots() {
     }, 0);
     return () => clearTimeout(timer);
   }, [fetchFloors]);
+
+  // Deep Link Logic
+  useEffect(() => {
+    if (!bookingIdParam || floors.length === 0 || hasProcessedDeepLink.current) return;
+    hasProcessedDeepLink.current = true;
+
+    const loadDeepLinkBooking = async () => {
+      try {
+        const res = await getAllBookings({ bookingId: bookingIdParam });
+        if (res.ok && res.data?.data?.length > 0) {
+          const booking = res.data.data[0];
+          
+          // Select Floor
+          if (booking.floorId) {
+            const fId = typeof booking.floorId === 'object' ? booking.floorId._id : booking.floorId;
+            if (fId) setCurrentFloorId(fId);
+          }
+          
+          // Construct and Select Slot
+          if (booking.parkingSlot) {
+             const fId = typeof booking.floorId === 'object' ? booking.floorId._id : booking.floorId;
+             setSelectedItem({
+               id: booking.parkingSlot,
+               type: 'hourly',
+               floorId: fId,
+               isHeld: true,
+               booking: booking
+             });
+          }
+          
+          // Remove from URL so refresh doesn't keep triggering if they navigate away inside the view
+          setSearchParams({}, { replace: true });
+        }
+      } catch (err) {
+        console.error("Deep link fetch failed", err);
+      }
+    };
+
+    loadDeepLinkBooking();
+  }, [bookingIdParam, floors, setSearchParams]);
 
   // Fetch Slots for current floor to know maintenance status
   const fetchDbSlots = useCallback(async (floorId) => {
@@ -600,9 +645,9 @@ export default function ParkingLots() {
                   </div>
                 ) : !isZone && selectedItem.isHeld ? (
                   <div className="flex flex-col gap-4">
-                      <div className="bg-orange-900/20 border border-orange-500/30 rounded-xl p-4 flex flex-col items-center justify-center mb-2">
-                          <span className="text-xs text-orange-400 uppercase tracking-widest font-bold mb-1">Status</span>
-                          <span className="text-lg text-white font-black uppercase">Holding / Booked</span>
+                      <div className={`border rounded-xl p-4 flex flex-col items-center justify-center mb-2 ${selectedItem.booking?.status === 'CANCELLED' ? 'bg-red-900/20 border-red-500/30' : 'bg-orange-900/20 border-orange-500/30'}`}>
+                          <span className={`text-xs uppercase tracking-widest font-bold mb-1 ${selectedItem.booking?.status === 'CANCELLED' ? 'text-red-400' : 'text-orange-400'}`}>Status</span>
+                          <span className="text-lg text-white font-black uppercase">{selectedItem.booking?.status === 'CANCELLED' ? 'Cancelled / Historical' : 'Holding / Booked'}</span>
                       </div>
                       {selectedItem.booking ? (
                         <>
@@ -612,6 +657,9 @@ export default function ParkingLots() {
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">License Plate</span><span className="font-mono text-base font-semibold text-white bg-slate-800/80 px-3 py-1 rounded border border-slate-700/50">{selectedItem.booking.licensePlate || 'N/A'}</span></div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Start Time</span><span className="font-medium text-white">{new Date(selectedItem.booking.scheduledStart).toLocaleString('vi-VN')}</span></div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">End Time</span><span className="font-medium text-white">{new Date(selectedItem.booking.scheduledEnd).toLocaleString('vi-VN')}</span></div>
+                          {selectedItem.booking.status === 'CANCELLED' && (
+                            <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Booking Status</span><span className="font-bold text-red-400">CANCELLED</span></div>
+                          )}
                         </>
                       ) : (
                         <p className="text-xs text-orange-400 text-center mt-4">This slot is currently held for an upcoming booking or checkout process.</p>

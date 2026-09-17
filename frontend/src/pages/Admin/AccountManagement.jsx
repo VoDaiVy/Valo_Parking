@@ -8,6 +8,7 @@ import {
   RefreshCw, Layers, Eye
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import { useSearchParams } from 'react-router-dom';
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -111,31 +112,37 @@ function SkeletonRow() {
 }
 
 // --- Overview Card ------------------------------------------------------------
-function StatCard({ icon: Icon, label, value, gradient, glow, loading }) {
-  return (
-    <div
-      className="relative bg-[#171717] border border-white/10 rounded-2xl p-5 overflow-hidden cursor-default group transition-all duration-300 hover:scale-[1.035]"
-      style={{
-        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 8px 40px ${glow}, 0 0 0 1px rgba(255,255,255,0.12)`; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(0,0,0,0.3)'; }}
-    >
-      {/* sweep shimmer */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-        style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%)' }} />
-      {/* gradient blob */}
-      <div className={`absolute -top-6 -right-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-xl`} />
+function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-emerald-300', loading, index }) {
+  const dividerClass = [
+    index > 0 ? 'border-t border-white/10' : '',
+    index % 2 === 1 ? 'sm:border-l sm:border-white/10' : '',
+    index > 1 ? 'sm:border-t sm:border-white/10' : 'sm:border-t-0',
+    index > 0 ? 'xl:border-l xl:border-white/10' : '',
+    'xl:border-t-0',
+  ].join(' ');
 
-      <div className="relative flex items-start justify-between">
-        <div>
-          <p className="text-[11px] text-white/40 uppercase tracking-widest font-semibold mb-2">{label}</p>
-          <p className="text-3xl font-bold text-white">
-            {loading ? <span className="inline-block w-12 h-8 rounded bg-white/10 animate-skeleton" /> : <AnimatedCounter target={value} />}
-          </p>
-        </div>
-        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg`}>
-          <Icon size={20} className="text-white" />
+  return (
+    <div className={dividerClass}>
+      <div className="group min-w-0 px-0 py-3 transition hover:bg-white/[0.018] sm:px-4">
+        <div className="flex items-center gap-3">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition group-hover:brightness-125 ${toneClass}`}>
+            <Icon size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-blue-200/55 leading-none">{label}</p>
+            {loading ? (
+              <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" />
+            ) : (
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <p className="truncate font-mono text-2xl font-black leading-none text-white">
+                  <AnimatedCounter target={value} />
+                </p>
+                <p className={`truncate text-[10px] font-bold ${subTone}`}>
+                  {sub}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -165,6 +172,9 @@ export default function AccountManagement() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2500);
   };
+  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userIdQuery = searchParams.get('userId');
 
   // ── Data ──
   const fetchUsers = async () => {
@@ -183,6 +193,24 @@ export default function AccountManagement() {
 
     return () => window.clearTimeout(timerId);
   }, []);
+
+  useEffect(() => {
+    if (users.length > 0 && userIdQuery) {
+      const targetUser = users.find(u => u._id === userIdQuery);
+      if (targetUser) {
+        setTimeout(() => {
+          setPanelUser(targetUser);
+          setIsEditing(false);
+          setBlockConfirm(false);
+          setDeleteConfirm(false);
+          setSaveState('idle');
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('userId');
+          setSearchParams(newParams, { replace: true });
+        }, 0);
+      }
+    }
+  }, [users, userIdQuery, searchParams, setSearchParams]);
 
   const handleBlockToggle = async (userId, currentStatus) => {
     try {
@@ -426,7 +454,7 @@ export default function AccountManagement() {
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
                 <Users size={12} /> User Management
               </div>
-              <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Account Management</h1>
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Account Management</h1>
               <p className="text-gray-400 text-sm mt-1">Manage user accounts, roles, and access permissions</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
@@ -435,11 +463,13 @@ export default function AccountManagement() {
           </div>
 
           {/* -- Stat Cards -- */}
-          <div className="grid grid-cols-4 gap-4 mt-6">
-            <StatCard icon={Users}   label="Total Accounts"   value={totalAccounts} gradient="from-cyan-400 to-blue-500"    glow="rgba(6,182,212,0.3)"    loading={loading} />
-            <StatCard icon={UserPlus} label="New This Month"  value={newThisMonth}  gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)"  loading={loading} />
-            <StatCard icon={UserX}   label="Blocked Accounts" value={blockedCount}  gradient="from-rose-500 to-red-600"     glow="rgba(239,68,68,0.3)"    loading={loading} />
-            <StatCard icon={Clock}   label="Pending Verify"   value={pendingCount}  gradient="from-amber-400 to-orange-500" glow="rgba(251,191,36,0.3)"   loading={loading} />
+          <div className="mt-6 border-y border-white/10 bg-[#080808]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard index={0} icon={Users} label="Total Accounts" value={totalAccounts} sub="Managed users" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
+              <StatCard index={1} icon={UserPlus} label="New This Month" value={newThisMonth} sub="Recently joined" toneClass="bg-purple-500/10 text-purple-300" loading={loading} />
+              <StatCard index={2} icon={UserX} label="Blocked Accounts" value={blockedCount} sub={blockedCount > 0 ? "Requires review" : "All users are active"} toneClass="bg-red-500/10 text-red-300" subTone={blockedCount > 0 ? "text-red-400" : "text-emerald-300"} loading={loading} />
+              <StatCard index={3} icon={Clock} label="Pending Verify" value={pendingCount} sub={pendingCount > 0 ? "Awaiting action" : "Fully verified"} toneClass="bg-yellow-500/10 text-yellow-300" subTone={pendingCount > 0 ? "text-amber-400" : "text-emerald-300"} loading={loading} />
+            </div>
           </div>
         </div>
 
@@ -544,11 +574,11 @@ export default function AccountManagement() {
               <tr className="bg-[#171717] border-b border-white/10">
                 <th className="w-6"></th>
                 {['Account','Email','Phone','Role','Status','Joined Date'].map(label => (
-                  <th key={label} className="px-4 py-4 text-left">
+                  <th key={label} className="px-4 py-2.5 text-left">
                     <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{label}</span>
                   </th>
                 ))}
-                <th className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
               </tr>
             </thead>
             <tbody>

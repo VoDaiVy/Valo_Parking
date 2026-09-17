@@ -21,8 +21,12 @@ import {
 } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
+
+import AiBookingPanel from '../../components/Customer/AiBookingPanel';
+
 import PriceBadge from '../../components/PriceBadge';
 import { useDynamicPricing } from '../../hooks/useDynamicPricing';
+
 
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
@@ -679,6 +683,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
 };
 
 export default function CreateBookingPage() {
+  const [bookingMode, setBookingMode] = useState('manual');
   const location = useLocation();
   const requestedServiceId = useMemo(
     () => new URLSearchParams(location.search).get('serviceId') || '',
@@ -806,6 +811,8 @@ export default function CreateBookingPage() {
   }, [currentFloorId]);
 
   useEffect(() => {
+    const timerId = window.setTimeout(fetchDbSlots, 0);
+    return () => window.clearTimeout(timerId);
     const timer = setTimeout(() => { fetchDbSlots(); }, 0);
     return () => clearTimeout(timer);
   }, [fetchDbSlots]);
@@ -861,6 +868,7 @@ export default function CreateBookingPage() {
   };
 
   useEffect(() => {
+    const timerId = window.setTimeout(() => {
     const initialTimer = setTimeout(() => {
       fetchActiveSessions();
       fetchActiveHoldsData();
@@ -871,6 +879,7 @@ export default function CreateBookingPage() {
       fetchDbSlots();
     }, 30000); // 30s
     return () => {
+      window.clearTimeout(timerId);
       clearTimeout(initialTimer);
       clearInterval(intervalId);
     };
@@ -1728,6 +1737,11 @@ export default function CreateBookingPage() {
           </div>
         </div>
 
+        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
+          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Tự chọn chỗ</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>✨ Đặt nhanh với AI</button>
+        </div>
+
         {(error || success) && (
           <div className={`mb-6 rounded-2xl border px-4 py-3 flex items-start gap-3 ${error
               ? 'bg-rose-50 border-rose-200 text-rose-600'
@@ -1738,7 +1752,7 @@ export default function CreateBookingPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
+        {bookingMode === 'ai' ? <AiBookingPanel vehicles={vehicles} onSwitchToManual={() => setBookingMode('manual')} /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
@@ -2205,7 +2219,7 @@ export default function CreateBookingPage() {
               )}
             </div>
           </section>
-        </div>
+        </div>}
       </div>
 
       {showCheckoutConfirm && (

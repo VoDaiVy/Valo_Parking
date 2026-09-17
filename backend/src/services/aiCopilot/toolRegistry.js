@@ -1,0 +1,264 @@
+const mongoose = require('mongoose');
+const statistics = require('../statisticsService');
+const Session = require('../../models/Session');
+const Slot = require('../../models/Slot');
+const ParkingFloor = require('../../models/ParkingFloor');
+const User = require('../../models/User');
+const TicketPackage = require('../../models/TicketPackage');
+const Subscription = require('../../models/Subscription');
+const Service = require('../../models/Service');
+const BookingService = require('../../models/BookingService');
+const Policy = require('../../models/Policy');
+const PolicyAcceptance = require('../../models/PolicyAcceptance');
+const PricingConfig = require('../../models/PricingConfig');
+const AINotification = require('../../models/AINotification');
+const pricingEngine = require('../pricingEngine');
+const { startOfVietnamDay, parseVietnamCalendarDate } = require('../../utils/bookingDateRange');
+const readTools = require('./readTools');
+
+const dateProperties = {
+  startDate: { type: 'string', description: 'ISO date, inclusive' },
+  endDate: { type: 'string', description: 'ISO date, inclusive' },
+};
+const dateSchema = { type: 'object', properties: dateProperties };
+const emptySchema = { type: 'object', properties: {} };
+
+function validateDates(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tham số không hợp lệ.');
+  const keys = Object.keys(args);
+  if (keys.some((key) => !['startDate', 'endDate'].includes(key))) throw new Error('Tham số không được hỗ trợ.');
+  if (keys.some((key) => typeof args[key] !== 'string' || !args[key].trim())) throw new Error('Ngày phải là chuỗi ISO hợp lệ.');
+  const isDay = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const start = args.startDate ? (isDay(args.startDate) ? parseVietnamCalendarDate(args.startDate) : new Date(args.startDate)) : null;
+  const end = args.endDate ? (isDay(args.endDate) ? new Date(parseVietnamCalendarDate(args.endDate).getTime() + 86400000 - 1) : new Date(args.endDate)) : new Date();
+  if ((start && !Number.isFinite(start.getTime())) || !Number.isFinite(end.getTime()) || (start && start > end) || (start && end - start > 366 * 86400000) || end > new Date(Date.now() + 86400000)) throw new Error('Khoảng ngày không hợp lệ hoặc quá 366 ngày.');
+  return start ? { startDate: start.toISOString(), endDate: end.toISOString() } : { range: 'today' };
+}
+function noArgs(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length) throw new Error('Công cụ này không nhận tham số.');
+  return {};
+}
+/* passthrough validator: returns args as-is so readTools functions handle their own validation */
+function passArgs(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tham số không hợp lệ.');
+  return args;
+}
+const define = (name, description, parameters, validate, run) => ({ name, description, parameters, validate, run });
+const tools = [
+  /* ── 11 existing aggregate / summary tools (untouched) ─────────────── */
+  define('get_revenue_metrics', 'Doanh thu nền tảng từ booking, gói vé, gia hạn và phí chuyển nhượng; không chỉ tiền phạt.', dateSchema, validateDates, async (p) => statistics.getAdminPlatformRevenueStatistics(p)),
+  define('get_session_statistics', 'Thống kê phiên xe theo trạng thái trong khoảng thời gian.', dateSchema, validateDates, async (p) => {
+    const match = p.startDate ? { checkInTime: { $gte: new Date(p.startDate), $lte: new Date(p.endDate) } } : { checkInTime: { $gte: startOfVietnamDay(new Date()) } };
+    const rows = await Session.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 }, averageDurationHours: { $avg: '$expectedDurationHours' } } }]);
+    return { byStatus: rows.map((row) => ({ status: row._id, count: row.count, averageExpectedDurationHours: row.averageDurationHours })), period: p };
+  }),
+  define('get_parking_occupancy', 'Số chỗ và tình trạng theo tầng hiện tại.', emptySchema, noArgs, async () => {
+    const [floors, rows] = await Promise.all([ParkingFloor.find().select('name floorNumber').lean(), Slot.aggregate([{ $group: { _id: { floorID: '$floorID', status: '$status' }, count: { $sum: 1 } } }])]);
+    return floors.map((floor) => ({ floorId: String(floor._id), name: floor.name, floorNumber: floor.floorNumber, statuses: rows.filter((r) => String(r._id.floorID) === String(floor._id)).map((r) => ({ status: r._id.status, count: r.count })) }));
+  }),
+  define('get_user_summary', 'Số tài khoản theo vai trò và trạng thái; không trả PII.', emptySchema, noArgs, async () => User.aggregate([{ $group: { _id: { role: '$role', active: '$status' }, count: { $sum: 1 } } }])),
+  define('get_pricing_config', 'Bảng giá đang có hiệu lực; phân biệt cấu hình mặc định.', emptySchema, noArgs, async () => {
+    const config = await PricingConfig.findOne({ isActive: true }).sort({ createdAt: -1 }).select('timeBlocks cap12h cap24h createdAt').lean();
+    return config ? { ...config, source: 'PricingConfig' } : { ...(await pricingEngine.getActivePricingConfig()), configured: false, source: 'pricingEngine.DEFAULT_CONFIG', note: 'Bảng giá mặc định đang được sử dụng vì DB chưa có cấu hình hoạt động.' };
+  }),
+  define('get_package_list', 'Danh sách gói vé và số đăng ký thực tế.', emptySchema, noArgs, async () => {
+    const [packages, counts] = await Promise.all([TicketPackage.find().select('name type price description isActive maxSlots updatedAt').lean(), Subscription.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: '$ticketPackage', sold: { $sum: 1 } } }])]);
+    return packages.map((p) => ({ ...p, sold: counts.find((c) => String(c._id) === String(p._id))?.sold || 0 }));
+  }),
+  define('get_subscription_stats', 'Thống kê đăng ký và gia hạn gói.', dateSchema, validateDates, async (p) => statistics.getAdminSubscriptionStatistics(p)),
+  define('get_service_catalog', 'Dịch vụ hiện có và số lượt đặt.', emptySchema, noArgs, async () => {
+    const [services, counts] = await Promise.all([Service.find().select('name price isActive').lean(), BookingService.aggregate([{ $group: { _id: '$serviceId', usage: { $sum: 1 } } }])]);
+    return services.map((s) => ({ ...s, usage: counts.find((c) => String(c._id) === String(s._id))?.usage || 0 }));
+  }),
+  define('get_policy_summary', 'Chính sách đã công bố và lượt chấp nhận.', emptySchema, noArgs, async () => {
+    const [policies, counts] = await Promise.all([Policy.find({ status: 'published' }).select('title category currentVersionNumber requiresAcceptance updatedAt').lean(), PolicyAcceptance.aggregate([{ $group: { _id: '$policyId', count: { $sum: 1 } } }])]);
+    return policies.map((p) => ({ ...p, acceptanceCount: counts.find((c) => String(c._id) === String(p._id))?.count || 0 }));
+  }),
+  define('check_system_health', 'Chỉ số sức khỏe có thể xác minh: kết nối DB và số phiên đang hoạt động.', emptySchema, noArgs, async () => ({ databaseConnected: mongoose.connection.readyState === 1, activeSessions: await Session.countDocuments({ status: 'active' }), checkedAt: new Date().toISOString() })),
+  define('get_ai_notifications', 'Cảnh báo AI mới nhất có bằng chứng.', emptySchema, noArgs, async () => AINotification.find({ status: 'OPEN' }).sort({ detectedAt: -1 }).limit(10).select('title summary severity evidence detectedAt').lean()),
+
+  /* ── 12 new drill-down read tools ──────────────────────────────────── */
+
+  define('get_active_sessions',
+    'Danh sách phiên xe đang hoạt động (status=active) với biển số, tầng, người dùng. Dùng khi Admin hỏi "phiên nào đang hoạt động", "xe nào đang trong bãi".',
+    { type: 'object', properties: {
+      floorId: { type: 'string', description: 'ObjectId tầng, tuỳ chọn.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.getActiveSessions(p, actorRole)),
+
+  define('search_sessions',
+    'Tìm kiếm phiên xe theo biển số, trạng thái, ngày, hoặc userId. Nếu không truyền tham số nào, trả các phiên hôm nay (Asia/Ho_Chi_Minh).',
+    { type: 'object', properties: {
+      plateNumber: { type: 'string', description: 'Biển số xe (có thể nhập một phần).' },
+      status: { type: 'string', enum: ['active', 'completed', 'cancelled'], description: 'Trạng thái phiên.' },
+      startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
+      endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      userId: { type: 'string', description: 'ObjectId người dùng.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchSessions(p, actorRole)),
+
+  define('get_session_detail',
+    'Chi tiết một phiên xe cụ thể: biển số, trạng thái, tầng, người dùng, thời gian check-in/out, giá.',
+    { type: 'object', properties: {
+      sessionId: { type: 'string', description: 'ObjectId của phiên cần xem.' },
+    }, required: ['sessionId'] },
+    passArgs, async (p, actorRole) => readTools.getSessionDetail(p, actorRole)),
+
+  define('search_users',
+    'Tìm người dùng theo tên, email, hoặc vai trò. Trả về cấu trúc { items, total }. Khi được hỏi có bao nhiêu/số lượng, hãy lấy giá trị từ trường "total", TUYỆT ĐỐI KHÔNG đếm mảng "items" vì danh sách này đã bị giới hạn (limit).',
+    { type: 'object', properties: {
+      query: { type: 'string', description: 'Từ khoá tìm theo username hoặc email.' },
+      role: { type: 'string', enum: ['guest', 'customer', 'staff', 'admin'], description: 'Lọc theo vai trò.' },
+      status: { type: 'boolean', description: 'true=active, false=inactive.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa cho mảng items (mặc định 10).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchUsers(p, actorRole)),
+
+  define('get_user_detail',
+    'Thông tin profile/account an toàn của một người dùng cụ thể. Không trả password/token/OTP.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId của người dùng.' },
+    }, required: ['userId'] },
+    passArgs, async (p, actorRole) => readTools.getUserDetail(p, actorRole)),
+
+  define('search_notification_recipients',
+    'Chỉ dùng để chọn người nhận khi Staff chuẩn bị SEND_NOTIFICATION. Tìm tài khoản active theo username/email với cùng quyền của Notification Management. Nếu có nhiều kết quả và không có exactMatchUserId, phải hỏi Staff chọn lại; không được tự đoán.',
+    { type: 'object', properties: {
+      query: { type: 'string', description: 'Username hoặc email cần tìm, từ 1 đến 100 ký tự.' },
+    }, required: ['query'] },
+    passArgs, async (p, actorRole) => {
+      if (actorRole !== 'staff') throw new Error('Công cụ này chỉ dành cho Staff Notification Management.');
+      return readTools.searchNotificationRecipients(p, actorRole);
+    }),
+
+  define('search_vehicles',
+    'Tìm xe theo biển số, chủ xe (userId), loại xe, hoặc trạng thái duyệt.',
+    { type: 'object', properties: {
+      plateNumber: { type: 'string', description: 'Biển số xe (có thể nhập một phần).' },
+      userId: { type: 'string', description: 'ObjectId chủ xe.' },
+      vehicleType: { type: 'string', enum: ['car', 'electric_car'], description: 'Loại xe.' },
+      status: { type: 'string', enum: ['pending', 'approved', 'rejected'], description: 'Trạng thái duyệt.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchVehicles(p, actorRole)),
+
+  define('search_bookings',
+    'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Nếu không có filter, trả booking gần nhất.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId người đặt.' },
+      plateNumber: { type: 'string', description: 'Biển số xe.' },
+      status: { type: 'string', enum: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED', 'EXPIRED', 'COMPLETED', 'CANCELLED'], description: 'Trạng thái booking.' },
+      startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
+      endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchBookings(p, actorRole)),
+
+  define('get_booking_detail',
+    'Chi tiết một booking cụ thể: slot, tầng, người đặt, xe, thanh toán, trạng thái.',
+    { type: 'object', properties: {
+      bookingId: { type: 'string', description: 'ObjectId của booking.' },
+    }, required: ['bookingId'] },
+    passArgs, async (p, actorRole) => readTools.getBookingDetail(p, actorRole)),
+
+  define('get_parking_floors',
+    'Danh sách tất cả tầng đỗ xe với tên và số tầng. Dùng để resolve floorId trước khi xem slot.',
+    emptySchema, noArgs, async () => readTools.getParkingFloors()),
+
+  define('get_parking_slots',
+    'Danh sách slot ở tầng cụ thể, có thể lọc theo trạng thái (available/occupied/maintenance/booked) hoặc loại slot.',
+    { type: 'object', properties: {
+      floorId: { type: 'string', description: 'ObjectId tầng.' },
+      status: { type: 'string', enum: ['available', 'occupied', 'maintenance', 'booked'], description: 'Trạng thái slot.' },
+      slotType: { type: 'string', description: 'Loại slot (hourly, monthly, ...).' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 50).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.getParkingSlots(p, actorRole)),
+
+  define('search_transactions',
+    'Tìm giao dịch ví theo userId, loại (TOP_UP/PAYMENT/REFUND/TRANSFER_OUT/TRANSFER_IN/TRANSFER_FEE), trạng thái, khoảng ngày.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId người dùng.' },
+      type: { type: 'string', enum: ['TOP_UP', 'PAYMENT', 'REFUND', 'TRANSFER_OUT', 'TRANSFER_IN', 'TRANSFER_FEE'], description: 'Loại giao dịch.' },
+      status: { type: 'string', enum: ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'], description: 'Trạng thái.' },
+      startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
+      endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchTransactions(p, actorRole)),
+
+  define('get_subscription_members',
+    'Danh sách đăng ký/membership theo userId, packageId hoặc trạng thái. Mặc định trả active.',
+    { type: 'object', properties: {
+      userId: { type: 'string', description: 'ObjectId người dùng.' },
+      packageId: { type: 'string', description: 'ObjectId gói vé.' },
+      status: { type: 'string', enum: ['pending', 'active', 'expired', 'cancelled', 'failed'], description: 'Trạng thái đăng ký.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 15).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.getSubscriptionMembers(p, actorRole)),
+
+  define('search_ticket_packages',
+    'Tìm kiếm gói vé theo tên, loại (hourly/daily/monthly/yearly) và trạng thái (isActive). Trả về đầy đủ các trường business schema: name, type, price, description, maxSlots, renewalWindowDays, isRenewable, isActive.',
+    { type: 'object', properties: {
+      query: { type: 'string', description: 'Từ khoá tìm kiếm theo tên gói vé.' },
+      type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'], description: 'Loại gói vé.' },
+      isActive: { type: 'boolean', description: 'Trạng thái hoạt động.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchTicketPackages(p, actorRole)),
+    
+  define('search_services',
+    'Tìm kiếm dịch vụ theo tên, giá và trạng thái. Trả về chi tiết các trường: name, price, timeCost (thời lượng), description, isActive.',
+    { type: 'object', properties: {
+      name: { type: 'string', description: 'Từ khoá tìm kiếm theo tên dịch vụ.' },
+      minPrice: { type: 'number', description: 'Giá thấp nhất.' },
+      maxPrice: { type: 'number', description: 'Giá cao nhất.' },
+      isActive: { type: 'boolean', description: 'Trạng thái hoạt động.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 20, tối đa 50).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchServices(p, actorRole)),
+];
+const STAFF_TOOLS = [
+  'get_active_sessions',
+  'search_sessions',
+  'get_session_detail',
+  'search_bookings',
+  'get_booking_detail',
+  'get_parking_floors',
+  'get_parking_slots',
+  'get_parking_occupancy',
+  'get_subscription_members',
+  'search_users',
+  'get_user_detail',
+  'search_notification_recipients',
+  'search_vehicles'
+];
+const STAFF_ONLY_TOOLS = new Set(['search_notification_recipients']);
+
+function getToolsForRole(role) {
+  if (role === 'staff') {
+    return tools.filter(t => STAFF_TOOLS.includes(t.name));
+  }
+  return tools.filter((tool) => !STAFF_ONLY_TOOLS.has(tool.name));
+}
+
+const registry = new Map(tools.map((tool) => [tool.name, tool]));
+async function execute(name, args, actorRole = 'admin') {
+  const tool = registry.get(name);
+  if (!tool) throw new Error('Công cụ không nằm trong allowlist.');
+  
+  if (actorRole === 'staff' && !STAFF_TOOLS.includes(name)) {
+    throw new Error('Bạn không có quyền sử dụng công cụ này.');
+  }
+  if (actorRole !== 'staff' && STAFF_ONLY_TOOLS.has(name)) {
+    throw new Error('Công cụ này chỉ dành cho Staff Notification Management.');
+  }
+
+  const params = tool.validate(args);
+  // Pass actorRole down to the tool run function
+  const data = await tool.run(params, actorRole);
+  return { tool: name, source: name, timestamp: new Date().toISOString(), parameters: params, data };
+}
+module.exports = { tools, getToolsForRole, execute, validateDates };

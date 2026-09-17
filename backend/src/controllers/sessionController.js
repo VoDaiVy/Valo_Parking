@@ -12,6 +12,7 @@ const payos = require('../config/payos');
 const cloudinary = require('../config/cloudinary');
 const { sendKioskCheckInEmail, sendCheckoutEmail } = require('../utils/emailUtils');
 const notifTriggers = require('../services/notificationTriggers');
+const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
@@ -20,6 +21,7 @@ const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrServi
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
 const { normalizePhone, getPhoneRegex, getPhoneVariants, getPhoneSearchConditions, claimUserSessionsByPhone } = require('../utils/phoneUtils');
+const { triggerBarrierOpen } = require('../routes/iotRoutes');
 
 const normalizeSlotCode = (slotCode = '') => String(slotCode || '').trim().toUpperCase();
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
@@ -923,6 +925,7 @@ exports.createKioskSession = async (req, res, next) => {
       entryGate: entryGate || null,
       paymentStatus: 'unpaid'
     });
+    aiNotificationEvents.notifySessionCreatedSafely(newSession, req.app);
 
     if (holdToConsume) {
       holdToConsume.status = 'consumed';
@@ -961,6 +964,9 @@ exports.createKioskSession = async (req, res, next) => {
         req.app, userId, cleanPlate, normalizedFinalSlot || 'N/A'
       ).catch(err => console.error('Failed to send entry notification:', err));
     }
+
+    // Trigger IoT ESP32 Barrier Open
+    triggerBarrierOpen(cleanPlate, normalizedFinalSlot || 'N/A', entryGate || 'ENTRY_1', req.app);
 
     res.status(201).json({
       success: true,
@@ -1464,6 +1470,9 @@ exports.kioskCheckout = async (req, res, next) => {
         ).catch(err => console.error('Failed to send payment notification:', err));
       }
     }
+
+    // Trigger IoT ESP32 Barrier Open on Exit
+    triggerBarrierOpen(session.licensePlate, session.parkingSlot || 'N/A', exitGate || 'EXIT_1', req.app);
 
     res.status(200).json({
       success: true,

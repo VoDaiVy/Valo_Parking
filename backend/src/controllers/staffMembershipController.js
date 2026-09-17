@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Vehicle = require('../models/Vehicle');
 const StaffSubscriptionAction = require('../models/StaffSubscriptionAction');
 const notifTriggers = require('../services/notificationTriggers');
+const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 const {
   isMembershipQrAvailable,
   parseAndVerifyAnyMembershipQr,
@@ -327,6 +328,7 @@ exports.transitionMembershipByQr = async (req, res, next) => {
         paymentStatus: 'paid',
         status: 'active',
       });
+      aiNotificationEvents.notifySessionCreatedSafely(session, req.app);
     } else {
       session = await Session.findOne({
         _id: req.body.sessionId,

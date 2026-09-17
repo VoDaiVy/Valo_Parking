@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
+import { useSearchParams } from 'react-router-dom';
 
 export default function SessionManagement() {
   const [sessions, setSessions] = useState([]);
@@ -17,6 +18,8 @@ export default function SessionManagement() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiInitialPlate, setAiInitialPlate] = useState('');
   const [aiInitialImage, setAiInitialImage] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sessionIdQuery = searchParams.get('sessionId');
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -48,6 +51,20 @@ export default function SessionManagement() {
 
     return () => pageScroller?.classList.remove('scrollbar-hidden');
   }, []);
+
+  useEffect(() => {
+    if (sessions.length > 0 && sessionIdQuery) {
+      const targetSession = sessions.find(s => s._id === sessionIdQuery);
+      if (targetSession) {
+        setTimeout(() => {
+          setSelectedSession(targetSession);
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('sessionId');
+          setSearchParams(newParams, { replace: true });
+        }, 0);
+      }
+    }
+  }, [sessions, sessionIdQuery, searchParams, setSearchParams]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -82,6 +99,9 @@ export default function SessionManagement() {
     <div className="min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+            <MonitorCheck size={12} /> Session Manager
+          </div>
           <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>
           <p className="mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
         </div>
@@ -94,9 +114,9 @@ export default function SessionManagement() {
             setAiInitialImage(null);
             setShowAiModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-lg shadow-yellow-500/10 shrink-0"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
         >
-          <Sparkles size={16} className="text-amber-400 animate-pulse" />
+          <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>AI Plate Assistant</span>
         </button>
       </div>

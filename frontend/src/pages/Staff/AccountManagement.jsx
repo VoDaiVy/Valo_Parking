@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -160,6 +161,8 @@ export default function AccountManagement() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryUserId = searchParams.get('userId');
   const filterRole = 'customer'; // Always customer for Staff
   const [filterStatus, setFilterStatus] = useState('all');
   const [page, setPage] = useState(1);
@@ -209,6 +212,26 @@ export default function AccountManagement() {
 
     return () => window.clearTimeout(timerId);
   }, []);
+
+  useEffect(() => {
+    if (users.length > 0 && queryUserId) {
+      const targetUser = users.find(u => String(u._id) === queryUserId);
+      if (targetUser) {
+        // Use direct state updates instead of openPanel to avoid dependency issues
+        setTimeout(() => {
+          if (targetUser.role === 'customer') {
+            setPanelUser(targetUser);
+            setIsEditing(false);
+            setBlockConfirm(false);
+            setSaveState('idle');
+          }
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('userId');
+          setSearchParams(newParams, { replace: true });
+        }, 0);
+      }
+    }
+  }, [users, queryUserId, searchParams, setSearchParams]);
 
   const handleBlockToggle = async (userId, currentStatus) => {
     const userToBlock = users.find(u => u._id === userId);

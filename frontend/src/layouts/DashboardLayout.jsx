@@ -9,6 +9,8 @@ import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
+import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
+import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
 import {
   LayoutDashboard,
@@ -54,14 +56,14 @@ const NAV_CONFIG = {
       to: "/admin/dashboard",
     },
     {
-      label: "Account Management",
-      icon: <Users size={18} />,
-      to: "/admin/accounts",
-    },
-    {
       label: "Parking Lots",
       icon: <ParkingCircle size={18} />,
       to: "/admin/parking-lots",
+    },
+    {
+      label: "Account Management",
+      icon: <Users size={18} />,
+      to: "/admin/accounts",
     },
     {
       label: "Session Management",
@@ -502,6 +504,15 @@ export default function DashboardLayout() {
                           key={n._id || n.notificationId}
                           onClick={() => {
                             if (!n.isRead) markAsRead(n.notificationId || n._id);
+
+                            let dest = null;
+                            if (role === 'staff') {
+                              dest = getSafeStaffDeepLink(n);
+                            }
+                            
+                            if (dest) {
+                              setNotifOpen(false);
+                              navigate(dest);
                             if (role === "customer") {
                               const destination = getSafeCustomerNotificationLink(n);
                               if (destination) {
@@ -592,6 +603,7 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+      {(role === 'admin' || role === 'staff') && <ValoAICopilot />}
 
       {/* Report Modal */}
       {reportModalOpen && (

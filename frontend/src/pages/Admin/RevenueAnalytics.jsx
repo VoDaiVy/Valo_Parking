@@ -4,16 +4,13 @@ import { motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
   ArrowDownRight,
-  ArrowUpRight,
   BarChart3,
   CalendarDays,
   Check,
   ChevronDown,
   CircleDollarSign,
   Crown,
-  Info,
   RefreshCw,
-  RotateCcw,
   WalletCards,
 } from 'lucide-react';
 import {
@@ -251,29 +248,8 @@ export default function RevenueAnalytics() {
       label: 'Membership transfer fees',
       value: formatCurrency(transferFeeSummary.revenue),
       note: `${formatNumber(transferFeeSummary.transactionCount)} completed fee transactions`,
-      tone: 'emerald',
-    },
-  ];
 
-  const sourceSummary = [
-    {
-      icon: ArrowUpRight,
-      title: 'External payment-derived booking value',
-      value: formatCurrency(bookingMoney.externalPaymentValue),
-      text: 'Estimated from paid booking records.',
-    },
-    {
-      icon: RotateCcw,
-      title: 'Renewal value',
-      value: formatCurrency(subscriptionSummary.renewalAmount),
-      text: 'Successful renewals recorded by the new audit flow.',
-    },
-    {
-      icon: BarChart3,
-      title: 'Partial financial coverage',
-      value: bookingMoney.financialCoverage || 'Unavailable',
-      text: 'Wallet totals require a verified booking reference.',
-      accent: 'amber',
+      tone: 'emerald',
     },
   ];
 
@@ -293,17 +269,17 @@ export default function RevenueAnalytics() {
       <div className="relative mx-auto max-w-[1500px]">
         <motion.header
           {...motionProps}
-          className="mb-7 flex flex-col justify-between gap-5 border-b border-white/[0.08] pb-7 xl:flex-row xl:items-end"
+          className="mb-5 flex flex-col justify-between gap-4 border-b border-white/[0.08] pb-5 xl:flex-row xl:items-end"
         >
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-300">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-300">
               <BarChart3 size={13} />
               Analytics
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-white lg:text-[42px] sm:text-5xl">
+            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
               Revenue Analytics
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
               Booking cash flow, refunds and parking package performance with each source kept separate.
             </p>
           </div>
@@ -386,7 +362,6 @@ export default function RevenueAnalytics() {
         ) : (
           <>
             <FinancialOverviewStrip metrics={financialMetrics} reduceMotion={reduceMotion} />
-            <SourceCoverageNotice />
 
             <SalesTrendChart
               points={revenueTimeline}
@@ -406,8 +381,6 @@ export default function RevenueAnalytics() {
                 reduceMotion={reduceMotion}
               />
             </section>
-
-            <SourceSummaryStrip items={sourceSummary} />
           </>
         )}
       </div>
@@ -430,7 +403,7 @@ function FinancialOverviewStrip({ metrics, reduceMotion }) {
             initial={reduceMotion ? false : { opacity: 0, y: 8 }}
             animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
             transition={{ delay: index * 0.055 }}
-            className="group flex gap-4 border-white/[0.08] px-2 py-5 transition hover:bg-white/[0.025] sm:px-5 [&:not(:last-child)]:border-b md:[&:not(:last-child)]:border-r xl:[&:not(:last-child)]:border-b-0"
+            className="group flex gap-3 border-white/[0.08] px-2 py-3 transition hover:bg-white/[0.025] sm:px-4 [&:not(:last-child)]:border-b md:[&:not(:last-child)]:border-r xl:[&:not(:last-child)]:border-b-0"
           >
             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
               metric.tone === 'rose'
@@ -447,10 +420,10 @@ function FinancialOverviewStrip({ metrics, reduceMotion }) {
               <p className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-500">
                 {metric.label}
               </p>
-              <p className="mt-2 text-2xl font-black tabular-nums tracking-tight text-white">
+              <p className="mt-1 text-lg font-black tabular-nums tracking-tight text-white sm:text-xl">
                 {metric.value}
               </p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+              <p className="mt-0.5 text-xs font-semibold leading-5 text-slate-500">
                 {metric.note}
               </p>
             </div>
@@ -458,20 +431,6 @@ function FinancialOverviewStrip({ metrics, reduceMotion }) {
         );
       })}
     </motion.section>
-  );
-}
-
-function SourceCoverageNotice() {
-  return (
-    <div className="mt-4 flex items-start gap-3 border-l-2 border-yellow-400/55 bg-yellow-400/[0.045] px-4 py-3">
-      <Info size={18} className="mt-0.5 shrink-0 text-yellow-300" />
-      <div>
-        <p className="text-sm font-black text-slate-100">Financial sources are reported separately</p>
-        <p className="mt-1 text-xs leading-5 text-slate-400">
-          Financial sources are reported separately and must not be interpreted as one accounting revenue total.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -787,36 +746,6 @@ function PackageValueSection({ packageRows, maxPackageAmount, reduceMotion }) {
         </div>
       </div>
     </motion.section>
-  );
-}
-
-function SourceSummaryStrip({ items }) {
-  return (
-    <section className="mt-7 grid border-y border-white/[0.08] md:grid-cols-3">
-      {items.map((item) => {
-        const Icon = item.icon;
-        const isAmber = item.accent === 'amber';
-        return (
-          <div
-            key={item.title}
-            className="flex items-start gap-3 border-white/[0.08] px-2 py-5 sm:px-5 [&:not(:last-child)]:border-b md:[&:not(:last-child)]:border-b-0 md:[&:not(:last-child)]:border-r"
-          >
-            <div className={`mt-0.5 ${isAmber ? 'text-amber-300' : 'text-yellow-300'}`}>
-              <Icon size={17} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                {item.title}
-              </p>
-              <p className={`mt-2 text-lg font-black tabular-nums capitalize ${isAmber ? 'text-amber-200' : 'text-white'}`}>
-                {item.value}
-              </p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{item.text}</p>
-            </div>
-          </div>
-        );
-      })}
-    </section>
   );
 }
 

@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { scanPlate, scanRegistrationCard, getOccupancyForecast, resolveUnclearPlate } = require('../controllers/aiController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect, authorize } = require('../middlewares/authMiddleware');
+const aiBookingController = require('../controllers/aiBookingController');
+
+router.post('/booking/interpret', protect, authorize('customer'), aiBookingController.interpret);
 
 // @route   POST /api/ai/scan-plate
 // @desc    Scan license plate from base64 image using PlateRecognizer
