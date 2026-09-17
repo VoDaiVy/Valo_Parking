@@ -12,6 +12,7 @@ const payos = require('../config/payos');
 const cloudinary = require('../config/cloudinary');
 const { sendKioskCheckInEmail, sendCheckoutEmail } = require('../utils/emailUtils');
 const notifTriggers = require('../services/notificationTriggers');
+const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
@@ -923,6 +924,7 @@ exports.createKioskSession = async (req, res, next) => {
       entryGate: entryGate || null,
       paymentStatus: 'unpaid'
     });
+    aiNotificationEvents.notifySessionCreatedSafely(newSession, req.app);
 
     if (holdToConsume) {
       holdToConsume.status = 'consumed';

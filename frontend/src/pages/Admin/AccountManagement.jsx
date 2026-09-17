@@ -8,6 +8,7 @@ import {
   RefreshCw, Layers, Eye
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import { useSearchParams } from 'react-router-dom';
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -171,6 +172,9 @@ export default function AccountManagement() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2500);
   };
+  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userIdQuery = searchParams.get('userId');
 
   // ── Data ──
   const fetchUsers = async () => {
@@ -189,6 +193,24 @@ export default function AccountManagement() {
 
     return () => window.clearTimeout(timerId);
   }, []);
+
+  useEffect(() => {
+    if (users.length > 0 && userIdQuery) {
+      const targetUser = users.find(u => u._id === userIdQuery);
+      if (targetUser) {
+        setTimeout(() => {
+          setPanelUser(targetUser);
+          setIsEditing(false);
+          setBlockConfirm(false);
+          setDeleteConfirm(false);
+          setSaveState('idle');
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('userId');
+          setSearchParams(newParams, { replace: true });
+        }, 0);
+      }
+    }
+  }, [users, userIdQuery, searchParams, setSearchParams]);
 
   const handleBlockToggle = async (userId, currentStatus) => {
     try {

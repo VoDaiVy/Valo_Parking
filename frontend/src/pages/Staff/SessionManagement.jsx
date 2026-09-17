@@ -4,6 +4,7 @@ import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
+import { useSearchParams } from 'react-router-dom';
 
 export default function SessionManagement() {
   const [sessions, setSessions] = useState([]);
@@ -17,6 +18,8 @@ export default function SessionManagement() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiInitialPlate, setAiInitialPlate] = useState('');
   const [aiInitialImage, setAiInitialImage] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sessionIdQuery = searchParams.get('sessionId');
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -48,6 +51,20 @@ export default function SessionManagement() {
 
     return () => pageScroller?.classList.remove('scrollbar-hidden');
   }, []);
+
+  useEffect(() => {
+    if (sessions.length > 0 && sessionIdQuery) {
+      const targetSession = sessions.find(s => s._id === sessionIdQuery);
+      if (targetSession) {
+        setTimeout(() => {
+          setSelectedSession(targetSession);
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('sessionId');
+          setSearchParams(newParams, { replace: true });
+        }, 0);
+      }
+    }
+  }, [sessions, sessionIdQuery, searchParams, setSearchParams]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';

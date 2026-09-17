@@ -11,6 +11,7 @@ const {
 const { generateOTP, sendOTPEmail, sendResetPasswordEmail } = require('../utils/emailUtils');
 const { buildOtpAutofillHint, getOtpAutofillConfig } = require('../utils/otpAutofillUtils');
 const notifTriggers = require('../services/notificationTriggers');
+const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -79,6 +80,7 @@ const register = async (req, res, next) => {
 
     // Fire-and-forget: send welcome notification
     notifTriggers.notifyRegistrationSuccess(req.app, user._id);
+    aiNotificationEvents.notifyUserRegisteredSafely(user, req.app);
 
     res.status(201).json({
       success: true,
@@ -450,6 +452,7 @@ const googleLogin = async (req, res, next) => {
         lastName,
         avatar: picture || '',
       });
+      aiNotificationEvents.notifyUserRegisteredSafely(user, req.app);
     }
 
     // Generate tokens

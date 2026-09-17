@@ -13,6 +13,7 @@ const notificationDispatch = require('../notificationDispatchService');
 
 const fail = (message, statusCode = 400) => { const error = new Error(message); error.statusCode = statusCode; throw error; };
 function cleanPayload(type, input) {
+  if (['APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'ARCHIVE_SERVICE', 'ARCHIVE_TICKET_PACKAGE'].includes(type)) return {};
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Nội dung bản nháp không hợp lệ.');
   if (type === 'MODIFY_PRICING') {
     const { timeBlocks, cap12h, cap24h } = input;
@@ -48,15 +49,33 @@ function cleanPayload(type, input) {
     if (!['guest', 'customer', 'staff', 'admin'].includes(input.role)) fail('Vai trò không hợp lệ.');
     return { role: input.role };
   }
-  if (type === 'APPROVE_VEHICLE' || type === 'ARCHIVE_POLICY') {
-    return {};
-  }
   if (type === 'CREATE_POLICY_DRAFT') {
     const { title, category, summary, content, effectiveDate } = input;
     if (typeof title !== 'string' || !title.trim()) fail('Thiếu tiêu đề chính sách.');
     if (typeof category !== 'string' || !category.trim()) fail('Thiếu phân loại chính sách.');
     if (typeof content !== 'string' || !content.trim()) fail('Thiếu nội dung chính sách.');
     return { title: title.trim(), category: category.trim(), summary: summary?.trim() || '', content: content.trim(), effectiveDate };
+  }
+  if (type === 'UPDATE_USER_PROFILE') {
+    const { firstName, lastName, phone } = input;
+    const allowed = {};
+    if (typeof firstName === 'string') allowed.firstName = firstName.trim();
+    if (typeof lastName === 'string') allowed.lastName = lastName.trim();
+    if (typeof phone === 'string') allowed.phone = phone.trim();
+    return allowed;
+  }
+  if (type === 'CREATE_SERVICE' || type === 'UPDATE_SERVICE') {
+    const { name, price, timeCost, description } = input;
+    const allowed = {};
+    if (name !== undefined) allowed.name = typeof name === 'string' ? name.trim() : name;
+    if (price !== undefined) allowed.price = Number(price);
+    if (timeCost !== undefined) allowed.timeCost = Number(timeCost);
+    if (description !== undefined) allowed.description = typeof description === 'string' ? description.trim() : description;
+    
+    if (type === 'CREATE_SERVICE') {
+      if (!allowed.name || allowed.price === undefined || !allowed.description) fail('Vui lòng cung cấp đầy đủ thông tin (name, description, price).');
+    }
+    return allowed;
   }
   if (!['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'].includes(type)) fail('Thao tác này chưa được hỗ trợ.');
   const { name, type: packageType, price, description = '', maxSlots = 3, isActive = true } = input;
@@ -68,7 +87,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     fail('Hành động không được phép đối với Staff.', 403);
   }
   let clean = cleanPayload(type, payload);
-  if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
+  if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
   if (notificationId && !mongoose.isValidObjectId(notificationId)) fail('Cảnh báo không hợp lệ.');
   
   let current = null;
@@ -101,6 +120,18 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     current = await Policy.findById(targetId).select('status title').lean();
     if (!current) fail('Không tìm thấy chính sách.', 404);
     if (current.status === 'archived') fail('Chính sách đã được lưu trữ.', 400);
+  } else if (type === 'UPDATE_USER_PROFILE') {
+    current = await User.findById(targetId).select('updatedAt status').lean();
+    if (!current) fail('Không tìm thấy người dùng.', 404);
+  } else if (type === 'ARCHIVE_TICKET_PACKAGE') {
+    current = await TicketPackage.findById(targetId).select('updatedAt isActive').lean();
+    if (!current) fail('Không tìm thấy gói vé.', 404);
+    if (!current.isActive) fail('Gói vé đã được lưu trữ.', 400);
+  } else if (type === 'UPDATE_SERVICE' || type === 'ARCHIVE_SERVICE') {
+    const Service = require('../../models/Service');
+    current = await Service.findById(targetId).select('updatedAt isActive').lean();
+    if (!current) fail('Không tìm thấy dịch vụ.', 404);
+    if (type === 'ARCHIVE_SERVICE' && !current.isActive) fail('Dịch vụ đã được lưu trữ.', 400);
   }
 
   if (notificationId) {
@@ -113,7 +144,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     const seen = evidence.some((entry) => entry.tool === 'get_ai_notifications' && Array.isArray(entry.data) && entry.data.some((row) => String(row._id) === String(notificationId)));
     if (!seen) fail('Cần kiểm tra cảnh báo trước khi gắn bản nháp.');
   }
-  const hasTargetId = ['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE'].includes(type);
+  const hasTargetId = ['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type);
   const draft = await AIDraft.create({ adminUserId, type, payload: clean, targetId: hasTargetId ? targetId : undefined, notificationId, current, reason: String(reason || '').slice(0, 1000), evidence: Array.isArray(evidence) ? evidence.slice(0, 10) : [], expiresAt: new Date(Date.now() + 3600000) });
   await AIAuditLog.create({ actorId: adminUserId, action: 'DRAFT_CREATED', subjectId: draft._id, metadata: { type } });
   return draft;
@@ -239,7 +270,22 @@ async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
         if (draft.current?.status === 'archived') fail('Chính sách đã được lưu trữ.', 400);
         const archived = await policyService.archivePolicy(draft.targetId, adminUserId);
         result = { id: archived._id, type: draft.type };
-      } else {
+      } else if (draft.type === 'UPDATE_USER_PROFILE') {
+        const updated = await catalogWrites.updateUserProfileSafely(draft.targetId, payload, { session, expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+        result = { id: updated.userId, type: draft.type };
+      } else if (draft.type === 'ARCHIVE_TICKET_PACKAGE') {
+        const archived = await catalogWrites.archivePackageSafely(draft.targetId, { session, expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+        result = { id: archived._id, type: draft.type };
+      } else if (draft.type === 'CREATE_SERVICE') {
+        const created = await catalogWrites.createServiceSafely(payload, { session, adminId: adminUserId });
+        result = { id: created._id, type: draft.type };
+      } else if (draft.type === 'UPDATE_SERVICE') {
+        const updated = await catalogWrites.updateServiceSafely(draft.targetId, payload, { session, expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+        result = { id: updated._id, type: draft.type };
+      } else if (draft.type === 'ARCHIVE_SERVICE') {
+        const archived = await catalogWrites.archiveServiceSafely(draft.targetId, { session, expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+        result = { id: archived._id, type: draft.type };
+      } else if (draft.type === 'UPDATE_TICKET_PACKAGE') {
         const updated = await catalogWrites.updatePackage(draft.targetId, payload, { session, expectedUpdatedAt: draft.current?.updatedAt, draftId: draft._id, adminId: adminUserId });
         if (!updated) fail('Gói vé đã thay đổi; cần tạo đề xuất mới.', 409);
         result = { id: updated._id, type: draft.type };
@@ -259,6 +305,47 @@ async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
       await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: created._id } } });
       await AIAuditLog.create({ actorId: adminUserId, action: 'DRAFT_EXECUTED', subjectId: draft._id, metadata: { id: created._id, type: draft.type } }).catch(() => {});
       return { id: created._id, type: draft.type };
+    } else if (draft.type === 'UPDATE_USER_PROFILE') {
+      const updated = await catalogWrites.updateUserProfileSafely(draft.targetId, payload, { expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: updated.userId } } });
+      return { id: updated.userId, type: draft.type };
+    } else if (draft.type === 'ARCHIVE_TICKET_PACKAGE') {
+      const archived = await catalogWrites.archivePackageSafely(draft.targetId, { expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: archived._id } } });
+      return { id: archived._id, type: draft.type };
+    } else if (draft.type === 'CREATE_SERVICE') {
+      const created = await catalogWrites.createServiceSafely(payload, { adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: created._id } } });
+      return { id: created._id, type: draft.type };
+    } else if (draft.type === 'UPDATE_SERVICE') {
+      const updated = await catalogWrites.updateServiceSafely(draft.targetId, payload, { expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: updated._id } } });
+      return { id: updated._id, type: draft.type };
+    } else if (draft.type === 'ARCHIVE_SERVICE') {
+      const archived = await catalogWrites.archiveServiceSafely(draft.targetId, { expectedUpdatedAt: draft.current?.updatedAt, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: archived._id } } });
+      return { id: archived._id, type: draft.type };
+    } else if (draft.type === 'UPDATE_USER_STATUS') {
+      const updated = await catalogWrites.updateUserStatusSafely(draft.targetId, payload.status, { expectedStatus: draft.current?.status, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: updated._id } } });
+      return { id: updated._id, type: draft.type };
+    } else if (draft.type === 'CHANGE_USER_ROLE') {
+      const updated = await catalogWrites.changeUserRoleSafely(draft.targetId, payload.role, { expectedRole: draft.current?.role, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: updated._id } } });
+      return { id: updated._id, type: draft.type };
+    } else if (draft.type === 'APPROVE_VEHICLE') {
+      const updated = await catalogWrites.approveVehicleSafely(draft.targetId, { expectedStatus: draft.current?.status, adminId: adminUserId });
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: updated._id } } });
+      return { id: updated._id, type: draft.type };
+    } else if (draft.type === 'CREATE_POLICY_DRAFT') {
+      const policyDraft = await policyService.createPolicyWithDraft(payload, adminUserId);
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: policyDraft.policy._id } } });
+      return { id: policyDraft.policy._id, type: draft.type };
+    } else if (draft.type === 'ARCHIVE_POLICY') {
+      if (draft.current?.status === 'archived') fail('Chính sách đã được lưu trữ.', 400);
+      const archived = await policyService.archivePolicy(draft.targetId, adminUserId);
+      await AIDraft.updateOne({ _id: draft._id, status: 'PENDING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: { id: archived._id } } });
+      return { id: archived._id, type: draft.type };
     }
     const alreadyApplied = await TicketPackage.findOne({ _id: draft.targetId, aiAppliedDraftIds: draft._id });
     const updated = alreadyApplied || await catalogWrites.updatePackage(draft.targetId, payload, { expectedUpdatedAt: draft.current?.updatedAt, draftId: draft._id });

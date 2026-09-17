@@ -28,11 +28,11 @@ const serviceSchema = new mongoose.Schema(
     },
     imageUrl: {
       type: String,
-      required: [true, 'Image URL is required'],
+      default: '',
     },
     cloudinary_id: {
       type: String,
-      required: [true, 'Cloudinary ID is required for image management'],
+      default: '',
     },
     isActive: {
       type: Boolean,

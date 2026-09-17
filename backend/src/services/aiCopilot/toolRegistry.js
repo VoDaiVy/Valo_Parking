@@ -198,6 +198,27 @@ const tools = [
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 15).' },
     } },
     passArgs, async (p, actorRole) => readTools.getSubscriptionMembers(p, actorRole)),
+
+  define('search_ticket_packages',
+    'Tìm kiếm gói vé theo tên, loại (hourly/daily/monthly/yearly) và trạng thái (isActive). Trả về đầy đủ các trường business schema: name, type, price, description, maxSlots, renewalWindowDays, isRenewable, isActive.',
+    { type: 'object', properties: {
+      query: { type: 'string', description: 'Từ khoá tìm kiếm theo tên gói vé.' },
+      type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'], description: 'Loại gói vé.' },
+      isActive: { type: 'boolean', description: 'Trạng thái hoạt động.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchTicketPackages(p, actorRole)),
+    
+  define('search_services',
+    'Tìm kiếm dịch vụ theo tên, giá và trạng thái. Trả về chi tiết các trường: name, price, timeCost (thời lượng), description, isActive.',
+    { type: 'object', properties: {
+      name: { type: 'string', description: 'Từ khoá tìm kiếm theo tên dịch vụ.' },
+      minPrice: { type: 'number', description: 'Giá thấp nhất.' },
+      maxPrice: { type: 'number', description: 'Giá cao nhất.' },
+      isActive: { type: 'boolean', description: 'Trạng thái hoạt động.' },
+      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 20, tối đa 50).' },
+    } },
+    passArgs, async (p, actorRole) => readTools.searchServices(p, actorRole)),
 ];
 const STAFF_TOOLS = [
   'get_active_sessions',

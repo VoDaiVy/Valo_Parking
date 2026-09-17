@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bell, Check, Send, X, Trash2, AlertTriangle, Paperclip, MapPin, CalendarDays, CreditCard } from 'lucide-react';
+import { Bell, Check, Send, X, Trash2, AlertTriangle, Paperclip, MapPin, CalendarDays, CreditCard, UserPlus, Car, ShieldAlert } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import ValoAIMascot from './ValoAIMascot';
@@ -9,7 +9,8 @@ import { notificationTarget } from '../utils/notificationTarget';
 import '../styles/ValoAICopilot.css';
 
 const fieldLabels = {
-  name: 'Tên gói', type: 'Loại', price: 'Giá', description: 'Mô tả', maxSlots: 'Số chỗ tối đa',
+  name: 'Tên', type: 'Loại', price: 'Giá', description: 'Mô tả', maxSlots: 'Số chỗ tối đa',
+  timeCost: 'Thời lượng (phút)',
   cap12h: 'Trần 12 giờ', cap24h: 'Trần 24 giờ', timeBlocks: 'Khung giờ', isActive: 'Đang hoạt động',
   status: 'Trạng thái', title: 'Tiêu đề', category: 'Phân loại', summary: 'Tóm tắt', content: 'Nội dung', effectiveDate: 'Ngày hiệu lực', role: 'Vai trò', username: 'Người nhận', email: 'Email', expectedRecipientRole: 'Vai trò người nhận'
 };
@@ -35,7 +36,7 @@ const pretty = (value, key) => {
   if (typeof value === 'number') return value.toLocaleString('vi-VN');
   return String(value ?? '—');
 };
-const typeLabel = { MODIFY_PRICING: 'Điều chỉnh bảng giá', CREATE_TICKET_PACKAGE: 'Tạo gói vé mới', UPDATE_TICKET_PACKAGE: 'Cập nhật gói vé', UPDATE_USER_STATUS: 'Đề xuất thay đổi tài khoản', SEND_NOTIFICATION: 'Gửi thông báo', CHANGE_USER_ROLE: 'Đề xuất thay đổi vai trò', APPROVE_VEHICLE: 'Đề xuất duyệt phương tiện', CREATE_POLICY_DRAFT: 'Đề xuất tạo bản nháp chính sách', ARCHIVE_POLICY: 'Đề xuất lưu trữ chính sách' };
+const typeLabel = { MODIFY_PRICING: 'Điều chỉnh bảng giá', CREATE_TICKET_PACKAGE: 'Tạo gói vé mới', UPDATE_TICKET_PACKAGE: 'Cập nhật gói vé', UPDATE_USER_STATUS: 'Đề xuất thay đổi tài khoản', SEND_NOTIFICATION: 'Gửi thông báo', CHANGE_USER_ROLE: 'Đề xuất thay đổi vai trò', APPROVE_VEHICLE: 'Đề xuất duyệt phương tiện', CREATE_POLICY_DRAFT: 'Đề xuất tạo bản nháp chính sách', ARCHIVE_POLICY: 'Đề xuất lưu trữ chính sách', CREATE_SERVICE: 'Tạo dịch vụ', UPDATE_SERVICE: 'Cập nhật dịch vụ', ARCHIVE_SERVICE: 'Lưu trữ dịch vụ' };
 function DraftCard({ draft, busy, onDecide, userRole }) {
   const [settled, setSettled] = useState(null); // 'approved' | 'rejected' | null
   const isSendNotification = draft.type === 'SEND_NOTIFICATION';
@@ -61,6 +62,7 @@ function DraftCard({ draft, busy, onDecide, userRole }) {
     </dl> : <>
       {draft.current && <details><summary>Giá trị hiện tại</summary><dl>{Object.entries(draft.current).filter(([key]) => key in fieldLabels).map(([key, value]) => <div key={key}><dt>{fieldLabels[key]}</dt><dd>{pretty(value, key)}</dd></div>)}</dl></details>}
       {draft.payload && Object.keys(draft.payload).length > 0 && <details open><summary>Đề xuất thay đổi</summary><dl>{Object.entries(draft.payload).map(([key, value]) => <div key={key}><dt>{fieldLabels[key] || key}</dt><dd>{pretty(value, key)}</dd></div>)}</dl></details>}
+      {draft.type === 'CREATE_SERVICE' && <p className="valo-ai-draft-warning"><AlertTriangle size={14}/> VALO AI không thể tải ảnh. Hãy bổ sung hình ảnh tại trang Services sau khi duyệt.</p>}
     </>}
     {draft.evidence?.length > 0 && <p className="valo-ai-draft-evidence-hint">📊 Dựa trên {draft.evidence.length} nguồn dữ liệu</p>}
     {!settled && <div className="valo-ai-draft-actions">
@@ -96,7 +98,7 @@ function popupStyle(position) {
   return { left, top, width, height, transformOrigin: `${originX}px ${originY}px` };
 }
 
-const noticeIcon = (type) => type === 'FLOOR_FULL' ? <MapPin size={15}/> : type === 'NEW_BOOKING' ? <CalendarDays size={15}/> : type === 'REFUND_COMPLETED' ? <CreditCard size={15}/> : <Bell size={15}/>;
+const noticeIcon = (type) => type === 'FLOOR_FULL' ? <MapPin size={15}/> : type === 'NEW_BOOKING' ? <CalendarDays size={15}/> : type === 'REFUND_COMPLETED' ? <CreditCard size={15}/> : type === 'NEW_USER_REGISTERED' ? <UserPlus size={15}/> : type === 'NEW_SESSION' ? <Car size={15}/> : type === 'VEHICLE_PENDING_VERIFICATION' ? <ShieldAlert size={15}/> : <Bell size={15}/>;
 const noticeTime = (value) => value ? formatDistanceToNow(new Date(value), { addSuffix: true, locale: vi }) : '';
 
 export default function ValoAICopilotView({ position, open, setOpen, tab, setTab, messages, busy, noticeBusy, input, setInput, submit, decide, notifications, unreadCount, notificationError, filter, setFilter, selected, setSelected, preview, openNotice, onNotificationClick, refresh, dismissNotice, onPointerDown, onPointerMove, onPointerUp, onTriggerClick, bottomRef, suggestions, filters, dragging, userRole = 'admin' }) {

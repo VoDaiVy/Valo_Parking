@@ -103,6 +103,7 @@ test('read allowlist contains the 11 original aggregate tools plus 12 drill-down
     'search_users', 'get_user_detail', 'search_notification_recipients', 'search_vehicles',
     'search_bookings', 'get_booking_detail', 'get_parking_floors',
     'get_parking_slots', 'search_transactions', 'get_subscription_members',
+    'search_ticket_packages', 'search_services'
   ]);
   assert.rejects(execute('delete_user', {}), /allowlist/);
 });
@@ -144,6 +145,50 @@ test('monitor requires comparable history before creating candidates', () => {
   assert.equal(candidateFromSeries('sessions', 100, [10, 11, 12, 13], new Date().toISOString()).candidate, true);
   assert.equal(candidateFromSeries('sessions', 12, [10, 11, 12, 13], new Date().toISOString()).candidate, false);
 });
+test('revenue monitor anti-spam threshold tests', () => {
+  const originalEnv = process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND;
+
+  // 1. revenue delta 499,999 VND + MAD cao -> NO notification (default fallback to 500,000)
+  delete process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND;
+  assert.equal(candidateFromSeries('revenue', 499999, [0, 0, 0, 0], new Date().toISOString()).candidate, false); // insufficient baseline, but if it had baseline:
+  assert.equal(candidateFromSeries('revenue', 500099, [10, 11, 12, 13], new Date().toISOString()).candidate, true); // Wait, center is 11.5. 500099 - 11.5 = 500087.5 > 500000. It should be TRUE.
+  
+  // Let's test with exact baseline center: [1000, 1001, 1002, 1003]. Center = 1001.5.
+  // 1. revenue delta 499,999 VND + MAD cao -> NO notification
+  assert.equal(candidateFromSeries('revenue', 1001.5 + 499999, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, false);
+  
+  // 2. revenue delta 500,000 VND + MAD đủ -> notification
+  assert.equal(candidateFromSeries('revenue', 1001.5 + 500000, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, true);
+  
+  // 3. revenue delta >500,000 nhưng MAD dưới threshold -> NO notification
+  // if deviation is low, candidate is false. [1000000, 1000001, 1000002, 1000003] and current = 1000005 (diff is < 500k, false). 
+  // Wait, I need MAD < threshold:
+  assert.equal(candidateFromSeries('revenue', 1000000 + 500001, [1000000 - 500000, 1000000, 1000000 + 500000, 1000000 + 1000000], new Date().toISOString()).candidate, false); 
+  
+  // 4. env custom threshold hoạt động
+  process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND = '1000000';
+  assert.equal(candidateFromSeries('revenue', 1001.5 + 500000, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, false);
+  assert.equal(candidateFromSeries('revenue', 1001.5 + 1000000, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, true);
+  
+  // 5. invalid env -> fallback 500,000
+  process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND = 'invalid';
+  assert.equal(candidateFromSeries('revenue', 1001.5 + 500000, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, true);
+  
+  // negative -> fallback 500,000
+  process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND = '-100';
+  assert.equal(candidateFromSeries('revenue', 1001.5 + 499999, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, false);
+  
+  // 6. session anomaly behavior không bị ảnh hưởng (dù change nhỏ < 500000)
+  process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND = '500000';
+  assert.equal(candidateFromSeries('sessions', 1001.5 + 10, [1000, 1001, 1002, 1003], new Date().toISOString()).candidate, true);
+
+  // Restore env
+  if (originalEnv !== undefined) {
+    process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND = originalEnv;
+  } else {
+    delete process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND;
+  }
+});
 test('monitor creates no notification without a historical baseline and makes no Gemini call', async () => {
   const originals = { sessions: Session.countDocuments, revenue: statistics.getAdminPlatformRevenueStatistics, update: AINotification.updateOne, findUpdate: AINotification.findOneAndUpdate, model: GoogleGenerativeAI.prototype.getGenerativeModel };
   let writes = 0;
@@ -174,7 +219,7 @@ test('monitor persists and deduplicates a statistical candidate with determinist
   Session.countDocuments = async () => 0;
   statistics.getAdminPlatformRevenueStatistics = async ({ endDate }) => {
     const week = Math.round((Date.now() - new Date(endDate).getTime()) / (7 * 86400000));
-    return { totalRevenue: week === 0 ? 300 : baseline[week - 1] };
+    return { totalRevenue: week === 0 ? 500500 : baseline[week - 1] };
   };
   AINotification.updateOne = async () => ({ modifiedCount: 0 });
   AINotification.findOne = async ({ deduplicationKey }) => notification?.deduplicationKey === deduplicationKey ? notification : null;
@@ -195,7 +240,7 @@ test('monitor persists and deduplicates a statistical candidate with determinist
     assert.equal(inserts, 1);
     assert.equal(emits, 1);
     assert.equal(notification.evidence.metric, 'revenue');
-    assert.equal(notification.affectedMetrics[0].currentValue, 300);
+    assert.equal(notification.affectedMetrics[0].currentValue, 500500);
     assert.match(notification.recommendedActions[0], /doanh thu và cấu hình giá/);
   } finally {
     Session.countDocuments = originals.sessions;

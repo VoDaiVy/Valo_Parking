@@ -17,7 +17,7 @@ const pricingEngine = require('../services/pricingEngine');
 const notifTriggers = require('../services/notificationTriggers');
 const contractService = require('../services/contractService');
 const bookingRefundService = require('../services/bookingRefundService');
-const { notifyBookingPaidSafely, notifyBookingCancelledSafely } = require('../services/aiCopilot/notificationEvents');
+const { notifyBookingPaidSafely, notifyBookingCancelledSafely, notifySessionCreatedSafely } = require('../services/aiCopilot/notificationEvents');
 const {
   getBookingFinancialSummaryMap,
 } = require('../services/bookingFinancialService');
@@ -1396,6 +1396,7 @@ exports.checkInBooking = async (req, res, next) => {
           }
         : {}),
     });
+    notifySessionCreatedSafely(session, req.app);
 
     await recordStaffBookingAction({
       req,

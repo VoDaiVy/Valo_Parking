@@ -14,6 +14,15 @@ function candidateFromSeries(metric, current, historical, checkedAt) {
   if (!mad) return { candidate: false, insufficientBaseline: true, reason: 'Historical distribution has no measurable variation' };
   const robustDeviation = Math.abs(current - center) / (1.4826 * mad);
   if (robustDeviation < 3.5) return { candidate: false, insufficientBaseline: false };
+  
+  if (metric === 'revenue') {
+    const rawThreshold = Number(process.env.AI_REVENUE_MIN_ABSOLUTE_CHANGE_VND);
+    const minAbsoluteChange = (Number.isNaN(rawThreshold) || rawThreshold < 0) ? 500000 : rawThreshold;
+    if (Math.abs(current - center) < minAbsoluteChange) {
+      return { candidate: false, insufficientBaseline: false, reason: 'Absolute change below anti-spam threshold' };
+    }
+  }
+  
   return { candidate: true, metric, current, baseline: historical, median: center, robustDeviation, direction: current > center ? 'increase' : 'decrease', checkedAt };
 }
 async function collectWindow(end) {

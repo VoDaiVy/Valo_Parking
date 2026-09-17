@@ -90,6 +90,72 @@ function notifySubscriptionActivatedSafely(subscription, ticketPackage, app) {
   });
 }
 
+async function notifyUserRegistered(user, app) {
+  if (!user) return false;
+  return insertEvent({
+    app,
+    deduplicationKey: `new-user:${user._id}`,
+    notificationType: 'NEW_USER_REGISTERED', severity: 'NOTICE',
+    targetRoles: ['admin'],
+    title: 'Khách hàng mới đăng ký',
+    summary: `${user.username} vừa tạo tài khoản VALO.`,
+    entityType: 'User', entityId: user._id, targetRoute: `/admin/accounts?userId=${user._id}`,
+    evidence: { username: user.username, email: user.email, role: user.role, createdAt: user.createdAt },
+    sourceModules: ['Auth'], detectedAt: new Date(),
+  });
+}
+
+function notifyUserRegisteredSafely(user, app) {
+  return notifyUserRegistered(user, app).catch((error) => {
+    console.error('[VALO AI Notification] NEW_USER_REGISTERED:', error);
+    return false;
+  });
+}
+
+async function notifySessionCreated(session, app) {
+  if (!session) return false;
+  return insertEvent({
+    app,
+    deduplicationKey: `new-session:${session._id}`,
+    notificationType: 'NEW_SESSION', severity: 'NOTICE',
+    targetRoles: ['admin'],
+    title: 'Phiên đỗ xe mới',
+    summary: `Xe ${session.licensePlate} vừa bắt đầu đỗ tại tầng ${session.floorId}, vị trí ${session.parkingSlot}.`,
+    entityType: 'Session', entityId: session._id, targetRoute: `/admin/sessions?sessionId=${session._id}`,
+    evidence: { licensePlate: session.licensePlate, floor: session.floorId, slot: session.parkingSlot, type: session.type, source: session.source, checkInTime: session.checkInTime, status: session.status },
+    sourceModules: ['Session'], detectedAt: new Date(),
+  });
+}
+
+function notifySessionCreatedSafely(session, app) {
+  return notifySessionCreated(session, app).catch((error) => {
+    console.error('[VALO AI Notification] NEW_SESSION:', error);
+    return false;
+  });
+}
+
+async function notifyVehiclePending(vehicle, app) {
+  if (!vehicle || vehicle.status !== 'pending') return false;
+  return insertEvent({
+    app,
+    deduplicationKey: `vehicle-pending:${vehicle._id}`,
+    notificationType: 'VEHICLE_PENDING_VERIFICATION', severity: 'CRITICAL',
+    targetRoles: ['admin'],
+    title: 'Xe đang chờ xác minh',
+    summary: `Biển số ${vehicle.licensePlate} vừa được đăng ký và cần Admin kiểm tra.`,
+    entityType: 'Vehicle', entityId: vehicle._id, targetRoute: `/admin/vehicle-models?vehicleId=${vehicle._id}`,
+    evidence: { licensePlate: vehicle.licensePlate, vehicleType: vehicle.vehicleType, owner: vehicle.userId, status: vehicle.status, createdAt: vehicle.createdAt },
+    sourceModules: ['Vehicle'], detectedAt: new Date(),
+  });
+}
+
+function notifyVehiclePendingSafely(vehicle, app) {
+  return notifyVehiclePending(vehicle, app).catch((error) => {
+    console.error('[VALO AI Notification] VEHICLE_PENDING_VERIFICATION:', error);
+    return false;
+  });
+}
+
 module.exports = { 
   insertEvent, 
   notifyBookingPaid, 
@@ -97,5 +163,8 @@ module.exports = {
   notifyBookingCancelled,
   notifyBookingCancelledSafely,
   notifySubscriptionActivated,
-  notifySubscriptionActivatedSafely
+  notifySubscriptionActivatedSafely,
+  notifyUserRegisteredSafely,
+  notifySessionCreatedSafely,
+  notifyVehiclePendingSafely
 };

@@ -16,7 +16,7 @@ const Vehicle = require('../../models/Vehicle');
 const Booking = require('../../models/Booking');
 const ParkingFloor = require('../../models/ParkingFloor');
 const Slot = require('../../models/Slot');
-const WalletTransaction = require('../../models/WalletTransaction');
+const TicketPackage = require('../../models/TicketPackage');
 const Subscription = require('../../models/Subscription');
 const { startOfVietnamDay, parseVietnamCalendarDate } = require('../../utils/bookingDateRange');
 const { normalizeLicensePlate } = require('../../utils/licensePlateUtils');
@@ -62,6 +62,7 @@ const BOOKING_SAFE_SELECT = '_id licensePlate floorId parkingSlot scheduledStart
 const VEHICLE_SAFE_SELECT = '_id licensePlate vehicleType brand model color status nickname isDefault owner createdAt';
 const WALLET_TX_SAFE_SELECT = '_id userId type amount balanceBefore balanceAfter status description refSource createdAt';
 const SUBSCRIPTION_SAFE_SELECT = '_id user ticketPackage slots amount paymentStatus validFrom expireAt status renewalCount lastRenewedAt createdAt';
+const TICKET_PACKAGE_SAFE_SELECT = '_id name type price description isActive maxSlots renewalWindowDays isRenewable createdAt updatedAt';
 
 function parseDateRange(args) {
   const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -418,6 +419,74 @@ async function searchNotificationRecipients(args = {}) {
   };
 }
 
+/* ── 14. search_ticket_packages ──────────────────────────────────────── */
+
+async function searchTicketPackages({ query, type, isActive, limit } = {}) {
+  const filter = {};
+  if (query) {
+    const escaped = escapeRegex(query);
+    filter.name = new RegExp(escaped, 'i');
+  }
+  if (type) {
+    const allowed = ['hourly', 'daily', 'monthly', 'yearly'];
+    if (!allowed.includes(type)) throw new Error(`type phải là: ${allowed.join(', ')}.`);
+    filter.type = type;
+  }
+  if (isActive !== undefined && isActive !== null) {
+    filter.isActive = isActive === true || isActive === 'true';
+  }
+  const actualLimit = clampLimit(limit, 20);
+  const [items, total] = await Promise.all([
+    TicketPackage.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(actualLimit)
+      .select(TICKET_PACKAGE_SAFE_SELECT)
+      .lean(),
+    TicketPackage.countDocuments(filter)
+  ]);
+  return { items, total, returned: items.length, limit: actualLimit };
+}
+
+async function searchServices({ name, minPrice, maxPrice, isActive, limit } = {}) {
+  const filter = {};
+  if (name) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.name = new RegExp(escaped, 'i');
+  }
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    filter.price = {};
+    if (minPrice !== undefined) filter.price.$gte = minPrice;
+    if (maxPrice !== undefined) filter.price.$lte = maxPrice;
+  }
+  if (isActive !== undefined) {
+    filter.isActive = isActive;
+  }
+
+  const actualLimit = limit ? Math.min(Math.max(1, parseInt(limit, 10)), 50) : 20;
+
+  const Service = require('../../models/Service');
+  const [items, total] = await Promise.all([
+    Service.find(filter)
+      .limit(actualLimit)
+      .select('name price timeCost description isActive imageUrl cloudinary_id updatedAt')
+      .lean(),
+    Service.countDocuments(filter)
+  ]);
+
+  const sanitizedItems = items.map(s => ({
+    _id: s._id,
+    name: s.name,
+    price: s.price,
+    timeCost: s.timeCost, // Duration
+    description: s.description,
+    isActive: s.isActive,
+    hasImage: !!(s.imageUrl && s.cloudinary_id),
+    updatedAt: s.updatedAt
+  }));
+
+  return { items: sanitizedItems, total, returned: sanitizedItems.length, limit: actualLimit };
+}
+
 const exportsList = {
   getActiveSessions,
   searchSessions,
@@ -432,6 +501,8 @@ const exportsList = {
   searchTransactions,
   getSubscriptionMembers,
   searchNotificationRecipients,
+  searchTicketPackages,
+  searchServices,
 };
 
 module.exports = Object.fromEntries(
