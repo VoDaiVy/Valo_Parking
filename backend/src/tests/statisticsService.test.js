@@ -190,12 +190,10 @@ test('platform booking revenue separates parking and service without double coun
     completedServices
   );
 
-  assert.deepEqual(result, {
-    bookingRevenue: 135,
-    serviceRevenue: 35,
-    completedBookingCount: 2,
-    serviceBookingCount: 2,
-  });
+  assert.equal(result.bookingRevenue, 135);
+  assert.equal(result.serviceRevenue, 35);
+  assert.equal(result.completedBookingCount, 2);
+  assert.equal(result.serviceBookingCount, 2);
   assert.equal(result.bookingRevenue + result.serviceRevenue, 170);
 });
 
@@ -230,6 +228,43 @@ test('platform service revenue excludes paid services that are not completed', (
   assert.equal(result.serviceBookingCount, 0);
 });
 
+test('refund is tracked separately and not double-subtracted', () => {
+  const bookings = [{
+    _id: 'refunded-booking',
+    paymentBreakdownSnapshot: {
+      source: 'calculated',
+      parkingAmount: 100,
+      serviceAmount: 0,
+      totalAmount: 100,
+    },
+    refundSettlements: [{
+      payoutStatus: 'credited',
+      refundableServiceAmount: 0,
+    }],
+  }];
+  const financialSummaries = new Map([
+    ['refunded-booking', {
+      prepaidCollected: 100,
+      grossRevenue: 100,
+      refundPaid: 30,
+      actualRevenue: 70,
+    }],
+  ]);
+
+  const result = _private.calculatePlatformBookingRevenue(
+    bookings,
+    financialSummaries,
+    new Map()
+  );
+
+  // Booking revenue should be 70 (100 gross - 30 refund)
+  assert.equal(result.bookingRevenue, 70);
+  // The refund total should be tracked separately
+  assert.equal(result.refundTotal, 30);
+  // Both sum to gross
+  assert.equal(result.bookingRevenue + result.refundTotal, 100);
+});
+
 test('platform revenue includes realized membership transfer fees exactly once', () => {
   const result = _private.calculatePlatformRevenueTotal({
     vipRevenue: 500000,
@@ -252,4 +287,124 @@ test('platform revenue uses lifecycle timestamps with a legacy fallback', () => 
   assert.equal(match.$or[0].completedAt.$lte, period.endDate);
   assert.equal(match.$or[1].completedAt, null);
   assert.equal(match.$or[1].updatedAt.$gte, period.startDate);
+});
+
+/* ── Mode-based Revenue Analytics tests ──────────────────────────────── */
+
+test('resolveModeDateRange: 7d gives exactly 7 calendar days', () => {
+  // 2026-09-23 01:00 ICT = 2026-09-22T18:00Z
+  const now = new Date('2026-09-22T18:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: '7d' }, now);
+  // Start = 6 days before start of today ICT
+  // Today ICT starts at 2026-09-22T17:00Z (midnight Sep 23 ICT)
+  const todayStart = new Date('2026-09-22T17:00:00.000Z');
+  const expectedStart = new Date(todayStart.getTime() - 6 * 86400000);
+  assert.equal(result.startDate.toISOString(), expectedStart.toISOString());
+  assert.equal(result.endDate.toISOString(), new Date(todayStart.getTime() + 86400000).toISOString());
+  assert.equal(result.granularity, 'day');
+});
+
+test('resolveModeDateRange: month uses full calendar month in Vietnam', () => {
+  const now = new Date('2026-09-15T12:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'month', year: '2026', month: '9' }, now);
+  // Sep 1 ICT = Aug 31 17:00 UTC
+  assert.equal(result.startDate.toISOString(), '2026-08-31T17:00:00.000Z');
+  // Oct 1 ICT = Sep 30 17:00 UTC
+  assert.equal(result.endDate.toISOString(), '2026-09-30T17:00:00.000Z');
+  assert.equal(result.granularity, 'day');
+});
+
+test('resolveModeDateRange: quarter covers exactly 3 months', () => {
+  const now = new Date('2026-09-15T12:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'quarter', year: '2026', quarter: '3' }, now);
+  // Q3 = Jul-Sep: Jul 1 ICT = Jun 30 17:00 UTC → Oct 1 ICT = Sep 30 17:00 UTC
+  assert.equal(result.startDate.toISOString(), '2026-06-30T17:00:00.000Z');
+  assert.equal(result.endDate.toISOString(), '2026-09-30T17:00:00.000Z');
+  assert.equal(result.granularity, 'month');
+});
+
+test('resolveModeDateRange: year has all 12 months', () => {
+  const now = new Date('2026-06-15T12:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'year', year: '2026' }, now);
+  // Jan 1 ICT = Dec 31 2025 17:00 UTC → Jan 1 2027 ICT = Dec 31 2026 17:00 UTC
+  assert.equal(result.startDate.toISOString(), '2025-12-31T17:00:00.000Z');
+  assert.equal(result.endDate.toISOString(), '2026-12-31T17:00:00.000Z');
+  assert.equal(result.granularity, 'month');
+});
+
+test('resolveModeDateRange: leap year February has 29 days', () => {
+  const now = new Date('2028-02-15T12:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'month', year: '2028', month: '2' }, now);
+  const buckets = _private.generateBucketLabels(result.startDate, result.endDate, result.granularity);
+  assert.equal(buckets.length, 29);
+  assert.equal(buckets[0], '2028-02-01');
+  assert.equal(buckets[28], '2028-02-29');
+});
+
+test('resolveModeDateRange: non-leap year February has 28 days', () => {
+  const now = new Date('2026-02-15T12:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'month', year: '2026', month: '2' }, now);
+  const buckets = _private.generateBucketLabels(result.startDate, result.endDate, result.granularity);
+  assert.equal(buckets.length, 28);
+});
+
+test('generateBucketLabels: year mode produces exactly 12 months', () => {
+  const result = _private.resolveModeDateRange({ mode: 'year', year: '2026' });
+  const buckets = _private.generateBucketLabels(result.startDate, result.endDate, 'month');
+  assert.equal(buckets.length, 12);
+  assert.equal(buckets[0], '2026-01');
+  assert.equal(buckets[11], '2026-12');
+});
+
+test('generateBucketLabels: 7d mode produces exactly 7 days', () => {
+  const now = new Date('2026-09-22T18:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: '7d' }, now);
+  const buckets = _private.generateBucketLabels(result.startDate, result.endDate, 'day');
+  assert.equal(buckets.length, 7);
+});
+
+test('generateBucketLabels: quarter mode produces exactly 3 months', () => {
+  for (let q = 1; q <= 4; q++) {
+    const result = _private.resolveModeDateRange({ mode: 'quarter', year: '2026', quarter: String(q) });
+    const buckets = _private.generateBucketLabels(result.startDate, result.endDate, 'month');
+    assert.equal(buckets.length, 3, `Quarter ${q} should have 3 months`);
+  }
+});
+
+test('buildLifecycleDateMatchExclusive uses $lt for endDate', () => {
+  const start = new Date('2026-09-01T00:00:00.000Z');
+  const end = new Date('2026-10-01T00:00:00.000Z');
+  const match = _private.buildLifecycleDateMatchExclusive('completedAt', 'updatedAt', start, end);
+  assert.equal(match.$or[0].completedAt.$gte, start);
+  assert.equal(match.$or[0].completedAt.$lt, end);
+  assert.equal(match.$or[1].completedAt, null);
+  assert.equal(match.$or[1].updatedAt.$gte, start);
+  assert.equal(match.$or[1].updatedAt.$lt, end);
+});
+
+test('startOfSpecificVietnamMonth gives correct boundary', () => {
+  const result = _private.startOfSpecificVietnamMonth(2026, 9);
+  // Sep 1 midnight ICT = Aug 31 17:00 UTC
+  assert.equal(result.toISOString(), '2026-08-31T17:00:00.000Z');
+});
+
+test('endOfSpecificVietnamMonth gives start of next month', () => {
+  const result = _private.endOfSpecificVietnamMonth(2026, 9);
+  // Oct 1 midnight ICT = Sep 30 17:00 UTC
+  assert.equal(result.toISOString(), '2026-09-30T17:00:00.000Z');
+});
+
+test('source sum invariant: booking + service + package + transfer = total', () => {
+  // This tests the invariant at the calculatePlatformRevenueTotal level
+  const bookingRev = 300000;
+  const serviceRev = 75000;
+  const packageRev = 500000;
+  const transferFee = 12200;
+  const total = _private.calculatePlatformRevenueTotal({
+    vipRevenue: packageRev,
+    bookingRevenue: bookingRev,
+    serviceRevenue: serviceRev,
+    membershipTransferFeeRevenue: transferFee,
+  });
+  assert.equal(total, bookingRev + serviceRev + packageRev + transferFee);
 });

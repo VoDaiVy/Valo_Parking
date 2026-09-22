@@ -73,38 +73,54 @@ const tools = [
           completedBookingCount: stats.booking.completedCount
         };
       } else {
-        const [bookingStats, subStats] = await Promise.all([
-          statistics.getAdminBookingStatistics(p),
-          statistics.getAdminSubscriptionStatistics(p)
-        ]);
-        
-        const recordedSales = 
-          Number(bookingStats.money.walletBookingCharges || 0) +
-          Number(subStats.summary.grossAmount || 0) +
-          Number(subStats.summary.renewalAmount || 0);
-        const refunds = Number(bookingStats.money.walletBookingRefunds || 0);
-        
-        const timelineMap = new Map();
-        for (const pt of bookingStats.timeline.points) {
-          timelineMap.set(pt.period, { 
-            date: pt.period, 
-            recordedSales: Number(pt.bookingCharges || 0), 
-            refunds: Number(pt.bookingRefunds || 0) 
-          });
-        }
-        for (const pt of subStats.timeline.points) {
-          const current = timelineMap.get(pt.period) || { date: pt.period, recordedSales: 0, refunds: 0 };
-          current.recordedSales += Number(pt.packageSales || 0) + Number(pt.renewalSales || 0);
-          timelineMap.set(pt.period, current);
+        // Use canonical platform-revenue service directly
+        const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+        const start = p.startDate ? new Date(p.startDate) : null;
+        const end = p.endDate ? new Date(p.endDate) : new Date();
+        // Determine best mode from the date range
+        const daysDiff = start ? Math.round((end - start) / 86400000) : 0;
+        let mode = 'month';
+        let modeFilters = {};
+        if (start) {
+          const localStart = new Date(start.getTime() + 7 * 3600000);
+          const localEnd = new Date(end.getTime() + 7 * 3600000);
+          if (daysDiff <= 7) {
+            mode = '7d';
+          } else if (daysDiff <= 31) {
+            mode = 'month';
+            modeFilters = { year: String(localStart.getUTCFullYear()), month: String(localStart.getUTCMonth() + 1) };
+          } else if (daysDiff <= 93) {
+            mode = 'quarter';
+            modeFilters = { year: String(localStart.getUTCFullYear()), quarter: String(Math.ceil((localStart.getUTCMonth() + 1) / 3)) };
+          } else {
+            mode = 'year';
+            modeFilters = { year: String(localStart.getUTCFullYear()) };
+          }
         }
 
+        const stats = await statistics.getAdminPlatformRevenueStatistics({
+          mode,
+          ...modeFilters,
+        });
+
         return {
-          period: p.range ? { range: p.range } : { startDate: p.startDate, endDate: p.endDate },
+          period: stats.period,
           scope: 'platform',
-          recordedSales,
-          refunds,
-          netSales: recordedSales - refunds,
-          timeline: [...timelineMap.values()].sort((a, b) => a.date.localeCompare(b.date))
+          totalRevenue: stats.summary.totalRevenue,
+          bookingRevenue: stats.summary.bookingRevenue,
+          serviceRevenue: stats.summary.serviceRevenue,
+          packageRevenue: stats.summary.packageRevenue,
+          membershipTransferFees: stats.summary.membershipTransferFees,
+          refunds: stats.summary.refunds,
+          sourceCompositionTotal: stats.summary.sourceCompositionTotal,
+          timeline: (stats.trend || []).map((pt) => ({
+            date: pt.period,
+            totalRevenue: pt.totalRevenue,
+            bookingRevenue: pt.bookingRevenue,
+            serviceRevenue: pt.serviceRevenue,
+            packageRevenue: pt.packageRevenue,
+            membershipTransferFees: pt.membershipTransferFees,
+          })),
         };
       }
     }

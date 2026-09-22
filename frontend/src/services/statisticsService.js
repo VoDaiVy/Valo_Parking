@@ -27,6 +27,18 @@ export const getAdminPlatformRevenueStatistics = (range = 'all') =>
     headers: authHeader(),
   });
 
+/**
+ * Mode-based platform revenue for Revenue Analytics dashboard.
+ * Single call for all data: summary, trend, traffic, status, packages.
+ * @param {Object} params - { mode: '7d'|'month'|'quarter'|'year', year?, month?, quarter? }
+ */
+export const getAdminPlatformRevenueByMode = (params = {}) => {
+  const query = new URLSearchParams(params).toString();
+  return apiFetch(`/statistics/admin/platform-revenue?${query}`, {
+    headers: authHeader(),
+  });
+};
+
 const getRevenueDateRange = (range) => {
   if (range === 'all') return {};
   const endDate = new Date();
