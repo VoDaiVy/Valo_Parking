@@ -25,6 +25,7 @@ const EMPTY_FORM = {
   vehicleType: 'car',
   brand: '',
   model: '',
+  color: '',
   hexColor: '#ffffff',
   nickname: '',
 };
@@ -246,6 +247,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
         vehicleType: editVehicle.vehicleType,
         brand: editVehicle.brand || '',
         model: editVehicle.model || '',
+        color: editVehicle.color || '',
         hexColor: editVehicle.hexColor || '#ffffff',
         nickname: editVehicle.nickname || '',
       }
@@ -294,7 +296,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
       setScanPreview(base64);
       const res = await scanRegistrationCard(base64);
       if (res.ok && res.data?.data) {
-        const { nickname, brand, model, licensePlate, hexColor: aiHex } = res.data.data;
+        const { nickname, brand, model, licensePlate, colorText, hexColor: aiHex } = res.data.data;
         console.log('[AI Scan] response data:', res.data.data);
         console.log('[AI Scan] hexColor from AI:', aiHex);
         const cleanPlate = normalizeLicensePlate(licensePlate);
@@ -303,6 +305,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
           nickname: nickname || f.nickname,
           brand: brand || f.brand,
           model: model || f.model,
+          color: colorText || f.color,
           licensePlate: cleanPlate || f.licensePlate,
           hexColor: aiHex || f.hexColor,
         }));
@@ -487,6 +490,15 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                   placeholder="Orangery, Civic..."
                   className={inputCls} />
               </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
+                Paint color on registration
+              </label>
+              <input name="color" value={form.color} onChange={handleChange}
+                placeholder="As written on the registration card"
+                className={inputCls} />
             </div>
 
             {/* Nickname */}
@@ -685,7 +697,7 @@ export default function MyVehicles() {
   const handleQuickColorCommit = async (hex) => {
     if (!selected) return;
     setActionLoading(true);
-    await updateVehicle(selected._id, { hexColor: hex, color: hex });
+    await updateVehicle(selected._id, { hexColor: hex });
     setActionLoading(false);
     setQuickColor(null);
     await fetchVehicles();

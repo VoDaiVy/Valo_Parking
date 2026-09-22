@@ -11,7 +11,7 @@ const WIDGET_HEIGHT = 100;
 const clamp = (x, y) => ({ x: Math.max(0, Math.min(x, window.innerWidth - WIDGET_WIDTH)), y: Math.max(0, Math.min(y, window.innerHeight - WIDGET_HEIGHT)) });
 const getRole = () => { try { return JSON.parse(sessionStorage.getItem('valo_user') || '{}').role || 'admin'; } catch { return 'admin'; } };
 
-const adminSuggestions = ['Có rủi ro nào không?', 'Gợi ý điều chỉnh giá', 'Xem lượt xe hôm nay'];
+const adminSuggestions = ['Có rủi ro nào không?', 'Gợi ý điều chỉnh giá', 'Xem lượt xe hôm nay', 'Hôm nay đã duyệt bao nhiêu xe?'];
 const staffSuggestions = ['Xe nào đang đỗ trong bãi?', 'Tìm booking gần đây', 'Các vị trí còn trống'];
 const filters = [['all', 'Tất cả'], ['unread', 'Chưa đọc'], ['warning', 'Cảnh báo'], ['critical', 'Nghiêm trọng']];
 
