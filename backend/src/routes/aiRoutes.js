@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { scanPlate, scanRegistrationCard, getOccupancyForecast, resolveUnclearPlate } = require('../controllers/aiController');
+const {
+  scanPlate,
+  scanRegistrationCard,
+  getOccupancyForecast,
+  resolveUnclearPlate,
+  scanParkingSlots,
+  autoDetectSlotGrid,
+} = require('../controllers/aiController');
 const { protect } = require('../middlewares/authMiddleware');
 
 // @route   POST /api/ai/scan-plate
@@ -23,4 +30,15 @@ router.get('/occupancy-forecast', getOccupancyForecast);
 // @access  Public
 router.post('/resolve-unclear-plate', resolveUnclearPlate);
 
+// @route   POST /api/ai/scan-slots
+// @desc    Scan parking slots status & plates from live camera ROI
+// @access  Public / Staff
+router.post('/scan-slots', scanParkingSlots);
+
+// @route   POST /api/ai/auto-detect-grid
+// @desc    Auto-detect diorama grid ROI coordinates for parking slots
+// @access  Public / Staff
+router.post('/auto-detect-grid', autoDetectSlotGrid);
+
 module.exports = router;
+

@@ -1951,3 +1951,45 @@ exports.checkPayosStatus = async (req, res, next) => {
     return res.status(200).json({ success: false, isPaid: false });
   }
 };
+
+/**
+ * Staff/Admin reassigns a parking slot for an active session (e.g. resolve wrong-slot violation)
+ * POST /api/sessions/:id/reassign-slot
+ */
+exports.reassignSlot = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { newSlotCode, floorId, reason } = req.body;
+
+    if (!newSlotCode) {
+      return res.status(400).json({ success: false, message: 'Vui lòng cung cấp mã ô đỗ mới (newSlotCode)' });
+    }
+
+    const session = await Session.findById(id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy phiên đỗ xe' });
+    }
+
+    if (session.status !== 'active') {
+      return res.status(400).json({ success: false, message: 'Chỉ có thể đổi ô cho phiên đỗ đang hoạt động (active)' });
+    }
+
+    const oldSlot = session.parkingSlot;
+    session.parkingSlot = String(newSlotCode).trim().toUpperCase();
+    if (floorId) {
+      session.floorId = floorId;
+    }
+    await session.save();
+
+    console.log(`[reassignSlot] Session ${session.licensePlate} reassigned from ${oldSlot} to ${session.parkingSlot} by ${req.user?.username || 'Staff'}. Reason: ${reason || 'N/A'}`);
+
+    return res.status(200).json({
+      success: true,
+      message: `Đã chuyển ô đỗ xe ${session.licensePlate} từ ${oldSlot || 'N/A'} sang ${session.parkingSlot} thành công`,
+      data: session
+    });
+  } catch (error) {
+    console.error('Error reassigning slot:', error);
+    next(error);
+  }
+};

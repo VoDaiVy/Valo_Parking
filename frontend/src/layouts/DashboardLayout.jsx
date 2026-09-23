@@ -113,7 +113,7 @@ const NAV_CONFIG = {
     {
       label: "Live Grid Monitor",
       icon: <ParkingCircle size={18} />,
-      to: "/staff/parking-lots",
+      to: "/staff/live-grid",
     },
     { label: "Gate Control", icon: <Car size={18} />, to: "/staff/gate" },
     {

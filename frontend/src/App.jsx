@@ -199,7 +199,7 @@ export default function App() {
             />
             <Route path="/staff/live-grid" element={<LiveGridMonitor />} />
             <Route path="/staff/gate" element={<GateControl />} />
-            <Route path="/staff/parking-lots" element={<ParkingLots />} />
+            <Route path="/staff/parking-lots" element={<LiveGridMonitor />} />
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/staff/tickets" element={<TicketPackages />} />

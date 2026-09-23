@@ -6,6 +6,12 @@ const authHeader = () => ({
 
 export const getAllSessions = () => apiFetch('/sessions', { method: 'GET', headers: authHeader() });
 export const getActiveSessions = () => apiFetch('/sessions/active-status', { method: 'GET', headers: authHeader() });
+export const reassignSessionSlot = (sessionId, data) =>
+  apiFetch(`/sessions/${sessionId}/reassign-slot`, {
+    method: 'POST',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
 
 export const getSessionResponseState = (response) => {
   const isAvailable = Boolean(response?.ok && response.data?.success);

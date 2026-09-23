@@ -37,4 +37,7 @@ router.post('/kiosk-checkout', sessionController.kioskCheckout);
 // GET /api/sessions/check-payos/:orderCode
 router.get('/check-payos/:orderCode', sessionController.checkPayosStatus);
 
+// POST /api/sessions/:id/reassign-slot
+router.post('/:id/reassign-slot', protect, authorize('staff', 'admin'), sessionController.reassignSlot);
+
 module.exports = router;
