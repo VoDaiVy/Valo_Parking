@@ -6,6 +6,7 @@ const authHeader = () => ({
 
 export const getAllSessions = () => apiFetch('/sessions', { method: 'GET', headers: authHeader() });
 export const getActiveSessions = () => apiFetch('/sessions/active-status', { method: 'GET', headers: authHeader() });
+export const getMyParkingHistory = () => apiFetch('/sessions/my-history', { method: 'GET', headers: authHeader() });
 
 export const getSessionResponseState = (response) => {
   const isAvailable = Boolean(response?.ok && response.data?.success);

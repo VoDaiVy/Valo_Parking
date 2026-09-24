@@ -32,6 +32,7 @@ const buildMembershipPayload = async (membership = {}, userId = null) => {
     if (entitlements.length) {
       reservedSlots = entitlements.map((entitlement) => ({
         entitlementId: entitlement._id,
+        floorId: entitlement.floorId?._id || entitlement.floorId || null,
         floorName: entitlement.floorId?.name || 'Unknown Floor',
         floorNumber: entitlement.floorId?.floorNumber || null,
         slotNumber: entitlement.slotCode,
@@ -45,6 +46,7 @@ const buildMembershipPayload = async (membership = {}, userId = null) => {
     } else {
       const slots = await Slot.find({ reservedFor: userId }).populate('floorID', 'name').lean();
       reservedSlots = slots.map(s => ({
+        floorId: s.floorID?._id || s.floorID || null,
         floorName: s.floorID?.name || 'Unknown Floor',
         slotNumber: s.slotNumber
       }));

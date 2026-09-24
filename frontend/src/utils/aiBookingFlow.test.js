@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkAiAvailability, confirmAiBooking, confirmAiExistingAction, enumerateBookingDays, findAiActionBookings, prepareAiBooking, prepareAiExistingAction } from './aiBookingFlow.js';
+import { checkAiAvailability, confirmAiBooking, confirmAiExistingAction, enumerateBookingDays, findAiActionBookings, getMissingBookingFields, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from './aiBookingFlow.js';
 
 const vehicle = { _id: 'vehicle-1', licensePlate: '43A12345', status: 'approved' };
 const baseDraft = { startDate: '2099-01-15', endDate: '2099-01-15', startTime: '08:00', endTime: '10:00' };
@@ -32,14 +32,209 @@ test('normal booking previews correct slot, duration and server price without cr
   assert.equal(api.calls.creates.length, 0);
 });
 
+test('AI-selected services are preserved in quote and final booking items', async () => {
+  const api = gateway();
+  const draft = { ...baseDraft, serviceIds: ['service-wash'] };
+  const preview = await prepareAiBooking(draft, api, [vehicle]);
+  assert.deepEqual(preview.items[0].serviceIds, ['service-wash']);
+  const result = await confirmAiBooking(preview, draft, api, [vehicle], 'with-service');
+  assert.ok(result.success);
+  assert.deepEqual(api.calls.creates[0].items[0].serviceIds, ['service-wash']);
+});
+
+test('a VIP quote asks for a different plate while keeping the selected date and hours', async () => {
+  const vipQuote = gateway({ quoteBulkBooking: async () => ok({
+    grandTotal: 0, items: [], itemErrors: [{ clientItemId: 'ai-0-2099-01-15', code: 'VIP_BOOKING_RESTRICTED', message: 'Xe đã có gói VIP' }],
+  }) });
+  const result = await prepareAiBooking({ ...baseDraft, licensePlate: vehicle.licensePlate }, vipQuote, [vehicle]);
+  assert.equal(result.vipPlateRequired, vehicle.licensePlate);
+  assert.equal(vipQuote.calls.holds.length, 0);
+  assert.equal(vipQuote.calls.creates.length, 0);
+  const awaitingPlate = { ...baseDraft, blockedVipPlate: vehicle.licensePlate, licensePlate: '', vehicleId: '' };
+  assert.match(getMissingBookingFields(awaitingPlate, [vehicle]).join(' '), /biển số xe khác/);
+  assert.match(getMissingBookingFields({ ...awaitingPlate, licensePlate: vehicle.licensePlate }, [vehicle]).join(' '), /biển số xe khác/);
+  assert.deepEqual(getMissingBookingFields({ ...awaitingPlate, licensePlate: '43C67890' }, [vehicle]), []);
+  const otherCar = await prepareAiBooking({ ...awaitingPlate, licensePlate: '43C67890' }, gateway(), [vehicle]);
+  assert.equal(otherCar.items[0].licensePlate, '43C67890');
+  assert.equal(otherCar.items[0].date, baseDraft.startDate);
+});
+
+test('legacy VIP quote without an error code asks for another plate instead of showing English', async () => {
+  const message = 'Vehicle 43B20404 is already in a VIP subscription. Please use your VIP parking slot instead of making a new booking.';
+  const api = gateway({ quoteBulkBooking: async () => ok({ grandTotal: 0, items: [], itemErrors: [{ message }] }) });
+  const result = await prepareAiBooking({ ...baseDraft, licensePlate: '43B20404' }, api, [vehicle]);
+  assert.equal(result.vipPlateRequired, '43B20404');
+  assert.deepEqual(result.days, [baseDraft.startDate]);
+  assert.deepEqual(api.calls.holds, []);
+  assert.deepEqual(api.calls.creates, []);
+});
+
+test('legacy VIP quote failure also asks for another plate', async () => {
+  const api = gateway({ quoteBulkBooking: async () => ({
+    ok: false, status: 400, data: { message: 'Vehicle 43B20404 is already in a VIP subscription. Please use your VIP parking slot instead of making a new booking.' },
+  }) });
+  const result = await prepareAiBooking({ ...baseDraft, licensePlate: '43B20404' }, api, [vehicle]);
+  assert.equal(result.vipPlateRequired, '43B20404');
+  assert.equal(isVipBookingRestriction({ code: 'VIP_BOOKING_RESTRICTED' }), true);
+  assert.equal(isVipBookingRestriction({ message: 'VIP restriction' }), false);
+});
+
 test('missing time asks for it', async () => {
   const result = await prepareAiBooking({ startDate: '2099-01-15' }, gateway(), [vehicle]);
   assert.match(result.missing.join(' '), /mấy giờ/);
 });
 
+test('known start and duration ask only for the missing date and vehicle', () => {
+  const missing = getMissingBookingFields(
+    { startTime: '14:00', endTime: '17:00' },
+    [vehicle, { ...vehicle, _id: 'vehicle-2', licensePlate: '43B54321' }],
+  ).join(' ');
+  assert.match(missing, /ngày nào/i);
+  assert.match(missing, /xe nào|biển số/i);
+  assert.doesNotMatch(missing, /từ mấy giờ đến mấy giờ/i);
+});
+
+test('relative arrival with a known date asks only for departure time and vehicle', () => {
+  const missing = getMissingBookingFields(
+    { startDate: '2099-01-15', endDate: '2099-01-15', startTime: '14:10' },
+    [vehicle, { ...vehicle, _id: 'vehicle-2', licensePlate: '43B54321' }],
+  ).join(' ');
+  assert.match(missing, /đến mấy giờ/i);
+  assert.match(missing, /xe nào|biển số/i);
+  assert.doesNotMatch(missing, /ngày nào|bắt đầu đỗ lúc mấy giờ|từ mấy giờ đến mấy giờ/i);
+});
+
+test('missing-field checks prioritize elapsed dates and elapsed hours over other questions', () => {
+  const now = Date.parse('2026-09-23T07:00:00.000Z'); // 14:00 in Vietnam
+  const pastDate = getMissingBookingFields(
+    { startDate: '2026-09-18', requestedVehicleCount: 2 },
+    [],
+    now,
+  );
+  assert.deepEqual(pastDate, ['ngày 18/09/2026 đã qua. Vui lòng chọn thời gian trong tương lai.']);
+
+  const pastHour = getMissingBookingFields(
+    { startDate: '2026-09-23', startTime: '08:00', requestedVehicleCount: 2 },
+    [],
+    now,
+  );
+  assert.deepEqual(pastHour, ['giờ 08:00 hôm nay đã qua. Vui lòng chọn thời gian trong tương lai.']);
+});
+
 test('missing vehicle asks customer when several are registered', async () => {
   const result = await prepareAiBooking(baseDraft, gateway(), [vehicle, { ...vehicle, _id: 'vehicle-2', licensePlate: '43A99999' }]);
   assert.match(result.missing.join(' '), /xe nào/);
+});
+
+test('quick booking rejects invalid and motorcycle-shaped license plates before availability or quote', async () => {
+  const invalidDraft = { ...baseDraft, licensePlate: '81A123456' };
+  const missing = getMissingBookingFields(invalidDraft, [vehicle]);
+  assert.match(missing.join(' '), /81A123456.*không hợp lệ.*43A12345/i);
+
+  const api = gateway();
+  let availabilityCalls = 0;
+  api.getAvailableBookingSlots = async () => { availabilityCalls += 1; return ok({ slots: [slot()] }); };
+  const result = await prepareAiBooking(invalidDraft, api, [vehicle]);
+  assert.match(result.missing.join(' '), /không hợp lệ/i);
+  assert.equal(availabilityCalls, 0);
+});
+
+test('a multiple-vehicle request waits until every plate is supplied', async () => {
+  const missing = getMissingBookingFields({ ...baseDraft, requestedVehicleCount: 2, licensePlates: ['43A12345'] }, [vehicle]);
+  assert.match(missing.join(' '), /thêm 1 biển số/);
+});
+
+test('two vehicles receive different slots, one combined quote and one atomic confirmation', async () => {
+  const second = { _id: 'vehicle-2', licensePlate: '43B20404', status: 'approved' };
+  const draft = { ...baseDraft, requestedVehicleCount: 2, licensePlates: [vehicle.licensePlate, second.licensePlate] };
+  const api = gateway();
+  const preview = await prepareAiBooking(draft, api, [vehicle, second]);
+  assert.equal(preview.items.length, 2);
+  assert.equal(preview.total, 40000);
+  assert.deepEqual(new Set(preview.items.map((item) => item.licensePlate)), new Set(['43A12345', '43B20404']));
+  assert.equal(new Set(preview.items.map((item) => item.slotCode)).size, 2);
+  const result = await confirmAiBooking(preview, draft, api, [vehicle, second], 'two-vehicles');
+  assert.ok(result.success);
+  assert.equal(api.calls.holds.length, 2);
+  assert.equal(api.calls.creates.length, 1);
+  assert.equal(api.calls.creates[0].items.length, 2);
+});
+
+test('multiple vehicles never share a requested slot and fail safely when spaces are insufficient', async () => {
+  const twoCars = { ...baseDraft, requestedVehicleCount: 2, licensePlates: ['43A12345', '43B20404'] };
+  const fixed = await prepareAiBooking({ ...twoCars, slotCode: 'A-015' }, gateway(), [vehicle]);
+  assert.match(fixed.conflicts[0], /một ô cho nhiều xe/);
+  const api = gateway({ getAvailableBookingSlots: async () => ok({ slots: [slot('A-015')] }) });
+  const full = await prepareAiBooking(twoCars, api, [vehicle]);
+  assert.match(full.conflicts.join(' '), /chỉ còn 1 chỗ.*chưa thể đặt đủ 2 xe/);
+  assert.deepEqual(api.calls.holds, []);
+  assert.deepEqual(api.calls.creates, []);
+});
+
+test('two reservation items can use different times and are quoted and confirmed atomically', async () => {
+  const second = { _id: 'vehicle-2', licensePlate: '47A67890', status: 'approved' };
+  const draft = {
+    requestedVehicleCount: 2,
+    reservationItems: [
+      { licensePlate: vehicle.licensePlate, startDate: '2099-01-15', endDate: '2099-01-15', startTime: '08:00', endTime: '09:00' },
+      { licensePlate: second.licensePlate, startDate: '2099-01-15', endDate: '2099-01-15', startTime: '10:00', endTime: '12:00' },
+    ],
+  };
+  const api = gateway({ getAvailableBookingSlots: async ({ startTime }) => ok({
+    slots: [slot(startTime.includes('01:00:00.000Z') ? 'A-015' : 'A-016')],
+  }) });
+  const preview = await prepareAiBooking(draft, api, [vehicle, second]);
+  assert.deepEqual(preview.items.map((item) => [item.licensePlate, item.date, item.startTime.slice(11, 16), item.endTime.slice(11, 16)]), [
+    ['43A12345', '2099-01-15', '01:00', '02:00'],
+    ['47A67890', '2099-01-15', '03:00', '05:00'],
+  ]);
+  const result = await confirmAiBooking(preview, draft, api, [vehicle, second], 'different-times');
+  assert.ok(result.success);
+  assert.equal(api.calls.holds.length, 2);
+  assert.equal(api.calls.creates[0].items.length, 2);
+});
+
+test('two reservation items can use different dates without sharing schedule fields', async () => {
+  const second = { _id: 'vehicle-2', licensePlate: '47A67890', status: 'approved' };
+  const draft = {
+    requestedVehicleCount: 2,
+    reservationItems: [
+      { licensePlate: vehicle.licensePlate, startDate: '2099-01-15', startTime: '08:00', endTime: '09:00' },
+      { licensePlate: second.licensePlate, startDate: '2099-01-16', startTime: '09:00', endTime: '11:00' },
+    ],
+  };
+  const preview = await prepareAiBooking(draft, gateway(), [vehicle, second]);
+  assert.deepEqual(preview.items.map((item) => [item.licensePlate, item.date]), [
+    ['43A12345', '2099-01-15'], ['47A67890', '2099-01-16'],
+  ]);
+  assert.deepEqual(preview.days, ['2099-01-15', '2099-01-16']);
+});
+
+test('multiple days and vehicles respect the backend limit of five simultaneous holds', async () => {
+  await assert.rejects(prepareAiBooking({
+    ...baseDraft, endDate: '2099-01-17', requestedVehicleCount: 2,
+    licensePlates: ['43A12345', '43B20404'],
+  }, gateway(), [vehicle]), /tối đa 5 chỗ/);
+});
+
+test('one overlapping vehicle blocks the whole multiple-vehicle preview', async () => {
+  const api = gateway({ getMyBookings: async () => ok([{
+    status: 'PAID', licensePlate: '43B20404', scheduledStart: '2099-01-15T02:00:00Z', scheduledEnd: '2099-01-15T04:00:00Z',
+  }]) });
+  const result = await prepareAiBooking({ ...baseDraft, requestedVehicleCount: 2, licensePlates: ['43A12345', '43B20404'] }, api, [vehicle]);
+  assert.match(result.conflicts.join(' '), /43B20404.*trùng thời gian/);
+  assert.deepEqual(api.calls.holds, []);
+});
+
+test('VIP rejection identifies only the affected plate in a multiple-vehicle quote', async () => {
+  const api = gateway({ quoteBulkBooking: async ({ items }) => ok({
+    grandTotal: 0, items: [], itemErrors: [{
+      clientItemId: items.find((item) => item.licensePlate === '43B20404').clientItemId,
+      code: 'VIP_BOOKING_RESTRICTED', message: 'Xe 43B20404 đang có gói VIP',
+    }],
+  }) });
+  const result = await prepareAiBooking({ ...baseDraft, requestedVehicleCount: 2, licensePlates: ['43A12345', '43B20404'] }, api, [vehicle]);
+  assert.equal(result.vipPlateRequired, '43B20404');
 });
 
 test('an electric-car request selects only an approved electric car', async () => {
@@ -170,6 +365,24 @@ test('taken requested slot suggests another available slot', async () => {
   assert.match(result.conflicts[0], /A-016/);
 });
 
+test('coded zone preference selects that zone and falls back to the same slot code', async () => {
+  const inZone = { ...slot('A1'), zoneName: 'Zone B2' };
+  const sameCodeElsewhere = { ...slot('B2'), zoneName: 'Zone C1' };
+  const exactZone = await prepareAiBooking(
+    { ...baseDraft, zoneName: 'B2' },
+    gateway({ getAvailableBookingSlots: async () => ok({ slots: [sameCodeElsewhere, inZone] }) }),
+    [vehicle],
+  );
+  assert.equal(exactZone.items[0].slotCode, 'A1');
+
+  const slotFallback = await prepareAiBooking(
+    { ...baseDraft, zoneName: 'B2' },
+    gateway({ getAvailableBookingSlots: async () => ok({ slots: [sameCodeElsewhere] }) }),
+    [vehicle],
+  );
+  assert.equal(slotFallback.items[0].slotCode, 'B2');
+});
+
 test('Vietnamese floor preference maps to the existing floor number', async () => {
   const preview = await prepareAiBooking({ ...baseDraft, floorName: 'tầng 2' }, gateway(), [vehicle]);
   assert.equal(preview.items[0].floorId, 'floor-2');
@@ -237,6 +450,18 @@ test('failed booking creation releases all holds', async () => {
   assert.deepEqual(api.calls.releases, ['hold-1']);
 });
 
+test('legacy VIP rejection at final creation can be turned into a plate request', async () => {
+  const api = gateway({ createBulkBooking: async () => ({
+    ok: false, status: 400, data: { message: 'Vehicle 43A12345 is already in a VIP subscription. Please use your VIP parking slot instead of making a new booking.' },
+  }) });
+  const preview = await prepareAiBooking(baseDraft, api, [vehicle]);
+  await assert.rejects(confirmAiBooking(preview, baseDraft, api, [vehicle], 'vip-confirmation'), (error) => {
+    assert.equal(isVipBookingRestriction(error.responseData), true);
+    return true;
+  });
+  assert.deepEqual(api.calls.releases, ['hold-1']);
+});
+
 test('changed price requires a new confirmation without any hold', async () => {
   const api = gateway();
   const preview = await prepareAiBooking(baseDraft, api, [vehicle]);
@@ -249,7 +474,7 @@ test('changed price requires a new confirmation without any hold', async () => {
 test('quote item error blocks preview even if HTTP status is 200', async () => {
   const api = gateway({ quoteBulkBooking: async () => ok({ grandTotal: 0, items: [], itemErrors: [{ message: 'VIP restriction' }] }) });
   const result = await prepareAiBooking(baseDraft, api, [vehicle]);
-  assert.match(result.conflicts[0], /VIP restriction/);
+  assert.match(result.conflicts[0], /Hạn chế.*gói ưu tiên/i);
 });
 
 test('insufficient wallet blocks confirmation before any hold', async () => {
@@ -261,7 +486,7 @@ test('insufficient wallet blocks confirmation before any hold', async () => {
 
 test('network error during availability is surfaced', async () => {
   const api = gateway({ getAvailableBookingSlots: async () => ({ ok: false, status: 0, data: { message: 'Network error' } }) });
-  await assert.rejects(prepareAiBooking(baseDraft, api, [vehicle]), /Network error/);
+  await assert.rejects(prepareAiBooking(baseDraft, api, [vehicle]), /Lỗi kết nối mạng/);
 });
 
 test('network response lost after successful create is reconciled from My Bookings', async () => {
@@ -346,6 +571,6 @@ test('cancellation and modification failures surface server business rules', asy
     cancelBooking: async () => ({ ok: false, status: 400, data: { message: 'Too late to cancel' } }),
     extendBooking: async () => ({ ok: false, status: 400, data: { message: 'Slot already booked' } }),
   });
-  await assert.rejects(confirmAiExistingAction('CANCEL_BOOKING', booking, null, api), /Too late to cancel/);
-  await assert.rejects(confirmAiExistingAction('MODIFY_BOOKING', booking, { startDate: '2099-01-15', startTime: '09:00', endDate: '2099-01-15', endTime: '11:00' }, api), /Slot already booked/);
+  await assert.rejects(confirmAiExistingAction('CANCEL_BOOKING', booking, null, api), /Đã quá thời hạn hủy/);
+  await assert.rejects(confirmAiExistingAction('MODIFY_BOOKING', booking, { startDate: '2099-01-15', startTime: '09:00', endDate: '2099-01-15', endTime: '11:00' }, api), /Ô đỗ đã có người đặt/);
 });

@@ -1,11 +1,20 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { parseBookingUtterance, specialBookingRequest } = require('./bookingUtteranceParser');
+const { isValidCarLicensePlate } = require('../utils/licensePlateUtils');
 
 const INTENTS = new Set([
   'CREATE_BOOKING', 'CHECK_AVAILABILITY', 'CANCEL_BOOKING',
-  'MODIFY_BOOKING', 'VIEW_BOOKING', 'UNKNOWN',
+  'MODIFY_BOOKING', 'VIEW_BOOKING', 'BOOK_PARKING',
+  'CHECK_VEHICLE_PARKING_STATUS', 'CHECK_VEHICLE_ENTRY_TIME',
+  'CHECK_VEHICLE_EXIT_TIME', 'CHECK_VEHICLE_LOCATION', 'CHECK_VEHICLE_DURATION',
+  'CHECK_PARKING_FEE', 'CHECK_BOOKING_STATUS', 'CHECK_UPCOMING_BOOKING',
+  'CHECK_PARKING_AVAILABILITY', 'CHECK_SLOT_STATUS', 'CHECK_WALLET_BALANCE',
+  'CHECK_PAYMENT_STATUS', 'CHECK_TRANSACTION_HISTORY', 'LIST_MY_VEHICLES',
+  'ADD_VEHICLE', 'UPDATE_VEHICLE', 'REMOVE_VEHICLE', 'CHECK_SERVICES',
+  'BOOK_SERVICE', 'CHECK_PARKING_POLICY', 'HELP', 'UNKNOWN',
 ]);
-const FIELDS = ['startDate', 'endDate', 'startTime', 'endTime', 'licensePlate', 'floorName', 'slotCode', 'bookingId'];
+const FIELDS = ['startDate', 'endDate', 'startTime', 'endTime', 'licensePlate', 'floorName', 'zoneName', 'slotCode', 'bookingId'];
+const RESERVATION_FIELDS = ['vehicleId', 'licensePlate', 'startDate', 'endDate', 'startTime', 'endTime', 'floorName', 'zoneName', 'slotCode'];
 
 const cleanString = (value, maximum = 100) =>
   typeof value === 'string' ? value.trim().slice(0, maximum) : '';
@@ -16,10 +25,38 @@ const validDate = (value) => {
 };
 const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 
+function normalizeReservationItems(incoming, previous = []) {
+  if (!Array.isArray(incoming) && !Array.isArray(previous)) return [];
+  const source = Array.isArray(incoming) && incoming.length
+    ? incoming : (Array.isArray(previous) ? previous : []);
+  return source.slice(0, 5).map((raw, index) => {
+    const item = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const prior = Array.isArray(previous) && previous[index] && typeof previous[index] === 'object'
+      ? previous[index] : {};
+    const normalized = {};
+    for (const field of RESERVATION_FIELDS) {
+      normalized[field] = cleanString(item[field]) || cleanString(prior[field]);
+    }
+    normalized.licensePlate = normalized.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12);
+    if (normalized.licensePlate && !isValidCarLicensePlate(normalized.licensePlate)) normalized.licensePlate = '';
+    normalized.slotCode = normalized.slotCode.toUpperCase();
+    if (normalized.startDate && !validDate(normalized.startDate)) normalized.startDate = '';
+    if (normalized.endDate && !validDate(normalized.endDate)) normalized.endDate = '';
+    if (normalized.startTime && !validTime(normalized.startTime)) normalized.startTime = '';
+    if (normalized.endTime && !validTime(normalized.endTime)) normalized.endTime = '';
+    if (!normalized.endDate && normalized.startDate) normalized.endDate = normalized.startDate;
+    return normalized;
+  });
+}
+
 function normalizeInterpretation(raw, previous = {}) {
   const parsed = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const requestedIntent = cleanString(parsed.intent).toUpperCase();
-  const intent = INTENTS.has(requestedIntent) ? requestedIntent : 'UNKNOWN';
+  const previousIntent = cleanString(previous.__intent).toUpperCase();
+  const parsedIntent = requestedIntent === 'BOOK_PARKING'
+    ? 'CREATE_BOOKING' : (INTENTS.has(requestedIntent) ? requestedIntent : 'UNKNOWN');
+  const intent = parsedIntent === 'UNKNOWN' && INTENTS.has(previousIntent) && previousIntent !== 'UNKNOWN'
+    ? previousIntent : parsedIntent;
   const canInherit = !previous.__intent || previous.__intent === intent;
   const draft = {};
   for (const field of FIELDS) {
@@ -41,6 +78,43 @@ function normalizeInterpretation(raw, previous = {}) {
     if (draft[field] && !validTime(draft[field])) draft[field] = '';
   }
   draft.licensePlate = draft.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12);
+  if (draft.licensePlate && !isValidCarLicensePlate(draft.licensePlate)) draft.licensePlate = '';
+  const incomingPlates = Array.isArray(parsed.licensePlates) ? parsed.licensePlates : [];
+  const priorPlates = canInherit && Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+  const plates = [...new Set((incomingPlates.length ? incomingPlates : priorPlates)
+    .map((plate) => cleanString(plate, 20).replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12))
+    .filter(isValidCarLicensePlate))];
+  if (plates.length) {
+    draft.licensePlates = plates;
+    if (!draft.licensePlate) draft.licensePlate = plates[0];
+  }
+  const reservationItems = normalizeReservationItems(
+    parsed.reservationItems,
+    canInherit ? previous.reservationItems : [],
+  );
+  if (reservationItems.length) {
+    const assignedPlates = new Set(reservationItems.map((item) => item.licensePlate).filter(Boolean));
+    const unassignedPlates = plates.filter((plate) => !assignedPlates.has(plate));
+    reservationItems.forEach((item) => {
+      if (!item.licensePlate) item.licensePlate = unassignedPlates.shift() || '';
+      if (!item.startDate && draft.startDate) item.startDate = draft.startDate;
+      if (!item.endDate && item.startDate) item.endDate = item.startDate;
+      if (!item.startTime && draft.startTime) item.startTime = draft.startTime;
+      if (!item.endTime && draft.endTime) item.endTime = draft.endTime;
+    });
+    draft.reservationItems = reservationItems;
+    const itemPlates = reservationItems.map((item) => item.licensePlate).filter(Boolean);
+    if (itemPlates.length) {
+      draft.licensePlates = [...new Set(itemPlates)];
+      draft.licensePlate = draft.licensePlates[0];
+    }
+  }
+  const incomingCount = Number(parsed.requestedVehicleCount || 0);
+  const priorCount = canInherit ? Number(previous.requestedVehicleCount || 0) : 0;
+  const requestedVehicleCount = incomingCount || priorCount;
+  if (Number.isInteger(requestedVehicleCount) && requestedVehicleCount > 0 && requestedVehicleCount <= 5) {
+    draft.requestedVehicleCount = requestedVehicleCount;
+  }
   draft.slotCode = draft.slotCode.toUpperCase();
   const incomingVehicleType = cleanString(parsed.vehicleType).toLowerCase();
   const priorVehicleType = canInherit ? cleanString(previous.vehicleType).toLowerCase() : '';
@@ -51,6 +125,14 @@ function normalizeInterpretation(raw, previous = {}) {
   }
   if (!draft.endDate && draft.startDate) draft.endDate = draft.startDate;
   if (draft.startDate && draft.endDate && draft.endDate < draft.startDate) draft.endDate = '';
+  const incomingServiceIds = Array.isArray(parsed.serviceIds) ? parsed.serviceIds : [];
+  const priorServiceIds = canInherit && Array.isArray(previous.serviceIds) ? previous.serviceIds : [];
+  const serviceIds = (incomingServiceIds.length ? incomingServiceIds : priorServiceIds)
+    .map((value) => cleanString(value, 80)).filter(Boolean).slice(0, 10);
+  if (serviceIds.length) draft.serviceIds = [...new Set(serviceIds)];
+  if (canInherit && previous.assistantContext && typeof previous.assistantContext === 'object') {
+    draft.assistantContext = previous.assistantContext;
+  }
   return { intent, draft };
 }
 
@@ -66,8 +148,8 @@ function parseModelJson(text) {
   }
 }
 
-function parseBasicVietnameseBooking(prompt, today, previous = {}) {
-  const parsed = parseBookingUtterance(prompt, today, previous);
+function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime = '') {
+  const parsed = parseBookingUtterance(prompt, today, previous, currentTime);
   if (!parsed) return null;
   const result = normalizeInterpretation({ intent: 'CREATE_BOOKING', ...parsed.changes }, previous);
   if (parsed.clarification) result.clarification = parsed.clarification;
@@ -75,12 +157,35 @@ function parseBasicVietnameseBooking(prompt, today, previous = {}) {
     result.draft.startTime = '';
     result.draft.endTime = '';
   }
+  if (parsed.clearDates) {
+    result.draft.startDate = '';
+    result.draft.endDate = '';
+  }
+  if (parsed.clearVehicle) {
+    result.draft.licensePlate = '';
+    result.draft.licensePlates = [];
+    result.draft.reservationItems = [];
+  }
+  if (parsed.pendingLicensePlate) result.draft.pendingLicensePlate = parsed.pendingLicensePlate;
+  else if (!parsed.clearPendingPlate && previous.pendingLicensePlate) result.draft.pendingLicensePlate = previous.pendingLicensePlate;
+  if (parsed.clearPendingPlate) delete result.draft.pendingLicensePlate;
   if (parsed.pendingTimes) {
     result.draft.pendingStartTime = parsed.pendingTimes.start;
     result.draft.pendingEndTime = parsed.pendingTimes.end;
   } else if (!parsed.clearPending && previous.pendingStartTime) {
     result.draft.pendingStartTime = previous.pendingStartTime;
     result.draft.pendingEndTime = previous.pendingEndTime || '';
+  }
+  if (Number.isInteger(parsed.pendingReservationEditIndex)) {
+    result.draft.pendingReservationEditIndex = parsed.pendingReservationEditIndex;
+    result.draft.pendingReservationEditField = parsed.pendingReservationEditField || '';
+  } else if (!parsed.clearPendingReservationEdit && Number.isInteger(previous.pendingReservationEditIndex)) {
+    result.draft.pendingReservationEditIndex = previous.pendingReservationEditIndex;
+    result.draft.pendingReservationEditField = previous.pendingReservationEditField || '';
+  }
+  if (parsed.clearPendingReservationEdit) {
+    delete result.draft.pendingReservationEditIndex;
+    delete result.draft.pendingReservationEditField;
   }
   if (!result.clarification && result.draft.startTime && result.draft.endTime
     && result.draft.endTime <= result.draft.startTime) {
@@ -95,10 +200,10 @@ const retrySeconds = (error) => {
   return value ? Math.ceil(Number(value[1])) : null;
 };
 
-async function interpretBookingMessage({ prompt, draft = {}, today, generateText }) {
+async function interpretBookingMessage({ prompt, draft = {}, today, currentTime = '', generateText }) {
   const userText = cleanString(prompt, 1200);
   if (!userText) throw Object.assign(new Error('Vui lòng nhập yêu cầu đặt chỗ.'), { statusCode: 400 });
-  if (!validDate(today)) throw Object.assign(new Error('Invalid reference date'), { statusCode: 400 });
+  if (!validDate(today)) throw Object.assign(new Error('Ngày tham chiếu không hợp lệ.'), { statusCode: 400 });
 
   const specialMessage = specialBookingRequest(userText, draft);
   if (specialMessage) {
@@ -106,7 +211,7 @@ async function interpretBookingMessage({ prompt, draft = {}, today, generateText
   }
 
   // Common booking requests and short follow-ups do not need a network round trip or AI quota.
-  const local = parseBasicVietnameseBooking(userText, today, draft);
+  const local = parseBasicVietnameseBooking(userText, today, draft, currentTime);
   if (local && !generateText) return local;
 
   const generator = generateText || (async (instruction) => {
@@ -119,14 +224,15 @@ async function interpretBookingMessage({ prompt, draft = {}, today, generateText
     return response.response.text();
   });
 
-  const instruction = `You extract Vietnamese parking booking intents. Today in Asia/Bangkok is ${today}.
-Return ONLY a JSON object, no markdown, with these string keys:
-intent (CREATE_BOOKING, CHECK_AVAILABILITY, CANCEL_BOOKING, MODIFY_BOOKING, VIEW_BOOKING, UNKNOWN),
-startDate, endDate (YYYY-MM-DD), startTime, endTime (HH:mm 24h), licensePlate, vehicleType (car or electric_car when explicitly stated), floorName, slotCode, bookingId.
-Use empty strings for information not mentioned in the NEW message. Do not invent missing times, dates, vehicles, slots or booking IDs.
+  const instruction = `You extract Vietnamese parking booking intents. Today in Asia/Bangkok is ${today}; the current local time is ${validTime(currentTime) ? currentTime : 'unknown'}.
+Return ONLY a JSON object, no markdown, with these fields:
+intent (BOOK_PARKING, CREATE_BOOKING, CHECK_AVAILABILITY, CHECK_VEHICLE_PARKING_STATUS, CHECK_VEHICLE_ENTRY_TIME, CHECK_VEHICLE_EXIT_TIME, CHECK_VEHICLE_LOCATION, CHECK_VEHICLE_DURATION, CHECK_PARKING_FEE, CHECK_BOOKING_STATUS, CHECK_UPCOMING_BOOKING, CHECK_PARKING_AVAILABILITY, CHECK_SLOT_STATUS, CHECK_WALLET_BALANCE, CHECK_PAYMENT_STATUS, CHECK_TRANSACTION_HISTORY, LIST_MY_VEHICLES, ADD_VEHICLE, UPDATE_VEHICLE, REMOVE_VEHICLE, CHECK_SERVICES, BOOK_SERVICE, CHECK_PARKING_POLICY, HELP, CANCEL_BOOKING, MODIFY_BOOKING, VIEW_BOOKING, UNKNOWN),
+startDate, endDate (YYYY-MM-DD), startTime, endTime (HH:mm 24h), licensePlate, licensePlates (array), requestedVehicleCount (number), reservationItems (array), vehicleType (car or electric_car when explicitly stated), floorName, zoneName, slotCode, bookingId.
+Each reservationItems entry may contain licensePlate, startDate, endDate, startTime, endTime, floorName, zoneName and slotCode. Use reservationItems when vehicles have different dates or times. Preserve their spoken order. Use empty strings, an empty array, or zero for information not mentioned in the NEW message. When several vehicles are requested, return every stated plate in licensePlates and their stated count in requestedVehicleCount. Do not invent missing times, dates, vehicles, zones, slots or booking IDs.
 Interpret Vietnamese time expressions in 24-hour format: 7 giờ tối = 19:00, 8 giờ tối = 20:00, 7 rưỡi tối = 19:30.
-If a 1–12 hour has no morning/afternoon/evening clue, leave that time empty rather than assuming AM.
+Read a bare clock hour literally in 24-hour notation: 8h and 8 giờ mean 08:00; 20h means 20:00. Explicit tối or chiều converts 7 giờ tối to 19:00.
 Interpret ngày mai and ngày kia relative to today. A single date applies to startDate and endDate.
+Interpret "sau 30 phút", "trong 30 phút nữa" and similar phrases as a start time relative to the supplied current local time, not as parking duration. Do not invent an end time.
 For a date range, endDate is inclusive. For a single date, endDate equals startDate.
 The prior draft supplies context for a follow-up. Extract ONLY changes supplied by the new message; do not repeat unchanged values.
 If the new message is a follow-up and does not name another action, retain the prior intent.
@@ -141,7 +247,7 @@ New customer message: ${JSON.stringify(userText)}`;
     responseText = await generator(instruction);
   } catch (error) {
     if (isQuotaError(error)) {
-      const fallback = parseBasicVietnameseBooking(userText, today, draft);
+      const fallback = parseBasicVietnameseBooking(userText, today, draft, currentTime);
       if (fallback) return fallback;
       const seconds = retrySeconds(error);
       throw Object.assign(new Error(`Gemini tạm hết hạn mức xử lý. Vui lòng thử lại${seconds ? ` sau khoảng ${seconds} giây` : ' sau ít phút'}.`), { statusCode: 429 });

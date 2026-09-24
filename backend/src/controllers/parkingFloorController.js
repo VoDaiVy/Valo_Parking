@@ -314,16 +314,16 @@ exports.getLiveMapData = async (req, res) => {
     });
     const activeHolds = await BookingHold.find({ status: 'active', expiresAt: { $gt: now } });
     const maintenanceLogs = await SlotMaintenanceLog.find({
-      status: 'in_progress',
       startTime: { $lte: now },
       $or: [{ endTime: { $gte: now } }, { endTime: null }]
-    });
+    }).select('slotID').lean();
 
     // Hash maps for quick lookup
-    const occupiedSlots = new Set(activeSessions.map(s => s.parkingSlot));
-    const bookedSlots = new Set(upcomingBookings.map(b => b.parkingSlot));
-    const heldSlots = new Set(activeHolds.map(h => h.slotCode));
-    const maintenanceSet = new Set(maintenanceLogs.map(m => m.slotNumber));
+    const slotKey = (floorId, slotCode) => `${String(floorId || '')}:${String(slotCode || '').toUpperCase()}`;
+    const occupiedSlots = new Set(activeSessions.map(s => slotKey(s.floorId, s.parkingSlot)));
+    const bookedSlots = new Set(upcomingBookings.map(b => slotKey(b.floorId, b.parkingSlot)));
+    const heldSlots = new Set(activeHolds.map(h => slotKey(h.floorId, h.slotCode)));
+    const maintenanceSet = new Set(maintenanceLogs.map(m => String(m.slotID || '')));
     const subscriptionSlots = new Set(
       slots
         .filter((slot) => {
@@ -338,16 +338,17 @@ exports.getLiveMapData = async (req, res) => {
           }
           return false;
         })
-        .map((slot) => slot.slotNumber)
+        .map((slot) => String(slot._id))
     );
 
     const mapData = slots.map(slot => {
       let status = 'available';
-      if (slot.status === 'maintenance' || maintenanceSet.has(slot.slotNumber)) {
+      const currentSlotKey = slotKey(slot.floorID?._id || slot.floorID, slot.slotNumber);
+      if (slot.status === 'maintenance' || maintenanceSet.has(String(slot._id))) {
         status = 'maintenance';
-      } else if (occupiedSlots.has(slot.slotNumber)) {
+      } else if (occupiedSlots.has(currentSlotKey)) {
         status = 'occupied';
-      } else if (bookedSlots.has(slot.slotNumber) || heldSlots.has(slot.slotNumber) || subscriptionSlots.has(slot.slotNumber)) {
+      } else if (bookedSlots.has(currentSlotKey) || heldSlots.has(currentSlotKey) || subscriptionSlots.has(String(slot._id))) {
         status = 'reserved';
       }
 

@@ -53,6 +53,7 @@ import {
   writeBookingCart,
 } from '../../utils/bookingCartStorage';
 import { findRequestedService } from '../../utils/bookingNavigation';
+import { getVipBookingSelection } from '../../utils/vipBookingPolicy';
 import { getMyVouchers } from '../../services/loyaltyService';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
@@ -1003,38 +1004,20 @@ export default function CreateBookingPage() {
 
   const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey);
   const selectedVehicle = vehicles.find((vehicle) => vehicle._id === vehicleId);
-  const activeMembershipType = useMemo(() => {
-    const membership = profile?.membership;
-    if (!membership?.isVip || !membership?.expireAt) return null;
-    const expireAt = new Date(membership.expireAt);
-    if (Number.isNaN(expireAt.getTime()) || expireAt <= new Date()) return null;
-    return ['monthly', 'yearly'].includes(membership.packageType) ? membership.packageType : null;
-  }, [profile?.membership]);
-  const selectedDbSlot = selectedSlot
-    ? dbSlots.find((slot) => slot.slotNumber === selectedSlot.slotCode)
-    : null;
-  const selectedSlotReservedFor = selectedDbSlot?.reservedFor?._id || selectedDbSlot?.reservedFor || null;
-  const rawManualPlateForCheck = manualPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-  const currentLicensePlate = vehicleId ? selectedVehicle?.licensePlate : rawManualPlateForCheck;
-  const isRegisteredPlate = vehicles.some(
-    v => v.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === currentLicensePlate
-  );
-
-  const selectedSlotIsOwnVipSlot = Boolean(
-    activeMembershipType &&
-    isRegisteredPlate &&
-    selectedSlot &&
-    selectedSlotReservedFor &&
-    String(selectedSlotReservedFor) === String(profile?.id)
-  );
-
-  const selectedRegisteredVehicleBlockedByVip = Boolean(
-    activeMembershipType &&
-    isRegisteredPlate &&
-    selectedSlot &&
-    selectedDbSlot &&
-    !selectedSlotIsOwnVipSlot
-  );
+  const {
+    activeMembershipType,
+    isRegisteredPlate,
+    selectedSlotIsOwnVipSlot,
+    selectedRegisteredVehicleBlockedByVip,
+  } = getVipBookingSelection({
+    membership: profile?.membership,
+    vehicles,
+    selectedVehicle,
+    manualPlate,
+    selectedSlot,
+    startTime,
+    endTime,
+  });
   const pricePreview = useMemo(
     () => calculateBookingPrice(startTime, endTime, { 
       waiveOpeningFee: selectedSlotIsOwnVipSlot,
@@ -1325,7 +1308,7 @@ export default function CreateBookingPage() {
     }
 
     if (selectedRegisteredVehicleBlockedByVip) {
-      setError('This vehicle is already covered by your active VIP membership. Please use your assigned VIP slot instead of booking another slot.');
+      setError('Your VIP pass only covers assigned slots during its valid period. Choose an assigned slot within the pass dates or renew your pass.');
       return;
     }
 
@@ -1768,7 +1751,7 @@ export default function CreateBookingPage() {
 
         <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
           <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Tự chọn chỗ</button>
-          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>✨ Đặt nhanh với AI</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Trợ lý đỗ xe AI</button>
         </div>
 
         {(error || success) && (
@@ -1781,7 +1764,7 @@ export default function CreateBookingPage() {
           </div>
         )}
 
-        {bookingMode === 'ai' ? <AiBookingPanel vehicles={vehicles} onSwitchToManual={() => setBookingMode('manual')} /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
+        {bookingMode === 'ai' ? <AiBookingPanel vehicles={vehicles} onVehiclesChanged={loadData} onSwitchToManual={() => setBookingMode('manual')} /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
@@ -1877,7 +1860,7 @@ export default function CreateBookingPage() {
                   }`}>
                     {selectedSlotIsOwnVipSlot
                       ? 'This is your assigned VIP slot, so this registered vehicle can use it while your membership is active.'
-                      : 'This registered vehicle is covered by an active VIP membership. Please use your assigned VIP slot instead of booking another slot.'}
+                      : 'Your VIP pass only covers assigned slots during its valid period. Choose an assigned slot within the pass dates or renew your pass.'}
                   </div>
                 )}
               </div>
