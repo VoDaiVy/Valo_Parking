@@ -46,7 +46,85 @@ function passArgs(args = {}) {
 const define = (name, description, parameters, validate, run) => ({ name, description, parameters, validate, run });
 const tools = [
   /* ── 11 existing aggregate / summary tools (untouched) ─────────────── */
-  define('get_revenue_metrics', 'Doanh thu nền tảng từ booking, gói vé, gia hạn và phí chuyển nhượng; không chỉ tiền phạt.', dateSchema, validateDates, async (p) => statistics.getAdminPlatformRevenueStatistics(p)),
+  define(
+    'get_revenue_metrics', 
+    'QUAN TRỌNG: Từ khóa "doanh thu hệ thống", "tổng doanh thu", "platform revenue" => dùng scope="platform". Từ khóa "doanh thu bãi đỗ xe", "doanh thu booking", "tiền đặt chỗ" => dùng scope="parking". Trả về tổng doanh thu và breakdown theo từng ngày (timeline) trong khoảng thời gian.', 
+    {
+      type: 'object',
+      properties: {
+        startDate: { type: 'string', description: 'ISO date hoặc YYYY-MM-DD, inclusive' },
+        endDate: { type: 'string', description: 'ISO date hoặc YYYY-MM-DD, inclusive' },
+        scope: { type: 'string', enum: ['platform', 'parking'], description: 'platform (Recorded Sales) hay parking (Parking Revenue).' }
+      }
+    }, 
+    (args = {}) => {
+      const datesArgs = {};
+      if (args.startDate) datesArgs.startDate = args.startDate;
+      if (args.endDate) datesArgs.endDate = args.endDate;
+      return { ...validateDates(datesArgs), scope: args.scope || 'platform' };
+    }, 
+    async (p) => {
+      if (p.scope === 'parking') {
+        const stats = await statistics.getAdminPlatformRevenueStatistics(p);
+        return {
+          period: stats.period,
+          scope: 'parking',
+          parkingRevenue: stats.booking.revenue,
+          completedBookingCount: stats.booking.completedCount
+        };
+      } else {
+        // Use canonical platform-revenue service directly
+        const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+        const start = p.startDate ? new Date(p.startDate) : null;
+        const end = p.endDate ? new Date(p.endDate) : new Date();
+        // Determine best mode from the date range
+        const daysDiff = start ? Math.round((end - start) / 86400000) : 0;
+        let mode = 'month';
+        let modeFilters = {};
+        if (start) {
+          const localStart = new Date(start.getTime() + 7 * 3600000);
+          const localEnd = new Date(end.getTime() + 7 * 3600000);
+          if (daysDiff <= 7) {
+            mode = '7d';
+          } else if (daysDiff <= 31) {
+            mode = 'month';
+            modeFilters = { year: String(localStart.getUTCFullYear()), month: String(localStart.getUTCMonth() + 1) };
+          } else if (daysDiff <= 93) {
+            mode = 'quarter';
+            modeFilters = { year: String(localStart.getUTCFullYear()), quarter: String(Math.ceil((localStart.getUTCMonth() + 1) / 3)) };
+          } else {
+            mode = 'year';
+            modeFilters = { year: String(localStart.getUTCFullYear()) };
+          }
+        }
+
+        const stats = await statistics.getAdminPlatformRevenueStatistics({
+          mode,
+          ...modeFilters,
+        });
+
+        return {
+          period: stats.period,
+          scope: 'platform',
+          totalRevenue: stats.summary.totalRevenue,
+          bookingRevenue: stats.summary.bookingRevenue,
+          serviceRevenue: stats.summary.serviceRevenue,
+          packageRevenue: stats.summary.packageRevenue,
+          membershipTransferFees: stats.summary.membershipTransferFees,
+          refunds: stats.summary.refunds,
+          sourceCompositionTotal: stats.summary.sourceCompositionTotal,
+          timeline: (stats.trend || []).map((pt) => ({
+            date: pt.period,
+            totalRevenue: pt.totalRevenue,
+            bookingRevenue: pt.bookingRevenue,
+            serviceRevenue: pt.serviceRevenue,
+            packageRevenue: pt.packageRevenue,
+            membershipTransferFees: pt.membershipTransferFees,
+          })),
+        };
+      }
+    }
+  ),
   define('get_session_statistics', 'Thống kê phiên xe theo trạng thái trong khoảng thời gian.', dateSchema, validateDates, async (p) => {
     const match = p.startDate ? { checkInTime: { $gte: new Date(p.startDate), $lte: new Date(p.endDate) } } : { checkInTime: { $gte: startOfVietnamDay(new Date()) } };
     const rows = await Session.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 }, averageDurationHours: { $avg: '$expectedDurationHours' } } }]);
@@ -145,13 +223,14 @@ const tools = [
     passArgs, async (p, actorRole) => readTools.searchVehicles(p, actorRole)),
 
   define('search_bookings',
-    'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Nếu không có filter, trả booking gần nhất.',
+    'Tìm booking theo userId, biển số, trạng thái, khoảng ngày. Hỗ trợ tìm kiếm theo dateType (tạo trong khoảng, bắt đầu trong khoảng, hoặc có hiệu lực giao với khoảng này). Mặc định tìm các booking đang có hiệu lực / overlap.',
     { type: 'object', properties: {
       userId: { type: 'string', description: 'ObjectId người đặt.' },
       plateNumber: { type: 'string', description: 'Biển số xe.' },
       status: { type: 'string', enum: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED', 'EXPIRED', 'COMPLETED', 'CANCELLED'], description: 'Trạng thái booking.' },
       startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
       endDate: { type: 'string', description: 'Ngày kết thúc YYYY-MM-DD hoặc ISO.' },
+      dateType: { type: 'string', enum: ['overlap', 'start', 'create'], description: '"overlap" = đang có hiệu lực / giao nhau với khoảng (ví dụ: "booking hôm nay"). "start" = có lịch bắt đầu trong khoảng. "create" = tạo trong khoảng. Mặc định là "overlap".' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
     } },
     passArgs, async (p, actorRole) => readTools.searchBookings(p, actorRole)),

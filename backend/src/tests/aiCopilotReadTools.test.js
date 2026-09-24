@@ -106,4 +106,42 @@ test('AI Copilot Read Tools - Pagination and Semantics', async (t) => {
     assert.strictEqual(result.items.length, 2);
     assert.strictEqual(result.total, 2);
   });
+  await t.test('searchBookings applies dateType overlap by default', async () => {
+    const Booking = require('../models/Booking');
+    let capturedFilter = {};
+    test.mock.method(Booking, 'find', (filter) => {
+      capturedFilter = filter;
+      return { sort: () => ({ limit: () => ({ select: () => ({ populate: () => ({ populate: () => ({ populate: () => ({ lean: async () => [] }) }) }) }) }) }) };
+    });
+    test.mock.method(Booking, 'countDocuments', async () => 0);
+
+    // Overlap: start is 2026-09-17 00:00:00 (local), end is 2026-09-17 23:59:59 (local)
+    await readTools.searchBookings({ startDate: '2026-09-17', endDate: '2026-09-17' });
+    assert.ok(capturedFilter.scheduledStart.$lte);
+    assert.ok(capturedFilter.scheduledEnd.$gte);
+    
+    // Test that the filter handles interval overlap correctly
+    assert.equal(capturedFilter.scheduledStart.$lte.toISOString(), '2026-09-17T16:59:59.999Z');
+    assert.equal(capturedFilter.scheduledEnd.$gte.toISOString(), '2026-09-16T17:00:00.000Z');
+  });
+
+  await t.test('searchBookings applies dateType start and create correctly', async () => {
+    const Booking = require('../models/Booking');
+    let capturedFilter = {};
+    test.mock.method(Booking, 'find', (filter) => {
+      capturedFilter = filter;
+      return { sort: () => ({ limit: () => ({ select: () => ({ populate: () => ({ populate: () => ({ populate: () => ({ lean: async () => [] }) }) }) }) }) }) };
+    });
+    test.mock.method(Booking, 'countDocuments', async () => 0);
+
+    await readTools.searchBookings({ startDate: '2026-09-17', endDate: '2026-09-17', dateType: 'start' });
+    assert.ok(capturedFilter.scheduledStart.$gte);
+    assert.ok(capturedFilter.scheduledStart.$lte);
+    assert.equal(capturedFilter.scheduledEnd, undefined);
+
+    await readTools.searchBookings({ startDate: '2026-09-17', endDate: '2026-09-17', dateType: 'create' });
+    assert.ok(capturedFilter.createdAt.$gte);
+    assert.ok(capturedFilter.createdAt.$lte);
+    assert.equal(capturedFilter.scheduledStart, undefined);
+  });
 });

@@ -5,6 +5,8 @@ const Subscription = require('../models/Subscription');
 const SubscriptionRenewal = require('../models/SubscriptionRenewal');
 const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRenewal');
 const WalletTransaction = require('../models/WalletTransaction');
+const Session = require('../models/Session');
+const TicketPackage = require('../models/TicketPackage');
 const {
   DAY_MS,
   VIETNAM_OFFSET_MS,
@@ -25,6 +27,106 @@ const startOfVietnamMonth = (date) => {
       VIETNAM_OFFSET_MS
   );
 };
+
+/* ── Vietnam timezone helpers for Revenue Analytics modes ────────────── */
+
+const toVietnamLocal = (date) => new Date(date.getTime() + VIETNAM_OFFSET_MS);
+const fromVietnamLocal = (utcDate) => new Date(utcDate.getTime() - VIETNAM_OFFSET_MS);
+
+/**
+ * Returns start of a specific Vietnam month (year, month 1-indexed).
+ * e.g. startOfSpecificVietnamMonth(2026, 9) => midnight 2026-09-01 ICT in UTC.
+ */
+const startOfSpecificVietnamMonth = (year, month) =>
+  new Date(Date.UTC(year, month - 1, 1) - VIETNAM_OFFSET_MS);
+
+/**
+ * Returns end-of-month exclusive boundary for Vietnam timezone.
+ * e.g. endOfSpecificVietnamMonth(2026, 9) => midnight 2026-10-01 ICT in UTC.
+ */
+const endOfSpecificVietnamMonth = (year, month) =>
+  new Date(Date.UTC(year, month, 1) - VIETNAM_OFFSET_MS);
+
+/**
+ * Resolve mode-based date range for Revenue Analytics.
+ * All boundaries are at midnight Asia/Ho_Chi_Minh.
+ * Returns { startDate, endDate, granularity, buckets }.
+ * endDate is exclusive (start of next period).
+ */
+const resolveModeDateRange = (filters = {}, now = new Date()) => {
+  const mode = filters.mode || '7d';
+  const localNow = toVietnamLocal(now);
+  const currentYear = localNow.getUTCFullYear();
+  const currentMonth = localNow.getUTCMonth() + 1;
+
+  if (mode === '7d') {
+    // Today and 6 days before, by day
+    const todayStart = startOfVietnamDay(now);
+    const startDate = new Date(todayStart.getTime() - 6 * DAY_MS);
+    const endDate = new Date(todayStart.getTime() + DAY_MS); // exclusive
+    return { startDate, endDate, granularity: 'day', mode };
+  }
+
+  if (mode === 'month') {
+    const year = filters.year ? Number(filters.year) : currentYear;
+    const month = filters.month ? Number(filters.month) : currentMonth;
+    const startDate = startOfSpecificVietnamMonth(year, month);
+    const endDate = endOfSpecificVietnamMonth(year, month);
+    return { startDate, endDate, granularity: 'day', mode };
+  }
+
+  if (mode === 'quarter') {
+    const year = filters.year ? Number(filters.year) : currentYear;
+    const quarter = filters.quarter ? Number(filters.quarter) : Math.ceil(currentMonth / 3);
+    const startMonth = (quarter - 1) * 3 + 1;
+    const startDate = startOfSpecificVietnamMonth(year, startMonth);
+    const endDate = startOfSpecificVietnamMonth(year, startMonth + 3);
+    return { startDate, endDate, granularity: 'month', mode };
+  }
+
+  if (mode === 'year') {
+    const year = filters.year ? Number(filters.year) : currentYear;
+    const startDate = startOfSpecificVietnamMonth(year, 1);
+    const endDate = startOfSpecificVietnamMonth(year + 1, 1);
+    return { startDate, endDate, granularity: 'month', mode };
+  }
+
+  throw Object.assign(new Error('Unsupported mode'), { statusCode: 400 });
+};
+
+/**
+ * Generate zero-filled bucket labels for the given range.
+ */
+const generateBucketLabels = (startDate, endDate, granularity) => {
+  const labels = [];
+  if (granularity === 'day') {
+    let cursor = new Date(startDate.getTime());
+    while (cursor < endDate) {
+      const local = toVietnamLocal(cursor);
+      const y = local.getUTCFullYear();
+      const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(local.getUTCDate()).padStart(2, '0');
+      labels.push(`${y}-${m}-${d}`);
+      cursor = new Date(cursor.getTime() + DAY_MS);
+    }
+  } else {
+    // month granularity
+    let cursor = new Date(startDate.getTime());
+    while (cursor < endDate) {
+      const local = toVietnamLocal(cursor);
+      const y = local.getUTCFullYear();
+      const m = String(local.getUTCMonth() + 1).padStart(2, '0');
+      labels.push(`${y}-${m}`);
+      // advance to next month
+      cursor = fromVietnamLocal(
+        new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1))
+      );
+    }
+  }
+  return labels;
+};
+
+/* ── Legacy resolveDateRange (kept for backward compatibility) ────────── */
 
 const resolveDateRange = (filters = {}, now = new Date()) => {
   const range = filters.range || '30d';
@@ -219,6 +321,22 @@ const buildLifecycleDateMatch = (field, fallbackField, period) => {
   };
 };
 
+/**
+ * Build lifecycle date match for mode-based queries where endDate is exclusive.
+ */
+const buildLifecycleDateMatchExclusive = (field, fallbackField, startDate, endDate) => {
+  const dateRange = { $gte: startDate, $lt: endDate };
+  return {
+    $or: [
+      { [field]: dateRange },
+      {
+        [field]: null,
+        [fallbackField]: dateRange,
+      },
+    ],
+  };
+};
+
 const calculatePlatformBookingRevenue = (
   bookings,
   financialSummaries,
@@ -283,6 +401,7 @@ const calculatePlatformBookingRevenue = (
 
     summary.bookingRevenue += bookingRevenue;
     summary.serviceRevenue += serviceRevenue;
+    summary.refundTotal += refundPaid;
     summary.completedBookingCount += 1;
     if (grossServiceAmount > 0) summary.serviceBookingCount += 1;
     return summary;
@@ -290,6 +409,7 @@ const calculatePlatformBookingRevenue = (
   {
     bookingRevenue: 0,
     serviceRevenue: 0,
+    refundTotal: 0,
     completedBookingCount: 0,
     serviceBookingCount: 0,
   }
@@ -323,7 +443,568 @@ const calculatePlatformRevenueTotal = ({
   Number(serviceRevenue || 0) +
   Number(membershipTransferFeeRevenue || 0);
 
+/* ── Enhanced platform revenue (mode-based, single source of truth) ──── */
+
 const getAdminPlatformRevenueStatistics = async (filters = {}) => {
+  // If no mode is provided, fall back to legacy behavior for backward compatibility
+  if (!filters.mode) {
+    return getAdminPlatformRevenueStatisticsLegacy(filters);
+  }
+
+  const now = new Date();
+  const { startDate, endDate, granularity, mode } = resolveModeDateRange(filters, now);
+  const bucketFormat = granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
+  const bucketLabels = generateBucketLabels(startDate, endDate, granularity);
+
+  // Build date matches for exclusive endDate
+  const bookingDateMatch = buildLifecycleDateMatchExclusive(
+    'completedAt', 'updatedAt', startDate, endDate
+  );
+  const renewalDateMatch = {
+    $or: [
+      { paidAt: { $gte: startDate, $lt: endDate } },
+      { paidAt: null, createdAt: { $gte: startDate, $lt: endDate } },
+    ],
+  };
+  const createdAtMatchExclusive = { createdAt: { $gte: startDate, $lt: endDate } };
+
+  // Status Distribution: use scheduledStart for operational analytics
+  const scheduledStartMatch = { scheduledStart: { $gte: startDate, $lt: endDate } };
+
+  const [
+    completedBookings,
+    subscriptionPurchases,
+    subscriptionRenewals,
+    entitlementRenewals,
+    membershipTransferFees,
+    // Timeline aggregates
+    bookingTimelineRows,
+    serviceTimelineRows,
+    subscriptionPurchaseTimelineRows,
+    subscriptionRenewalTimelineRows,
+    entitlementRenewalTimelineRows,
+    transferFeeTimelineRows,
+    // Traffic
+    entryRows,
+    exitRows,
+    currentlyParked,
+    // Status Distribution (by scheduledStart for operational analytics)
+    statusDistributionRows,
+    // Package breakdown
+    packagePurchaseRows,
+    packageSubRenewalRows,
+    packageEntRenewalRows,
+    // Available years
+    earliestBookingYear,
+    earliestSubscriptionYear,
+  ] = await Promise.all([
+    // Revenue: completed bookings in period
+    Booking.find({ status: 'COMPLETED', ...bookingDateMatch })
+      .select(
+        'prepaidAmount paymentBreakdownSnapshot paidOverageAdjustments refundSettlements completedAt updatedAt'
+      )
+      .lean(),
+    // Revenue: subscription purchases in period
+    aggregatePaidAmount(Subscription, {
+      paymentStatus: 'paid',
+      ...createdAtMatchExclusive,
+    }),
+    // Revenue: subscription renewals in period
+    aggregatePaidAmount(SubscriptionRenewal, {
+      status: 'paid',
+      ...renewalDateMatch,
+    }),
+    // Revenue: entitlement renewals in period
+    aggregatePaidAmount(MembershipEntitlementRenewal, {
+      status: 'paid',
+      ...renewalDateMatch,
+    }),
+    // Revenue: membership transfer fees in period
+    aggregatePaidAmount(WalletTransaction, {
+      type: 'TRANSFER_FEE',
+      status: 'COMPLETED',
+      ...createdAtMatchExclusive,
+    }),
+
+    // Timeline: booking revenue per bucket (completedAt/updatedAt based)
+    Booking.aggregate([
+      { $match: { status: 'COMPLETED', ...bookingDateMatch } },
+      {
+        $group: {
+          _id: timelineDateExpression(
+            bucketFormat,
+            { $ifNull: ['$completedAt', '$updatedAt'] }
+          ),
+          bookingIds: { $push: '$_id' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Timeline: completed service amounts by bucket
+    BookingService.aggregate([
+      {
+        $match: {
+          status: 'done',
+        },
+      },
+      {
+        $lookup: {
+          from: 'bookings',
+          localField: 'bookingId',
+          foreignField: '_id',
+          as: 'booking',
+          pipeline: [
+            { $match: { status: 'COMPLETED', ...bookingDateMatch } },
+            { $project: { completedAt: 1, updatedAt: 1 } },
+          ],
+        },
+      },
+      { $unwind: '$booking' },
+      {
+        $group: {
+          _id: {
+            bookingId: '$bookingId',
+            period: timelineDateExpression(
+              bucketFormat,
+              { $ifNull: ['$booking.completedAt', '$booking.updatedAt'] }
+            ),
+          },
+          amount: { $sum: '$price' },
+        },
+      },
+    ]),
+    // Timeline: subscription purchases per bucket
+    Subscription.aggregate([
+      { $match: { paymentStatus: 'paid', ...createdAtMatchExclusive } },
+      {
+        $group: {
+          _id: timelineDateExpression(bucketFormat),
+          amount: { $sum: '$amount' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Timeline: subscription renewals per bucket
+    SubscriptionRenewal.aggregate([
+      { $match: { status: 'paid', ...renewalDateMatch } },
+      {
+        $group: {
+          _id: timelineDateExpression(
+            bucketFormat,
+            { $ifNull: ['$paidAt', '$createdAt'] }
+          ),
+          amount: { $sum: '$amount' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Timeline: entitlement renewals per bucket
+    MembershipEntitlementRenewal.aggregate([
+      { $match: { status: 'paid', ...renewalDateMatch } },
+      {
+        $group: {
+          _id: timelineDateExpression(
+            bucketFormat,
+            { $ifNull: ['$paidAt', '$createdAt'] }
+          ),
+          amount: { $sum: '$amount' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Timeline: transfer fees per bucket
+    WalletTransaction.aggregate([
+      { $match: { type: 'TRANSFER_FEE', status: 'COMPLETED', ...createdAtMatchExclusive } },
+      {
+        $group: {
+          _id: timelineDateExpression(bucketFormat),
+          amount: { $sum: '$amount' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+
+    // Traffic: entries by checkInTime
+    Session.aggregate([
+      { $match: { checkInTime: { $gte: startDate, $lt: endDate } } },
+      {
+        $group: {
+          _id: timelineDateExpression(bucketFormat, '$checkInTime'),
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Traffic: exits by checkOutTime
+    Session.aggregate([
+      { $match: { checkOutTime: { $gte: startDate, $lt: endDate } } },
+      {
+        $group: {
+          _id: timelineDateExpression(bucketFormat, '$checkOutTime'),
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Traffic: currently parked (snapshot, no period filter)
+    Session.countDocuments({ status: 'active' }),
+
+    // Status Distribution: bookings by scheduledStart in period
+    Booking.aggregate([
+      { $match: scheduledStartMatch },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+    ]),
+
+    // Package breakdown: subscription purchases by package
+    Subscription.aggregate([
+      { $match: { paymentStatus: 'paid', ...createdAtMatchExclusive } },
+      {
+        $group: {
+          _id: '$ticketPackage',
+          purchaseAmount: { $sum: '$amount' },
+          purchaseCount: { $sum: 1 },
+        },
+      },
+    ]),
+    // Package breakdown: subscription renewals by package (via subscription lookup)
+    SubscriptionRenewal.aggregate([
+      { $match: { status: 'paid', ...renewalDateMatch } },
+      {
+        $lookup: {
+          from: 'subscriptions',
+          localField: 'subscriptionId',
+          foreignField: '_id',
+          as: 'subscription',
+          pipeline: [{ $project: { ticketPackage: 1 } }],
+        },
+      },
+      { $unwind: { path: '$subscription', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: '$subscription.ticketPackage',
+          renewalAmount: { $sum: '$amount' },
+          renewalCount: { $sum: 1 },
+        },
+      },
+    ]),
+    // Package breakdown: entitlement renewals by package (via subscription → package)
+    MembershipEntitlementRenewal.aggregate([
+      { $match: { status: 'paid', ...renewalDateMatch } },
+      {
+        $lookup: {
+          from: 'subscriptions',
+          localField: 'sourceSubscriptionId',
+          foreignField: '_id',
+          as: 'subscription',
+          pipeline: [{ $project: { ticketPackage: 1 } }],
+        },
+      },
+      { $unwind: { path: '$subscription', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: '$subscription.ticketPackage',
+          renewalAmount: { $sum: '$amount' },
+          renewalCount: { $sum: 1 },
+        },
+      },
+    ]),
+
+    // Available years: earliest booking
+    Booking.aggregate([
+      { $match: { status: 'COMPLETED' } },
+      { $group: { _id: null, earliest: { $min: { $ifNull: ['$completedAt', '$updatedAt'] } } } },
+    ]),
+    // Available years: earliest subscription
+    Subscription.aggregate([
+      { $match: { paymentStatus: 'paid' } },
+      { $group: { _id: null, earliest: { $min: '$createdAt' } } },
+    ]),
+  ]);
+
+  // ── Process booking revenues ──────────────────────────────────────────
+  const bookingIds = completedBookings.map((b) => b._id);
+  const [financialSummaries, completedServiceRows] = await Promise.all([
+    getBookingFinancialSummaryMap(completedBookings),
+    bookingIds.length
+      ? BookingService.aggregate([
+        { $match: { bookingId: { $in: bookingIds }, status: 'done' } },
+        { $group: { _id: '$bookingId', amount: { $sum: '$price' } } },
+      ])
+      : [],
+  ]);
+  const completedServiceAmountByBooking = new Map(
+    completedServiceRows.map((row) => [String(row._id), Number(row.amount) || 0])
+  );
+  const bookingRevenueResult = calculatePlatformBookingRevenue(
+    completedBookings,
+    financialSummaries,
+    completedServiceAmountByBooking
+  );
+
+  const bookingRevenue = bookingRevenueResult.bookingRevenue;
+  const serviceRevenue = bookingRevenueResult.serviceRevenue;
+  const refundTotal = bookingRevenueResult.refundTotal;
+  const packageRevenue =
+    subscriptionPurchases.amount +
+    subscriptionRenewals.amount +
+    entitlementRenewals.amount;
+  const membershipTransferFeeRevenue = membershipTransferFees.amount;
+  const totalRevenue = bookingRevenue + serviceRevenue + packageRevenue + membershipTransferFeeRevenue;
+  const sourceCompositionTotal = totalRevenue;
+
+  // ── Build timeline with per-bucket booking/service separation ─────────
+  // We need per-bucket booking revenue. Since calculatePlatformBookingRevenue
+  // does complex per-booking calculation, we approximate by proportional split
+  // for timeline. But for accuracy, we compute per-bucket.
+  const bookingsByBucket = new Map();
+  for (const row of bookingTimelineRows) {
+    bookingsByBucket.set(row._id, row.bookingIds || []);
+  }
+
+  // Build per-bucket service amounts
+  const serviceByBucketAndBooking = new Map();
+  for (const row of serviceTimelineRows) {
+    const period = row._id.period;
+    const bookingId = String(row._id.bookingId);
+    if (!serviceByBucketAndBooking.has(period)) {
+      serviceByBucketAndBooking.set(period, new Map());
+    }
+    serviceByBucketAndBooking.get(period).set(bookingId, Number(row.amount) || 0);
+  }
+
+  // Build per-bucket package revenue
+  const packageByBucket = new Map();
+  for (const row of subscriptionPurchaseTimelineRows) {
+    packageByBucket.set(row._id, (packageByBucket.get(row._id) || 0) + Number(row.amount || 0));
+  }
+  for (const row of subscriptionRenewalTimelineRows) {
+    packageByBucket.set(row._id, (packageByBucket.get(row._id) || 0) + Number(row.amount || 0));
+  }
+  for (const row of entitlementRenewalTimelineRows) {
+    packageByBucket.set(row._id, (packageByBucket.get(row._id) || 0) + Number(row.amount || 0));
+  }
+
+  // Build per-bucket transfer fees
+  const transferFeeByBucket = new Map();
+  for (const row of transferFeeTimelineRows) {
+    transferFeeByBucket.set(row._id, Number(row.amount || 0));
+  }
+
+  // Compute per-bucket booking and service revenues
+  const bookingRevenueByBucket = new Map();
+  const serviceRevenueByBucket = new Map();
+  const refundByBucket = new Map();
+
+  // Create a map from bookingId -> booking document for quick lookup
+  const bookingDocMap = new Map(
+    completedBookings.map((b) => [String(b._id), b])
+  );
+
+  for (const [period, bIds] of bookingsByBucket) {
+    const bucketBookings = bIds
+      .map((id) => bookingDocMap.get(String(id)))
+      .filter(Boolean);
+    const bucketServiceMap = serviceByBucketAndBooking.get(period) || new Map();
+    const bucketResult = calculatePlatformBookingRevenue(
+      bucketBookings,
+      financialSummaries,
+      bucketServiceMap
+    );
+    bookingRevenueByBucket.set(period, bucketResult.bookingRevenue);
+    serviceRevenueByBucket.set(period, bucketResult.serviceRevenue);
+    refundByBucket.set(period, bucketResult.refundTotal);
+  }
+
+  // Build final zero-filled trend
+  const trend = bucketLabels.map((label) => ({
+    period: label,
+    totalRevenue:
+      (bookingRevenueByBucket.get(label) || 0) +
+      (serviceRevenueByBucket.get(label) || 0) +
+      (packageByBucket.get(label) || 0) +
+      (transferFeeByBucket.get(label) || 0),
+    bookingRevenue: bookingRevenueByBucket.get(label) || 0,
+    serviceRevenue: serviceRevenueByBucket.get(label) || 0,
+    packageRevenue: packageByBucket.get(label) || 0,
+    membershipTransferFees: transferFeeByBucket.get(label) || 0,
+    refunds: refundByBucket.get(label) || 0,
+  }));
+
+  // ── Traffic ────────────────────────────────────────────────────────────
+  const entryByBucket = new Map(entryRows.map((r) => [r._id, r.count]));
+  const exitByBucket = new Map(exitRows.map((r) => [r._id, r.count]));
+
+  const traffic = bucketLabels.map((label) => ({
+    period: label,
+    entries: entryByBucket.get(label) || 0,
+    exits: exitByBucket.get(label) || 0,
+  }));
+
+  const totalEntries = traffic.reduce((s, p) => s + p.entries, 0);
+  const totalExits = traffic.reduce((s, p) => s + p.exits, 0);
+
+  // ── Status Distribution ───────────────────────────────────────────────
+  const statusMap = new Map(
+    statusDistributionRows.map((r) => [r._id, r.count])
+  );
+  const totalBookings =
+    (statusMap.get('COMPLETED') || 0) +
+    (statusMap.get('CANCELLED') || 0) +
+    (statusMap.get('PAID') || 0) +
+    (statusMap.get('ACTIVE') || 0) +
+    (statusMap.get('PAUSED') || 0) +
+    (statusMap.get('EXPIRED') || 0) +
+    (statusMap.get('PENDING') || 0);
+  const statusDistribution = {
+    completed: statusMap.get('COMPLETED') || 0,
+    cancelled: statusMap.get('CANCELLED') || 0,
+    totalBookings,
+    byStatus: statusDistributionRows.map((r) => ({
+      status: r._id,
+      count: r.count,
+    })),
+  };
+
+  // ── Package breakdown ─────────────────────────────────────────────────
+  // Merge purchases + sub renewals + entitlement renewals by packageId
+  const packageMap = new Map();
+  const ensurePackage = (pkgId) => {
+    const key = pkgId ? String(pkgId) : '__unknown__';
+    if (!packageMap.has(key)) {
+      packageMap.set(key, {
+        packageId: pkgId ? String(pkgId) : null,
+        purchaseAmount: 0,
+        purchaseCount: 0,
+        renewalAmount: 0,
+        renewalCount: 0,
+      });
+    }
+    return packageMap.get(key);
+  };
+  for (const row of packagePurchaseRows) {
+    const pkg = ensurePackage(row._id);
+    pkg.purchaseAmount += Number(row.purchaseAmount || 0);
+    pkg.purchaseCount += Number(row.purchaseCount || 0);
+  }
+  for (const row of packageSubRenewalRows) {
+    const pkg = ensurePackage(row._id);
+    pkg.renewalAmount += Number(row.renewalAmount || 0);
+    pkg.renewalCount += Number(row.renewalCount || 0);
+  }
+  for (const row of packageEntRenewalRows) {
+    const pkg = ensurePackage(row._id);
+    pkg.renewalAmount += Number(row.renewalAmount || 0);
+    pkg.renewalCount += Number(row.renewalCount || 0);
+  }
+
+  // Lookup package names (including archived)
+  const packageIds = [...packageMap.values()]
+    .map((p) => p.packageId)
+    .filter(Boolean)
+    .map((id) => {
+      try { return new mongoose.Types.ObjectId(id); } catch { return null; }
+    })
+    .filter(Boolean);
+  const packageDocs = packageIds.length
+    ? await TicketPackage.find({ _id: { $in: packageIds } })
+      .select('name type isActive')
+      .lean()
+    : [];
+  const packageNameMap = new Map(
+    packageDocs.map((p) => [String(p._id), p])
+  );
+
+  const packageBreakdown = [...packageMap.values()]
+    .map((pkg) => {
+      const doc = pkg.packageId ? packageNameMap.get(pkg.packageId) : null;
+      return {
+        packageId: pkg.packageId,
+        packageName: doc?.name || 'Archived package',
+        packageType: doc?.type || null,
+        isActive: doc?.isActive ?? false,
+        totalAmount: pkg.purchaseAmount + pkg.renewalAmount,
+        purchaseAmount: pkg.purchaseAmount,
+        purchaseCount: pkg.purchaseCount,
+        renewalAmount: pkg.renewalAmount,
+        renewalCount: pkg.renewalCount,
+      };
+    })
+    .sort((a, b) => b.totalAmount - a.totalAmount);
+
+  // ── Available years ───────────────────────────────────────────────────
+  const earliestDates = [
+    earliestBookingYear[0]?.earliest,
+    earliestSubscriptionYear[0]?.earliest,
+  ].filter(Boolean);
+  const currentYearVN = toVietnamLocal(now).getUTCFullYear();
+  let minYear = currentYearVN;
+  for (const d of earliestDates) {
+    const y = toVietnamLocal(new Date(d)).getUTCFullYear();
+    if (y < minYear) minYear = y;
+  }
+  const availableYears = [];
+  for (let y = minYear; y <= currentYearVN; y++) {
+    availableYears.push(y);
+  }
+
+  return {
+    period: { startDate, endDate, mode, granularity },
+    currency: 'VND',
+    basis: 'realized_completed_revenue',
+    summary: {
+      totalRevenue,
+      bookingRevenue,
+      serviceRevenue,
+      packageRevenue,
+      membershipTransferFees: membershipTransferFeeRevenue,
+      refunds: refundTotal,
+      sourceCompositionTotal,
+    },
+    trend,
+    traffic,
+    trafficSummary: {
+      totalEntries,
+      totalExits,
+      currentlyParked,
+    },
+    statusDistribution,
+    packageBreakdown,
+    availableYears,
+    // Legacy fields for backward compatibility
+    vip: {
+      revenue: packageRevenue,
+      transactionCount:
+        subscriptionPurchases.count +
+        subscriptionRenewals.count +
+        entitlementRenewals.count,
+      purchaseRevenue: subscriptionPurchases.amount,
+      renewalRevenue: subscriptionRenewals.amount + entitlementRenewals.amount,
+    },
+    booking: {
+      revenue: bookingRevenue,
+      completedCount: bookingRevenueResult.completedBookingCount,
+    },
+    service: {
+      revenue: serviceRevenue,
+      completedBookingCount: bookingRevenueResult.serviceBookingCount,
+    },
+    membershipTransferFeesDetail: {
+      revenue: membershipTransferFeeRevenue,
+      transactionCount: membershipTransferFees.count,
+    },
+    totalRevenue,
+  };
+};
+
+/* ── Legacy platform revenue (backward compat for Staff Dashboard) ──── */
+
+const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
   const period = resolveDateRange({ range: 'all', ...filters });
   const bookingDateMatch = buildLifecycleDateMatch(
     'completedAt',
@@ -389,7 +1070,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
   const completedServiceAmountByBooking = new Map(
     completedServiceRows.map((row) => [String(row._id), Number(row.amount) || 0])
   );
-  const bookingRevenue = calculatePlatformBookingRevenue(
+  const bookingRevenueResult = calculatePlatformBookingRevenue(
     completedBookings,
     financialSummaries,
     completedServiceAmountByBooking
@@ -404,8 +1085,8 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     entitlementRenewals.count;
   const totalRevenue = calculatePlatformRevenueTotal({
     vipRevenue,
-    bookingRevenue: bookingRevenue.bookingRevenue,
-    serviceRevenue: bookingRevenue.serviceRevenue,
+    bookingRevenue: bookingRevenueResult.bookingRevenue,
+    serviceRevenue: bookingRevenueResult.serviceRevenue,
     membershipTransferFeeRevenue: membershipTransferFees.amount,
   });
 
@@ -421,12 +1102,12 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
         subscriptionRenewals.amount + entitlementRenewals.amount,
     },
     booking: {
-      revenue: bookingRevenue.bookingRevenue,
-      completedCount: bookingRevenue.completedBookingCount,
+      revenue: bookingRevenueResult.bookingRevenue,
+      completedCount: bookingRevenueResult.completedBookingCount,
     },
     service: {
-      revenue: bookingRevenue.serviceRevenue,
-      completedBookingCount: bookingRevenue.serviceBookingCount,
+      revenue: bookingRevenueResult.serviceRevenue,
+      completedBookingCount: bookingRevenueResult.serviceBookingCount,
     },
     membershipTransferFees: {
       revenue: membershipTransferFees.amount,
@@ -802,6 +1483,8 @@ module.exports = {
   getAdminPlatformRevenueStatistics,
   _private: {
     resolveDateRange,
+    resolveModeDateRange,
+    generateBucketLabels,
     parseVietnamCalendarDate,
     normalizeBookingSummary,
     buildCreatedAtMatch,
@@ -809,7 +1492,11 @@ module.exports = {
     getTimelineBucket,
     normalizeCompletedBookingStatistics,
     buildLifecycleDateMatch,
+    buildLifecycleDateMatchExclusive,
     calculatePlatformBookingRevenue,
     calculatePlatformRevenueTotal,
+    startOfSpecificVietnamMonth,
+    endOfSpecificVietnamMonth,
+    toVietnamLocal,
   },
 };
