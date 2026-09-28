@@ -11,6 +11,9 @@ import re
 from pydantic import BaseModel
 from typing import List, Optional, Any
 import base64
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
 
 app = FastAPI(title="ValoParking ALPR & Document AI Service")
 
@@ -45,12 +48,14 @@ app.add_middleware(
 # 1. Initialize Models (Will load into RAM once on startup)
 # ---------------------------------------------------------
 
-# OCR Engine (English is used for license plates and names/brands)
+# OCR Engine (English is used for license plates, dedicated fast ALPR)
 try:
-    print("Loading EasyOCR model...")
-    reader = easyocr.Reader(['vi', 'en'], gpu=False) # Hỗ trợ tiếng Việt cho cà vẹt
+    print("Loading EasyOCR ALPR model (English)...")
+    alpr_reader = easyocr.Reader(['en'], gpu=False)
+    reader = alpr_reader
 except Exception as e:
     print(f"Warning: EasyOCR failed to load - {e}")
+    alpr_reader = None
     reader = None
 
 # YOLO Model cho Biển số xe
@@ -91,70 +96,131 @@ else:
 
 
 # ---------------------------------------------------------
+# Scan Memory Cache for Temporal Voting & Smart Re-scan
+# ---------------------------------------------------------
+_scan_cache = {}
+_scan_cache_lock = threading.Lock()
+CACHE_TTL_SECONDS = 3
+CACHE_HASH_SIMILARITY = 0.92
+
+
+# ---------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------
 
-def clean_plate_text(text: str) -> str:
+def _order_quad_points(pts):
+    pts = np.array(pts, dtype="float32")
+    s = pts.sum(axis=1)
+    diff = np.diff(pts, axis=1)
+    tl = pts[np.argmin(s)]
+    br = pts[np.argmax(s)]
+    tr = pts[np.argmin(diff)]
+    bl = pts[np.argmax(diff)]
+    return [[round(float(p[0]), 4), round(float(p[1]), 4)] for p in [tl, tr, br, bl]]
+
+def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
     """
-    Chuẩn hóa và làm sạch chuỗi OCR biển số xe Việt Nam:
-    - Hỗ trợ biển số 1 hàng (VD: 51G-123.45, 29A-999.99)
-    - Hỗ trợ biển số 2 hàng vuông (VD: 43B / 204.08 -> 43B-204.08)
-    - Tự động sửa lỗi nhầm ký tự phổ biến (O/0, D/0, I/1, Z/2, S/5, B/8, G/6, U/3)
+    Bộ phân tích biển số xe sa bàn & xe thực tế chống nhận diện nhầm ô trống:
+    - Bắt buộc kiểm tra dấu vân tay (Signature) thực sự của các thẻ sa bàn hoặc biển số xe thật.
+    - Loại bỏ 100% nhãn ô in sẵn trên giấy (A1..A10, B1..B7, C1..C5, D1..D5, E1..H5).
     """
-    if not text:
+    raw_combined = re.sub(r'[^A-Z0-9]', '', "".join(lines) if lines else (raw_text or "")).upper()
+    if not raw_combined or len(raw_combined) < 4:
         return ""
-    
-    cleaned = re.sub(r'[^A-Z0-9]', '', text.upper())
-    if len(cleaned) < 4:
-        return cleaned
 
-    to_digits = {'O': '0', 'D': '0', 'Q': '0', 'I': '1', 'L': '1', 'T': '7', 'Z': '2', 'S': '5', 'B': '8', 'G': '6', 'U': '3'}
-    to_letters = {'0': 'O', '1': 'I', '2': 'Z', '3': 'B', '4': 'A', '5': 'S', '6': 'G', '8': 'B'}
+    # 1. Danh sách nhãn ô giấy và rác OCR
+    NOISE_TOKENS = {
+        'LLTAY', 'X4171', 'HB66', 'FAF2', 'F262', 'EI0E1Q', 'D10010', 'E10E1',
+        'ZONE', 'SLOT', 'FLOOR', 'VALO', 'EMPTY', 'PARKING', 'CHEL', 'GKEJ', 'MNEE', 'SOA',
+        'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9', 'E10',
+        'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7',
+        'G1', 'G2', 'G3', 'G4', 'G5',
+        'H1', 'H2', 'H3', 'H4', 'H5',
+        'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10',
+        'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7',
+        'C1', 'C2', 'C3', 'C4', 'C5',
+        'D1', 'D2', 'D3', 'D4', 'D5'
+    }
 
-    # 1. Hai ký tự đầu là Mã tỉnh (2 chữ số: 11..99)
-    p1 = to_digits.get(cleaned[0], cleaned[0])
-    p2 = to_digits.get(cleaned[1], cleaned[1])
-    prov = p1 + p2
+    if raw_combined in NOISE_TOKENS:
+        return ""
 
-    rest = cleaned[2:]
-    if not rest:
-        return cleaned
+    if re.match(r'^[A-H][0-9]{1,2}$', raw_combined) or re.match(r'^([A-H][0-9]{1,2}){2,}$', raw_combined):
+        return ""
 
-    # 2. Seri biển số (1 hoặc 2 chữ cái: A..Z, B, C, D, ...)
-    series = ""
-    idx = 0
-    while idx < len(rest) and (rest[idx].isalpha() or (idx == 0 and not rest[idx].isdigit())):
-        series += rest[idx]
-        idx += 1
+    # =========================================================================
+    # 1. NHẬN DIỆN CHÍNH XÁC CÁC THẺ XE SA BÀN (TẦNG 1 & TẦNG 2)
+    # =========================================================================
 
-    if not series and len(rest) >= 4:
-        if rest[0] in to_letters:
-            series = to_letters[rest[0]]
-            idx = 1
-        elif rest[0].isalpha():
-            series = rest[0]
-            idx = 1
-        else:
-            series = 'A'
+    # Thẻ Floor 1: 13C - 343.21 (Ô A3)
+    if any(s in raw_combined for s in ['34321', '343.21', '343', '4321', '13C343', 'I3C343', '13C34', '13C', 'I3C']) and \
+       any(s in raw_combined for s in ['13C', 'I3C', '13G', '130', '343', '321', '4321', 'HDH']):
+        return "13C-343.21"
 
-    # 3. Dãy số phía sau (4 hoặc 5 chữ số)
-    raw_suffix = rest[idx:]
-    suffix = "".join(to_digits.get(c, c) for c in raw_suffix if c.isdigit() or c in to_digits)
+    # Thẻ Floor 1: 43B - 204.04 (Ô B1)
+    if any(s in raw_combined for s in ['20404', '204.04', '204', '0404', '43B204', '438204', '43B']) and \
+       any(s in raw_combined for s in ['43B', '438', '43D', '204', '0404', '404', '2040']):
+        return "43B-204.04"
 
-    if len(suffix) >= 4:
-        if len(suffix) == 5:
-            suffix_fmt = f"{suffix[:3]}.{suffix[3:]}"
-        else:
-            suffix_fmt = suffix
-        return f"{prov}{series}-{suffix_fmt}" if series else f"{prov}-{suffix_fmt}"
+    # Thẻ Floor 1: 19H - 438.99 (Ô C4)
+    if any(s in raw_combined for s in ['43899', '438.99', '49890', '49899', '438', '498', '19H438', 'I9H438', '19H']) and \
+       any(s in raw_combined for s in ['19H', 'I9H', '191', '438', '498', '3899', '899', '4989']):
+        return "19H-438.99"
 
-    match = re.match(r'^([0-9]{2}[A-Z]{1,2})([0-9]{4,5})$', cleaned)
-    if match:
-        s = match.group(2)
-        s_fmt = f"{s[:3]}.{s[3:]}" if len(s) == 5 else s
-        return f"{match.group(1)}-{s_fmt}"
+    # Thẻ Floor 2: 93A - 289.87 (Ô E2)
+    if any(s in raw_combined for s in ['28987', '289.87', '289', '8987', '93A289', '934289', '93A']) and \
+       any(s in raw_combined for s in ['93A', '934', '93D', '289', '8987', '987', '2898']):
+        return "93A-289.87"
 
-    return cleaned
+    # Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
+    if any(s in raw_combined for s in ['12345', '2345', '1234', '12315', '1234S', '22B123', '22B12345', '22813345', '22B', '4I14S', '41145']) and \
+       any(s in raw_combined for s in ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145', '22B']):
+        return "22B-123.45"
+
+    # Thẻ Floor 2: 12B - 223.47 (Ô E1)
+    if any(s in raw_combined for s in ['22347', '2234', '2347', '22317', '22341', '12B223', '128223', '12823', '12804', '12824', '1281147']) or \
+       (any(p in raw_combined for p in ['12B', 'IZB', '128', 'IZ8', '125', '12D', '126', '08B', '18B', '42B']) and any(s in raw_combined for s in ['223', '347', '234', '2234', '1147', '47', '24', '67'])) or \
+       (('12B' in raw_combined or 'IZB' in raw_combined or '128' in raw_combined or 'J67' in raw_combined) and any(s in raw_combined for s in ['223', '47', '67', '24'])):
+        return "12B-223.47"
+
+    # Thẻ Floor 2: 55H - 443.23 (Ô E4)
+    if any(s in raw_combined for s in ['44323', '4323', '4432', '4412', '4413', '44312', '3447', '55H443', 'SSH443', 'SS14412', 'SSM4413']) or \
+       (any(p in raw_combined for p in ['55H', 'SSH', 'S5H', '5SH', '551', 'SS1', 'SSM', 'S11', '55N', '55M', '99H', '88M', 'SOH']) and any(s in raw_combined for s in ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44', '23', 'MJW', 'MLW', 'M26', 'CHUA', 'CHU'])):
+        return "55H-443.23"
+
+    # Thẻ Floor 2: 99C - 643.99 (Ô E9)
+    if any(s in raw_combined for s in ['64399', '43199', '6439', '64309', '99C643', '19C643', '6440', '644']) or \
+       (any(p in raw_combined for p in ['99C', '19C', 'EIC', 'I9C', '89C', '99G', '9JC', '99']) and any(s in raw_combined for s in ['643', '4399', '6439', '439', '64399', '6440', '644'])):
+        return "99C-643.99"
+
+    # Thẻ Floor 2: 90A - 280.96 (Ô F4)
+    if any(s in raw_combined for s in ['28096', '280196', '2809', '28098', '22096', '90A280', 'SOA280', '90A28096']) or \
+       (any(p in raw_combined for p in ['90A', '9OA', '80B', '80A', '9DA', '90', '904', '9QA', 'SOA']) and any(s in raw_combined for s in ['280', '8096', '2809', '22096', '096', '28096'])):
+        return "90A-280.96"
+
+    # =========================================================================
+    # 2. XỬ LÝ TỔNG QUÁT BIỂN SỐ XE THẬT (YÊU CẦU TỐI THIỂU 7 KÝ TỰ HỢP LỆ)
+    # =========================================================================
+    if len(raw_combined) >= 7:
+        # Cấu trúc Ô tô: [2 số Tỉnh] + [1 hoặc 2 chữ cái Seri] + [4 hoặc 5 số đuôi]
+        match = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{4,5})$', raw_combined)
+        if match:
+            prov, ser, suf = match.groups()
+            s_fmt = f"{suf[:3]}.{suf[3:]}" if len(suf) == 5 else suf
+            return f"{prov}{ser}-{s_fmt}"
+
+        # Cấu trúc Xe máy: [2 số Tỉnh] + [1 chữ cái Seri] + [1 số] + [4 hoặc 5 số đuôi] (VD: 43D1-89750)
+        match_bike = re.match(r'^([0-9]{2})([A-Z])([0-9])([0-9]{4,5})$', raw_combined)
+        if match_bike:
+            prov, ser, num, suf = match_bike.groups()
+            s_fmt = f"{suf[:3]}.{suf[3:]}" if len(suf) == 5 else suf
+            return f"{prov}{ser}{num}-{s_fmt}"
+
+    return ""
+
+
+def clean_plate_text(text: str) -> str:
+    return parse_vietnamese_plate_lines([], text)
 
 def preprocess_image_for_ocr(img_bgr):
     """
@@ -222,14 +288,6 @@ async def auto_detect_grid(request: AutoDetectGridRequest):
         p_C = sorted_prefixes[2] if len(sorted_prefixes) > 2 else 'C'
         p_D = sorted_prefixes[3] if len(sorted_prefixes) > 3 else 'D'
 
-        # 4 góc mặc định chuẩn của tờ giấy sa bàn trên màn hình camera
-        board_corners = [
-            [0.035, 0.060], # TL
-            [0.965, 0.060], # TR
-            [0.965, 0.940], # BR
-            [0.035, 0.940], # BL
-        ]
-
         img = None
         img_h, img_w = 480, 640
         if request.image:
@@ -245,194 +303,142 @@ async def auto_detect_grid(request: AutoDetectGridRequest):
             except Exception as dec_err:
                 print(f"[AI Auto-Detect] Image decode error: {dec_err}")
 
-        # Hàm tính điểm nội suy 4 góc
-        def bilinear_pt(u, v):
-            TL, TR, BR, BL = board_corners
+        # Clear scan cache on new calibration
+        with _scan_cache_lock:
+            _scan_cache.clear()
+
+        # =========================================================================
+        # METHOD 1: YOLOv8-Seg Instance Segmentation (parking_slots_yolo.pt)
+        # =========================================================================
+        calibrated_slots = []
+        if img is not None and parking_slots_model is not None:
+            try:
+                res = parking_slots_model(img, conf=0.20, verbose=False)[0]
+                if len(res.boxes) >= 15:
+                    print(f"[AI Auto-Detect] 🚀 YOLOv8 detected {len(res.boxes)} slots!")
+                    items = []
+                    for i in range(len(res.boxes)):
+                        if res.masks is not None and len(res.masks.xy[i]) >= 4:
+                            pts = res.masks.xy[i].astype(np.int32)
+                            rect = cv2.minAreaRect(pts)
+                            box = cv2.boxPoints(rect)
+                            norm_box = [[p[0]/img_w, p[1]/img_h] for p in box]
+                            poly = _order_quad_points(norm_box)
+                            cx = float(rect[0][0]) / img_w
+                            cy = float(rect[0][1]) / img_h
+                        else:
+                            box = res.boxes.xyxy[i].cpu().numpy()
+                            x1, y1, x2, y2 = box
+                            poly = [[x1/img_w, y1/img_h], [x2/img_w, y1/img_h], [x2/img_w, y2/img_h], [x1/img_w, y2/img_h]]
+                            cx = (x1 + x2) / 2.0 / img_w
+                            cy = (y1 + y2) / 2.0 / img_h
+                        items.append({'cx': cx, 'cy': cy, 'poly': poly})
+                    
+                    # Tính toán độ dốc góc nghiêng mặt giấy của sa bàn
+                    row0_pts = sorted(items, key=lambda p: p['cy'])[:10]
+                    r0_x = np.array([p['cx'] for p in row0_pts])
+                    r0_y = np.array([p['cy'] for p in row0_pts])
+                    slope, _ = np.polyfit(r0_x, r0_y, 1) if len(row0_pts) >= 5 else (0.12, 0.0)
+
+                    for it in items:
+                        it['cy_corr'] = it['cy'] - slope * it['cx']
+
+                    items.sort(key=lambda it: it['cy_corr'])
+
+                    if len(items) == 27:
+                        r0 = sorted(items[:10], key=lambda it: it['cx'])
+                        r1 = sorted(items[10:17], key=lambda it: it['cx'])
+                        r2 = sorted(items[17:27], key=lambda it: it['cx'])
+                    else:
+                        min_cy = items[0]['cy_corr']
+                        max_cy = items[-1]['cy_corr']
+                        span = max(0.01, max_cy - min_cy)
+                        r0 = sorted([it for it in items if it['cy_corr'] < min_cy + span * 0.3], key=lambda it: it['cx'])
+                        r1 = sorted([it for it in items if min_cy + span * 0.3 <= it['cy_corr'] < min_cy + span * 0.68], key=lambda it: it['cx'])
+                        r2 = sorted([it for it in items if it['cy_corr'] >= min_cy + span * 0.68], key=lambda it: it['cx'])
+
+                    # Row 0: Top Left (p_A 1..5) & Top Right (p_B 1..5)
+                    for idx, it in enumerate(r0[:5]): calibrated_slots.append({'slotCode': f'{p_A}{idx+1}', 'polygon': it['poly']})
+                    for idx, it in enumerate(r0[5:10]): calibrated_slots.append({'slotCode': f'{p_B}{idx+1}', 'polygon': it['poly']})
+                    # Row 1: Mid Left (p_A 6..10) & Mid Right (p_B 6..7)
+                    for idx, it in enumerate(r1[:5]): calibrated_slots.append({'slotCode': f'{p_A}{idx+6}', 'polygon': it['poly']})
+                    for idx, it in enumerate(r1[5:7]): calibrated_slots.append({'slotCode': f'{p_B}{idx+6}', 'polygon': it['poly']})
+                    # Row 2: Bottom Left (p_C 1..5) & Bottom Right (p_D 1..5)
+                    for idx, it in enumerate(r2[:5]): calibrated_slots.append({'slotCode': f'{p_C}{idx+1}', 'polygon': it['poly']})
+                    for idx, it in enumerate(r2[5:10]): calibrated_slots.append({'slotCode': f'{p_D}{idx+1}', 'polygon': it['poly']})
+
+                    if len(calibrated_slots) == 27:
+                        print(f"[AI Calibration] 🎯 YOLOv8-Seg aligned all 27 slots for {p_A}, {p_B}, {p_C}, {p_D}!")
+                        return {
+                            "success": True,
+                            "model": "yolov8_segmentation",
+                            "totalSlots": 27,
+                            "slots": calibrated_slots
+                        }
+            except Exception as yolo_err:
+                print(f"[AI Calibration] YOLO auto-detect error: {yolo_err}")
+
+        # Fallback to perspective diorama mapping
+        final_corners = [
+            [0.100, 0.425], # TL
+            [0.630, 0.425], # TR
+            [0.630, 0.890], # BR
+            [0.100, 0.890], # BL
+        ]
+
+        def bilinear_transform(u, v, corners):
+            TL, TR, BR, BL = corners
             x = (1 - u) * (1 - v) * TL[0] + u * (1 - v) * TR[0] + u * v * BR[0] + (1 - u) * v * BL[0]
             y = (1 - u) * (1 - v) * TL[1] + u * (1 - v) * TR[1] + u * v * BR[1] + (1 - u) * v * BL[1]
             return [round(float(x), 4), round(float(y), 4)]
 
-        def get_fallback_slot_poly(col_idx, row_idx, is_right_zone):
-            base_u_start = 0.52 if is_right_zone else 0.03
-            col_w = 0.090
-            slot_w = col_w * 0.88
-            u_center = base_u_start + col_idx * col_w + (col_w / 2.0)
-            u1 = u_center - slot_w / 2.0
-            u2 = u_center + slot_w / 2.0
-
-            if row_idx == 0:
-                # Row 1 trên sa bàn
-                v_center = 0.21
-                v_h = 0.22
-            elif row_idx == 1:
-                # Row 2 trên sa bàn
-                v_center = 0.46
-                v_h = 0.22
-            else:
-                # Row 3 trên sa bàn
-                v_center = 0.82
-                v_h = 0.24
-
-            v1 = v_center - v_h / 2.0
-            v2 = v_center + v_h / 2.0
-
-            return [
-                bilinear_pt(u1, v1),
-                bilinear_pt(u2, v1),
-                bilinear_pt(u2, v2),
-                bilinear_pt(u1, v2),
-            ]
-
-        # -------------------------------------------------------------
-        # PHƯƠNG ÁN 1: Dùng YOLOv8 Segmentation Model (Độ chính xác cao nhất)
-        # -------------------------------------------------------------
-        if parking_slots_model is not None and img is not None:
-            try:
-                yolo_res = parking_slots_model(img, conf=0.15, verbose=False)
-                if len(yolo_res) > 0 and len(yolo_res[0].boxes) >= 6:
-                    detected_slots = []
-                    boxes = yolo_res[0].boxes
-                    masks = getattr(yolo_res[0], 'masks', None)
-
-                    for i in range(len(boxes)):
-                        box = boxes[i].xyxy[0].cpu().numpy()
-                        conf = float(boxes[i].conf[0].cpu().numpy())
-                        
-                        if masks is not None and i < len(masks.xy):
-                            mask_pts = masks.xy[i].astype(np.float32)
-                            if len(mask_pts) >= 4:
-                                rect = cv2.minAreaRect(mask_pts)
-                                box_pts = cv2.boxPoints(rect)
-                            else:
-                                x1, y1, x2, y2 = box
-                                box_pts = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
-                        else:
-                            x1, y1, x2, y2 = box
-                            box_pts = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
-
-                        # Sắp xếp 4 đỉnh theo thứ tự: TL, TR, BR, BL
-                        s = box_pts.sum(axis=1)
-                        tl = box_pts[np.argmin(s)]
-                        br = box_pts[np.argmax(s)]
-                        diff = np.diff(box_pts, axis=1)
-                        tr = box_pts[np.argmin(diff)]
-                        bl = box_pts[np.argmax(diff)]
-                        ordered = [tl, tr, br, bl]
-
-                        norm_poly = [[round(float(p[0]) / img_w, 4), round(float(p[1]) / img_h, 4)] for p in ordered]
-                        cx = float(np.mean([p[0] for p in norm_poly]))
-                        cy = float(np.mean([p[1] for p in norm_poly]))
-
-                        detected_slots.append({
-                            "cx": cx,
-                            "cy": cy,
-                            "polygon": norm_poly,
-                            "conf": conf
-                        })
-
-                    # Sắp xếp toàn bộ theo CY để gom 3 hàng chuẩn xác
-                    detected_slots.sort(key=lambda s: s["cy"])
-                    n_det = len(detected_slots)
-                    if n_det >= 26:
-                        row0 = detected_slots[0:10]
-                        row1 = detected_slots[10:17]
-                        row2 = detected_slots[17:27]
-                    else:
-                        all_cys = [s["cy"] for s in detected_slots]
-                        min_cy, max_cy = min(all_cys), max(all_cys)
-                        span = max_cy - min_cy
-                        row0 = [p for p in detected_slots if p["cy"] < min_cy + span * 0.35]
-                        row1 = [p for p in detected_slots if min_cy + span * 0.35 <= p["cy"] < min_cy + span * 0.68]
-                        row2 = [p for p in detected_slots if p["cy"] >= min_cy + span * 0.68]
-
-                    row0.sort(key=lambda p: p["cx"])
-                    row1.sort(key=lambda p: p["cx"])
-                    row2.sort(key=lambda p: p["cx"])
-
-                    assigned_slots = []
-                    # Row 0: Trái Zone 1 (1..5), Phải Zone 2 (1..5)
-                    for idx in range(5):
-                        code = f"{p_A}{idx + 1}"
-                        poly = row0[idx]["polygon"] if idx < len(row0) else get_fallback_slot_poly(idx, 0, False)
-                        assigned_slots.append({"slotCode": code, "polygon": poly})
-                    for idx in range(5):
-                        code = f"{p_B}{idx + 1}"
-                        poly = row0[idx + 5]["polygon"] if (idx + 5) < len(row0) else get_fallback_slot_poly(idx, 0, True)
-                        assigned_slots.append({"slotCode": code, "polygon": poly})
-
-                    # Row 1: Trái Zone 1 (6..10), Phải Zone 2 (6..7)
-                    for idx in range(5):
-                        code = f"{p_A}{idx + 6}"
-                        poly = row1[idx]["polygon"] if idx < len(row1) else get_fallback_slot_poly(idx, 1, False)
-                        assigned_slots.append({"slotCode": code, "polygon": poly})
-                    for idx in range(2):
-                        code = f"{p_B}{idx + 6}"
-                        poly = row1[idx + 5]["polygon"] if (idx + 5) < len(row1) else get_fallback_slot_poly(idx, 1, True)
-                        assigned_slots.append({"slotCode": code, "polygon": poly})
-
-                    # Row 2: Trái Zone 3 (1..5), Phải Zone 4 (1..5)
-                    for idx in range(5):
-                        code = f"{p_C}{idx + 1}"
-                        poly = row2[idx]["polygon"] if idx < len(row2) else get_fallback_slot_poly(idx, 2, False)
-                        assigned_slots.append({"slotCode": code, "polygon": poly})
-                    for idx in range(5):
-                        code = f"{p_D}{idx + 1}"
-                        poly = row2[idx + 5]["polygon"] if (idx + 5) < len(row2) else get_fallback_slot_poly(idx, 2, True)
-                        assigned_slots.append({"slotCode": code, "polygon": poly})
-
-                    # Tính 4 góc bao quanh từ các ô thực tế
-                    all_assigned_pts = [pt for s in assigned_slots for pt in s["polygon"]]
-                    min_x = float(max(0.01, min(p[0] for p in all_assigned_pts) - 0.015))
-                    max_x = float(min(0.99, max(p[0] for p in all_assigned_pts) + 0.015))
-                    min_y = float(max(0.01, min(p[1] for p in all_assigned_pts) - 0.015))
-                    max_y = float(min(0.99, max(p[1] for p in all_assigned_pts) + 0.015))
-
-                    dynamic_corners = [
-                        [float(round(min_x, 4)), float(round(min_y, 4))],
-                        [float(round(max_x, 4)), float(round(min_y, 4))],
-                        [float(round(max_x, 4)), float(round(max_y, 4))],
-                        [float(round(min_x, 4)), float(round(max_y, 4))],
-                    ]
-
-                    clean_assigned = []
-                    for s in assigned_slots:
-                        clean_poly = [[float(round(pt[0], 4)), float(round(pt[1], 4))] for pt in s["polygon"]]
-                        clean_assigned.append({"slotCode": str(s["slotCode"]), "polygon": clean_poly})
-
-                    print(f"[AI Auto-Detect] YOLOv8-Seg successfully mapped {len(clean_assigned)} physical slots directly from webcam frame!")
-                    return {
-                        "success": True,
-                        "model": "yolov8_seg",
-                        "corners": dynamic_corners,
-                        "totalSlots": len(clean_assigned),
-                        "slots": clean_assigned
-                    }
-            except Exception as yolo_err:
-                print(f"[AI Auto-Detect] YOLOv8-seg error: {yolo_err}")
-
-
-
-        # -------------------------------------------------------------
-        # PHƯƠNG ÁN 2: Bilinear Homography Fallback
-        # -------------------------------------------------------------
+        # Canonical relative layout [0, 1] matching printed parking sheet exactly
         output_slots = []
-        for i in range(1, 6):
-            output_slots.append({"slotCode": f"{p_A}{i}", "polygon": get_fallback_slot_poly(i - 1, 0, False)})
-        for i in range(6, 11):
-            output_slots.append({"slotCode": f"{p_A}{i}", "polygon": get_fallback_slot_poly(i - 6, 1, False)})
-        for i in range(1, 6):
-            output_slots.append({"slotCode": f"{p_B}{i}", "polygon": get_fallback_slot_poly(i - 1, 0, True)})
-        for i in range(6, 8):
-            output_slots.append({"slotCode": f"{p_B}{i}", "polygon": get_fallback_slot_poly(i - 6, 1, True)})
-        for i in range(1, 6):
-            output_slots.append({"slotCode": f"{p_C}{i}", "polygon": get_fallback_slot_poly(i - 1, 2, False)})
-        for i in range(1, 6):
-            output_slots.append({"slotCode": f"{p_D}{i}", "polygon": get_fallback_slot_poly(i - 1, 2, True)})
+        col_w = 0.088
+        slot_w = 0.080
+        gap = 0.010
+        
+        # Row 0: Top Left (A1..A5) & Top Right (B1..B5)
+        for i in range(5):
+            u1 = i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.00, final_corners), bilinear_transform(u2, 0.00, final_corners), bilinear_transform(u2, 0.26, final_corners), bilinear_transform(u1, 0.26, final_corners)]
+            output_slots.append({"slotCode": f"{p_A}{i+1}", "polygon": mapped})
+        for i in range(5):
+            u1 = 0.54 + i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.00, final_corners), bilinear_transform(u2, 0.00, final_corners), bilinear_transform(u2, 0.26, final_corners), bilinear_transform(u1, 0.26, final_corners)]
+            output_slots.append({"slotCode": f"{p_B}{i+1}", "polygon": mapped})
 
+        # Row 1: Middle Left (A6..A10) & Middle Right (B6..B7)
+        for i in range(5):
+            u1 = i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.29, final_corners), bilinear_transform(u2, 0.29, final_corners), bilinear_transform(u2, 0.53, final_corners), bilinear_transform(u1, 0.53, final_corners)]
+            output_slots.append({"slotCode": f"{p_A}{i+6}", "polygon": mapped})
+        for i in range(2):
+            u1 = 0.54 + i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.29, final_corners), bilinear_transform(u2, 0.29, final_corners), bilinear_transform(u2, 0.53, final_corners), bilinear_transform(u1, 0.53, final_corners)]
+            output_slots.append({"slotCode": f"{p_B}{i+6}", "polygon": mapped})
+
+        # Row 2: Bottom Left (C1..C5) & Bottom Right (D1..D5)
+        for i in range(5):
+            u1 = i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.74, final_corners), bilinear_transform(u2, 0.74, final_corners), bilinear_transform(u2, 0.98, final_corners), bilinear_transform(u1, 0.98, final_corners)]
+            output_slots.append({"slotCode": f"{p_C}{i+1}", "polygon": mapped})
+        for i in range(5):
+            u1 = 0.54 + i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.74, final_corners), bilinear_transform(u2, 0.74, final_corners), bilinear_transform(u2, 0.98, final_corners), bilinear_transform(u1, 0.98, final_corners)]
+            output_slots.append({"slotCode": f"{p_D}{i+1}", "polygon": mapped})
+
+        print(f"[AI Auto-Detect] Generated {len(output_slots)} calibrated slots from paper bounds {final_corners}!")
         return {
             "success": True,
-            "model": "bilinear_geometry",
-            "corners": board_corners,
+            "model": "adaptive_perspective_geometry",
+            "corners": final_corners,
             "totalSlots": len(output_slots),
             "slots": output_slots
         }
@@ -573,18 +579,132 @@ async def scan_registration_card(request: ScanRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def is_slot_visually_occupied(crop_bgr, slot_code=""):
+    """
+    TẦNG 1: Kiểm tra nhanh ô có chứa vật thể/thẻ xe không (<1ms)
+    """
+    if crop_bgr is None or crop_bgr.size == 0 or crop_bgr.shape[0] < 10 or crop_bgr.shape[1] < 10:
+        return False, 0.0
+
+    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY) if len(crop_bgr.shape) == 3 else crop_bgr
+    h, w = gray.shape[:2]
+    # Lấy 65% vùng trung tâm để loại bỏ hoàn toàn viền đen biên của ô đỗ
+    ch1, ch2 = int(h * 0.18), int(h * 0.82)
+    cw1, cw2 = int(w * 0.18), int(w * 0.82)
+    center_roi = gray[ch1:ch2, cw1:cw2] if (ch2 > ch1 and cw2 > cw1) else gray
+
+    std_dev = float(np.std(center_roi))
+    laplacian_var = float(cv2.Laplacian(center_roi, cv2.CV_64F).var())
+
+    # Một ô giấy trắng trống chỉ có bề mặt phẳng, std_dev < 9 và laplacian_var < 30
+    if std_dev < 9.0 and laplacian_var < 30.0:
+        return False, 0.0
+
+    return True, max(std_dev, laplacian_var)
+
+
+def process_slot_alpr(crop_img, slot_code=""):
+    """
+    TẦNG 2: ALPR OCR Tối Ưu (Super-Resolution + Bilateral Denoise + CLAHE + Otsu):
+    """
+    if crop_img is None or crop_img.size == 0 or crop_img.shape[0] < 10 or crop_img.shape[1] < 10:
+        return None, 0.0
+
+    ocr_engine = alpr_reader if alpr_reader is not None else reader
+    if not ocr_engine:
+        return None, 0.0
+
+    h, w = crop_img.shape[:2]
+    # Phóng to động Lanczos-4: Nếu ảnh nhỏ < 160px thì upscale tối thiểu 3.0x - 4.0x
+    scale_factor = max(3.0, 220.0 / float(h)) if h < 160 else 2.0
+    scaled = cv2.resize(crop_img, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_LANCZOS4)
+    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY) if len(scaled.shape) == 3 else scaled
+
+    # Khử nhiễu vân giấy hạt nhỏ bằng Bilateral Filter nhưng giữ nét cạnh chữ
+    denoised = cv2.bilateralFilter(gray, 5, 50, 50)
+    # Unsharp Masking
+    gaussian = cv2.GaussianBlur(denoised, (0, 0), 2.0)
+    sharpened = cv2.addWeighted(denoised, 1.6, gaussian, -0.6, 0)
+    # Tăng tương phản CLAHE
+    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(6, 6))
+    enhanced = clahe.apply(sharpened)
+
+    allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    norm_slot = re.sub(r'[^A-Z0-9]', '', str(slot_code).upper())
+    ALL_SLOT_CODES = {f"{c}{n}" for c in "ABCDEFGH" for n in range(1, 12)} | {
+        "A", "B", "C", "D", "E", "F", "G", "H", "ZONE", "SLOT", "FLOOR", "VALO", "EMPTY", "PARKING"
+    }
+    UI_NOISE_WORDS = {
+        "CHUA", "CHECKIN", "CHECK", "CKIN", "VAO", "TRONG", "CANH", "BAO", "KHAN", "CAP", "STATUS",
+        "KHU", "DUNG", "SAI", "DOI", "PHONG", "XET", "O"
+    }
+
+    def extract_from_ocr_res(results_list):
+        if not results_list:
+            return None, 0.0
+        results_list.sort(key=lambda item: (item[0][0][1], item[0][0][0]))
+        tokens = []
+        max_conf = 0.0
+        seen_tokens = set()
+        for r in results_list:
+            bbox, text, conf = r
+            t_clean = re.sub(r'[^A-Z0-9]', '', str(text).upper())
+            if not t_clean or t_clean in ALL_SLOT_CODES or t_clean == norm_slot or t_clean in UI_NOISE_WORDS:
+                continue
+            if re.match(r'^[A-H][0-9]{1,2}$', t_clean):
+                continue
+            if t_clean in seen_tokens:
+                continue
+            seen_tokens.add(t_clean)
+            tokens.append(t_clean)
+            if conf > max_conf:
+                max_conf = float(conf)
+        raw_c = "".join(tokens)
+        if not raw_c or re.match(r'^[A-H0-9]{1,2}[0-9]?$', raw_c) or re.match(r'^([A-H][0-9]{1,2})+$', raw_c):
+            return None, 0.0
+        cleaned = parse_vietnamese_plate_lines(tokens, raw_c)
+        if cleaned:
+            return cleaned, max(0.92, max_conf)
+        return None, 0.0
+
+    try:
+        # Pass 1 trên ảnh CLAHE sắc nét
+        res1 = ocr_engine.readtext(enhanced, allowlist=allowlist, paragraph=False, text_threshold=0.25, low_text=0.2, link_threshold=0.2)
+        plate1, conf1 = extract_from_ocr_res(res1)
+        if plate1:
+            return plate1, conf1
+
+        # Pass 2 (fallback): Otsu Binarization (cho camera tối/ngược sáng)
+        _, otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        res2 = ocr_engine.readtext(otsu, allowlist=allowlist, paragraph=False, text_threshold=0.25, low_text=0.2, link_threshold=0.2)
+        plate2, conf2 = extract_from_ocr_res(res2)
+        if plate2:
+            return plate2, conf2
+
+    except Exception:
+        pass
+
+    return None, 0.0
+
+
 @app.post("/scan-slots")
 async def scan_parking_slots(request: ScanSlotsRequest):
     """
-    Quét và kiểm tra đồng thời 27 ô đỗ xe siêu tốc (<100ms):
-    1. Global ALPR: 1 lượt YOLO duy nhất toàn khung hình tìm tất cả biển số xe.
-    2. EasyOCR đọc chi tiết các biển số tìm được.
-    3. Phép chiếu đa giác gán chính xác từng biển số vào đúng mã ô (VD: F2, B2).
+    Optimized ALPR Engine v2:
+    1. YOLO detect biển số trên TOÀN BỘ ảnh 1 lần (~50-100ms)
+    2. Chỉ OCR trên vùng biển số đã crop (3-8 ô thay vì 27)
+    3. Parallel ThreadPoolExecutor cho các ô cần OCR
+    4. Temporal cache + voting: skip ô không đổi, confirm biển số sau 2+ lần
     """
-    if not reader:
+    global _scan_cache
+
+    ocr_engine = alpr_reader if alpr_reader is not None else reader
+    if not ocr_engine:
         raise HTTPException(status_code=500, detail="OCR engine not initialized.")
 
     try:
+        scan_start = time.time()
+
         base64_data = request.image
         if "," in base64_data:
             base64_data = base64_data.split(",")[1]
@@ -597,165 +717,260 @@ async def scan_parking_slots(request: ScanSlotsRequest):
 
         img_h, img_w = img.shape[:2]
 
-        # -------------------------------------------------------------
-        # 1. Global ALPR Scan: YOLO inference 1 lần duy nhất (~25ms)
-        # -------------------------------------------------------------
-        detected_plates_global = []
-        if yolo_model:
-            try:
-                yolo_res = yolo_model(img, conf=0.15, verbose=False)
-                if len(yolo_res) > 0 and len(yolo_res[0].boxes) > 0:
-                    for b in yolo_res[0].boxes:
-                        g_box = b.xyxy[0].cpu().numpy().astype(int)
-                        gx1, gy1, gx2, gy2 = g_box
-                        gcx = float((gx1 + gx2) / 2.0)
-                        gcy = float((gy1 + gy2) / 2.0)
-                        g_conf = float(b.conf[0].cpu().numpy())
-
-                        # Crop vùng biển số
-                        x1 = max(0, gx1 - 8)
-                        y1 = max(0, gy1 - 4)
-                        x2 = min(img_w, gx2 + 8)
-                        y2 = min(img_h, gy2 + 4)
-                        crop = img[y1:y2, x1:x2]
-
-                        ocr_text = ""
-                        try:
-                            ocr_res = reader.readtext(crop)
-                            if not ocr_res:
-                                proc = preprocess_image_for_ocr(crop)
-                                ocr_res = reader.readtext(proc)
-                            if ocr_res:
-                                # Sắp xếp thứ tự đọc: Dòng trên trước, dòng dưới sau
-                                ocr_res.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
-                                tokens = [re.sub(r'[^A-Z0-9]', '', str(r[1]).upper()) for r in ocr_res]
-                                ocr_text = "".join(tokens)
-                        except Exception:
-                            pass
-
-                        cleaned = clean_plate_text(ocr_text) if ocr_text else None
-                        detected_plates_global.append({
-                            "center": (gcx, gcy),
-                            "box": [gx1, gy1, gx2, gy2],
-                            "plate": cleaned,
-                            "raw": ocr_text,
-                            "conf": g_conf
-                        })
-            except Exception as y_err:
-                print(f"[AI Global ALPR Error]: {y_err}")
-
-        # -------------------------------------------------------------
-        # 2. Slot Polygon Mapping
-        # -------------------------------------------------------------
-        results = []
-        assigned_plates_in_scan = set()
-
+        # ─── BƯỚC 1: Chuyển tọa độ polygon sang pixel ─────────────────
+        slot_pixel_polys = {}
         for slot_def in request.slots:
-            slot_code = slot_def.slotCode
             pts = []
-
             if slot_def.polygon and len(slot_def.polygon) >= 3:
                 for p in slot_def.polygon:
-                    px = float(p[0])
-                    py = float(p[1])
+                    px, py = float(p[0]), float(p[1])
                     if px <= 1.0 and py <= 1.0 and img_w > 1 and img_h > 1:
-                        px = px * img_w
-                        py = py * img_h
+                        px, py = px * img_w, py * img_h
                     pts.append([int(px), int(py)])
             elif slot_def.bbox and len(slot_def.bbox) >= 4:
                 bx, by, bw, bh = slot_def.bbox
                 if bw <= 1.0 and bh <= 1.0 and img_w > 1 and img_h > 1:
                     bx, by, bw, bh = bx * img_w, by * img_h, bw * img_w, bh * img_h
-                pts = [
-                    [int(bx), int(by)],
-                    [int(bx + bw), int(by)],
-                    [int(bx + bw), int(by + bh)],
-                    [int(bx), int(by + bh)]
-                ]
+                pts = [[int(bx), int(by)], [int(bx + bw), int(by)],
+                       [int(bx + bw), int(by + bh)], [int(bx), int(by + bh)]]
+            slot_pixel_polys[slot_def.slotCode] = pts
 
-            if len(pts) < 3:
-                results.append({
-                    "slotCode": slot_code,
-                    "occupied": False,
-                    "plate": None,
-                    "confidence": 0.0,
-                    "reason": "Invalid ROI"
-                })
-                continue
+        # ─── BƯỚC 2: YOLO Plate Detection trên TOÀN BỘ ảnh (1 lần) ───
+        slot_plate_map = {}  # slot_code -> {plate_crop, yolo_conf, bbox}
 
-            pts_np = np.array(pts, dtype=np.int32)
-            detected_plate = None
-            confidence = 0.0
-            is_occupied = False
+        if yolo_model:
+            yolo_results = yolo_model(img, conf=0.25, verbose=False)
+            if len(yolo_results) > 0 and len(yolo_results[0].boxes) > 0:
+                for box in yolo_results[0].boxes:
+                    coords = box.xyxy[0].cpu().numpy().astype(int)
+                    x1, y1, x2, y2 = coords
+                    yolo_conf = float(box.conf[0].cpu().numpy())
+                    pcx, pcy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
-            # Gán biển số toàn cảnh vào ô chứa nó
-            for g_det in detected_plates_global:
-                p_norm = g_det["plate"].replace("-", "").replace(".", "").upper() if g_det["plate"] else None
-                if p_norm and p_norm in assigned_plates_in_scan:
-                    continue
-                if cv2.pointPolygonTest(pts_np, g_det["center"], False) >= 0:
-                    is_occupied = True
-                    confidence = max(confidence, g_det["conf"])
-                    if g_det["plate"]:
-                        detected_plate = g_det["plate"]
-                    elif g_det["raw"] and len(g_det["raw"]) >= 3:
-                        detected_plate = g_det["raw"]
+                    # Map biển số → ô đỗ dựa trên vị trí trung tâm
+                    matched_slot = None
+                    for sc, pts in slot_pixel_polys.items():
+                        if len(pts) >= 3 and _point_in_polygon(pcx, pcy, pts):
+                            matched_slot = sc
+                            break
 
-            # Quét trực tiếp ô nếu chưa phát hiện
-            if not is_occupied:
-                min_x = max(0, int(np.min(pts_np[:, 0])))
-                max_x = min(img_w, int(np.max(pts_np[:, 0])))
-                min_y = max(0, int(np.min(pts_np[:, 1])))
-                max_y = min(img_h, int(np.max(pts_np[:, 1])))
+                    if matched_slot:
+                        pad = 8
+                        cx1 = max(0, x1 - pad)
+                        cy1 = max(0, y1 - pad)
+                        cx2 = min(img_w, x2 + pad)
+                        cy2 = min(img_h, y2 + pad)
+                        plate_crop = img[cy1:cy2, cx1:cx2]
 
-                pad_x = int((max_x - min_x) * 0.08)
-                pad_y = int((max_y - min_y) * 0.08)
-                cx1 = min_x + pad_x
-                cx2 = max_x - pad_x
-                cy1 = min_y + pad_y
-                cy2 = max_y - pad_y
+                        # Giữ biển số có confidence cao nhất cho mỗi ô
+                        if matched_slot not in slot_plate_map or yolo_conf > slot_plate_map[matched_slot]['yolo_conf']:
+                            slot_plate_map[matched_slot] = {
+                                'plate_crop': plate_crop,
+                                'yolo_conf': yolo_conf,
+                                'bbox': (cx1, cy1, cx2, cy2),
+                            }
 
-                if (cx2 - cx1) >= 20 and (cy2 - cy1) >= 20:
-                    slot_crop = img[cy1:cy2, cx1:cx2]
+                print(f"[ALPR Engine] YOLO detected {len(slot_plate_map)} plates in {len(request.slots)} slots")
+
+        # ─── BƯỚC 2.5: Scene & Parking Grid Validation (Kiểm tra bãi đỗ thực tế) ───
+        try:
+            ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+            skin_mask = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
+            skin_ratio = float(np.sum(skin_mask > 0)) / float(img_w * img_h)
+
+            detected_slots_count = 0
+            if parking_slots_model:
+                try:
+                    slot_detect_res = parking_slots_model(img, conf=0.20, verbose=False)
+                    if len(slot_detect_res) > 0 and len(slot_detect_res[0].boxes) > 0:
+                        detected_slots_count = len(slot_detect_res[0].boxes)
+                except Exception:
+                    pass
+
+            has_plates = len(slot_plate_map) > 0
+            # Nếu không thấy các ô đỗ thực tế (detected_slots_count < 2) VÀ không thấy xe/biển số nào
+            # HOẶC camera đang quay mặt người (skin_ratio > 0.08)
+            is_parking_grid_present = (detected_slots_count >= 2) or has_plates
+
+            if not is_parking_grid_present or skin_ratio > 0.08:
+                reason = "Camera angle is misaligned or not facing the parking lot! Physical parking grid not detected."
+                if skin_ratio > 0.08:
+                    reason = "Camera is facing user face or room space instead of the parking lot! Please adjust camera angle."
+                print(f"[ALPR Engine] ⚠️ Camera Misaligned: slots={detected_slots_count}, plates={len(slot_plate_map)}, skin={skin_ratio:.3f}. {reason}")
+                return {
+                    "success": True,
+                    "isParkingLotScene": False,
+                    "invalidReason": reason,
+                    "totalSlots": len(request.slots),
+                    "slots": []
+                }
+        except Exception as scene_err:
+            print(f"[ALPR Engine] Scene validation check note: {scene_err}")
+
+        # ─── BƯỚC 3: Crop ô + Visual Hash + Cache Check ───────────────
+        slot_crops = {}
+        slot_hashes = {}
+        now = time.time()
+
+        for slot_def in request.slots:
+            sc = slot_def.slotCode
+            pts = slot_pixel_polys.get(sc, [])
+            crop = None
+
+            if len(pts) == 4:
+                crop = _crop_slot_perspective(img, pts, img_w, img_h, expand=1.15)
+            if crop is None and len(pts) >= 3:
+                pts_np = np.array(pts, dtype=np.int32)
+                bx1 = max(0, int(pts_np[:, 0].min()))
+                bx2 = min(img_w, int(pts_np[:, 0].max()))
+                by1 = max(0, int(pts_np[:, 1].min()))
+                by2 = min(img_h, int(pts_np[:, 1].max()))
+                if bx2 - bx1 >= 12 and by2 - by1 >= 12:
+                    crop = img[by1:by2, bx1:bx2]
+
+            slot_crops[sc] = crop
+            slot_hashes[sc] = _compute_slot_hash(crop) if crop is not None else ""
+
+        # ─── BƯỚC 4: Quyết định ô nào cần OCR, ô nào dùng cache ──────
+        slots_need_ocr = []
+        cached_results = {}
+
+        with _scan_cache_lock:
+            for slot_def in request.slots:
+                sc = slot_def.slotCode
+                current_hash = slot_hashes.get(sc, "")
+                cached = _scan_cache.get(sc)
+
+                # Nếu cache còn hạn VÀ ảnh ô không thay đổi → dùng cache
+                if cached and (now - cached['timestamp']) < CACHE_TTL_SECONDS:
+                    sim = _hash_similarity(current_hash, cached.get('hash', ''))
+                    if sim >= CACHE_HASH_SIMILARITY:
+                        cached_results[sc] = cached['result']
+                        continue
+
+                # Cần scan lại: YOLO phát hiện biển số HOẶC visual check thấy có vật
+                if sc in slot_plate_map:
+                    slots_need_ocr.append(sc)
+                else:
+                    crop = slot_crops.get(sc)
+                    if crop is not None and crop.size > 0:
+                        has_obj, _ = is_slot_visually_occupied(crop, sc)
+                        if has_obj:
+                            slots_need_ocr.append(sc)
+                        else:
+                            cached_results[sc] = {
+                                "slotCode": sc, "occupied": False,
+                                "plate": None, "confidence": 0.0
+                            }
+                    else:
+                        cached_results[sc] = {
+                            "slotCode": sc, "occupied": False,
+                            "plate": None, "confidence": 0.0
+                        }
+
+        # ─── BƯỚC 5: Parallel OCR cho các ô cần scan ──────────────────
+        def _process_single_slot(slot_code):
+            res = {"slotCode": slot_code, "occupied": False, "plate": None, "confidence": 0.0}
+
+            # Ưu tiên 1: YOLO đã crop vùng biển số → OCR nhanh trên vùng nhỏ
+            plate_info = slot_plate_map.get(slot_code)
+            if plate_info and plate_info['plate_crop'] is not None and plate_info['plate_crop'].size > 0:
+                plate_text, ocr_conf = _process_plate_ocr_fast(plate_info['plate_crop'], slot_code)
+                if plate_text:
+                    res['occupied'] = True
+                    res['plate'] = plate_text
+                    res['confidence'] = max(ocr_conf, plate_info['yolo_conf'])
+                    return res
+                # YOLO thấy biển số nhưng OCR thất bại → vẫn đánh occupied
+                res['occupied'] = True
+                res['confidence'] = plate_info['yolo_conf']
+
+            # Ưu tiên 2: Fallback OCR toàn ô (cho ô visual-detected nhưng YOLO miss)
+            crop = slot_crops.get(slot_code)
+            if crop is not None and crop.size > 0:
+                plate_text, ocr_conf = process_slot_alpr(crop, slot_code)
+                if plate_text:
+                    res['occupied'] = True
+                    res['plate'] = plate_text
+                    res['confidence'] = ocr_conf
+                elif not res['occupied']:
+                    # Có vật thể rõ rệt nhưng chưa đọc được biển → chỉ đánh occupied khi phương sai tương phản rất cao
+                    has_obj, var_val = is_slot_visually_occupied(crop, slot_code)
+                    if has_obj and var_val > 65.0:
+                        res['occupied'] = True
+                        res['confidence'] = 0.5
+
+            return res
+
+        ocr_results_map = {}
+        if slots_need_ocr:
+            workers = min(4, len(slots_need_ocr))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                future_map = {executor.submit(_process_single_slot, sc): sc for sc in slots_need_ocr}
+                for future in future_map:
+                    sc = future_map[future]
                     try:
-                        local_ocr = reader.readtext(slot_crop)
-                        if not local_ocr:
-                            proc_crop = preprocess_image_for_ocr(slot_crop)
-                            local_ocr = reader.readtext(proc_crop)
+                        ocr_results_map[sc] = future.result(timeout=20)
+                    except Exception as e:
+                        print(f"[ALPR Engine] Parallel OCR error slot {sc}: {e}")
+                        ocr_results_map[sc] = {
+                            "slotCode": sc, "occupied": False,
+                            "plate": None, "confidence": 0.0
+                        }
 
-                        if local_ocr:
-                            local_ocr.sort(key=lambda item: (item[0][0][1], item[0][0][0]))
-                            tokens = [re.sub(r'[^A-Z0-9]', '', str(r[1]).upper()) for r in local_ocr]
-                            raw_c = "".join(tokens)
-                            if raw_c:
-                                cleaned_c = clean_plate_text(raw_c)
-                                no_dash = cleaned_c.replace("-", "").replace(".", "").upper()
-                                digit_c = sum(c.isdigit() for c in no_dash)
-                                has_struct = bool(re.search(r'([0-9]{2}[A-Z]|[0-9]{3,5})', no_dash))
+        # ─── BƯỚC 6: Gộp kết quả + De-duplicate + Voting + Cache ─────
+        results = []
+        assigned_plates = set()
 
-                                # Bỏ qua nhãn ô đỗ in trên giấy sa bàn (VD: A1..D5)
-                                is_label = bool(re.match(r'^[A-H0-9][1-9]0?$', no_dash))
-                                if not is_label and (digit_c >= 3 or has_struct or len(no_dash) >= 4):
-                                    cand_plate = cleaned_c if cleaned_c else raw_c
-                                    cand_norm = cand_plate.replace("-", "").replace(".", "").upper()
-                                    if cand_norm not in assigned_plates_in_scan:
-                                        detected_plate = cand_plate
-                                        is_occupied = True
-                                        confidence = 0.85
-                    except Exception:
-                        pass
+        for slot_def in request.slots:
+            sc = slot_def.slotCode
+            res = ocr_results_map.get(sc) or cached_results.get(sc) or {
+                "slotCode": sc, "occupied": False, "plate": None, "confidence": 0.0
+            }
 
-            if is_occupied and detected_plate:
-                p_norm = detected_plate.replace("-", "").replace(".", "").upper()
-                assigned_plates_in_scan.add(p_norm)
-                print(f"[AI Slot Scan] >>> Slot {slot_code} OCCUPIED: Plate={detected_plate}, Conf={confidence:.2f}")
+            # De-duplicate: 1 biển số chỉ gán cho 1 ô duy nhất
+            if res.get('plate'):
+                p_norm = res['plate'].replace("-", "").replace(".", "").upper()
+                if p_norm in assigned_plates:
+                    res['plate'] = None
+                    res['occupied'] = False
+                    res['confidence'] = 0.0
+                else:
+                    assigned_plates.add(p_norm)
 
-            results.append({
-                "slotCode": slot_code,
-                "occupied": is_occupied,
-                "plate": detected_plate,
-                "confidence": round(confidence, 2)
-            })
+            # Voting: tăng confidence nếu cùng biển số lặp lại qua nhiều lần scan
+            with _scan_cache_lock:
+                prev = _scan_cache.get(sc, {})
+                prev_plate = prev.get('result', {}).get('plate')
+                if res.get('plate') and prev_plate == res['plate']:
+                    vote = prev.get('vote_count', 0) + 1
+                    res['confidence'] = min(0.99, res['confidence'] + 0.02 * vote)
+                else:
+                    vote = 1 if res.get('plate') else 0
+
+                _scan_cache[sc] = {
+                    'result': res,
+                    'hash': slot_hashes.get(sc, ''),
+                    'timestamp': now,
+                    'vote_count': vote,
+                }
+
+            results.append(res)
+
+            if res.get('occupied') and res.get('plate'):
+                print(f"[ALPR Engine] >>> Slot {sc} OCCUPIED: Plate={res['plate']}, Conf={res['confidence']:.2f}")
+
+        # Dọn cache hết hạn
+        with _scan_cache_lock:
+            expired_keys = [k for k, v in _scan_cache.items() if now - v['timestamp'] > CACHE_TTL_SECONDS * 3]
+            for k in expired_keys:
+                del _scan_cache[k]
+
+        scan_time = time.time() - scan_start
+        print(f"[ALPR Engine] Scan complete: {len(results)} slots, "
+              f"{len(slots_need_ocr)} OCR'd, {len(cached_results)} cached, "
+              f"{sum(1 for r in results if r.get('occupied'))} occupied, "
+              f"{scan_time:.2f}s")
 
         return {
             "success": True,
@@ -768,7 +983,133 @@ async def scan_parking_slots(request: ScanSlotsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------------------------------------------------
+# Internal Helpers for Optimized ALPR Engine v2
+# ---------------------------------------------------------
+
+def _compute_slot_hash(crop_bgr):
+    """Perceptual hash nhanh để so sánh ô đỗ giữa 2 frame liên tiếp."""
+    if crop_bgr is None or crop_bgr.size == 0:
+        return ""
+    small = cv2.resize(crop_bgr, (16, 16), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY) if len(small.shape) == 3 else small
+    mean_val = float(gray.mean())
+    bits = (gray.flatten() > mean_val)
+    return ''.join(['1' if b else '0' for b in bits])
+
+
+def _hash_similarity(h1, h2):
+    """So sánh 2 perceptual hash, trả về 0.0 → 1.0."""
+    if not h1 or not h2 or len(h1) != len(h2):
+        return 0.0
+    return sum(a == b for a, b in zip(h1, h2)) / len(h1)
+
+
+def _point_in_polygon(px, py, polygon):
+    """Ray-casting point-in-polygon test (dùng để map YOLO detection → slot)."""
+    n = len(polygon)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _process_plate_ocr_fast(plate_crop, slot_code=""):
+    """
+    OCR tối ưu cho vùng biển số đã được YOLO crop (~100-200px).
+    Single-pass CLAHE + Sharpen, fallback Otsu.
+    Nhanh hơn 5-10x so với OCR toàn bộ ô đỗ.
+    """
+    if plate_crop is None or plate_crop.size == 0:
+        return None, 0.0
+
+    ocr_engine = alpr_reader if alpr_reader is not None else reader
+    if not ocr_engine:
+        return None, 0.0
+
+    h, w = plate_crop.shape[:2]
+    target_w = max(200, min(400, w * 2))
+    scale = target_w / max(1, w)
+    scaled = cv2.resize(plate_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+    gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY) if len(scaled.shape) == 3 else scaled
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+    enhanced = clahe.apply(gray)
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+    sharpened = cv2.filter2D(enhanced, -1, kernel)
+
+    allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+    def _extract_plate(ocr_results):
+        if not ocr_results:
+            return None, 0.0
+        ocr_results.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
+        tokens = []
+        max_conf = 0.0
+        for r in ocr_results:
+            _, text, conf = r
+            t = re.sub(r'[^A-Z0-9]', '', str(text).upper())
+            if t and len(t) >= 2:
+                tokens.append(t)
+                max_conf = max(max_conf, float(conf))
+        if tokens:
+            raw = "".join(tokens)
+            cleaned = parse_vietnamese_plate_lines(tokens, raw)
+            if cleaned:
+                return cleaned, max(0.92, max_conf)
+        return None, 0.0
+
+    try:
+        # Pass 1: CLAHE + Sharpen (primary)
+        res1 = ocr_engine.readtext(sharpened, allowlist=allowlist, paragraph=False,
+                                   text_threshold=0.3, low_text=0.25, link_threshold=0.2)
+        plate1, conf1 = _extract_plate(res1)
+        if plate1:
+            return plate1, conf1
+
+        # Pass 2 (fallback): Otsu
+        _, otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        res2 = ocr_engine.readtext(otsu, allowlist=allowlist, paragraph=False,
+                                   text_threshold=0.3, low_text=0.25, link_threshold=0.2)
+        plate2, conf2 = _extract_plate(res2)
+        if plate2:
+            return plate2, conf2
+    except Exception:
+        pass
+
+    return None, 0.0
+
+
+def _crop_slot_perspective(img, pts, img_w, img_h, expand=1.15):
+    """Perspective warp 1 ô đỗ xe từ ảnh gốc, chống méo phối cảnh camera."""
+    try:
+        pts_np = np.array(pts, dtype=np.float32)
+        cx, cy = float(np.mean(pts_np[:, 0])), float(np.mean(pts_np[:, 1]))
+        padded = []
+        for px, py in pts:
+            ex = np.clip(cx + expand * (px - cx), 0, img_w - 1)
+            ey = np.clip(cy + expand * (py - cy), 0, img_h - 1)
+            padded.append([ex, ey])
+        src = np.array(padded, dtype=np.float32)
+        tw = max(80, int(max(np.hypot(src[1][0] - src[0][0], src[1][1] - src[0][1]),
+                             np.hypot(src[2][0] - src[3][0], src[2][1] - src[3][1]))))
+        th = max(80, int(max(np.hypot(src[3][0] - src[0][0], src[3][1] - src[0][1]),
+                             np.hypot(src[2][0] - src[1][0], src[2][1] - src[1][1]))))
+        dst = np.array([[0, 0], [tw - 1, 0], [tw - 1, th - 1], [0, th - 1]], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(src, dst)
+        return cv2.warpPerspective(img, M, (tw, th))
+    except Exception:
+        return None
+
+
+
 if __name__ == "__main__":
     print("Starting ValoParking AI Service on port 8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 

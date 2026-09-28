@@ -41,6 +41,8 @@ export default function ViolationResolutionModal({
   const currentActualSlot = actualSlot || slotCode;
   const plate = detectedPlate || session?.licensePlate || 'N/A';
 
+  const isPendingPark = violation.status === 'CHECKED_IN_PENDING_PARK' || violation.violationType === 'CHECKED_IN_PENDING_PARK';
+
   const handleReassign = async () => {
     if (!session?._id) {
       setErrorMsg('Không tìm thấy mã phiên đỗ xe tương ứng để đổi ô.');
@@ -75,17 +77,21 @@ export default function ViolationResolutionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-[#12161f] border border-red-500/40 rounded-2xl shadow-2xl overflow-hidden text-gray-100 font-sans">
+      <div className={`w-full max-w-lg bg-[#12161f] border ${isPendingPark ? 'border-purple-500/50' : 'border-red-500/40'} rounded-2xl shadow-2xl overflow-hidden text-gray-100 font-sans`}>
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-red-950/80 to-red-900/40 border-b border-red-500/30">
+        <div className={`flex items-center justify-between px-6 py-4 ${isPendingPark ? 'bg-gradient-to-r from-purple-950/80 to-indigo-900/40 border-b border-purple-500/30' : 'bg-gradient-to-r from-red-950/80 to-red-900/40 border-b border-red-500/30'}`}>
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/40 shadow-inner">
-              <ShieldAlert size={22} className="animate-pulse" />
+            <div className={`p-2 rounded-xl border shadow-inner ${isPendingPark ? 'bg-purple-500/20 text-purple-300 border-purple-400/40' : 'bg-red-500/20 text-red-400 border-red-500/40'}`}>
+              {isPendingPark ? <Clock size={22} className="animate-pulse" /> : <ShieldAlert size={22} className="animate-pulse" />}
             </div>
             <div>
-              <h3 className="text-base font-black text-white uppercase tracking-wide">Wrong-Slot Violation Alert</h3>
-              <p className="text-xs text-red-300">Detected by AI Overhead Camera Surveillance</p>
+              <h3 className="text-base font-black text-white uppercase tracking-wide">
+                {isPendingPark ? 'Checked-in Vehicle (Not Parked Yet)' : 'Wrong-Slot Violation Alert'}
+              </h3>
+              <p className={`text-xs ${isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
+                {isPendingPark ? 'Vehicle checked-in at gate but slot is still vacant' : 'Detected by AI Overhead Camera Surveillance'}
+              </p>
             </div>
           </div>
 
@@ -102,7 +108,7 @@ export default function ViolationResolutionModal({
         <div className="p-6 space-y-4">
           
           {/* License Plate & Slot Comparison Box */}
-          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 space-y-3">
+          <div className={`p-4 rounded-xl border space-y-3 ${isPendingPark ? 'bg-purple-500/10 border-purple-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">License Plate:</span>
               <span className="font-mono text-base font-black px-3 py-1 rounded-lg bg-black border border-white/20 text-amber-300">
@@ -112,16 +118,18 @@ export default function ViolationResolutionModal({
 
             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/10 text-center">
               <div className="p-2.5 rounded-lg bg-black/40 border border-white/10">
-                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Originally Assigned Slot</span>
+                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Assigned Parking Slot</span>
                 <span className="text-lg font-black text-emerald-400 font-mono">
-                  {expectedSlot || 'N/A'}
+                  {expectedSlot || currentActualSlot || 'N/A'}
                 </span>
               </div>
-              <div className="p-2.5 rounded-lg bg-red-950/60 border border-red-500/40">
-                <span className="text-[10px] text-red-300 uppercase font-bold block mb-1">Actual Parked Slot</span>
-                <span className="text-lg font-black text-red-400 font-mono flex items-center justify-center gap-1">
-                  {currentActualSlot}
-                  <AlertTriangle size={14} className="text-red-400" />
+              <div className={`p-2.5 rounded-lg border ${isPendingPark ? 'bg-purple-950/60 border-purple-500/40' : 'bg-red-950/60 border-red-500/40'}`}>
+                <span className={`text-[10px] uppercase font-bold block mb-1 ${isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
+                  {isPendingPark ? 'Camera Physical Status' : 'Actual Parked Slot'}
+                </span>
+                <span className={`text-sm font-black font-mono flex items-center justify-center gap-1 ${isPendingPark ? 'text-purple-300' : 'text-red-400 text-lg'}`}>
+                  {isPendingPark ? 'Chưa vào ô (Trống)' : currentActualSlot}
+                  {isPendingPark ? <Clock size={14} className="text-purple-400" /> : <AlertTriangle size={14} className="text-red-400" />}
                 </span>
               </div>
             </div>

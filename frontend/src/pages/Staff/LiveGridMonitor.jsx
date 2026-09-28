@@ -149,7 +149,7 @@ export default function LiveGridMonitor() {
   const violations = useMemo(() => {
     if (!Array.isArray(aiSlotStatuses)) return [];
     return aiSlotStatuses.filter(
-      (s) => s.status === 'WRONG_SLOT_VIOLATION' || s.status === 'UNAUTHORIZED_OCCUPANCY'
+      (s) => s.status === 'WRONG_SLOT_VIOLATION' || s.status === 'UNAUTHORIZED_OCCUPANCY' || s.status === 'UNAUTHORIZED_PARKING' || s.status === 'CHECKED_IN_PENDING_PARK' || s.isViolation
     );
   }, [aiSlotStatuses]);
 
@@ -457,6 +457,7 @@ export default function LiveGridMonitor() {
           onClose={() => setShowSurveillanceModal(false)}
           floors={floors}
           currentFloorId={currentFloorId}
+          activeSessions={activeSessions}
           onSlotStatusUpdate={(results, floorId) => {
             if (!floorId) return;
             setFloorAiStatusesMap((prev) => {

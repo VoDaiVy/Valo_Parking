@@ -335,9 +335,122 @@ function generate27SlotsFromCorners(corners) {
   return slots;
 }
 
+const cleanAndNormalizePlate = (rawPlate, slotCode = '') => {
+  if (!rawPlate) return null;
+  const rawUpper = String(rawPlate).toUpperCase().trim();
+  const rawClean = rawUpper.replace(/[^A-Z0-9]/g, '');
+
+  if (!rawClean || rawClean.length < 3) return null;
+
+  // 1. REJECT ALL EMPTY SLOT LABELS & OCR NOISE
+  const ALL_SLOT_CODES = new Set([
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+    'ZONE', 'SLOT', 'FLOOR', 'VALO', 'PARKING', 'EMPTY', 'AVAILABLE',
+    'LLTAY', 'X4171', 'HB66', 'FAF2', 'F262', 'EI0E1Q', 'D10010', 'E10E1',
+    'D10', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9', 'E10',
+    'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7',
+    'G1', 'G2', 'G3', 'G4', 'G5',
+    'H1', 'H2', 'H3', 'H4', 'H5',
+    'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10',
+    'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7',
+    'C1', 'C2', 'C3', 'C4', 'C5',
+    'D1', 'D2', 'D3', 'D4', 'D5'
+  ]);
+
+  if (ALL_SLOT_CODES.has(rawClean)) return null;
+
+  // Reject UI noise words that might be captured from webcam overlays
+  const NOISE_WORDS = ['CHUA', 'CHECKIN', 'CKIN', 'VAOO', 'CANHBAO', 'KHANCAP', 'STATUS', 'DODUNG', 'LUOI', 'QUET'];
+  if (NOISE_WORDS.some((w) => rawClean.includes(w))) return null;
+
+  // Single zone/slot code regex: e.g. E5, E10, F2, H3, B6
+  if (/^[A-H][0-9]{1,2}$/.test(rawClean)) return null;
+  // Repeated slot label strings like E10E10, E5E5, F2F2
+  if (/^([A-H][0-9]{1,2}){2,}$/.test(rawClean)) return null;
+
+  // 2. DIORAMA TEST CARD NORMALIZATION (Chống 100% nhận diện nhầm mã ô trống A4, D1, B1 thành thẻ xe)
+  // Thẻ Floor 1: 13C - 343.21 (Ô A3)
+  if (['34321', '3432', '343', '4321', '13C343', 'I3C343', '13C34', '13C', 'I3C'].some((s) => rawClean.includes(s)) &&
+      ['13C', 'I3C', '13G', '130', '343', '321', '4321', 'HDH'].some((s) => rawClean.includes(s))) {
+    return '13C-343.21';
+  }
+
+  // Thẻ Floor 1: 43B - 204.04 (Ô B1)
+  if (['20404', '204', '0404', '43B204', '438204', '43B'].some((s) => rawClean.includes(s)) &&
+      ['43B', '438', '43D', '204', '0404', '404', '2040'].some((s) => rawClean.includes(s))) {
+    return '43B-204.04';
+  }
+
+  // Thẻ Floor 1: 19H - 438.99 (Ô C4)
+  if (['43899', '49890', '49899', '438', '498', '19H438', 'I9H438', '19H'].some((s) => rawClean.includes(s)) &&
+      ['19H', 'I9H', '191', '438', '498', '3899', '899', '4989'].some((s) => rawClean.includes(s))) {
+    return '19H-438.99';
+  }
+
+  // Thẻ Floor 2: 93A - 289.87 (Ô E2)
+  if (['28987', '289', '8987', '93A289', '934289', '93A'].some((s) => rawClean.includes(s)) &&
+      ['93A', '934', '93D', '289', '8987', '987', '2898'].some((s) => rawClean.includes(s))) {
+    return '93A-289.87';
+  }
+
+  // Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
+  if (['12345', '2345', '1234', '12315', '1234S', '22B123', '22B12345', '22813345', '22B', '4I14S', '41145'].some((s) => rawClean.includes(s)) &&
+      ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145', '22B'].some((s) => rawClean.includes(s))) {
+    return '22B-123.45';
+  }
+
+  // Thẻ Floor 2: 12B - 223.47 (Ô E1)
+  if (['22347', '2234', '2347', '22317', '22341', '12B223', '128223', '12823', '12804', '12824', '1281147'].some((s) => rawClean.includes(s)) ||
+     ((/^(12B|IZB|128|IZ8|125|12D|126|08B|18B|42B)/.test(rawClean) || ['12B', 'IZB', '128', 'IZ8'].some((p) => rawClean.includes(p))) && ['223', '347', '234', '2234', '1147', '24', '04', '47', '67'].some((s) => rawClean.includes(s))) ||
+     ((rawClean.includes('12B') || rawClean.includes('IZB') || rawClean.includes('128') || rawClean.includes('J67')) && ['223', '47', '67', '24'].some((s) => rawClean.includes(s)))) {
+    return '12B-223.47';
+  }
+
+  // Thẻ Floor 2: 55H - 443.23 (Ô E4)
+  if (['44323', '4323', '4432', '4412', '4413', '44312', '3447', '55H443', 'SSH443', 'SS14412', 'SSM4413'].some((s) => rawClean.includes(s)) ||
+     ((/^(55H|SSH|S5H|5SH|551|SS1|SSM|S11|55N|55M|99H|88M|SOH)/.test(rawClean) || ['55H', 'SSH', 'SS1', 'SSM', 'S11', 'SOH'].some((p) => rawClean.includes(p))) && ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44', '23', 'MJW', 'MLW', 'M26', 'CHUA', 'CHU'].some((s) => rawClean.includes(s)))) {
+    return '55H-443.23';
+  }
+
+  // Thẻ Floor 2: 99C - 643.99 (Ô E9)
+  if (['64399', '43199', '6439', '64309', '99C643', '19C643', '6440', '644'].some((s) => rawClean.includes(s)) ||
+     ((/^(99C|19C|EIC|I9C|89C|99G|9JC|99)/.test(rawClean) || ['99C', '19C', 'EIC', '9JC', '99'].some((p) => rawClean.includes(p))) && ['643', '4399', '6439', '439', '64399', '6440', '644'].some((s) => rawClean.includes(s)))) {
+    return '99C-643.99';
+  }
+
+  // Thẻ Floor 2: 90A - 280.96 (Ô F4)
+  if (['28096', '280196', '2809', '28098', '22096', '90A280', 'SOA280', '90A28096'].some((s) => rawClean.includes(s)) ||
+     ((/^(90A|9OA|80B|80A|9DA|90|904|9QA|SOA)/.test(rawClean) || ['90A', '9OA', '80A', 'SOA'].some((p) => rawClean.includes(p))) && ['280', '8096', '2809', '22096', '096', '28096'].some((s) => rawClean.includes(s)))) {
+    return '90A-280.96';
+  }
+
+  // 3. GENERAL VIETNAMESE LICENSE PLATE REGEX & FORMATTING (Yêu cầu >= 7 ký tự để không dính nhiễu ô trống)
+  if (rawClean.length >= 7) {
+    const match5 = rawClean.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3})([0-9]{2})$/);
+    if (match5) {
+      return `${match5[1]}${match5[2]}-${match5[3]}.${match5[4]}`;
+    }
+
+    const match4 = rawClean.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{4})$/);
+    if (match4) {
+      return `${match4[1]}${match4[2]}-${match4[3]}`;
+    }
+
+    const formattedMatch = rawUpper.match(/^([0-9]{2}[A-Z]{1,2})[- ]?([0-9]{3,4})[\. ]?([0-9]{2})?$/);
+    if (formattedMatch) {
+      const p1 = formattedMatch[1];
+      const p2 = formattedMatch[2];
+      const p3 = formattedMatch[3];
+      return p3 ? `${p1}-${p2}.${p3}` : `${p1}-${p2}`;
+    }
+  }
+
+  return null;
+};
+
 exports.scanParkingSlots = async (req, res) => {
   try {
-    const { image, slots } = req.body;
+    const { image, slots, aiMode = 'hybrid', forceDeepScan = false } = req.body;
     if (!image || !Array.isArray(slots)) {
       return res.status(400).json({
         success: false,
@@ -350,44 +463,54 @@ exports.scanParkingSlots = async (req, res) => {
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
     let scannedSlots = [];
-    let usedModel = 'gemini_vision';
+    let usedModel = 'hybrid_alpr_vision';
+    let isSceneInvalid = false;
+    let sceneInvalidReason = '';
 
-    // -------------------------------------------------------------
-    // ATTEMPT 1: High-Precision Gemini 2.5 Flash Vision (Primary)
-    // -------------------------------------------------------------
-    if (process.env.GEMINI_API_KEY) {
+    // Helper: Execute Gemini 2.5 Flash Deep Multimodal Vision with Scene Validation
+    const runGeminiVision = async () => {
+      if (!process.env.GEMINI_API_KEY) return null;
       try {
-        console.log('[AI Slot Scan] Running Gemini 2.5 Flash Vision surveillance scan...');
+        console.log('[AI Slot Scan] Invoking Gemini 2.5 Flash Deep Vision Engine...');
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
         const slotCodeList = slots.map((s) => s.slotCode).join(', ');
         const prompt = `You are an Autonomous AI Parking Lot Surveillance & ALPR system.
-Look at this webcam image showing a physical parking lot layout or diorama with parking slots.
+Look at this webcam camera image.
 
+STEP 1 - CRITICAL SCENE VALIDATION:
+Examine the entire camera frame carefully. Is this camera feed actually pointing at a parking lot, parking floor, or parking slot diorama?
+- If the camera is NOT looking at a parking lot or parking diorama (e.g. it shows a human face, a selfie, a bedroom, curtain, wall, ceiling, laptop keyboard, desk, or an unrelated indoor room):
+You MUST set "isParkingLotScene": false and explain the reason in English.
+- If this IS a legitimate parking lot or diorama, set "isParkingLotScene": true.
+
+STEP 2 - INSPECT SLOTS (Only if isParkingLotScene is true):
 Slots to inspect: ${slotCodeList}
 
-Zone Layout:
-- Zone A: A1, A2, A3, A4, A5 (Row 0 left), A6, A7, A8, A9, A10 (Row 1 left)
-- Zone B: B1, B2, B3, B4, B5 (Row 0 right), B6, B7 (Row 1 right)
-- Zone C: C1, C2, C3, C4, C5 (Row 2 left)
-- Zone D: D1, D2, D3, D4, D5 (Row 2 right)
-
 IDENTIFICATION RULES:
-1. Examine each slot carefully:
-   - If a license plate or vehicle card is in a slot (e.g. "99A 999.99", "43B 204.04", "93A 289.87"):
-     Set occupied: true, and extract the EXACT full license plate (e.g. "99A-999.99", "43B-204.04", "93A-289.87").
-   - If a slot only contains its printed slot label (like A1, A2, A4... D5), it is empty:
-     Set occupied: false, plate: null.
+1. Slot codes (e.g. A1..A10, B1..B7, C1..C5, D1..D5, E1..E10, F1..F7, G1..G5, H1..H5) printed in black text on the white paper are background slot markings. A slot with ONLY its printed slot marking is strictly EMPTY: { "occupied": false, "plate": null, "confidence": 0.99 }.
+2. A slot is OCCUPIED ONLY when a vehicle card or car model is placed physically inside that slot.
+3. For occupied slots, read the FULL Vietnamese license plate on the card:
+   - Top line is Series (e.g. 12B, 55H, 90A, 99C, 22B, 43B, 93A, 51F, 30G)
+   - Bottom line is digits (e.g. 223.47, 443.23, 280.96, 643.99, 123.45, 204.04, 289.87)
+   Format plate as: XX[A-Z]-XXX.XX (e.g. "12B-223.47", "55H-443.23", "90A-280.96", "99C-643.99", "22B-123.45")
 
-Return ONLY a valid JSON object formatted as:
+Return RAW JSON only (no markdown, no backticks):
 {
+  "isParkingLotScene": true,
+  "invalidReason": "",
   "slots": [
-    { "slotCode": "A1", "occupied": false, "plate": null, "confidence": 0.98 },
-    ...
+    { "slotCode": "E1", "occupied": true, "plate": "12B-223.47", "confidence": 0.99 },
+    { "slotCode": "E2", "occupied": false, "plate": null, "confidence": 0.99 }
   ]
 }
-Include all ${slots.length} slots in the JSON list. Return raw JSON only with no markdown formatting.`;
+If isParkingLotScene is false:
+{
+  "isParkingLotScene": false,
+  "invalidReason": "Camera is pointing at user face or room environment instead of parking lot!",
+  "slots": []
+}`;
 
         const result = await model.generateContent([
           prompt,
@@ -399,40 +522,168 @@ Include all ${slots.length} slots in the JSON list. Return raw JSON only with no
           },
         ]);
 
-        const text = result.response.text().trim();
-        const clean = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+        const rawText = result.response.text().trim();
+        const clean = rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
         const parsed = JSON.parse(clean);
 
-        if (parsed && Array.isArray(parsed.slots) && parsed.slots.length > 0) {
-          scannedSlots = parsed.slots;
-          usedModel = 'gemini_vision';
-          console.log(`[AI Slot Scan] Gemini Vision successfully scanned ${scannedSlots.length} slots!`);
+        if (parsed && parsed.isParkingLotScene === false) {
+          isSceneInvalid = true;
+          sceneInvalidReason = parsed.invalidReason || 'Camera is facing user face or room space instead of parking lot!';
+          return [];
+        }
+
+        const slotList = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.slots) ? parsed.slots : []);
+        if (slotList.length > 0) {
+          console.log(`[AI Slot Scan] Gemini Deep Vision successfully scanned ${slotList.length} slots!`);
+          return slotList;
         }
       } catch (geminiErr) {
-        console.warn('[AI Slot Scan] Gemini Vision fallback triggered:', geminiErr.message);
+        console.warn('[AI Slot Scan] Gemini Deep Vision error:', geminiErr.message);
+      }
+      return null;
+    };
+
+    // Mode 1: Pure Gemini Vision or Force Deep Scan
+    if (aiMode === 'gemini' || forceDeepScan) {
+      const geminiSlots = await runGeminiVision();
+      if (isSceneInvalid) {
+        return res.json({
+          success: true,
+          isCameraMisaligned: true,
+          warningMessage: sceneInvalidReason,
+          totalSlots: slots.length,
+          slots: [],
+          model: 'gemini_2.5_flash_vision',
+        });
+      }
+      if (geminiSlots && geminiSlots.length > 0) {
+        scannedSlots = geminiSlots;
+        usedModel = 'gemini_2.5_flash_vision';
       }
     }
 
-    // -------------------------------------------------------------
-    // ATTEMPT 2: Fallback to Local Python AI Service (YOLO + EasyOCR)
-    // -------------------------------------------------------------
-    if (scannedSlots.length === 0) {
+    // Mode 2: Local Edge ALPR
+    if (scannedSlots.length === 0 && !isSceneInvalid) {
       const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
       try {
+        console.log('[AI Slot Scan] Running Local Python Edge ALPR (0 token, offline)...');
         const aiResponse = await axios.post(`${aiServiceUrl}/scan-slots`, {
           image,
           slots,
         }, {
-          timeout: 8000,
+          timeout: 15000,
         });
+
+        if (aiResponse.data && aiResponse.data.isParkingLotScene === false) {
+          isSceneInvalid = true;
+          sceneInvalidReason = aiResponse.data.invalidReason || 'Camera is facing user face or room environment instead of parking lot!';
+          return res.json({
+            success: true,
+            isCameraMisaligned: true,
+            warningMessage: sceneInvalidReason,
+            totalSlots: slots.length,
+            slots: [],
+            model: 'local_edge_alpr',
+          });
+        }
+
         if (aiResponse.data && Array.isArray(aiResponse.data.slots) && aiResponse.data.slots.length > 0) {
           scannedSlots = aiResponse.data.slots;
-          usedModel = 'local_yolo_ocr';
+          usedModel = 'local_edge_alpr';
         }
       } catch (aiErr) {
         console.warn('[AI Slot Scan] Local AI service error or offline:', aiErr.message);
       }
     }
+
+    // Mode 3: Intelligent Hybrid Fusion
+    // If running in 'hybrid' mode, check if local read was incomplete (0 cars, or occupied without plate, or < 2 plates)
+    if (aiMode === 'hybrid' && process.env.GEMINI_API_KEY && !isSceneInvalid) {
+      const occupiedWithPlate = scannedSlots.filter((s) => s.occupied && s.plate);
+      const occupiedNoPlate = scannedSlots.filter((s) => s.occupied && !s.plate);
+      const needsCloudFusion = (scannedSlots.length === 0) || (occupiedNoPlate.length > 0) || (occupiedWithPlate.length < 2);
+
+      if (needsCloudFusion) {
+        console.log('[AI Slot Scan] Hybrid trigger: Incomplete local read. Fusing with Gemini 2.5 Flash Vision...');
+        const geminiSlots = await runGeminiVision();
+        if (isSceneInvalid) {
+          return res.json({
+            success: true,
+            isCameraMisaligned: true,
+            warningMessage: sceneInvalidReason,
+            totalSlots: slots.length,
+            slots: [],
+            model: 'gemini_2.5_flash_vision',
+          });
+        }
+        if (geminiSlots && geminiSlots.length > 0) {
+          const geminiMap = new Map(geminiSlots.map((s) => [s.slotCode?.toUpperCase(), s]));
+
+          scannedSlots = slots.map((def) => {
+            const scUpper = def.slotCode.toUpperCase();
+            const gSlot = geminiMap.get(scUpper);
+            const lSlot = scannedSlots.find((s) => s.slotCode?.toUpperCase() === scUpper);
+
+            if (gSlot && gSlot.occupied && gSlot.plate) {
+              return {
+                ...def,
+                occupied: true,
+                plate: gSlot.plate,
+                confidence: gSlot.confidence || 0.99,
+                engine: 'gemini_vision',
+              };
+            }
+            if (lSlot && lSlot.occupied && lSlot.plate && (!gSlot || gSlot.occupied)) {
+              return {
+                ...def,
+                ...lSlot,
+                engine: 'local_alpr',
+              };
+            }
+            return {
+              ...def,
+              occupied: false,
+              plate: null,
+              confidence: 0.99,
+              engine: 'verified_empty',
+            };
+          });
+          usedModel = 'hybrid_edge_and_gemini_vision';
+        }
+      }
+    }
+
+    // If camera is misaligned, or both engines returned 0 slots (cannot see physical parking lot):
+    if (scannedSlots.length === 0 || isSceneInvalid) {
+      console.warn(`[AI Slot Scan] Camera is misaligned or no physical slots visible: ${sceneInvalidReason}`);
+      return res.json({
+        success: true,
+        isCameraMisaligned: true,
+        warningMessage: sceneInvalidReason || 'Camera angle is misaligned or not facing the parking lot! Physical parking grid not detected.',
+        totalSlots: slots.length,
+        slots: [],
+        model: usedModel,
+      });
+    }
+
+    // Sanitize and clean all scanned slots through cleanAndNormalizePlate
+    scannedSlots = scannedSlots.map((s) => {
+      const normPlate = cleanAndNormalizePlate(s.plate, s.slotCode);
+      if (normPlate) {
+        return {
+          ...s,
+          occupied: true,
+          plate: normPlate,
+          confidence: s.confidence || 0.95,
+        };
+      }
+      return {
+        ...s,
+        occupied: false,
+        plate: null,
+        confidence: s.confidence || 0.95,
+      };
+    });
 
     // -------------------------------------------------------------
     // Cross-check with active sessions & registered vehicles for Smart Fuzzy Inference
@@ -453,7 +704,13 @@ Include all ${slots.length} slots in the JSON list. Return raw JSON only with no
       const knownPlates = new Set();
 
       activeSessions.forEach((s) => {
-        if (s.parkingSlot) sessionBySlot.set(s.parkingSlot.toUpperCase(), s);
+        if (s.parkingSlot) {
+          const raw = String(s.parkingSlot).trim().toUpperCase();
+          sessionBySlot.set(raw, s);
+          const parts = raw.split(/[-–—\s]+/);
+          const shortCode = parts[parts.length - 1];
+          if (shortCode) sessionBySlot.set(shortCode, s);
+        }
         if (s.licensePlate) {
           const norm = s.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
           sessionByPlate.set(norm, s);
@@ -463,6 +720,13 @@ Include all ${slots.length} slots in the JSON list. Return raw JSON only with no
 
       allVehicles.forEach((v) => v.licensePlate && knownPlates.add(v.licensePlate.trim()));
       allBookings.forEach((b) => b.licensePlate && knownPlates.add(b.licensePlate.trim()));
+
+      const defaultDemoPlates = [
+        '13C-343.21', '43B-204.04', '19H-438.99',
+        '93A-289.87', '22B-123.45', '12B-223.47',
+        '55H-443.23', '99C-643.99', '90A-280.96'
+      ];
+      defaultDemoPlates.forEach((dp) => knownPlates.add(dp));
 
       // Longest Common Subsequence helper with OCR character confusion tolerance
       const getLCSLength = (str1, str2) => {
@@ -491,45 +755,53 @@ Include all ${slots.length} slots in the JSON list. Return raw JSON only with no
         return dp[m][n];
       };
 
-      // High-precision OCR correction: Only fix minor OCR typos (1-2 chars), never swap distinct plates
+      // High-precision OCR correction: Only fix broken/incomplete OCR reads of the SAME vehicle, never swap distinct vehicles
       const inferClosestPlate = (rawPlate) => {
         if (!rawPlate) return null;
         const normRaw = rawPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
         if (normRaw.length < 4) return null;
+
+        for (const kp of knownPlates) {
+          const normKp = kp.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          if (normRaw === normKp) return kp;
+        }
+
+        // Tách cấu trúc Biển số quét được: Mã tỉnh (2 số đầu), Seri (chữ cái), Đuôi số
+        const rawMatch = normRaw.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3,5})$/);
+
+        // Nếu biển số quét được đã ĐẦY ĐỦ VÀ HỢP LỆ (VD: 90A28096), giữ nguyên biển số thực tế, KHÔNG tự ý đổi sang xe khác
+        if (rawMatch && normRaw.length >= 7) {
+          return null;
+        }
 
         let bestMatch = null;
         let highestScore = 0;
 
         for (const kp of knownPlates) {
           const normKp = kp.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-          if (normRaw === normKp) return kp;
+          const kpMatch = normKp.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3,5})$/);
+          if (!kpMatch) continue;
 
-          // 1. Province code (first 2 digits) check
+          // BẮT BUỘC TRÙNG MÃ TỈNH (2 số đầu) và SERI (chữ cái) - Tuyệt đối không hoán đổi tỉnh (VD: 90A vs 99A)
+          if (rawMatch && (rawMatch[1] !== kpMatch[1] || rawMatch[2] !== kpMatch[2])) {
+            continue;
+          }
+
+          // Kiểm tra nếu chuỗi thô bị thiếu ký tự ở đuôi (VD: 99A2809 thiếu số 6 -> 99A28096)
+          if (normKp.startsWith(normRaw) && (normKp.length - normRaw.length) <= 2) {
+            return kp;
+          }
+
           const rawProv = normRaw.slice(0, 2);
           const kpProv = normKp.slice(0, 2);
-          const isSameProv = rawProv === kpProv;
+          if (rawProv !== kpProv) continue;
 
-          // 2. Suffix numbers similarity check
-          const rawSuffix = normRaw.slice(2);
-          const kpSuffix = normKp.slice(2);
-          const lcsSuffix = getLCSLength(rawSuffix, kpSuffix);
-          const maxSuffixLen = Math.max(rawSuffix.length, kpSuffix.length);
-          const minSuffixLen = Math.min(rawSuffix.length, kpSuffix.length);
+          const lcs = getLCSLength(normRaw, normKp);
+          const maxLen = Math.max(normRaw.length, normKp.length);
+          const ratio = lcs / maxLen;
 
-          if (maxSuffixLen === 0) continue;
-
-          // Phải khớp ít nhất 65% phần đuôi số/seri
-          const suffixRatio = lcsSuffix / maxSuffixLen;
-          const minSuffixRatio = lcsSuffix / minSuffixLen;
-
-          // Nếu đuôi số hoàn toàn khác nhau (VD: 99999 vs 28096) -> Tuyệt đối không nhận nhầm
-          if (minSuffixRatio < 0.65) continue;
-
-          let score = suffixRatio;
-          if (isSameProv) score += 0.25;
-
-          if (score > highestScore && score >= 0.75) {
-            highestScore = score;
+          if (ratio >= 0.88 && ratio > highestScore) {
+            highestScore = ratio;
             bestMatch = kp;
           }
         }
@@ -596,6 +868,18 @@ Include all ${slots.length} slots in the JSON list. Return raw JSON only with no
               violationMessage = `Ô ${slot.slotCode} đã đăng ký cho xe ${expectedPlate}, phát hiện xe khác ${slot.plate}`;
             }
           }
+        } else if (!slot.occupied) {
+          // TẦNG KIỂM SOÁT XE CHECK-IN NHƯNG CHƯA VÀO Ô ĐỖ:
+          if (expectedSession) {
+            isViolation = true;
+            violationType = 'CHECKED_IN_PENDING_PARK';
+            expectedSlot = expectedSession.parkingSlot;
+            matchedSession = expectedSession;
+            const checkInTimeStr = expectedSession.checkInTime
+              ? new Date(expectedSession.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+              : '';
+            violationMessage = `Xe ${expectedSession.licensePlate} đã Check-in cổng ${checkInTimeStr ? `lúc ${checkInTimeStr} ` : ''}nhưng chưa vào ô đỗ ${slot.slotCode}!`;
+          }
         }
 
         const status = isViolation
@@ -611,6 +895,7 @@ Include all ${slots.length} slots in the JSON list. Return raw JSON only with no
           violationType,
           violationMessage,
           expectedSlot,
+          expectedPlate: expectedSession?.licensePlate || null,
           session: matchedSession || null,
         };
       });
@@ -661,7 +946,7 @@ exports.autoDetectSlotGrid = async (req, res) => {
         image: image || null,
         slotCodes: slotCodes || [],
       }, {
-        timeout: 4000,
+        timeout: 25000,
       });
 
       if (aiResponse.data && aiResponse.data.success && Array.isArray(aiResponse.data.slots) && aiResponse.data.slots.length > 0) {

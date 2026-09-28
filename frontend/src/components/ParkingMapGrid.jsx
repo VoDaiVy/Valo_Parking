@@ -5,19 +5,23 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
   const slotZ = 5;
   const slotTransition = 'all 0.2s ease-in-out';
   const hasName = !!el.name && el.name.trim() !== '';
+  const isPendingPark = Boolean(
+    aiStatus?.status === 'CHECKED_IN_PENDING_PARK' || 
+    aiStatus?.violationType === 'CHECKED_IN_PENDING_PARK'
+  );
   const isWrongSlot = Boolean(
     aiStatus?.status === 'WRONG_SLOT_VIOLATION' || 
     aiStatus?.status === 'UNAUTHORIZED_OCCUPANCY' || 
     aiStatus?.violationType === 'WRONG_SLOT_VIOLATION' || 
-    aiStatus?.isViolation
+    (aiStatus?.isViolation && !isPendingPark)
   );
-  const detectedPlate = aiStatus?.plate || aiStatus?.detectedPlate || session?.licensePlate || null;
+  const detectedPlate = aiStatus?.plate || aiStatus?.detectedPlate || aiStatus?.expectedPlate || session?.licensePlate || null;
 
   const handleClick = (e, type) => {
     e.stopPropagation();
     if (!hasName) return;
     if (onClick) {
-      onClick({ id: el.name || el.id, type, session, floorId, isReserved, isHeld, aiStatus, isWrongSlot, booking: el.booking });
+      onClick({ id: el.name || el.id, type, session, floorId, isReserved, isHeld, aiStatus, isWrongSlot, isPendingPark, booking: el.booking });
     }
   };
 
@@ -25,7 +29,7 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
     backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 10px, rgba(127, 29, 29, 0.3) 10px, rgba(127, 29, 29, 0.3) 20px)'
   } : {};
 
-  const isOccupied = Boolean(session || aiStatus?.occupied);
+  const isOccupied = Boolean(session || aiStatus?.occupied || isWrongSlot);
 
   if (el.type === 'slot') {
     let bgColor = '#ffffff';
@@ -49,6 +53,7 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
     }
 
     if (isWrongSlot) { bgColor = '#fef2f2'; borderColor = '#ef4444'; }
+    else if (isPendingPark) { bgColor = '#f5f3ff'; borderColor = '#a855f7'; }
     else if (isMaintenance) { bgColor = '#fee2e2'; borderColor = '#ef4444'; }
     else if (isReserved) { bgColor = vipBg; borderColor = vipBorder; }
     else if (isOccupied) { bgColor = '#fecdd3'; borderColor = '#e11d48'; } 
@@ -56,19 +61,19 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
     else if (isHovered) { bgColor = '#67e8f9'; borderColor = '#06b6d4'; }
 
     return (
-      <div style={{...style, ...maintenanceStyle, opacity: hasName ? 1 : 0.3, cursor: hasName ? 'pointer' : 'not-allowed', transform: `translateZ(${slotZ}px) rotateZ(${el.rot || 0}deg)`, borderColor, backgroundColor: bgColor, transition: slotTransition }} className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center group ${isWrongSlot ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]' : ''}`}
+      <div style={{...style, ...maintenanceStyle, opacity: hasName ? 1 : 0.3, cursor: hasName ? 'pointer' : 'not-allowed', transform: `translateZ(${slotZ}px) rotateZ(${el.rot || 0}deg)`, borderColor, backgroundColor: bgColor, transition: slotTransition }} className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center group ${isWrongSlot ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]' : isPendingPark ? 'animate-pulse ring-2 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.7)]' : ''}`}
            onMouseEnter={() => onMouseEnter(el.id)}
            onMouseLeave={onMouseLeave}
            onClick={(e) => handleClick(e, 'hourly')}>
-        <span className={`text-[10px] font-bold ${isOccupied ? 'mb-0.5' : 'mb-1'} ${isWrongSlot ? 'text-red-700' : isMaintenance ? 'text-red-700' : isReserved ? 'text-purple-700' : isHeld ? 'text-orange-700' : isOccupied ? 'text-rose-700' : 'text-slate-500 group-hover:text-[#0891b2]'}`} style={{ transform: 'translateZ(2px)' }}>
+        <span className={`text-[10px] font-bold ${isOccupied || isPendingPark ? 'mb-0.5' : 'mb-1'} ${isWrongSlot ? 'text-red-700' : isPendingPark ? 'text-purple-700' : isMaintenance ? 'text-red-700' : isReserved ? 'text-purple-700' : isHeld ? 'text-orange-700' : isOccupied ? 'text-rose-700' : 'text-slate-500 group-hover:text-[#0891b2]'}`} style={{ transform: 'translateZ(2px)' }}>
           {hasName ? el.name : ''}
         </span>
-        {isOccupied && canViewLicensePlate && detectedPlate && (
-           <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${isWrongSlot ? 'bg-red-600 text-white border border-red-700' : 'bg-white border border-gray-400 text-black'}`} style={{ transform: 'translateZ(3px)' }}>
-             {isWrongSlot ? `⚠️ ${detectedPlate}` : detectedPlate}
+        {(isOccupied || isPendingPark) && canViewLicensePlate && detectedPlate && (
+           <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${isWrongSlot ? 'bg-red-600 text-white border border-red-700' : isPendingPark ? 'bg-purple-600 text-white border border-purple-700' : 'bg-white border border-gray-400 text-black'}`} style={{ transform: 'translateZ(3px)' }}>
+             {isWrongSlot ? `⚠️ ${detectedPlate}` : isPendingPark ? `⏳ ${detectedPlate}` : detectedPlate}
            </div>
         )}
-        <Car size={isOccupied && canViewLicensePlate ? 16 : 20} className={isWrongSlot ? 'text-red-600 animate-bounce' : isMaintenance ? 'text-red-500' : isReserved ? 'text-purple-500' : isHeld ? 'text-orange-500' : isOccupied ? 'text-rose-500' : 'text-slate-400 group-hover:text-[#06b6d4]'} style={{ transform: 'translateZ(5px)' }} />
+        <Car size={(isOccupied || isPendingPark) && canViewLicensePlate ? 16 : 20} className={isWrongSlot ? 'text-red-600 animate-bounce' : isPendingPark ? 'text-purple-600 animate-bounce' : isMaintenance ? 'text-red-500' : isReserved ? 'text-purple-500' : isHeld ? 'text-orange-500' : isOccupied ? 'text-rose-500' : 'text-slate-400 group-hover:text-[#06b6d4]'} style={{ transform: 'translateZ(5px)' }} />
       </div>
     );
   }
@@ -86,25 +91,26 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
        }
     }
     if (isWrongSlot) { bgColor = '#fef2f2'; borderColor = '#ef4444'; }
+    else if (isPendingPark) { bgColor = '#f5f3ff'; borderColor = '#a855f7'; }
     else if (isMaintenance) { bgColor = '#fee2e2'; borderColor = '#ef4444'; }
     else if (isReserved) { bgColor = vipBg; borderColor = vipBorder; }
     else if (isOccupied) { bgColor = '#fecdd3'; borderColor = '#e11d48'; }
     else if (isHeld) { bgColor = '#ffedd5'; borderColor = '#f97316'; }
     else if (isHovered) { bgColor = '#6ee7b7'; borderColor = '#059669'; }
     return (
-      <div style={{...style, ...maintenanceStyle, opacity: hasName ? 1 : 0.3, cursor: hasName ? 'pointer' : 'not-allowed', transform: `translateZ(${slotZ}px) rotateZ(${el.rot || 0}deg)`, borderColor, backgroundColor: bgColor, transition: slotTransition }} className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center group ${isWrongSlot ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]' : ''}`}
+      <div style={{...style, ...maintenanceStyle, opacity: hasName ? 1 : 0.3, cursor: hasName ? 'pointer' : 'not-allowed', transform: `translateZ(${slotZ}px) rotateZ(${el.rot || 0}deg)`, borderColor, backgroundColor: bgColor, transition: slotTransition }} className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center group ${isWrongSlot ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]' : isPendingPark ? 'animate-pulse ring-2 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.7)]' : ''}`}
            onMouseEnter={() => onMouseEnter(el.id)}
            onMouseLeave={onMouseLeave}
            onClick={(e) => handleClick(e, 'ev')}>
-        <span className={`text-[10px] font-bold ${isOccupied ? 'mb-0.5' : 'mb-1'} ${isWrongSlot ? 'text-red-700' : isMaintenance ? 'text-red-700' : isReserved ? 'text-purple-700' : isHeld ? 'text-orange-700' : isOccupied ? 'text-rose-700' : 'text-emerald-600'}`} style={{ transform: 'translateZ(2px)' }}>
+        <span className={`text-[10px] font-bold ${isOccupied || isPendingPark ? 'mb-0.5' : 'mb-1'} ${isWrongSlot ? 'text-red-700' : isPendingPark ? 'text-purple-700' : isMaintenance ? 'text-red-700' : isReserved ? 'text-purple-700' : isHeld ? 'text-orange-700' : isOccupied ? 'text-rose-700' : 'text-emerald-600'}`} style={{ transform: 'translateZ(2px)' }}>
           {hasName ? el.name : ''}
         </span>
-        {isOccupied && canViewLicensePlate && detectedPlate && (
-           <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${isWrongSlot ? 'bg-red-600 text-white border border-red-700' : 'bg-white border border-gray-400 text-black'}`} style={{ transform: 'translateZ(3px)' }}>
-             {isWrongSlot ? `⚠️ ${detectedPlate}` : detectedPlate}
+        {(isOccupied || isPendingPark) && canViewLicensePlate && detectedPlate && (
+           <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${isWrongSlot ? 'bg-red-600 text-white border border-red-700' : isPendingPark ? 'bg-purple-600 text-white border border-purple-700' : 'bg-white border border-gray-400 text-black'}`} style={{ transform: 'translateZ(3px)' }}>
+             {isWrongSlot ? `⚠️ ${detectedPlate}` : isPendingPark ? `⏳ ${detectedPlate}` : detectedPlate}
            </div>
         )}
-        <Zap size={isOccupied && canViewLicensePlate ? 16 : 20} className={isWrongSlot ? 'text-red-600 animate-bounce' : isMaintenance ? 'text-red-500' : isReserved ? 'text-purple-500' : isHeld ? 'text-orange-500' : isOccupied ? 'text-rose-500' : 'text-emerald-500'} style={{ transform: 'translateZ(5px)' }} />
+        <Zap size={(isOccupied || isPendingPark) && canViewLicensePlate ? 16 : 20} className={isWrongSlot ? 'text-red-600 animate-bounce' : isPendingPark ? 'text-purple-600 animate-bounce' : isMaintenance ? 'text-red-500' : isReserved ? 'text-purple-500' : isHeld ? 'text-orange-500' : isOccupied ? 'text-rose-500' : 'text-emerald-500'} style={{ transform: 'translateZ(5px)' }} />
       </div>
     );
   }
@@ -122,25 +128,26 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
        }
     }
     if (isWrongSlot) { bgColor = '#fef2f2'; borderColor = '#ef4444'; }
+    else if (isPendingPark) { bgColor = '#f5f3ff'; borderColor = '#a855f7'; }
     else if (isMaintenance) { bgColor = '#fee2e2'; borderColor = '#ef4444'; }
     else if (isReserved) { bgColor = vipBg; borderColor = vipBorder; }
     else if (isOccupied) { bgColor = '#fecdd3'; borderColor = '#e11d48'; }
     else if (isHeld) { bgColor = '#ffedd5'; borderColor = '#f97316'; }
     else if (isHovered) { bgColor = '#93c5fd'; borderColor = '#2563eb'; }
     return (
-      <div style={{...style, ...maintenanceStyle, opacity: hasName ? 1 : 0.3, cursor: hasName ? 'pointer' : 'not-allowed', transform: `translateZ(${slotZ}px) rotateZ(${el.rot || 0}deg)`, borderColor, backgroundColor: bgColor, transition: slotTransition }} className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center group ${isWrongSlot ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]' : ''}`}
+      <div style={{...style, ...maintenanceStyle, opacity: hasName ? 1 : 0.3, cursor: hasName ? 'pointer' : 'not-allowed', transform: `translateZ(${slotZ}px) rotateZ(${el.rot || 0}deg)`, borderColor, backgroundColor: bgColor, transition: slotTransition }} className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center group ${isWrongSlot ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]' : isPendingPark ? 'animate-pulse ring-2 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.7)]' : ''}`}
            onMouseEnter={() => onMouseEnter(el.id)}
            onMouseLeave={onMouseLeave}
            onClick={(e) => handleClick(e, 'handicap')}>
-        <span className={`text-[10px] font-bold ${isOccupied ? 'mb-0.5' : 'mb-1'} ${isWrongSlot ? 'text-red-700' : isMaintenance ? 'text-red-700' : isReserved ? 'text-purple-700' : isHeld ? 'text-orange-700' : isOccupied ? 'text-rose-700' : 'text-blue-600'}`} style={{ transform: 'translateZ(2px)' }}>
+        <span className={`text-[10px] font-bold ${isOccupied || isPendingPark ? 'mb-0.5' : 'mb-1'} ${isWrongSlot ? 'text-red-700' : isPendingPark ? 'text-purple-700' : isMaintenance ? 'text-red-700' : isReserved ? 'text-purple-700' : isHeld ? 'text-orange-700' : isOccupied ? 'text-rose-700' : 'text-blue-600'}`} style={{ transform: 'translateZ(2px)' }}>
           {hasName ? el.name : ''}
         </span>
-        {isOccupied && canViewLicensePlate && detectedPlate && (
-           <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${isWrongSlot ? 'bg-red-600 text-white border border-red-700' : 'bg-white border border-gray-400 text-black'}`} style={{ transform: 'translateZ(3px)' }}>
-             {isWrongSlot ? `⚠️ ${detectedPlate}` : detectedPlate}
+        {(isOccupied || isPendingPark) && canViewLicensePlate && detectedPlate && (
+           <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${isWrongSlot ? 'bg-red-600 text-white border border-red-700' : isPendingPark ? 'bg-purple-600 text-white border border-purple-700' : 'bg-white border border-gray-400 text-black'}`} style={{ transform: 'translateZ(3px)' }}>
+             {isWrongSlot ? `⚠️ ${detectedPlate}` : isPendingPark ? `⏳ ${detectedPlate}` : detectedPlate}
            </div>
         )}
-        <Accessibility size={isOccupied && canViewLicensePlate ? 16 : 20} className={isWrongSlot ? 'text-red-600 animate-bounce' : isMaintenance ? 'text-red-500' : isReserved ? 'text-purple-500' : isHeld ? 'text-orange-500' : isOccupied ? 'text-rose-500' : 'text-blue-500'} style={{ transform: 'translateZ(5px)' }} />
+        <Accessibility size={(isOccupied || isPendingPark) && canViewLicensePlate ? 16 : 20} className={isWrongSlot ? 'text-red-600 animate-bounce' : isPendingPark ? 'text-purple-600 animate-bounce' : isMaintenance ? 'text-red-500' : isReserved ? 'text-purple-500' : isHeld ? 'text-orange-500' : isOccupied ? 'text-rose-500' : 'text-blue-500'} style={{ transform: 'translateZ(5px)' }} />
       </div>
     );
   }
