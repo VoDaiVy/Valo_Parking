@@ -25,8 +25,8 @@ const statisticsQueryValidator = [
     .withMessage('endDate must be a valid ISO date'),
   query('mode')
     .optional()
-    .isIn(['7d', 'month', 'quarter', 'year'])
-    .withMessage('mode must be 7d, month, quarter, or year'),
+    .isIn(['7d', 'month', 'quarter', 'year', 'years'])
+    .withMessage('mode must be 7d, month, quarter, year, or years'),
   query('year')
     .optional()
     .isInt({ min: 2020, max: 2099 })

@@ -332,6 +332,90 @@ test('resolveModeDateRange: year has all 12 months', () => {
   assert.equal(result.granularity, 'month');
 });
 
+test('years mode creates one bucket per calendar year, not twelve monthly bars', () => {
+  const now = new Date('2028-06-15T12:00:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'years' }, now, 2026);
+  assert.equal(result.startDate.toISOString(), '2025-12-31T17:00:00.000Z');
+  assert.equal(result.endDate.toISOString(), '2028-12-31T17:00:00.000Z');
+  assert.equal(result.granularity, 'year');
+  assert.deepEqual(_private.generateBucketLabels(result.startDate, result.endDate, result.granularity), ['2026', '2027', '2028']);
+});
+
+test('years mode uses the Vietnam current year and handles no revenue history', () => {
+  const now = new Date('2026-12-31T17:30:00.000Z');
+  const result = _private.resolveModeDateRange({ mode: 'years' }, now);
+  assert.deepEqual(_private.generateBucketLabels(result.startDate, result.endDate, result.granularity), ['2027']);
+});
+
+test('years revenue API groups every source into annual totals including older transfer fees', async t => {
+  const statistics = require('../services/statisticsService');
+  const Booking = require('../models/Booking');
+  const BookingService = require('../models/BookingService');
+  const Subscription = require('../models/Subscription');
+  const SubscriptionRenewal = require('../models/SubscriptionRenewal');
+  const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRenewal');
+  const WalletTransaction = require('../models/WalletTransaction');
+  const Session = require('../models/Session');
+  const currentYear = _private.toVietnamLocal(new Date()).getUTCFullYear();
+  const firstYear = currentYear - 3;
+  const timelines = [];
+  const trafficTimelines = [];
+
+  t.mock.method(Booking, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  for (const Model of [Booking, BookingService, SubscriptionRenewal, MembershipEntitlementRenewal]) {
+    t.mock.method(Model, 'aggregate', async () => []);
+  }
+  t.mock.method(Session, 'aggregate', async pipeline => {
+    const timeline = pipeline.find(stage => stage.$group)?.$group._id.$dateToString;
+    trafficTimelines.push(timeline);
+    return [{ _id: `${currentYear}-09`, count: timeline.date === '$checkInTime' ? 158 : 156 }];
+  });
+  t.mock.method(Session, 'countDocuments', async () => 0);
+  for (const [Model, earliestYear, amounts] of [
+    [Subscription, currentYear - 1, [{ _id: String(currentYear - 1), amount: 100 }, { _id: String(currentYear), amount: 200 }]],
+    [WalletTransaction, firstYear, [{ _id: String(firstYear), amount: 50 }, { _id: String(currentYear), amount: 75 }]],
+  ]) {
+    t.mock.method(Model, 'aggregate', async pipeline => {
+      const group = pipeline.find(stage => stage.$group)?.$group;
+      if (group?.earliest) return [{ earliest: _private.startOfSpecificVietnamMonth(earliestYear, 1) }];
+      if (group?.amount && group._id === null) return [{ amount: amounts.reduce((sum, row) => sum + row.amount, 0), count: amounts.length }];
+      if (group?._id?.$dateToString) {
+        timelines.push(group._id.$dateToString);
+        return amounts;
+      }
+      return [];
+    });
+  }
+  const data = await statistics.getAdminPlatformRevenueStatistics({ mode: 'years' });
+  assert.equal(data.period.granularity, 'year');
+  assert.deepEqual(data.trend.map(row => row.period), Array.from({ length: 4 }, (_, index) => String(firstYear + index)));
+  assert.deepEqual(data.trend.map(row => row.totalRevenue), [50, 0, 100, 275]);
+  assert.equal(data.summary.totalRevenue, 425);
+  assert.equal(data.summary.sourceCompositionTotal, 425);
+  assert.equal(data.trend.reduce((sum, row) => sum + row.totalRevenue, 0), data.summary.totalRevenue);
+  assert.ok(data.availableYears.includes(firstYear));
+  assert.ok(timelines.length >= 2);
+  assert.ok(timelines.every(timeline => timeline.format === '%Y' && timeline.timezone === 'Asia/Ho_Chi_Minh'));
+  assert.equal(data.trafficGranularity, 'month');
+  assert.equal(data.traffic.length, 48);
+  assert.equal(data.traffic[0].period, `${firstYear}-01`);
+  assert.equal(data.traffic.at(-1).period, `${currentYear}-12`);
+  assert.equal(data.trafficSummary.totalEntries, 158);
+  assert.equal(data.trafficSummary.totalExits, 156);
+  assert.deepEqual(data.traffic.find(row => row.period === `${currentYear}-09`), { period: `${currentYear}-09`, entries: 158, exits: 156 });
+  assert.ok(trafficTimelines.every(timeline => timeline.format === '%Y-%m' && timeline.timezone === 'Asia/Ho_Chi_Minh'));
+});
+
+test('statistics validator accepts annual grouping and rejects unknown modes', async () => {
+  const { statisticsQueryValidator } = require('../validators/statisticsValidator');
+  const { validationResult } = require('express-validator');
+  for (const [mode, valid] of [['years', true], ['year', true], ['unsupported', false]]) {
+    const request = { query: { mode } };
+    for (const validator of statisticsQueryValidator) await validator.run(request);
+    assert.equal(validationResult(request).isEmpty(), valid, mode);
+  }
+});
+
 test('resolveModeDateRange: leap year February has 29 days', () => {
   const now = new Date('2028-02-15T12:00:00.000Z');
   const result = _private.resolveModeDateRange({ mode: 'month', year: '2028', month: '2' }, now);

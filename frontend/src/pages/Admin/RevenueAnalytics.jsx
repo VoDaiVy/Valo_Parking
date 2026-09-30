@@ -23,7 +23,8 @@ const MODE_OPTIONS = [
   { value: '7d', label: '7 Days' },
   { value: 'month', label: 'Month' },
   { value: 'quarter', label: 'Quarter' },
-  { value: 'year', label: 'Year' },
+  { value: 'year', label: 'Months in Year' },
+  { value: 'years', label: 'By Year' },
 ];
 
 const MONTHS = [
@@ -80,6 +81,7 @@ const pct = (value, total) => {
 
 const formatPeriodLabel = (label, granularity) => {
   if (!label) return '';
+  if (granularity === 'year') return label;
   if (granularity === 'month') {
     const [y, m] = label.split('-');
     return `${MONTHS[Number(m) - 1]?.slice(0, 3) || m} ${y}`;
@@ -179,7 +181,7 @@ export default function RevenueAnalytics() {
     setError('');
 
     const params = { mode };
-    if (mode !== '7d') params.year = String(selectedYear);
+    if (mode !== '7d' && mode !== 'years') params.year = String(selectedYear);
     if (mode === 'month') params.month = String(selectedMonth);
     if (mode === 'quarter') params.quarter = String(selectedQuarter);
 
@@ -205,6 +207,7 @@ export default function RevenueAnalytics() {
   const statusDistribution = data?.statusDistribution || {};
   const packageBreakdown = data?.packageBreakdown || [];
   const granularity = data?.period?.granularity || 'day';
+  const trafficGranularity = data?.trafficGranularity || granularity;
 
   return (
     <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-5 text-slate-200 lg:px-8">
@@ -229,7 +232,7 @@ export default function RevenueAnalytics() {
 
           <div className="flex flex-wrap items-center gap-2.5">
             <ModeMenu mode={mode} onChange={(m) => m !== mode && setMode(m)} />
-            {mode !== '7d' && (
+            {mode !== '7d' && mode !== 'years' && (
               <SecondarySelector
                 mode={mode}
                 year={selectedYear}
@@ -287,7 +290,7 @@ export default function RevenueAnalytics() {
                 <VehicleTrafficSection
                   traffic={traffic}
                   trafficSummary={trafficSummary}
-                  granularity={granularity}
+                  granularity={trafficGranularity}
                   reduceMotion={reduceMotion}
                 />
               </div>
@@ -434,6 +437,10 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
   const padding = { top: 16, right: 16, bottom: 24, left: 60 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
+  const isBarChart = granularity === 'year';
+  const bandWidth = isBarChart
+    ? plotWidth / Math.max(trend.length, 1)
+    : trend.length > 1 ? plotWidth / (trend.length - 1) : plotWidth;
 
   const sourceKeys = useMemo(() =>
     viewMode === 'total'
@@ -454,7 +461,9 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
   }, [trend, sourceKeys]);
 
   const xForIndex = (index) =>
-    padding.left + (trend.length <= 1 ? plotWidth / 2 : (index / (trend.length - 1)) * plotWidth);
+    padding.left + (isBarChart
+      ? bandWidth * (index + 0.5)
+      : trend.length <= 1 ? plotWidth / 2 : (index / (trend.length - 1)) * plotWidth);
   const yForValue = (value) =>
     padding.top + plotHeight - (safe(value) / maxValue) * plotHeight;
 
@@ -468,7 +477,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
 
   const hasActivity = trend.some((p) => sourceKeys.some((k) => safe(p[k]) > 0));
 
-  const labelCount = Math.min(trend.length, granularity === 'month' ? 12 : 7);
+  const labelCount = Math.min(trend.length, granularity === 'day' ? 7 : 12);
   const labelIndexes = useMemo(() => {
     if (trend.length <= labelCount) return new Set(trend.map((_, i) => i));
     const step = (trend.length - 1) / (labelCount - 1);
@@ -477,7 +486,9 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
     return set;
   }, [trend.length, labelCount]);
 
-  const bandWidth = trend.length > 1 ? plotWidth / (trend.length - 1) : plotWidth;
+  const barGroupWidth = Math.min(bandWidth * 0.72, 72);
+  const barGap = sourceKeys.length > 1 ? Math.min(3, barGroupWidth / (sourceKeys.length * 3)) : 0;
+  const barWidth = (barGroupWidth - barGap * (sourceKeys.length - 1)) / sourceKeys.length;
   const lineColors = viewMode === 'total' ? { totalRevenue: '#FACC15' } : SOURCE_COLORS;
 
   return (
@@ -490,7 +501,9 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
         <div>
           <h2 className="text-[18px] font-bold text-white">Revenue Trend</h2>
           <p className="mt-1 text-[12px] text-slate-400">
-            {viewMode === 'total' ? 'Total realized platform revenue' : 'Revenue broken down by source'} over the selected period.
+            {isBarChart
+              ? 'Annual revenue across years. Each column represents one year; the current year is year to date.'
+              : `${viewMode === 'total' ? 'Total realized platform revenue' : 'Revenue broken down by source'} over the selected period.`}
           </p>
         </div>
         <div className="flex items-center gap-6">
@@ -515,7 +528,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
 
       {hasActivity ? (
         <div className="relative w-full overflow-x-auto">
-          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[700px] w-full" role="img" aria-label="Revenue trend chart">
+          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[700px] w-full" role="img" aria-label={isBarChart ? 'Annual revenue bar chart' : 'Revenue trend chart'}>
             <defs>
               {sourceKeys.map((key) => (
                 <linearGradient key={`grad-${key}`} id={`grad-${key}`} x1="0" y1="0" x2="0" y2="1">
@@ -536,12 +549,30 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
               );
             })}
 
-            {sourceKeys.map((key, i) => (
-              <path key={`area-${key}`} d={makeAreaPath(key)} fill={`url(#grad-${key})`} />
-            ))}
-            {sourceKeys.map((key, i) => (
-              <path key={`line-${key}`} d={makePath(key)} fill="none" stroke={lineColors[key] || '#FACC15'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            ))}
+            {isBarChart ? trend.map((point, index) => (
+              <g key={`bars-${point.period}`}>
+                {sourceKeys.map((key, sourceIndex) => {
+                  const value = Math.max(0, safe(point[key]));
+                  return <rect
+                    key={key}
+                    x={xForIndex(index) - barGroupWidth / 2 + sourceIndex * (barWidth + barGap)}
+                    y={yForValue(value)}
+                    width={barWidth}
+                    height={yForValue(0) - yForValue(value)}
+                    rx="3"
+                    fill={lineColors[key] || '#FACC15'}
+                    opacity={hoveredIndex === null || hoveredIndex === index ? 1 : 0.6}
+                  />;
+                })}
+              </g>
+            )) : <>
+              {sourceKeys.map((key) => (
+                <path key={`area-${key}`} d={makeAreaPath(key)} fill={`url(#grad-${key})`} />
+              ))}
+              {sourceKeys.map((key) => (
+                <path key={`line-${key}`} d={makePath(key)} fill="none" stroke={lineColors[key] || '#FACC15'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              ))}
+            </>}
 
             {trend.map((point, index) => {
               const isHovered = hoveredIndex === index;
@@ -549,11 +580,11 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
                 <g key={point.period} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)}>
                   <rect x={xForIndex(index) - bandWidth / 2} y={padding.top} width={bandWidth} height={plotHeight} fill="transparent" cursor="crosshair" />
                   {isHovered && <line x1={xForIndex(index)} x2={xForIndex(index)} y1={padding.top} y2={padding.top + plotHeight} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />}
-                  {sourceKeys.map((key) => safe(point[key]) > 0 ? (
+                  {!isBarChart && sourceKeys.map((key) => safe(point[key]) > 0 ? (
                     <circle key={`dot-${key}`} cx={xForIndex(index)} cy={yForValue(point[key])} r={isHovered ? '4' : '0'} fill="#111111" stroke={lineColors[key] || '#FACC15'} strokeWidth="2" className="pointer-events-none" />
                   ) : null)}
                   {labelIndexes.has(index) && (
-                    <text x={xForIndex(index)} y={height - 4} textAnchor={index === 0 ? 'start' : index === trend.length - 1 ? 'end' : 'middle'} fill={isHovered ? 'rgba(255,255,255,0.8)' : 'rgba(148,163,184,0.6)'} fontSize="10" fontWeight="600" className="pointer-events-none">
+                    <text x={xForIndex(index)} y={height - 4} textAnchor={isBarChart ? 'middle' : index === 0 ? 'start' : index === trend.length - 1 ? 'end' : 'middle'} fill={isHovered ? 'rgba(255,255,255,0.8)' : 'rgba(148,163,184,0.6)'} fontSize="10" fontWeight="600" className="pointer-events-none">
                       {formatPeriodLabel(point.period, granularity)}
                     </text>
                   )}
@@ -706,9 +737,13 @@ function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMot
             <path d={makeArea('exits')} fill="url(#grad-exits)" />
             <path d={makeLine('entries')} fill="none" stroke="#34D399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             <path d={makeLine('exits')} fill="none" stroke="#FB7185" strokeWidth="2" strokeDasharray="5 3" strokeLinecap="round" strokeLinejoin="round" />
+            {traffic.length === 1 && <>
+              <circle cx={xFor(0)} cy={yFor(traffic[0].entries)} r="4" fill="#34D399"><title>{`Entries: ${formatNumber(traffic[0].entries)}`}</title></circle>
+              <circle cx={xFor(0)} cy={yFor(traffic[0].exits)} r="4" fill="#FB7185"><title>{`Exits: ${formatNumber(traffic[0].exits)}`}</title></circle>
+            </>}
             {traffic.map((p, i) => {
               if (traffic.length <= 7 || i === 0 || i === traffic.length - 1 || i === Math.floor(traffic.length / 2)) {
-                return <text key={p.period} x={xFor(i)} y={height - 2} textAnchor={i === 0 ? 'start' : i === traffic.length - 1 ? 'end' : 'middle'} fill="rgba(148,163,184,0.6)" fontSize="9" fontWeight="600">{formatPeriodLabel(p.period, granularity)}</text>;
+                return <text key={p.period} x={xFor(i)} y={height - 2} textAnchor={traffic.length === 1 ? 'middle' : i === 0 ? 'start' : i === traffic.length - 1 ? 'end' : 'middle'} fill="rgba(148,163,184,0.6)" fontSize="9" fontWeight="600">{formatPeriodLabel(p.period, granularity)}</text>;
               }
               return null;
             })}
