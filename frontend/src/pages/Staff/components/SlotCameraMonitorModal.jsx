@@ -699,6 +699,36 @@ export default function SlotCameraMonitorModal({
         const currentFloorKey = activeFloor?._id || activeFloor?.name || 'default';
         const freshSlots = data.slots;
 
+        // Auto-update slot polygons with real physical contours detected by AI
+        const polyList = Array.isArray(data.calibratedSlots) && data.calibratedSlots.length > 0
+          ? data.calibratedSlots
+          : freshSlots.filter((s) => s.polygon && Array.isArray(s.polygon) && s.polygon.length >= 3);
+
+        if (polyList.length > 0) {
+          const polyMap = new Map();
+          polyList.forEach((item) => {
+            if (item.slotCode && Array.isArray(item.polygon) && item.polygon.length >= 3) {
+              polyMap.set(item.slotCode.toUpperCase(), item.polygon);
+            }
+          });
+
+          if (polyMap.size > 0) {
+            setSlotRois((prev) => {
+              const updated = prev.map((s) => {
+                const p = polyMap.get(s.slotCode.toUpperCase());
+                return p ? { ...s, polygon: p } : s;
+              });
+              if (activeFloor) {
+                const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
+                try {
+                  localStorage.setItem(storageKey, JSON.stringify(updated));
+                } catch (e) {}
+              }
+              return updated;
+            });
+          }
+        }
+
         const currentPlates = new Set(
           freshSlots
             .filter((r) => r.occupied && (r.plate || r.detectedPlate))
@@ -967,10 +997,11 @@ export default function SlotCameraMonitorModal({
 
     // 2. Draw Slot Polygons
     slotRois.forEach((slot, sIdx) => {
-      const pts = slot.polygon.map(([nx, ny]) => toScreenCoords(nx, ny));
+      const result = resolveSlotStatus(slot.slotCode);
+      const activePoly = (result?.polygon && Array.isArray(result.polygon) && result.polygon.length >= 3) ? result.polygon : slot.polygon;
+      const pts = activePoly.map(([nx, ny]) => toScreenCoords(nx, ny));
       if (pts.length < 3) return;
 
-      const result = resolveSlotStatus(slot.slotCode);
       const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
       const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
       const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
@@ -1090,27 +1121,27 @@ export default function SlotCameraMonitorModal({
       // High-tech Cyber Slot Badge
       const labelX = pts[0][0];
       const labelY = pts[0][1] - 8;
-      ctx.font = 'bold 11px Inter, sans-serif';
+      ctx.font = 'bold 10px Inter, sans-serif';
       const plateText = result?.plate || result?.detectedPlate;
       const pendingPlate = result?.expectedPlate || result?.session?.licensePlate;
       const slotText = isWrongSlot
-        ? `🚨 WRONG: ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}${result?.expectedSlot ? ` ➔ EXP: ${result.expectedSlot}` : ''}`
+        ? `🚨 ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
         : isUnauthorized
-          ? `⚠️ UNREGISTERED: ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
+          ? `⚠️ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
           : isPendingPark
-            ? `⏳ IN TRANSIT: ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
+            ? `⏳ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
             : isOccupied
-              ? `✅ PARKED: ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
+              ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
               : slot.slotCode;
       const textWidth = ctx.measureText(slotText).width;
 
       ctx.fillStyle = isWrongSlot ? '#f43f5e' : isUnauthorized ? '#d97706' : isPendingPark ? '#7c3aed' : isOccupied ? '#059669' : 'rgba(15, 23, 42, 0.88)';
       ctx.beginPath();
-      ctx.roundRect(labelX, Math.max(8, labelY - 14), textWidth + 12, 18, 4);
+      ctx.roundRect(labelX, Math.max(8, labelY - 13), textWidth + 10, 16, 4);
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(slotText, labelX + 6, Math.max(21, labelY));
+      ctx.fillText(slotText, labelX + 5, Math.max(20, labelY));
     });
   }, [mode, boardCorners, toScreenCoords, slotRois, resolveSlotStatus, selectedSlotIndex, activeCornerIndex, activeHandleIndex, showGridOverlay]);
 

@@ -263,12 +263,91 @@ def health_check_alias():
     return health_check()
 
 
+def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
+    """
+    Trích xuất chính xác viền ô đỗ vật lý (nghiêng, dọc, ngang) từ camera sử dụng YOLOv8-Seg.
+    Tự động lọc trùng (NMS), nhóm theo 3 hàng và ánh xạ chính xác vào danh sách slotCodes.
+    """
+    if img is None or parking_slots_model is None:
+        return {}
+    try:
+        res = parking_slots_model(img, conf=0.18, verbose=False)[0]
+        if len(res.boxes) < 8:
+            return {}
+
+        raw = []
+        for i in range(len(res.boxes)):
+            if res.masks is not None and len(res.masks.xy[i]) >= 4:
+                pts = res.masks.xy[i].astype(np.int32)
+                rect = cv2.minAreaRect(pts)
+                box = cv2.boxPoints(rect)
+                cx, cy = float(rect[0][0]), float(rect[0][1])
+                area = cv2.contourArea(box.astype(np.int32))
+
+                pts_sort = sorted(box, key=lambda p: p[1])
+                top_two = sorted(pts_sort[:2], key=lambda p: p[0])
+                bot_two = sorted(pts_sort[2:], key=lambda p: p[0])
+                ordered_box = [top_two[0], top_two[1], bot_two[1], bot_two[0]]
+                norm_poly = [[round(float(p[0]/img_w), 4), round(float(p[1]/img_h), 4)] for p in ordered_box]
+                raw.append({'cx': cx, 'cy': cy, 'area': area, 'poly': norm_poly})
+
+        # NMS Deduplication theo diện tích và khoảng cách tâm
+        raw.sort(key=lambda s: s['area'], reverse=True)
+        dedup = []
+        for s in raw:
+            if s['area'] < 1200:
+                continue
+            if any(np.hypot(s['cx'] - ex['cx'], s['cy'] - ex['cy']) < 22 for ex in dedup):
+                continue
+            dedup.append(s)
+
+        if len(dedup) < 10:
+            return {}
+
+        # Trích xuất linh hoạt tiền tố khu vực theo tầng (VD: Floor 1: A,B,C,D; Floor 2: E,F,G,H)
+        zone_map = {}
+        for sc in (slot_codes or []):
+            p = sc[0].upper() if sc else 'A'
+            zone_map.setdefault(p, []).append(sc)
+        prefixes = sorted(zone_map.keys())
+        pA = prefixes[0] if len(prefixes) > 0 else 'E'
+        pB = prefixes[1] if len(prefixes) > 1 else 'F'
+        pC = prefixes[2] if len(prefixes) > 2 else 'G'
+        pD = prefixes[3] if len(prefixes) > 3 else 'H'
+
+        # Nhóm theo 3 hàng bằng toạ độ cy
+        dedup.sort(key=lambda s: s['cy'])
+        min_cy, max_cy = dedup[0]['cy'], dedup[-1]['cy']
+        span = max(1.0, max_cy - min_cy)
+
+        r0 = sorted([s for s in dedup if s['cy'] < min_cy + span * 0.32], key=lambda s: s['cx'])
+        r1 = sorted([s for s in dedup if min_cy + span * 0.32 <= s['cy'] < min_cy + span * 0.68], key=lambda s: s['cx'])
+        r2 = sorted([s for s in dedup if s['cy'] >= min_cy + span * 0.68], key=lambda s: s['cx'])
+
+        res_map = {}
+        # Hàng 0: Top Left (pA 1..5) & Top Right (pB 1..5)
+        for idx, s in enumerate(r0[:5]): res_map[f'{pA}{idx+1}'] = s['poly']
+        for idx, s in enumerate(r0[5:10]): res_map[f'{pB}{idx+1}'] = s['poly']
+        # Hàng 1: Mid Left (pA 6..10) & Mid Right (pB 6..7)
+        for idx, s in enumerate(r1[:5]): res_map[f'{pA}{idx+6}'] = s['poly']
+        for idx, s in enumerate(r1[5:7]): res_map[f'{pB}{idx+6}'] = s['poly']
+        # Hàng 2: Bottom Left (pC 1..5) & Bottom Right (pD 1..5)
+        for idx, s in enumerate(r2[:5]): res_map[f'{pC}{idx+1}'] = s['poly']
+        for idx, s in enumerate(r2[5:10]): res_map[f'{pD}{idx+1}'] = s['poly']
+
+        print(f"[Physical Slot Segmentation] 🎯 Extracted {len(res_map)} real slanted slot polygons (r0={len(r0)}, r1={len(r1)}, r2={len(r2)})")
+        return res_map
+    except Exception as err:
+        print(f"[Physical Slot Segmentation] Error: {err}")
+        return {}
+
+
 @app.post("/auto-detect-grid")
 async def auto_detect_grid(request: AutoDetectGridRequest):
     """
     AI Smart Diorama & Grid Auto-Detection:
     1. Sử dụng model YOLOv8-Seg (parking_slots_yolo.pt) phân đoạn chính xác viền ô đỗ vật lý.
-    2. Gom nhóm theo 3 hàng và gán nhãn tự động A1..A10, B1..B7, C1..C5, D1..D5.
+    2. Gom nhóm theo 3 hàng và gán nhãn tự động A1..A10, B1..B7, C1..C5, D1..D5 (hoặc E,F,G,H).
     3. Tự động bù khuyết điểm bằng phép chiếu phối cảnh (Bilinear Perspective Homography).
     """
     try:
@@ -310,73 +389,17 @@ async def auto_detect_grid(request: AutoDetectGridRequest):
         # =========================================================================
         # METHOD 1: YOLOv8-Seg Instance Segmentation (parking_slots_yolo.pt)
         # =========================================================================
-        calibrated_slots = []
         if img is not None and parking_slots_model is not None:
-            try:
-                res = parking_slots_model(img, conf=0.20, verbose=False)[0]
-                if len(res.boxes) >= 15:
-                    print(f"[AI Auto-Detect] 🚀 YOLOv8 detected {len(res.boxes)} slots!")
-                    items = []
-                    for i in range(len(res.boxes)):
-                        if res.masks is not None and len(res.masks.xy[i]) >= 4:
-                            pts = res.masks.xy[i].astype(np.int32)
-                            rect = cv2.minAreaRect(pts)
-                            box = cv2.boxPoints(rect)
-                            norm_box = [[p[0]/img_w, p[1]/img_h] for p in box]
-                            poly = _order_quad_points(norm_box)
-                            cx = float(rect[0][0]) / img_w
-                            cy = float(rect[0][1]) / img_h
-                        else:
-                            box = res.boxes.xyxy[i].cpu().numpy()
-                            x1, y1, x2, y2 = box
-                            poly = [[x1/img_w, y1/img_h], [x2/img_w, y1/img_h], [x2/img_w, y2/img_h], [x1/img_w, y2/img_h]]
-                            cx = (x1 + x2) / 2.0 / img_w
-                            cy = (y1 + y2) / 2.0 / img_h
-                        items.append({'cx': cx, 'cy': cy, 'poly': poly})
-                    
-                    # Tính toán độ dốc góc nghiêng mặt giấy của sa bàn
-                    row0_pts = sorted(items, key=lambda p: p['cy'])[:10]
-                    r0_x = np.array([p['cx'] for p in row0_pts])
-                    r0_y = np.array([p['cy'] for p in row0_pts])
-                    slope, _ = np.polyfit(r0_x, r0_y, 1) if len(row0_pts) >= 5 else (0.12, 0.0)
-
-                    for it in items:
-                        it['cy_corr'] = it['cy'] - slope * it['cx']
-
-                    items.sort(key=lambda it: it['cy_corr'])
-
-                    if len(items) == 27:
-                        r0 = sorted(items[:10], key=lambda it: it['cx'])
-                        r1 = sorted(items[10:17], key=lambda it: it['cx'])
-                        r2 = sorted(items[17:27], key=lambda it: it['cx'])
-                    else:
-                        min_cy = items[0]['cy_corr']
-                        max_cy = items[-1]['cy_corr']
-                        span = max(0.01, max_cy - min_cy)
-                        r0 = sorted([it for it in items if it['cy_corr'] < min_cy + span * 0.3], key=lambda it: it['cx'])
-                        r1 = sorted([it for it in items if min_cy + span * 0.3 <= it['cy_corr'] < min_cy + span * 0.68], key=lambda it: it['cx'])
-                        r2 = sorted([it for it in items if it['cy_corr'] >= min_cy + span * 0.68], key=lambda it: it['cx'])
-
-                    # Row 0: Top Left (p_A 1..5) & Top Right (p_B 1..5)
-                    for idx, it in enumerate(r0[:5]): calibrated_slots.append({'slotCode': f'{p_A}{idx+1}', 'polygon': it['poly']})
-                    for idx, it in enumerate(r0[5:10]): calibrated_slots.append({'slotCode': f'{p_B}{idx+1}', 'polygon': it['poly']})
-                    # Row 1: Mid Left (p_A 6..10) & Mid Right (p_B 6..7)
-                    for idx, it in enumerate(r1[:5]): calibrated_slots.append({'slotCode': f'{p_A}{idx+6}', 'polygon': it['poly']})
-                    for idx, it in enumerate(r1[5:7]): calibrated_slots.append({'slotCode': f'{p_B}{idx+6}', 'polygon': it['poly']})
-                    # Row 2: Bottom Left (p_C 1..5) & Bottom Right (p_D 1..5)
-                    for idx, it in enumerate(r2[:5]): calibrated_slots.append({'slotCode': f'{p_C}{idx+1}', 'polygon': it['poly']})
-                    for idx, it in enumerate(r2[5:10]): calibrated_slots.append({'slotCode': f'{p_D}{idx+1}', 'polygon': it['poly']})
-
-                    if len(calibrated_slots) == 27:
-                        print(f"[AI Calibration] 🎯 YOLOv8-Seg aligned all 27 slots for {p_A}, {p_B}, {p_C}, {p_D}!")
-                        return {
-                            "success": True,
-                            "model": "yolov8_segmentation",
-                            "totalSlots": 27,
-                            "slots": calibrated_slots
-                        }
-            except Exception as yolo_err:
-                print(f"[AI Calibration] YOLO auto-detect error: {yolo_err}")
+            phys_slots = _extract_physical_slot_polygons(img, slot_codes, img_w, img_h)
+            if len(phys_slots) >= 20:
+                calibrated_slots = [{'slotCode': sc, 'polygon': poly} for sc, poly in phys_slots.items()]
+                print(f"[AI Auto-Detect] 🎯 YOLOv8-Seg aligned {len(calibrated_slots)} physical slots for {p_A}, {p_B}, {p_C}, {p_D}!")
+                return {
+                    "success": True,
+                    "model": "yolov8_segmentation_nms",
+                    "totalSlots": len(calibrated_slots),
+                    "slots": calibrated_slots
+                }
 
         # Fallback to perspective diorama mapping
         final_corners = [
@@ -717,6 +740,15 @@ async def scan_parking_slots(request: ScanSlotsRequest):
 
         img_h, img_w = img.shape[:2]
 
+        # ─── BƯỚC 0: Tự động trích xuất viền ô đỗ thực tế (nghiêng, dọc, ngang) ───
+        physical_slots = _extract_physical_slot_polygons(img, [s.slotCode for s in request.slots], img_w, img_h)
+        if physical_slots:
+            print(f"[ALPR Engine] 🎯 Calibrated {len(physical_slots)} real slanted slot polygons from live camera!")
+            for slot_def in request.slots:
+                sc = slot_def.slotCode
+                if sc in physical_slots:
+                    slot_def.polygon = physical_slots[sc]
+
         # ─── BƯỚC 1: Chuyển tọa độ polygon sang pixel ─────────────────
         slot_pixel_polys = {}
         for slot_def in request.slots:
@@ -955,6 +987,9 @@ async def scan_parking_slots(request: ScanSlotsRequest):
                     'vote_count': vote,
                 }
 
+            if slot_def.polygon:
+                res['polygon'] = slot_def.polygon
+
             results.append(res)
 
             if res.get('occupied') and res.get('plate'):
@@ -972,10 +1007,14 @@ async def scan_parking_slots(request: ScanSlotsRequest):
               f"{sum(1 for r in results if r.get('occupied'))} occupied, "
               f"{scan_time:.2f}s")
 
+        calibrated_slots = [{"slotCode": s.slotCode, "polygon": s.polygon} for s in request.slots if s.polygon]
+
         return {
             "success": True,
             "totalSlots": len(results),
-            "slots": results
+            "slots": results,
+            "calibratedSlots": calibrated_slots,
+            "scanTime": round(scan_time, 2)
         }
 
     except Exception as e:

@@ -543,6 +543,9 @@ If isParkingLotScene is false:
       return null;
     };
 
+    let physicalCalibratedSlots = [];
+    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
     // Mode 1: Pure Gemini Vision or Force Deep Scan
     if (aiMode === 'gemini' || forceDeepScan) {
       const geminiSlots = await runGeminiVision();
@@ -564,7 +567,6 @@ If isParkingLotScene is false:
 
     // Mode 2: Local Edge ALPR
     if (scannedSlots.length === 0 && !isSceneInvalid) {
-      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
       try {
         console.log('[AI Slot Scan] Running Local Python Edge ALPR (0 token, offline)...');
         const aiResponse = await axios.post(`${aiServiceUrl}/scan-slots`, {
@@ -585,6 +587,10 @@ If isParkingLotScene is false:
             slots: [],
             model: 'local_edge_alpr',
           });
+        }
+
+        if (aiResponse.data && Array.isArray(aiResponse.data.calibratedSlots) && aiResponse.data.calibratedSlots.length > 0) {
+          physicalCalibratedSlots = aiResponse.data.calibratedSlots;
         }
 
         if (aiResponse.data && Array.isArray(aiResponse.data.slots) && aiResponse.data.slots.length > 0) {
@@ -623,10 +629,12 @@ If isParkingLotScene is false:
             const scUpper = def.slotCode.toUpperCase();
             const gSlot = geminiMap.get(scUpper);
             const lSlot = scannedSlots.find((s) => s.slotCode?.toUpperCase() === scUpper);
+            const slotPoly = lSlot?.polygon || def.polygon;
 
             if (gSlot && gSlot.occupied && gSlot.plate) {
               return {
                 ...def,
+                polygon: slotPoly,
                 occupied: true,
                 plate: gSlot.plate,
                 confidence: gSlot.confidence || 0.99,
@@ -637,11 +645,13 @@ If isParkingLotScene is false:
               return {
                 ...def,
                 ...lSlot,
+                polygon: slotPoly,
                 engine: 'local_alpr',
               };
             }
             return {
               ...def,
+              polygon: slotPoly,
               occupied: false,
               plate: null,
               confidence: 0.99,
@@ -651,6 +661,28 @@ If isParkingLotScene is false:
           usedModel = 'hybrid_edge_and_gemini_vision';
         }
       }
+    }
+
+    // Always fetch physical slot polygons from YOLO-Seg if not yet loaded
+    if (physicalCalibratedSlots.length === 0 && !isSceneInvalid) {
+      try {
+        const polyRes = await axios.post(`${aiServiceUrl}/auto-detect-grid`, {
+          image,
+          slotCodes: slots.map((s) => s.slotCode),
+        }, { timeout: 3500 });
+        if (polyRes.data && Array.isArray(polyRes.data.slots) && polyRes.data.slots.length > 0) {
+          physicalCalibratedSlots = polyRes.data.slots;
+        }
+      } catch (polyErr) {}
+    }
+
+    // Ensure all scannedSlots have real physical polygons
+    if (physicalCalibratedSlots.length > 0) {
+      const polyMap = new Map(physicalCalibratedSlots.map((cs) => [cs.slotCode.toUpperCase(), cs.polygon]));
+      scannedSlots = scannedSlots.map((s) => {
+        const p = polyMap.get(s.slotCode.toUpperCase()) || s.polygon;
+        return p ? { ...s, polygon: p } : s;
+      });
     }
 
     // If camera is misaligned, or both engines returned 0 slots (cannot see physical parking lot):
@@ -905,6 +937,7 @@ If isParkingLotScene is false:
         model: usedModel,
         totalSlots: enrichedSlots.length,
         slots: enrichedSlots,
+        calibratedSlots: physicalCalibratedSlots,
       });
     } catch (dbErr) {
       console.warn('[AI Slot Scan] Database cross-check warning:', dbErr.message);
@@ -913,6 +946,7 @@ If isParkingLotScene is false:
         model: usedModel,
         totalSlots: scannedSlots.length,
         slots: scannedSlots,
+        calibratedSlots: physicalCalibratedSlots,
       });
     }
   } catch (error) {

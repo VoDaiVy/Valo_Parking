@@ -2,3 +2,7 @@
 
 docs/*
 plans/*
+
+# Excel reports
+Report5_Test_Report_VALOParking.xlsx
+*.xlsx
