@@ -191,7 +191,7 @@ export default function AIBusynessForecast({
           <div>
             <p className="text-xs font-extrabold">Reference forecast only</p>
             <p className="mt-0.5 text-[11px] font-medium opacity-80">
-              This booking is outside the {data.forecastHorizonHours || 24}-hour pricing horizon. Dynamic Pricing is not applied; the chart is for planning only.
+              This date is outside the {data.forecastHorizonHours || 24}-hour forecast horizon. The chart is for planning only and never changes the parking price.
             </p>
           </div>
         </div>

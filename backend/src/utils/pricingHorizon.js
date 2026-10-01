@@ -31,7 +31,6 @@ function buildForecastHorizonMetadata({ date, hour, horizonHours = DEFAULT_FOREC
     forecastHorizonHours: normalizedHorizon,
     leadTimeHours: leadTimeHours === null ? null : Number(leadTimeHours.toFixed(2)),
     isReferenceOnly,
-    isDynamicPricingEligible: !isReferenceOnly,
   };
 }
 

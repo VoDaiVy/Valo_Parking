@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, Loader2, AlertCircle, Save, CheckCircle2, RotateCcw, Clock3 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
-import DynamicPricingAdminTabs from '../../components/Admin/DynamicPricingAdminTabs';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
 
 const formatCurrency = (value = 0) => `${currencyFormatter.format(Number(value) || 0)} VND`;
 
-const serializeConfig = (timeBlocks, caps) => JSON.stringify({ timeBlocks, caps });
+const DEFAULT_DAY_NIGHT = {
+  day: { isActive: false, startHour: 6, price: 50000 },
+  night: { isActive: false, startHour: 18, price: 70000 },
+};
+
+const serializeConfig = (timeBlocks, dayNightPricing, pricePolicies) => JSON.stringify({ timeBlocks, dayNightPricing, pricePolicies });
 
 const formatHour = (hour) => {
   const value = Number(hour) || 0;
@@ -136,7 +140,7 @@ function PricingHeader({ status }) {
           <Edit2 size={12} /> Pricing
         </div>
         <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Pricing Management</h1>
-        <p className="mt-1 text-sm font-medium text-blue-100/65">Configure time blocks and price caps for parking sessions.</p>
+        <p className="mt-1 text-sm font-medium text-blue-100/65">Manage time blocks and calendar pricing policies.</p>
       </div>
       <div className={`group inline-flex h-9 w-fit items-center gap-2 rounded-full border px-3 text-xs font-black transition hover:shadow-[0_0_22px_rgba(34,197,94,0.14)] ${
         status.tone === 'success'
@@ -187,7 +191,7 @@ function PricingScheduleTimeline({ timeBlocks, status }) {
         <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-xl font-black text-white">24-Hour Pricing Schedule</h2>
-            <p className="text-sm font-medium text-blue-100/60">Read-only timeline generated from current time blocks.</p>
+            <p className="text-sm font-medium text-blue-100/60">Pricing schedule generated from the time blocks below.</p>
           </div>
           <span className="text-xs font-bold uppercase tracking-wide text-blue-100/50">00:00 - 24:00</span>
         </div>
@@ -330,7 +334,7 @@ function TimeBlockEditor({ timeBlocks, onAdd, onChange, onRemove }) {
   return (
     <section className="mb-8">
       <SectionHeader
-        title="Time Blocks"
+        title="Hourly time blocks"
         subtitle="Set the hourly pricing schedule for a full parking day."
         action={(
           <button onClick={onAdd} className="group inline-flex items-center gap-2 rounded-xl border border-yellow-500/30 px-3 py-2 text-sm font-black text-yellow-300 transition duration-200 hover:bg-yellow-500/10 active:scale-[0.98] motion-reduce:transition-none motion-reduce:transform-none">
@@ -362,50 +366,7 @@ function TimeBlockEditor({ timeBlocks, onAdd, onChange, onRemove }) {
   );
 }
 
-function PriceCapsSection({ caps, setCaps }) {
-  const inputClass = `w-full bg-[#171717] border border-white/10 rounded-xl pl-4 pr-14 py-3 text-sm font-bold text-white outline-none transition duration-200 focus:-translate-y-0.5 focus:border-gold focus:ring-1 focus:ring-gold/50 focus:shadow-[0_10px_24px_rgba(245,197,66,0.08)] font-mono motion-reduce:transition-none motion-reduce:transform-none ${numberNoSpinnerClass}`;
-
-  return (
-    <section className="mb-8 border-t border-white/10 pt-6">
-      <SectionHeader title="Price Caps" subtitle="Maximum charge limits for long parking sessions." />
-      <div className="grid gap-6 md:grid-cols-2 md:divide-x md:divide-white/10">
-        <div className="md:pr-6">
-          <label className="block text-[10px] font-black uppercase tracking-widest text-blue-100/55">12-HOUR MAXIMUM</label>
-          <div className="relative mt-2">
-            <input
-              type="number"
-              min="0"
-              step="1000"
-              value={caps.cap12h}
-              onChange={(e) => setCaps({ ...caps, cap12h: e.target.value === '' ? '' : Number(e.target.value) })}
-              className={inputClass}
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs font-black text-blue-100/60">VND</span>
-          </div>
-          <p className="mt-2 text-sm font-medium text-blue-100/60">Maximum charge for a continuous 12-hour stay.</p>
-        </div>
-
-        <div className="md:pl-6">
-          <label className="block text-[10px] font-black uppercase tracking-widest text-blue-100/55">24-HOUR MAXIMUM</label>
-          <div className="relative mt-2">
-            <input
-              type="number"
-              min="0"
-              step="1000"
-              value={caps.cap24h}
-              onChange={(e) => setCaps({ ...caps, cap24h: e.target.value === '' ? '' : Number(e.target.value) })}
-              className={inputClass}
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs font-black text-blue-100/60">VND</span>
-          </div>
-          <p className="mt-2 text-sm font-medium text-blue-100/60">Maximum charge for a continuous 24-hour stay.</p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PricingSummary({ timeBlocks, caps, status }) {
+function PricingSummary({ timeBlocks, status }) {
   const prices = timeBlocks.map((block) => Number(block.price)).filter((price) => Number.isFinite(price));
   const lowest = prices.length ? Math.min(...prices) : 0;
   const highest = prices.length ? Math.max(...prices) : 0;
@@ -417,8 +378,6 @@ function PricingSummary({ timeBlocks, caps, status }) {
         <span>{timeBlocks.length} time blocks</span>
         <span>Lowest rate: <strong className="font-mono text-white">{formatCurrency(lowest)}</strong></span>
         <span>Highest rate: <strong className="font-mono text-white">{formatCurrency(highest)}</strong></span>
-        <span>12h cap: <strong className="font-mono text-white">{formatCurrency(caps.cap12h)}</strong></span>
-        <span>24h cap: <strong className="font-mono text-white">{formatCurrency(caps.cap24h)}</strong></span>
         <span className={status.tone === 'success' ? 'text-green-300' : status.tone === 'danger' ? 'text-red-300' : 'text-yellow-300'}>{status.label}</span>
       </div>
     </section>
@@ -457,6 +416,84 @@ function PricingSaveBar({ saving, onSave, onReset, error, success, hasUnsavedCha
   );
 }
 
+const weekDays = [
+  ['Sun', 0], ['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6],
+];
+
+function PolicyAdjustmentInput({ value, onChange }) {
+  const [emptyDirection, setEmptyDirection] = useState('increase');
+  const direction = Number(value) === 0 ? emptyDirection : Number(value) < 0 ? 'decrease' : 'increase';
+  const magnitude = value === '' ? '' : Math.abs(Number(value));
+  const limit = direction === 'decrease' ? 100 : 500;
+  const invalid = value === '' || !Number.isFinite(Number(value)) || magnitude > limit;
+
+  return (
+    <div>
+      <span className="text-xs font-bold text-white/50">Điều chỉnh giá</span>
+      <div className="mt-2 flex gap-2">
+        <select aria-label="Loại điều chỉnh giá" value={direction} onChange={(event) => {
+          const next = event.target.value;
+          setEmptyDirection(next);
+          onChange(value === '' ? '' : (next === 'decrease' ? -1 : 1) * magnitude);
+        }} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-gold">
+          <option value="increase">Tăng giá</option>
+          <option value="decrease">Giảm giá</option>
+        </select>
+        <div className="flex w-24 shrink-0 items-center rounded-xl border border-white/10 bg-black focus-within:border-gold">
+          <input aria-label="Phần trăm điều chỉnh" aria-invalid={invalid} type="number" min="0" max={limit} step="any" value={magnitude} onChange={(event) => {
+            setEmptyDirection(direction);
+            onChange(event.target.value === '' ? '' : (direction === 'decrease' ? -1 : 1) * Math.abs(Number(event.target.value)));
+          }} className={`w-full min-w-0 bg-transparent px-3 py-3 text-sm tabular-nums text-white outline-none ${numberNoSpinnerClass}`} />
+          <span className="pr-3 text-xs font-black text-white/40">%</span>
+        </div>
+      </div>
+      <p className={`mt-1.5 text-xs ${invalid ? 'text-red-300' : 'text-white/40'}`}>{direction === 'decrease' ? 'Giảm tối đa 100%' : 'Tăng tối đa 500%'}</p>
+    </div>
+  );
+}
+
+function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
+  const toggleValue = (index, field, value) => {
+    const current = policies[index][field] || [];
+    onChange(index, field, current.includes(value)
+      ? current.filter((item) => item !== value)
+      : [...current, value]);
+  };
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 md:p-7">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-yellow-300">Calendar policies</p>
+          <h2 className="mt-2 text-2xl font-black text-white">Day, month & holiday pricing</h2>
+          <p className="mt-1 max-w-2xl text-sm text-blue-100/50">Set a percentage increase or decrease. If several policies match, the highest priority wins; a date range wins ties over month and weekday.</p>
+        </div>
+        <button type="button" onClick={onAdd} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gold px-5 text-sm font-black text-black"><Plus size={16} /> Add policy</button>
+      </div>
+
+      <div className="space-y-4">
+        {policies.map((policy, index) => (
+          <article key={policy._id || index} className="rounded-2xl border border-white/10 bg-black/25 p-4 md:p-5">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_minmax(230px,1.2fr)_80px_auto]">
+              <label><span className="text-xs font-bold text-white/50">Policy name</span><input value={policy.name} onChange={(event) => onChange(index, 'name', event.target.value)} placeholder="Tet holiday 2027" className="mt-2 w-full rounded-xl border border-white/10 bg-black px-3 py-3 text-sm text-white outline-none focus:border-gold" /></label>
+              <label><span className="text-xs font-bold text-white/50">Applies by</span><select value={policy.scope} onChange={(event) => onChange(index, 'scope', event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-gold"><option value="weekday">Day of week</option><option value="month">Month</option><option value="date_range">Holiday / date range</option></select></label>
+              <PolicyAdjustmentInput value={policy.adjustmentPercent} onChange={(value) => onChange(index, 'adjustmentPercent', value)} />
+              <label><span className="text-xs font-bold text-white/50">Priority</span><input type="number" min="0" max="10000" value={policy.priority} onChange={(event) => onChange(index, 'priority', Number(event.target.value))} className={`mt-2 w-full rounded-xl border border-white/10 bg-black px-3 py-3 text-sm text-white outline-none focus:border-gold ${numberNoSpinnerClass}`} /></label>
+              <div className="flex items-end gap-2"><button type="button" onClick={() => onChange(index, 'isActive', !policy.isActive)} className={`h-11 rounded-xl border px-4 text-xs font-black ${policy.isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-white/40'}`}>{policy.isActive ? 'Active' : 'Off'}</button><button type="button" onClick={() => onRemove(index)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"><Trash2 size={16} /></button></div>
+            </div>
+
+            {policy.scope === 'weekday' && <div className="mt-4 flex flex-wrap gap-2">{weekDays.map(([label, value]) => <button key={value} type="button" onClick={() => toggleValue(index, 'daysOfWeek', value)} className={`rounded-lg border px-3 py-2 text-xs font-black ${policy.daysOfWeek?.includes(value) ? 'border-gold bg-gold text-black' : 'border-white/10 text-white/50'}`}>{label}</button>)}</div>}
+            {policy.scope === 'month' && <div className="mt-4 flex flex-wrap gap-2">{Array.from({ length: 12 }, (_, month) => month + 1).map((month) => <button key={month} type="button" onClick={() => toggleValue(index, 'months', month)} className={`rounded-lg border px-3 py-2 text-xs font-black ${policy.months?.includes(month) ? 'border-gold bg-gold text-black' : 'border-white/10 text-white/50'}`}>Month {month}</button>)}</div>}
+            {policy.scope === 'date_range' && <div className="mt-4 grid max-w-xl gap-3 sm:grid-cols-2"><label><span className="text-xs font-bold text-white/50">From date</span><input type="date" value={policy.startDate || ''} onChange={(event) => onChange(index, 'startDate', event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black px-3 py-3 text-sm text-white [color-scheme:dark]" /></label><label><span className="text-xs font-bold text-white/50">To date</span><input type="date" value={policy.endDate || ''} onChange={(event) => onChange(index, 'endDate', event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black px-3 py-3 text-sm text-white [color-scheme:dark]" /></label></div>}
+            <p className="mt-3 text-xs text-white/35">{Number(policy.adjustmentPercent) < 0 ? `Decrease ${Math.abs(Number(policy.adjustmentPercent))}%` : `Increase ${Number(policy.adjustmentPercent) || 0}%`} from the applicable base price.</p>
+          </article>
+        ))}
+        {policies.length === 0 && <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center text-sm text-white/40">No calendar policy. The base price applies every day.</div>}
+      </div>
+    </section>
+  );
+}
+
 export default function PricingManagement() {
   const [activeTab, setActiveTab] = useState('time-blocks');
   const [config, setConfig] = useState(null);
@@ -466,7 +503,8 @@ export default function PricingManagement() {
   const [success, setSuccess] = useState('');
 
   const [timeBlocks, setTimeBlocks] = useState([]);
-  const [caps, setCaps] = useState({ cap12h: 100000, cap24h: 180000 });
+  const [dayNightPricing, setDayNightPricing] = useState(DEFAULT_DAY_NIGHT);
+  const [pricePolicies, setPricePolicies] = useState([]);
   const [baselineConfig, setBaselineConfig] = useState('');
 
   const fetchConfig = async ({ silent = false } = {}) => {
@@ -479,14 +517,13 @@ export default function PricingManagement() {
       const data = await res.json();
       if (data.success && data.data) {
         const nextBlocks = data.data.timeBlocks || [];
-        const nextCaps = {
-          cap12h: data.data.cap12h || 100000,
-          cap24h: data.data.cap24h || 180000
-        };
+        const nextDayNight = data.data.dayNightPricing || DEFAULT_DAY_NIGHT;
+        const nextPolicies = data.data.pricePolicies || [];
         setConfig(data.data);
         setTimeBlocks(nextBlocks);
-        setCaps(nextCaps);
-        setBaselineConfig(serializeConfig(nextBlocks, nextCaps));
+        setDayNightPricing(nextDayNight);
+        setPricePolicies(nextPolicies);
+        setBaselineConfig(serializeConfig(nextBlocks, nextDayNight, nextPolicies));
       }
     } catch (err) {
       console.error(err);
@@ -520,16 +557,30 @@ export default function PricingManagement() {
     setTimeBlocks(newBlocks);
   };
 
-  const handleCapsChange = (nextCaps) => {
+  const handleAddPolicy = () => {
     setSuccess('');
-    setCaps(nextCaps);
+    setPricePolicies((current) => [...current, {
+      name: '', scope: 'weekday', daysOfWeek: [1], months: [], startDate: '', endDate: '', adjustmentPercent: 0, priority: 0, isActive: true,
+    }]);
+  };
+
+  const handlePolicyChange = (index, field, value) => {
+    setSuccess('');
+    setError('');
+    setPricePolicies((current) => current.map((policy, policyIndex) => policyIndex === index ? { ...policy, [field]: value } : policy));
+  };
+
+  const handleRemovePolicy = (index) => {
+    setSuccess('');
+    setPricePolicies((current) => current.filter((_, policyIndex) => policyIndex !== index));
   };
 
   const handleResetChanges = () => {
     if (!baselineConfig) return;
     const parsed = JSON.parse(baselineConfig);
     setTimeBlocks(parsed.timeBlocks);
-    setCaps(parsed.caps);
+    setDayNightPricing(parsed.dayNightPricing || DEFAULT_DAY_NIGHT);
+    setPricePolicies(parsed.pricePolicies || []);
     setError('');
     setSuccess('');
   };
@@ -589,9 +640,34 @@ export default function PricingManagement() {
       return;
     }
 
-    if (caps.cap12h === '' || caps.cap12h < 0 || caps.cap24h === '' || caps.cap24h < 0) {
-      setError('Price caps must be valid positive numbers.');
+    for (const [period, block] of Object.entries(dayNightPricing)) {
+      if (!Number.isInteger(Number(block.startHour)) || Number(block.startHour) < 0 || Number(block.startHour) > 23
+        || block.price === '' || !Number.isFinite(Number(block.price)) || Number(block.price) < 0) {
+        setError(`${period === 'day' ? 'Day' : 'Night'} pricing needs a valid start hour and non-negative price.`);
+        return;
+      }
+    }
+    if ((Number(dayNightPricing.day.startHour) + 12) % 24 !== Number(dayNightPricing.night.startHour)) {
+      setError('Day and night blocks must be consecutive and exactly 12 hours each.');
       return;
+    }
+    for (const policy of pricePolicies) {
+      if (!policy.name?.trim() || policy.adjustmentPercent === '' || !Number.isFinite(Number(policy.adjustmentPercent)) || Number(policy.adjustmentPercent) < -100 || Number(policy.adjustmentPercent) > 500) {
+        setError('Mỗi chính sách cần có tên và phần trăm hợp lệ: giảm tối đa 100%, tăng tối đa 500%.');
+        return;
+      }
+      if (policy.scope === 'weekday' && !policy.daysOfWeek?.length) {
+        setError(`Select at least one weekday for ${policy.name}.`);
+        return;
+      }
+      if (policy.scope === 'month' && !policy.months?.length) {
+        setError(`Select at least one month for ${policy.name}.`);
+        return;
+      }
+      if (policy.scope === 'date_range' && (!policy.startDate || !policy.endDate || policy.startDate > policy.endDate)) {
+        setError(`Choose a valid date range for ${policy.name}.`);
+        return;
+      }
     }
 
     try {
@@ -606,7 +682,11 @@ export default function PricingManagement() {
         },
         body: JSON.stringify({
           timeBlocks,
-          ...caps
+          dayNightPricing,
+          pricePolicies,
+          // The existing API requires these legacy fields, even without cap controls.
+          cap12h: config.cap12h ?? 100000,
+          cap24h: config.cap24h ?? 180000,
         })
       });
       const data = await res.json();
@@ -626,8 +706,8 @@ export default function PricingManagement() {
 
   const scheduleStatus = useMemo(() => getScheduleStatus(timeBlocks), [timeBlocks]);
   const hasUnsavedChanges = useMemo(
-    () => Boolean(baselineConfig) && serializeConfig(timeBlocks, caps) !== baselineConfig,
-    [baselineConfig, caps, timeBlocks]
+    () => Boolean(baselineConfig) && serializeConfig(timeBlocks, dayNightPricing, pricePolicies) !== baselineConfig,
+    [baselineConfig, dayNightPricing, pricePolicies, timeBlocks]
   );
 
   if (loading) {
@@ -646,10 +726,7 @@ export default function PricingManagement() {
         <nav className="mb-7 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.035] p-1.5" aria-label="Pricing sections">
           {[
             ['time-blocks', 'Time Blocks'],
-            ['dynamic', 'Dynamic Pricing'],
-            ['rules', 'Pricing Rules'],
-            ['suggestions', 'Suggestions'],
-            ['history', 'History & Stats'],
+            ['policies', 'Calendar Policies'],
           ].map(([value, label]) => (
             <button
               key={value}
@@ -666,6 +743,7 @@ export default function PricingManagement() {
 
         {activeTab === 'time-blocks' ? (
           <>
+
             <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} />
             <TimeBlockEditor
               timeBlocks={timeBlocks}
@@ -673,24 +751,19 @@ export default function PricingManagement() {
               onChange={handleTimeBlockChange}
               onRemove={handleRemoveTimeBlock}
             />
-            <PriceCapsSection caps={caps} setCaps={handleCapsChange} />
-            <PricingSummary timeBlocks={timeBlocks} caps={caps} status={scheduleStatus} />
+            <PricingSummary timeBlocks={timeBlocks} status={scheduleStatus} />
           </>
-        ) : (
-          <DynamicPricingAdminTabs activeTab={activeTab} />
-        )}
+        ) : <PricePolicyEditor policies={pricePolicies} onAdd={handleAddPolicy} onChange={handlePolicyChange} onRemove={handleRemovePolicy} />}
       </div>
 
-      {activeTab === 'time-blocks' && (
-        <PricingSaveBar
+      <PricingSaveBar
           saving={saving}
           onSave={handleSave}
           onReset={handleResetChanges}
           error={error}
           success={success}
           hasUnsavedChanges={hasUnsavedChanges}
-        />
-      )}
+      />
     </div>
   );
 }

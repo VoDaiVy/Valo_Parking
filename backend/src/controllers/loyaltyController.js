@@ -13,18 +13,20 @@ const pagination = (query) => {
 exports.getAccount = async (req, res, next) => {
   try {
     const { page, limit, skip } = pagination(req.query);
-    const account = await LoyaltyAccount.findOneAndUpdate(
-      { userId: req.user._id },
-      { $setOnInsert: { userId: req.user._id, balance: 0 } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
-    const [transactions, total] = await Promise.all([
+    const { loyaltyAccount: account } = await loyaltyService.expirePoints({ userId: req.user._id });
+    const [transactions, total, nextExpiringLot] = await Promise.all([
       PointTransaction.find({ loyaltyAccountId: account._id })
         .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
       PointTransaction.countDocuments({ loyaltyAccountId: account._id }),
+      PointTransaction.findOne({
+        loyaltyAccountId: account._id,
+        type: 'EARN',
+        remainingAmount: { $gt: 0 },
+        expiresAt: { $gt: new Date() },
+      }).sort({ expiresAt: 1 }).select('remainingAmount expiresAt').lean(),
     ]);
 
     res.json({
@@ -32,6 +34,9 @@ exports.getAccount = async (req, res, next) => {
       data: {
         account,
         transactions,
+        nextPointExpiry: nextExpiringLot
+          ? { points: nextExpiringLot.remainingAmount, expiresAt: nextExpiringLot.expiresAt }
+          : null,
         pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
     });

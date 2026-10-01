@@ -1,5 +1,4 @@
 const TicketPackage = require('../models/TicketPackage');
-const dynamicPricingEngine = require('../services/dynamicPricingEngine');
 
 // Get active ticket packages (For Customer/Kiosk)
 exports.getActivePackages = async (req, res) => {
@@ -8,7 +7,7 @@ exports.getActivePackages = async (req, res) => {
       isActive: true,
       type: { $in: ['monthly', 'yearly'] },
     }).sort({ type: -1, price: 1 });
-    const pricedPackages = await Promise.all(packages.map(async (pkg) => {
+    const pricedPackages = packages.map((pkg) => {
       const base = pkg.toObject();
       const common = {
         durationMonths: pkg.type === 'yearly' ? 12 : 1,
@@ -16,12 +15,13 @@ exports.getActivePackages = async (req, res) => {
           ? ['Reserved VIP slots', '12 free services', 'Priority parking access']
           : ['Reserved VIP slots', 'Priority parking access'],
       };
-      try {
-        const price = await dynamicPricingEngine.getEffectivePrice({
-          priceType: 'package',
-          packageId: pkg._id,
-          basePrice: pkg.price,
-        });
+      const price = {
+        basePrice: pkg.price,
+        adjustedPrice: pkg.price,
+        changePercent: 0,
+        busynessScore: null,
+        level: null,
+      };
         return {
           ...base,
           ...common,
@@ -32,18 +32,7 @@ exports.getActivePackages = async (req, res) => {
           ...(price.adjustedPrice < price.basePrice ? { priceLabel: 'Giá ưu đãi' } : {}),
           ...(price.adjustedPrice > price.basePrice ? { priceLabel: 'Giá cao điểm' } : {}),
         };
-      } catch (error) {
-        console.error(`[DynamicPricing] Package ${pkg._id} fallback:`, error.message);
-        return {
-          ...base,
-          ...common,
-          adjustedPrice: pkg.price,
-          changePercent: 0,
-          busynessScore: null,
-          level: null,
-        };
-      }
-    }));
+    });
     res.status(200).json({ success: true, data: pricedPackages });
   } catch (error) {
     console.error('Error fetching active ticket packages:', error);

@@ -6,6 +6,28 @@ const timeBlockSchema = new mongoose.Schema({
   price: { type: Number, required: true }
 }, { _id: false });
 
+const twelveHourBlockSchema = new mongoose.Schema({
+  isActive: { type: Boolean, default: false },
+  startHour: { type: Number, required: true, min: 0, max: 23 },
+  price: { type: Number, required: true, min: 0 },
+}, { _id: false });
+
+const pricePolicySchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  scope: {
+    type: String,
+    enum: ['weekday', 'month', 'date_range'],
+    required: true,
+  },
+  daysOfWeek: [{ type: Number, min: 0, max: 6 }],
+  months: [{ type: Number, min: 1, max: 12 }],
+  startDate: { type: String, default: null },
+  endDate: { type: String, default: null },
+  adjustmentPercent: { type: Number, required: true, min: -100, max: 500 },
+  priority: { type: Number, default: 0, min: 0, max: 10000 },
+  isActive: { type: Boolean, default: true },
+}, { _id: true });
+
 const pricingConfigSchema = new mongoose.Schema(
   {
     timeBlocks: {
@@ -27,6 +49,20 @@ const pricingConfigSchema = new mongoose.Schema(
       type: Number,
       required: true,
       default: 180000,
+    },
+    dayNightPricing: {
+      day: {
+        type: twelveHourBlockSchema,
+        default: () => ({ isActive: false, startHour: 6, price: 50000 }),
+      },
+      night: {
+        type: twelveHourBlockSchema,
+        default: () => ({ isActive: false, startHour: 18, price: 70000 }),
+      },
+    },
+    pricePolicies: {
+      type: [pricePolicySchema],
+      default: [],
     },
     isActive: {
       type: Boolean,

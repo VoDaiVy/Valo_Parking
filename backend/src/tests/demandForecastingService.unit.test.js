@@ -133,6 +133,5 @@ test('far-date daily forecast is explicitly reference-only', async () => {
     forecastHorizonHours: 24,
   });
   assert.equal(result.isReferenceOnly, true);
-  assert.equal(result.isDynamicPricingEligible, false);
   assert.equal(result.forecastHorizonHours, 24);
 });

@@ -614,6 +614,11 @@ exports.getPricingConfig = async (req, res, next) => {
       ],
       cap12h: 100000,
       cap24h: 180000,
+      dayNightPricing: {
+        day: { isActive: false, startHour: 6, price: 50000 },
+        night: { isActive: false, startHour: 18, price: 70000 },
+      },
+      pricePolicies: [],
     };
     res.status(200).json({ success: true, data: config || DEFAULT_CONFIG });
   } catch (err) {

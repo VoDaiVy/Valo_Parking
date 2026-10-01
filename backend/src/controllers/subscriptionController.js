@@ -15,7 +15,6 @@ const {
   isMembershipQrAvailable,
 } = require('../services/membershipQrService');
 const { validationResult } = require('express-validator');
-const dynamicPricingEngine = require('../services/dynamicPricingEngine');
 const loyaltyService = require('../services/loyaltyService');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const {
@@ -67,14 +66,7 @@ exports.createSubscriptionPayment = async (req, res, next) => {
       slots,
     });
 
-    // Always resolve the authoritative adjusted price on the server. The client-provided
-    // adjustedPrice is informational only and is never trusted for payment calculation.
-    const dynamicPrice = await dynamicPricingEngine.getEffectivePrice({
-      priceType: 'package',
-      packageId: ticketPackage._id,
-      basePrice: ticketPackage.price,
-    });
-    const amount = dynamicPrice.adjustedPrice * Math.max(1, slots.length);
+    const amount = ticketPackage.price * Math.max(1, slots.length);
 
     // Generate Order Code for PayOS
     const orderCode = Number(String(Date.now()).slice(-6) + Math.floor(Math.random() * 100));
@@ -272,12 +264,7 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       slots,
     });
 
-    const dynamicPrice = await dynamicPricingEngine.getEffectivePrice({
-      priceType: 'package',
-      packageId: ticketPackage._id,
-      basePrice: ticketPackage.price,
-    });
-    const amount = dynamicPrice.adjustedPrice * Math.max(1, slots.length);
+    const amount = ticketPackage.price * Math.max(1, slots.length);
 
     // Calculate expiration date
     const expireAt = buildExpirationDate(ticketPackage.type);

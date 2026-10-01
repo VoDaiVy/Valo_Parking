@@ -8,7 +8,6 @@ import {
   paySubscriptionWithWallet,
   getMembershipStatus,
 } from '../../services/subscriptionService';
-import { getCurrentPricing } from '../../services/pricingService';
 import { getWalletInfo } from '../../services/walletService';
 import { getMyVehicles } from '../../services/vehicleService';
 import { apiFetch } from '../../services/api';
@@ -102,7 +101,6 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
 export default function Membership() {
   const navigate = useNavigate();
   const [packages, setPackages] = useState([]);
-  const [packagePriceMap, setPackagePriceMap] = useState(() => new Map());
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
@@ -234,9 +232,8 @@ export default function Membership() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [pkgRes, pricingRes, vRes, floorRes, profileRes, walletRes, membershipRes] = await Promise.all([
+        const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes] = await Promise.all([
           getTicketPackages(),
-          getCurrentPricing(),
           getMyVehicles(),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(r => r.json()),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/profile`, {
@@ -249,14 +246,6 @@ export default function Membership() {
         if (pkgRes.ok && pkgRes.data?.data) {
           const pkgs = pkgRes.data.data;
           setPackages(pkgs);
-        }
-        if (pricingRes.ok && pricingRes.data?.data?.packages) {
-          setPackagePriceMap(new Map(pricingRes.data.data.packages.map((pkg) => [
-            String(pkg._id),
-            { adjustedPrice: Number(pkg.adjustedPrice), priceLabel: pkg.priceLabel },
-          ])));
-        } else {
-          setPackagePriceMap(new Map());
         }
         if (vRes.ok) {
           setVehicles(vRes.data?.data || []);
@@ -293,8 +282,7 @@ export default function Membership() {
   };
 
   const getEffectivePackagePrice = (pkg) => {
-    const dynamicPrice = packagePriceMap.get(String(pkg?._id))?.adjustedPrice;
-    return Number.isFinite(dynamicPrice) ? dynamicPrice : Number(pkg?.price || 0);
+    return Number(pkg?.price || 0);
   };
 
   const cardShellClass = "group relative z-10 flex min-h-[430px] w-full flex-col overflow-hidden rounded-3xl bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_22px_46px_rgba(15,23,42,0.14)] md:p-6";
@@ -527,10 +515,9 @@ export default function Membership() {
             const presentation = getPackagePresentation(pkg, index);
             const buttonState = getPackageButton(pkg);
             const Icon = presentation.Icon;
-            const dynamicEntry = packagePriceMap.get(String(pkg._id));
             const effectivePrice = getEffectivePackagePrice(pkg);
-            const hasAdjustedPrice = Number.isFinite(dynamicEntry?.adjustedPrice)
-              && effectivePrice !== Number(pkg.price);
+            const hasAdjustedPrice = false;
+            const dynamicEntry = null;
 
             return (
               <div

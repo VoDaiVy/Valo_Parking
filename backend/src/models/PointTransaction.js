@@ -8,8 +8,12 @@ const pointTransactionSchema = new mongoose.Schema(
       required: true,
     },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['EARN', 'REVOKE', 'REDEEM'], required: true },
+    type: { type: String, enum: ['EARN', 'REVOKE', 'REDEEM', 'EXPIRE'], required: true },
     amount: { type: Number, required: true, min: 0 },
+    // EARN transactions behave as FIFO point lots. Each lot is valid for 30 days.
+    remainingAmount: { type: Number, min: 0, default: null },
+    expiresAt: { type: Date, default: null },
+    expiredAt: { type: Date, default: null },
     balanceBefore: { type: Number, required: true, min: 0 },
     balanceAfter: { type: Number, required: true, min: 0 },
     refSource: {
@@ -23,6 +27,7 @@ const pointTransactionSchema = new mongoose.Schema(
 );
 
 pointTransactionSchema.index({ loyaltyAccountId: 1, createdAt: -1 });
+pointTransactionSchema.index({ userId: 1, type: 1, expiresAt: 1, remainingAmount: 1 });
 pointTransactionSchema.index({ userId: 1, type: 1, refSourceId: 1 });
 pointTransactionSchema.index(
   { userId: 1, type: 1, refSource: 1, refSourceId: 1 },

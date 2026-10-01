@@ -254,9 +254,7 @@ const { getOccupancyForecast } = require('../services/demandForecastingService')
 
 exports.getOccupancyForecast = async (req, res, next) => {
   try {
-    const dynamicPricingEngine = require('../services/dynamicPricingEngine');
     const { date, hour, vehicleType, floorId, timeframe, selectedIndex } = req.query;
-    const pricingConfig = await dynamicPricingEngine.getActiveConfig();
     const forecast = await getOccupancyForecast({
       date,
       hour: hour !== undefined ? Number(hour) : undefined,
@@ -264,7 +262,7 @@ exports.getOccupancyForecast = async (req, res, next) => {
       floorId,
       timeframe,
       selectedIndex: selectedIndex !== undefined ? Number(selectedIndex) : undefined,
-      forecastHorizonHours: pricingConfig.forecastHorizonHours,
+      forecastHorizonHours: 24,
     });
 
     res.status(200).json({

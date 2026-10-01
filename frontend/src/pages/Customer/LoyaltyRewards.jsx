@@ -19,7 +19,7 @@ import {
 } from '../../services/loyaltyService';
 
 const date = (value) => new Date(value).toLocaleDateString('vi-VN');
-const transactionTone = { EARN: 'text-emerald-400', REDEEM: 'text-amber-300', REVOKE: 'text-rose-400' };
+const transactionTone = { EARN: 'text-emerald-400', REDEEM: 'text-amber-300', REVOKE: 'text-rose-400', EXPIRE: 'text-rose-300' };
 
 export default function LoyaltyRewards() {
   const [data, setData] = useState({ account: { balance: 0 }, transactions: [] });
@@ -84,12 +84,16 @@ export default function LoyaltyRewards() {
             <div className="px-6 pb-7 pt-7 sm:px-8 sm:pb-8 sm:pt-8 lg:px-10 lg:py-10">
               <p className="text-[11px] font-black uppercase tracking-[0.25em] text-yellow-400">Valo loyalty</p>
               <h1 className="mt-3 text-balance text-4xl font-black tracking-[-0.045em] text-white sm:text-5xl">Rewards & Vouchers</h1>
-              <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-white/45">Mỗi 1.000 VND thanh toán hợp lệ tương ứng 1 điểm. Dùng điểm để đổi ưu đãi cho lần đặt chỗ tiếp theo.</p>
+              <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-white/45">Mỗi 1.000 VND thanh toán hợp lệ tương ứng 1 điểm. Mỗi lượt điểm có hiệu lực 30 ngày và điểm sắp hết hạn sẽ được dùng trước.</p>
 
               <div className="mt-7 flex flex-wrap gap-x-8 gap-y-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.05] text-yellow-400"><TrendingUp size={16} /></div>
                   <div><p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Tỷ lệ tích điểm</p><p className="mt-0.5 font-mono text-sm font-bold tabular-nums text-white">1.000 VND = 1 điểm</p></div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.05] text-yellow-400"><CalendarDays size={16} /></div>
+                  <div><p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Hạn sử dụng điểm</p><p className="mt-0.5 text-sm font-bold text-white">30 ngày từ khi nhận</p></div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.05] text-yellow-400"><Gift size={16} /></div>
@@ -111,6 +115,7 @@ export default function LoyaltyRewards() {
               </div>
 
               <div className="mt-7">
+                {data.nextPointExpiry && <p className="mb-3 rounded-lg border border-amber-300/10 bg-amber-300/[0.05] px-3 py-2 text-[11px] font-semibold text-amber-100/70">{Number(data.nextPointExpiry.points).toLocaleString('vi-VN')} điểm gần nhất hết hạn ngày {date(data.nextPointExpiry.expiresAt)}</p>}
                 <div className="mb-2 flex items-center justify-between gap-4 text-[11px] font-semibold">
                   <span className="text-white/40">{nextReward ? `Còn ${Math.max(0, nextReward.pointCost - balance).toLocaleString('vi-VN')} điểm để đổi ${nextReward.name}` : 'Bạn có thể đổi mọi phần thưởng'}</span>
                   <span className="font-mono text-yellow-300/80 tabular-nums">{rewardProgress}%</span>
@@ -140,7 +145,7 @@ export default function LoyaltyRewards() {
 
         <div className="grid gap-7 xl:grid-cols-2">
           <section><div className="mb-4 flex items-center gap-2"><TicketCheck className="text-yellow-400" size={20} /><h2 className="text-xl font-black">Voucher của tôi</h2></div><div className="space-y-3">{vouchers.map((voucher) => <div key={voucher._id} className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-4"><div><p className="font-black">{voucher.benefitSnapshot?.name}</p><p className="mt-1 text-xs text-white/45">Hết hạn {date(voucher.expiresAt)}{voucher.bookingId && voucher.status === 'available' ? ' · Đang giữ cho booking' : ''}</p></div><span className={`rounded-full px-3 py-1 text-xs font-black capitalize ${voucher.status === 'available' ? 'bg-emerald-500/10 text-emerald-300' : voucher.status === 'used' ? 'bg-white/10 text-white/45' : 'bg-rose-500/10 text-rose-300'}`}>{voucher.status}</span></div>)}{vouchers.length === 0 && <p className="text-sm text-white/40">Bạn chưa đổi voucher nào.</p>}</div></section>
-          <section><div className="mb-4 flex items-center gap-2"><History className="text-yellow-400" size={20} /><h2 className="text-xl font-black">Lịch sử điểm</h2></div><div className="overflow-hidden rounded-2xl border border-white/10">{data.transactions.map((transaction) => <div key={transaction._id} className="flex items-center justify-between border-b border-white/10 bg-white/[0.035] p-4 last:border-0"><div className="flex items-center gap-3"><CalendarDays size={16} className="text-white/30" /><div><p className="text-sm font-bold">{transaction.type === 'EARN' ? 'Tích điểm' : transaction.type === 'REDEEM' ? 'Đổi voucher' : 'Thu hồi điểm'}</p><p className="text-xs text-white/35">{new Date(transaction.createdAt).toLocaleString('vi-VN')}</p></div></div><p className={`font-black ${transactionTone[transaction.type]}`}>{transaction.type === 'EARN' ? '+' : '-'}{transaction.amount}</p></div>)}{data.transactions.length === 0 && <p className="p-6 text-sm text-white/40">Chưa có giao dịch điểm.</p>}</div></section>
+          <section><div className="mb-4 flex items-center gap-2"><History className="text-yellow-400" size={20} /><h2 className="text-xl font-black">Lịch sử điểm</h2></div><div className="overflow-hidden rounded-2xl border border-white/10">{data.transactions.map((transaction) => <div key={transaction._id} className="flex items-center justify-between border-b border-white/10 bg-white/[0.035] p-4 last:border-0"><div className="flex items-center gap-3"><CalendarDays size={16} className="text-white/30" /><div><p className="text-sm font-bold">{transaction.type === 'EARN' ? 'Tích điểm' : transaction.type === 'REDEEM' ? 'Đổi voucher' : transaction.type === 'EXPIRE' ? 'Điểm hết hạn' : 'Thu hồi điểm'}</p><p className="text-xs text-white/35">{new Date(transaction.createdAt).toLocaleString('vi-VN')}{transaction.type === 'EARN' && transaction.expiresAt ? ` · Hết hạn ${date(transaction.expiresAt)}` : ''}</p></div></div><p className={`font-black ${transactionTone[transaction.type]}`}>{transaction.type === 'EARN' ? '+' : '-'}{transaction.amount}</p></div>)}{data.transactions.length === 0 && <p className="p-6 text-sm text-white/40">Chưa có giao dịch điểm.</p>}</div></section>
         </div>
       </div>
     </div>
