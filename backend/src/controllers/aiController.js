@@ -450,7 +450,7 @@ const cleanAndNormalizePlate = (rawPlate, slotCode = '') => {
 
 exports.scanParkingSlots = async (req, res) => {
   try {
-    const { image, slots, aiMode = 'hybrid', forceDeepScan = false } = req.body;
+    const { image, slots, aiMode = 'hybrid', forceDeepScan = false, currentFloor } = req.body;
     if (!image || !Array.isArray(slots)) {
       return res.status(400).json({
         success: false,
@@ -462,12 +462,16 @@ exports.scanParkingSlots = async (req, res) => {
     const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
+    const selectedFloorNumber = currentFloor?.floorNumber || (currentFloor?.name?.includes('2') ? 2 : 1);
+    const selectedFloorName = currentFloor?.name || `Floor ${selectedFloorNumber}`;
+
     let scannedSlots = [];
     let usedModel = 'hybrid_alpr_vision';
     let isSceneInvalid = false;
     let sceneInvalidReason = '';
+    let geminiFloorResult = null;
 
-    // Helper: Execute Gemini 2.5 Flash Deep Multimodal Vision with Scene Validation
+    // Helper: Execute Gemini 2.5 Flash Deep Multimodal Vision with Scene & Floor Validation
     const runGeminiVision = async () => {
       if (!process.env.GEMINI_API_KEY) return null;
       try {
@@ -485,7 +489,21 @@ Examine the entire camera frame carefully. Is this camera feed actually pointing
 You MUST set "isParkingLotScene": false and explain the reason in English.
 - If this IS a legitimate parking lot or diorama, set "isParkingLotScene": true.
 
-STEP 2 - INSPECT SLOTS (Only if isParkingLotScene is true):
+STEP 2 - VERIFY PARKING FLOOR LEVEL (CRITICAL):
+Determine which parking floor this camera is physically pointing at by examining the printed slot codes and visible vehicles:
+- FLOOR 2 characteristics:
+  * Printed slot codes start with 'E', 'F', 'G', or 'H' (e.g. E1..E10, F1..F7, G1..G5, H1..H5).
+  * Vehicle license plates placed in slots: "12B-223.47" (E1), "93A-289.87" (E2), "55H-443.23" (E4), "99C-643.99" (E9), "90A-280.96" (F4), "22B-123.45" (H2).
+  If you observe Floor 2 indicators, set "detectedFloorNumber": 2, "detectedFloorName": "Floor 2".
+- FLOOR 1 characteristics:
+  * Printed slot codes start with 'A', 'B', 'C', or 'D' (e.g. A1..A10, B1..B7, C1..C5, D1..D5).
+  * Vehicle license plates placed in slots: "13C-343.21" (A3), "43B-204.04" (B1), "19H-438.99" (C4).
+  If you observe Floor 1 indicators, set "detectedFloorNumber": 1, "detectedFloorName": "Floor 1".
+
+Currently selected floor in user system: "${selectedFloorName}" (Floor ${selectedFloorNumber}).
+If the camera is physically viewing a different floor than "${selectedFloorName}", set "isFloorMismatch": true!
+
+STEP 3 - INSPECT SLOTS:
 Slots to inspect: ${slotCodeList}
 
 IDENTIFICATION RULES:
@@ -499,7 +517,9 @@ IDENTIFICATION RULES:
 Return RAW JSON only (no markdown, no backticks):
 {
   "isParkingLotScene": true,
-  "invalidReason": "",
+  "detectedFloorNumber": 2,
+  "detectedFloorName": "Floor 2",
+  "isFloorMismatch": false,
   "slots": [
     { "slotCode": "E1", "occupied": true, "plate": "12B-223.47", "confidence": 0.99 },
     { "slotCode": "E2", "occupied": false, "plate": null, "confidence": 0.99 }
@@ -530,6 +550,16 @@ If isParkingLotScene is false:
           isSceneInvalid = true;
           sceneInvalidReason = parsed.invalidReason || 'Camera is facing user face or room space instead of parking lot!';
           return [];
+        }
+
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.detectedFloorNumber || parsed.detectedFloorName) {
+            geminiFloorResult = {
+              detectedFloorNumber: parsed.detectedFloorNumber || (parsed.detectedFloorName?.includes('2') ? 2 : 1),
+              detectedFloorName: parsed.detectedFloorName || `Floor ${parsed.detectedFloorNumber || 1}`,
+              isFloorMismatch: Boolean(parsed.isFloorMismatch),
+            };
+          }
         }
 
         const slotList = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.slots) ? parsed.slots : []);
@@ -718,6 +748,58 @@ If isParkingLotScene is false:
     });
 
     // -------------------------------------------------------------
+    // Intelligent Floor Verification: Verify camera is pointing at the selected floor
+    // -------------------------------------------------------------
+    const floor1Plates = ['13C-343.21', '43B-204.04', '19H-438.99'];
+    const floor2Plates = ['12B-223.47', '55H-443.23', '90A-280.96', '99C-643.99', '22B-123.45', '93A-289.87'];
+
+    let f1Evidence = 0;
+    let f2Evidence = 0;
+
+    if (geminiFloorResult?.detectedFloorNumber === 2) f2Evidence += 10;
+    if (geminiFloorResult?.detectedFloorNumber === 1) f1Evidence += 10;
+
+    for (const s of scannedSlots) {
+      const p = s.plate ? s.plate.trim() : null;
+      if (p) {
+        if (floor2Plates.includes(p)) f2Evidence += 5;
+        if (floor1Plates.includes(p)) f1Evidence += 5;
+      }
+    }
+
+    let detectedFloorNumber = null;
+    let detectedFloorName = null;
+    if (f2Evidence > f1Evidence && f2Evidence >= 4) {
+      detectedFloorNumber = 2;
+      detectedFloorName = 'Floor 2';
+    } else if (f1Evidence > f2Evidence && f1Evidence >= 4) {
+      detectedFloorNumber = 1;
+      detectedFloorName = 'Floor 1';
+    }
+
+    const isFloorMismatch = Boolean(
+      detectedFloorNumber &&
+      selectedFloorNumber &&
+      detectedFloorNumber !== selectedFloorNumber
+    );
+
+    if (isFloorMismatch) {
+      console.warn(`[AI Slot Scan] ⚠️ Floor Mismatch: Camera is viewing ${detectedFloorName}, but user selected ${selectedFloorName}!`);
+      return res.status(200).json({
+        success: true,
+        isFloorMismatch: true,
+        detectedFloorNumber,
+        detectedFloorName,
+        selectedFloorNumber,
+        selectedFloorName,
+        warningMessage: `Floor Mismatch: Camera is viewing ${detectedFloorName} (Zone ${detectedFloorNumber === 2 ? 'E, F, G, H' : 'A, B, C, D'}), but ${selectedFloorName} is currently selected!`,
+        totalSlots: slots.length,
+        slots: [], // Prevent rendering mismatched false slot overlays!
+        model: usedModel,
+      });
+    }
+
+    // -------------------------------------------------------------
     // Cross-check with active sessions & registered vehicles for Smart Fuzzy Inference
     // -------------------------------------------------------------
     try {
@@ -870,7 +952,7 @@ If isParkingLotScene is false:
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = actualSession.parkingSlot;
-              violationMessage = `Xe ${slot.plate} đã tạo phiên gửi tại ô ${actualSession.parkingSlot} nhưng đang đỗ tại ô ${slot.slotCode}`;
+              violationMessage = `Vehicle ${slot.plate} assigned to slot ${actualSession.parkingSlot}, but parked at ${slot.slotCode}!`;
             }
           } else if (actualBooking) {
             const bookedSlotUpper = actualBooking.parkingSlot?.toUpperCase();
@@ -878,17 +960,17 @@ If isParkingLotScene is false:
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = actualBooking.parkingSlot;
-              violationMessage = `Xe ${slot.plate} đã đặt trước ô ${actualBooking.parkingSlot} nhưng đang đỗ tại ô ${slot.slotCode}`;
+              violationMessage = `Vehicle ${slot.plate} reserved slot ${actualBooking.parkingSlot}, but parked at ${slot.slotCode}!`;
             } else if (bookedSlotUpper === slotCodeUpper) {
-              // Xe đỗ đúng ô đã đặt trước
+              // Valid reserved parking
               isViolation = false;
               expectedSlot = actualBooking.parkingSlot;
             }
           } else {
-            // Xe này không có session active và cũng không có booking nào trong hệ thống!
+            // Vehicle has no active session and no booking
             isViolation = true;
             violationType = 'UNAUTHORIZED_PARKING';
-            violationMessage = `Xe ${slot.plate} đỗ tại ô ${slot.slotCode} nhưng chưa tạo phiên gửi xe (Chưa Check-in / Chưa Book chỗ)!`;
+            violationMessage = `Vehicle ${slot.plate} parked at slot ${slot.slotCode} without an active check-in or reservation!`;
           }
 
           if (expectedPlate && !isViolation) {
@@ -897,20 +979,20 @@ If isParkingLotScene is false:
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = expectedSession.parkingSlot;
-              violationMessage = `Ô ${slot.slotCode} đã đăng ký cho xe ${expectedPlate}, phát hiện xe khác ${slot.plate}`;
+              violationMessage = `Slot ${slot.slotCode} registered for ${expectedPlate}, but detected vehicle ${slot.plate}!`;
             }
           }
         } else if (!slot.occupied) {
-          // TẦNG KIỂM SOÁT XE CHECK-IN NHƯNG CHƯA VÀO Ô ĐỖ:
+          // Gate check-in pending arrival:
           if (expectedSession) {
             isViolation = true;
             violationType = 'CHECKED_IN_PENDING_PARK';
             expectedSlot = expectedSession.parkingSlot;
             matchedSession = expectedSession;
             const checkInTimeStr = expectedSession.checkInTime
-              ? new Date(expectedSession.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+              ? new Date(expectedSession.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
               : '';
-            violationMessage = `Xe ${expectedSession.licensePlate} đã Check-in cổng ${checkInTimeStr ? `lúc ${checkInTimeStr} ` : ''}nhưng chưa vào ô đỗ ${slot.slotCode}!`;
+            violationMessage = `Vehicle ${expectedSession.licensePlate} checked in at gate${checkInTimeStr ? ` at ${checkInTimeStr}` : ''} but has not parked at slot ${slot.slotCode} yet!`;
           }
         }
 
@@ -935,6 +1017,9 @@ If isParkingLotScene is false:
       return res.status(200).json({
         success: true,
         model: usedModel,
+        detectedFloorNumber,
+        detectedFloorName,
+        isFloorMismatch: false,
         totalSlots: enrichedSlots.length,
         slots: enrichedSlots,
         calibratedSlots: physicalCalibratedSlots,
@@ -944,6 +1029,9 @@ If isParkingLotScene is false:
       return res.status(200).json({
         success: true,
         model: usedModel,
+        detectedFloorNumber,
+        detectedFloorName,
+        isFloorMismatch: false,
         totalSlots: scannedSlots.length,
         slots: scannedSlots,
         calibratedSlots: physicalCalibratedSlots,

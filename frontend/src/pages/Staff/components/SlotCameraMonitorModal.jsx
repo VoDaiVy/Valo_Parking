@@ -36,6 +36,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { API_BASE } from '../../../services/api';
+import toast from 'react-hot-toast';
 import { formatLicensePlateDisplay } from '../../../utils/licensePlate';
 
 const ROBOFLOW_CALIBRATED_SLOTS = [
@@ -67,6 +68,36 @@ const ROBOFLOW_CALIBRATED_SLOTS = [
   { slotCode: 'D4', polygon: [[0.7139, 0.657], [0.7705, 0.6586], [0.766, 0.8167], [0.7094, 0.8151]] },
   { slotCode: 'D5', polygon: [[0.7782, 0.6516], [0.8326, 0.6539], [0.8262, 0.8107], [0.7717, 0.8084]] },
 ];
+
+// Helper to guarantee 100% clean English violation messages even if legacy backend data contains Vietnamese
+const formatViolationEnglish = (res, slotCode) => {
+  if (!res) return '';
+  const rawPlate = res.plate || res.detectedPlate || res.expectedPlate || res.session?.licensePlate;
+  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : 'Vehicle';
+  const isWrong = res.status === 'WRONG_SLOT_VIOLATION' || res.violationType === 'WRONG_SLOT_VIOLATION';
+  const isUnauth = res.status === 'UNAUTHORIZED_PARKING' || res.violationType === 'UNAUTHORIZED_PARKING';
+  const isPending = res.status === 'CHECKED_IN_PENDING_PARK' || res.violationType === 'CHECKED_IN_PENDING_PARK';
+
+  if (isWrong) {
+    if (res.expectedSlot) {
+      return `Vehicle ${plateDisp} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
+    }
+    return `Vehicle ${plateDisp} parked in wrong slot (assigned elsewhere)!`;
+  }
+  if (isUnauth) {
+    return `Vehicle ${plateDisp} parked at slot ${slotCode} without an active check-in or reservation!`;
+  }
+  if (isPending) {
+    const timeStr = res.session?.checkInTime
+      ? new Date(res.session.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    return `Vehicle ${plateDisp} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+  }
+  if (res.violationMessage && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(res.violationMessage)) {
+    return res.violationMessage;
+  }
+  return 'Parking policy exception detected.';
+};
 
 export default function SlotCameraMonitorModal({
   isOpen,
@@ -344,6 +375,7 @@ export default function SlotCameraMonitorModal({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showGridOverlay, setShowGridOverlay] = useState(false); // Mặc định ẩn 27 khung xanh, chỉ hiện khi phát hiện có xe/vi phạm
   const [cameraMisalignedWarning, setCameraMisalignedWarning] = useState(null);
+  const [floorMismatch, setFloorMismatch] = useState(null);
   const [isAiDropdownOpen, setIsAiDropdownOpen] = useState(false);
 
   const videoRef = useRef(null);
@@ -367,6 +399,11 @@ export default function SlotCameraMonitorModal({
       wasOpenRef.current = false;
     }
   }, [isOpen, currentFloorId, floors]);
+
+  // Reset floor mismatch warning whenever user changes floor manually
+  useEffect(() => {
+    setFloorMismatch(null);
+  }, [selectedFloorId]);
 
   // When active floor changes, restore its scan results if any
   useEffect(() => {
@@ -673,6 +710,11 @@ export default function SlotCameraMonitorModal({
           slots: slotsToScan,
           aiMode: forceDeep ? 'gemini' : aiMode,
           forceDeepScan: forceDeep,
+          currentFloor: activeFloor ? {
+            id: activeFloor._id,
+            name: activeFloor.name,
+            floorNumber: activeFloor.floorNumber || (activeFloor.name?.includes('2') ? 2 : 1),
+          } : null,
         }),
       });
 
@@ -681,6 +723,8 @@ export default function SlotCameraMonitorModal({
       if (data.model) {
         setActiveAiEngine(data.model);
       }
+
+      // Check 1: Camera Misalignment (looking at user face or wall)
       if (data.isCameraMisaligned) {
         let msg = data.warningMessage || 'Camera angle is misaligned or not facing the parking lot!';
         if (msg.includes('mặt người') || msg.includes('không gian phòng') || msg.includes('phòng thay vì')) {
@@ -689,11 +733,26 @@ export default function SlotCameraMonitorModal({
           msg = 'Camera angle is misaligned or not facing the parking lot! Physical parking grid not detected.';
         }
         setCameraMisalignedWarning(msg);
+        setFloorMismatch(null);
         setScanResults([]);
         playAlertSound(false);
         return;
       }
       setCameraMisalignedWarning(null);
+
+      // Check 2: Floor Level Mismatch (camera looking at Floor 2 while Floor 1 is selected)
+      if (data.isFloorMismatch) {
+        setFloorMismatch({
+          detectedFloorNumber: data.detectedFloorNumber,
+          detectedFloorName: data.detectedFloorName,
+          selectedFloorName: data.selectedFloorName || activeFloor?.name || 'Selected Floor',
+          warningMessage: data.warningMessage || `Camera is pointing at ${data.detectedFloorName}, but ${data.selectedFloorName || 'another floor'} is selected!`,
+        });
+        setScanResults([]);
+        playAlertSound(false);
+        return;
+      }
+      setFloorMismatch(null);
 
       if (data.success && Array.isArray(data.slots)) {
         const currentFloorKey = activeFloor?._id || activeFloor?.name || 'default';
@@ -769,6 +828,34 @@ export default function SlotCameraMonitorModal({
       setIsScanning(false);
     }
   }, [activeFloor, isScanning, slotRois, aiMode, onSlotStatusUpdate, playAlertSound]);
+
+  // Auto-switch floor when AI detects camera is pointing at another floor
+  const handleAutoSwitchFloor = useCallback((targetFloorNumber, targetFloorName) => {
+    if (!floors || floors.length === 0) return;
+    const targetFloor = floors.find((f) => {
+      if (f.floorNumber && Number(f.floorNumber) === Number(targetFloorNumber)) return true;
+      if (f.name) {
+        const nameLower = f.name.toLowerCase();
+        if (targetFloorNumber && (nameLower.includes(`floor ${targetFloorNumber}`) || nameLower.includes(`tầng ${targetFloorNumber}`) || nameLower.endsWith(targetFloorNumber.toString()))) return true;
+        if (targetFloorName && nameLower.includes(targetFloorName.toLowerCase())) return true;
+      }
+      return false;
+    });
+
+    if (targetFloor) {
+      setSelectedFloorId(targetFloor._id);
+      setActiveZoneFilter('ALL');
+      setActiveStatusFilter('ALL');
+      setFloorMismatch(null);
+      setScanResults([]);
+      toast.success(`Switched to ${targetFloor.name}. Re-scanning...`);
+      setTimeout(() => {
+        captureAndScanSlots(null, aiMode === 'gemini');
+      }, 450);
+    } else {
+      toast.error(`Target floor not found in facility.`);
+    }
+  }, [floors, captureAndScanSlots, aiMode]);
 
   // 1-Click Fast Reassign to resolve wrong-slot violations
   const handleQuickReassignSlot = useCallback(async (session, targetSlotCode) => {
@@ -892,6 +979,48 @@ export default function SlotCameraMonitorModal({
   const pendingCount = useMemo(() => violations.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length, [violations]);
   const validCount = useMemo(() => hasScanned ? allResolvedSlots.filter((s) => s.status === 'OCCUPIED_VALID' || (s.occupied && !s.isViolation)).length : 0, [allResolvedSlots, hasScanned]);
   const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots) : 0;
+
+  // Smart sorted & filtered slot list: Pinned alerts on top, followed by parked, then available
+  const sortedAndFilteredSlots = useMemo(() => {
+    return slotRois
+      .filter((s) => {
+        // Zone filter
+        if (activeZoneFilter !== 'ALL' && !s.slotCode.startsWith(activeZoneFilter)) {
+          return false;
+        }
+        // Status filter
+        const res = resolveSlotStatus(s.slotCode);
+        const isWrong = res?.status === 'WRONG_SLOT_VIOLATION' || res?.violationType === 'WRONG_SLOT_VIOLATION';
+        const isUnauth = res?.status === 'UNAUTHORIZED_PARKING' || res?.violationType === 'UNAUTHORIZED_PARKING';
+        const isPending = res?.status === 'CHECKED_IN_PENDING_PARK' || res?.violationType === 'CHECKED_IN_PENDING_PARK';
+        const isAlert = isWrong || isUnauth || isPending || Boolean(res?.isViolation);
+        const isValid = res?.status === 'OCCUPIED_VALID' || (res?.occupied && !isWrong && !isUnauth);
+        const isEmpty = !res?.occupied && !isWrong && !isUnauth && !isPending;
+
+        if (activeStatusFilter === 'ALERTS') return isAlert;
+        if (activeStatusFilter === 'VALID') return isValid;
+        if (activeStatusFilter === 'EMPTY') return isEmpty;
+        return true;
+      })
+      .sort((a, b) => {
+        const resA = resolveSlotStatus(a.slotCode);
+        const resB = resolveSlotStatus(b.slotCode);
+        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resA?.isViolation);
+        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resB?.isViolation);
+
+        // Pin active alerts to the top
+        if (isAlertA && !isAlertB) return -1;
+        if (!isAlertA && isAlertB) return 1;
+
+        // Occupied cars next
+        const occA = resA?.occupied ? 1 : 0;
+        const occB = resB?.occupied ? 1 : 0;
+        if (occA !== occB) return occB - occA;
+
+        // Natural alphanumeric order
+        return a.slotCode.localeCompare(b.slotCode, undefined, { numeric: true });
+      });
+  }, [slotRois, activeZoneFilter, activeStatusFilter, resolveSlotStatus]);
 
   // Precise Video Render Rect to eliminate letterboxing distortions
   const getVideoRenderRect = useCallback(() => {
@@ -1118,10 +1247,9 @@ export default function SlotCameraMonitorModal({
         ctx.restore();
       }
 
-      // High-tech Cyber Slot Badge
-      const labelX = pts[0][0];
-      const labelY = pts[0][1] - 8;
-      ctx.font = 'bold 10px Inter, sans-serif';
+      // High-tech Centered Cyber Slot Badge (Clamped to avoid overlap)
+      ctx.save();
+      ctx.font = 'bold 9.5px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
       const plateText = result?.plate || result?.detectedPlate;
       const pendingPlate = result?.expectedPlate || result?.session?.licensePlate;
       const slotText = isWrongSlot
@@ -1133,15 +1261,57 @@ export default function SlotCameraMonitorModal({
             : isOccupied
               ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
               : slot.slotCode;
-      const textWidth = ctx.measureText(slotText).width;
+      
+      const textMetrics = ctx.measureText(slotText);
+      const pillW = textMetrics.width + 10;
+      const pillH = 16;
+      const topCenterX = (pts[0][0] + pts[1][0]) / 2;
+      const topCenterY = (pts[0][1] + pts[1][1]) / 2;
 
-      ctx.fillStyle = isWrongSlot ? '#f43f5e' : isUnauthorized ? '#d97706' : isPendingPark ? '#7c3aed' : isOccupied ? '#059669' : 'rgba(15, 23, 42, 0.88)';
+      // Center horizontally on top edge of slot polygon and clamp within canvas bounds
+      let pillX = topCenterX - pillW / 2;
+      const canvasW = canvasRef.current?.width || 800;
+      pillX = Math.max(4, Math.min(canvasW - pillW - 4, pillX));
+      const pillY = Math.max(4, topCenterY - pillH - 3);
+
+      // Pill backdrop with high-tech glow & shadow
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = isWrongSlot
+        ? 'rgba(225, 29, 72, 0.95)'
+        : isUnauthorized
+          ? 'rgba(217, 119, 6, 0.95)'
+          : isPendingPark
+            ? 'rgba(124, 58, 237, 0.95)'
+            : isOccupied
+              ? 'rgba(5, 150, 105, 0.95)'
+              : 'rgba(15, 23, 42, 0.88)';
       ctx.beginPath();
-      ctx.roundRect(labelX, Math.max(8, labelY - 13), textWidth + 10, 16, 4);
+      ctx.roundRect(pillX, pillY, pillW, pillH, 4);
       ctx.fill();
 
+      // Pill border
+      ctx.shadowColor = 'transparent';
+      ctx.strokeStyle = isWrongSlot
+        ? 'rgba(255, 255, 255, 0.45)'
+        : isUnauthorized
+          ? 'rgba(255, 255, 255, 0.4)'
+          : isPendingPark
+            ? 'rgba(255, 255, 255, 0.45)'
+            : isOccupied
+              ? 'rgba(255, 255, 255, 0.35)'
+              : 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // White centered crisp text
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(slotText, labelX + 5, Math.max(20, labelY));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(slotText, pillX + pillW / 2, pillY + pillH / 2 + 0.5);
+      ctx.restore();
     });
   }, [mode, boardCorners, toScreenCoords, slotRois, resolveSlotStatus, selectedSlotIndex, activeCornerIndex, activeHandleIndex, showGridOverlay]);
 
@@ -1662,6 +1832,39 @@ export default function SlotCameraMonitorModal({
               </div>
             )}
 
+            {/* Floor Mismatch HUD Warning Banner */}
+            {floorMismatch && (
+              <div className="absolute top-14 left-3 right-3 z-30 flex items-center justify-between bg-amber-950/95 backdrop-blur-xl px-4 py-3 rounded-xl border border-amber-500/60 text-xs shadow-2xl animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center gap-3 text-amber-200">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0">
+                    <Layers size={18} className="text-amber-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <strong className="text-amber-300 font-black uppercase tracking-wide text-[11px]">
+                        FLOOR MISMATCH DETECTED:
+                      </strong>
+                      <span className="text-[10px] bg-amber-500/30 text-amber-200 px-2 py-0.5 rounded font-mono font-bold">
+                        Viewing: {floorMismatch.detectedFloorName}
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        (Selected: {floorMismatch.selectedFloorName})
+                      </span>
+                    </div>
+                    <span className="text-gray-300 text-[11.5px] mt-0.5 block">{floorMismatch.warningMessage}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAutoSwitchFloor(floorMismatch.detectedFloorNumber, floorMismatch.detectedFloorName)}
+                  className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black text-xs transition flex items-center gap-1.5 shadow-lg shadow-amber-500/20 active:scale-95 shrink-0 cursor-pointer"
+                >
+                  <ArrowRight size={14} className="stroke-[3]" />
+                  <span>Switch to {floorMismatch.detectedFloorName}</span>
+                </button>
+              </div>
+            )}
+
             {mode === 'calibrate' && (
               <div className="absolute top-12 left-3 right-3 z-20 flex items-center justify-between bg-amber-950/80 backdrop-blur-md px-3.5 py-2 rounded-xl border border-amber-500/40 text-xs shadow-lg">
                 <span className="text-amber-200 font-medium flex items-center gap-2">
@@ -1737,194 +1940,119 @@ export default function SlotCameraMonitorModal({
               </div>
             )}
 
-            {/* Violation Alert Banner with 1-Click Fast Reassign Action */}
-            {violations.length > 0 && (
-              <div className="p-3 bg-rose-500/10 border-b border-rose-500/30">
-                <div className="flex items-center justify-between text-rose-400 font-black text-xs uppercase tracking-wider mb-2">
-                  <div className="flex items-center gap-1.5">
-                    <ShieldAlert size={14} className="animate-pulse text-rose-400" />
-                    <span>{violations.length} ALERTS DETECTED BY AI:</span>
-                  </div>
-                  <span className="text-[10px] font-mono text-rose-300 font-bold bg-rose-500/20 px-1.5 py-0.5 rounded">
-                    CRITICAL
-                  </span>
-                </div>
-                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                  {violations.map((v) => {
-                    const isPending = v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK';
-                    const isWrong = v.status === 'WRONG_SLOT_VIOLATION' || v.violationType === 'WRONG_SLOT_VIOLATION';
-                    const isUnauth = v.status === 'UNAUTHORIZED_PARKING' || v.violationType === 'UNAUTHORIZED_PARKING';
-                    const plateDisp = v.plate || v.detectedPlate || v.expectedPlate || v.session?.licensePlate;
-
-                    return (
-                      <div
-                        key={v.slotCode}
-                        className={`p-2.5 rounded-xl border text-xs transition ${
-                          isPending
-                            ? 'bg-purple-950/40 border-purple-500/40'
-                            : isWrong
-                              ? 'bg-rose-950/50 border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.15)]'
-                              : 'bg-amber-950/40 border-amber-500/40'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between font-bold">
-                          <span
-                            className={`font-mono px-2 py-0.5 rounded text-[11px] font-black ${
-                              isPending
-                                ? 'bg-purple-500/30 text-purple-200 border border-purple-400/40'
-                                : isWrong
-                                  ? 'bg-rose-500/30 text-rose-100 border border-rose-400/40'
-                                  : 'bg-amber-500/30 text-amber-200 border border-amber-400/40'
-                            }`}
-                          >
-                            {plateDisp ? formatLicensePlateDisplay(plateDisp) : 'Unknown Vehicle'}
-                          </span>
-                          <span
-                            className={`font-mono font-bold text-xs ${
-                              isPending ? 'text-purple-300' : isWrong ? 'text-rose-300' : 'text-amber-300'
-                            }`}
-                          >
-                            Slot: <strong className="text-white font-black">{v.slotCode}</strong>
-                          </span>
-                        </div>
-
-                        <p className={`text-[11px] mt-1.5 ${isPending ? 'text-purple-200' : isWrong ? 'text-rose-200' : 'text-amber-200'}`}>
-                          {isPending ? (
-                            <>Status: <strong className="text-purple-300">Checked in at gate (In transit to slot {v.slotCode})</strong></>
-                          ) : isWrong ? (
-                            <>Assigned: <strong className="text-amber-300 font-bold">{v.expectedSlot || 'N/A'}</strong> ➔ Parked: <strong className="text-rose-300 font-bold">{v.slotCode}</strong></>
-                          ) : (
-                            <>Warning: <strong className="text-amber-300">No active check-in session found</strong></>
-                          )}
-                        </p>
-
-                        {/* 1-Click Fast Reassign Action Button for Wrong Slot Violations */}
-                        {isWrong && v.session && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleQuickReassignSlot(v.session, v.slotCode);
-                            }}
-                            disabled={reassigningSlot === v.slotCode}
-                            className="mt-2 w-full py-1.5 px-3 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
-                          >
-                            {reassigningSlot === v.slotCode ? (
-                              <RefreshCw size={13} className="animate-spin text-emerald-200" />
-                            ) : (
-                              <Zap size={13} className="text-amber-300" />
-                            )}
-                            <span>Accept vehicle at {v.slotCode} (Reassign Slot)</span>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Status Filter Tabs */}
-            <div className="flex items-center gap-1 px-3 py-2 bg-[#121622] border-b border-white/10 overflow-x-auto text-xs no-scrollbar select-none">
-              <button
-                type="button"
-                onClick={() => setActiveStatusFilter('ALL')}
-                className={`px-2 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] ${
-                  activeStatusFilter === 'ALL' ? 'bg-amber-400 text-black shadow font-black' : 'text-gray-400 hover:text-white bg-white/5'
-                }`}
-              >
-                All ({totalSlots})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveStatusFilter('WRONG_SLOT')}
-                className={`px-2 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] flex items-center gap-1 ${
-                  activeStatusFilter === 'WRONG_SLOT'
-                    ? 'bg-rose-500 text-white shadow font-black'
-                    : 'text-rose-400 hover:text-white bg-rose-500/10 border border-rose-500/20'
-                }`}
-              >
-                <span>🚨 Wrong Slot</span>
-                <span className="font-mono font-black">({wrongSlotCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveStatusFilter('UNAUTHORIZED')}
-                className={`px-2 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] flex items-center gap-1 ${
-                  activeStatusFilter === 'UNAUTHORIZED'
-                    ? 'bg-amber-500 text-black shadow font-black'
-                    : 'text-amber-400 hover:text-white bg-amber-500/10 border border-amber-500/20'
-                }`}
-              >
-                <span>⚠️ Unregistered</span>
-                <span className="font-mono font-black">({unauthCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveStatusFilter('PENDING')}
-                className={`px-2 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] flex items-center gap-1 ${
-                  activeStatusFilter === 'PENDING'
-                    ? 'bg-purple-600 text-white shadow font-black'
-                    : 'text-purple-300 hover:text-white bg-purple-500/10 border border-purple-500/20'
-                }`}
-              >
-                <span>⏳ In Transit</span>
-                <span className="font-mono font-black">({pendingCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveStatusFilter('VALID')}
-                className={`px-2 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] flex items-center gap-1 ${
-                  activeStatusFilter === 'VALID'
-                    ? 'bg-emerald-500 text-black shadow font-black'
-                    : 'text-emerald-400 hover:text-white bg-emerald-500/10 border border-emerald-500/20'
-                }`}
-              >
-                <span>✅ Parked</span>
-                <span className="font-mono font-black">({validCount})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveStatusFilter('EMPTY')}
-                className={`px-2 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] flex items-center gap-1 ${
-                  activeStatusFilter === 'EMPTY'
-                    ? 'bg-sky-500 text-black shadow font-black'
-                    : 'text-sky-300 hover:text-white bg-sky-500/10 border border-sky-500/20'
-                }`}
-              >
-                <span>🟢 Available</span>
-                <span className="font-mono font-black">({availableCount})</span>
-              </button>
-            </div>
-
-            {/* Zone Filter Tabs */}
-            <div className="flex items-center gap-1 px-3 py-1.5 bg-[#0f121a] border-b border-white/10 overflow-x-auto text-xs no-scrollbar select-none">
-              <button
-                type="button"
-                onClick={() => setActiveZoneFilter('ALL')}
-                className={`px-2 py-0.5 rounded font-bold uppercase transition whitespace-nowrap text-[10px] ${
-                  activeZoneFilter === 'ALL' ? 'bg-white/20 text-white' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                All Zones
-              </button>
-              {Object.keys(floorData.zones).map((zKey) => (
+            {/* Unified Cyber Surveillance Toolbar */}
+            <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[#121622] border-b border-white/10 select-none">
+              {/* Status Segmented Control */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                 <button
-                  key={zKey}
                   type="button"
-                  onClick={() => setActiveZoneFilter(zKey)}
-                  className={`px-2 py-0.5 rounded font-bold uppercase transition whitespace-nowrap text-[10px] ${
-                    activeZoneFilter === zKey ? 'bg-amber-400 text-black font-black' : 'text-gray-400 hover:text-white'
+                  onClick={() => setActiveStatusFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] sm:text-[11px] ${
+                    activeStatusFilter === 'ALL'
+                      ? 'bg-amber-400 text-black shadow font-black'
+                      : 'text-gray-400 hover:text-white bg-white/5'
                   }`}
                 >
-                  Zone {zKey} ({floorData.zones[zKey]?.length || 0})
+                  All ({totalSlots})
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setActiveStatusFilter('ALERTS')}
+                  className={`px-2.5 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] sm:text-[11px] flex items-center gap-1.5 ${
+                    activeStatusFilter === 'ALERTS'
+                      ? 'bg-rose-500 text-white shadow font-black'
+                      : violations.length > 0
+                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25'
+                        : 'text-gray-400 hover:text-white bg-white/5'
+                  }`}
+                >
+                  <span>🚨 Alerts</span>
+                  <span className={`font-mono font-black ${violations.length > 0 ? 'text-rose-200' : ''}`}>
+                    ({hasScanned ? violations.length : 0})
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveStatusFilter('VALID')}
+                  className={`px-2.5 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] sm:text-[11px] flex items-center gap-1.5 ${
+                    activeStatusFilter === 'VALID'
+                      ? 'bg-emerald-500 text-black shadow font-black'
+                      : 'text-emerald-400 hover:text-white bg-emerald-500/10 border border-emerald-500/20'
+                  }`}
+                >
+                  <span>✅ Parked</span>
+                  <span className="font-mono font-black">({hasScanned ? validCount : 0})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveStatusFilter('EMPTY')}
+                  className={`px-2.5 py-1 rounded-lg font-bold uppercase transition whitespace-nowrap text-[10px] sm:text-[11px] flex items-center gap-1.5 ${
+                    activeStatusFilter === 'EMPTY'
+                      ? 'bg-sky-500 text-black shadow font-black'
+                      : 'text-sky-300 hover:text-white bg-sky-500/10 border border-sky-500/20'
+                  }`}
+                >
+                  <span>🟢 Available</span>
+                  <span className="font-mono font-black">({hasScanned ? availableCount : 0})</span>
+                </button>
+              </div>
+
+              {/* Compact Zone Dropdown */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider hidden sm:inline">Zone:</span>
+                <select
+                  value={activeZoneFilter}
+                  onChange={(e) => setActiveZoneFilter(e.target.value)}
+                  className="bg-[#181d2a] hover:bg-[#1f2637] text-gray-200 text-xs font-bold px-2 py-1 rounded-lg border border-white/10 focus:outline-none focus:border-amber-400 transition cursor-pointer"
+                >
+                  <option value="ALL">All Zones</option>
+                  {Object.keys(floorData.zones).map((zKey) => (
+                    <option key={zKey} value={zKey}>
+                      Zone {zKey} ({floorData.zones[zKey]?.length || 0})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Slot List */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {cameraMisalignedWarning ? (
+            {/* Streamlined Slot List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+              {floorMismatch ? (
+                <div className="h-full flex flex-col items-center justify-center p-6 text-center text-gray-400 my-auto min-h-[300px]">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-3 shadow-inner">
+                    <Layers size={28} className="animate-pulse" />
+                  </div>
+                  <h4 className="font-bold text-white text-sm mb-1.5 text-amber-300">Floor Mismatch Detected</h4>
+                  <p className="text-xs text-amber-200/90 max-w-[260px] leading-relaxed mb-1">
+                    Camera is currently viewing <strong className="text-white">{floorMismatch.detectedFloorName}</strong>, but <strong className="text-white">{floorMismatch.selectedFloorName}</strong> is selected.
+                  </p>
+                  <p className="text-[11px] text-gray-400 max-w-[260px] leading-relaxed mb-4">
+                    Auto-switch to {floorMismatch.detectedFloorName} to correctly project slot boundaries and license telemetry.
+                  </p>
+                  <div className="flex flex-col gap-2 w-full max-w-[240px]">
+                    <button
+                      type="button"
+                      onClick={() => handleAutoSwitchFloor(floorMismatch.detectedFloorNumber, floorMismatch.detectedFloorName)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-black text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-amber-400/25 active:scale-95 cursor-pointer"
+                    >
+                      <ArrowRight size={15} className="stroke-[2.5]" />
+                      <span>Switch to {floorMismatch.detectedFloorName} (Auto-Adjust)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFloorMismatch(null);
+                        captureAndScanSlots(null, aiMode === 'gemini');
+                      }}
+                      disabled={isScanning}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 font-bold text-xs transition flex items-center justify-center gap-1.5 border border-white/10 cursor-pointer"
+                    >
+                      <RefreshCw size={12} className={isScanning ? 'animate-spin' : ''} />
+                      <span>Re-scan Current Selection</span>
+                    </button>
+                  </div>
+                </div>
+              ) : cameraMisalignedWarning ? (
                 <div className="h-full flex flex-col items-center justify-center p-6 text-center text-gray-400 my-auto min-h-[300px]">
                   <div className="w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-3 shadow-inner">
                     <ShieldAlert size={28} className="animate-pulse" />
@@ -1965,70 +2093,55 @@ export default function SlotCameraMonitorModal({
                     <span>{isScanning ? 'Analyzing...' : '⚡ Scan Parking Lot Now'}</span>
                   </button>
                 </div>
+              ) : sortedAndFilteredSlots.length === 0 ? (
+                <div className="py-12 text-center text-gray-400">
+                  <p className="text-xs">No parking slots found matching the selected filter.</p>
+                </div>
               ) : (
-                slotRois
-                .filter((s) => {
-                  // Zone filter
-                  if (activeZoneFilter !== 'ALL' && !s.slotCode.startsWith(activeZoneFilter)) {
-                    return false;
-                  }
-                  // Status filter
-                  const res = resolveSlotStatus(s.slotCode);
-                  const isWrong = res?.status === 'WRONG_SLOT_VIOLATION' || res?.violationType === 'WRONG_SLOT_VIOLATION';
-                  const isUnauth = res?.status === 'UNAUTHORIZED_PARKING' || res?.violationType === 'UNAUTHORIZED_PARKING';
-                  const isPending = res?.status === 'CHECKED_IN_PENDING_PARK' || res?.violationType === 'CHECKED_IN_PENDING_PARK';
-                  const isValid = res?.status === 'OCCUPIED_VALID' || (res?.occupied && !isWrong && !isUnauth);
-                  const isEmpty = !res?.occupied && !isWrong && !isUnauth && !isPending;
-
-                  if (activeStatusFilter === 'WRONG_SLOT') return isWrong;
-                  if (activeStatusFilter === 'UNAUTHORIZED') return isUnauth;
-                  if (activeStatusFilter === 'PENDING') return isPending;
-                  if (activeStatusFilter === 'VALID') return isValid;
-                  if (activeStatusFilter === 'EMPTY') return isEmpty;
-                  return true;
-                })
-                .map((slot, sIdx) => {
+                sortedAndFilteredSlots.map((slot) => {
+                  const originalIndex = slotRois.findIndex((s) => s.slotCode === slot.slotCode);
                   const result = resolveSlotStatus(slot.slotCode);
                   const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
                   const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
                   const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
                   const isViolation = isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
                   const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
-                  const isSelected = sIdx === selectedSlotIndex;
+                  const isSelected = originalIndex === selectedSlotIndex;
                   const cardPlate = result?.plate || result?.detectedPlate || result?.expectedPlate || result?.session?.licensePlate;
 
                   return (
                     <div
                       key={slot.slotCode}
-                      onClick={() => setSelectedSlotIndex(sIdx)}
+                      onClick={() => setSelectedSlotIndex(originalIndex !== -1 ? originalIndex : 0)}
                       className={`p-3 rounded-xl border transition cursor-pointer flex flex-col gap-2 ${
                         isWrongSlot
-                          ? 'bg-rose-500/10 border-rose-500/40 hover:bg-rose-500/20'
+                          ? 'bg-rose-950/30 border-rose-500/50 hover:bg-rose-950/45 shadow-[0_0_12px_rgba(244,63,94,0.12)]'
                           : isUnauthorized
-                            ? 'bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/20'
+                            ? 'bg-amber-950/30 border-amber-500/50 hover:bg-amber-950/45'
                             : isPendingPark
-                              ? 'bg-purple-500/15 border-purple-500/50 hover:bg-purple-500/25 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+                              ? 'bg-purple-950/30 border-purple-500/50 hover:bg-purple-950/45'
                               : isOccupied
-                                ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15'
+                                ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
                                 : isSelected
                                   ? 'bg-amber-400/10 border-amber-400/50'
                                   : 'bg-white/5 border-white/5 hover:bg-white/10'
                       }`}
                     >
+                      {/* Card Header */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm font-black text-white">{slot.slotCode}</span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
                               isWrongSlot
-                                ? 'bg-rose-500 text-white'
+                                ? 'bg-rose-500 text-white shadow-sm'
                                 : isUnauthorized
                                   ? 'bg-amber-500 text-black font-black'
                                   : isPendingPark
                                     ? 'bg-purple-500 text-white font-black animate-pulse'
                                     : isOccupied
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                      : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
+                                      : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
                             }`}
                           >
                             {isWrongSlot
@@ -2050,7 +2163,9 @@ export default function SlotCameraMonitorModal({
                                 ? 'bg-purple-950/60 border-purple-400/40 text-purple-200'
                                 : isWrongSlot
                                   ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
-                                  : 'bg-black/60 border-white/20 text-white'
+                                  : isUnauthorized
+                                    ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
+                                    : 'bg-black/60 border-white/20 text-white'
                             }`}
                           >
                             {formatLicensePlateDisplay(cardPlate)}
@@ -2058,6 +2173,7 @@ export default function SlotCameraMonitorModal({
                         )}
                       </div>
 
+                      {/* Card Session Info */}
                       {result?.session && (
                         <div className="text-[11px] text-gray-300 space-y-1 bg-black/30 p-2 rounded-lg border border-white/5">
                           {result.session.userId?.phone && (
@@ -2069,51 +2185,51 @@ export default function SlotCameraMonitorModal({
                           {result.session.checkInTime && (
                             <div className="flex items-center gap-1.5 text-gray-400">
                               <Clock size={11} />
-                              <span>Check-in: {new Date(result.session.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span>Check-in: {new Date(result.session.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* Actions & Alerts */}
+                      {/* Card Alerts & Action Buttons */}
                       {isWrongSlot ? (
-                        <div className="mt-1 pt-1.5 border-t border-rose-500/20 space-y-1.5">
-                          <span className="text-[11px] font-black text-rose-400 flex items-center gap-1">
-                            <ShieldAlert size={12} className="animate-pulse" />
-                            {result?.violationMessage || 'Vehicle parked in wrong slot!'}
-                          </span>
-                          {result?.session && (
+                        <div className="mt-1 pt-1.5 border-t border-rose-500/20 space-y-2">
+                          <div className="text-[11px] font-bold text-rose-300 flex items-start gap-1.5 leading-snug">
+                            <ShieldAlert size={13} className="text-rose-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
+                          {(result?.session || result?.expectedSession) && (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleQuickReassignSlot(result.session, slot.slotCode);
+                                handleQuickReassignSlot(result.session || result.expectedSession, slot.slotCode);
                               }}
                               disabled={reassigningSlot === slot.slotCode}
-                              className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 shadow active:scale-95 disabled:opacity-50 cursor-pointer"
+                              className="w-full py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
                             >
                               {reassigningSlot === slot.slotCode ? (
                                 <RefreshCw size={12} className="animate-spin text-emerald-200" />
                               ) : (
                                 <Zap size={12} className="text-amber-300" />
                               )}
-                              <span>Reassign to {slot.slotCode} (Accept)</span>
+                              <span>Accept vehicle at {slot.slotCode} (Reassign Slot)</span>
                             </button>
                           )}
                         </div>
                       ) : isUnauthorized ? (
-                        <div className="mt-1 pt-1 border-t border-amber-500/20">
-                          <span className="text-[11px] font-black text-amber-400 flex items-center gap-1">
-                            <AlertTriangle size={12} className="animate-pulse" />
-                            {result?.violationMessage || 'No valid parking session found!'}
-                          </span>
+                        <div className="mt-1 pt-1.5 border-t border-amber-500/20">
+                          <div className="text-[11px] font-bold text-amber-300 flex items-start gap-1.5 leading-snug">
+                            <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
                         </div>
                       ) : isPendingPark ? (
-                        <div className="mt-1 pt-1 border-t border-purple-500/30">
-                          <span className="text-[11px] font-black text-purple-300 flex items-center gap-1">
-                            <Clock size={12} className="animate-pulse text-purple-400" />
-                            {result?.violationMessage || 'Vehicle checked in but not parked yet!'}
-                          </span>
+                        <div className="mt-1 pt-1.5 border-t border-purple-500/30">
+                          <div className="text-[11px] font-bold text-purple-300 flex items-start gap-1.5 leading-snug">
+                            <Clock size={13} className="text-purple-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
                         </div>
                       ) : isOccupied && result?.session && onCheckoutSlot ? (
                         <button

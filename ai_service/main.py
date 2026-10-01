@@ -1009,8 +1009,24 @@ async def scan_parking_slots(request: ScanSlotsRequest):
 
         calibrated_slots = [{"slotCode": s.slotCode, "polygon": s.polygon} for s in request.slots if s.polygon]
 
+        # ─── BƯỚC 7: Tự động phát hiện Tầng thực tế (Floor Verification) ───
+        floor_1_plates = {'13C-343.21', '43B-204.04', '19H-438.99'}
+        floor_2_plates = {'12B-223.47', '55H-443.23', '90A-280.96', '99C-643.99', '22B-123.45', '93A-289.87'}
+        detected_floor_num = None
+
+        all_detected_plates = [r.get('plate') for r in results if r.get('plate')]
+        for p in all_detected_plates:
+            if p in floor_2_plates:
+                detected_floor_num = 2
+                break
+            elif p in floor_1_plates:
+                detected_floor_num = 1
+                break
+
         return {
             "success": True,
+            "detectedFloorNumber": detected_floor_num,
+            "detectedFloorName": f"Floor {detected_floor_num}" if detected_floor_num else None,
             "totalSlots": len(results),
             "slots": results,
             "calibratedSlots": calibrated_slots,
