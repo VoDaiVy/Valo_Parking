@@ -2,7 +2,6 @@ import { validDate, validTime } from './aiBookingValidation.js';
 import { isValidLicensePlate, normalizeLicensePlate } from './licensePlate.js';
 import { localizeAiBookingMessage } from './aiBookingMessages.js';
 
-export const MAX_AI_BOOKING_DAYS = 5;
 export const MAX_AI_BOOKING_ITEMS = 5;
 const activeStatus = new Set(['PAID', 'ACTIVE', 'PAUSED']);
 const normalize = (value) => String(value || '').trim().toUpperCase();
@@ -47,8 +46,8 @@ const floorMatches = (slot, requested) => {
   const code = floorCode(target);
   return /^\d+$/.test(code) && normalize(slot.floorNumber) === String(Number(code));
 };
-const parseDate = (date) => new Date(`${date}T12:00:00Z`);
 const dayLabel = (date) => date.split('-').reverse().join('/');
+const rangeLabel = (request) => `${dayLabel(request.date)} ${request.startTime} đến ${dayLabel(request.endDate)} ${request.endTime}`;
 const vietnamDate = (now = Date.now()) => new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date(now));
@@ -62,18 +61,14 @@ export const isVipBookingRestriction = (error) => {
   return /already in a VIP subscription|please use your VIP parking slot instead of making a new booking|đang có gói VIP|thuộc xe VIP của tài khoản khác/i.test(message);
 };
 
-export function enumerateBookingDays(startDate, endDate) {
-  if (!validDate(startDate) || !validDate(endDate) || endDate < startDate) {
-    throw new Error('Vui lòng chọn ngày đặt chỗ hợp lệ.');
-  }
-  const days = [];
-  for (let current = parseDate(startDate); current <= parseDate(endDate); current.setUTCDate(current.getUTCDate() + 1)) {
-    days.push(current.toISOString().slice(0, 10));
-    if (days.length > MAX_AI_BOOKING_DAYS) {
-      throw new Error('Đặt nhanh bằng AI hỗ trợ tối đa 5 ngày mỗi lần vì hệ thống chỉ giữ tối đa 5 chỗ.');
-    }
-  }
-  return days;
+export function bookingDateSchedules(draft = {}) {
+  return [{
+    date: draft.startDate || '',
+    endDate: draft.endDate || draft.startDate || '',
+    startTime: draft.startTime || '',
+    endTime: draft.endTime || '',
+    bookingMode: 'CONTINUOUS',
+  }];
 }
 
 export function getMissingBookingFields(draft, vehicles = [], now = Date.now()) {
@@ -107,9 +102,10 @@ export function getMissingBookingFields(draft, vehicles = [], now = Date.now()) 
       else if (!(item.endTime || draft.endTime)) missing.push(`Xe ${index + 1} muốn đỗ đến mấy giờ?`);
     }
   } else {
-    if (!draft.startDate) missing.push('Bạn muốn đỗ xe ngày nào?');
-    if (!draft.startTime) missing.push('Bạn muốn bắt đầu đỗ lúc mấy giờ?');
-    else if (!draft.endTime) missing.push('Bạn muốn đỗ đến mấy giờ?');
+    if (!draft.startDate) missing.push('Bạn muốn bắt đầu đỗ ngày nào?');
+    else if (!draft.endDate) missing.push('Bạn muốn kết thúc đỗ ngày nào?');
+    if (!draft.startTime) missing.push(`Bạn muốn bắt đầu lúc mấy giờ${draft.startDate ? ` ngày ${dayLabel(draft.startDate)}` : ''}?`);
+    else if (!draft.endTime) missing.push(`Bạn muốn kết thúc lúc mấy giờ${draft.endDate ? ` ngày ${dayLabel(draft.endDate)}` : ''}?`);
   }
   if (invalidPlates.length) {
     missing.push(`Biển số ${invalidPlates.join(', ')} không hợp lệ. Hãy dùng biển ô tô gồm 2 số tỉnh, 1 đến 2 chữ cái và 4 đến 5 số cuối, ví dụ 43A12345.`);
@@ -149,24 +145,29 @@ export function resolveBookingVehicles(draft, vehicles = []) {
 }
 
 export async function checkAiAvailability(draft, gateway, now = Date.now()) {
-  if (!draft.startDate) return { missing: ['Bạn muốn kiểm tra ngày nào?'] };
-  if (!draft.startTime || !draft.endTime) return { missing: ['Bạn muốn kiểm tra khoảng giờ nào?'] };
-  const days = enumerateBookingDays(draft.startDate, draft.endDate || draft.startDate);
-  if (!validTime(draft.startTime) || !validTime(draft.endTime) || draft.endTime <= draft.startTime) {
-    throw new Error('Khoảng thời gian chưa hợp lệ.');
-  }
+  const missing = getMissingBookingFields({ ...draft, licensePlate: '43A12345' }, [{
+    _id: 'availability-only', licensePlate: '43A12345', status: 'approved', vehicleType: draft.vehicleType || 'car',
+  }], now).filter((message) => !/xe nào|biển số/i.test(message));
+  if (missing.length) return { missing };
+  const schedules = bookingDateSchedules(draft);
   const results = [];
-  for (const date of days) {
-    const startTime = new Date(`${date}T${draft.startTime}:00+07:00`);
-    const endTime = new Date(`${date}T${draft.endTime}:00+07:00`);
-    if (startTime.getTime() <= now) throw new Error(`Giờ bắt đầu ngày ${dayLabel(date)} đã qua.`);
+  for (const schedule of schedules) {
+    if (!validDate(schedule.date) || !validDate(schedule.endDate)
+      || !validTime(schedule.startTime) || !validTime(schedule.endTime)) {
+      throw new Error('Khoảng thời gian chưa hợp lệ.');
+    }
+    const startTime = new Date(`${schedule.date}T${schedule.startTime}:00+07:00`);
+    const endTime = new Date(`${schedule.endDate}T${schedule.endTime}:00+07:00`);
+    if (endTime <= startTime) throw new Error('Khoảng thời gian chưa hợp lệ.');
+    if (startTime.getTime() <= now) throw new Error(`Giờ bắt đầu ngày ${dayLabel(schedule.date)} đã qua.`);
     const response = await gateway.getAvailableBookingSlots({ startTime: startTime.toISOString(), endTime: endTime.toISOString() });
-    if (!response.ok) throw resultError(response, `Không thể kiểm tra ngày ${dayLabel(date)}.`);
+    if (!response.ok) throw resultError(response, `Không thể kiểm tra khoảng từ ngày ${dayLabel(schedule.date)} đến ${dayLabel(schedule.endDate)}.`);
     const matching = (response.data?.data?.slots || []).filter((slot) =>
       isCompatibleSlot(slot, draft.vehicleType || 'car')
       && floorMatches(slot, draft.floorName)
       && (!draft.slotCode || normalize(slot.slotCode) === normalize(draft.slotCode)));
-    results.push({ date, count: matching.length, suggestions: matching.slice(0, 3) });
+    results.push({ date: schedule.date, endDate: schedule.endDate, bookingMode: schedule.bookingMode,
+      count: matching.length, suggestions: matching.slice(0, 3) });
   }
   return { availability: results };
 }
@@ -232,40 +233,40 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         licensePlate: source.licensePlate || draftPlates(draft)[index] || '',
       }, vehicles);
       const startDate = source.startDate || draft.startDate;
-      const endDate = source.endDate || startDate;
-      for (const date of enumerateBookingDays(startDate, endDate)) {
-        requestSpecs.push({
-          sourceIndex: index, vehicle, date,
-          startTime: source.startTime || draft.startTime,
-          endTime: source.endTime || draft.endTime,
-          floorName: source.floorName || draft.floorName || '',
-          zoneName: source.zoneName || draft.zoneName || '',
-          slotCode: source.slotCode || draft.slotCode || '',
-        });
-      }
+      const endDate = source.endDate || draft.endDate || startDate;
+      requestSpecs.push({
+        sourceIndex: index, vehicle, date: startDate, endDate, bookingMode: 'CONTINUOUS',
+        startTime: source.startTime || draft.startTime,
+        endTime: source.endTime || draft.endTime,
+        floorName: source.floorName || draft.floorName || '',
+        zoneName: source.zoneName || draft.zoneName || '',
+        slotCode: source.slotCode || draft.slotCode || '',
+      });
     }
   } else {
-    const days = enumerateBookingDays(draft.startDate, draft.endDate || draft.startDate);
-    for (const date of days) {
-      for (const vehicle of bookingVehicles) {
-        requestSpecs.push({
-          sourceIndex: requestSpecs.length, vehicle, date,
-          startTime: draft.startTime, endTime: draft.endTime,
-          floorName: draft.floorName || '', zoneName: draft.zoneName || '', slotCode: draft.slotCode || '',
-        });
-      }
+    for (const vehicle of bookingVehicles) {
+      requestSpecs.push({
+        sourceIndex: requestSpecs.length, vehicle,
+        date: draft.startDate, endDate: draft.endDate || draft.startDate,
+        bookingMode: 'CONTINUOUS',
+        startTime: draft.startTime, endTime: draft.endTime,
+        floorName: draft.floorName || '', zoneName: draft.zoneName || '', slotCode: draft.slotCode || '',
+      });
     }
   }
   if (requestSpecs.length > MAX_AI_BOOKING_ITEMS) {
-    throw new Error(`Mỗi lần xác nhận tối đa ${MAX_AI_BOOKING_ITEMS} chỗ. Vui lòng giảm số xe hoặc số ngày rồi thử lại.`);
+    throw new Error(`Mỗi lần xác nhận tối đa ${MAX_AI_BOOKING_ITEMS} chỗ. Vui lòng giảm số xe rồi thử lại.`);
   }
   const days = [...new Set(requestSpecs.map((request) => request.date))].sort();
   for (const request of requestSpecs) {
-    if (!validTime(request.startTime) || !validTime(request.endTime) || request.endTime <= request.startTime) {
-      throw new Error(`Giờ của xe ${request.vehicle.licensePlate} chưa hợp lệ. Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.`);
+    if (!validDate(request.date) || !validDate(request.endDate)
+      || !validTime(request.startTime) || !validTime(request.endTime)) {
+      throw new Error(`Thời gian của xe ${request.vehicle.licensePlate} chưa hợp lệ.`);
     }
-    const durationMinutes = (Number(request.endTime.slice(0, 2)) * 60 + Number(request.endTime.slice(3)))
-      - (Number(request.startTime.slice(0, 2)) * 60 + Number(request.startTime.slice(3)));
+    const start = new Date(`${request.date}T${request.startTime}:00+07:00`);
+    const end = new Date(`${request.endDate}T${request.endTime}:00+07:00`);
+    const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+    if (end <= start) throw new Error(`Giờ kết thúc của xe ${request.vehicle.licensePlate} phải sau giờ bắt đầu.`);
     if (durationMinutes < 30) throw new Error(`Xe ${request.vehicle.licensePlate} cần đặt tối thiểu 30 phút.`);
   }
   if (!explicitItems.length && bookingVehicles.length > 1 && draft.slotCode) {
@@ -281,7 +282,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
 
   for (const request of requestSpecs) {
     const startTime = new Date(`${request.date}T${request.startTime}:00+07:00`);
-    const endTime = new Date(`${request.date}T${request.endTime}:00+07:00`);
+    const endTime = new Date(`${request.endDate}T${request.endTime}:00+07:00`);
     if (startTime.getTime() <= now) throw new Error(`Ngày ${dayLabel(request.date)} đã qua hoặc giờ bắt đầu không còn hợp lệ.`);
     const rangeKey = `${startTime.toISOString()}|${endTime.toISOString()}`;
     if (!availabilityCache.has(rangeKey)) {
@@ -300,7 +301,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const requestedOverlap = candidates.find((candidate) => normalizePlate(candidate.vehicle.licensePlate) === normalizePlate(vehicle.licensePlate)
       && rangesOverlap(startTime, endTime, new Date(candidate.startTime), new Date(candidate.endTime)));
     if (ownOverlap || requestedOverlap) {
-      conflicts.push(`${dayLabel(request.date)}: xe ${vehicle.licensePlate} đã có booking trùng thời gian. Hãy chọn khung giờ khác.`);
+      conflicts.push(`Xe ${vehicle.licensePlate} đã có booking trùng thời gian trong khoảng ${rangeLabel(request)}. Hãy chọn khoảng thời gian khác.`);
       continue;
     }
     const occupiedSlots = new Set(candidates.filter((candidate) =>
@@ -325,15 +326,15 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const seed = `${vehicle.licensePlate}:${request.date}:${request.startTime}:${request.endTime}`;
     const chosen = exact || (!preferredSlot ? chooseAutoSlot(floorSlots, seed, vehicleType) : null);
     if (!chosen) {
-      const sameRangeRequests = requestSpecs.filter((item) => item.date === request.date
+      const sameRangeRequests = requestSpecs.filter((item) => item.date === request.date && item.endDate === request.endDate
         && item.startTime === request.startTime && item.endTime === request.endTime);
       if (!preferredSlot && sameRangeRequests.length > 1
         && sameRangeRequests.length > allCompatibleSlots.length && !shortageRanges.has(rangeKey)) {
         shortageRanges.add(rangeKey);
-        conflicts.push(`Hiện chỉ còn ${allCompatibleSlots.length} chỗ trong khung ${request.startTime}–${request.endTime} ngày ${dayLabel(request.date)}, nên chưa thể đặt đủ ${sameRangeRequests.length} xe. Bạn muốn giảm số xe hay chọn thời gian khác?`);
+        conflicts.push(`Hiện chỉ còn ${allCompatibleSlots.length} chỗ trống trong toàn bộ khoảng ${rangeLabel(request)}, nên chưa thể đặt đủ ${sameRangeRequests.length} xe. Bạn muốn giảm số xe hay chọn thời gian khác?`);
       } else if (!shortageRanges.has(rangeKey)) {
         const suggestion = chooseAutoSlot(floorSlots, seed, vehicleType) || chooseAutoSlot(compatibleSlots, seed, vehicleType);
-        conflicts.push(`${dayLabel(request.date)}: xe ${vehicle.licensePlate} ${preferredSlot
+        conflicts.push(`Không có chỗ phù hợp cho toàn bộ khoảng ${rangeLabel(request)}. Xe ${vehicle.licensePlate} ${preferredSlot
           ? `không thể dùng ô ${preferredSlot} vì ô không còn trống hoặc không phù hợp với loại xe`
           : preferredZone
             ? `không còn ô phù hợp tại khu ${request.zoneName}`
@@ -349,13 +350,6 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
   }
   if (conflicts.length || candidates.length !== requestSpecs.length) return { conflicts, days };
 
-  // Keep the same slot across days when possible, while allowing a per-day alternative.
-  if (!explicitItems.length && !draft.slotCode && bookingVehicles.length === 1 && candidates.length > 1) {
-    const first = candidates[0].availableSlots;
-    const commonSlots = first.filter((slot) => candidates.every((day) => day.availableSlots.some((candidate) => keyOf(candidate) === keyOf(slot))));
-    const common = chooseAutoSlot(commonSlots, `${bookingVehicles[0].licensePlate}:${draft.startDate}:${draft.endDate}:${draft.startTime}:${draft.endTime}`, candidates[0].vehicleType);
-    if (common) candidates.forEach((day) => { day.slot = common; });
-  }
   const items = candidates.map((candidate, index) => ({
     clientItemId: `ai-${index}-${candidate.date}-${candidate.vehicle.licensePlate}`,
     ...candidate.vehicle,
@@ -365,6 +359,8 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     endTime: candidate.endTime,
     serviceIds: Array.isArray(draft.serviceIds) ? draft.serviceIds : [],
     date: candidate.date,
+    endDate: candidate.endDate,
+    bookingMode: candidate.bookingMode,
     floorName: candidate.slot.floorName,
   }));
   const quote = await gateway.quoteBulkBooking({ items });
@@ -383,17 +379,18 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     throw resultError(quote, 'Không thể tính giá booking.');
   }
   if (itemErrors.length) return { conflicts: itemErrors.map((error) => localizeAiBookingMessage(error.message)), days };
-  if ((quote.data?.data?.items || []).length !== items.length) throw new Error('Báo giá chưa đầy đủ cho tất cả các ngày.');
+  if ((quote.data?.data?.items || []).length !== items.length) throw new Error('Báo giá chưa đầy đủ cho tất cả chỗ.');
   const wallet = await gateway.getWalletInfo();
   if (!wallet.ok) throw resultError(wallet, 'Không thể kiểm tra số dư ví.');
   const total = Number(quote.data.data.grandTotal);
   if (!Number.isFinite(total) || total < 0) throw new Error('Báo giá không hợp lệ.');
   const durations = requestSpecs.map((request) => (
-    Number(request.endTime.slice(0, 2)) * 60 + Number(request.endTime.slice(3))
-      - Number(request.startTime.slice(0, 2)) * 60 - Number(request.startTime.slice(3))
-  ));
+    new Date(`${request.endDate}T${request.endTime}:00+07:00`).getTime()
+      - new Date(`${request.date}T${request.startTime}:00+07:00`).getTime()
+  ) / 60000);
   const durationMinutes = durations.every((duration) => duration === durations[0]) ? durations[0] : null;
-  return { items, days, durationMinutes, total, walletBalance: Number(wallet.data?.data?.balance || 0), quotes: quote.data.data.items };
+  return { items, days, bookingMode: 'CONTINUOUS',
+    durationMinutes, total, walletBalance: Number(wallet.data?.data?.balance || 0), quotes: quote.data.data.items };
 }
 
 export async function confirmAiBooking(preview, draft, gateway, vehicles, idempotencyKey) {

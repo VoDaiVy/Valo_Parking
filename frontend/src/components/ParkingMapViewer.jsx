@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Maximize, Car, Zap, Accessibility, Bike, TreePine, ArrowRight, Navigation, Layers, MonitorSmartphone } from 'lucide-react';
 
-const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, isMaintenance, isReserved, isHeld, session, canViewLicensePlate, onSelectSlot }) => {
+const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, isMaintenance, isReserved, isHeld, session, canViewLicensePlate, onSelectSlot, readOnly }) => {
   const hasName = !!el.name && el.name.trim() !== '';
   if (!hasName) return null;
   const slotName = el.name;
@@ -83,13 +83,13 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
         borderColor: finalBorderColor,
         backgroundColor: finalBgColor,
         transition: slotTransition,
-        cursor: (isOccupied || isMaintenance || isReserved || isHeld || !hasName) ? 'not-allowed' : 'pointer',
+        cursor: readOnly ? 'default' : ((isOccupied || isMaintenance || isReserved || isHeld || !hasName) ? 'not-allowed' : 'pointer'),
         opacity: (!hasName) ? 0.3 : 1
       }}
       className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center ${isSelected ? 'ring-4 ring-cyan-500/50 shadow-cyan-500/50' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
-        if (!hasName) return;
+        if (!hasName || readOnly) return;
         if (!isOccupied && !isMaintenance && !isReserved && !isHeld && onSelectSlot) {
           onSelectSlot({ id: slotName, type: el.type }, floorId);
         }
@@ -107,7 +107,7 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
   );
 });
 
-export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect, activeSessions = [], dbSlots = [], availableSlots = null, activeHolds = [], onSelectSlot, selectedSlotId, is2DMode = false, hideUI = false, theme = 'dark', initialZoom, staticFit = false }) {
+export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect, activeSessions = [], dbSlots = [], availableSlots = null, activeHolds = [], onSelectSlot, selectedSlotId, is2DMode = false, hideUI = false, theme = 'dark', initialZoom, staticFit = false, readOnly = false }) {
   const isLight = theme === 'light';
 
   const [camera, setCamera] = useState(
@@ -343,6 +343,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
             session={occupiedSession}
             canViewLicensePlate={canViewLicensePlate}
             onSelectSlot={handleSelectSlot}
+            readOnly={readOnly}
           />
         );
       }

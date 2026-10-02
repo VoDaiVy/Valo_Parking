@@ -1764,7 +1764,17 @@ export default function CreateBookingPage() {
           </div>
         )}
 
-        {bookingMode === 'ai' ? <AiBookingPanel vehicles={vehicles} onVehiclesChanged={loadData} onSwitchToManual={() => setBookingMode('manual')} /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
+        {bookingMode === 'ai' ? <AiBookingPanel
+          vehicles={vehicles}
+          onVehiclesChanged={loadData}
+          onSwitchToManual={() => setBookingMode('manual')}
+          mapFloors={floors}
+          mapFloorId={currentFloorId}
+          onMapFloorSelect={setCurrentFloorId}
+          mapActiveSessions={activeSessions}
+          mapDbSlots={dbSlots}
+          mapActiveHolds={activeHolds}
+        /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>

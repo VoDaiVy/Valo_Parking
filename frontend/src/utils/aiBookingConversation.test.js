@@ -28,6 +28,19 @@ test('negative and mixed replies never confirm a booking', () => {
   assert.equal(routeBookingReply('IDLE', 'Thôi.'), 'cancel_draft');
 });
 
+test('top-up and QR requests are routed to payment while a booking preview is waiting', () => {
+  for (const message of [
+    'Nạp thêm.', 'Nạp tiền', 'Nạp ví', 'Tôi muốn nạp thêm', 'Thêm tiền',
+    'Thanh toán', 'Thanh toán bằng QR', 'Quét mã QR', 'Hiện mã QR',
+    'Cho tôi mã QR', 'QR', 'Top up', 'Chuyển khoản',
+  ]) {
+    assert.equal(routeBookingReply('WAITING_CONFIRMATION', message), 'top_up', message);
+    assert.equal(routeBookingReply('IDLE', message), 'interpret', message);
+  }
+  assert.notEqual(routeBookingReply('WAITING_CONFIRMATION', 'Không nạp thêm'), 'top_up');
+  assert.equal(routeBookingReply('WAITING_CONFIRMATION', 'Nạp thêm nhưng đổi giờ'), 'interpret');
+});
+
 test('vehicle actions accept natural confirmation without weakening booking confirmation', () => {
   assert.equal(routeAssistantActionReply('Đồng ý xóa xe'), 'confirm');
   assert.equal(routeAssistantActionReply('Thêm đi'), 'confirm');
@@ -65,9 +78,10 @@ test('summary uses actual quoted date, car, slot, time and price', () => {
     items: [{ date: '2026-09-23', licensePlate: '43B20404', floorName: 'Floor 1', slotCode: 'B2' }],
     durationMinutes: 60, total: 20000,
   }, { startTime: '08:00', endTime: '09:00' });
-  for (const fragment of ['23/09/2026', '08:00', '09:00', '43B20404', 'Floor 1', 'B2', '20.000đ', 'Xác nhận']) {
+  for (const fragment of ['23/09/2026', '08:00', '09:00', '43B20404', 'Floor 1', 'B2', '20.000đ']) {
     assert.ok(summary.includes(fragment), fragment);
   }
+  assert.match(summary, /xác nhận/i);
 });
 
 test('multi-day summary names every booking day and warns before an unaffordable confirmation', () => {
@@ -91,8 +105,8 @@ test('multiple-item confirmation lists the actual date and time of every vehicle
     ],
     quotes: [{ totalAmount: 10000 }, { totalAmount: 20000 }], total: 30000, walletBalance: 100000,
   });
-  assert.match(summary, /43A12345: 24\/09\/2026, 08:00–09:00/);
-  assert.match(summary, /47A67890: 25\/09\/2026, 09:00–11:00/);
+  assert.match(summary, /43A12345: 24\/09\/2026 08:00 đến 24\/09\/2026 09:00/);
+  assert.match(summary, /47A67890: 25\/09\/2026 09:00 đến 25\/09\/2026 11:00/);
   assert.match(summary, /Tổng 30\.000đ/);
   assert.match(summary, /xác nhận đặt 2 chỗ/i);
 });
@@ -106,7 +120,7 @@ test('vehicles sharing one schedule mention the date and time only once', () => 
     quotes: [{ totalAmount: 10000 }, { totalAmount: 10000 }], total: 20000, walletBalance: 100000,
   });
   assert.equal(summary,
-    '2 xe, 28/09/2026, 08:00–09:00:\n- 43A12345: Tầng 1, ô B7\n- 43B54321: Tầng 1, ô C5\nTổng 20.000đ. Xác nhận đặt 2 chỗ?');
-  assert.equal((summary.match(/28\/09\/2026/g) || []).length, 1);
-  assert.equal((summary.match(/08:00–09:00/g) || []).length, 1);
+    '2 xe, 28/09/2026 08:00 đến 28/09/2026 09:00:\n- 43A12345: Tầng 1, ô B7\n- 43B54321: Tầng 1, ô C5\nTổng 20.000đ. Xác nhận đặt 2 chỗ?');
+  assert.equal((summary.match(/28\/09\/2026/g) || []).length, 2);
+  assert.equal((summary.match(/08:00/g) || []).length, 1);
 });

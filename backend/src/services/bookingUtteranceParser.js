@@ -1,6 +1,6 @@
 const simplify = (value) => String(value || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
-const manualOnlyPattern = /\b(hang ngay|moi ngay|lap lai|sac|vip|dich vu|gan|khu|zone|cong|loi ra|uu tien|co mai|ngoai troi)\b/;
+const manualOnlyPattern = /\b(sac|vip|dich vu|gan|khu|zone|cong|loi ra|uu tien|co mai|ngoai troi)\b/;
 const supportedLocationCodePattern = /\b(?:zone|khu(?:\s+vuc)?)\s*([a-z]+\d+)\b/;
 const withoutSupportedLocationCode = (message) => message.replace(supportedLocationCodePattern, ' ');
 
@@ -10,6 +10,9 @@ function specialBookingRequest(prompt, previous = {}) {
   const bookingCue = /\b(dat|giu cho|book|do xe|dau xe|gui xe|mai|hom nay|ngay kia)\b/.test(message)
     || /\b\d{1,2}\s*(?:h|gio|:)/.test(message)
     || previous.__intent === 'CREATE_BOOKING';
+  if (bookingCue && /\b(moi ngay|hang ngay|lap lai moi ngay)\b/.test(message)) {
+    return 'VALO chỉ hỗ trợ một khoảng giữ chỗ liên tục. Hãy nói rõ thời gian bắt đầu và thời gian kết thúc.';
+  }
   if (bookingCue && manualOnlyPattern.test(withoutSupportedLocationCode(message))) {
     return 'Yêu cầu này cần chọn thêm điều kiện trong Đặt chỗ thủ công để tránh đặt sai chỗ hoặc sai dịch vụ.';
   }
@@ -25,6 +28,30 @@ const addDays = (date, count) => {
   const value = new Date(`${date}T12:00:00Z`);
   value.setUTCDate(value.getUTCDate() + count);
   return value.toISOString().slice(0, 10);
+};
+const dayOfMonthRange = (startDay, endDay, today) => {
+  const reference = new Date(`${today}T12:00:00Z`);
+  const make = (year, month, day) => {
+    const value = `${year}-${pad(month)}-${pad(day)}`;
+    return validDate(value) ? value : '';
+  };
+  let year = reference.getUTCFullYear();
+  let month = reference.getUTCMonth() + 1;
+  let start = make(year, month, Number(startDay));
+  if (!start) return [];
+  if (start < today) {
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+    start = make(year, month, Number(startDay));
+  }
+  if (!start) return [];
+  let end = make(year, month, Number(endDay));
+  if (end && end < start) {
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+    end = make(year, month, Number(endDay));
+  }
+  return end ? [start, end] : [];
 };
 
 const plateDigits = {
@@ -489,6 +516,9 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   if (/\b(sua|doi|gia han)\s*(?:booking|dat cho|lich dat)\b/.test(message)) return null;
   const createCue = /\b(dat|giu cho|book|do xe|dau xe|gui xe)\b/.test(message);
   if (!createCue && previous.__intent && !['UNKNOWN', 'CREATE_BOOKING'].includes(previous.__intent)) return null;
+  if (/\b(moi ngay|hang ngay|lap lai moi ngay)\b/.test(message)) {
+    return { changes: {}, clarification: 'VALO chỉ hỗ trợ một khoảng giữ chỗ liên tục. Hãy nói rõ thời gian bắt đầu và thời gian kết thúc.' };
+  }
   if (/\b(thang|xe may|toi da|toi thieu)\b/.test(message)
     || manualOnlyPattern.test(withoutSupportedLocationCode(message))) return null;
   const requestedVehicleCount = extractVehicleCount(message) || Number(previous.requestedVehicleCount || 0);
@@ -496,13 +526,20 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   if (requestedVehicleCount > 5 || /\b\d+\s*(?:cho|o do)\b/.test(message)) return null;
 
   const datePattern = /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay mot|cuoi tuan|thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)(?:\s+tuan\s+(?:sau|nay))?|chu nhat(?:\s+tuan\s+(?:sau|nay))?|mai|nay|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/g;
-  const dateMatches = [...message.matchAll(datePattern)];
+  const sharedMonthRange = message.match(/\btu\s+(?:ngay\s+)?(\d{1,2})\s+(?:den|toi)\s+(?:ngay\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  const bareDayRange = !sharedMonthRange
+    ? message.match(/\b(?:tu\s+)?ngay\s+(\d{1,2})\s+(?:den|toi)\s+ngay\s+(\d{1,2})\b/) : null;
+  const dateMatches = sharedMonthRange || bareDayRange ? [] : [...message.matchAll(datePattern)];
   const dateTokens = dateMatches.map((match) => match[0]);
   if (dateTokens.length > 2) return null;
   const withoutDateWords = message.replace(datePattern, '');
   if (/\b(thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)|chu nhat|tuan)\b/.test(withoutDateWords)) return null;
   if (dateTokens.length > 1 && dateTokens.some((token) => /^(thu|chu nhat|cuoi tuan)/.test(token))) return null;
-  const dates = dateTokens.map((token) => parseDateToken(token, today));
+  const dates = sharedMonthRange ? [
+    parseDateToken(`${sharedMonthRange[1]}/${sharedMonthRange[3]}${sharedMonthRange[4] ? `/${sharedMonthRange[4]}` : ''}`, today),
+    parseDateToken(`${sharedMonthRange[2]}/${sharedMonthRange[3]}${sharedMonthRange[4] ? `/${sharedMonthRange[4]}` : ''}`, today),
+  ] : bareDayRange ? dayOfMonthRange(bareDayRange[1], bareDayRange[2], today)
+    : dateTokens.map((token) => parseDateToken(token, today));
   if (dates.some((date) => !date)) return null;
   const pastDate = dates.find((date) => date < today);
   if (pastDate) {
@@ -514,21 +551,10 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   let startDate = dates[0] || '';
   let endDate = dates[1] || (dateTokens[0] === 'cuoi tuan' ? addDays(startDate, 1) : startDate);
   if (startDate && endDate < startDate) return null;
-  const crossDateClarification = 'Bạn đang muốn đỗ liên tục qua ngày. Vui lòng chọn Đặt chỗ thủ công để nhập riêng ngày giờ vào và ngày giờ ra.';
-  if (/\b(qua dem|lien tuc|hom sau|sang ngay sau)\b/.test(message)) {
-    return { changes: { startDate, endDate, startTime: '', endTime: '' }, clearTimes: true, clarification: crossDateClarification };
-  }
-
-  // A clock time before the second date means a continuous cross-date stay,
-  // not one repeated booking on each date in the range.
-  if (dateMatches.length === 2 && /\b\d{1,2}\s*(?:h|gio|:)/.test(message.slice(0, dateMatches[1].index))) {
-    return {
-      changes: { startDate, endDate, startTime: '', endTime: '' }, clearTimes: true,
-      clarification: crossDateClarification,
-    };
-  }
-
-  const withoutDates = message.replace(/\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/g, '');
+  const withoutDates = message
+    .replace(sharedMonthRange?.[0] || /$^/, '')
+    .replace(bareDayRange?.[0] || /$^/, '')
+    .replace(/\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/g, '');
   const relativeDelayMatch = withoutDates.match(/\b(?:sau\s+|trong\s+)?(\d{1,3})\s*(phut|gio|tieng)\s+nua\b/)
     || withoutDates.match(/\bsau\s+(\d{1,3})\s*(phut|gio|tieng)\b/)
     || withoutDates.match(/\b(?:sau\s+|trong\s+)?(nua)\s*(gio|tieng)\s+nua\b/);
@@ -551,17 +577,15 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
     relativeStartTime = `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`;
   }
   const timeSource = relativeDelayMatch ? withoutDates.replace(relativeDelayMatch[0], '') : withoutDates;
-  const durationMatch = timeSource.match(/\b(?:trong|suot|keo dai)\s*(\d{1,3})\s*(gio|tieng|phut)(?:\s*(ruoi))?\b/)
-    || timeSource.match(/\b(\d{1,3})\s*(gio|tieng|phut)(?:\s*(ruoi))?\s+(?:tu(?:\s+luc)?|bat dau(?:\s+tu|\s+luc)?)\b/)
-    || timeSource.match(/\b(\d{1,3})\s*(tieng)(?:\s*(ruoi))?\b/);
+  const durationMatch = timeSource.match(/\b(?:trong|suot|keo dai)\s*(\d+)\s*(ngay|gio|tieng|phut)(?:\s*(ruoi))?\b/)
+    || timeSource.match(/\b(\d+)\s*(ngay|gio|tieng|phut)(?:\s*(ruoi))?\s+(?:tu(?:\s+luc)?|bat dau(?:\s+tu|\s+luc)?)\b/)
+    || timeSource.match(/\b(\d+)\s*(tieng)(?:\s*(ruoi))?\b/);
   const durationMinutes = durationMatch
-    ? Number(durationMatch[1]) * (durationMatch[2] === 'phut' ? 1 : 60) + (durationMatch[3] ? 30 : 0)
+    ? Number(durationMatch[1]) * (durationMatch[2] === 'phut' ? 1 : durationMatch[2] === 'ngay' ? 24 * 60 : 60)
+      + (durationMatch[3] ? 30 : 0)
     : 0;
   const times = extractTimes(durationMatch ? timeSource.replace(durationMatch[0], '') : timeSource);
   if (times.length > 2) return null;
-  if (times.length === 2 && Number(times[0].hour) >= 13 && Number(times[1].hour) <= 12 && !times[1].period) {
-    return { changes: { startDate, endDate, startTime: '', endTime: '' }, clearTimes: true, clarification: crossDateClarification };
-  }
   const periodSource = message.replace(/\bsang\s+(?:tang|floor|o|ngay)\b/g, '');
   const periods = new Set([...periodSource.matchAll(/\b(sang|chieu|toi|trua)\b/g)].map((match) => match[1]));
   if (periods.size === 1) times.forEach((time) => { if (!time.period) time.period = [...periods][0]; });
@@ -569,6 +593,10 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   // interpreted time in the preview and must explicitly confirm it.
   const parsedTimes = times.map(({ hour, minute, period }) => parseHour(hour, minute, period));
   if (parsedTimes.includes(null)) return null;
+  if (times.length === 2 && parsedTimes[1] <= parsedTimes[0]
+    && /\b(qua dem|lien tuc)\b/.test(message) && startDate && endDate === startDate) {
+    endDate = addDays(endDate, 1);
+  }
 
   const incomingPlates = extractLicensePlates(message);
   const licensePlates = [...new Set([...(continuing ? previousPlates : []), ...incomingPlates]
@@ -596,8 +624,8 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
     changes.startTime = relativeStartTime;
   } else if (times.length === 2) {
     [changes.startTime, changes.endTime] = parsedTimes;
-    if (changes.endTime <= changes.startTime) {
-      clarification = 'Giờ ra cần sau giờ vào trong cùng ngày. Nếu muốn đỗ qua đêm, vui lòng chọn Đặt chỗ thủ công.';
+    if (changes.endTime <= changes.startTime && startDate === endDate) {
+      clarification = 'Giờ ra cần sau giờ vào trong cùng ngày.';
       clearTimes = true;
     } else if (durationMatch) {
       const minutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
@@ -613,21 +641,28 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
     if (durationMatch && !isEnd) {
       const [hour, minute] = parsedTimes[0].split(':').map(Number);
       const endMinute = hour * 60 + minute + durationMinutes;
-      if (durationMinutes < 30 || endMinute >= 24 * 60) {
-        clarification = 'Khoảng đỗ qua ngày hoặc dưới 30 phút chưa phù hợp. Vui lòng chọn lại giờ vào và giờ ra.';
+      if (!Number.isFinite(durationMinutes) || durationMinutes < 30) {
+        clarification = 'Thời lượng đặt chỗ phải tối thiểu 30 phút.';
         clearTimes = true;
       } else {
-        changes.endTime = `${pad(Math.floor(endMinute / 60))}:${pad(endMinute % 60)}`;
+        const dayOffset = Math.floor(endMinute / (24 * 60));
+        const minuteOfDay = endMinute % (24 * 60);
+        const baseDate = changes.startDate || (continuing ? previous.startDate : '');
+        changes.endDate = baseDate ? addDays(baseDate, dayOffset) : changes.endDate;
+        changes.endTime = `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`;
       }
     }
   } else if (durationMatch && continuing && /^\d{2}:\d{2}$/.test(previous.startTime || '')) {
     const [hour, minute] = previous.startTime.split(':').map(Number);
     const endMinute = hour * 60 + minute + durationMinutes;
-    if (durationMinutes < 30 || endMinute >= 24 * 60) {
-      clarification = 'Khoảng đỗ qua ngày hoặc dưới 30 phút chưa phù hợp. Vui lòng chọn lại giờ vào và giờ ra.';
+    if (!Number.isFinite(durationMinutes) || durationMinutes < 30) {
+      clarification = 'Thời lượng đặt chỗ phải tối thiểu 30 phút.';
       clearTimes = true;
     } else {
-      changes.endTime = `${pad(Math.floor(endMinute / 60))}:${pad(endMinute % 60)}`;
+      const dayOffset = Math.floor(endMinute / (24 * 60));
+      const minuteOfDay = endMinute % (24 * 60);
+      changes.endDate = previous.startDate ? addDays(previous.startDate, dayOffset) : changes.endDate;
+      changes.endTime = `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`;
     }
   }
   const effectiveStartDate = changes.startDate || (continuing ? previous.startDate : '');

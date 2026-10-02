@@ -17,6 +17,14 @@ const cancellationPhrases = new Set([
   'khong dong y', 'toi khong dong y', 'khong xac nhan', 'khong muon dat nua',
   'thoi khong dat', 'toi huy dat cho',
 ]);
+const topUpPhrases = new Set([
+  'nap', 'nap them', 'nap tien', 'nap vi', 'nap them tien', 'nap them vao vi',
+  'toi muon nap', 'toi muon nap them', 'minh muon nap them', 'nap cho toi',
+  'them tien', 'them tien vao vi', 'top up', 'topup',
+  'thanh toan', 'thanh toan qr', 'thanh toan bang qr', 'thanh toan qua qr',
+  'quet qr', 'quet ma qr', 'mo qr', 'mo ma qr', 'hien qr', 'hien ma qr',
+  'tao qr', 'tao ma qr', 'ma qr', 'qr', 'cho toi ma qr', 'chuyen khoan',
+]);
 
 export function routeBookingReply(phase, message) {
   const value = normalize(message).replace(/^(?:da|vang)\s+/, '').replace(/\s+(?:nhe|nha)$/, '');
@@ -29,6 +37,7 @@ export function routeBookingReply(phase, message) {
   if (/\b(khong|huy|thoi|dung)\b/.test(value)) {
     return cancellationPhrases.has(value) ? 'cancel' : 'clarify';
   }
+  if (topUpPhrases.has(value)) return 'top_up';
   if (confirmationPhrases.has(value)) return 'confirm';
   if (/\b(doi|sua|chuyen|thay|ngay|mai|hom|thu|cuoi tuan|gio|bien|xe|tang|floor|slot|o do|buoi|sang|chieu|toi|trua|\d{1,2}h|\d{1,2}:\d{2})\b/.test(value)) {
     return 'interpret';
@@ -61,30 +70,32 @@ export function bookingPreviewSummary(preview, draft = {}) {
   };
   const payment = Number(preview.walletBalance) < Number(preview.total)
     ? 'Ví chưa đủ tiền. Vui lòng nạp thêm.'
-    : 'Xác nhận đặt?';
+    : 'Bạn có xác nhận đặt chỗ không?';
   if (items.length === 1) {
     const start = parts(items[0].startTime, items[0].date, draft.startTime);
-    const end = parts(items[0].endTime, items[0].date, draft.endTime);
-    return `${start.date}, ${start.time}–${end.time}. Xe ${items[0].licensePlate}. `
-      + `${items[0].floorName}, ô ${items[0].slotCode}. ${Number(preview.total).toLocaleString('vi-VN')}đ. ${payment}`;
+    const end = parts(items[0].endTime, items[0].endDate || items[0].date, draft.endTime);
+    return `Xe ${items[0].licensePlate}: ${start.date} ${start.time} đến ${end.date} ${end.time}. `
+      + `Giữ chỗ liên tục, ${items[0].floorName}, ô ${items[0].slotCode}. `
+      + `${Number(preview.total).toLocaleString('vi-VN')}đ. ${payment}`;
   }
   const details = items.map((item) => {
     const start = parts(item.startTime, item.date, draft.startTime);
-    const end = parts(item.endTime, item.date, draft.endTime);
+    const end = parts(item.endTime, item.endDate || item.date, draft.endTime);
     return { item, start, end };
   });
   const sameSchedule = details.every(({ start, end }) => (
     start.date === details[0].start.date
     && start.time === details[0].start.time
+    && end.date === details[0].end.date
     && end.time === details[0].end.time
   ));
   const lines = sameSchedule
     ? details.map(({ item }) => `- ${item.licensePlate}: ${item.floorName}, ô ${item.slotCode}`)
     : details.map(({ item, start, end }) => (
-      `- ${item.licensePlate}: ${start.date}, ${start.time}–${end.time}, ${item.floorName}, ô ${item.slotCode}`
+      `- ${item.licensePlate}: ${start.date} ${start.time} đến ${end.date} ${end.time}, ${item.floorName}, ô ${item.slotCode}`
     ));
   const heading = sameSchedule
-    ? `${items.length} xe, ${details[0].start.date}, ${details[0].start.time}–${details[0].end.time}:`
+    ? `${items.length} xe, ${details[0].start.date} ${details[0].start.time} đến ${details[0].end.date} ${details[0].end.time}:`
     : `${items.length} chỗ:`;
   return `${heading}\n${lines.join('\n')}\nTổng ${Number(preview.total).toLocaleString('vi-VN')}đ. `
     + (Number(preview.walletBalance) < Number(preview.total)
@@ -99,8 +110,13 @@ export function vipPlatePrompt(plate) {
 export function bookingSuccessSummary(items = []) {
   if (!items.length) return 'Đặt chỗ thành công. QR có trong My Bookings.';
   const details = items.map((item) => {
-    const bookingDate = String(item.date || '').split('-').reverse().join('/');
-    return `${bookingDate ? `${bookingDate}: ` : ''}xe ${item.licensePlate}, ${item.floorName}, ô ${item.slotCode}`;
+    const start = item.startTime ? new Date(item.startTime) : null;
+    const end = item.endTime ? new Date(item.endTime) : null;
+    const format = (value) => value && !Number.isNaN(value.getTime())
+      ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }).format(value)
+      : '';
+    const range = start && end ? `${format(start)} đến ${format(end)}` : String(item.date || '').split('-').reverse().join('/');
+    return `${range ? `${range}: ` : ''}xe ${item.licensePlate}, ${item.floorName}, ô ${item.slotCode}`;
   });
   if (details.length === 1) return `Đặt xong. ${details[0]}. QR trong My Bookings.`;
   return `Đặt xong ${details.length} chỗ:\n${details.map((detail) => `- ${detail}`).join('\n')}\nQR trong My Bookings.`;

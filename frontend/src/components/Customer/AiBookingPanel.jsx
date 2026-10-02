@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bot, CalendarDays, CheckCircle2, Loader2, Mic, MicOff, Send, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { AlertCircle, Bot, CalendarDays, CheckCircle2, Loader2, MapPin, Mic, MicOff, RefreshCw, Send, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import ParkingMapViewer from '../ParkingMapViewer';
 import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import {
@@ -16,7 +18,7 @@ import {
   getAvailableBookingSlots, getBookingCancellationQuote, getMyBookings,
   quoteBulkBooking, releaseBookingHold,
 } from '../../services/bookingService';
-import { getWalletInfo } from '../../services/walletService';
+import { createTopUpUrl, getTopUpStatus, getWalletInfo } from '../../services/walletService';
 import { getMyParkingHistory } from '../../services/sessionService';
 import { getLiveMapData } from '../../services/parkingFloorService';
 import { addVehicle, deleteVehicle, updateVehicle } from '../../services/vehicleService';
@@ -42,6 +44,14 @@ const gateway = {
   getWalletInfo, quoteBulkBooking, releaseBookingHold,
 };
 const money = (amount) => `${Number(amount || 0).toLocaleString('vi-VN')} VND`;
+const durationText = (minutes) => {
+  const value = Number(minutes || 0);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const days = Math.floor(value / 1440);
+  const hours = Math.floor((value % 1440) / 60);
+  const rest = Math.round(value % 60);
+  return [days ? `${days} ngày` : '', hours ? `${hours} giờ` : '', rest ? `${rest} phút` : ''].filter(Boolean).join(' ');
+};
 const dayText = (day) => day?.split('-').reverse().join('/') || '';
 const nowInVietnam = () => {
   const parts = new Intl.DateTimeFormat('sv-SE', {
@@ -86,7 +96,8 @@ const vehicleSelectionPrompt = (draft, vehicles, fallback) => {
 const phaseLabels = {
   IDLE: 'Sẵn sàng', LISTENING: 'Đang nghe...', PROCESSING: 'Đang xử lý...',
   WAITING_CONFIRMATION: 'CHỜ XÁC NHẬN', CONFIRMING: 'Đang kiểm tra lại...',
-  BOOKING: 'Đang tạo booking...', SUCCESS: 'Đặt chỗ thành công', ERROR: 'Có lỗi, vui lòng thử lại',
+  WAITING_PAYMENT: 'CHỜ THANH TOÁN', BOOKING: 'Đang tạo booking...',
+  SUCCESS: 'Đặt chỗ thành công', ERROR: 'Có lỗi, vui lòng thử lại',
 };
 const assistantIntentLabels = {
   CHECK_VEHICLE_PARKING_STATUS: 'Trạng thái xe', CHECK_VEHICLE_ENTRY_TIME: 'Giờ vào',
@@ -111,13 +122,22 @@ const welcomeMessage = {
 };
 const newClientSessionId = () => globalThis.crypto?.randomUUID?.()
   || `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const toVietnamBookingIso = (date, time) => {
+  if (!date || !time) return '';
+  const value = new Date(`${date}T${time}:00+07:00`);
+  return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+};
 const isReadyAssistantAction = (action) => Boolean(action && (
   (action.type === 'ADD_VEHICLE' && action.licensePlate && action.brand && action.vehicleType)
   || (action.type === 'REMOVE_VEHICLE' && action.vehicleId)
   || (action.type === 'UPDATE_VEHICLE' && action.vehicleId && Object.keys(action.changes || {}).length)
 ));
 
-export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehiclesChanged }) {
+export default function AiBookingPanel({
+  vehicles = [], onSwitchToManual, onVehiclesChanged,
+  mapFloors = [], mapFloorId = null, onMapFloorSelect,
+  mapActiveSessions = [], mapDbSlots = [], mapActiveHolds = [],
+}) {
   const [prompt, setPrompt] = useState('');
   const [draft, setDraft] = useState({});
   const [intent, setIntent] = useState('UNKNOWN');
@@ -145,6 +165,13 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
   const [resumeCandidate, setResumeCandidate] = useState(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionSaving, setSessionSaving] = useState('idle');
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [topUpData, setTopUpData] = useState(null);
+  const [topUpLoading, setTopUpLoading] = useState(false);
+  const [topUpSuccess, setTopUpSuccess] = useState(false);
+  const [mapAvailableSlots, setMapAvailableSlots] = useState(null);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [mapError, setMapError] = useState('');
   const voiceSessionRef = useRef(null);
   const speakerRef = useRef(null);
   const draftRef = useRef({});
@@ -171,6 +198,59 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
   const lastSnapshotRef = useRef(null);
   const snapshotSaverRef = useRef(null);
   const ownerKeyRef = useRef(getAiBookingOwnerKey());
+  const confirmCreationRef = useRef(null);
+  const mapRequestRef = useRef(0);
+
+  const previewMapItem = preview?.items?.[0] || null;
+  const mapStartTime = previewMapItem?.startTime
+    || toVietnamBookingIso(draft.startDate, draft.startTime);
+  const mapEndTime = previewMapItem?.endTime
+    || toVietnamBookingIso(draft.endDate || draft.startDate, draft.endTime);
+  const selectedMapSlots = (preview?.items || []).map((item) => `${item.floorId}:${item.slotCode}`);
+
+  const refreshMapAvailability = useCallback(async ({ silent = false } = {}) => {
+    if (!mapStartTime || !mapEndTime || new Date(mapEndTime) <= new Date(mapStartTime)) {
+      mapRequestRef.current += 1;
+      setMapAvailableSlots(null);
+      setMapError('');
+      setMapLoading(false);
+      return;
+    }
+    const request = ++mapRequestRef.current;
+    if (!silent) setMapLoading(true);
+    try {
+      const response = await getAvailableBookingSlots({ startTime: mapStartTime, endTime: mapEndTime });
+      if (request !== mapRequestRef.current) return;
+      if (!response.ok) {
+        setMapError(localizeAiBookingMessage(response.data?.message || 'Không thể tải bản đồ chỗ trống.'));
+        return;
+      }
+      setMapAvailableSlots(response.data?.data?.slots || []);
+      setMapError('');
+    } catch {
+      if (request === mapRequestRef.current) setMapError('Không thể cập nhật bản đồ theo thời gian thực.');
+    } finally {
+      if (request === mapRequestRef.current && !silent) setMapLoading(false);
+    }
+  }, [mapEndTime, mapStartTime]);
+
+  useEffect(() => {
+    const selectedFloorId = previewMapItem?.floorId;
+    if (selectedFloorId && onMapFloorSelect) onMapFloorSelect(selectedFloorId);
+  }, [onMapFloorSelect, previewMapItem?.floorId]);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => refreshMapAvailability(), 0);
+    const refreshSilently = () => refreshMapAvailability({ silent: true });
+    const intervalId = window.setInterval(refreshSilently, 15000);
+    window.addEventListener('focus', refreshSilently);
+    return () => {
+      mapRequestRef.current += 1;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshSilently);
+    };
+  }, [refreshMapAvailability]);
 
   const setConversationPhase = (value) => { phaseRef.current = value; setPhase(value); };
   const updateDraft = (value) => {
@@ -619,6 +699,13 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
         if (pendingAssistantActionRef.current) await confirmAssistantAction();
         else await confirmCreation();
       }
+      else if (route === 'top_up') {
+        handlingInputRef.current = false;
+        const currentPreview = previewRef.current;
+        const shortfall = Math.max(Number(currentPreview?.total || 0) - Number(currentPreview?.walletBalance || 0), 0);
+        if (shortfall > 0) await startTopUpForShortfall(shortfall);
+        else say('Số dư ví hiện đã đủ cho booking này. Hãy nói “Đặt” hoặc “Đồng ý” để xác nhận.');
+      }
       else if (route === 'cancel') {
         if (pendingAssistantActionRef.current) cancelAssistantAction();
         else cancelPreview();
@@ -628,7 +715,7 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
         setConversationPhase('IDLE'); say('Đã dừng yêu cầu đặt chỗ này. Bạn có thể bắt đầu yêu cầu mới khi sẵn sàng.');
       }
       else if (route === 'no_preview') say('Chưa có bản xem trước để xác nhận. Bạn hãy cho mình biết ngày, giờ và xe muốn đặt.');
-      else say('Hãy nói “Đặt”, “OK”, “Hủy”, hoặc thông tin muốn đổi.');
+      else say('Hãy nói “Đặt”, “Nạp thêm”, “Hủy”, hoặc thông tin muốn đổi.');
       handlingInputRef.current = false;
       resumeVoiceIfReady();
       return;
@@ -776,9 +863,68 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
     finally { busyRef.current = false; setBusy(false); resumeVoiceIfReady(); }
   };
 
-  const confirmCreation = async () => {
+  const startTopUpForShortfall = async (shortfall) => {
+    let amountToTopUp = Math.ceil(Number(shortfall));
+    if (amountToTopUp > 0 && amountToTopUp < 2000) amountToTopUp = 2000;
+    if (!Number.isFinite(amountToTopUp) || amountToTopUp <= 0) {
+      reportError('Không thể xác định số tiền cần thanh toán thêm.');
+      return;
+    }
+
+    voiceSessionRef.current?.pause();
+    setTopUpLoading(true);
+    setError('');
+    setConversationPhase('PROCESSING');
+    try {
+      const response = await createTopUpUrl(amountToTopUp, { purpose: 'booking_shortfall' });
+      if (response.ok && response.data?.data) {
+        setTopUpData(response.data.data);
+        setTopUpSuccess(false);
+        setShowTopUpModal(true);
+        setConversationPhase('WAITING_PAYMENT');
+        return;
+      }
+      if (isPolicyAcceptanceRequired(response.data)) {
+        setPolicyItems(extractMissingPolicies(response.data));
+        setConversationPhase('WAITING_CONFIRMATION');
+        return;
+      }
+      reportError(response.data?.message || 'Không thể tạo mã QR thanh toán.');
+    } catch {
+      reportError('Lỗi mạng khi tạo mã QR thanh toán.');
+    } finally {
+      setTopUpLoading(false);
+    }
+  };
+
+  const cancelPendingTopUp = async () => {
+    const orderCode = topUpData?.orderCode;
+    setTopUpLoading(true);
+    try {
+      if (orderCode) {
+        const response = await getTopUpStatus(orderCode, true);
+        if (!response.ok) setError(response.data?.message || 'Không thể hủy giao dịch đang chờ.');
+      }
+    } catch {
+      setError('Lỗi mạng khi hủy giao dịch đang chờ.');
+    } finally {
+      setShowTopUpModal(false);
+      setTopUpData(null);
+      setTopUpSuccess(false);
+      setTopUpLoading(false);
+      setConversationPhase('WAITING_CONFIRMATION');
+      resumeVoiceIfReady();
+    }
+  };
+
+  const confirmCreation = async ({ skipWalletCheck = false } = {}) => {
     const currentPreview = previewRef.current;
     if (!currentPreview || busyRef.current || !confirmationPendingRef.current) return;
+    const shortfall = Math.max(Number(currentPreview.total || 0) - Number(currentPreview.walletBalance || 0), 0);
+    if (!skipWalletCheck && shortfall > 0) {
+      await startTopUpForShortfall(shortfall);
+      return;
+    }
     busyRef.current = true;
     voiceSessionRef.current?.pause();
     setBusy(true); setError(''); setConversationPhase('CONFIRMING');
@@ -816,6 +962,46 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
       else reportError(caught.message || 'Không thể tạo booking. Vui lòng thử lại.');
     } finally { busyRef.current = false; setBusy(false); resumeVoiceIfReady(); }
   };
+  useEffect(() => { confirmCreationRef.current = confirmCreation; });
+
+  useEffect(() => {
+    if (!showTopUpModal || !topUpData?.orderCode) return undefined;
+    let cancelled = false;
+    let polling = false;
+
+    const checkPayment = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const response = await getTopUpStatus(topUpData.orderCode);
+        const status = String(response.data?.data?.status || '').toUpperCase();
+        if (['COMPLETED', 'SUCCESS', 'PAID'].includes(status)) {
+          setTopUpSuccess(true);
+          await confirmCreationRef.current?.({ skipWalletCheck: true });
+          if (!cancelled) {
+            setShowTopUpModal(false);
+            setTopUpData(null);
+            setTopUpSuccess(false);
+          }
+        } else if (['CANCELLED', 'CANCELED', 'FAILED'].includes(status)) {
+          setShowTopUpModal(false);
+          setTopUpData(null);
+          setTopUpSuccess(false);
+          voiceHandlersRef.current.reportError?.('Thanh toán đã bị hủy hoặc không thành công.');
+        }
+      } catch (caught) {
+        console.error('AI booking payment polling error:', caught);
+      } finally {
+        polling = false;
+      }
+    };
+
+    const intervalId = window.setInterval(checkPayment, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [showTopUpModal, topUpData?.orderCode]);
 
   const confirmExistingAction = async () => {
     if (!target || busyRef.current) return;
@@ -894,6 +1080,11 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
   const resumeExpired = resumeCandidate?.status === 'EXPIRED';
   const resumeIsBooking = ['CREATE_BOOKING', 'CHECK_AVAILABILITY', 'CANCEL_BOOKING', 'MODIFY_BOOKING', 'VIEW_BOOKING']
     .includes(resumeCandidate?.intent);
+  const mapFloorAvailableCount = Array.isArray(mapAvailableSlots)
+    ? mapAvailableSlots.filter((slot) => !mapFloorId || String(slot.floorId) === String(mapFloorId)).length
+    : null;
+  const mapRangeStart = mapStartTime ? vnParts(mapStartTime) : null;
+  const mapRangeEnd = mapEndTime ? vnParts(mapEndTime) : null;
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 pb-8">
@@ -988,13 +1179,13 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
         {conflicts.length > 0 && <div role="alert" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><div className="mb-2 font-black">Chưa thể đặt chỗ</div>{conflicts.map((conflict, index) => <p key={index} className="mb-1">{conflict}</p>)}</div>}
 
         {preview?.items && <div className="space-y-3">
-          {preview.items.map((item, index) => { const start = vnParts(item.startTime); const end = vnParts(item.endTime); return <div key={item.clientItemId} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 flex flex-wrap items-center justify-between gap-2"><div><div className="font-black text-gray-900">{dayText(item.date)} · {start.time}–{end.time}</div><div className="text-sm text-gray-500">{item.licensePlate} · {item.floorName} · {item.slotCode}</div></div><strong className="text-yellow-700">{money(preview.quotes?.[index]?.totalAmount)}</strong></div>; })}
-          <div className="rounded-2xl bg-gray-900 p-5 text-white flex justify-between items-center"><span>Tổng tạm tính · {preview.durationMinutes} phút/ngày</span><strong className="text-xl text-yellow-300">{money(preview.total)}</strong></div>
-          {preview.walletBalance < preview.total && <p className="text-sm text-rose-600">Ví còn {money(preview.walletBalance)}. <Link to="/customer/wallet" className="font-bold underline">Nạp thêm</Link> trước khi xác nhận.</p>}
-          <div className="flex gap-3"><button type="button" onClick={confirmCreation} disabled={busy || preview.walletBalance < preview.total} className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-gray-900 disabled:opacity-50">Xác nhận đặt chỗ</button><button type="button" onClick={cancelPreview} disabled={busy} className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 disabled:opacity-50">Hủy</button></div>
+          {preview.items.map((item, index) => { const start = vnParts(item.startTime); const end = vnParts(item.endTime); return <div key={item.clientItemId} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 flex flex-wrap items-center justify-between gap-2"><div><div className="font-black text-gray-900">{dayText(start.date)} {start.time} → {dayText(end.date)} {end.time}</div><div className="text-sm text-gray-500">{item.licensePlate} · Giữ chỗ liên tục · {item.floorName} · {item.slotCode}</div></div><strong className="text-yellow-700">{money(preview.quotes?.[index]?.totalAmount)}</strong></div>; })}
+          <div className="rounded-2xl bg-gray-900 p-5 text-white flex justify-between items-center"><span>Giữ chỗ liên tục{preview.durationMinutes ? ` · ${durationText(preview.durationMinutes)}` : ''}</span><strong className="text-xl text-yellow-300">{money(preview.total)}</strong></div>
+          {preview.walletBalance < preview.total && <p className="text-sm text-rose-600">Ví còn {money(preview.walletBalance)}. Bạn có thể quét mã QR để thanh toán thêm {money(preview.total - preview.walletBalance)} khi xác nhận.</p>}
+          <div className="flex gap-3"><button type="button" onClick={() => confirmCreation()} disabled={busy || topUpLoading} className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-gray-900 disabled:opacity-50">{preview.walletBalance < preview.total ? 'Xác nhận & thanh toán QR' : 'Xác nhận đặt chỗ'}</button><button type="button" onClick={cancelPreview} disabled={busy || topUpLoading} className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 disabled:opacity-50">Hủy</button></div>
         </div>}
 
-        {availability && <div className="space-y-3">{availability.map((day) => <div key={day.date} className="rounded-2xl border border-gray-200 p-4"><strong>{dayText(day.date)}: {day.count} chỗ trống</strong><p className="text-sm text-gray-500">{day.suggestions.map((slot) => `${slot.floorName} · ${slot.slotCode}`).join(', ') || 'Hãy thử giờ hoặc tầng khác.'}</p></div>)}</div>}
+        {availability && <div className="space-y-3">{availability.map((day) => <div key={`${day.date}-${day.endDate}`} className="rounded-2xl border border-gray-200 p-4"><strong>{dayText(day.date)} → {dayText(day.endDate)}: {day.count} chỗ trống liên tục</strong><p className="text-sm text-gray-500">{day.suggestions.map((slot) => `${slot.floorName} · ${slot.slotCode}`).join(', ') || 'Hãy thử thời gian hoặc tầng khác.'}</p></div>)}</div>}
 
         {choices.length > 0 && <div className="space-y-2 mb-5">{choices.map((booking) => <button key={booking._id} type="button" onClick={() => selectTarget(booking).catch((caught) => setError(caught.message))} className={`block w-full rounded-xl border p-4 text-left text-sm font-bold ${target?._id === booking._id ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200 hover:border-yellow-300'}`}>{labelBooking(booking)} <span className="ml-2 text-gray-400">{booking.status}</span></button>)}</div>}
 
@@ -1004,6 +1195,124 @@ export default function AiBookingPanel({ vehicles = [], onSwitchToManual, onVehi
 
         {!preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">Kết quả hoặc bản xem trước sẽ xuất hiện ở đây.</p></div>}
       </section>
+
+      <section className="xl:col-span-12 rounded-3xl border border-gray-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-2 pb-3 pt-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <MapPin size={20} className="text-cyan-500" />
+              <h2 className="text-lg font-black text-gray-900">Bản đồ bãi đỗ theo thời gian thực</h2>
+            </div>
+            <p className="mt-1 text-sm font-medium text-gray-500">
+              {mapRangeStart && mapRangeEnd
+                ? `Chỗ trống từ ${dayText(mapRangeStart.date)} ${mapRangeStart.time} đến ${dayText(mapRangeEnd.date)} ${mapRangeEnd.time}. Ô AI chọn được tô màu xanh.`
+                : 'Nhập ngày giờ booking để xem chỗ trống; trạng thái xe đang đỗ vẫn được cập nhật trực tiếp.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {mapFloorAvailableCount !== null && (
+              <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-600">
+                {mapFloorAvailableCount} chỗ trống ở tầng này
+              </div>
+            )}
+            <button type="button" onClick={() => refreshMapAvailability()} disabled={mapLoading || !mapStartTime || !mapEndTime} className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-600 transition hover:border-cyan-300 hover:text-cyan-600 disabled:opacity-40" aria-label="Cập nhật bản đồ">
+              <RefreshCw size={17} className={mapLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </div>
+
+        {mapError && <div role="alert" className="mx-2 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">{mapError}</div>}
+
+        <div className="relative h-[500px] w-full overflow-hidden rounded-2xl border border-[#0b0e16] bg-[#0b0e16] shadow-inner">
+          {mapFloors.length > 0 && (
+            <div className="absolute left-0 right-0 top-4 z-30 flex flex-wrap justify-center gap-2 px-4">
+              {mapFloors.map((floor) => (
+                <button key={floor._id} type="button" onClick={() => onMapFloorSelect?.(floor._id)} className={`rounded-full px-6 py-1.5 text-xs font-bold shadow-sm transition-all ${mapFloorId === floor._id ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'border border-white/10 bg-[#181c23]/80 text-gray-400 backdrop-blur hover:bg-[#1f242d]/80 hover:text-white'}`}>
+                  {floor.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mapLoading && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0b0e16]/70 text-center backdrop-blur-sm">
+              <Loader2 size={36} className="mb-3 animate-spin text-cyan-400" />
+              <p className="font-black text-white">Đang cập nhật chỗ trống...</p>
+            </div>
+          )}
+
+          {mapFloors.length ? (
+            <ParkingMapViewer
+              floors={mapFloors}
+              currentFloorId={mapFloorId}
+              onFloorSelect={onMapFloorSelect}
+              activeSessions={mapActiveSessions}
+              dbSlots={mapDbSlots}
+              activeHolds={mapActiveHolds}
+              availableSlots={mapAvailableSlots}
+              selectedSlotId={selectedMapSlots}
+              is2DMode
+              hideUI
+              staticFit
+              readOnly
+              theme="dark"
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center text-center text-gray-400">
+              <MapPin size={36} className="mb-3 text-cyan-500" />
+              <p className="font-bold text-white">Chưa có sơ đồ bãi đỗ</p>
+            </div>
+          )}
+
+          <div className="pointer-events-none absolute bottom-4 left-0 right-0 z-30 flex justify-center px-4">
+            <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-4 rounded-full border border-white/10 bg-[#181c23]/80 px-5 py-2.5 shadow-lg backdrop-blur">
+              <span className="hidden text-[10px] font-black uppercase tracking-widest text-cyan-400 sm:block">Chú thích</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-gray-300 bg-white" />Trống</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-rose-600 bg-rose-200" />Đang đỗ</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-cyan-400 bg-cyan-500" />AI đã chọn</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500"><i className="h-3.5 w-3.5 rounded-sm border border-yellow-500 bg-yellow-100" />VIP</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-orange-500"><i className="h-3.5 w-3.5 rounded-sm border border-orange-500 bg-orange-100" />Đang giữ/đã đặt</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {showTopUpModal && topUpData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-md">
+          <div className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-gray-100 bg-white p-8 text-center shadow-2xl">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 text-rose-500 shadow-sm">
+              <AlertCircle size={32} />
+            </div>
+            <h2 className="mb-1 text-2xl font-black text-gray-900">Insufficient Balance</h2>
+            <p className="mb-6 text-sm font-medium text-gray-500">
+              You need to top up <span className="font-bold text-gray-900">{money(topUpData.amount)}</span> to complete this checkout.
+            </p>
+
+            <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 shadow-inner">
+              {topUpData.qrCode ? (
+                <QRCodeSVG value={String(topUpData.qrCode)} size={200} />
+              ) : (
+                <div className="flex h-[200px] w-[200px] items-center justify-center text-sm font-medium text-gray-400">No QR data</div>
+              )}
+            </div>
+
+            <p className="mb-6 text-xs font-medium text-gray-500">
+              Scan with your banking app or e-wallet to pay.<br />
+              {topUpData.checkoutUrl && <>Alternatively, <a href={topUpData.checkoutUrl} target="_blank" rel="noreferrer" className="font-bold text-blue-500 hover:underline">click here to checkout</a>.</>}
+            </p>
+
+            <div className="mb-6 flex items-center justify-center gap-2 text-sm font-black text-yellow-600">
+              <Loader2 size={16} className="animate-spin" />
+              {topUpSuccess ? 'Payment received! Processing checkout...' : 'Waiting for your payment...'}
+            </div>
+
+            <button type="button" disabled={topUpSuccess || topUpLoading} onClick={cancelPendingTopUp} className="w-full rounded-2xl bg-gray-100 py-3.5 font-bold text-gray-700 transition hover:bg-gray-200 disabled:opacity-50">
+              {topUpLoading ? 'Cancelling...' : 'Cancel'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <PolicyAcceptancePrompt open={policyItems.length > 0} missingPolicies={policyItems} onClose={() => setPolicyItems([])} onAccepted={() => { setPolicyItems([]); say('Đã chấp nhận chính sách. Vui lòng xác nhận booking lại.'); }} />
     </div>
   );

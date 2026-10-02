@@ -1,5 +1,4 @@
 const MIN_BOOKING_MINUTES = 30;
-const MAX_BOOKING_MINUTES = 24 * 60;
 
 const bookingTimeError = (message, code) => Object.assign(new Error(message), {
   statusCode: 400,
@@ -10,7 +9,6 @@ function validateBookingTimeRange(startTime, endTime, {
   now = new Date(),
   requireFuture = true,
   minMinutes = MIN_BOOKING_MINUTES,
-  maxMinutes = MAX_BOOKING_MINUTES,
 } = {}) {
   const start = new Date(startTime);
   const end = new Date(endTime);
@@ -30,15 +28,10 @@ function validateBookingTimeRange(startTime, endTime, {
   if (Number.isFinite(minMinutes) && durationMinutes < minMinutes) {
     throw bookingTimeError(`Thời gian đặt chỗ phải tối thiểu ${minMinutes} phút.`, 'BOOKING_DURATION_TOO_SHORT');
   }
-  if (Number.isFinite(maxMinutes) && durationMinutes > maxMinutes) {
-    throw bookingTimeError(`Thời gian đặt chỗ không được vượt quá ${Math.round(maxMinutes / 60)} giờ.`, 'BOOKING_DURATION_TOO_LONG');
-  }
-
   return { start, end, durationMinutes };
 }
 
 module.exports = {
-  MAX_BOOKING_MINUTES,
   MIN_BOOKING_MINUTES,
   validateBookingTimeRange,
 };

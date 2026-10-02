@@ -747,18 +747,20 @@ test('local parser does not silently ignore unavailable service or recurring req
   const { parseBasicVietnameseBooking } = require('../services/aiBookingInterpreter');
   for (const prompt of [
     'Đặt xe điện có sạc ngày mai từ 19h đến 20h',
-    'Đặt chỗ mỗi ngày từ 19h đến 20h',
     'Mai 19h đến 20h ở khu A',
     'Kiểm tra còn chỗ ngày mai từ 19h đến 20h không?',
     'Không muốn đặt chỗ ngày mai từ 19h đến 20h',
   ]) assert.equal(parseBasicVietnameseBooking(prompt, '2026-09-12'), null, prompt);
+  assert.match(
+    parseBasicVietnameseBooking('Đặt chỗ mỗi ngày từ 19h đến 20h', '2026-09-12').clarification,
+    /khoảng giữ chỗ liên tục/,
+  );
   assert.equal(parseBasicVietnameseBooking('từ 19h đến 20h', '2026-09-12', { __intent: 'CHECK_AVAILABILITY', startDate: '2026-09-13' }), null);
 });
 
 test('manual-only and motorbike requests do not produce an incomplete booking preview', async () => {
   for (const prompt of [
     'Đặt xe điện có sạc ngày mai từ 19h đến 20h',
-    'Đặt chỗ mỗi ngày từ 19h đến 20h',
     'Mai 19h đến 20h ở khu A',
   ]) {
     const result = await interpretBookingMessage({ prompt, today: '2026-09-12' });
@@ -766,6 +768,10 @@ test('manual-only and motorbike requests do not produce an incomplete booking pr
     assert.match(result.clarification, /Đặt chỗ thủ công/, prompt);
     assert.equal(result.draft.startTime, '');
   }
+  const recurring = await interpretBookingMessage({
+    prompt: 'Đặt chỗ mỗi ngày từ 19h đến 20h', today: '2026-09-12',
+  });
+  assert.match(recurring.clarification, /khoảng giữ chỗ liên tục/);
   const motorbike = await interpretBookingMessage({ prompt: 'Đặt xe máy ngày mai', today: '2026-09-12' });
   assert.match(motorbike.clarification, /chỉ hỗ trợ.*ô tô/);
 });
@@ -776,11 +782,27 @@ test('cross-date stay is not mistaken for a booking repeated on both dates', asy
   });
   assert.equal(result.draft.startDate, '2026-09-13');
   assert.equal(result.draft.endDate, '2026-09-14');
-  assert.equal(result.draft.startTime, '');
-  assert.match(result.clarification, /đỗ liên tục qua ngày/);
+  assert.equal(result.draft.startTime, '23:00');
+  assert.equal(result.draft.endTime, '01:00');
+  assert.equal(result.clarification || '', '');
   const overnight = await interpretBookingMessage({
     prompt: 'Đặt xe qua đêm từ 23h đến 01h ngày mai', today: '2026-09-12',
   });
-  assert.equal(overnight.draft.startTime, '');
-  assert.match(overnight.clarification, /Đặt chỗ thủ công/);
+  assert.equal(overnight.draft.startDate, '2026-09-13');
+  assert.equal(overnight.draft.endDate, '2026-09-14');
+  assert.equal(overnight.draft.startTime, '23:00');
+  assert.equal(overnight.draft.endTime, '01:00');
+});
+
+test('bare day range is parsed as one continuous booking interval', async () => {
+  for (const prompt of [
+    'Đặt xe từ ngày 3 đến ngày 6, từ 7 giờ đến 8 giờ, biển số 43A12333',
+    'ngày 3 đến ngày 6, 7h đến 8h, xe 43A12333',
+  ]) {
+    const result = await interpretBookingMessage({ prompt, today: '2026-10-02' });
+    assert.deepEqual([
+      result.draft.startDate, result.draft.endDate,
+      result.draft.startTime, result.draft.endTime, result.draft.licensePlate,
+    ], ['2026-10-03', '2026-10-06', '07:00', '08:00', '43A12333'], prompt);
+  }
 });

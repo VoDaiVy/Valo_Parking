@@ -975,8 +975,8 @@ exports.modifyBookingTime = async (req, res, next) => {
     }
 
     const durationHours = durationMs / (1000 * 60 * 60);
-    if (durationHours < 1 || durationHours > 24) {
-      return res.status(400).json({ success: false, message: 'Thời lượng tổng cộng phải từ 1 đến 24 giờ' });
+    if (durationHours < 1) {
+      return res.status(400).json({ success: false, message: 'Thời lượng tổng cộng phải tối thiểu 1 giờ' });
     }
 
     // Kiểm tra ô đỗ có thuộc Subscription (Gói tháng/năm) không

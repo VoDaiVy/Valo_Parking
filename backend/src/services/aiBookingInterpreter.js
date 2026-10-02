@@ -44,7 +44,6 @@ function normalizeReservationItems(incoming, previous = []) {
     if (normalized.endDate && !validDate(normalized.endDate)) normalized.endDate = '';
     if (normalized.startTime && !validTime(normalized.startTime)) normalized.startTime = '';
     if (normalized.endTime && !validTime(normalized.endTime)) normalized.endTime = '';
-    if (!normalized.endDate && normalized.startDate) normalized.endDate = normalized.startDate;
     return normalized;
   });
 }
@@ -98,7 +97,8 @@ function normalizeInterpretation(raw, previous = {}) {
     reservationItems.forEach((item) => {
       if (!item.licensePlate) item.licensePlate = unassignedPlates.shift() || '';
       if (!item.startDate && draft.startDate) item.startDate = draft.startDate;
-      if (!item.endDate && item.startDate) item.endDate = item.startDate;
+      if (!item.endDate && draft.endDate) item.endDate = draft.endDate;
+      else if (!item.endDate && item.startDate) item.endDate = item.startDate;
       if (!item.startTime && draft.startTime) item.startTime = draft.startTime;
       if (!item.endTime && draft.endTime) item.endTime = draft.endTime;
     });
@@ -188,7 +188,8 @@ function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime =
     delete result.draft.pendingReservationEditField;
   }
   if (!result.clarification && result.draft.startTime && result.draft.endTime
-    && result.draft.endTime <= result.draft.startTime) {
+    && result.draft.endTime <= result.draft.startTime
+    && !(result.draft.endDate > result.draft.startDate)) {
     result.clarification = 'Giờ ra cần sau giờ vào trong cùng ngày. Bạn muốn đổi lại khoảng giờ nào?';
   }
   return result;
@@ -228,12 +229,13 @@ async function interpretBookingMessage({ prompt, draft = {}, today, currentTime 
 Return ONLY a JSON object, no markdown, with these fields:
 intent (BOOK_PARKING, CREATE_BOOKING, CHECK_AVAILABILITY, CHECK_VEHICLE_PARKING_STATUS, CHECK_VEHICLE_ENTRY_TIME, CHECK_VEHICLE_EXIT_TIME, CHECK_VEHICLE_LOCATION, CHECK_VEHICLE_DURATION, CHECK_PARKING_FEE, CHECK_BOOKING_STATUS, CHECK_UPCOMING_BOOKING, CHECK_PARKING_AVAILABILITY, CHECK_SLOT_STATUS, CHECK_WALLET_BALANCE, CHECK_PAYMENT_STATUS, CHECK_TRANSACTION_HISTORY, LIST_MY_VEHICLES, ADD_VEHICLE, UPDATE_VEHICLE, REMOVE_VEHICLE, CHECK_SERVICES, BOOK_SERVICE, CHECK_PARKING_POLICY, HELP, CANCEL_BOOKING, MODIFY_BOOKING, VIEW_BOOKING, UNKNOWN),
 startDate, endDate (YYYY-MM-DD), startTime, endTime (HH:mm 24h), licensePlate, licensePlates (array), requestedVehicleCount (number), reservationItems (array), vehicleType (car or electric_car when explicitly stated), floorName, zoneName, slotCode, bookingId.
+Every booking request is one continuous interval from startDate/startTime to endDate/endTime. A multi-day range is one requested booking, never one booking per day. Only extract the exact endpoints; the shared booking backend decides whether the range is valid.
 Each reservationItems entry may contain licensePlate, startDate, endDate, startTime, endTime, floorName, zoneName and slotCode. Use reservationItems when vehicles have different dates or times. Preserve their spoken order. Use empty strings, an empty array, or zero for information not mentioned in the NEW message. When several vehicles are requested, return every stated plate in licensePlates and their stated count in requestedVehicleCount. Do not invent missing times, dates, vehicles, zones, slots or booking IDs.
 Interpret Vietnamese time expressions in 24-hour format: 7 giờ tối = 19:00, 8 giờ tối = 20:00, 7 rưỡi tối = 19:30.
 Read a bare clock hour literally in 24-hour notation: 8h and 8 giờ mean 08:00; 20h means 20:00. Explicit tối or chiều converts 7 giờ tối to 19:00.
 Interpret ngày mai and ngày kia relative to today. A single date applies to startDate and endDate.
 Interpret "sau 30 phút", "trong 30 phút nữa" and similar phrases as a start time relative to the supplied current local time, not as parking duration. Do not invent an end time.
-For a date range, endDate is inclusive. For a single date, endDate equals startDate.
+startDate/startTime and endDate/endTime are the exact endpoints of one continuous booking. For a single date, endDate equals startDate.
 The prior draft supplies context for a follow-up. Extract ONLY changes supplied by the new message; do not repeat unchanged values.
 If the new message is a follow-up and does not name another action, retain the prior intent.
 If a user asks to cancel or modify an existing booking, extract the target date/plate when mentioned; never choose a booking ID yourself.

@@ -4,7 +4,7 @@ const { validateBookingTimeRange } = require('../utils/bookingTimeValidation');
 
 const now = new Date('2026-09-23T08:00:00.000Z');
 
-test('booking time validation accepts a future range from 30 minutes through 24 hours', () => {
+test('booking time validation accepts a future range from 30 minutes through multiple days', () => {
   const minimum = validateBookingTimeRange(
     '2026-09-23T09:00:00.000Z',
     '2026-09-23T09:30:00.000Z',
@@ -12,12 +12,12 @@ test('booking time validation accepts a future range from 30 minutes through 24 
   );
   assert.equal(minimum.durationMinutes, 30);
 
-  const maximum = validateBookingTimeRange(
-    '2026-09-24T09:00:00.000Z',
-    '2026-09-25T09:00:00.000Z',
+  const multiDay = validateBookingTimeRange(
+    '2026-10-03T00:00:00.000Z',
+    '2026-10-09T01:00:00.000Z',
     { now },
   );
-  assert.equal(maximum.durationMinutes, 24 * 60);
+  assert.equal(multiDay.durationMinutes, 145 * 60);
 });
 
 test('booking time validation rejects past and current start instants', () => {
@@ -30,7 +30,7 @@ test('booking time validation rejects past and current start instants', () => {
   }
 });
 
-test('booking time validation rejects malformed, reversed, short and overlong ranges', () => {
+test('booking time validation rejects malformed, reversed and short ranges', () => {
   assert.throws(
     () => validateBookingTimeRange('not-a-date', '2026-09-23T10:00:00.000Z', { now }),
     (error) => error.code === 'INVALID_BOOKING_TIME',
@@ -42,9 +42,5 @@ test('booking time validation rejects malformed, reversed, short and overlong ra
   assert.throws(
     () => validateBookingTimeRange('2026-09-23T09:00:00.000Z', '2026-09-23T09:29:00.000Z', { now }),
     (error) => error.code === 'BOOKING_DURATION_TOO_SHORT',
-  );
-  assert.throws(
-    () => validateBookingTimeRange('2026-09-24T09:00:00.000Z', '2026-09-25T09:01:00.000Z', { now }),
-    (error) => error.code === 'BOOKING_DURATION_TOO_LONG',
   );
 });

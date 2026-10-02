@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkAiAvailability, confirmAiBooking, confirmAiExistingAction, enumerateBookingDays, findAiActionBookings, getMissingBookingFields, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from './aiBookingFlow.js';
+import { bookingDateSchedules, checkAiAvailability, confirmAiBooking, confirmAiExistingAction, findAiActionBookings, getMissingBookingFields, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from './aiBookingFlow.js';
 
 const vehicle = { _id: 'vehicle-1', licensePlate: '43A12345', status: 'approved' };
 const baseDraft = { startDate: '2099-01-15', endDate: '2099-01-15', startTime: '08:00', endTime: '10:00' };
@@ -99,7 +99,7 @@ test('relative arrival with a known date asks only for departure time and vehicl
     { startDate: '2099-01-15', endDate: '2099-01-15', startTime: '14:10' },
     [vehicle, { ...vehicle, _id: 'vehicle-2', licensePlate: '43B54321' }],
   ).join(' ');
-  assert.match(missing, /đến mấy giờ/i);
+  assert.match(missing, /kết thúc lúc mấy giờ/i);
   assert.match(missing, /xe nào|biển số/i);
   assert.doesNotMatch(missing, /ngày nào|bắt đầu đỗ lúc mấy giờ|từ mấy giờ đến mấy giờ/i);
 });
@@ -210,11 +210,21 @@ test('two reservation items can use different dates without sharing schedule fie
   assert.deepEqual(preview.days, ['2099-01-15', '2099-01-16']);
 });
 
-test('multiple days and vehicles respect the backend limit of five simultaneous holds', async () => {
-  await assert.rejects(prepareAiBooking({
+test('multiple vehicles across multiple days create one continuous item per vehicle', async () => {
+  const preview = await prepareAiBooking({
     ...baseDraft, endDate: '2099-01-17', requestedVehicleCount: 2,
     licensePlates: ['43A12345', '43B20404'],
-  }, gateway(), [vehicle]), /tối đa 5 chỗ/);
+  }, gateway(), [vehicle]);
+  assert.equal(preview.items.length, 2);
+  assert.ok(preview.items.every((item) => item.endDate === '2099-01-17'));
+});
+
+test('date schedules preserve one continuous range instead of enumerating each day', () => {
+  assert.deepEqual(bookingDateSchedules({
+    startDate: '2026-10-03', endDate: '2026-10-06', startTime: '07:00', endTime: '08:00',
+  }), [{
+    date: '2026-10-03', endDate: '2026-10-06', startTime: '07:00', endTime: '08:00', bookingMode: 'CONTINUOUS',
+  }]);
 });
 
 test('one overlapping vehicle blocks the whole multiple-vehicle preview', async () => {
@@ -350,14 +360,14 @@ test('cancelled bookings and adjacent time ranges do not block the same vehicle'
   assert.equal(preview.items.length, 1);
 });
 
-test('multi-day booking reports only the day overlapping the selected vehicle', async () => {
+test('an overlap anywhere in a continuous multi-day range blocks the whole request', async () => {
   const bookings = [
     { status: 'PAID', licensePlate: '43B54321', scheduledStart: '2099-01-15T02:00:00Z', scheduledEnd: '2099-01-15T04:00:00Z' },
     { status: 'PAID', licensePlate: vehicle.licensePlate, scheduledStart: '2099-01-16T02:00:00Z', scheduledEnd: '2099-01-16T04:00:00Z' },
   ];
   const result = await prepareAiBooking({ ...baseDraft, endDate: '2099-01-16' }, gateway({ getMyBookings: async () => ok(bookings) }), [vehicle]);
   assert.equal(result.conflicts.length, 1);
-  assert.match(result.conflicts[0], /16\/01\/2099/);
+  assert.match(result.conflicts[0], /trùng thời gian/);
 });
 
 test('taken requested slot suggests another available slot', async () => {
@@ -398,23 +408,35 @@ test('full parking floor reports no suitable slot', async () => {
   assert.match(result.conflicts[0], /không còn trống/);
 });
 
-test('multi-day booking checks every day and reports exact conflicting day', async () => {
-  const api = gateway({ getAvailableBookingSlots: async ({ startTime }) => ok({ slots: startTime.startsWith('2099-01-16') ? [] : [slot()] }) });
+test('multi-day booking checks availability once for the complete interval', async () => {
+  const ranges = [];
+  const api = gateway({ getAvailableBookingSlots: async (range) => { ranges.push(range); return ok({ slots: [] }); } });
   const result = await prepareAiBooking({ ...baseDraft, endDate: '2099-01-18' }, api, [vehicle]);
-  assert.equal(result.days.length, 4);
-  assert.match(result.conflicts[0], /16\/01\/2099/);
+  assert.equal(ranges.length, 1);
+  assert.equal(ranges[0].startTime, '2099-01-15T01:00:00.000Z');
+  assert.equal(ranges[0].endTime, '2099-01-18T03:00:00.000Z');
+  assert.match(result.conflicts[0], /không có chỗ phù hợp/i);
   assert.equal(api.calls.creates.length, 0);
 });
 
-test('multi-day preview contains every date and uses a common slot', async () => {
+test('multi-day preview contains exactly one continuous booking', async () => {
   const preview = await prepareAiBooking({ ...baseDraft, endDate: '2099-01-18' }, gateway(), [vehicle]);
-  assert.equal(preview.items.length, 4);
-  assert.equal(preview.total, 80000);
-  assert.ok(preview.items.every((item) => item.slotCode === preview.items[0].slotCode));
+  assert.equal(preview.items.length, 1);
+  assert.equal(preview.total, 20000);
+  assert.equal(preview.items[0].startTime, '2099-01-15T01:00:00.000Z');
+  assert.equal(preview.items[0].endTime, '2099-01-18T03:00:00.000Z');
+  assert.equal(preview.bookingMode, 'CONTINUOUS');
 });
 
-test('more than five days is refused before creating holds', () => {
-  assert.throws(() => enumerateBookingDays('2099-01-15', '2099-01-21'), /tối đa 5 ngày/);
+test('confirming a multi-day range creates one hold and one booking item', async () => {
+  const api = gateway();
+  const draft = { ...baseDraft, endDate: '2099-01-21' };
+  const preview = await prepareAiBooking(draft, api, [vehicle]);
+  const result = await confirmAiBooking(preview, draft, api, [vehicle], 'continuous-multi-day');
+  assert.ok(result.success);
+  assert.equal(api.calls.holds.length, 1);
+  assert.equal(api.calls.creates.length, 1);
+  assert.equal(api.calls.creates[0].items.length, 1);
 });
 
 test('closing or cancelling at preview leaves no hold and no booking', async () => {
@@ -436,9 +458,10 @@ test('confirmation holds slots then calls existing bulk create once', async () =
 
 test('a failed later hold releases every earlier hold', async () => {
   const api = gateway();
-  const preview = await prepareAiBooking({ ...baseDraft, endDate: '2099-01-16' }, api, [vehicle]);
+  const draft = { ...baseDraft, requestedVehicleCount: 2, licensePlates: ['43A12345', '43B20404'] };
+  const preview = await prepareAiBooking(draft, api, [vehicle]);
   api.createBookingHold = async (item) => { api.calls.holds.push(item); return api.calls.holds.length === 2 ? { ok: false, data: { message: 'taken' } } : ok({ _id: 'hold-1' }); };
-  await assert.rejects(confirmAiBooking(preview, { ...baseDraft, endDate: '2099-01-16' }, api, [vehicle], 'confirmation-2'), /taken/);
+  await assert.rejects(confirmAiBooking(preview, draft, api, [vehicle], 'confirmation-2'), /taken/);
   assert.deepEqual(api.calls.releases, ['hold-1']);
   assert.equal(api.calls.creates.length, 0);
 });
@@ -500,9 +523,10 @@ test('network response lost after successful create is reconciled from My Bookin
   assert.deepEqual(api.calls.releases, []);
 });
 
-test('availability intent checks each requested date without needing a vehicle', async () => {
+test('availability intent checks the complete range without needing a vehicle', async () => {
   const result = await checkAiAvailability({ ...baseDraft, endDate: '2099-01-16' }, gateway());
-  assert.equal(result.availability.length, 2);
+  assert.equal(result.availability.length, 1);
+  assert.equal(result.availability[0].endDate, '2099-01-16');
   assert.equal(result.availability[0].count, 2);
 });
 
