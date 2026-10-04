@@ -45,3 +45,44 @@ test('translates common network, slot, cancellation and subscription errors', ()
     'Không thể hoàn tất yêu cầu đặt chỗ. Vui lòng kiểm tra thông tin và thử lại.',
   );
 });
+
+test('English mode never emits Vietnamese for any Quick Booking message family', () => {
+  const vietnameseMarker = /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu;
+  const messages = [
+    'Mình đã ghi 12345. Hãy đọc tiếp phần còn lại của biển số.',
+    'Bạn muốn bắt đầu đỗ ngày nào?',
+    'Bạn muốn kết thúc lúc mấy giờ ngày 05/10/2026?',
+    'Bạn muốn dùng xe nào? Hãy chọn xe hoặc cho biết biển số.',
+    'Xe 2 bắt đầu đỗ lúc mấy giờ?',
+    'Biển số 43A12 không hợp lệ. Hãy dùng biển ô tô hợp lệ.',
+    'Khoảng thời gian chưa hợp lệ.',
+    'Giờ bắt đầu ngày 05/10/2026 đã qua.',
+    'Xe 43A12345 cần đặt tối thiểu 30 phút.',
+    'Số dư ví chưa đủ. Cần thêm 25.000 VND.',
+    'Thông tin chỗ hoặc giá đã thay đổi. Hãy xác nhận lại nếu bạn đồng ý.',
+    'Đã hủy bản xem trước. Chưa có booking nào được tạo.',
+    'Một thông báo tiếng Việt mới chưa có trong danh mục.',
+  ];
+  for (const message of messages) {
+    const translated = localizeAiBookingMessage(message, 'en');
+    assert.equal(vietnameseMarker.test(translated), false, `${message} -> ${translated}`);
+    assert.match(translated, /[a-z]/i);
+  }
+  assert.equal(
+    localizeAiBookingMessage('Mình đã ghi 12345. Hãy đọc tiếp phần còn lại của biển số.', 'en'),
+    'I recorded 12345. Please provide the rest of the license plate.',
+  );
+});
+
+test('Vietnamese mode never emits an English server response', () => {
+  const englishCases = [
+    'I recorded 12345. Please provide the rest of the license plate.',
+    'Which floor would you like?',
+    'The booking request failed because the selected slot is occupied.',
+  ];
+  for (const message of englishCases) {
+    const localized = localizeAiBookingMessage(message, 'vi');
+    assert.doesNotMatch(localized, /\b(?:which|would|please|the|selected|occupied)\b/i);
+    assert.doesNotMatch(localized, /\bI(?:'\w+)?\b/);
+  }
+});

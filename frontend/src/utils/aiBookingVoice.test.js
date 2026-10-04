@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createAiBookingRecognition, createAiBookingSpeaker, createAiBookingVoiceSession, formatAiBookingSpeech,
-  splitAiBookingSpeechSegments,
+  resolveEnglishVoicePlateTranscript, splitAiBookingSpeechSegments,
 } from './aiBookingVoice.js';
 
 test('voice input passes Vietnamese transcript to the same message handler', () => {
@@ -14,6 +14,64 @@ test('voice input passes Vietnamese transcript to the same message handler', () 
   recognition.onresult({ results: [[{ transcript: '  Đặt chỗ ngày mai từ 8h đến 10h  ' }]] });
   assert.equal(recognition.lang, 'vi-VN');
   assert.equal(transcript, 'Đặt chỗ ngày mai từ 8h đến 10h');
+});
+
+test('English recognition and speech use matching locales and voices', () => {
+  class Recognition {}
+  const recognition = createAiBookingRecognition({ SpeechRecognition: Recognition }, {
+    language: 'en', onTranscript: () => {}, onError: () => {}, onEnd: () => {},
+  });
+  assert.equal(recognition.lang, 'en-US');
+
+  class Utterance { constructor(text) { this.text = text; } }
+  const spoken = [];
+  const speaker = createAiBookingSpeaker({
+    speechSynthesis: {
+      speak: (value) => spoken.push(value), cancel: () => {},
+      getVoices: () => [{ lang: 'vi-VN', name: 'Vietnamese' }, { lang: 'en-US', name: 'Samantha' }],
+    },
+    SpeechSynthesisUtterance: Utterance,
+  });
+  speaker.speak('Vehicle 43A12345 from 19:00 to 21:00', 'en');
+  assert.equal(spoken[0].lang, 'en-US');
+  assert.equal(spoken[0].voice.name, 'Samantha');
+  assert.match(spoken[0].text, /7:00 PM/);
+});
+
+test('English plate recognition prefers an alternative that preserves the spoken letter', () => {
+  class Recognition {}
+  let transcript = '';
+  const recognition = createAiBookingRecognition({ SpeechRecognition: Recognition }, {
+    language: 'en', expectLicensePlate: true,
+    onTranscript: (value) => { transcript = value; }, onError: () => {}, onEnd: () => {},
+  });
+  const alternatives = [
+    { transcript: '481122' },
+    { transcript: '48 a 1122' },
+  ];
+  alternatives.isFinal = true;
+  recognition.onresult({ results: [alternatives] });
+  assert.equal(recognition.maxAlternatives, 5);
+  assert.equal(transcript, '48 a 1122');
+});
+
+test('English numeric voice transcript resolves against one matching registered plate', () => {
+  const vehicles = [
+    { status: 'approved', licensePlate: '48A1122' },
+    { status: 'approved', licensePlate: '49C1122' },
+  ];
+  assert.equal(resolveEnglishVoicePlateTranscript('481122', vehicles), '48A1122');
+  assert.equal(resolveEnglishVoicePlateTranscript('4931122', vehicles), '49C1122');
+  assert.equal(resolveEnglishVoicePlateTranscript('49 C 1122', vehicles), '49C1122');
+});
+
+test('English numeric voice transcript is not guessed when registered plates are ambiguous', () => {
+  const vehicles = [
+    { status: 'approved', licensePlate: '48A1122' },
+    { status: 'approved', licensePlate: '48B1122' },
+  ];
+  assert.equal(resolveEnglishVoicePlateTranscript('481122', vehicles), '481122');
+  assert.equal(resolveEnglishVoicePlateTranscript('481122', vehicles, ['48A1122']), '48B1122');
 });
 
 test('speaker uses Vietnamese voice and cancels stale speech before a new reply', () => {

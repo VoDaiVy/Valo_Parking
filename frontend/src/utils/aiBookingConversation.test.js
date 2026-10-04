@@ -41,6 +41,20 @@ test('top-up and QR requests are routed to payment while a booking preview is wa
   assert.equal(routeBookingReply('WAITING_CONFIRMATION', 'Nạp thêm nhưng đổi giờ'), 'interpret');
 });
 
+test('English confirmation, cancellation, correction, and top-up phrases route safely', () => {
+  for (const message of ['Yes', 'Confirm booking', 'Book it', 'Go ahead', 'Looks good']) {
+    assert.equal(routeBookingReply('WAITING_CONFIRMATION', message), 'confirm', message);
+  }
+  for (const message of ['No', 'Cancel it', 'Never mind', 'Do not book']) {
+    assert.equal(routeBookingReply('WAITING_CONFIRMATION', message), 'cancel', message);
+  }
+  for (const message of ['Top up wallet', 'Show QR code', 'Pay by QR']) {
+    assert.equal(routeBookingReply('WAITING_CONFIRMATION', message), 'top_up', message);
+  }
+  assert.equal(routeBookingReply('WAITING_CONFIRMATION', 'Change the time to 9 AM'), 'interpret');
+  assert.notEqual(routeBookingReply('WAITING_CONFIRMATION', 'No, go ahead'), 'confirm');
+});
+
 test('vehicle actions accept natural confirmation without weakening booking confirmation', () => {
   assert.equal(routeAssistantActionReply('Đồng ý xóa xe'), 'confirm');
   assert.equal(routeAssistantActionReply('Thêm đi'), 'confirm');
@@ -123,4 +137,20 @@ test('vehicles sharing one schedule mention the date and time only once', () => 
     '2 xe, 28/09/2026 08:00 đến 28/09/2026 09:00:\n- 43A12345: Tầng 1, ô B7\n- 43B54321: Tầng 1, ô C5\nTổng 20.000đ. Xác nhận đặt 2 chỗ?');
   assert.equal((summary.match(/28\/09\/2026/g) || []).length, 2);
   assert.equal((summary.match(/08:00/g) || []).length, 1);
+});
+
+test('English preview and success summaries contain no Vietnamese fragments', () => {
+  const preview = {
+    total: 25000, walletBalance: 100000,
+    items: [{
+      licensePlate: '43A12345', floorName: 'Tầng 2', slotCode: 'E9',
+      startTime: '2026-10-05T01:00:00.000Z', endTime: '2026-10-05T02:00:00.000Z',
+    }],
+  };
+  const summary = bookingPreviewSummary(preview, {}, 'en');
+  const success = bookingSuccessSummary(preview.items, 'en');
+  assert.match(summary, /Vehicle 43A12345/);
+  assert.match(summary, /Floor 2, slot E9/);
+  assert.match(success, /Booking completed/);
+  assert.doesNotMatch(`${summary} ${success}`, /\b(?:Xe|Tầng|ô|đặt|chỗ|ngày|giờ)\b/iu);
 });

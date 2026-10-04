@@ -1,5 +1,6 @@
 const simplify = (value) => String(value || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+const { detectBookingLanguage } = require('./aiBookingLanguage');
 const manualOnlyPattern = /\b(sac|vip|dich vu|gan|khu|zone|cong|loi ra|uu tien|co mai|ngoai troi)\b/;
 const supportedLocationCodePattern = /\b(?:zone|khu(?:\s+vuc)?)\s*([a-z]+\d+)\b/;
 const withoutSupportedLocationCode = (message) => message.replace(supportedLocationCodePattern, ' ');
@@ -57,15 +58,66 @@ const dayOfMonthRange = (startDay, endDay, today) => {
 const plateDigits = {
   khong: '0', linh: '0', le: '0', mot: '1', hai: '2', ba: '3', bon: '4', bong: '4', tu: '4',
   nam: '5', lam: '5', sau: '6', bay: '7', tam: '8', chin: '9',
+  zero: '0', oh: '0', one: '1', two: '2', three: '3', four: '4', five: '5',
+  six: '6', seven: '7', eight: '8', nine: '9',
+  owe: '0', won: '1', want: '1', to: '2', too: '2', tree: '3', free: '3', chi: '3',
+  for: '4', fore: '4', fire: '5', sex: '6', heaven: '7', ate: '8', mine: '9',
 };
 const plateLetters = {
   a: 'A', b: 'B', be: 'B', bo: 'B', c: 'C', ce: 'C', xe: 'C', d: 'D', de: 'D',
   e: 'E', g: 'G', ge: 'G', h: 'H', hat: 'H', k: 'K', ca: 'K', m: 'M', em: 'M',
   n: 'N', no: 'N', p: 'P', pe: 'P', r: 'R', ro: 'R', s: 'S', et: 'S',
   t: 'T', te: 'T', v: 'V', ve: 'V', x: 'X', ich: 'X',
+  ay: 'A', bee: 'B', see: 'C', sea: 'C', dee: 'D', gee: 'G', jay: 'J', kay: 'K',
+  el: 'L', en: 'N', pee: 'P', cue: 'Q', ar: 'R', ess: 'S', tee: 'T', vee: 'V',
+  doubleyou: 'W', why: 'Y', zee: 'Z', zed: 'Z', i: 'I',
+  alpha: 'A', bravo: 'B', charlie: 'C', delta: 'D', echo: 'E', foxtrot: 'F',
+  golf: 'G', hotel: 'H', india: 'I', juliett: 'J', juliet: 'J', kilo: 'K', lima: 'L',
+  mike: 'M', november: 'N', oscar: 'O', papa: 'P', quebec: 'Q', romeo: 'R',
+  sierra: 'S', tango: 'T', uniform: 'U', victor: 'V', whiskey: 'W', xray: 'X',
+  yankee: 'Y', zulu: 'Z',
 };
 const fullPlatePattern = /^[1-9]\d[A-Z]{1,2}\d{4,5}$/;
 const directPlatePattern = /\b[1-9]\d[\s,.;-]*[a-z]{1,2}(?:[\s,.;-]*\d){4,5}\b/g;
+
+// Browser speech recognition commonly returns English homophones for isolated
+// plate characters (for/four, want/one, to/two, fire/five). Scan only sequences
+// that have the exact Vietnamese car-plate shape so normal English sentences
+// are not rewritten as license plates.
+function decodeSpokenPlateSequence(value) {
+  const tokens = String(value || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  for (let start = 0; start < tokens.length; start += 1) {
+    let plate = '';
+    let provinceDigits = 0;
+    let letters = 0;
+    let finalDigits = 0;
+    let best = '';
+    for (let index = start; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (provinceDigits < 2) {
+        const digit = /^\d$/.test(token) ? token : plateDigits[token];
+        if (digit === undefined || (provinceDigits === 0 && digit === '0')) break;
+        plate += digit;
+        provinceDigits += 1;
+        continue;
+      }
+      if (letters === 0 || (letters < 2 && finalDigits === 0 && plateDigits[token] === undefined)) {
+        const letter = plateLetters[token] || (/^[a-z]$/.test(token) ? token.toUpperCase() : '');
+        if (!letter) break;
+        plate += letter;
+        letters += 1;
+        continue;
+      }
+      const digit = /^\d$/.test(token) ? token : plateDigits[token];
+      if (digit === undefined || finalDigits >= 5) break;
+      plate += digit;
+      finalDigits += 1;
+      if (fullPlatePattern.test(plate)) best = plate;
+    }
+    if (best) return best;
+  }
+  return '';
+}
 
 function extractDirectLicensePlates(message) {
   return [...String(message || '').matchAll(directPlatePattern)]
@@ -77,7 +129,9 @@ function decodeSpokenPlate(value) {
   const raw = String(value || '').trim().replace(/\btu\s+\d{1,2}\s*(?:h|gio|:)\b.*$/, '').trim();
   const compact = raw.replace(/[^a-z0-9]/gi, '').toUpperCase();
   if (/^(?:\d{1,2}[A-Z]{0,2}\d{0,6}|[A-Z]{1,2}\d{1,6})$/.test(compact)) return compact;
-  const tokens = raw.replace(/\b(?:bien so|bien|khac|la|cua|toi)\b/g, ' ')
+  const recognizedSequence = decodeSpokenPlateSequence(raw);
+  if (recognizedSequence) return recognizedSequence;
+  const tokens = raw.replace(/\b(?:bien so|bien|khac|la|cua|toi|my|the|license|plate|number|registration|vehicle|car|letter|is|its|it s)\b/g, ' ')
     .split(/[\s,.;:-]+/).filter(Boolean);
   if (!tokens.length) return '';
   let plate = '';
@@ -96,7 +150,7 @@ function decodeSpokenPlate(value) {
 function extractLicensePlate(message) {
   const direct = extractDirectLicensePlates(message);
   if (direct.length) return direct[0];
-  const spoken = message.match(/\b(?:bien so|bien|xe)\s+(?:khac\s+)?(?:la\s+)?([^.!?]+)/);
+  const spoken = message.match(/\b(?:bien so|bien|xe|license plate|plate number|registration number|vehicle registration|plate)\s+(?:khac\s+)?(?:la|is)?\s*([^.!?]+)/);
   if (!spoken) return '';
   const plate = decodeSpokenPlate(spoken[1]);
   return fullPlatePattern.test(plate) ? plate : '';
@@ -114,10 +168,47 @@ function extractVehicleCount(message) {
   return match ? Number(words[match[1]] || match[1]) : 0;
 }
 
-function parsePlateFollowUp(message, previous = {}) {
+function parsePlateFollowUp(message, previous = {}, language = 'vi') {
+  const tr = (english, vietnamese) => language === 'en' ? english : vietnamese;
   const spoken = decodeSpokenPlate(message);
   if (!spoken) return null;
-  const pending = String(previous.pendingLicensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const rawPending = String(previous.pendingLicensePlate || '').toUpperCase();
+  const missingLetter = rawPending.match(/^(\d{2})_([0-9]{4,5})$/);
+  if (missingLetter && /^[A-Z]{1,2}$/.test(spoken)) {
+    const complete = `${missingLetter[1]}${spoken}${missingLetter[2]}`;
+    if (fullPlatePattern.test(complete)) {
+      const priorPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+      const licensePlates = [...new Set([...priorPlates, complete])];
+      const requestedVehicleCount = Number(previous.requestedVehicleCount || 0);
+      return {
+        changes: { licensePlate: complete, licensePlates, requestedVehicleCount },
+        clearPendingPlate: true,
+        clarification: requestedVehicleCount > licensePlates.length
+          ? tr(
+            `I have received ${licensePlates.length} of ${requestedVehicleCount} license plates. Please provide the next plate.`,
+            `Mình đã nhận ${licensePlates.length}/${requestedVehicleCount} biển số. Hãy đọc biển số xe tiếp theo.`,
+          )
+          : '',
+      };
+    }
+  }
+  if (/^\d{6,7}$/.test(spoken)) {
+    // Six digits means the middle letter was omitted. With seven digits, speech
+    // recognition often turns A/B/C into the third digit, so preserve the last
+    // four digits and ask only for the ambiguous letter.
+    const province = spoken.slice(0, 2);
+    const finalDigits = spoken.length === 6 ? spoken.slice(2) : spoken.slice(3);
+    const pendingLicensePlate = `${province}_${finalDigits}`;
+    return {
+      changes: {},
+      pendingLicensePlate,
+      clarification: tr(
+        `I heard only numbers: ${spoken}. Which letter is between ${province} and ${finalDigits}? Please say Alpha, Bravo, Charlie, or another NATO letter.`,
+        `Mình chỉ nghe được các số ${spoken}. Chữ cái nằm giữa ${province} và ${finalDigits} là gì? Hãy đọc chữ cái đó, ví dụ Alpha, Bravo hoặc Charlie.`,
+      ),
+    };
+  }
+  const pending = rawPending.replace(/[^A-Z0-9]/g, '');
   const pendingPrefix = pending.match(/^\d{2}[A-Z]{1,2}/)?.[0] || '';
   const complete = [spoken, `${pending}${spoken}`, `${spoken}${pending}`, `${pendingPrefix}${spoken}`]
     .find((plate) => fullPlatePattern.test(plate));
@@ -133,7 +224,10 @@ function parsePlateFollowUp(message, previous = {}) {
       },
       clearPendingPlate: true,
       clarification: requestedVehicleCount > licensePlates.length
-        ? `Mình đã nhận ${licensePlates.length}/${requestedVehicleCount} biển số. Hãy đọc biển số xe tiếp theo.`
+        ? tr(
+          `I have received ${licensePlates.length} of ${requestedVehicleCount} license plates. Please provide the next plate.`,
+          `Mình đã nhận ${licensePlates.length}/${requestedVehicleCount} biển số. Hãy đọc biển số xe tiếp theo.`,
+        )
         : '',
     };
   }
@@ -144,13 +238,16 @@ function parsePlateFollowUp(message, previous = {}) {
     || /^[A-Z]{1,2}\d{0,6}$/.test(partial)
     || /^\d{2}[A-Z]{0,2}\d{0,5}$/.test(partial);
   if (!plausible) return {
-    changes: {}, clarification: 'Biển số chưa hợp lệ. Hãy đọc lại biển số đầy đủ của ô tô, gồm 2 số tỉnh, 1 đến 2 chữ cái và 4 đến 5 số cuối, ví dụ 43A12345.',
+    changes: {}, clarification: tr(
+      'The license plate is invalid. Please provide the full car plate: two province digits, one or two letters, and four or five final digits, for example 43A12345.',
+      'Biển số chưa hợp lệ. Hãy đọc lại biển số đầy đủ của ô tô, gồm 2 số tỉnh, 1 đến 2 chữ cái và 4 đến 5 số cuối, ví dụ 43A12345.',
+    ),
   };
   const clarification = /^[A-Z]/.test(partial)
-    ? `Mình đã ghi ${partial}. Hãy đọc 2 số đầu của biển số.`
+    ? tr(`I recorded ${partial}. Please provide the first two digits of the plate.`, `Mình đã ghi ${partial}. Hãy đọc 2 số đầu của biển số.`)
     : /^\d{1,2}$/.test(partial)
-      ? `Mình đã ghi ${partial}. Hãy đọc chữ cái và dãy số cuối.`
-      : `Mình đã ghi ${partial}. Hãy đọc tiếp phần còn lại của biển số.`;
+      ? tr(`I recorded ${partial}. Please provide the letters and final digits.`, `Mình đã ghi ${partial}. Hãy đọc chữ cái và dãy số cuối.`)
+      : tr(`I recorded ${partial}. Please provide the rest of the license plate.`, `Mình đã ghi ${partial}. Hãy đọc tiếp phần còn lại của biển số.`);
   return { changes: {}, pendingLicensePlate: partial, clarification };
 }
 
@@ -438,8 +535,238 @@ function parseIndexedReservationItems(message, today, previous = {}) {
   return result;
 }
 
-// Only common, explicit CREATE_BOOKING language is handled locally. Unknown constraints go to Gemini.
-function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
+const englishNumbers = {
+  zero: 0, one: 1, an: 1, a: 1, two: 2, couple: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+const englishOrdinals = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7,
+  eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13,
+  fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18,
+  nineteenth: 19, twentieth: 20, 'twenty first': 21, 'twenty second': 22,
+  'twenty third': 23, 'twenty fourth': 24, 'twenty fifth': 25, 'twenty sixth': 26,
+  'twenty seventh': 27, 'twenty eighth': 28, 'twenty ninth': 29, thirtieth: 30,
+  'thirty first': 31,
+};
+const englishMonths = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+const englishWeekdays = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 0 };
+const englishNumber = (value) => {
+  const text = String(value || '').trim().replace(/^(?:a|an)\s+couple(?:\s+of)?$/, 'couple');
+  if (/^\d+$/.test(text)) return Number(text);
+  return englishNumbers[text] ?? englishOrdinals[text] ?? null;
+};
+const upcomingWeekday = (today, weekday, forceFollowing = false) => {
+  const current = new Date(`${today}T12:00:00Z`).getUTCDay();
+  let difference = (weekday - current + 7) % 7;
+  if (forceFollowing && difference === 0) difference = 7;
+  return addDays(today, difference);
+};
+
+function parseEnglishDate(message, today) {
+  if (/\bday after tomorrow\b/.test(message)) return addDays(today, 2);
+  if (/\btomorrow\b/.test(message)) return addDays(today, 1);
+  if (/\btoday\b/.test(message)) return today;
+  const weekend = message.match(/\b(next\s+)?weekend\b/);
+  if (weekend) {
+    let date = upcomingWeekday(today, 6, true);
+    if (weekend[1]) date = addDays(date, 7);
+    return date;
+  }
+  const weekday = message.match(/\b(?:(next|this|following)\s+|on\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+  if (weekday) return upcomingWeekday(today, englishWeekdays[weekday[2]], ['next', 'following'].includes(weekday[1]));
+
+  const monthFirst = message.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}(?:st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty first|twenty second|twenty third|twenty fourth|twenty fifth|twenty sixth|twenty seventh|twenty eighth|twenty ninth|thirtieth|thirty first)(?:,?\s+(\d{4}))?\b/);
+  const dayFirst = message.match(/\b(?:the\s+)?(\d{1,2}(?:st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty first|twenty second|twenty third|twenty fourth|twenty fifth|twenty sixth|twenty seventh|twenty eighth|twenty ninth|thirtieth|thirty first)\s+of\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?\b/);
+  const match = monthFirst || dayFirst;
+  if (!match) return '';
+  const monthText = monthFirst ? match[1] : match[2];
+  const rawDayText = monthFirst ? match[2] : match[1];
+  const dayText = /^\d/.test(rawDayText) ? rawDayText.replace(/(?:st|nd|rd|th)$/i, '') : rawDayText;
+  const month = englishMonths[monthText];
+  const day = englishNumber(dayText);
+  let year = Number(match[3] || today.slice(0, 4));
+  if (!day) return '';
+  let result = `${year}-${pad(month)}-${pad(day)}`;
+  if (!validDate(result)) return '';
+  if (!match[3] && result < today) {
+    year += 1;
+    result = `${year}-${pad(month)}-${pad(day)}`;
+  }
+  return validDate(result) ? result : '';
+}
+
+const englishClockPattern = '(?:\\d{1,2}(?::\\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?:\\s*(?:am|pm)|\\s+in the (?:morning|afternoon|evening|night))?';
+
+function parseEnglishClock(value, inferredPeriod = '') {
+  const text = String(value || '').trim().replace(/\./g, '');
+  const match = text.match(/^(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?::(\d{2}))?\s*(am|pm|in the morning|in the afternoon|in the evening|in the night)?$/);
+  if (!match) return '';
+  let hour = englishNumber(match[1]);
+  const minute = Number(match[2] || 0);
+  const period = match[3] || inferredPeriod;
+  if (!Number.isInteger(hour) || hour > 23 || minute > 59) return '';
+  if (/pm|afternoon|evening|night/.test(period) && hour < 12) hour += 12;
+  if (/am|morning/.test(period) && hour === 12) hour = 0;
+  return `${pad(hour)}:${pad(minute)}`;
+}
+
+function extractEnglishTimeData(message, previous = {}) {
+  const approximate = /\b(?:around|about|approximately|roughly)\s+(?:at\s+)?(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b(?!\s+hours?\b)/.test(message);
+  if (approximate) return { clarification: 'What exact time would you like to use?' };
+  const clock = englishClockPattern;
+  const patterns = [
+    new RegExp(`\\b(?:from|between)\\s+(${clock})\\s+(?:to|until|and|through|-)\\s+(${clock})\\b`),
+    new RegExp(`\\b(${clock})\\s+(?:to|until|through|-)\\s+(${clock})\\b`),
+    new RegExp(`\\b(?:arrive|arriving|start|starting)\\s+(?:at\\s+)?(${clock}).*?\\b(?:leave|leaving|end|ending)\\s+(?:at\\s+)?(${clock})\\b`),
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (!match) continue;
+    const secondPeriod = /\b(pm|in the afternoon|in the evening|in the night)\b/.test(match[2]) ? 'pm'
+      : /\b(am|in the morning)\b/.test(match[2]) ? 'am' : '';
+    const startTime = parseEnglishClock(match[1], secondPeriod);
+    const endTime = parseEnglishClock(match[2]);
+    if (startTime && endTime) return { startTime, endTime };
+  }
+
+  const start = message.match(new RegExp(`\\b(?:at|from|starting at|start at|arrive at|will arrive at|want to arrive at|arrival time is|plan to arrive at)\\s+(${clock})\\b`));
+  const end = message.match(new RegExp(`\\b(?:until|up to|leave at|will leave at|be leaving at|leaving at|departure time is|end at|ending at)\\s+(${clock})\\b`));
+  if (start || end) return {
+    startTime: start ? parseEnglishClock(start[1]) : '',
+    endTime: end ? parseEnglishClock(end[1]) : '',
+  };
+  const short = message.replace(/[.!?]+$/g, '').trim().match(new RegExp(`^(${clock})$`));
+  if (short) {
+    const time = parseEnglishClock(short[1]);
+    if (!time) return {};
+    return previous.startTime && !previous.endTime ? { endTime: time } : { startTime: time };
+  }
+  return {};
+}
+
+function addDuration(startDate, startTime, durationMinutes) {
+  if (!startDate || !startTime || !durationMinutes) return {};
+  const start = new Date(`${startDate}T${startTime}:00+07:00`);
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+  const local = new Date(end.getTime() + 7 * 3600000).toISOString();
+  return { endDate: local.slice(0, 10), endTime: local.slice(11, 16) };
+}
+
+function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime = '', responseLanguage = 'en') {
+  if (!validDate(today)) return null;
+  const message = simplify(String(prompt || '')).replace(/\ba\.m\.?\b/g, 'am').replace(/\bp\.m\.?\b/g, 'pm');
+  const continuing = previous.__intent === 'CREATE_BOOKING';
+  const createCue = /\b(?:book|reserve|reservation|parking|park|spot|space|license plate|registration|somewhere to park|place to leave|save me)\b/.test(message)
+    || /\b(?:want|need|like)\b.*\b(?:dat|xe|cho)\b/.test(message);
+  const correctionCue = /\b(?:change|correct|instead|actually|wrong|meant)\b/.test(message);
+  if (!continuing && !createCue) return null;
+
+  const tr = (english, vietnamese) => responseLanguage === 'en' ? english : vietnamese;
+  const barePlateFollowUp = continuing && /\d/.test(message)
+    && /^[a-z0-9\s,.-]{1,50}$/.test(message)
+    && !/\b(?:am|pm|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour|hours|from|until|to|at)\b/.test(message);
+  const spokenPlateFollowUp = /\b(?:zero|oh|owe|one|won|want|two|to|too|three|tree|free|chi|four|for|fore|five|fire|six|sex|seven|heaven|eight|ate|nine|mine|alpha|bravo|charlie|delta|echo|foxtrot|golf|hotel|india|juliett|juliet|kilo|lima|mike|november|oscar|papa|quebec|romeo|sierra|tango|uniform|victor|whiskey|xray|yankee|zulu)\b/.test(message);
+  const priorPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+  const expectsPlateFollowUp = continuing && (!previous.licensePlate
+    || Number(previous.requestedVehicleCount || 0) > priorPlates.length
+    || previous.pendingLicensePlate);
+  if ((expectsPlateFollowUp && (/\d/.test(message) || spokenPlateFollowUp)) || barePlateFollowUp) {
+    const plateFollowUp = parsePlateFollowUp(message, previous, responseLanguage);
+    if (plateFollowUp) return plateFollowUp;
+  }
+  if (/\b(?:change|correct).*(?:time|arrival|departure)\b/.test(message)
+    && !new RegExp(englishClockPattern).test(message)) {
+    return { changes: {}, clearTimes: true,
+      clarification: tr('What arrival and departure times would you like instead?', 'Bạn muốn đổi giờ vào và giờ ra thành mấy giờ?') };
+  }
+  if (/\b(?:change|correct).*(?:date|day)\b/.test(message) && !parseEnglishDate(message, today)) {
+    return { changes: {}, clearDates: true,
+      clarification: tr('What date would you like instead?', 'Bạn muốn đổi sang ngày nào?') };
+  }
+  if (/\b(?:wrong plate|plate.*wrong|change the (?:license )?plate|wrong registration)\b/.test(message)
+    && !extractLicensePlates(message).length) {
+    return { changes: {}, clearVehicle: true,
+      clarification: tr('What is the correct license plate?', 'Biển số đúng là gì?') };
+  }
+
+  const startDate = parseEnglishDate(message, today);
+  const hasAmbiguousOrdinal = /\b(?:on\s+)?(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d{1,2}(?:st|nd|rd|th))\b/.test(message)
+    && !Object.keys(englishMonths).some((month) => message.includes(month));
+  if (!startDate && hasAmbiguousOrdinal) {
+    return { changes: {}, clarification: tr('Which month do you mean?', 'Bạn muốn ngày đó trong tháng nào?') };
+  }
+
+  const timeData = extractEnglishTimeData(message, previous);
+  if (timeData.clarification) return { changes: { startDate, endDate: startDate }, clarification: tr(
+    timeData.clarification, 'Bạn muốn chính xác mấy giờ?',
+  ) };
+  let { startTime = '', endTime = '' } = timeData;
+  const replacementTime = message.match(new RegExp(`\\b(?:make it|i meant|i want)\\s+(${englishClockPattern})\\s*(?:instead)?\\b`));
+  if (replacementTime && !startTime && !endTime) {
+    const replacement = parseEnglishClock(replacementTime[1]);
+    if (replacement) {
+      if (previous.startTime && !previous.endTime) endTime = replacement;
+      else startTime = replacement;
+    }
+  }
+  const duration = message.match(/\b(?:just\s+)?for\s+(?:about\s+|around\s+|approximately\s+|only\s+)?(a\s+couple(?:\s+of)?|a|an|one|two|three|four|five|couple(?:\s+of)?|\d+)\s+hours?\b/);
+  const durationMinutes = duration ? englishNumber(duration[1].replace(/\s+of$/, '')) * 60 : 0;
+  const effectiveStartDate = startDate || previous.startDate || '';
+  const effectiveStartTime = startTime || previous.startTime || '';
+  if (durationMinutes && effectiveStartDate && effectiveStartTime && !endTime) {
+    const calculated = addDuration(effectiveStartDate, effectiveStartTime, durationMinutes);
+    endTime = calculated.endTime;
+  }
+
+  const countMatch = message.match(/\b(one|two|three|four|five|\d+)\s+(?:cars?|vehicles?|parking spaces?|spots?)\b/)
+    || message.match(/\b(?:for|bringing|have)\s+(one|two|three|four|five|\d+)\s+(?:cars?|vehicles?)\b/);
+  const requestedVehicleCount = countMatch ? englishNumber(countMatch[1]) : Number(previous.requestedVehicleCount || 0);
+  if (requestedVehicleCount > 5) return null;
+  const incomingPlates = extractLicensePlates(message);
+  let licensePlates = [...new Set([...(continuing && Array.isArray(previous.licensePlates) ? previous.licensePlates : []), ...incomingPlates])];
+  let pendingLicensePlate = '';
+  if (!incomingPlates.length && /\b(?:license plate|plate number|registration|plate is)\b/.test(message)) {
+    const spoken = decodeSpokenPlate(message);
+    if (fullPlatePattern.test(spoken)) licensePlates = [...new Set([...licensePlates, spoken])];
+    else if (spoken) pendingLicensePlate = spoken;
+  }
+  if (!incomingPlates.length && continuing && (!previous.licensePlate || Number(previous.requestedVehicleCount || 0) > licensePlates.length)) {
+    const spoken = decodeSpokenPlate(message);
+    if (fullPlatePattern.test(spoken)) licensePlates = [...new Set([...licensePlates, spoken])];
+  }
+  const licensePlate = licensePlates.find((plate) => !Array.isArray(previous.licensePlates) || !previous.licensePlates.includes(plate))
+    || licensePlates[0] || '';
+
+  if (!startDate && !startTime && !endTime && !durationMinutes && !licensePlate && !requestedVehicleCount
+    && !createCue && !correctionCue) return null;
+  const changes = {
+    startDate, endDate: startDate, startTime, endTime, licensePlate, licensePlates,
+    requestedVehicleCount, vehicleType: /\b(?:electric car|electric vehicle|ev)\b/.test(message) ? 'electric_car' : '',
+    floorName: '', zoneName: '', slotCode: '',
+  };
+  if (durationMinutes && effectiveStartDate && effectiveStartTime) Object.assign(changes, addDuration(effectiveStartDate, effectiveStartTime, durationMinutes));
+  let clarification = '';
+  if (startTime && endTime && endTime <= startTime && (!changes.endDate || changes.endDate === effectiveStartDate)) {
+    clarification = tr('The departure time must be after the arrival time. What times would you like?', 'Giờ ra cần sau giờ vào. Bạn muốn đổi lại khoảng giờ nào?');
+  } else if (pendingLicensePlate) {
+    clarification = tr('Could you confirm the full license plate?', 'Bạn đọc lại đầy đủ biển số giúp mình nhé.');
+  } else if (requestedVehicleCount > licensePlates.length) {
+    clarification = tr(
+      `You are booking for ${requestedVehicleCount} vehicles. Please provide all ${requestedVehicleCount} license plates. I have ${licensePlates.length} so far.`,
+      `Bạn muốn đặt ${requestedVehicleCount} xe. Vui lòng đọc đủ ${requestedVehicleCount} biển số; hiện mình nhận được ${licensePlates.length}.`,
+    );
+  }
+  const result = { changes, clarification };
+  if (/\b(?:change|switch).*(?:vehicle|car)\b/.test(message) && !licensePlate) result.clearVehicle = true;
+  if (pendingLicensePlate) result.pendingLicensePlate = pendingLicensePlate;
+  return result;
+}
+
+// Existing Vietnamese parser remains isolated so bilingual support cannot regress it.
+function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   if (!validDate(today)) return null;
   const words = { 'muoi mot': 11, 'muoi hai': 12, mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9, muoi: 10 };
   const message = simplify(String(prompt || '').replace(/\btôi\b/giu, 'nguoi_dung').replace(/\btới\b/giu, 'đến').replace(/\bmốt\b/giu, 'ngày mốt'))
@@ -691,4 +1018,50 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   return { changes, clarification, clearTimes, clearPending: times.length > 0 };
 }
 
-module.exports = { parseBookingUtterance, specialBookingRequest };
+function mergeParsedBookings(primary, secondary) {
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+  const changes = { ...(primary.changes || {}) };
+  for (const [field, value] of Object.entries(secondary.changes || {})) {
+    const empty = changes[field] === undefined || changes[field] === '' || changes[field] === 0
+      || (Array.isArray(changes[field]) && changes[field].length === 0);
+    if (empty && value !== '' && value !== 0) changes[field] = value;
+  }
+  const plates = [...new Set([
+    ...(Array.isArray(primary.changes?.licensePlates) ? primary.changes.licensePlates : []),
+    ...(Array.isArray(secondary.changes?.licensePlates) ? secondary.changes.licensePlates : []),
+  ])];
+  if (plates.length) {
+    changes.licensePlates = plates;
+    if (!changes.licensePlate) changes.licensePlate = plates[0];
+  }
+  return {
+    ...secondary,
+    ...primary,
+    changes,
+    clarification: primary.clarification || secondary.clarification || '',
+    clearTimes: Boolean(primary.clearTimes || secondary.clearTimes),
+    clearDates: Boolean(primary.clearDates || secondary.clearDates),
+    clearVehicle: Boolean(primary.clearVehicle || secondary.clearVehicle),
+  };
+}
+
+function parseBookingUtterance(prompt, today, previous = {}, currentTime = '', language) {
+  const detected = language || detectBookingLanguage(prompt, previous.language).language;
+  const englishSignals = /\b(?:book|reserve|parking|spot|space|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|arrive|leave|until|license plate|plate number|vehicle|car|hours?|am|pm)\b/i.test(prompt);
+  if (detected === 'en') {
+    return parseEnglishBookingUtterance(prompt, today, previous, currentTime, 'en')
+      || parseVietnameseBookingUtterance(prompt, today, previous, currentTime);
+  }
+  const vietnamese = parseVietnameseBookingUtterance(prompt, today, previous, currentTime);
+  if (!englishSignals) return vietnamese;
+  const english = parseEnglishBookingUtterance(prompt, today, previous, currentTime, 'vi');
+  return mergeParsedBookings(vietnamese, english);
+}
+
+module.exports = {
+  parseBookingUtterance,
+  parseEnglishBookingUtterance,
+  parseVietnameseBookingUtterance,
+  specialBookingRequest,
+};

@@ -1,4 +1,6 @@
 const { interpretBookingMessage, normalizeInterpretation } = require('../services/aiBookingInterpreter');
+const { detectBookingLanguage } = require('../services/aiBookingLanguage');
+const { toEnglishBookingMessage } = require('../services/aiBookingReplyLanguage');
 const mongoose = require('mongoose');
 const aiBookingSessionService = require('../services/aiBookingSessionService');
 const {
@@ -42,6 +44,9 @@ const sendMutationResult = (res, result) => {
 };
 
 exports.interpret = async (req, res) => {
+  const languageInfo = detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const responseMessage = (value) => languageInfo.language === 'en'
+    ? toEnglishBookingMessage(value) : value;
   try {
     const assistantRequest = parseAssistantRequest({
       prompt: req.body?.prompt,
@@ -62,6 +67,8 @@ exports.interpret = async (req, res) => {
         success: true,
         data: {
           ...normalized,
+          language: languageInfo.language,
+          languageConfidence: languageInfo.confidence,
           canonicalIntent: assistantRequest.intent,
           intents: assistantRequest.intents,
         },
@@ -91,11 +98,13 @@ exports.interpret = async (req, res) => {
         success: true,
         data: {
           intent: transition.intent || assistantRequest.intent,
+          language: languageInfo.language,
+          languageConfidence: languageInfo.confidence,
           canonicalIntent: assistantRequest.intent,
           intents: assistantRequest.intents,
           draft,
           assistantResult: {
-            message: assistantResult.message,
+            message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
           },
         },
@@ -127,11 +136,13 @@ exports.interpret = async (req, res) => {
         success: true,
         data: {
           intent: assistantResult.transition?.intent || result.intent,
+          language: result.language || languageInfo.language,
+          languageConfidence: result.languageConfidence || languageInfo.confidence,
           canonicalIntent: result.intent,
           intents: [result.intent],
           draft: { ...draft, ...(assistantResult.transition?.draftPatch || {}) },
           assistantResult: {
-            message: assistantResult.message,
+            message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
           },
         },
@@ -141,7 +152,7 @@ exports.interpret = async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
-      message: error.statusCode ? error.message : 'Không thể xử lý yêu cầu AI lúc này.',
+      message: responseMessage(error.statusCode ? error.message : 'Không thể xử lý yêu cầu AI lúc này.'),
     });
   }
 };
