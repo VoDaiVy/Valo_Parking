@@ -6,3 +6,25 @@ plans/*
 # Excel reports
 Report5_Test_Report_VALOParking.xlsx
 *.xlsx
+
+# macOS system files
+.DS_Store
+*/.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+env/
