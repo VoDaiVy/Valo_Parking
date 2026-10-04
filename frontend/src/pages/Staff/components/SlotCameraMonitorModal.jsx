@@ -150,10 +150,10 @@ export default function SlotCameraMonitorModal({
   }, [activeFloor]);
 
   const DEFAULT_BOARD_CORNERS = useMemo(() => [
-    [0.012, 0.145], // 0: Top-Left (TL)
-    [0.985, 0.145], // 1: Top-Right (TR)
-    [0.985, 0.990], // 2: Bottom-Right (BR)
-    [0.012, 0.990], // 3: Bottom-Left (BL)
+    [0.100, 0.415], // 0: Top-Left (TL)
+    [0.635, 0.415], // 1: Top-Right (TR)
+    [0.635, 0.885], // 2: Bottom-Right (BR)
+    [0.100, 0.885], // 3: Bottom-Left (BL)
   ], []);
 
   const [boardCorners, setBoardCorners] = useState(DEFAULT_BOARD_CORNERS);
@@ -200,9 +200,9 @@ export default function SlotCameraMonitorModal({
     const sy = scale.y || 1.0;
 
     const getSlotPoly = (colIdx, rowIdx, isRightZone) => {
-      const baseUStart = isRightZone ? 0.525 : 0.00;
-      const colWidth = 0.092;
-      const slotWidth = 0.086 * sx;
+      const baseUStart = isRightZone ? 0.540 : 0.00;
+      const colWidth = 0.090;
+      const slotWidth = 0.080 * sx;
       const uCenter = baseUStart + colIdx * colWidth + (slotWidth / 2);
       const u1 = uCenter - slotWidth / 2;
       const u2 = uCenter + slotWidth / 2;
@@ -210,22 +210,16 @@ export default function SlotCameraMonitorModal({
       let v1, v2;
       if (rowIdx === 0) {
         // Hàng 1 (Trên): E1..E5 / F1..F5
-        const vCenter = 0.12;
-        const vHeight = 0.24 * sy;
-        v1 = vCenter - vHeight / 2;
-        v2 = vCenter + vHeight / 2;
+        v1 = 0.00;
+        v2 = 0.26 * sy;
       } else if (rowIdx === 1) {
         // Hàng 2 (Giữa): E6..E10 / F6..F7
-        const vCenter = 0.38;
-        const vHeight = 0.24 * sy;
-        v1 = vCenter - vHeight / 2;
-        v2 = vCenter + vHeight / 2;
+        v1 = 0.29;
+        v2 = (0.29 + 0.25) * sy;
       } else {
         // Hàng 3 (Dưới): G1..G5 / H1..H5
-        const vCenter = 0.86;
-        const vHeight = 0.24 * sy;
-        v1 = vCenter - vHeight / 2;
-        v2 = vCenter + vHeight / 2;
+        v1 = 0.73;
+        v2 = (0.73 + 0.25) * sy;
       }
 
       // Mỗi ô đỗ tự động tạo thành một hình tứ giác phối cảnh (perspective quadrilateral)
@@ -758,34 +752,14 @@ export default function SlotCameraMonitorModal({
         const currentFloorKey = activeFloor?._id || activeFloor?.name || 'default';
         const freshSlots = data.slots;
 
-        // Auto-update slot polygons with real physical contours detected by AI
-        const polyList = Array.isArray(data.calibratedSlots) && data.calibratedSlots.length > 0
-          ? data.calibratedSlots
-          : freshSlots.filter((s) => s.polygon && Array.isArray(s.polygon) && s.polygon.length >= 3);
-
-        if (polyList.length > 0) {
-          const polyMap = new Map();
-          polyList.forEach((item) => {
-            if (item.slotCode && Array.isArray(item.polygon) && item.polygon.length >= 3) {
-              polyMap.set(item.slotCode.toUpperCase(), item.polygon);
-            }
-          });
-
-          if (polyMap.size > 0) {
-            setSlotRois((prev) => {
-              const updated = prev.map((s) => {
-                const p = polyMap.get(s.slotCode.toUpperCase());
-                return p ? { ...s, polygon: p } : s;
-              });
-              if (activeFloor) {
-                const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
-                try {
-                  localStorage.setItem(storageKey, JSON.stringify(updated));
-                } catch (e) {}
-              }
-              return updated;
-            });
-          }
+        // Tự động định hình và bắt dính khung theo các ô đỗ vật lý AI vừa phát hiện từ camera
+        if (Array.isArray(data.calibratedSlots) && data.calibratedSlots.length > 0) {
+          setSlotRois(data.calibratedSlots);
+          const storageKey = `valo_slot_roi_floor_${currentFloorKey}`;
+          localStorage.setItem(storageKey, JSON.stringify(data.calibratedSlots));
+        }
+        if (Array.isArray(data.corners) && data.corners.length === 4) {
+          setBoardCorners(data.corners);
         }
 
         const currentPlates = new Set(

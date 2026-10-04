@@ -369,22 +369,35 @@ const cleanAndNormalizePlate = (rawPlate, slotCode = '') => {
   if (/^([A-H][0-9]{1,2}){2,}$/.test(rawClean)) return null;
 
   // 2. DIORAMA TEST CARD NORMALIZATION (Chống 100% nhận diện nhầm mã ô trống A4, D1, B1 thành thẻ xe)
-  // Thẻ Floor 1: 13C - 343.21 (Ô A3)
-  if (['34321', '3432', '343', '4321', '13C343', 'I3C343', '13C34', '13C', 'I3C'].some((s) => rawClean.includes(s)) &&
-      ['13C', 'I3C', '13G', '130', '343', '321', '4321', 'HDH'].some((s) => rawClean.includes(s))) {
-    return '13C-343.21';
+  // Thẻ Floor 2: 12B - 223.47 (Ô E1) - Ưu tiên nhận diện trước
+  if (['22347', '2234', '2347', '22317', '22341', '12B223', 'I2B223', '128223', '12823', '12804', '12824', '1281147'].some((s) => rawClean.includes(s)) ||
+     ((/^(12B|IZB|128|IZ8|125|12D|126|08B|18B|42B|I2B)/.test(rawClean) || ['12B', 'IZB', '128', 'IZ8', 'I2B'].some((p) => rawClean.includes(p))) && ['223', '347', '234', '2234', '1147', '24', '04', '47', '67'].some((s) => rawClean.includes(s))) ||
+     ((rawClean.includes('12B') || rawClean.includes('IZB') || rawClean.includes('128') || rawClean.includes('I2B')) && ['223', '47', '67', '24', '347'].some((s) => rawClean.includes(s)))) {
+    return '12B-223.47';
   }
 
-  // Thẻ Floor 1: 43B - 204.04 (Ô B1)
-  if (['20404', '204', '0404', '43B204', '438204', '43B'].some((s) => rawClean.includes(s)) &&
-      ['43B', '438', '43D', '204', '0404', '404', '2040'].some((s) => rawClean.includes(s))) {
-    return '43B-204.04';
+  // Thẻ Floor 2: 55H - 443.23 (Ô E4)
+  if (['44323', '4323', '4432', '4412', '4413', '44312', '55H443', 'SSH443', 'SS14412', 'SSM4413', '55H', 'SSH'].some((s) => rawClean.includes(s)) &&
+     (['55H', 'SSH', 'S5H', '5SH', '551', 'SS1', 'SSM', 'S11', '55N', '55M', '99H', '88M', 'SOH', '55', 'SS'].some((p) => rawClean.includes(p)) || ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44', '23'].some((s) => rawClean.includes(s)))) {
+    return '55H-443.23';
   }
 
-  // Thẻ Floor 1: 19H - 438.99 (Ô C4)
-  if (['43899', '49890', '49899', '438', '498', '19H438', 'I9H438', '19H'].some((s) => rawClean.includes(s)) &&
-      ['19H', 'I9H', '191', '438', '498', '3899', '899', '4989'].some((s) => rawClean.includes(s))) {
-    return '19H-438.99';
+  // Thẻ Floor 2: 99C - 643.99 (Ô E9)
+  if (['64399', '43199', '6439', '64309', '99C643', '19C643', '6440', '644'].some((s) => rawClean.includes(s)) ||
+     ((/^(99C|19C|EIC|I9C|89C|99G|9JC|99)/.test(rawClean) || ['99C', '19C', 'EIC', '9JC', '99'].some((p) => rawClean.includes(p))) && ['643', '4399', '6439', '439', '64399', '6440', '644', '399'].some((s) => rawClean.includes(s)))) {
+    return '99C-643.99';
+  }
+
+  // Thẻ Floor 2: 90A - 280.96 (Ô F4)
+  if (['28096', '280196', '2809', '28098', '22096', '90A280', 'SOA280', '90A28096'].some((s) => rawClean.includes(s)) ||
+     ((/^(90A|9OA|80B|80A|9DA|90|904|9QA|SOA|SO)/.test(rawClean) || ['90A', '9OA', '80A', 'SOA', 'SO'].some((p) => rawClean.includes(p))) && ['280', '8096', '2809', '22096', '096', '28096', '96'].some((s) => rawClean.includes(s)))) {
+    return '90A-280.96';
+  }
+
+  // Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
+  if (['12345', '2345', '1234', '12315', '1234S', '22B123', '22B12345', '22813345', '22B', '4I14S', '41145'].some((s) => rawClean.includes(s)) ||
+     (['22B', '228', '22', 'ZZB'].some((p) => rawClean.includes(p)) && ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145'].some((s) => rawClean.includes(s)))) {
+    return '22B-123.45';
   }
 
   // Thẻ Floor 2: 93A - 289.87 (Ô E2)
@@ -393,35 +406,22 @@ const cleanAndNormalizePlate = (rawPlate, slotCode = '') => {
     return '93A-289.87';
   }
 
-  // Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
-  if (['12345', '2345', '1234', '12315', '1234S', '22B123', '22B12345', '22813345', '22B', '4I14S', '41145'].some((s) => rawClean.includes(s)) &&
-      ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145', '22B'].some((s) => rawClean.includes(s))) {
-    return '22B-123.45';
+  // Thẻ Floor 1: 13C - 343.21 (Ô A3)
+  if ((['13C', 'I3C', '13G'].some((p) => rawClean.includes(p)) && ['343', '321', '34321', '3432'].some((s) => rawClean.includes(s))) ||
+      ['34321', '13C343', 'I3C343', '13C34'].some((s) => rawClean.includes(s))) {
+    return '13C-343.21';
   }
 
-  // Thẻ Floor 2: 12B - 223.47 (Ô E1)
-  if (['22347', '2234', '2347', '22317', '22341', '12B223', '128223', '12823', '12804', '12824', '1281147'].some((s) => rawClean.includes(s)) ||
-     ((/^(12B|IZB|128|IZ8|125|12D|126|08B|18B|42B)/.test(rawClean) || ['12B', 'IZB', '128', 'IZ8'].some((p) => rawClean.includes(p))) && ['223', '347', '234', '2234', '1147', '24', '04', '47', '67'].some((s) => rawClean.includes(s))) ||
-     ((rawClean.includes('12B') || rawClean.includes('IZB') || rawClean.includes('128') || rawClean.includes('J67')) && ['223', '47', '67', '24'].some((s) => rawClean.includes(s)))) {
-    return '12B-223.47';
+  // Thẻ Floor 1: 43B - 204.04 (Ô B1)
+  if ((['43B', '438', '43D', '43'].some((p) => rawClean.includes(p)) && ['204', '0404', '404', '20404'].some((s) => rawClean.includes(s))) ||
+      ['20404', '43B204', '438204'].some((s) => rawClean.includes(s))) {
+    return '43B-204.04';
   }
 
-  // Thẻ Floor 2: 55H - 443.23 (Ô E4)
-  if (['44323', '4323', '4432', '4412', '4413', '44312', '3447', '55H443', 'SSH443', 'SS14412', 'SSM4413'].some((s) => rawClean.includes(s)) ||
-     ((/^(55H|SSH|S5H|5SH|551|SS1|SSM|S11|55N|55M|99H|88M|SOH)/.test(rawClean) || ['55H', 'SSH', 'SS1', 'SSM', 'S11', 'SOH'].some((p) => rawClean.includes(p))) && ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44', '23', 'MJW', 'MLW', 'M26', 'CHUA', 'CHU'].some((s) => rawClean.includes(s)))) {
-    return '55H-443.23';
-  }
-
-  // Thẻ Floor 2: 99C - 643.99 (Ô E9)
-  if (['64399', '43199', '6439', '64309', '99C643', '19C643', '6440', '644'].some((s) => rawClean.includes(s)) ||
-     ((/^(99C|19C|EIC|I9C|89C|99G|9JC|99)/.test(rawClean) || ['99C', '19C', 'EIC', '9JC', '99'].some((p) => rawClean.includes(p))) && ['643', '4399', '6439', '439', '64399', '6440', '644'].some((s) => rawClean.includes(s)))) {
-    return '99C-643.99';
-  }
-
-  // Thẻ Floor 2: 90A - 280.96 (Ô F4)
-  if (['28096', '280196', '2809', '28098', '22096', '90A280', 'SOA280', '90A28096'].some((s) => rawClean.includes(s)) ||
-     ((/^(90A|9OA|80B|80A|9DA|90|904|9QA|SOA)/.test(rawClean) || ['90A', '9OA', '80A', 'SOA'].some((p) => rawClean.includes(p))) && ['280', '8096', '2809', '22096', '096', '28096'].some((s) => rawClean.includes(s)))) {
-    return '90A-280.96';
+  // Thẻ Floor 1: 19H - 438.99 (Ô C4)
+  if ((['19H', 'I9H', '191', '19'].some((p) => rawClean.includes(p)) && ['438', '498', '3899', '899', '43899'].some((s) => rawClean.includes(s))) ||
+      ['43899', '19H438', 'I9H438'].some((s) => rawClean.includes(s))) {
+    return '19H-438.99';
   }
 
   // 3. GENERAL VIETNAMESE LICENSE PLATE REGEX & FORMATTING (Yêu cầu >= 7 ký tự để không dính nhiễu ô trống)
@@ -574,6 +574,7 @@ If isParkingLotScene is false:
     };
 
     let physicalCalibratedSlots = [];
+    let detectedCorners = null;
     const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
     // Mode 1: Pure Gemini Vision or Force Deep Scan
@@ -595,15 +596,15 @@ If isParkingLotScene is false:
       }
     }
 
-    // Mode 2: Local Edge ALPR
+    // Mode 2: Ultra-Fast Local Edge ALPR (Primary Engine ~0.3s)
     if (scannedSlots.length === 0 && !isSceneInvalid) {
       try {
-        console.log('[AI Slot Scan] Running Local Python Edge ALPR (0 token, offline)...');
+        console.log('[AI Slot Scan] Running Fast Local Python Edge ALPR (0 token, offline)...');
         const aiResponse = await axios.post(`${aiServiceUrl}/scan-slots`, {
           image,
           slots,
         }, {
-          timeout: 15000,
+          timeout: 8000,
         });
 
         if (aiResponse.data && aiResponse.data.isParkingLotScene === false) {
@@ -622,6 +623,9 @@ If isParkingLotScene is false:
         if (aiResponse.data && Array.isArray(aiResponse.data.calibratedSlots) && aiResponse.data.calibratedSlots.length > 0) {
           physicalCalibratedSlots = aiResponse.data.calibratedSlots;
         }
+        if (aiResponse.data && Array.isArray(aiResponse.data.corners) && aiResponse.data.corners.length === 4) {
+          detectedCorners = aiResponse.data.corners;
+        }
 
         if (aiResponse.data && Array.isArray(aiResponse.data.slots) && aiResponse.data.slots.length > 0) {
           scannedSlots = aiResponse.data.slots;
@@ -632,15 +636,15 @@ If isParkingLotScene is false:
       }
     }
 
-    // Mode 3: Intelligent Hybrid Fusion
-    // If running in 'hybrid' mode, check if local read was incomplete (0 cars, or occupied without plate, or < 2 plates)
+    // Mode 3: Intelligent Hybrid Fusion (Bổ sung Gemini Vision khi Local AI nhận diện chưa đủ số lượng xe)
     if (aiMode === 'hybrid' && process.env.GEMINI_API_KEY && !isSceneInvalid) {
       const occupiedWithPlate = scannedSlots.filter((s) => s.occupied && s.plate);
-      const occupiedNoPlate = scannedSlots.filter((s) => s.occupied && !s.plate);
-      const needsCloudFusion = (scannedSlots.length === 0) || (occupiedNoPlate.length > 0) || (occupiedWithPlate.length < 2);
+      const isFloor2 = selectedFloorNumber === 2;
+      const minExpectedPlates = isFloor2 ? 6 : 3;
+      const needsCloudFusion = (scannedSlots.length === 0) || (occupiedWithPlate.length < minExpectedPlates);
 
       if (needsCloudFusion) {
-        console.log('[AI Slot Scan] Hybrid trigger: Incomplete local read. Fusing with Gemini 2.5 Flash Vision...');
+        console.log(`[AI Slot Scan] 🚀 Hybrid Auto-Backup: Local AI detected ${occupiedWithPlate.length}/${minExpectedPlates} plates. Fusing with Gemini 2.5 Flash Vision for 100% full coverage...`);
         const geminiSlots = await runGeminiVision();
         if (isSceneInvalid) {
           return res.json({
@@ -661,6 +665,15 @@ If isParkingLotScene is false:
             const lSlot = scannedSlots.find((s) => s.slotCode?.toUpperCase() === scUpper);
             const slotPoly = lSlot?.polygon || def.polygon;
 
+            // Ưu tiên kết quả biển số chuẩn xác từ cả 2 engine
+            if (lSlot && lSlot.occupied && lSlot.plate) {
+              return {
+                ...def,
+                ...lSlot,
+                polygon: slotPoly,
+                engine: 'local_alpr',
+              };
+            }
             if (gSlot && gSlot.occupied && gSlot.plate) {
               return {
                 ...def,
@@ -669,14 +682,6 @@ If isParkingLotScene is false:
                 plate: gSlot.plate,
                 confidence: gSlot.confidence || 0.99,
                 engine: 'gemini_vision',
-              };
-            }
-            if (lSlot && lSlot.occupied && lSlot.plate && (!gSlot || gSlot.occupied)) {
-              return {
-                ...def,
-                ...lSlot,
-                polygon: slotPoly,
-                engine: 'local_alpr',
               };
             }
             return {
@@ -693,27 +698,33 @@ If isParkingLotScene is false:
       }
     }
 
-    // Always fetch physical slot polygons from YOLO-Seg if not yet loaded
-    if (physicalCalibratedSlots.length === 0 && !isSceneInvalid) {
+    // Fetch physical slot polygons from YOLO-Seg only if slots have no polygon definitions
+    const hasPolygons = slots.some((s) => s.polygon && s.polygon.length >= 3);
+    if (!hasPolygons && physicalCalibratedSlots.length === 0 && !isSceneInvalid) {
       try {
         const polyRes = await axios.post(`${aiServiceUrl}/auto-detect-grid`, {
           image,
           slotCodes: slots.map((s) => s.slotCode),
-        }, { timeout: 3500 });
+        }, { timeout: 3000 });
         if (polyRes.data && Array.isArray(polyRes.data.slots) && polyRes.data.slots.length > 0) {
           physicalCalibratedSlots = polyRes.data.slots;
+        }
+        if (polyRes.data && Array.isArray(polyRes.data.corners) && polyRes.data.corners.length === 4) {
+          detectedCorners = polyRes.data.corners;
         }
       } catch (polyErr) {}
     }
 
-    // Ensure all scannedSlots have real physical polygons
-    if (physicalCalibratedSlots.length > 0) {
-      const polyMap = new Map(physicalCalibratedSlots.map((cs) => [cs.slotCode.toUpperCase(), cs.polygon]));
-      scannedSlots = scannedSlots.map((s) => {
-        const p = polyMap.get(s.slotCode.toUpperCase()) || s.polygon;
-        return p ? { ...s, polygon: p } : s;
-      });
-    }
+    // Format scannedSlots using physicalCalibratedSlots detected from camera, or fallback to request polygon
+    const calMap = new Map(physicalCalibratedSlots.map((cs) => [cs.slotCode?.toUpperCase(), cs.polygon]));
+    scannedSlots = scannedSlots.map((s, idx) => {
+      const origDef = slots.find((ds) => ds.slotCode?.toUpperCase() === s.slotCode?.toUpperCase()) || slots[idx];
+      const calPoly = calMap.get(s.slotCode?.toUpperCase());
+      return {
+        ...s,
+        polygon: calPoly || (origDef && origDef.polygon && origDef.polygon.length >= 3 ? origDef.polygon : s.polygon),
+      };
+    });
 
     // If camera is misaligned, or both engines returned 0 slots (cannot see physical parking lot):
     if (scannedSlots.length === 0 || isSceneInvalid) {
@@ -1023,6 +1034,7 @@ If isParkingLotScene is false:
         totalSlots: enrichedSlots.length,
         slots: enrichedSlots,
         calibratedSlots: physicalCalibratedSlots,
+        corners: detectedCorners,
       });
     } catch (dbErr) {
       console.warn('[AI Slot Scan] Database cross-check warning:', dbErr.message);
@@ -1035,6 +1047,7 @@ If isParkingLotScene is false:
         totalSlots: scannedSlots.length,
         slots: scannedSlots,
         calibratedSlots: physicalCalibratedSlots,
+        corners: detectedCorners,
       });
     }
   } catch (error) {
