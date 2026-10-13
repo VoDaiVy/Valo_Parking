@@ -14,9 +14,9 @@ import {
   updateAiBookingSession,
 } from '../../services/aiBookingService';
 import {
-  cancelBooking, createBookingHold, createBulkBooking, extendBooking,
+  cancelBooking, createBookingHold, createBulkBooking, modifyAiBookingTime,
   getAvailableBookingSlots, getBookingCancellationQuote, getMyBookings,
-  quoteBulkBooking, releaseBookingHold,
+  quoteBookingTimeModification, quoteBulkBooking, releaseBookingHold,
 } from '../../services/bookingService';
 import { createTopUpUrl, getTopUpStatus, getWalletInfo } from '../../services/walletService';
 import { getMyParkingHistory } from '../../services/sessionService';
@@ -24,9 +24,10 @@ import { getLiveMapData } from '../../services/parkingFloorService';
 import { addVehicle, deleteVehicle, updateVehicle } from '../../services/vehicleService';
 import { checkAiAvailability, confirmAiBooking, confirmAiExistingAction, findAiActionBookings, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from '../../utils/aiBookingFlow';
 import { createAiBookingVoiceSession, createAiBookingSpeaker, resolveEnglishVoicePlateTranscript } from '../../utils/aiBookingVoice';
-import { bookingPreviewSummary, bookingSuccessSummary, routeAssistantActionReply, routeBookingReply, vipPlatePrompt } from '../../utils/aiBookingConversation';
+import { applyBookingDraftField, applyMapSlotSelectionToDraft, applySingleVehicleSelectionToDraft, applySlotSuggestionToDraft, bookingPreviewSummary, bookingSuccessSummary, resolveContextualVehicleReply, routeAssistantActionReply, routeBookingReply, vipPlatePrompt } from '../../utils/aiBookingConversation';
 import { localizeAiBookingMessage } from '../../utils/aiBookingMessages';
-import { detectAiBookingLanguage } from '../../utils/aiBookingLanguage';
+import { detectAiBookingLanguage, inferAiBookingConversationLanguage } from '../../utils/aiBookingLanguage';
+import { clearPendingBookingPayment, readPendingBookingPayment, writePendingBookingPayment } from '../../utils/pendingBookingPayment';
 import { bookingStatusReply, detectDirectParkingLookup, parkingAvailabilityReply, parkingStatusReply, slotStatusReply } from '../../utils/aiParkingLookup';
 import {
   aiBookingStepLabel,
@@ -40,9 +41,9 @@ import {
 } from '../../utils/aiBookingSession';
 
 const gateway = {
-  cancelBooking, createBookingHold, createBulkBooking, extendBooking,
+  cancelBooking, createBookingHold, createBulkBooking, extendBooking: modifyAiBookingTime,
   getAvailableBookingSlots, getBookingCancellationQuote, getMyBookings,
-  getWalletInfo, quoteBulkBooking, releaseBookingHold,
+  getWalletInfo, quoteBookingTimeModification, quoteBulkBooking, releaseBookingHold,
 };
 const money = (amount) => `${Number(amount || 0).toLocaleString('vi-VN')} VND`;
 const durationText = (minutes) => {
@@ -54,6 +55,18 @@ const durationText = (minutes) => {
   return [days ? `${days} ngày` : '', hours ? `${hours} giờ` : '', rest ? `${rest} phút` : ''].filter(Boolean).join(' ');
 };
 const dayText = (day) => day?.split('-').reverse().join('/') || '';
+const locationLabel = (value) => String(value || '').toLowerCase().normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
+  .replace(/\b(?:floor|tang)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const sameLocationLabel = (left, right) => locationLabel(left) === locationLabel(right);
+const bookingTargetsOverlap = (left = {}, right = {}) => {
+  const leftStart = new Date(`${left.startDate}T${left.startTime}:00+07:00`);
+  const leftEnd = new Date(`${left.endDate || left.startDate}T${left.endTime}:00+07:00`);
+  const rightStart = new Date(`${right.startDate}T${right.startTime}:00+07:00`);
+  const rightEnd = new Date(`${right.endDate || right.startDate}T${right.endTime}:00+07:00`);
+  if ([leftStart, leftEnd, rightStart, rightEnd].some((value) => Number.isNaN(value.getTime()))) return true;
+  return leftStart < rightEnd && leftEnd > rightStart;
+};
 const nowInVietnam = () => {
   const parts = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -162,6 +175,11 @@ const isReadyAssistantAction = (action) => Boolean(action && (
   || (action.type === 'REMOVE_VEHICLE' && action.vehicleId)
   || (action.type === 'UPDATE_VEHICLE' && action.vehicleId && Object.keys(action.changes || {}).length)
 ));
+const withoutPendingSlotSuggestion = (value = {}) => {
+  const next = { ...value };
+  delete next.pendingSlotSuggestion;
+  return next;
+};
 
 export default function AiBookingPanel({
   vehicles = [], onSwitchToManual, onVehiclesChanged,
@@ -196,13 +214,14 @@ export default function AiBookingPanel({
   const [resumeCandidate, setResumeCandidate] = useState(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionSaving, setSessionSaving] = useState('idle');
-  const [showTopUpModal, setShowTopUpModal] = useState(false);
-  const [topUpData, setTopUpData] = useState(null);
+  const [topUpData, setTopUpData] = useState(() => readPendingBookingPayment('quick'));
+  const [showTopUpModal, setShowTopUpModal] = useState(() => Boolean(readPendingBookingPayment('quick')));
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [topUpSuccess, setTopUpSuccess] = useState(false);
   const [mapAvailableSlots, setMapAvailableSlots] = useState(null);
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState('');
+  const [mapTargetIndex, setMapTargetIndex] = useState(0);
   const voiceSessionRef = useRef(null);
   const speakerRef = useRef(null);
   const draftRef = useRef({});
@@ -233,12 +252,45 @@ export default function AiBookingPanel({
   const mapRequestRef = useRef(0);
   const languageRef = useRef('vi');
 
-  const previewMapItem = preview?.items?.[0] || null;
+  const requestedVehicleTotal = Math.max(
+    Number(draft.requestedVehicleCount || 0),
+    Array.isArray(draft.licensePlates) ? draft.licensePlates.length : 0,
+    Array.isArray(draft.reservationItems) ? draft.reservationItems.length : 0,
+  );
+  const mapSelectionTargetCount = Math.max(1, Math.min(5, requestedVehicleTotal || 1));
+  const activeMapTargetIndex = Math.min(mapTargetIndex, mapSelectionTargetCount - 1);
+  const draftItems = Array.isArray(draft.reservationItems) ? draft.reservationItems : [];
+  const draftPlates = Array.isArray(draft.licensePlates) && draft.licensePlates.length
+    ? draft.licensePlates : (draft.licensePlate ? [draft.licensePlate] : []);
+  const mapSelectionTargets = Array.from({ length: mapSelectionTargetCount }, (_, index) => ({
+    index,
+    licensePlate: draftItems[index]?.licensePlate || draftPlates[index] || '',
+    floorName: draftItems[index]?.floorName || (mapSelectionTargetCount === 1 ? draft.floorName : ''),
+    slotCode: draftItems[index]?.slotCode || (mapSelectionTargetCount === 1 ? draft.slotCode : ''),
+    startDate: draftItems[index]?.startDate || draft.startDate,
+    endDate: draftItems[index]?.endDate || draft.endDate || draft.startDate,
+    startTime: draftItems[index]?.startTime || draft.startTime,
+    endTime: draftItems[index]?.endTime || draft.endTime,
+  }));
+  const activeMapTarget = mapSelectionTargets[activeMapTargetIndex];
+  const previewMapItem = preview?.items?.[activeMapTargetIndex] || preview?.items?.[0] || null;
   const mapStartTime = previewMapItem?.startTime
-    || toVietnamBookingIso(draft.startDate, draft.startTime);
+    || toVietnamBookingIso(activeMapTarget?.startDate, activeMapTarget?.startTime);
   const mapEndTime = previewMapItem?.endTime
-    || toVietnamBookingIso(draft.endDate || draft.startDate, draft.endTime);
-  const selectedMapSlots = (preview?.items || []).map((item) => `${item.floorId}:${item.slotCode}`);
+    || toVietnamBookingIso(activeMapTarget?.endDate || activeMapTarget?.startDate, activeMapTarget?.endTime);
+  const previewSelectedMapSlots = (preview?.items || []).map((item) => `${item.floorId}:${item.slotCode}`);
+  const draftSelectedMapSlots = !previewSelectedMapSlots.length && Array.isArray(mapAvailableSlots)
+    ? mapSelectionTargets.map((target) => mapAvailableSlots.find((slot) => (
+      String(slot.slotCode || '').toUpperCase() === String(target.slotCode || '').toUpperCase()
+      && (!target.floorName || sameLocationLabel(slot.floorName, target.floorName))
+    ))).filter(Boolean).map((slot) => `${slot.floorId}:${slot.slotCode}`)
+    : [];
+  const selectedMapSlots = previewSelectedMapSlots.length
+    ? previewSelectedMapSlots
+    : draftSelectedMapSlots;
+  const targetVehicle = vehicles.find((vehicle) => String(vehicle.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()
+    === String(activeMapTarget?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase());
+  const mapVehicleType = draft.vehicleType || targetVehicle?.vehicleType || targetVehicle?.type || 'car';
 
   const refreshMapAvailability = useCallback(async ({ silent = false } = {}) => {
     if (!mapStartTime || !mapEndTime || new Date(mapEndTime) <= new Date(mapStartTime)) {
@@ -251,7 +303,11 @@ export default function AiBookingPanel({
     const request = ++mapRequestRef.current;
     if (!silent) setMapLoading(true);
     try {
-      const response = await getAvailableBookingSlots({ startTime: mapStartTime, endTime: mapEndTime });
+      const response = await getAvailableBookingSlots({
+        startTime: mapStartTime,
+        endTime: mapEndTime,
+        bookingSource: 'AI_QUICK',
+      });
       if (request !== mapRequestRef.current) return;
       if (!response.ok) {
         setMapError(localizeAiBookingMessage(
@@ -301,6 +357,11 @@ export default function AiBookingPanel({
     const next = value === 'en' ? 'en' : 'vi';
     languageRef.current = next;
     setLanguage(next);
+    if (draftRef.current?.__language !== next) {
+      const nextDraft = { ...draftRef.current, __language: next };
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+    }
     voiceSessionRef.current?.setLanguage(next);
     voiceSessionRef.current?.setExpectLicensePlate(expectsEnglishPlateInput());
     if (!hasStartedRef.current && messagesRef.current.length === 1
@@ -316,6 +377,45 @@ export default function AiBookingPanel({
     voiceSessionRef.current?.setExpectLicensePlate(expectsEnglishPlateInput(next));
   };
   const updatePreview = (value) => { previewRef.current = value; setPreview(value); };
+  const rememberSlotSuggestion = (result) => {
+    const suggestion = result?.suggestions?.[0] || null;
+    updateDraft((current) => {
+      const rest = withoutPendingSlotSuggestion(current);
+      return suggestion ? { ...rest, pendingSlotSuggestion: suggestion } : rest;
+    });
+  };
+  const selectMapSlot = (slot, floorId) => {
+    if (busyRef.current || !slot?.id) return;
+    const selected = Array.isArray(mapAvailableSlots)
+      ? mapAvailableSlots.find((item) => String(item.floorId) === String(floorId)
+        && String(item.slotCode || '').toUpperCase() === String(slot.id).toUpperCase())
+      : null;
+    const floor = mapFloors.find((item) => String(item._id) === String(floorId));
+    const floorName = selected?.floorName || floor?.name || '';
+    const duplicatesAnotherVehicle = mapSelectionTargetCount > 1 && mapSelectionTargets.some((target) => (
+      target.index !== activeMapTargetIndex
+      && String(target.slotCode || '').toUpperCase() === String(slot.id).toUpperCase()
+      && sameLocationLabel(target.floorName, floorName)
+      && bookingTargetsOverlap(activeMapTarget, target)
+    ));
+    if (duplicatesAnotherVehicle) {
+      setConflicts([`Ô ${String(slot.id).toUpperCase()} đã được chọn cho xe khác. Hãy chọn một ô khác.`]);
+      return;
+    }
+    requestRef.current += 1;
+    confirmationPendingRef.current = false;
+    confirmationKeyRef.current = null;
+    setConversationPhase('IDLE');
+    updateDraft((current) => applyMapSlotSelectionToDraft(current, {
+      floorName,
+      slotCode: slot.id,
+      sourceIndex: mapSelectionTargetCount > 1 ? activeMapTargetIndex : undefined,
+    }));
+    updatePreview(null);
+    setConflicts([]);
+    setAvailability(null);
+    onMapFloorSelect?.(floorId);
+  };
   const replaceMessages = (value) => {
     messagesRef.current = value;
     setMessages(value);
@@ -496,13 +596,22 @@ export default function AiBookingPanel({
   };
   const cancelPreview = () => {
     updatePreview(null); setConflicts([]); setError('');
+    updateDraft((current) => withoutPendingSlotSuggestion(current));
     confirmationPendingRef.current = false;
     confirmationKeyRef.current = null;
     setConversationPhase('IDLE');
     say('Đã hủy bản xem trước. Chưa có booking nào được tạo.');
   };
+  const cancelExistingSelection = () => {
+    setTarget(null); setActionQuote(null); setEdit(null);
+    confirmationPendingRef.current = false;
+    confirmationKeyRef.current = null;
+    setConversationPhase('IDLE');
+    say('Đã dừng thao tác. Booking hiện tại chưa bị thay đổi.');
+  };
   const clearResult = () => {
     confirmationPendingRef.current = false;
+    updateDraft((current) => withoutPendingSlotSuggestion(current));
     updatePreview(null); setConflicts([]); setAvailability(null); setChoices([]); setTarget(null);
     setActionQuote(null); setEdit(null); setSuccess(null); setError(''); setManualSuggestion(false);
     setAssistantInfo(null); setPendingAssistantAction(null); pendingAssistantActionRef.current = null;
@@ -572,7 +681,11 @@ export default function AiBookingPanel({
       ? restored.messages : [{ ...welcomeMessage, createdAt: new Date().toISOString() }];
     replaceMessages(restoredMessages);
     updateDraft(restored.bookingDraft || {});
-    updateLanguage(restored.bookingDraft?.__language || 'vi');
+    updateLanguage(inferAiBookingConversationLanguage(
+      restored.bookingDraft,
+      restoredMessages,
+      languageRef.current,
+    ));
     intentRef.current = restored.intent || 'UNKNOWN';
     setIntent(intentRef.current);
     sessionIdRef.current = restored.sessionId || '';
@@ -595,7 +708,7 @@ export default function AiBookingPanel({
       setConversationPhase('WAITING_CONFIRMATION');
       return;
     }
-    const needsConfirmation = restored.currentStep === 'CONFIRM_BOOKING';
+    const needsConfirmation = ['CONFIRM_BOOKING', 'PAYMENT'].includes(restored.currentStep);
     setConversationPhase(needsConfirmation ? 'PROCESSING' : 'IDLE');
     if (!needsConfirmation || restored.intent !== 'CREATE_BOOKING') return;
 
@@ -604,11 +717,13 @@ export default function AiBookingPanel({
     try {
       const checked = await prepareAiBooking(restored.bookingDraft || {}, gateway, vehiclesRef.current);
       if (checked.items) {
+        rememberSlotSuggestion(null);
         updatePreview(checked);
         confirmationKeyRef.current = newClientSessionId();
         confirmationPendingRef.current = true;
         setConversationPhase('WAITING_CONFIRMATION');
       } else {
+        rememberSlotSuggestion(checked);
         setConflicts(checked.conflicts || []);
         setConversationPhase('IDLE');
         if (checked.vipPlateRequired) askForAnotherPlate(checked.vipPlateRequired);
@@ -731,6 +846,7 @@ export default function AiBookingPanel({
   const selectTarget = async (booking, nextIntent = intent, nextDraft = draft) => {
     setTarget(booking);
     setError('');
+    setActionQuote(null);
     if (nextIntent === 'CANCEL_BOOKING') {
       setActionQuote(await prepareAiExistingAction(nextIntent, booking, gateway));
     }
@@ -744,27 +860,48 @@ export default function AiBookingPanel({
         endTime: nextDraft.endTime || end.time,
       });
     }
+    if (['CANCEL_BOOKING', 'MODIFY_BOOKING'].includes(nextIntent)) {
+      confirmationPendingRef.current = true;
+      setConversationPhase('WAITING_CONFIRMATION');
+    }
   };
 
   const submitMessage = async (spokenText) => {
-    const text = String(spokenText ?? prompt).trim();
-    if (!text || busyRef.current) return;
-    updateLanguage(detectAiBookingLanguage(text, languageRef.current));
+    const displayedText = String(spokenText ?? prompt).trim();
+    if (!displayedText || busyRef.current) return;
+    updateLanguage(detectAiBookingLanguage(displayedText, languageRef.current));
+    const text = resolveContextualVehicleReply(
+      displayedText, vehiclesRef.current, draftRef.current, languageRef.current,
+    );
     beginSession();
     handlingInputRef.current = true;
     voiceSessionRef.current?.pause();
     speakerRef.current?.cancel();
     const route = pendingAssistantActionRef.current
       ? routeAssistantActionReply(text)
-      : routeBookingReply(confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : phaseRef.current, text);
+      : routeBookingReply(
+        confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : phaseRef.current,
+        text,
+        { hasSlotSuggestion: Boolean(draftRef.current.pendingSlotSuggestion) },
+      );
     if (route !== 'interpret') {
       setPrompt('');
-      appendMessage({ role: 'user', text });
+      appendMessage({ role: 'user', text: displayedText });
       if (phaseRef.current === 'LISTENING') setConversationPhase(confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : 'IDLE');
       if (route === 'confirm') {
         handlingInputRef.current = false;
         if (pendingAssistantActionRef.current) await confirmAssistantAction();
+        else if (target && ['CANCEL_BOOKING', 'MODIFY_BOOKING'].includes(intentRef.current)) await confirmExistingAction();
         else await confirmCreation();
+      }
+      else if (route === 'accept_suggestion') {
+        const suggestion = draftRef.current.pendingSlotSuggestion;
+        updateDraft((current) => applySlotSuggestionToDraft(current, suggestion));
+        handlingInputRef.current = false;
+        say(languageRef.current === 'en'
+          ? `Okay, I will check suggested slot ${suggestion?.slotCode}.`
+          : `Được, mình sẽ kiểm tra ô gợi ý ${suggestion?.slotCode}.`);
+        await refreshPreview();
       }
       else if (route === 'top_up') {
         handlingInputRef.current = false;
@@ -775,6 +912,7 @@ export default function AiBookingPanel({
       }
       else if (route === 'cancel') {
         if (pendingAssistantActionRef.current) cancelAssistantAction();
+        else if (target && ['CANCEL_BOOKING', 'MODIFY_BOOKING'].includes(intentRef.current)) cancelExistingSelection();
         else cancelPreview();
       }
       else if (route === 'cancel_draft') {
@@ -793,7 +931,7 @@ export default function AiBookingPanel({
     setPrompt('');
     clearResult();
     setConversationPhase('PROCESSING');
-    appendMessage({ role: 'user', text });
+    appendMessage({ role: 'user', text: displayedText });
     setBusy(true);
     try {
       const directLookup = detectDirectParkingLookup(text);
@@ -876,9 +1014,12 @@ export default function AiBookingPanel({
         if (request !== requestRef.current) return;
         if (nextPreview.vipPlateRequired) askForAnotherPlate(nextPreview.vipPlateRequired);
         else if (nextPreview.missing) { setConversationPhase('IDLE'); say(nextPreview.missing.join(' ')); }
-        else if (nextPreview.conflicts) { setConflicts(nextPreview.conflicts); setConversationPhase('IDLE'); say(nextPreview.conflicts.join('\n')); }
+        else if (nextPreview.conflicts) { rememberSlotSuggestion(nextPreview); setConflicts(nextPreview.conflicts); setConversationPhase('IDLE'); say(nextPreview.conflicts.join('\n')); }
         else {
-          updateDraft((current) => ({ ...current, vehicleId: nextPreview.items[0]?.vehicleId || '', licensePlate: nextPreview.items[0]?.licensePlate || current.licensePlate }));
+          updateDraft((current) => {
+            const rest = withoutPendingSlotSuggestion(current);
+            return { ...rest, vehicleId: nextPreview.items[0]?.vehicleId || '', licensePlate: nextPreview.items[0]?.licensePlate || current.licensePlate };
+          });
           updatePreview(nextPreview); confirmationKeyRef.current = crypto.randomUUID();
           confirmationPendingRef.current = true;
           setConversationPhase('WAITING_CONFIRMATION');
@@ -893,7 +1034,6 @@ export default function AiBookingPanel({
       } else if (['CANCEL_BOOKING', 'MODIFY_BOOKING', 'VIEW_BOOKING'].includes(nextIntent)) {
         await findTargetBookings(nextIntent, nextDraft);
         if (request !== requestRef.current) return;
-        setConversationPhase('IDLE');
       } else { setConversationPhase('IDLE'); say('Mình hỗ trợ đặt chỗ, kiểm tra chỗ trống, xem, sửa hoặc hủy booking. Bạn muốn làm gì?'); }
     } catch (caught) {
       if (request !== requestRef.current) return;
@@ -920,9 +1060,12 @@ export default function AiBookingPanel({
       if (request !== requestRef.current) return;
       if (checked.vipPlateRequired) askForAnotherPlate(checked.vipPlateRequired);
       else if (checked.missing) { setConversationPhase('IDLE'); say(checked.missing.join(' ')); }
-      else if (checked.conflicts) { setConflicts(checked.conflicts); setConversationPhase('IDLE'); say(checked.conflicts.join('\n')); }
+      else if (checked.conflicts) { rememberSlotSuggestion(checked); setConflicts(checked.conflicts); setConversationPhase('IDLE'); say(checked.conflicts.join('\n')); }
       else {
-        updateDraft((current) => ({ ...current, vehicleId: checked.items[0]?.vehicleId || '', licensePlate: checked.items[0]?.licensePlate || current.licensePlate }));
+        updateDraft((current) => {
+          const rest = withoutPendingSlotSuggestion(current);
+          return { ...rest, vehicleId: checked.items[0]?.vehicleId || '', licensePlate: checked.items[0]?.licensePlate || current.licensePlate };
+        });
         updatePreview(checked); confirmationKeyRef.current = crypto.randomUUID();
         confirmationPendingRef.current = true;
         setConversationPhase('WAITING_CONFIRMATION');
@@ -953,6 +1096,7 @@ export default function AiBookingPanel({
       const response = await createTopUpUrl(amountToTopUp, { purpose: 'booking_shortfall' });
       if (response.ok && response.data?.data) {
         setTopUpData(response.data.data);
+        writePendingBookingPayment('quick', response.data.data);
         setTopUpSuccess(false);
         setShowTopUpModal(true);
         setConversationPhase('WAITING_PAYMENT');
@@ -984,6 +1128,7 @@ export default function AiBookingPanel({
     } finally {
       setShowTopUpModal(false);
       setTopUpData(null);
+      clearPendingBookingPayment('quick');
       setTopUpSuccess(false);
       setTopUpLoading(false);
       setConversationPhase('WAITING_CONFIRMATION');
@@ -1015,6 +1160,7 @@ export default function AiBookingPanel({
         }
         updatePreview(result.refreshed.items ? result.refreshed : null);
         setConflicts(result.refreshed.conflicts || []);
+        rememberSlotSuggestion(result.refreshed);
         confirmationKeyRef.current = result.refreshed.items ? crypto.randomUUID() : null;
         confirmationPendingRef.current = Boolean(result.refreshed.items);
         setConversationPhase(result.refreshed.items ? 'WAITING_CONFIRMATION' : 'IDLE');
@@ -1051,16 +1197,27 @@ export default function AiBookingPanel({
         const status = String(response.data?.data?.status || '').toUpperCase();
         if (['COMPLETED', 'SUCCESS', 'PAID'].includes(status)) {
           setTopUpSuccess(true);
-          await confirmCreationRef.current?.({ skipWalletCheck: true });
+          if (previewRef.current && confirmationPendingRef.current) {
+            await confirmCreationRef.current?.({ skipWalletCheck: true });
+          } else {
+            setConversationPhase('IDLE');
+            setAssistantInfo({
+              intent: 'WALLET_BALANCE',
+              intents: ['WALLET_BALANCE'],
+              message: 'Tiền đã được cộng vào ví. Hãy tiếp tục yêu cầu đang lưu để hệ thống kiểm tra lại chỗ và giá trước khi đặt.',
+            });
+          }
           if (!cancelled) {
             setShowTopUpModal(false);
             setTopUpData(null);
             setTopUpSuccess(false);
+            clearPendingBookingPayment('quick');
           }
         } else if (['CANCELLED', 'CANCELED', 'FAILED'].includes(status)) {
           setShowTopUpModal(false);
           setTopUpData(null);
           setTopUpSuccess(false);
+          clearPendingBookingPayment('quick');
           voiceHandlersRef.current.reportError?.('Thanh toán đã bị hủy hoặc không thành công.');
         }
       } catch (caught) {
@@ -1082,9 +1239,21 @@ export default function AiBookingPanel({
     busyRef.current = true;
     setBusy(true); setError(''); setConversationPhase('CONFIRMING');
     try {
-      const result = await confirmAiExistingAction(intent, target, edit, gateway);
+      const editKey = intent === 'MODIFY_BOOKING' ? JSON.stringify(edit || {}) : '';
+      if (intent === 'MODIFY_BOOKING' && actionQuote?.editKey !== editKey) {
+        const quote = await prepareAiExistingAction(intent, target, gateway, edit);
+        setActionQuote({ ...quote, editKey });
+        confirmationPendingRef.current = true;
+        setConversationPhase('WAITING_CONFIRMATION');
+        say(`Chi phí sau khi sửa là ${money(quote.newPrice)}. ${quote.extraAmount > 0
+          ? `Cần thanh toán thêm ${money(quote.extraAmount)}.`
+          : quote.refundAmount > 0 ? `Dự kiến hoàn ${money(quote.refundAmount)}.` : 'Không phát sinh chênh lệch.'} Hãy xác nhận lại nếu bạn đồng ý.`);
+        return;
+      }
+      const result = await confirmAiExistingAction(intent, target, edit, gateway, actionQuote);
       setSuccess(result);
       setTarget(null); setChoices([]); setActionQuote(null);
+      confirmationPendingRef.current = false;
       setConversationPhase('SUCCESS');
       say(intent === 'CANCEL_BOOKING' ? 'Booking đã được hủy.' : 'Booking đã được cập nhật.');
       completeCurrentSession();
@@ -1108,28 +1277,32 @@ export default function AiBookingPanel({
     confirmationPendingRef.current = false;
     confirmationKeyRef.current = null;
     setConversationPhase('IDLE');
-    updateDraft((current) => ({
-      ...current,
-      [field]: value,
-      ...(field === 'startDate' && (!current.endDate || current.endDate === current.startDate) ? { endDate: value } : {}),
-      ...(['startTime', 'endTime'].includes(field) ? { pendingStartTime: '', pendingEndTime: '' } : {}),
-    }));
+    const sourceIndex = mapSelectionTargetCount > 1
+      && ['startDate', 'endDate', 'startTime', 'endTime', 'floorName', 'slotCode'].includes(field)
+      ? activeMapTargetIndex : undefined;
+    updateDraft((current) => applyBookingDraftField(current, field, value, { sourceIndex }));
     updatePreview(null); setConflicts([]);
   };
   const changePlateInput = (value) => {
     const plates = [...new Set(String(value).split(/[,;]/)
       .map((plate) => plate.replace(/[^A-Z0-9]/gi, '').toUpperCase()).filter(Boolean))];
-    changeDraft('licensePlate', plates[0] || '');
+    requestRef.current += 1;
+    confirmationPendingRef.current = false;
+    confirmationKeyRef.current = null;
+    setConversationPhase('IDLE');
     updateDraft((current) => ({
       ...current, vehicleId: '', licensePlate: plates[0] || '',
       licensePlates: plates.length > 1 ? plates : [],
-      requestedVehicleCount: plates.length > 1 ? plates.length : current.requestedVehicleCount,
-      reservationItems: Array.isArray(current.reservationItems)
-        ? current.reservationItems.map((item, index) => ({
-          ...item, vehicleId: '', licensePlate: plates[index] || '',
+      requestedVehicleCount: plates.length,
+      blockedVipPlate: plates.includes(current.blockedVipPlate) ? current.blockedVipPlate : '',
+      reservationItems: plates.length > 1 || (Array.isArray(current.reservationItems) && current.reservationItems.length)
+        ? plates.map((plate, index) => ({
+          ...(current.reservationItems?.[index] || {}), vehicleId: '', licensePlate: plate,
         }))
-        : current.reservationItems,
+        : [],
     }));
+    updatePreview(null); setConflicts([]); setAvailability(null);
+    setMapTargetIndex((current) => Math.min(current, Math.max(plates.length - 1, 0)));
   };
   useEffect(() => {
     voiceHandlersRef.current = { submitMessage, reportError };
@@ -1156,7 +1329,12 @@ export default function AiBookingPanel({
   const resumeIsBooking = ['CREATE_BOOKING', 'CHECK_AVAILABILITY', 'CANCEL_BOOKING', 'MODIFY_BOOKING', 'VIEW_BOOKING']
     .includes(resumeCandidate?.intent);
   const mapFloorAvailableCount = Array.isArray(mapAvailableSlots)
-    ? mapAvailableSlots.filter((slot) => !mapFloorId || String(slot.floorId) === String(mapFloorId)).length
+    ? mapAvailableSlots.filter((slot) => {
+      if (mapFloorId && String(slot.floorId) !== String(mapFloorId)) return false;
+      if (slot.isDedicatedToCurrentUser) return true;
+      const type = String(slot.slotType || '').toLowerCase();
+      return type === 'slot' || (mapVehicleType === 'electric_car' && type === 'slot-ev');
+    }).length
     : null;
   const mapRangeStart = mapStartTime ? vnParts(mapStartTime) : null;
   const mapRangeEnd = mapEndTime ? vnParts(mapEndTime) : null;
@@ -1194,6 +1372,10 @@ export default function AiBookingPanel({
         <div className="border-b border-gray-100 bg-gradient-to-r from-yellow-50 to-white px-5 py-4 flex items-center gap-3">
           <div className="rounded-2xl bg-yellow-400 p-2.5 text-gray-900"><Bot size={22} /></div>
           <div className="flex-1"><h2 className="font-black text-gray-900">{conversationUi.title}</h2><p className="text-xs text-gray-500">{conversationUi.subtitle}</p></div>
+          <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1" aria-label="Voice recognition language">
+            <button type="button" onClick={() => updateLanguage('vi')} className={`rounded-lg px-2 py-1 text-[11px] font-black transition ${language === 'vi' ? 'bg-yellow-400 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`} aria-pressed={language === 'vi'} title="Nhận giọng nói tiếng Việt">VI</button>
+            <button type="button" onClick={() => updateLanguage('en')} className={`rounded-lg px-2 py-1 text-[11px] font-black transition ${language === 'en' ? 'bg-yellow-400 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`} aria-pressed={language === 'en'} title="Recognize English speech">EN</button>
+          </div>
           <button type="button" onClick={() => {
             voiceEnabledRef.current = !voiceEnabledRef.current;
             setVoiceEnabled(voiceEnabledRef.current);
@@ -1266,14 +1448,15 @@ export default function AiBookingPanel({
 
         {intent === 'CREATE_BOOKING' && (draft.startDate || draft.startTime || draft.licensePlate) && !success && (
           <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-xs font-bold text-gray-500">Từ ngày<input type="date" min={currentVietnam.today} disabled={busy} value={draft.startDate || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Đến ngày<input type="date" min={draft.startDate || currentVietnam.today} disabled={busy} value={draft.endDate || draft.startDate || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Giờ vào<input type="time" min={draft.startDate === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy} value={draft.startTime || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Giờ ra<input type="time" disabled={busy} value={draft.endTime || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Xe<select disabled={busy} value={draft.vehicleId || ''} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); changeDraft('vehicleId', vehicle?._id || ''); updateDraft((current) => ({ ...current, vehicleId: vehicle?._id || '', licensePlate: vehicle?.licensePlate || '', licensePlates: [], requestedVehicleCount: vehicle ? 1 : 0 })); }} className={fieldClass}><option value="">Chọn xe hoặc nhập biển số</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
+            {mapSelectionTargetCount > 1 && <div className="sm:col-span-2 flex flex-wrap gap-2 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><span className="w-full text-xs font-black text-cyan-900">Đang chỉnh thông tin cho từng xe:</span>{mapSelectionTargets.map((item) => <button key={item.index} type="button" onClick={() => setMapTargetIndex(item.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${activeMapTargetIndex === item.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>{item.licensePlate || `Xe ${item.index + 1}`}</button>)}</div>}
+            <label className="text-xs font-bold text-gray-500">Từ ngày<input type="date" min={currentVietnam.today} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Đến ngày<input type="date" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || currentVietnam.today} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endDate : (draft.endDate || draft.startDate)) || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Giờ vào<input type="time" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Giờ ra<input type="time" disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Xe<select disabled={busy || mapSelectionTargetCount > 1} value={mapSelectionTargetCount > 1 ? '' : (draft.vehicleId || '')} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); requestRef.current += 1; confirmationPendingRef.current = false; confirmationKeyRef.current = null; setConversationPhase('IDLE'); updateDraft((current) => applySingleVehicleSelectionToDraft(current, vehicle)); updatePreview(null); setConflicts([]); setMapTargetIndex(0); }} className={fieldClass}><option value="">{mapSelectionTargetCount > 1 ? 'Chỉnh danh sách ở ô biển số' : 'Chọn xe hoặc nhập biển số'}</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
             <label className="text-xs font-bold text-gray-500">Biển số (ngăn cách bằng dấu phẩy nếu nhiều xe)<input disabled={busy} value={(draft.licensePlates?.length > 1 ? draft.licensePlates.join(', ') : draft.licensePlate) || ''} onChange={(event) => changePlateInput(event.target.value)} className={fieldClass} placeholder="43A12345, 43B20404" /></label>
-            <label className="text-xs font-bold text-gray-500">Tầng (không bắt buộc)<input disabled={busy} value={draft.floorName || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder="Floor 2" /></label>
-            <label className="text-xs font-bold text-gray-500">Ô đỗ (không bắt buộc)<input disabled={busy} value={draft.slotCode || ''} onChange={(event) => changeDraft('slotCode', event.target.value)} className={fieldClass} placeholder="A-015" /></label>
+            <label className="text-xs font-bold text-gray-500">Tầng (không bắt buộc)<input disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.floorName : draft.floorName) || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder="Floor 2" /></label>
+            <label className="text-xs font-bold text-gray-500">Ô đỗ (không bắt buộc)<input disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.slotCode : draft.slotCode) || ''} onChange={(event) => changeDraft('slotCode', event.target.value)} className={fieldClass} placeholder="A-015" /></label>
             <button type="button" onClick={refreshPreview} disabled={busy} className="sm:col-span-2 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3 font-black text-yellow-900 disabled:opacity-50">Kiểm tra lại chỗ và giá</button>
           </div>
         )}
@@ -1292,8 +1475,8 @@ export default function AiBookingPanel({
         {choices.length > 0 && <div className="space-y-2 mb-5">{choices.map((booking) => <button key={booking._id} type="button" onClick={() => selectTarget(booking).catch((caught) => setError(caught.message))} className={`block w-full rounded-xl border p-4 text-left text-sm font-bold ${target?._id === booking._id ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200 hover:border-yellow-300'}`}>{labelBooking(booking)} <span className="ml-2 text-gray-400">{booking.status}</span></button>)}</div>}
 
         {target && intent === 'VIEW_BOOKING' && <div className="rounded-2xl bg-gray-50 p-5 text-sm"><p className="font-black">{labelBooking(target)}</p><p>Trạng thái: {target.status}</p><p>Giá đã trả: {money(target.prepaidAmount)}</p></div>}
-        {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">Số tiền hoàn dự kiến: {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">Xác nhận hủy booking</button><button type="button" onClick={() => setTarget(null)} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Giữ booking</button></div></div>}
-        {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">Ngày vào<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => setEdit((current) => ({ ...current, startDate: event.target.value }))} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Giờ vào<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => setEdit((current) => ({ ...current, startTime: event.target.value }))} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Ngày ra<input type="date" value={edit.endDate} onChange={(event) => setEdit((current) => ({ ...current, endDate: event.target.value }))} className={fieldClass} /></label><label className="text-xs font-bold">Giờ ra<input type="time" value={edit.endTime} onChange={(event) => setEdit((current) => ({ ...current, endTime: event.target.value }))} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? 'Hệ thống sẽ kiểm tra chỗ và tính phí chênh lệch khi xác nhận.' : 'Xe đã vào bãi: chỉ có thể đổi giờ ra. Hệ thống sẽ tính phí chênh lệch khi xác nhận.'}</p><div className="flex gap-3"><button type="button" disabled={busy} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">Xác nhận sửa booking</button><button type="button" onClick={() => setTarget(null)} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Hủy</button></div></div>}
+        {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">Số tiền hoàn dự kiến: {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">Xác nhận hủy booking</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Giữ booking</button></div></div>}
+        {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">Ngày vào<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startDate: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Giờ vào<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startTime: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Ngày ra<input type="date" value={edit.endDate} onChange={(event) => { setEdit((current) => ({ ...current, endDate: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label><label className="text-xs font-bold">Giờ ra<input type="time" value={edit.endTime} onChange={(event) => { setEdit((current) => ({ ...current, endTime: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? 'Hệ thống sẽ kiểm tra chỗ và báo phí chênh lệch trước khi áp dụng.' : 'Xe đã vào bãi: chỉ có thể đổi giờ ra. Hệ thống sẽ báo phí chênh lệch trước khi áp dụng.'}</p>{actionQuote?.editKey && <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><div className="flex justify-between"><span>Tổng mới</span><strong>{money(actionQuote.newPrice)}</strong></div><div className="mt-1 flex justify-between"><span>{actionQuote.extraAmount > 0 ? 'Thanh toán thêm' : 'Hoàn lại'}</span><strong>{money(actionQuote.extraAmount || actionQuote.refundAmount || 0)}</strong></div></div>}<div className="flex gap-3"><button type="button" disabled={busy} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">{actionQuote?.editKey ? 'Xác nhận áp dụng' : 'Kiểm tra chi phí'}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Hủy</button></div></div>}
 
         {!preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">Kết quả hoặc bản xem trước sẽ xuất hiện ở đây.</p></div>}
       </section>
@@ -1307,7 +1490,7 @@ export default function AiBookingPanel({
             </div>
             <p className="mt-1 text-sm font-medium text-gray-500">
               {mapRangeStart && mapRangeEnd
-                ? `Chỗ trống từ ${dayText(mapRangeStart.date)} ${mapRangeStart.time} đến ${dayText(mapRangeEnd.date)} ${mapRangeEnd.time}. Ô AI chọn được tô màu xanh.`
+                ? `Chỗ trống từ ${dayText(mapRangeStart.date)} ${mapRangeStart.time} đến ${dayText(mapRangeEnd.date)} ${mapRangeEnd.time}. Nhấp vào một ô trống để chọn; ô đã chọn được tô màu xanh.`
                 : 'Nhập ngày giờ booking để xem chỗ trống; trạng thái xe đang đỗ vẫn được cập nhật trực tiếp.'}
             </p>
           </div>
@@ -1322,6 +1505,17 @@ export default function AiBookingPanel({
             </button>
           </div>
         </div>
+
+        {mapSelectionTargetCount > 1 && (
+          <div className="mx-2 mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
+            <span className="mr-1 text-xs font-black text-cyan-900">Đang chọn ô cho:</span>
+            {mapSelectionTargets.map((target) => (
+              <button key={target.index} type="button" onClick={() => setMapTargetIndex(target.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${activeMapTargetIndex === target.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>
+                {target.licensePlate || `Xe ${target.index + 1}`}{target.slotCode ? ` · ${target.slotCode}` : ''}
+              </button>
+            ))}
+          </div>
+        )}
 
         {mapError && <div role="alert" className="mx-2 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">{mapError}</div>}
 
@@ -1353,10 +1547,13 @@ export default function AiBookingPanel({
               activeHolds={mapActiveHolds}
               availableSlots={mapAvailableSlots}
               selectedSlotId={selectedMapSlots}
+              onSelectSlot={selectMapSlot}
+              vehicleType={mapVehicleType}
+              allowScheduledAvailabilityOverride
               is2DMode
               hideUI
               staticFit
-              readOnly
+              readOnly={busy}
               theme="dark"
             />
           ) : (
@@ -1371,7 +1568,7 @@ export default function AiBookingPanel({
               <span className="hidden text-[10px] font-black uppercase tracking-widest text-cyan-400 sm:block">Chú thích</span>
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-gray-300 bg-white" />Trống</span>
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-rose-600 bg-rose-200" />Đang đỗ</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-cyan-400 bg-cyan-500" />AI đã chọn</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-cyan-400 bg-cyan-500" />Đã chọn</span>
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500"><i className="h-3.5 w-3.5 rounded-sm border border-yellow-500 bg-yellow-100" />VIP</span>
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-orange-500"><i className="h-3.5 w-3.5 rounded-sm border border-orange-500 bg-orange-100" />Đang giữ/đã đặt</span>
             </div>

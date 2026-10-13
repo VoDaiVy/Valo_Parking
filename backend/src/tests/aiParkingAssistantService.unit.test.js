@@ -111,6 +111,20 @@ test('câu tạo booking vẫn đi vào luồng đặt chỗ, không bị nhận
   ]) assert.equal(parse(prompt), null, prompt);
 });
 
+test('sửa giờ của một xe trong bản đặt chỗ không bị chuyển sang sửa hồ sơ xe', () => {
+  const draft = {
+    __intent: 'CREATE_BOOKING',
+    requestedVehicleCount: 2,
+    licensePlate: '44A11111',
+    licensePlates: ['44A11111', '44B11122'],
+    reservationItems: [
+      { licensePlate: '44A11111', startDate: '2026-09-25', endDate: '2026-09-25', startTime: '07:00', endTime: '09:00', slotCode: 'E10' },
+      { licensePlate: '44B11122', startDate: '2026-09-25', endDate: '2026-09-25', startTime: '07:00', endTime: '09:00', slotCode: 'E8' },
+    ],
+  };
+  assert.equal(parse('Đổi xe 44B11122 thành từ 8 giờ đến 9 giờ.', draft), null);
+});
+
 test('nhận diện nhiều ý định trong cùng một câu', () => {
   const result = parse('Xe tôi đang ở đâu và phí đỗ hiện tại bao nhiêu?');
   assert.deepEqual(result.intents, ['CHECK_VEHICLE_LOCATION', 'CHECK_PARKING_FEE']);

@@ -28,7 +28,7 @@ export const deriveAiBookingProgress = ({ bookingDraft = {}, phase = 'IDLE', sta
   if (!hasTime) return { currentStep: 'COLLECT_TIME', completionPercent: 30 };
   const count = Math.max(1, Number(bookingDraft.requestedVehicleCount || 1));
   if (platesFromDraft(bookingDraft).length < count) return { currentStep: 'SELECT_VEHICLE', completionPercent: 50 };
-  if (phase === 'BOOKING' || phase === 'CONFIRMING') return { currentStep: 'PAYMENT', completionPercent: 95 };
+  if (['BOOKING', 'CONFIRMING', 'WAITING_PAYMENT'].includes(phase)) return { currentStep: 'PAYMENT', completionPercent: 95 };
   if (phase === 'WAITING_CONFIRMATION') return { currentStep: 'CONFIRM_BOOKING', completionPercent: 90 };
   return { currentStep: 'SELECT_SLOT', completionPercent: 70 };
 };

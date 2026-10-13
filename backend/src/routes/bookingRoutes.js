@@ -38,6 +38,8 @@ router.post('/bulk', requirePolicyAcceptance({ action: 'booking:create' }), book
 router.post('/bulk/quote', bookingController.quoteBulkBooking);
 router.get('/status/:orderCode', bookingController.checkVietQRStatus);
 router.post('/:id/cancel', bookingController.cancelBooking);
+router.post('/:id/ai-time/quote', bookingController.quoteBookingTimeModification);
+router.put('/:id/ai-time', bookingController.modifyAiBookingTime);
 router.put('/:id/time', bookingController.modifyBookingTime);
 router.put('/:id/vehicle', bookingController.updateBookingVehicle);
 router.post('/:id/check-in', bookingController.checkInBooking);

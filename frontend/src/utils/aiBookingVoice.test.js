@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createAiBookingRecognition, createAiBookingSpeaker, createAiBookingVoiceSession, formatAiBookingSpeech,
-  resolveEnglishVoicePlateTranscript, splitAiBookingSpeechSegments,
+  normalizeEnglishVoiceTranscript, resolveEnglishVoicePlateTranscript, selectEnglishVoiceTranscript,
+  splitAiBookingSpeechSegments,
 } from './aiBookingVoice.js';
 
 test('voice input passes Vietnamese transcript to the same message handler', () => {
@@ -22,6 +23,7 @@ test('English recognition and speech use matching locales and voices', () => {
     language: 'en', onTranscript: () => {}, onError: () => {}, onEnd: () => {},
   });
   assert.equal(recognition.lang, 'en-US');
+  assert.equal(recognition.maxAlternatives, 5);
 
   class Utterance { constructor(text) { this.text = text; } }
   const spoken = [];
@@ -36,6 +38,41 @@ test('English recognition and speech use matching locales and voices', () => {
   assert.equal(spoken[0].lang, 'en-US');
   assert.equal(spoken[0].voice.name, 'Samantha');
   assert.match(spoken[0].text, /7:00 PM/);
+});
+
+test('English voice repairs common browser misrecognition before sending the chat message', () => {
+  assert.equal(normalizeEnglishVoiceTranscript('I nick Bookwonder.'), 'I need to book a parking space.');
+  assert.equal(normalizeEnglishVoiceTranscript('Book a parking sport to morrow'), 'Book a parking spot tomorrow');
+  assert.equal(normalizeEnglishVoiceTranscript('Use license place 43 A 12345'), 'Use license plate 43 A 12345');
+  assert.equal(normalizeEnglishVoiceTranscript('Park for too hours'), 'Park for two hours');
+
+  assert.equal(selectEnglishVoiceTranscript([
+    { transcript: 'I nick Bookwonder', confidence: 0.8 },
+    { transcript: 'I need to book one parking space', confidence: 0.6 },
+  ]), 'I need to book a parking space');
+  assert.equal(normalizeEnglishVoiceTranscript('Show my book kings'), 'Show my bookings');
+  assert.equal(normalizeEnglishVoiceTranscript('Check my wallet balanced'), 'Check my wallet balance');
+  assert.equal(normalizeEnglishVoiceTranscript('Where is my card'), 'where is my car');
+  assert.equal(normalizeEnglishVoiceTranscript('How match is the parking fee'), 'how much is the parking fee');
+});
+
+test('English recognition chooses the parking-aware alternative and repairs a lone bad result', () => {
+  class Recognition {}
+  const transcripts = [];
+  const recognition = createAiBookingRecognition({ SpeechRecognition: Recognition }, {
+    language: 'en', onTranscript: (value) => transcripts.push(value), onError: () => {}, onEnd: () => {},
+  });
+  const alternatives = [
+    { transcript: 'I make a wonder', confidence: 0.9 },
+    { transcript: 'I need to book one parking space', confidence: 0.65 },
+  ];
+  alternatives.isFinal = true;
+  recognition.onresult({ results: [alternatives] });
+
+  const badOnly = [{ transcript: 'I nick Bookwonder.', confidence: 0.8 }];
+  badOnly.isFinal = true;
+  recognition.onresult({ results: [badOnly] });
+  assert.deepEqual(transcripts, ['I need to book one parking space', 'I need to book a parking space.']);
 });
 
 test('English plate recognition prefers an alternative that preserves the spoken letter', () => {

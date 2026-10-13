@@ -806,3 +806,161 @@ test('bare day range is parsed as one continuous booking interval', async () => 
     ], ['2026-10-03', '2026-10-06', '07:00', '08:00', '43A12333'], prompt);
   }
 });
+
+test('compact dates and shared follow-ups update every vehicle without losing prior context', async () => {
+  const previous = {
+    __intent: 'CREATE_BOOKING', __language: 'vi', requestedVehicleCount: 2,
+    startDate: '2026-10-08', endDate: '2026-10-08', startTime: '07:00', endTime: '09:00',
+    licensePlate: '43A6798', licensePlates: ['43A6798', '43A6788'],
+    reservationItems: [
+      { licensePlate: '43A6798', startDate: '2026-10-08', endDate: '2026-10-08', startTime: '07:00', endTime: '09:00' },
+      { licensePlate: '43A6788', startDate: '2026-10-08', endDate: '2026-10-08', startTime: '07:00', endTime: '09:00' },
+    ],
+  };
+  const dated = await interpretBookingMessage({
+    prompt: '7h đến 8h ngày10/10', today: '2026-10-08', currentTime: '13:36', draft: previous,
+  });
+  assert.deepEqual(dated.draft.reservationItems.map((item) => [
+    item.licensePlate, item.startDate, item.startTime, item.endTime,
+  ]), [
+    ['43A6798', '2026-10-10', '07:00', '08:00'],
+    ['43A6788', '2026-10-10', '07:00', '08:00'],
+  ]);
+  assert.equal(dated.clarification, undefined);
+
+  const retimed = await interpretBookingMessage({
+    prompt: '19h đến 20h', today: '2026-10-08', currentTime: '13:36', draft: previous,
+  });
+  assert.deepEqual(retimed.draft.reservationItems.map((item) => [item.startTime, item.endTime]), [
+    ['19:00', '20:00'], ['19:00', '20:00'],
+  ]);
+  assert.deepEqual(retimed.draft.licensePlates, ['43A6798', '43A6788']);
+});
+
+test('spoken per-vehicle dates are remembered whether the date comes before or after the vehicle', async () => {
+  const previous = {
+    __intent: 'CREATE_BOOKING', __language: 'vi', requestedVehicleCount: 3,
+    startTime: '08:00', endTime: '09:00',
+    reservationItems: [
+      { startTime: '08:00', endTime: '09:00' },
+      { startTime: '08:00', endTime: '09:00' },
+      { startTime: '08:00', endTime: '09:00' },
+    ],
+  };
+  const complete = await interpretBookingMessage({
+    prompt: 'Mười cho xe một, ngày 12 cho xe 2 và ngày 14 cho xe 3.',
+    today: '2026-10-08', draft: previous,
+  });
+  assert.deepEqual(complete.draft.reservationItems.map((item) => item.startDate), [
+    '2026-10-10', '2026-10-12', '2026-10-14',
+  ]);
+  assert.doesNotMatch(complete.clarification, /đỗ ngày nào/i);
+
+  const partial = await interpretBookingMessage({
+    prompt: 'Xe một đỗ ngày 10, xe 2 đỗ ngày 12.', today: '2026-10-08', draft: previous,
+  });
+  assert.match(partial.clarification, /Xe 3 đỗ ngày nào/i);
+  const finalDate = await interpretBookingMessage({
+    prompt: 'Ngày mười bốn.', today: '2026-10-08',
+    draft: { ...partial.draft, __intent: partial.intent, __language: 'vi' },
+  });
+  assert.deepEqual(finalDate.draft.reservationItems.map((item) => item.startDate), [
+    '2026-10-10', '2026-10-12', '2026-10-14',
+  ]);
+  assert.doesNotMatch(finalDate.clarification, /đỗ ngày nào/i);
+});
+
+test('a natural slot correction updates the inherited item and keeps its schedule and vehicle', async () => {
+  const result = await interpretBookingMessage({
+    prompt: 'Đổi qua bãi xe E8 cho tôi', today: '2026-10-08',
+    draft: {
+      __intent: 'CREATE_BOOKING', startDate: '2026-10-09', endDate: '2026-10-09',
+      startTime: '05:00', endTime: '07:00', licensePlate: '43A12345',
+      floorName: 'Tầng 2', slotCode: 'E9',
+      reservationItems: [{
+        licensePlate: '43A12345', startDate: '2026-10-09', endDate: '2026-10-09',
+        startTime: '05:00', endTime: '07:00', floorName: 'Tầng 2', slotCode: 'E9',
+      }],
+    },
+  });
+  assert.equal(result.draft.slotCode, 'E8');
+  assert.equal(result.draft.floorName, '');
+  assert.deepEqual(result.draft.reservationItems.map((item) => ({
+    plate: item.licensePlate, date: item.startDate, start: item.startTime, end: item.endTime,
+    floor: item.floorName, slot: item.slotCode,
+  })), [{ plate: '43A12345', date: '2026-10-09', start: '05:00', end: '07:00', floor: '', slot: 'E8' }]);
+});
+
+test('multi-vehicle edit keeps its pending target and applies a slot change without asking for known times', async () => {
+  const previous = {
+    __intent: 'CREATE_BOOKING', __language: 'vi', requestedVehicleCount: 2,
+    licensePlate: '43A11111', licensePlates: ['43A11111', '43A12345'],
+    reservationItems: [
+      { licensePlate: '43A11111', startDate: '2026-10-10', endDate: '2026-10-12', startTime: '08:00', endTime: '09:00', floorName: 'Tầng 2', slotCode: 'E8' },
+      { licensePlate: '43A12345', startDate: '2026-10-10', endDate: '2026-10-12', startTime: '10:00', endTime: '11:00', floorName: 'Tầng 2', slotCode: 'E9' },
+    ],
+  };
+  const selecting = await interpretBookingMessage({
+    prompt: 'Tôi muốn sửa', today: '2026-10-08', draft: previous,
+  });
+  assert.equal(selecting.draft.pendingReservationEditIndex, -1);
+  assert.equal(selecting.draft.pendingReservationEditField, 'target');
+  assert.match(selecting.clarification, /sửa xe nào/i);
+
+  const changed = await interpretBookingMessage({
+    prompt: 'Xe số 1 đổi qua E7', today: '2026-10-08',
+    draft: { ...selecting.draft, __intent: selecting.intent, __language: 'vi' },
+  });
+  assert.deepEqual(changed.draft.reservationItems.map((item) => ({
+    plate: item.licensePlate, date: item.startDate, start: item.startTime, end: item.endTime, slot: item.slotCode,
+  })), [
+    { plate: '43A11111', date: '2026-10-10', start: '08:00', end: '09:00', slot: 'E7' },
+    { plate: '43A12345', date: '2026-10-10', start: '10:00', end: '11:00', slot: 'E9' },
+  ]);
+  assert.equal(changed.draft.pendingReservationEditIndex, undefined);
+  assert.equal(changed.clarification, undefined);
+});
+
+test('a short ordinal answer continues the pending edit instead of restarting booking questions', async () => {
+  const previous = {
+    __intent: 'CREATE_BOOKING', __language: 'vi', requestedVehicleCount: 2,
+    licensePlate: '43A11111', licensePlates: ['43A11111', '43A12345'],
+    reservationItems: [
+      { licensePlate: '43A11111', startDate: '2026-10-10', endDate: '2026-10-12', startTime: '08:00', endTime: '09:00', slotCode: 'E8' },
+      { licensePlate: '43A12345', startDate: '2026-10-10', endDate: '2026-10-12', startTime: '10:00', endTime: '11:00', slotCode: 'E9' },
+    ],
+    pendingReservationEditIndex: -1, pendingReservationEditField: 'target',
+  };
+  const selected = await interpretBookingMessage({
+    prompt: 'Số một', today: '2026-10-08', draft: previous,
+  });
+  assert.equal(selected.draft.pendingReservationEditIndex, 0);
+  assert.match(selected.clarification, /sửa thông tin nào.*43A11111/i);
+  assert.doesNotMatch(selected.clarification, /từ mấy giờ đến mấy giờ/i);
+
+  const changed = await interpretBookingMessage({
+    prompt: 'Đổi qua E7', today: '2026-10-08',
+    draft: { ...selected.draft, __intent: selected.intent, __language: 'vi' },
+  });
+  assert.equal(changed.draft.reservationItems[0].slotCode, 'E7');
+  assert.equal(changed.draft.reservationItems[1].slotCode, 'E9');
+  assert.equal(changed.clarification, undefined);
+});
+
+test('complete per-vehicle schedules suppress repeated shared date and time questions', async () => {
+  const result = await interpretBookingMessage({
+    prompt: 'Ờ', today: '2026-10-08',
+    draft: {
+      __intent: 'CREATE_BOOKING', __language: 'vi', requestedVehicleCount: 2,
+      licensePlate: '43A11111', licensePlates: ['43A11111', '43A12345'],
+      reservationItems: [
+        { licensePlate: '43A11111', startDate: '2026-10-10', endDate: '2026-10-12', startTime: '08:00', endTime: '09:00' },
+        { licensePlate: '43A12345', startDate: '2026-10-10', endDate: '2026-10-12', startTime: '10:00', endTime: '11:00' },
+      ],
+    },
+  });
+  assert.equal(result.clarification, undefined);
+  assert.deepEqual(result.draft.reservationItems.map((item) => [item.startTime, item.endTime]), [
+    ['08:00', '09:00'], ['10:00', '11:00'],
+  ]);
+});

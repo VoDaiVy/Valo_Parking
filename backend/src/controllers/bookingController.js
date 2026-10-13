@@ -19,6 +19,7 @@ const voucherService = require('../services/voucherService');
 const notifTriggers = require('../services/notificationTriggers');
 const contractService = require('../services/contractService');
 const bookingRefundService = require('../services/bookingRefundService');
+const { quoteBookingTimeModification } = require('../services/bookingTimeModificationService');
 const { notifyBookingPaidSafely, notifyBookingCancelledSafely, notifySessionCreatedSafely } = require('../services/aiCopilot/notificationEvents');
 const {
   getBookingFinancialSummaryMap,
@@ -57,6 +58,50 @@ const normalizeSlotCode = (slotCode = '') => String(slotCode).trim().toUpperCase
 const buildSlotKey = (floorId, slotCode) => `${String(floorId)}:${normalizeSlotCode(slotCode)}`;
 
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
+
+const withSession = (query, session) => (session ? query.session(session) : query);
+
+const resolveCheckoutVehicle = async ({ userId, vehicleId, licensePlate, session = null }) => {
+  if (vehicleId) {
+    const vehicle = await withSession(Vehicle.findOne({ _id: vehicleId, owner: userId }), session);
+    if (!vehicle) {
+      throw Object.assign(new Error('Không tìm thấy xe hợp lệ trong tài khoản của bạn.'), {
+        code: 'BOOKING_VEHICLE_NOT_OWNED',
+        statusCode: 400,
+      });
+    }
+    return vehicle;
+  }
+
+  if (!isValidCarLicensePlate(licensePlate)) {
+    throw Object.assign(new Error(`Biển số ${licensePlate || ''} không hợp lệ. Vui lòng dùng biển ô tô, ví dụ 43A12345.`), {
+      code: 'INVALID_LICENSE_PLATE',
+      statusCode: 400,
+    });
+  }
+
+  const normalized = normalizeLicensePlate(licensePlate);
+  const registeredVehicle = await withSession(Vehicle.findOne({ licensePlate: normalized }), session);
+  if (registeredVehicle && !sameObjectId(registeredVehicle.owner, userId)) {
+    throw Object.assign(new Error(`Biển số ${normalized} đã thuộc một tài khoản khác. Vui lòng chọn xe của bạn hoặc nhập biển số chưa được đăng ký.`), {
+      code: 'BOOKING_VEHICLE_OWNED_BY_ANOTHER_USER',
+      statusCode: 400,
+    });
+  }
+
+  return registeredVehicle || { _id: null, licensePlate: normalized };
+};
+
+const expectedSessionCheckout = (parkingSession, now = new Date()) => {
+  const checkIn = new Date(parkingSession?.checkInTime);
+  const hours = Math.max(Number(parkingSession?.expectedDurationHours) || 1, 0);
+  const expected = new Date(checkIn.getTime() + (hours * 60 * 60 * 1000));
+  // An overdue active session has no reliable departure time, so it must keep
+  // blocking the slot until checkout. Otherwise future ranges may use the slot
+  // after the declared expected checkout.
+  if (Number.isNaN(expected.getTime()) || expected <= now) return null;
+  return expected;
+};
 
 const uploadStaffEvidence = async (staffAction, bookingId, action) => {
   if (!staffAction) return null;
@@ -194,6 +239,90 @@ const getDedicatedSlotKeys = async (userId = null) => {
   ]);
 };
 
+const getAiDedicatedSlotKeys = async (userId = null, start = new Date(), end = start) => {
+  const activeMembershipSlotsPromise = MembershipSlotEntitlement.find({
+    status: { $in: ['active', 'transfer_locked'] },
+    validFrom: { $lte: start },
+    expireAt: { $gt: start },
+  })
+    .select('ownerId floorId slotCode sourceSubscriptionId expireAt')
+    .lean()
+    .then(async (entitlements) => {
+      const Subscription = require('../models/Subscription');
+      const coveredSubscriptionIds = entitlements.map(
+        (item) => item.sourceSubscriptionId
+      );
+      const legacySubscriptions = await Subscription.find({
+        _id: { $nin: coveredSubscriptionIds },
+        status: 'active',
+        paymentStatus: 'paid',
+        validFrom: { $lte: start },
+        expireAt: { $gt: start },
+      })
+        .select('user slots expireAt')
+        .lean();
+      return [
+        ...entitlements.map((item) => ({
+          ownerId: item.ownerId,
+          floorId: item.floorId,
+          slotCode: item.slotCode,
+          expireAt: item.expireAt,
+        })),
+        ...legacySubscriptions.flatMap((subscription) => (subscription.slots || []).map((slot) => ({
+          ...slot,
+          user: subscription.user,
+          expireAt: subscription.expireAt,
+        }))),
+      ];
+    });
+
+  const reservedSlotsQuery = { reservedFor: { $ne: null } };
+  if (userId) {
+    reservedSlotsQuery.reservedFor = { $nin: [null, userId] };
+  }
+  const reservedSlotsPromise = Slot.find(reservedSlotsQuery)
+    .select('floorID slotNumber')
+    .lean();
+
+  const [reservedSlots, activeMembershipSlots] = await Promise.all([
+    reservedSlotsPromise, activeMembershipSlotsPromise,
+  ]);
+  return new Set([
+    ...reservedSlots.map((slot) => buildSlotKey(slot.floorID, slot.slotNumber)),
+    ...activeMembershipSlots
+      .filter((slot) => !(userId && sameObjectId(slot.ownerId || slot.user, userId)
+        && new Date(slot.expireAt).getTime() >= end.getTime()))
+      .map((slot) => buildSlotKey(slot.floorId, slot.slotCode)),
+  ]);
+};
+
+const getOwnedDedicatedSlotKeys = async (userId, start, end) => {
+  if (!userId) return new Set();
+  const Subscription = require('../models/Subscription');
+  const [entitlements, subscriptions, reservedSlots] = await Promise.all([
+    MembershipSlotEntitlement.find({
+      ownerId: userId,
+      status: { $in: ['active', 'transfer_locked'] },
+      validFrom: { $lte: start },
+      expireAt: { $gte: end },
+    }).select('floorId slotCode').lean(),
+    Subscription.find({
+      user: userId,
+      status: 'active',
+      paymentStatus: 'paid',
+      validFrom: { $lte: start },
+      expireAt: { $gte: end },
+    }).select('slots').lean(),
+    Slot.find({ reservedFor: userId }).select('floorID slotNumber').lean(),
+  ]);
+  return new Set([
+    ...entitlements.map((slot) => buildSlotKey(slot.floorId, slot.slotCode)),
+    ...subscriptions.flatMap((subscription) => subscription.slots || [])
+      .map((slot) => buildSlotKey(slot.floorId, slot.slotCode)),
+    ...reservedSlots.map((slot) => buildSlotKey(slot.floorID, slot.slotNumber)),
+  ]);
+};
+
 const getGeneralBookableSlots = async () => {
   const [slots, dedicatedKeys] = await Promise.all([
     getAllBookableSlots(), getDedicatedSlotKeys(),
@@ -201,7 +330,12 @@ const getGeneralBookableSlots = async () => {
   return slots.filter((slot) => !dedicatedKeys.has(buildSlotKey(slot.floorId, slot.slotCode)));
 };
 
-const getUnavailableSlotKeys = async (start, end, userId = null) => {
+const getUnavailableSlotKeys = async (
+  start,
+  end,
+  userId = null,
+  { allowExpectedSessionCheckout = false, includeOwnedDedicatedSlots = false } = {}
+) => {
   const now = new Date();
   const overlappingBookingsPromise = Booking.find({
     status: { $in: BOOKING_STATUSES_THAT_BLOCK_SLOT },
@@ -223,7 +357,7 @@ const getUnavailableSlotKeys = async (start, end, userId = null) => {
     floorId: { $ne: null },
     parkingSlot: { $ne: null },
   })
-    .select('floorId parkingSlot')
+    .select('floorId parkingSlot checkInTime expectedDurationHours')
     .lean();
 
   const maintenanceSlotsPromise = Slot.find({ status: 'maintenance' })
@@ -251,7 +385,9 @@ const getUnavailableSlotKeys = async (start, end, userId = null) => {
     activeSessionsPromise,
     maintenanceSlotsPromise,
     activeHoldsPromise,
-    getDedicatedSlotKeys(userId),
+    includeOwnedDedicatedSlots
+      ? getAiDedicatedSlotKeys(userId, start, end)
+      : getDedicatedSlotKeys(userId),
   ]);
 
   const unavailable = new Set();
@@ -260,8 +396,13 @@ const getUnavailableSlotKeys = async (start, end, userId = null) => {
     unavailable.add(buildSlotKey(booking.floorId, booking.parkingSlot));
   });
 
-  activeSessions.forEach((session) => {
-    unavailable.add(buildSlotKey(session.floorId, session.parkingSlot));
+  activeSessions.forEach((parkingSession) => {
+    const expectedCheckout = allowExpectedSessionCheckout
+      ? expectedSessionCheckout(parkingSession, now)
+      : null;
+    if (!allowExpectedSessionCheckout || !expectedCheckout || expectedCheckout > start) {
+      unavailable.add(buildSlotKey(parkingSession.floorId, parkingSession.parkingSlot));
+    }
   });
 
   maintenanceSlots.forEach((slot) => {
@@ -277,13 +418,23 @@ const getUnavailableSlotKeys = async (start, end, userId = null) => {
   return unavailable;
 };
 
-const getAvailableSlotsForRange = async (start, end, userId = null) => {
-  const [slots, unavailableSlotKeys] = await Promise.all([
+const getAvailableSlotsForRange = async (start, end, userId = null, options = {}) => {
+  const [slots, unavailableSlotKeys, ownedDedicatedSlotKeys] = await Promise.all([
     getAllBookableSlots(),
-    getUnavailableSlotKeys(start, end, userId),
+    getUnavailableSlotKeys(start, end, userId, options),
+    options.includeOwnedDedicatedSlots
+      ? getOwnedDedicatedSlotKeys(userId, start, end)
+      : Promise.resolve(new Set()),
   ]);
 
-  return slots.filter((slot) => !unavailableSlotKeys.has(buildSlotKey(slot.floorId, slot.slotCode)));
+  const availableSlots = slots
+    .filter((slot) => !unavailableSlotKeys.has(buildSlotKey(slot.floorId, slot.slotCode)));
+  if (!options.includeOwnedDedicatedSlots) return availableSlots;
+
+  return availableSlots.map((slot) => ({
+      ...slot,
+      isDedicatedToCurrentUser: ownedDedicatedSlotKeys.has(buildSlotKey(slot.floorId, slot.slotCode)),
+    }));
 };
 
 // Read-only availability helpers shared with the VALO AI floor monitor.
@@ -400,9 +551,12 @@ const findOwnedBooking = (bookingId, user) => {
 
 exports.getAvailableSlots = async (req, res, next) => {
   try {
-    const { startTime, endTime } = req.query;
+    const { startTime, endTime, bookingSource } = req.query;
     const { start, end } = validateBookingTimeRange(startTime, endTime);
-    const slots = await getAvailableSlotsForRange(start, end, req.user?._id);
+    const slots = await getAvailableSlotsForRange(start, end, req.user?._id, {
+      allowExpectedSessionCheckout: bookingSource === 'AI_QUICK',
+      includeOwnedDedicatedSlots: bookingSource === 'AI_QUICK',
+    });
 
     res.status(200).json({
       success: true,
@@ -929,6 +1083,199 @@ exports.cancelBooking = async (req, res, next) => {
   }
 };
 
+exports.quoteBookingTimeModification = async (req, res, next) => {
+  try {
+    if (req.body?.bookingSource !== 'AI_QUICK') {
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+    const booking = await Booking.findOne({ _id: req.params.id, userId: req.user._id });
+    const quote = await quoteBookingTimeModification({
+      booking,
+      userId: req.user._id,
+      newStart: req.body?.newStart,
+      newEnd: req.body?.newEnd,
+      bookingSource: 'AI_QUICK',
+    });
+    res.status(200).json({ success: true, data: quote });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false, message: error.message, code: error.code,
+      });
+    }
+    next(error);
+  }
+};
+
+/**
+ * @desc    Chỉnh sửa thời gian đặt chỗ từ Booking nhanh bằng AI
+ * @route   PUT /api/bookings/:id/ai-time
+ * @access  Private (Customer)
+ */
+exports.modifyAiBookingTime = async (req, res, next) => {
+  try {
+    const { newStart, newEnd, expectedNewPrice, bookingSource } = req.body;
+    const isAiQuickRequest = bookingSource === 'AI_QUICK';
+    if (!isAiQuickRequest) {
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+    let booking = await Booking.findOne({ _id: req.params.id, userId: req.user._id });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    let modificationQuote;
+    try {
+      modificationQuote = await quoteBookingTimeModification({
+        booking, userId: req.user._id, newStart, newEnd, bookingSource,
+      });
+    } catch (quoteError) {
+      return res.status(quoteError.statusCode || 400).json({
+        success: false,
+        message: quoteError.message,
+        ...(isAiQuickRequest && quoteError.code ? { code: quoteError.code } : {}),
+      });
+    }
+    const {
+      start, end, durationHours, newParkingAmount, newPrice, difference: diff,
+    } = modificationQuote;
+    if (isAiQuickRequest && expectedNewPrice !== undefined && Number(expectedNewPrice) !== newPrice) {
+      return res.status(409).json({
+        success: false,
+        code: 'BOOKING_MODIFICATION_PRICE_CHANGED',
+        message: 'Chi phí sửa booking đã thay đổi. Vui lòng kiểm tra và xác nhận lại.',
+        data: modificationQuote,
+      });
+    }
+    if (!modificationQuote.hasEnoughBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `The new time incurs an additional fee of ${diff.toLocaleString()} VND, insufficient wallet balance. Please top up your wallet first.`,
+        ...(isAiQuickRequest ? {
+          code: 'INSUFFICIENT_WALLET_BALANCE',
+          data: modificationQuote,
+        } : {}),
+      });
+    }
+    const expectedModificationCount = booking.modificationCount;
+
+    let modificationSession = null;
+    try {
+    if (diff > 0) {
+      modificationSession = await mongoose.startSession();
+      modificationSession.startTransaction();
+      await walletService.debitWallet(
+        req.user._id,
+        diff,
+        `Additional fee for modifying booking slot ${booking.parkingSlot} - Vehicle ${booking.licensePlate}`,
+        {
+          refSource: 'booking',
+          refSourceId: booking._id,
+          idempotencyKey: `booking:${booking._id}:modification:${booking.modificationCount + 1}`,
+          session: modificationSession,
+        }
+      );
+    } else if (diff < 0) {
+      // Hoàn lại tiền thừa
+      const refundAmount = Math.abs(diff);
+      modificationSession = await mongoose.startSession();
+      modificationSession.startTransaction();
+      await walletService.creditWallet(
+        req.user._id,
+        refundAmount,
+        'REFUND',
+        `Refund for modifying booking slot ${booking.parkingSlot} - Vehicle ${booking.licensePlate}`,
+        {
+          refSource: 'booking',
+          refSourceId: booking._id,
+          idempotencyKey: `booking:${booking._id}:modification:${booking.modificationCount + 1}`,
+          session: modificationSession,
+        }
+      );
+    }
+
+    booking.scheduledStart = start;
+    booking.scheduledEnd = end;
+    booking.durationHours = durationHours;
+    booking.prepaidAmount = newPrice;
+    if (booking.paymentBreakdownSnapshot?.source) {
+      const serviceAmount = Math.min(
+        Math.max(0, Number(booking.paymentBreakdownSnapshot.serviceAmount) || 0),
+        newPrice
+      );
+      const existingPaymentSnapshot = booking.paymentBreakdownSnapshot.toObject?.()
+        || booking.paymentBreakdownSnapshot;
+      booking.paymentBreakdownSnapshot = {
+        ...existingPaymentSnapshot,
+        parkingAmount: isAiQuickRequest
+          ? newParkingAmount
+          : Math.max(0, newPrice - serviceAmount),
+        serviceAmount,
+        totalAmount: newPrice,
+        source: booking.paymentBreakdownSnapshot.source,
+        adjustedTotal: isAiQuickRequest ? newParkingAmount : newPrice,
+        ...(isAiQuickRequest && booking.paymentBreakdownSnapshot.voucherId
+          ? { discountedTotal: newPrice }
+          : {}),
+      };
+    }
+    const updatedBooking = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        userId: req.user._id,
+        status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] },
+        modificationCount: expectedModificationCount,
+      },
+      {
+        $set: {
+          scheduledStart: booking.scheduledStart,
+          scheduledEnd: booking.scheduledEnd,
+          durationHours: booking.durationHours,
+          prepaidAmount: booking.prepaidAmount,
+          ...(booking.paymentBreakdownSnapshot?.source
+            ? { paymentBreakdownSnapshot: booking.paymentBreakdownSnapshot }
+            : {}),
+        },
+        $inc: { modificationCount: 1 },
+      },
+      {
+        new: true,
+        runValidators: true,
+        ...(modificationSession ? { session: modificationSession } : {}),
+      }
+    );
+    if (!updatedBooking) {
+      throw Object.assign(new Error('Booking was modified concurrently; please retry'), {
+        statusCode: 409,
+      });
+    }
+    booking = updatedBooking;
+    if (modificationSession) {
+      await modificationSession.commitTransaction();
+    }
+    } catch (error) {
+      if (modificationSession) {
+        await modificationSession.abortTransaction();
+      }
+      throw error;
+    } finally {
+      if (modificationSession) {
+        await modificationSession.endSession();
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Booking time updated successfully',
+      data: booking,
+    });
+  } catch (error) {
+    console.error('Error modifyBookingTime:', error);
+    next(error);
+  }
+};
+
 /**
  * @desc    Chỉnh sửa thời gian đặt chỗ trước khi Check-in
  * @route   PUT /api/bookings/:id/time
@@ -952,8 +1299,7 @@ exports.modifyBookingTime = async (req, res, next) => {
     }
 
     const now = new Date();
-    
-    // Nếu chưa Check-in (PAID), cho phép sửa cả Start (nhưng phải sửa trước giờ bắt đầu 30 phút)
+
     if (booking.status === 'PAID') {
       const timeBeforeStartOld = booking.scheduledStart.getTime() - now.getTime();
       if (timeBeforeStartOld < 30 * 60 * 1000) {
@@ -961,7 +1307,6 @@ exports.modifyBookingTime = async (req, res, next) => {
       }
     }
 
-    // Nếu đang trong bãi (ACTIVE / PAUSED), không được đổi Start
     const start = booking.status === 'PAID' ? new Date(newStart) : booking.scheduledStart;
     const end = new Date(newEnd);
 
@@ -979,7 +1324,6 @@ exports.modifyBookingTime = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Thời lượng tổng cộng phải tối thiểu 1 giờ' });
     }
 
-    // Kiểm tra ô đỗ có thuộc Subscription (Gói tháng/năm) không
     const subscriptionInfo = await findActiveSlotOwnership({
       floorId: booking.floorId,
       slotCode: booking.parkingSlot,
@@ -989,7 +1333,6 @@ exports.modifyBookingTime = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'This slot is registered under a fixed subscription, cannot change to this time.' });
     }
 
-    // Kiểm tra chồng lấn Slot ô đỗ mới/cũ trong khoảng thời gian mới (trừ chính booking hiện tại)
     const slotOverlap = await Booking.findOne({
       _id: { $ne: booking._id },
       floorId: booking.floorId,
@@ -1003,7 +1346,6 @@ exports.modifyBookingTime = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'This slot already has another booking during the new time frame' });
     }
 
-    // Tính phí lại
     const pricing = await pricingEngine.calculatePrice(start, end);
     const capturedDynamicMultiplier = Number(
       booking.paymentBreakdownSnapshot?.dynamicMultiplier || 1
@@ -1015,7 +1357,6 @@ exports.modifyBookingTime = async (req, res, next) => {
     let modificationSession = null;
     try {
     if (diff > 0) {
-      // Cần đóng thêm tiền -> chỉ hỗ trợ trừ tiền Wallet (phải nạp trước)
       const wallet = await walletService.getOrCreateWallet(req.user._id);
       if (wallet.balance < diff) {
         return res.status(400).json({ success: false, message: `The new time incurs an additional fee of ${diff.toLocaleString()} VND, insufficient wallet balance. Please top up your wallet first.` });
@@ -1035,7 +1376,6 @@ exports.modifyBookingTime = async (req, res, next) => {
         }
       );
     } else if (diff < 0) {
-      // Hoàn lại tiền thừa
       const refundAmount = Math.abs(diff);
       modificationSession = await mongoose.startSession();
       modificationSession.startTransaction();
@@ -1715,15 +2055,19 @@ exports.createBookingHold = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'This slot is temporarily held. Please select another slot.' });
     }
 
-    // Kiểm tra xem ô đỗ có đang có xe đỗ không (active session), 
-    // và dự kiến đỗ qua cả thời gian bắt đầu của chúng ta không
+    // A currently occupied slot only blocks ranges that begin before its
+    // expected checkout. This is shared by regular and Quick Booking.
     const slotOccupied = await Session.findOne({
       floorId,
       parkingSlot: slotCode,
       status: 'active'
     });
 
-    if (slotOccupied) {
+    const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
+    const slotExpectedCheckout = isAiQuickRequest && slotOccupied
+      ? expectedSessionCheckout(slotOccupied, now)
+      : null;
+    if (slotOccupied && (!isAiQuickRequest || !slotExpectedCheckout || slotExpectedCheckout > start)) {
       return res.status(400).json({ success: false, message: 'This slot is currently occupied by another vehicle' });
     }
 
@@ -1742,6 +2086,17 @@ exports.createBookingHold = async (req, res, next) => {
     const normalizedPlate = licensePlate ? licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
 
     if (normalizedPlate) {
+      if (isAiQuickRequest && req.user) {
+        try {
+          await resolveCheckoutVehicle({ userId: req.user._id, licensePlate: normalizedPlate });
+        } catch (vehicleError) {
+          return res.status(vehicleError.statusCode || 400).json({
+            success: false,
+            message: vehicleError.message,
+            ...(vehicleError.code ? { code: vehicleError.code } : {}),
+          });
+        }
+      }
       const vehicleOverlap = await Booking.findOne({
         licensePlate: normalizedPlate,
         status: { $in: ['PAID', 'PAUSED'] },
@@ -1878,8 +2233,9 @@ exports.releaseBookingHold = async (req, res, next) => {
 
 exports.quoteBulkBooking = async (req, res, next) => {
   try {
-    const { items } = req.body;
+    const { items, bookingSource } = req.body;
     const userId = req.user._id;
+    const isAiQuickRequest = bookingSource === 'AI_QUICK';
 
     if (!items || items.length === 0) {
       throw new Error('Giỏ hàng trống');
@@ -1909,14 +2265,15 @@ exports.quoteBulkBooking = async (req, res, next) => {
       try {
       const { start, end } = validateBookingTimeRange(scheduledStart, scheduledEnd);
       let vehicle;
-      if (vehicleId) {
+      if (isAiQuickRequest) {
+        vehicle = await resolveCheckoutVehicle({ userId, vehicleId, licensePlate });
+      } else if (vehicleId) {
         vehicle = await Vehicle.findOne({ _id: vehicleId, owner: userId });
       } else if (licensePlate) {
         if (!isValidCarLicensePlate(licensePlate)) {
           throw new Error(`Biển số ${licensePlate} không hợp lệ. Vui lòng dùng biển ô tô, ví dụ 43A12345.`);
         }
         const normalized = normalizeLicensePlate(licensePlate);
-        // Try to find if this plate is actually a registered vehicle
         const foundVehicle = await Vehicle.findOne({ licensePlate: normalized, owner: userId });
         if (!foundVehicle && await findForeignVipPlateRestriction({ userId, licensePlate: normalized })) {
           throw Object.assign(new Error(`Biển số ${normalized} thuộc xe VIP của tài khoản khác. Vui lòng đọc hoặc nhập biển số xe khác.`), {
@@ -2060,8 +2417,9 @@ exports.createBulkBooking = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { idempotencyKey, items } = req.body;
+    const { idempotencyKey, items, expectedTotal, bookingSource } = req.body;
     const userId = req.user._id;
+    const isAiQuickRequest = bookingSource === 'AI_QUICK';
 
     if (!items || items.length === 0) {
       throw new Error('Giỏ hàng trống');
@@ -2108,7 +2466,9 @@ exports.createBulkBooking = async (req, res, next) => {
       const { start, end } = validateBookingTimeRange(scheduledStart, scheduledEnd);
       
       let vehicle;
-      if (vehicleId) {
+      if (isAiQuickRequest) {
+        vehicle = await resolveCheckoutVehicle({ userId, vehicleId, licensePlate, session });
+      } else if (vehicleId) {
         vehicle = await Vehicle.findOne({ _id: vehicleId, owner: userId }).session(session);
       } else if (licensePlate) {
         if (!isValidCarLicensePlate(licensePlate)) {
@@ -2120,7 +2480,6 @@ exports.createBulkBooking = async (req, res, next) => {
             code: 'VIP_BOOKING_RESTRICTED', statusCode: 400,
           });
         }
-        
         const foundVehicle = await Vehicle.findOne({ licensePlate: normalized, owner: userId }).session(session);
         vehicle = foundVehicle || { _id: null, licensePlate: normalized };
       }
@@ -2196,15 +2555,17 @@ exports.createBulkBooking = async (req, res, next) => {
       }).session(session);
       
       if (activeSession) {
-        let expectedCheckoutTime = new Date(activeSession.checkInTime);
-        expectedCheckoutTime.setHours(expectedCheckoutTime.getHours() + (activeSession.expectedDurationHours || 1));
-        
-        // Cập nhật: Nếu xe đã overstay (expectedCheckoutTime nằm trong quá khứ), nhưng vẫn chưa checkout,
-        // thì vẫn tính là đang chiếm dụng đến thời điểm hiện tại.
-        const effectiveCheckoutTime = new Date(Math.max(expectedCheckoutTime.getTime(), Date.now()));
-        
-        // Block nếu thời gian bắt đầu booking nằm trước lúc xe rời đi (bao gồm cả hiện tại)
-        if (start < effectiveCheckoutTime) {
+        let effectiveCheckoutTime;
+        if (isAiQuickRequest) {
+          effectiveCheckoutTime = expectedSessionCheckout(activeSession);
+        } else {
+          const expectedCheckoutTime = new Date(activeSession.checkInTime);
+          expectedCheckoutTime.setHours(
+            expectedCheckoutTime.getHours() + (activeSession.expectedDurationHours || 1)
+          );
+          effectiveCheckoutTime = new Date(Math.max(expectedCheckoutTime.getTime(), Date.now()));
+        }
+        if (!effectiveCheckoutTime || start < effectiveCheckoutTime) {
           throw new Error(`Xe ${vehicle.licensePlate} đang đỗ trong bãi và chưa ra. Chưa thể tạo lượt đặt chỗ mới trong khung giờ này.`);
         }
       }
@@ -2316,6 +2677,23 @@ exports.createBulkBooking = async (req, res, next) => {
       });
     }
 
+    if (isAiQuickRequest) {
+      const confirmedTotal = Number(expectedTotal);
+      if (expectedTotal === null || expectedTotal === '' || !Number.isFinite(confirmedTotal) || confirmedTotal < 0) {
+        throw Object.assign(new Error('Vui lòng kiểm tra báo giá trước khi xác nhận booking.'), {
+          code: 'INVALID_EXPECTED_TOTAL',
+          statusCode: 400,
+        });
+      }
+      if (confirmedTotal !== grandTotal) {
+        throw Object.assign(new Error('Giá booking đã thay đổi. Vui lòng kiểm tra và xác nhận lại tổng tiền mới.'), {
+          code: 'BOOKING_PRICE_CHANGED',
+          statusCode: 409,
+          data: { expectedTotal: confirmedTotal, currentTotal: grandTotal },
+        });
+      }
+    }
+
     // Check wallet balance
     const wallet = await walletService.getOrCreateWallet(userId, { session });
     if (wallet.balance < grandTotal) {
@@ -2416,12 +2794,14 @@ exports.createBulkBooking = async (req, res, next) => {
         await BookingHold.updateOne({ _id: bData.holdId }, { status: 'consumed' }, { session });
       }
 
-      notifTriggers.notifyBookingSuccess(req.app, userId, {
-        bookingId: newBooking._id.toString(),
-        slotInfo: `${bData.parkingSlot}`
-      }).catch(() => {});
+      if (!isAiQuickRequest) {
+        notifTriggers.notifyBookingSuccess(req.app, userId, {
+          bookingId: newBooking._id.toString(),
+          slotInfo: `${bData.parkingSlot}`,
+        }).catch(() => {});
+        emitBookingChanged(req.app, newBooking, { action: 'created' });
+      }
 
-      emitBookingChanged(req.app, newBooking, { action: 'created' });
       createdBookingsResponse.push({
         bookingId: newBooking._id,
         qrCode: buildBookingQrPayload(newBooking),
@@ -2437,14 +2817,24 @@ exports.createBulkBooking = async (req, res, next) => {
 
     await session.commitTransaction();
     session.endSession();
-    paidBookings.forEach((booking) => notifyBookingPaidSafely(booking, req.app));
+    paidBookings.forEach((booking) => {
+      if (isAiQuickRequest) {
+        notifTriggers.notifyBookingSuccess(req.app, userId, {
+          bookingId: booking._id.toString(),
+          slotInfo: `${booking.parkingSlot}`,
+        }).catch(() => {});
+        emitBookingChanged(req.app, booking, { action: 'created' });
+      }
+      notifyBookingPaidSafely(booking, req.app);
+    });
 
     res.status(201).json({
       success: true,
       message: 'Đặt chỗ hàng loạt thành công',
       data: {
         transaction: newOrder[0],
-        bookings: createdBookingsResponse
+        bookings: createdBookingsResponse,
+        ...(isAiQuickRequest ? { grandTotal } : {}),
       }
     });
 
@@ -2452,10 +2842,12 @@ exports.createBulkBooking = async (req, res, next) => {
     await session.abortTransaction();
     session.endSession();
     console.error('Error createBulkBooking:', error);
-    res.status(400).json({
+    const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
+    res.status(isAiQuickRequest ? (error.statusCode || 400) : 400).json({
       success: false,
       message: error.message || 'Lỗi xử lý đặt chỗ',
       ...(typeof error.code === 'string' ? { code: error.code } : {}),
+      ...(isAiQuickRequest && error.data ? { data: error.data } : {}),
     });
   }
 };

@@ -72,6 +72,14 @@ function normalizeInterpretation(raw, previous = {}) {
     && cleanString(parsed.floorName).toUpperCase() !== cleanString(previous.floorName).toUpperCase()) {
     draft.slotCode = '';
   }
+  // A newly named slot may be on another floor. Do not let an inherited floor
+  // silently block a contextual reply such as "cho tôi E6".
+  if (cleanString(parsed.slotCode)
+    && cleanString(parsed.slotCode).toUpperCase() !== cleanString(previous.slotCode).toUpperCase()
+    && !cleanString(parsed.floorName)) {
+    draft.floorName = '';
+    draft.zoneName = '';
+  }
   for (const field of ['startDate', 'endDate']) {
     if (draft[field] && !validDate(draft[field])) draft[field] = '';
   }
@@ -89,11 +97,45 @@ function normalizeInterpretation(raw, previous = {}) {
     draft.licensePlates = plates;
     if (!draft.licensePlate) draft.licensePlate = plates[0];
   }
+  const hasIncomingReservationItems = Array.isArray(parsed.reservationItems) && parsed.reservationItems.length > 0;
   const reservationItems = normalizeReservationItems(
     parsed.reservationItems,
     canInherit ? previous.reservationItems : [],
   );
   if (reservationItems.length) {
+    // A shared follow-up (for example "19h đến 20h" or "đổi sang ô E8")
+    // must also update inherited per-vehicle rows. Otherwise the form shows the
+    // new shared value while availability still reads stale item-level data.
+    if (!hasIncomingReservationItems) {
+      const priorItems = Array.isArray(previous.reservationItems) ? previous.reservationItems : [];
+      const propagatedFields = new Set();
+      for (const field of ['startDate', 'endDate', 'startTime', 'endTime', 'floorName', 'zoneName', 'slotCode']) {
+        const incoming = cleanString(parsed[field]);
+        if (!incoming) continue;
+        const priorValues = reservationItems.map((_, index) => cleanString(priorItems[index]?.[field]));
+        const hadOneSharedValue = reservationItems.length === 1
+          || priorValues.every((value) => value === priorValues[0]);
+        if (hadOneSharedValue) {
+          reservationItems.forEach((item) => { item[field] = incoming; });
+          propagatedFields.add(field);
+        }
+      }
+      if (cleanString(parsed.startDate) && !cleanString(parsed.endDate)) {
+        reservationItems.forEach((item, index) => {
+          const prior = priorItems[index] || {};
+          if (!prior.endDate || prior.endDate === prior.startDate) item.endDate = draft.endDate;
+        });
+      }
+      if (propagatedFields.has('floorName') && !cleanString(parsed.slotCode)) {
+        reservationItems.forEach((item) => { item.slotCode = ''; });
+      }
+      if (propagatedFields.has('slotCode') && !cleanString(parsed.floorName)) {
+        reservationItems.forEach((item) => {
+          item.floorName = '';
+          item.zoneName = '';
+        });
+      }
+    }
     const assignedPlates = new Set(reservationItems.map((item) => item.licensePlate).filter(Boolean));
     const unassignedPlates = plates.filter((plate) => !assignedPlates.has(plate));
     reservationItems.forEach((item) => {

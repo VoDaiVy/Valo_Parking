@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bookingDateSchedules, checkAiAvailability, confirmAiBooking, confirmAiExistingAction, findAiActionBookings, getMissingBookingFields, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from './aiBookingFlow.js';
+import { applySlotSuggestionToDraft } from './aiBookingConversation.js';
 
 const vehicle = { _id: 'vehicle-1', licensePlate: '43A12345', status: 'approved' };
 const baseDraft = { startDate: '2099-01-15', endDate: '2099-01-15', startTime: '08:00', endTime: '10:00' };
@@ -82,6 +83,19 @@ test('legacy VIP quote failure also asks for another plate', async () => {
 test('missing time asks for it', async () => {
   const result = await prepareAiBooking({ startDate: '2099-01-15' }, gateway(), [vehicle]);
   assert.match(result.missing.join(' '), /mấy giờ/);
+});
+
+test('multi-vehicle collection asks only the next missing schedule question', () => {
+  const missing = getMissingBookingFields({
+    requestedVehicleCount: 3,
+    reservationItems: [
+      { startTime: '08:00', endTime: '09:00' },
+      { startTime: '08:00', endTime: '09:00' },
+      { startTime: '08:00', endTime: '09:00' },
+    ],
+  }, []);
+  assert.equal(missing.filter((message) => /Xe\s+[123]/i.test(message)).length, 1);
+  assert.match(missing[0], /Xe 1/i);
 });
 
 test('known start and duration ask only for the missing date and vehicle', () => {
@@ -373,6 +387,69 @@ test('an overlap anywhere in a continuous multi-day range blocks the whole reque
 test('taken requested slot suggests another available slot', async () => {
   const result = await prepareAiBooking({ ...baseDraft, slotCode: 'A-015' }, gateway({ getAvailableBookingSlots: async () => ok({ slots: [slot('A-016')] }) }), [vehicle]);
   assert.match(result.conflicts[0], /A-016/);
+  assert.deepEqual(result.suggestions, [{
+    sourceIndex: 0, licensePlate: '43A12345', floorId: 'floor-2', floorName: 'Floor 2', slotCode: 'A-016',
+  }]);
+});
+
+test('a customer can select their own dedicated VIP slot returned by availability', async () => {
+  const ownedVip = {
+    ...slot('VIP-01'), slotType: 'slot-vip', isDedicatedToCurrentUser: true,
+  };
+  const api = gateway({ getAvailableBookingSlots: async () => ok({ slots: [ownedVip] }) });
+  const preview = await prepareAiBooking({ ...baseDraft, slotCode: 'VIP-01' }, api, [vehicle]);
+  assert.equal(preview.items[0].slotCode, 'VIP-01');
+  const automatic = await prepareAiBooking(baseDraft, gateway({
+    getAvailableBookingSlots: async () => ok({ slots: [slot('A-016'), ownedVip] }),
+  }), [vehicle]);
+  assert.equal(automatic.items[0].slotCode, 'VIP-01');
+});
+
+test('a slot code present on multiple floors requires an explicit floor', async () => {
+  const duplicateSlots = [
+    { ...slot('A1'), floorId: 'floor-1', floorName: 'Floor 1', floorNumber: 1 },
+    { ...slot('A1'), floorId: 'floor-2', floorName: 'Floor 2', floorNumber: 2 },
+  ];
+  for (const slots of [duplicateSlots, [...duplicateSlots].reverse()]) {
+    const result = await prepareAiBooking(
+      { ...baseDraft, slotCode: 'A1' },
+      gateway({ getAvailableBookingSlots: async () => ok({ slots }) }),
+      [vehicle],
+    );
+    assert.match(result.conflicts[0], /nhiều tầng/);
+    assert.equal(result.items, undefined);
+  }
+
+  const selected = await prepareAiBooking(
+    { ...baseDraft, floorName: 'Floor 2', slotCode: 'A1' },
+    gateway({ getAvailableBookingSlots: async () => ok({ slots: duplicateSlots }) }),
+    [vehicle],
+  );
+  assert.equal(selected.items[0].floorName, 'Floor 2');
+});
+
+test('a suggested slot never steals another overlapping reservation item requested slot', async () => {
+  const secondVehicle = { _id: 'vehicle-2', licensePlate: '43B20404', status: 'approved' };
+  const api = gateway({ getAvailableBookingSlots: async () => ok({ slots: [slot('A-016'), slot('A-017')] }) });
+  const draft = {
+    ...baseDraft,
+    requestedVehicleCount: 2,
+    licensePlates: [vehicle.licensePlate, secondVehicle.licensePlate],
+    reservationItems: [
+      { licensePlate: vehicle.licensePlate, ...baseDraft, slotCode: 'TAKEN' },
+      { licensePlate: secondVehicle.licensePlate, ...baseDraft, slotCode: 'A-016' },
+    ],
+  };
+  const result = await prepareAiBooking(draft, api, [vehicle, secondVehicle]);
+  assert.equal(result.suggestions[0].sourceIndex, 0);
+  assert.equal(result.suggestions[0].slotCode, 'A-017');
+
+  const updatedDraft = applySlotSuggestionToDraft({
+    ...draft, pendingSlotSuggestion: result.suggestions[0],
+  }, result.suggestions[0]);
+  const preview = await prepareAiBooking(updatedDraft, api, [vehicle, secondVehicle]);
+  assert.equal(preview.conflicts, undefined);
+  assert.deepEqual(preview.items.map((item) => item.slotCode), ['A-017', 'A-016']);
 });
 
 test('coded zone preference selects that zone and falls back to the same slot code', async () => {
@@ -435,7 +512,9 @@ test('confirming a multi-day range creates one hold and one booking item', async
   const result = await confirmAiBooking(preview, draft, api, [vehicle], 'continuous-multi-day');
   assert.ok(result.success);
   assert.equal(api.calls.holds.length, 1);
+  assert.equal(api.calls.holds[0].bookingSource, 'AI_QUICK');
   assert.equal(api.calls.creates.length, 1);
+  assert.equal(api.calls.creates[0].bookingSource, 'AI_QUICK');
   assert.equal(api.calls.creates[0].items.length, 1);
 });
 
@@ -454,6 +533,7 @@ test('confirmation holds slots then calls existing bulk create once', async () =
   assert.equal(api.calls.holds.length, 1);
   assert.equal(api.calls.creates.length, 1);
   assert.equal(api.calls.creates[0].items[0].holdId, 'hold-1');
+  assert.equal(api.calls.creates[0].expectedTotal, preview.total);
 });
 
 test('a failed later hold releases every earlier hold', async () => {
@@ -542,6 +622,16 @@ test('availability counts only slots compatible with the requested car type', as
   assert.equal(electric.availability[0].count, 2);
 });
 
+test('availability respects a requested zone instead of counting the whole floor', async () => {
+  const api = gateway({ getAvailableBookingSlots: async () => ok({ slots: [
+    { ...slot('A1'), zoneName: 'Zone B2' },
+    { ...slot('C1'), zoneName: 'Zone C1' },
+  ] }) });
+  const result = await checkAiAvailability({ ...baseDraft, zoneName: 'B2' }, api, Date.parse('2026-10-07T00:00:00Z'));
+  assert.equal(result.availability[0].count, 1);
+  assert.equal(result.availability[0].suggestions[0].slotCode, 'A1');
+});
+
 test('invalid and past time are rejected', async () => {
   await assert.rejects(prepareAiBooking({ ...baseDraft, endTime: '07:00' }, gateway(), [vehicle]), /sau giờ bắt đầu/);
   await assert.rejects(prepareAiBooking(baseDraft, gateway(), [vehicle], Date.UTC(2100, 0, 1)), /đã qua/);
@@ -566,9 +656,14 @@ test('cancel intent selects only paid bookings and does not cancel during lookup
 
 test('modify intent uses owned booking and sends validated new range only on confirm', async () => {
   let changed = null;
+  let quoted = null;
   const booking = { _id: 'booking-1', status: 'PAID', licensePlate: '43A12345', scheduledStart: '2099-01-15T01:00:00Z' };
   const api = gateway({
     getMyBookings: async () => ok([booking]),
+    quoteBookingTimeModification: async (id, payload) => {
+      quoted = { id, payload };
+      return ok({ newPrice: 25000, extraAmount: 5000 });
+    },
     extendBooking: async (id, payload) => { changed = { id, payload }; return ok({}); },
   });
   const found = await findAiActionBookings('MODIFY_BOOKING', { licensePlate: '43A12345' }, api);
@@ -576,9 +671,17 @@ test('modify intent uses owned booking and sends validated new range only on con
   assert.equal(changed, null);
   await assert.rejects(confirmAiExistingAction('MODIFY_BOOKING', found[0], { startDate: '2099-01-15', startTime: '10:00', endDate: '2099-01-15', endTime: '09:00' }, api), /chưa hợp lệ/);
   assert.equal(changed, null);
-  await confirmAiExistingAction('MODIFY_BOOKING', found[0], { startDate: '2099-01-15', startTime: '09:00', endDate: '2099-01-15', endTime: '11:00' }, api);
+  const edit = { startDate: '2099-01-15', startTime: '09:00', endDate: '2099-01-15', endTime: '11:00' };
+  const quote = await prepareAiExistingAction('MODIFY_BOOKING', found[0], api, edit);
+  assert.equal(changed, null);
+  assert.equal(quoted.id, 'booking-1');
+  assert.equal(quoted.payload.bookingSource, 'AI_QUICK');
+  assert.equal(quote.extraAmount, 5000);
+  await confirmAiExistingAction('MODIFY_BOOKING', found[0], edit, api, quote);
   assert.equal(changed.id, 'booking-1');
   assert.equal(changed.payload.newStart, '2099-01-15T02:00:00.000Z');
+  assert.equal(changed.payload.expectedNewPrice, 25000);
+  assert.equal(changed.payload.bookingSource, 'AI_QUICK');
 });
 
 test('view intent reads owned bookings without side effects', async () => {

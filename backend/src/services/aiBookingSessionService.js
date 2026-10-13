@@ -55,7 +55,7 @@ const deriveSessionProgress = ({ bookingDraft = {}, phase = 'IDLE', status } = {
   if (uniquePlates(bookingDraft).length < requested) {
     return { currentStep: 'SELECT_VEHICLE', completionPercent: 50 };
   }
-  if (phase === 'BOOKING' || phase === 'CONFIRMING') {
+  if (['BOOKING', 'CONFIRMING', 'WAITING_PAYMENT'].includes(phase)) {
     return { currentStep: 'PAYMENT', completionPercent: 95 };
   }
   if (phase === 'WAITING_CONFIRMATION') {

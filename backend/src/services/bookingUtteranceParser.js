@@ -30,6 +30,15 @@ const addDays = (date, count) => {
   value.setUTCDate(value.getUTCDate() + count);
   return value.toISOString().slice(0, 10);
 };
+const nextMonthDay = (today, day = 1) => {
+  const value = new Date(`${today}T12:00:00Z`);
+  value.setUTCDate(1);
+  value.setUTCMonth(value.getUTCMonth() + 1);
+  const year = value.getUTCFullYear();
+  const month = value.getUTCMonth() + 1;
+  const result = `${year}-${pad(month)}-${pad(day)}`;
+  return validDate(result) ? result : '';
+};
 const dayOfMonthRange = (startDay, endDay, today) => {
   const reference = new Date(`${today}T12:00:00Z`);
   const make = (year, month, day) => {
@@ -54,6 +63,33 @@ const dayOfMonthRange = (startDay, endDay, today) => {
   }
   return end ? [start, end] : [];
 };
+
+const vietnameseDayWordPattern = '(?:ba muoi(?:\\s+mot)?|hai muoi(?:\\s+(?:mot|hai|ba|bon|nam|sau|bay|tam|chin))?|muoi(?:\\s+(?:mot|hai|ba|bon|nam|sau|bay|tam|chin))?|hai|ba|bon|nam|sau|bay|tam|chin)';
+const vietnameseDayNumber = (value) => {
+  const text = String(value || '').trim();
+  if (/^\d{1,2}$/.test(text)) {
+    const number = Number(text);
+    return number >= 1 && number <= 31 ? number : 0;
+  }
+  const units = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9 };
+  const tokens = text.split(/\s+/).filter(Boolean);
+  let number = 0;
+  if (tokens.length === 1) number = units[tokens[0]] || (tokens[0] === 'muoi' ? 10 : 0);
+  else if (tokens[0] === 'muoi') number = 10 + (units[tokens[1]] || 0);
+  else if (tokens[1] === 'muoi') number = (units[tokens[0]] || 0) * 10 + (units[tokens[2]] || 0);
+  return number >= 1 && number <= 31 ? number : 0;
+};
+
+// Voice transcripts commonly put the date before its vehicle, for example
+// "mười cho xe một, ngày 12 cho xe 2". Reorder those clauses into the same
+// indexed shape used by the deterministic multi-vehicle parser.
+function normalizeIndexedDateAssignments(message) {
+  const assignment = new RegExp(`\\b(?:ngay\\s+)?(\\d{1,2}|${vietnameseDayWordPattern})\\s+(?:cho|cua)\\s+xe\\s*(?:thu\\s*)?(1|2|3|4|5|nhat|mot|hai|ba|tu|bon|nam)\\b`, 'g');
+  return message.replace(assignment, (_, rawDay, vehicle) => {
+    const day = vietnameseDayNumber(rawDay);
+    return day ? `xe ${vehicle} ngay ${day}` : _;
+  });
+}
 
 const plateDigits = {
   khong: '0', linh: '0', le: '0', mot: '1', hai: '2', ba: '3', bon: '4', bong: '4', tu: '4',
@@ -164,8 +200,21 @@ function extractLicensePlates(message) {
 
 function extractVehicleCount(message) {
   const words = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5 };
-  const match = message.match(/\b(\d+|mot|hai|ba|bon|nam)\s*xe\b/);
-  return match ? Number(words[match[1]] || match[1]) : 0;
+  const match = message.match(/\b(\d+|mot|hai|ba|bon|nam)\s*(?:chiec\s+)?xe\b/);
+  if (match) return Number(words[match[1]] || match[1]);
+  if (/\b(?:ca|cho)\s+hai\s+xe\b|\bca\s+doi\s+xe\b/.test(message)) return 2;
+  return 0;
+}
+
+// Slot codes are often supplied as a very short contextual reply ("E6",
+// "cho tôi E6", "I'll take E6"). Keep this deliberately narrower than a
+// license-plate matcher: a slot has one/two letters and at most four digits.
+function extractContextualSlotCode(message, continuing = false) {
+  const prefixed = message.match(/\b(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot|parking\s+(?:spot|space)|doi(?:\s+(?:sang|qua))?|chuyen(?:\s+(?:sang|qua))?|lay|chon|dung|use|take|choose|pick|select|switch\s+to|change\s+to|give\s+me|cho\s+(?:nguoi_dung|minh))\s*(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot)?\s*([a-z]{1,2})\s*([-_.]?)\s*(\d{1,4})\b/);
+  if (prefixed) return `${prefixed[1]}${prefixed[2]}${prefixed[3]}`.toUpperCase();
+  if (!continuing) return '';
+  const bare = message.trim().match(/^([a-z]{1,2})\s*[-_. ]?\s*(\d{1,4})[.!?]?$/);
+  return bare ? `${bare[1]}${bare[2]}`.toUpperCase() : '';
 }
 
 function parsePlateFollowUp(message, previous = {}, language = 'vi') {
@@ -309,13 +358,16 @@ function parseReservationEdit(message, today, previous = {}) {
   const mentionedPlates = extractLicensePlates(message);
   const pendingIndex = Number(previous.pendingReservationEditIndex);
   const hasPendingTarget = Number.isInteger(pendingIndex) && pendingIndex >= 0 && pendingIndex < count;
+  const pendingField = String(previous.pendingReservationEditField || '');
+  const isWaitingForTarget = pendingField === 'target';
   const editCue = /\b(?:doi|sua|thay|chinh)(?:\s+lai)?\b/.test(message);
   const namesExistingVehicle = mentionedPlates.some((plate) => items.some((item) => item.licensePlate === plate));
   const suppliesReplacementSchedule = extractTimes(message).length > 0
     || /\b(?:hom nay|ngay mai|ngay kia|ngay mot|mai|\d{1,2}\/\d{1,2})\b/.test(message);
-  if (!editCue && !hasPendingTarget && !(namesExistingVehicle && suppliesReplacementSchedule)) return null;
+  if (!editCue && !hasPendingTarget && !isWaitingForTarget
+    && !(namesExistingVehicle && suppliesReplacementSchedule)) return null;
 
-  const ordinal = message.match(/\b(?:xe|bien so)\s*(?:thu\s*)?(1|2|3|4|5|nhat|mot|hai|ba|tu|bon|nam)\b/);
+  const ordinal = message.match(/\b(?:xe\s*(?:(?:so|thu)\s*)?|(?:so|thu)\s+|sai\s+so\s+)(1|2|3|4|5|nhat|mot|hai|ba|tu|bon|nam)\b/);
   const ordinalWords = { nhat: 1, mot: 1, hai: 2, ba: 3, tu: 4, bon: 4, nam: 5 };
   let targetIndex = ordinal ? Number(ordinalWords[ordinal[1]] || ordinal[1]) - 1 : -1;
   if (targetIndex < 0 && mentionedPlates.length) {
@@ -325,6 +377,8 @@ function parseReservationEdit(message, today, previous = {}) {
   if (targetIndex < 0 || targetIndex >= count) {
     return {
       changes: { requestedVehicleCount: count, reservationItems: items },
+      pendingReservationEditIndex: -1,
+      pendingReservationEditField: 'target',
       clarification: 'Bạn muốn sửa xe nào? Hãy nói số thứ tự hoặc biển số xe.',
     };
   }
@@ -336,11 +390,15 @@ function parseReservationEdit(message, today, previous = {}) {
   const parsedTimes = times.map(({ hour, minute, period }) => parseHour(hour, minute, period));
   if (parsedTimes.includes(null) || times.length > 2) return null;
 
-  const pendingField = String(previous.pendingReservationEditField || '');
   const wantsTime = /\b(?:gio|thoi gian|tu\s+\d{1,2})\b/.test(message) || pendingField === 'giờ';
   const wantsDate = /\bngay\b/.test(message) || pendingField === 'ngày';
-  const changesDate = wantsDate && Boolean(date);
   const changesPlate = /\b(?:bien so|doi xe|thay xe)\b/.test(message) || pendingField === 'biển số';
+  const slotCode = extractContextualSlotCode(message, true);
+  const wantsSlot = Boolean(slotCode)
+    || /\b(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|vi\s+tri|slot)\b/.test(message)
+    || pendingField === 'ô đỗ';
+  const floorMatch = message.match(/\b(?:tang|floor)\s*([a-z]?\d+)\b/);
+  const wantsFloor = Boolean(floorMatch) || pendingField === 'tầng';
   let changed = false;
   if (times.length === 2 && parsedTimes[1] > parsedTimes[0]) {
     items[targetIndex].startTime = parsedTimes[0];
@@ -359,6 +417,20 @@ function parseReservationEdit(message, today, previous = {}) {
       changed = true;
     }
   }
+  if (floorMatch) {
+    items[targetIndex].floorName = `tầng ${floorMatch[1].toUpperCase()}`;
+    items[targetIndex].zoneName = '';
+    items[targetIndex].slotCode = '';
+    changed = true;
+  }
+  if (slotCode) {
+    items[targetIndex].slotCode = slotCode;
+    if (!floorMatch) {
+      items[targetIndex].floorName = '';
+      items[targetIndex].zoneName = '';
+    }
+    changed = true;
+  }
 
   const baseChanges = {
     requestedVehicleCount: count,
@@ -375,7 +447,11 @@ function parseReservationEdit(message, today, previous = {}) {
   }
 
   const target = items[targetIndex].licensePlate ? `xe ${items[targetIndex].licensePlate}` : `xe ${targetIndex + 1}`;
-  const field = changesPlate ? 'biển số' : wantsDate ? 'ngày' : wantsTime ? 'giờ' : 'thông tin';
+  const field = changesPlate ? 'biển số'
+    : wantsDate ? 'ngày'
+      : wantsTime ? 'giờ'
+        : wantsSlot ? 'ô đỗ'
+          : wantsFloor ? 'tầng' : 'thông tin';
   return {
     changes: baseChanges,
     pendingReservationEditIndex: targetIndex,
@@ -384,7 +460,11 @@ function parseReservationEdit(message, today, previous = {}) {
       ? `Bạn muốn đổi giờ của ${target} thành từ mấy giờ đến mấy giờ?`
       : field === 'biển số'
         ? `Bạn muốn đổi ${target} sang biển số nào?`
-        : `Bạn muốn sửa thông tin nào của ${target}?`,
+        : field === 'ô đỗ'
+          ? `Bạn muốn đổi ${target} sang ô đỗ nào?`
+          : field === 'tầng'
+            ? `Bạn muốn đổi ${target} sang tầng nào?`
+            : `Bạn muốn sửa thông tin nào của ${target}?`,
   };
 }
 
@@ -396,6 +476,8 @@ function parseDateToken(token, today) {
     const current = (new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7;
     return addDays(today, (5 - current + 7) % 7);
   }
+  const bareDay = token.match(/^ngay\s+(\d{1,2})$/);
+  if (bareDay) return dayOfMonthRange(bareDay[1], bareDay[1], today)[0] || '';
   const weekday = token.match(/^(thu\s*(2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)|chu nhat)(?:\s+tuan\s+(sau|nay))?$/);
   if (weekday) {
     const weekdays = { '2': 0, hai: 0, '3': 1, ba: 1, '4': 2, tu: 2, '5': 3, nam: 3, '6': 4, sau: 4, '7': 5, bay: 5 };
@@ -452,7 +534,7 @@ function extractTimes(message) {
     .map((match) => ({ hour: match[1], minute: match[2], period: match[3] || '' }));
 }
 
-const indexedDatePattern = /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay mot|mai|nay|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/;
+const indexedDatePattern = /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay mot|mai|nay|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|ngay\s+\d{1,2}(?!\s*\/))\b/;
 
 function parseIndexedReservationItems(message, today, previous = {}) {
   const numberWords = { nhat: 1, mot: 1, hai: 2, ba: 3, tu: 4, bon: 4, nam: 5 };
@@ -535,6 +617,69 @@ function parseIndexedReservationItems(message, today, previous = {}) {
   return result;
 }
 
+function nextReservationQuestion(items, count) {
+  const missingSchedule = items.findIndex((item) => !item.startDate || !item.startTime || !item.endTime);
+  if (missingSchedule >= 0) {
+    const item = items[missingSchedule];
+    return !item.startDate
+      ? `Xe ${missingSchedule + 1} đỗ ngày nào?`
+      : `Xe ${missingSchedule + 1} đỗ từ mấy giờ đến mấy giờ?`;
+  }
+  return plateClarification(items, count);
+}
+
+// When the previous reply asked for one missing vehicle field, a short answer
+// such as "ngày mười" or "7h đến 8h" belongs to that first incomplete item.
+// This prevents the generic shared draft from forgetting which vehicle was
+// being completed and asking for every date again.
+function parsePendingReservationScheduleAnswer(message, today, previous = {}) {
+  const previousItems = Array.isArray(previous.reservationItems) ? previous.reservationItems : [];
+  const count = Math.max(Number(previous.requestedVehicleCount || 0), previousItems.length);
+  if (count < 2 || count > 5 || !previousItems.length) return null;
+  if (/\bxe\s*(?:thu\s*)?(?:[1-5]|nhat|mot|hai|ba|tu|bon|nam)\b/.test(message)) return null;
+
+  const items = reservationItemsFromPrevious(previous, count);
+  const missingDateIndex = items.findIndex((item) => !item.startDate);
+  const dateToken = message.match(indexedDatePattern)?.[0] || '';
+  const dateOnlyRemainder = dateToken
+    ? message.replace(dateToken, '').replace(/\b(?:vao|la|do|nhe|nha|a|oi)\b/g, '').replace(/[^a-z0-9]+/g, '')
+    : 'not-a-date-answer';
+  if (missingDateIndex >= 0 && dateToken && !dateOnlyRemainder) {
+    const date = parseDateToken(dateToken, today);
+    if (!date) return null;
+    items[missingDateIndex].startDate = date;
+    items[missingDateIndex].endDate = date;
+    return {
+      changes: {
+        requestedVehicleCount: count,
+        reservationItems: items,
+        licensePlates: items.map((item) => item.licensePlate).filter(Boolean),
+        licensePlate: items.find((item) => item.licensePlate)?.licensePlate || '',
+      },
+      clarification: nextReservationQuestion(items, count),
+    };
+  }
+
+  const missingTimeIndex = items.findIndex((item) => !item.startTime || !item.endTime);
+  const times = extractTimes(message);
+  if (missingTimeIndex >= 0 && times.length === 2) {
+    const parsedTimes = times.map(({ hour, minute, period }) => parseHour(hour, minute, period));
+    if (parsedTimes.includes(null) || parsedTimes[1] <= parsedTimes[0]) return null;
+    items[missingTimeIndex].startTime = parsedTimes[0];
+    items[missingTimeIndex].endTime = parsedTimes[1];
+    return {
+      changes: {
+        requestedVehicleCount: count,
+        reservationItems: items,
+        licensePlates: items.map((item) => item.licensePlate).filter(Boolean),
+        licensePlate: items.find((item) => item.licensePlate)?.licensePlate || '',
+      },
+      clarification: nextReservationQuestion(items, count),
+    };
+  }
+  return null;
+}
+
 const englishNumbers = {
   zero: 0, one: 1, an: 1, a: 1, two: 2, couple: 2, three: 3, four: 4, five: 5,
   six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
@@ -569,6 +714,9 @@ function parseEnglishDate(message, today) {
   if (/\bday after tomorrow\b/.test(message)) return addDays(today, 2);
   if (/\btomorrow\b/.test(message)) return addDays(today, 1);
   if (/\btoday\b/.test(message)) return today;
+  if (/\btonight\b/.test(message)) return today;
+  if (/\bnext\s+week\b/.test(message)) return upcomingWeekday(today, 1, true);
+  if (/\bnext\s+month\b/.test(message)) return nextMonthDay(today);
   const weekend = message.match(/\b(next\s+)?weekend\b/);
   if (weekend) {
     let date = upcomingWeekday(today, 6, true);
@@ -581,7 +729,10 @@ function parseEnglishDate(message, today) {
   const monthFirst = message.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}(?:st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty first|twenty second|twenty third|twenty fourth|twenty fifth|twenty sixth|twenty seventh|twenty eighth|twenty ninth|thirtieth|thirty first)(?:,?\s+(\d{4}))?\b/);
   const dayFirst = message.match(/\b(?:the\s+)?(\d{1,2}(?:st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty first|twenty second|twenty third|twenty fourth|twenty fifth|twenty sixth|twenty seventh|twenty eighth|twenty ninth|thirtieth|thirty first)\s+of\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?\b/);
   const match = monthFirst || dayFirst;
-  if (!match) return '';
+  if (!match) {
+    const standaloneOrdinal = message.match(/\bon\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/);
+    return standaloneOrdinal ? dayOfMonthRange(standaloneOrdinal[1], standaloneOrdinal[1], today)[0] || '' : '';
+  }
   const monthText = monthFirst ? match[1] : match[2];
   const rawDayText = monthFirst ? match[2] : match[1];
   const dayText = /^\d/.test(rawDayText) ? rawDayText.replace(/(?:st|nd|rd|th)$/i, '') : rawDayText;
@@ -619,7 +770,10 @@ function extractEnglishTimeData(message, previous = {}) {
   const clock = englishClockPattern;
   const patterns = [
     new RegExp(`\\b(?:from|between)\\s+(${clock})\\s+(?:to|until|and|through|-)\\s+(${clock})\\b`),
-    new RegExp(`\\b(${clock})\\s+(?:to|until|through|-)\\s+(${clock})\\b`),
+    // Speech recognition commonly drops "from/to" and returns a natural pair
+    // such as "5 AM and 9 AM". In a booking turn, two complete clock values
+    // joined by "and" still unambiguously mean arrival and departure.
+    new RegExp(`\\b(${clock})\\s+(?:to|until|till|and(?:\\s+then)?|through|-)\\s+(${clock})\\b`),
     new RegExp(`\\b(?:arrive|arriving|start|starting)\\s+(?:at\\s+)?(${clock}).*?\\b(?:leave|leaving|end|ending)\\s+(?:at\\s+)?(${clock})\\b`),
   ];
   for (const pattern of patterns) {
@@ -655,9 +809,67 @@ function addDuration(startDate, startTime, durationMinutes) {
   return { endDate: local.slice(0, 10), endTime: local.slice(11, 16) };
 }
 
+// Defensive normalization for text produced by English browser speech
+// recognition. Keep every rule tied to parking vocabulary; never infer dates,
+// clock values or license-plate characters from an uncertain transcript.
+function normalizeEnglishRecognitionErrors(value) {
+  return String(value || '')
+    .replace(/\bi\s+(?:nick|neat|knead)\s+(?=book)/gi, 'I need to ')
+    .replace(/\bi\s+(?:nick|neat|knead)\b/gi, 'I need')
+    .replace(/\bi\s+(?:one|won)\s+to\s+(?=book|reserve|park)/gi, 'I want to ')
+    .replace(/\bi\s+want\s+a\s+(?=book\b)/gi, 'I want to ')
+    .replace(/\b(?:book\s*wonder|book\s*wander|bookwonder|bookwander)\b/gi, 'book a parking space')
+    .replace(/\bparking\s+(?:sport|sports|spock|stop)\b/gi, 'parking spot')
+    .replace(/\bparking\s+(?:spice|pace)\b/gi, 'parking space')
+    .replace(/\bbook\s+kings?\b/gi, 'bookings')
+    .replace(/\blicen[cs]e\s+(?:place|played|plain)\b/gi, 'license plate')
+    .replace(/\bnumber\s+plate\b/gi, 'license plate')
+    .replace(/\bwallet\s+balanced\b/gi, 'wallet balance')
+    .replace(/\bwhere\s+is\s+my\s+card\b/gi, 'where is my car')
+    .replace(/\bhow\s+(?:match|mash)\b/gi, 'how much')
+    .replace(/\bcouncil\s+my\s+booking\b/gi, 'cancel my booking')
+    .replace(/\bfor\s+(?:too|to)\s+hours?\b/gi, 'for two hours')
+    .replace(/\bto\s+morrow\b/gi, 'tomorrow')
+    .replace(/\b(?:cancel|change|modify|show|view|check)\s+my\s+book\s+in\b/gi,
+      (match) => match.replace(/book\s+in/i, 'booking'))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime = '', responseLanguage = 'en') {
   if (!validDate(today)) return null;
-  const message = simplify(String(prompt || '')).replace(/\ba\.m\.?\b/g, 'am').replace(/\bp\.m\.?\b/g, 'pm');
+  const eveningClock = (clock) => {
+    const [hourText] = String(clock).split(':');
+    const numeric = englishNumber(hourText);
+    if (!Number.isInteger(numeric) || numeric > 23) return clock;
+    if (numeric === 12) return `${clock} am`;
+    if (numeric > 12 || numeric === 0) return clock;
+    return `${clock} pm`;
+  };
+  let message = simplify(normalizeEnglishRecognitionErrors(prompt))
+    .replace(/\ba\.m\.?\b/g, 'am').replace(/\bp\.m\.?\b/g, 'pm')
+    .replace(/\bnoon\b/g, '12 pm').replace(/\bmidnight\b/g, '12 am')
+    .replace(/\bhalf\s+past\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})\b/g,
+      (_, hour) => `${englishNumber(hour)}:30`)
+    .replace(/\bquarter\s+past\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})\b/g,
+      (_, hour) => `${englishNumber(hour)}:15`)
+    .replace(/\bquarter\s+to\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})\b/g,
+      (_, hour) => {
+        const numeric = englishNumber(hour);
+        return numeric ? `${numeric === 1 ? 12 : numeric - 1}:45` : hour;
+      })
+    .replace(/\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+tomorrow\s+morning\b/g, 'tomorrow at $1 am');
+  const naturalClock = '(?:\\d{1,2}(?::\\d{2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)';
+  const namedDate = '(?:(?:next|this|following)\\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|today|tomorrow';
+  message = message
+    .replace(new RegExp(`\\b(${namedDate})\\s+(?:night|evening)\\s+(?:at\\s+)?(${naturalClock})\\b`, 'g'),
+      (_, date, clock) => `${date} night at ${eveningClock(clock)}`)
+    .replace(new RegExp(`\\btonight\\s+(?:at\\s+)?(${naturalClock})\\b`, 'g'),
+      (_, clock) => `tonight at ${eveningClock(clock)}`)
+    .replace(new RegExp(`\\b(${naturalClock})\\s+tonight\\b`, 'g'),
+      (_, clock) => `tonight at ${eveningClock(clock)}`)
+    .replace(new RegExp(`\\b(${naturalClock})\\s+(${namedDate})\\s+(?:night|evening)\\b`, 'g'),
+      (_, clock, date) => `${date} night at ${eveningClock(clock)}`);
   const continuing = previous.__intent === 'CREATE_BOOKING';
   const createCue = /\b(?:book|reserve|reservation|parking|park|spot|space|license plate|registration|somewhere to park|place to leave|save me)\b/.test(message)
     || /\b(?:want|need|like)\b.*\b(?:dat|xe|cho)\b/.test(message);
@@ -665,6 +877,7 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
   if (!continuing && !createCue) return null;
 
   const tr = (english, vietnamese) => responseLanguage === 'en' ? english : vietnamese;
+  const contextualSlotCode = extractContextualSlotCode(message, continuing);
   const barePlateFollowUp = continuing && /\d/.test(message)
     && /^[a-z0-9\s,.-]{1,50}$/.test(message)
     && !/\b(?:am|pm|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour|hours|from|until|to|at)\b/.test(message);
@@ -692,7 +905,26 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
       clarification: tr('What is the correct license plate?', 'Biển số đúng là gì?') };
   }
 
-  const startDate = parseEnglishDate(message, today);
+  if (/\b(?:in|after)\s+(?:a\s+)?few\s+days\b|\bsometime\s+(?:today|tomorrow|next\s+week)\b/.test(message)) {
+    return { changes: {}, clearDates: true, clarification: tr(
+      'Which exact date would you like?',
+      'Bạn muốn chính xác ngày nào?',
+    ) };
+  }
+  const relativeDays = message.match(/\bin\s+(two|three|four|five|\d+)\s+days?\b/);
+  const englishRange = message.match(/\b(?:from\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\s+(?:to|through|until)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/);
+  const weekdayRange = message.match(/\b(?:from\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(?:to|through|until)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+  let startDate = relativeDays ? addDays(today, englishNumber(relativeDays[1])) : parseEnglishDate(message, today);
+  const midnightEndsNamedNight = /\b(?:tonight|night)\b.*\bat\s+12(?::\d{2})?\s+am\b/.test(message);
+  if (startDate && midnightEndsNamedNight) startDate = addDays(startDate, 1);
+  let endDate = startDate;
+  if (englishRange) [startDate, endDate] = dayOfMonthRange(englishRange[1], englishRange[2], today);
+  if (weekdayRange) {
+    startDate = upcomingWeekday(today, englishWeekdays[weekdayRange[1]], false);
+    endDate = upcomingWeekday(startDate, englishWeekdays[weekdayRange[2]], true);
+  } else if (/\b(?:the\s+)?whole\s+weekend\b|\b(?:this|next)\s+weekend\b/.test(message) && startDate) {
+    endDate = addDays(startDate, 1);
+  }
   const hasAmbiguousOrdinal = /\b(?:on\s+)?(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d{1,2}(?:st|nd|rd|th))\b/.test(message)
     && !Object.keys(englishMonths).some((month) => message.includes(month));
   if (!startDate && hasAmbiguousOrdinal) {
@@ -700,7 +932,7 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
   }
 
   const timeData = extractEnglishTimeData(message, previous);
-  if (timeData.clarification) return { changes: { startDate, endDate: startDate }, clarification: tr(
+  if (timeData.clarification) return { changes: { startDate, endDate: startDate }, clearTimes: true, clarification: tr(
     timeData.clarification, 'Bạn muốn chính xác mấy giờ?',
   ) };
   let { startTime = '', endTime = '' } = timeData;
@@ -712,9 +944,23 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
       else startTime = replacement;
     }
   }
-  const duration = message.match(/\b(?:just\s+)?for\s+(?:about\s+|around\s+|approximately\s+|only\s+)?(a\s+couple(?:\s+of)?|a|an|one|two|three|four|five|couple(?:\s+of)?|\d+)\s+hours?\b/);
-  const durationMinutes = duration ? englishNumber(duration[1].replace(/\s+of$/, '')) * 60 : 0;
+  const hourDuration = message.match(/\b(?:just\s+)?for\s+(?:about\s+|around\s+|approximately\s+|only\s+)?(a\s+couple(?:\s+of)?|a|an|one|two|three|four|five|couple(?:\s+of)?|\d+)\s+hours?\b/)
+    || message.match(/\band\s+(one|two|three|four|five|\d+)\s+hours?\b/);
+  const minuteDuration = message.match(/\b(?:for\s+)?(\d+)\s+minutes?\b/);
+  const dayDuration = message.match(/\bfor\s+(one|two|three|four|five|\d+)\s+days?\b/)
+    || (relativeDays ? null : message.match(/\b(one|two|three|four|five|\d+)\s+days?\b/));
+  const durationMinutes = /\b(?:for\s+)?(?:a|one)\s+day\s+and\s+a\s+half\b/.test(message) ? 36 * 60
+    : /\b(?:for\s+)?half\s+an?\s+hour\b/.test(message) ? 30
+    : /\b(?:for\s+)?(?:an?|one)\s+hour\s+and\s+a\s+half\b/.test(message) ? 90
+      : (dayDuration ? englishNumber(dayDuration[1]) * 1440 : 0)
+        + (hourDuration ? englishNumber(hourDuration[1].replace(/\s+of$/, '')) * 60 : 0)
+        + (minuteDuration ? Number(minuteDuration[1]) : 0);
   const effectiveStartDate = startDate || previous.startDate || '';
+  const effectiveEndDate = endDate || previous.endDate || effectiveStartDate;
+  if (startTime && endTime && endTime <= startTime && effectiveStartDate && effectiveEndDate === effectiveStartDate
+    && (/\b(?:overnight|through the night)\b/.test(message) || /\bpm\b.*\bam\b/.test(message))) {
+    endDate = addDays(effectiveEndDate, 1);
+  }
   const effectiveStartTime = startTime || previous.startTime || '';
   if (durationMinutes && effectiveStartDate && effectiveStartTime && !endTime) {
     const calculated = addDuration(effectiveStartDate, effectiveStartTime, durationMinutes);
@@ -723,7 +969,12 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
 
   const countMatch = message.match(/\b(one|two|three|four|five|\d+)\s+(?:cars?|vehicles?|parking spaces?|spots?)\b/)
     || message.match(/\b(?:for|bringing|have)\s+(one|two|three|four|five|\d+)\s+(?:cars?|vehicles?)\b/);
-  const requestedVehicleCount = countMatch ? englishNumber(countMatch[1]) : Number(previous.requestedVehicleCount || 0);
+  const priorVehicleCount = Number(previous.requestedVehicleCount || (previous.licensePlate ? 1 : 0));
+  const requestedVehicleCount = countMatch ? englishNumber(countMatch[1])
+    : /\b(?:both|the\s+two)\s+(?:cars?|vehicles?)\b/.test(message) ? 2
+      : /\b(?:add|bring|include)\s+another\s+(?:car|vehicle)\b/.test(message)
+        ? Math.max(2, priorVehicleCount + 1)
+        : priorVehicleCount;
   if (requestedVehicleCount > 5) return null;
   const incomingPlates = extractLicensePlates(message);
   let licensePlates = [...new Set([...(continuing && Array.isArray(previous.licensePlates) ? previous.licensePlates : []), ...incomingPlates])];
@@ -743,9 +994,9 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
   if (!startDate && !startTime && !endTime && !durationMinutes && !licensePlate && !requestedVehicleCount
     && !createCue && !correctionCue) return null;
   const changes = {
-    startDate, endDate: startDate, startTime, endTime, licensePlate, licensePlates,
+    startDate, endDate, startTime, endTime, licensePlate, licensePlates,
     requestedVehicleCount, vehicleType: /\b(?:electric car|electric vehicle|ev)\b/.test(message) ? 'electric_car' : '',
-    floorName: '', zoneName: '', slotCode: '',
+    floorName: '', zoneName: '', slotCode: contextualSlotCode,
   };
   if (durationMinutes && effectiveStartDate && effectiveStartTime) Object.assign(changes, addDuration(effectiveStartDate, effectiveStartTime, durationMinutes));
   let clarification = '';
@@ -769,15 +1020,58 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
 function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   if (!validDate(today)) return null;
   const words = { 'muoi mot': 11, 'muoi hai': 12, mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9, muoi: 10 };
-  const message = simplify(String(prompt || '').replace(/\btôi\b/giu, 'nguoi_dung').replace(/\btới\b/giu, 'đến').replace(/\bmốt\b/giu, 'ngày mốt'))
+  const markedPrompt = String(prompt || '')
+    .replace(/tháng\s+sáu/giu, 'thang6')
+    .replace(/tháng\s+sau/giu, 'thangtieptheo')
+    .replace(/tuần\s+tới/giu, 'tuan sau');
+  let message = simplify(markedPrompt.replace(/\btôi\b/giu, 'nguoi_dung').replace(/\btới\b/giu, 'đến').replace(/\b(?:ngày\s+)?mốt\b/giu, 'ngaykia'))
+    .replace(/\bngaykia\b/g, 'ngay kia')
+    .replace(/\bngay(?=\d)/g, 'ngay ')
     .replace(/\btoi\s+(?=muon|xin|can|se|dat|co)\b/g, 'nguoi_dung ')
     .replace(/(\d{1,2}\s*(?:h|gio|:\d{2})?)\s+toi\s+(?=\d{1,2})/g, '$1 den ')
     .replace(/\b(muoi mot|muoi hai|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\s+(gio|tieng)\b/g,
       (match, word, unit) => `${words[word]} ${unit}`)
     .replace(/\b(\d{1,2})\s+ruoi\s+(sang|chieu|toi|trua)\b/g, '$1 gio ruoi $2')
+    .replace(/\bnua\s+(?:gio|tieng)\b/g, 'trong 30 phut')
+    .replace(/\bmot\s+tuan\b/g, 'trong 7 ngay')
+    .replace(/\bnua\s+dem\b/g, '0 gio')
+    .replace(/\b12\s+trua\b/g, '12 gio trua')
+    .replace(/\b(\d{1,2})\s+thang6(?:\s+nam\s+(\d{4}))?\b/g,
+      (_, day, year) => `${day}/6${year ? `/${year}` : ''}`)
     .replace(/\b(\d{1,2})\s+thang\s+(muoi mot|muoi hai|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi|\d{1,2})(?:\s+nam\s+(\d{4}))?\b/g,
       (_, day, month, year) => `${day}/${words[month] || month}${year ? `/${year}` : ''}`);
+  message = message.replace(new RegExp(`\\bngay\\s+(${vietnameseDayWordPattern})\\b`, 'g'), (match, rawDay) => {
+    const day = vietnameseDayNumber(rawDay);
+    return day ? `ngay ${day}` : match;
+  });
+  message = normalizeIndexedDateAssignments(message);
+  const nextMonth = nextMonthDay(today);
+  const nextMonthParts = nextMonth ? nextMonth.split('-') : [];
+  const weekendRangeRequested = /\b(?:ca\s+|suot\s+)?cuoi\s+tuan\b/.test(message);
+  message = message
+    .replace(/\btu\s+ngay\s+(\d{1,2})\s+(?:den|toi)\s+ngay\s+(\d{1,2})\s+thangtieptheo\b/g,
+      (_, startDay, endDay) => `tu ngay ${startDay}/${nextMonthParts[1]}/${nextMonthParts[0]} den ngay ${endDay}/${nextMonthParts[1]}/${nextMonthParts[0]}`)
+    .replace(/\bngay\s+(\d{1,2})\s+thangtieptheo\b/g,
+      (_, day) => `${day}/${nextMonthParts[1]}/${nextMonthParts[0]}`)
+    .replace(/\b(\d{1,3})\s+ngay\s+nua\b/g, (_, count) => addDays(today, Number(count)));
+  message = message.replace(
+    /\b(thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)|chu\s+nhat)\s+tuan\s+toi\b/g,
+    '$1 tuan sau',
+  );
+  if (!/\b(?:thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)|chu\s+nhat|cuoi)\s+tuan\s+(?:sau|toi)\b/.test(message)) {
+    message = message.replace(/\btuan\s+(?:sau|toi)\b/g, upcomingWeekday(today, 1, true));
+  }
+  message = message
+    .replace(/\bcuoi\s+tuan\s+sau\b/g, addDays(upcomingWeekday(today, 6, true), 7))
+    .replace(/\bthangtieptheo\b/g, nextMonth);
   const continuing = previous.__intent === 'CREATE_BOOKING';
+  const contextualSlotCode = extractContextualSlotCode(message, continuing);
+  if (/\b(?:vai\s+ngay\s+nua|luc\s+nao\s+do|khi\s+nao\s+do)\b/.test(message)) {
+    return { changes: {}, clearDates: true, clarification: 'Bạn muốn chính xác ngày nào?' };
+  }
+  if (/\b(?:khoang|tam|xap\s+xi)\s+(?:luc\s+)?\d{1,2}(?:\s*(?:h|gio)|:\d{2})/.test(message)) {
+    return { changes: {}, clearTimes: true, clarification: 'Bạn muốn chính xác mấy giờ?' };
+  }
   const asksForOtherVehicle = /\b(?:(?:dat|cho)(?:\s+cho)?\s+)?(?:mot\s+)?xe\s+khac\b/.test(message);
   const periodAnswer = message.replace(/[.!?]+$/, '').trim()
     .match(/^(?:(?:nguoi_dung\s+)?(?:muon|can)?\s*(?:dat(?: cho)?\s+)?(?:vao\s+)?|(?:doi|chuyen)\s+sang\s+)?(?:buoi\s+)?(sang|chieu|toi|trua)(?:\s+(?:nhe|nha))?$/);
@@ -816,7 +1110,13 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   if (sequentialTimes) return sequentialTimes;
   const indexedReservations = parseIndexedReservationItems(message, today, previous);
   if (indexedReservations) return indexedReservations;
-  const previousPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+  const pendingReservationSchedule = parsePendingReservationScheduleAnswer(message, today, previous);
+  if (pendingReservationSchedule) return pendingReservationSchedule;
+  const previousPlates = [...new Set([
+    ...(Array.isArray(previous.licensePlates) ? previous.licensePlates : []),
+    ...(Array.isArray(previous.reservationItems)
+      ? previous.reservationItems.map((item) => item?.licensePlate) : []),
+  ].filter(Boolean))];
   const waitingForPlate = continuing && (previous.blockedVipPlate || previous.pendingLicensePlate
     || (!previous.licensePlate && !previousPlates.length)
     || Number(previous.requestedVehicleCount || 0) > previousPlates.length);
@@ -852,7 +1152,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const unspecifiedMultipleVehicles = /\b(?:nhieu|vai)\s+xe\b/.test(message) && !requestedVehicleCount;
   if (requestedVehicleCount > 5 || /\b\d+\s*(?:cho|o do)\b/.test(message)) return null;
 
-  const datePattern = /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay mot|cuoi tuan|thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)(?:\s+tuan\s+(?:sau|nay))?|chu nhat(?:\s+tuan\s+(?:sau|nay))?|mai|nay|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/g;
+  const datePattern = /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay mot|cuoi tuan|thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)(?:\s+tuan\s+(?:sau|nay))?|chu nhat(?:\s+tuan\s+(?:sau|nay))?|mai|nay|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|ngay\s+\d{1,2}(?!\s*\/))\b/g;
   const sharedMonthRange = message.match(/\btu\s+(?:ngay\s+)?(\d{1,2})\s+(?:den|toi)\s+(?:ngay\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
   const bareDayRange = !sharedMonthRange
     ? message.match(/\b(?:tu\s+)?ngay\s+(\d{1,2})\s+(?:den|toi)\s+ngay\s+(\d{1,2})\b/) : null;
@@ -877,6 +1177,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   }
   let startDate = dates[0] || '';
   let endDate = dates[1] || (dateTokens[0] === 'cuoi tuan' ? addDays(startDate, 1) : startDate);
+  if (weekendRangeRequested && startDate && !dates[1]) endDate = addDays(startDate, 1);
   if (startDate && endDate < startDate) return null;
   const withoutDates = message
     .replace(sharedMonthRange?.[0] || /$^/, '')
@@ -904,12 +1205,15 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     relativeStartTime = `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`;
   }
   const timeSource = relativeDelayMatch ? withoutDates.replace(relativeDelayMatch[0], '') : withoutDates;
-  const durationMatch = timeSource.match(/\b(?:trong|suot|keo dai)\s*(\d+)\s*(ngay|gio|tieng|phut)(?:\s*(ruoi))?\b/)
-    || timeSource.match(/\b(\d+)\s*(ngay|gio|tieng|phut)(?:\s*(ruoi))?\s+(?:tu(?:\s+luc)?|bat dau(?:\s+tu|\s+luc)?)\b/)
+  const durationMatch = timeSource.match(/\b(?:trong|suot|keo dai)\s*(\d+)\s*(ngay|tuan|gio|tieng|phut)(?:\s*(ruoi))?\b/)
+    || timeSource.match(/\b(\d+)\s*(ngay|tuan|gio|tieng|phut)(?:\s*(ruoi))?\s+(?:tu(?:\s+luc)?|bat dau(?:\s+tu|\s+luc)?)\b/)
+    || timeSource.match(/\b(?:dat|giu(?:\s+cho)?|do(?:\s+xe)?|de\s+xe)\s+(?:lien\s+tuc\s+)?(\d+)\s*(ngay|tuan|tieng)(?:\s*(ruoi))?\b/)
     || timeSource.match(/\b(\d+)\s*(tieng)(?:\s*(ruoi))?\b/);
+  const durationUnitMinutes = durationMatch
+    ? (durationMatch[2] === 'phut' ? 1 : durationMatch[2] === 'tuan' ? 7 * 24 * 60 : durationMatch[2] === 'ngay' ? 24 * 60 : 60)
+    : 0;
   const durationMinutes = durationMatch
-    ? Number(durationMatch[1]) * (durationMatch[2] === 'phut' ? 1 : durationMatch[2] === 'ngay' ? 24 * 60 : 60)
-      + (durationMatch[3] ? 30 : 0)
+    ? Number(durationMatch[1]) * durationUnitMinutes + (durationMatch[3] ? durationUnitMinutes / 2 : 0)
     : 0;
   const times = extractTimes(durationMatch ? timeSource.replace(durationMatch[0], '') : timeSource);
   if (times.length > 2) return null;
@@ -935,11 +1239,11 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const floorName = floorMatch ? `tầng ${floorMatch[1].toUpperCase()}` : '';
   const zoneMatch = message.match(supportedLocationCodePattern);
   const zoneName = zoneMatch?.[1].toUpperCase() || '';
-  const slotMatch = message.match(/\b(?:o do|o|slot)\s*(?:so|ma)?\s*([a-z][-_.]?\d+(?:[-_.]\d+)?)\b/);
-  const slotCode = slotMatch?.[1].toUpperCase() || '';
+  const slotMatch = message.match(/\b(?:o do|o|bai(?: do)?|cho(?: do)?|vi tri|slot|parking (?:spot|space))\s*(?:so|ma)?\s*([a-z][-_.]?\d+(?:[-_.]\d+)?)\b/);
+  const slotCode = contextualSlotCode || slotMatch?.[1].toUpperCase() || '';
   const mentionedPlate = /\b(bien so|bien|xe\s+[0-9]{2}[a-z0-9.-]+)\b/.test(message);
   const mentionedFloor = /\b(tang|floor)\b/.test(message);
-  const mentionedSlot = /\b(o do|slot)\b/.test(message);
+  const mentionedSlot = /\b(o do|bai(?: do)?|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message);
 
   if (!startDate && !times.length && !durationMatch && !licensePlate && !requestedVehicleCount
     && !vehicleType && !floorName && !zoneName && !slotCode && !createCue && !mentionedPlate) return null;
@@ -1001,7 +1305,14 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     clearTimes = true;
   }
   if (!clarification && mentionedPlate && !licensePlate) clarification = 'Biển số chưa hợp lệ. Hãy đọc lại biển số đầy đủ của ô tô, gồm 2 số tỉnh, 1 đến 2 chữ cái và 4 đến 5 số cuối, ví dụ 43A12345.';
-  if (!clarification && requestedVehicleCount > 1 && (!effectiveStartTime || !effectiveEndTime)) {
+  const existingReservationItems = Array.isArray(previous.reservationItems)
+    ? previous.reservationItems.slice(0, requestedVehicleCount) : [];
+  const hasCompletePerVehicleSchedules = requestedVehicleCount > 1
+    && existingReservationItems.length === requestedVehicleCount
+    && existingReservationItems.every((item) => item?.startDate && item?.endDate
+      && item?.startTime && item?.endTime);
+  if (!clarification && requestedVehicleCount > 1 && !hasCompletePerVehicleSchedules
+    && (!effectiveStartTime || !effectiveEndTime)) {
     clarification = `Mình sẽ đặt ${requestedVehicleCount} chỗ. Bạn muốn đỗ từ mấy giờ đến mấy giờ?`;
   }
   if (!clarification && requestedVehicleCount > licensePlates.length) {

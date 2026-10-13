@@ -1,5 +1,61 @@
 const speechLocale = (language) => (language === 'en' || language === 'en-US' ? 'en-US' : 'vi-VN');
 
+const englishParkingTerms = /\b(?:book|booking|reserve|reservation|park|parking|spot|space|slot|vehicle|car|license|plate|availability|available|wallet|balance|fee|price|location|where|cancel|change|modify|confirm|tomorrow|today|morning|afternoon|evening|night|floor|entry|exit|arrive|leave)\b/gi;
+
+// Browser speech recognition often turns short booking phrases into nearby
+// sounding words. These corrections are deliberately context-bound so dates,
+// times, plate numbers and unrelated free text are never guessed.
+export function normalizeEnglishVoiceTranscript(transcript) {
+  let text = String(transcript || '').trim();
+  if (!text) return '';
+  text = text
+    .replace(/\bi\s+(?:nick|neat|knead)\s+(?=book)/gi, 'I need to ')
+    .replace(/\bi\s+(?:nick|neat|knead)\b/gi, 'I need')
+    .replace(/\bi\s+(?:one|won)\s+to\s+(?=book|reserve|park)/gi, 'I want to ')
+    .replace(/\bi\s+want\s+a\s+(?=book\b)/gi, 'I want to ')
+    .replace(/\b(?:book\s*wonder|book\s*wander|bookwonder|bookwander)\b/gi, 'book a parking space')
+    .replace(/\bparking\s+(?:sport|sports|spock|stop)\b/gi, 'parking spot')
+    .replace(/\bparking\s+(?:spice|pace)\b/gi, 'parking space')
+    .replace(/\bbook\s+kings?\b/gi, 'bookings')
+    .replace(/\blicen[cs]e\s+(?:place|played|plain)\b/gi, 'license plate')
+    .replace(/\bnumber\s+plate\b/gi, 'license plate')
+    .replace(/\bwallet\s+balanced\b/gi, 'wallet balance')
+    .replace(/\bwhere\s+is\s+my\s+card\b/gi, 'where is my car')
+    .replace(/\bhow\s+(?:match|mash)\b/gi, 'how much')
+    .replace(/\bcouncil\s+my\s+booking\b/gi, 'cancel my booking')
+    .replace(/\b(?:my\s+)?(?:cooking|looking)\b/gi, (value) => (/^my\s/i.test(value) ? 'my booking' : 'booking'))
+    .replace(/\bto\s+morrow\b/gi, 'tomorrow')
+    .replace(/\bfor\s+(?:too|to)\s+hours?\b/gi, 'for two hours')
+    .replace(/\b(?:cancel|change|modify|show|view|check)\s+my\s+book\s+in\b/gi,
+      (value) => value.replace(/book\s+in/i, 'booking'))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text;
+}
+
+const englishVoiceScore = (value) => {
+  const normalized = normalizeEnglishVoiceTranscript(value);
+  const terms = normalized.match(englishParkingTerms)?.length || 0;
+  const intentPhrase = /\b(?:want|need|like|please|can you|could you)\b.*\b(?:book|reserve|park|check|show|cancel|change|modify)\b/i.test(normalized)
+    || /\b(?:where is|how much|how long|is there|are there|do i have)\b/i.test(normalized);
+  const structured = /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(normalized);
+  const suspicious = /\b(?:wonder|wander|nick|knead|cooking|looking)\b/i.test(normalized);
+  return terms * 12 + (intentPhrase ? 30 : 0) + (structured ? 12 : 0) - (suspicious ? 20 : 0);
+};
+
+export function selectEnglishVoiceTranscript(alternatives = []) {
+  const candidates = alternatives.map((alternative, index) => ({
+    transcript: normalizeEnglishVoiceTranscript(alternative?.transcript ?? alternative),
+    confidence: Number(alternative?.confidence || 0),
+    index,
+  })).filter((candidate) => candidate.transcript);
+  candidates.sort((left, right) => (
+    (englishVoiceScore(right.transcript) + right.confidence * 5)
+    - (englishVoiceScore(left.transcript) + left.confidence * 5)
+  ) || left.index - right.index);
+  return candidates[0]?.transcript || '';
+}
+
 export function resolveEnglishVoicePlateTranscript(transcript, vehicles = [], existingPlates = []) {
   const original = String(transcript || '').trim();
   const heardDigits = original.replace(/\D/g, '');
@@ -32,14 +88,15 @@ export function createAiBookingRecognition(browser, {
   recognition.lang = speechLocale(language);
   recognition.continuous = continuous;
   recognition.interimResults = false;
-  recognition.maxAlternatives = expectLicensePlate && language === 'en' ? 5 : 1;
+  recognition.maxAlternatives = language === 'en' ? 5 : 1;
   recognition.onresult = (event) => {
     for (let index = event.resultIndex || 0; index < (event.results?.length || 0); index += 1) {
       const result = event.results[index];
       if (result.isFinal === false) continue;
-      const alternatives = Array.from(result || [])
-        .map((alternative) => String(alternative?.transcript || '').trim())
-        .filter(Boolean);
+      const rawAlternatives = Array.from(result || []).filter((alternative) => (
+        String(alternative?.transcript || '').trim()
+      ));
+      const alternatives = rawAlternatives.map((alternative) => String(alternative.transcript).trim());
       const transcript = expectLicensePlate && language === 'en'
         ? alternatives.sort((left, right) => {
           const score = (value) => {
@@ -51,7 +108,7 @@ export function createAiBookingRecognition(browser, {
           };
           return score(right) - score(left);
         })[0]
-        : alternatives[0];
+        : language === 'en' ? selectEnglishVoiceTranscript(rawAlternatives) : alternatives[0];
       if (transcript) { onTranscript(transcript); break; }
     }
   };

@@ -86,3 +86,23 @@ test('Vietnamese mode never emits an English server response', () => {
     assert.doesNotMatch(localized, /\bI(?:'\w+)?\b/);
   }
 });
+
+test('English mode explains an unavailable requested slot and preserves its suggested alternative', () => {
+  const translated = localizeAiBookingMessage(
+    'Không có chỗ phù hợp cho toàn bộ khoảng 08/10/2026 08:00 đến 08/10/2026 09:00. Xe 43B20404 không thể dùng ô A6 vì ô không còn trống hoặc không phù hợp với loại xe. Gợi ý: Floor 2 · E10.',
+    'en',
+  );
+  assert.match(translated, /Vehicle 43B20404 cannot use slot A6/);
+  assert.match(translated, /Suggested alternative: Floor 2 · E10/);
+  assert.doesNotMatch(translated, /[ăâđêôơưáàảãạ]/iu);
+});
+
+test('English mode explains an ambiguous slot code shared by multiple floors', () => {
+  const result = localizeAiBookingMessage(
+    'Ô A1 tồn tại ở nhiều tầng (Floor 1, Floor 2). Hãy chọn tầng cụ thể.',
+    'en',
+  );
+  assert.match(result, /Slot A1 exists on multiple floors/);
+  assert.match(result, /choose a specific floor/i);
+  assert.doesNotMatch(result, /tầng|Hãy/u);
+});

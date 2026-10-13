@@ -18,6 +18,7 @@ const draftReservationItems = (draft) => (Array.isArray(draft?.reservationItems)
 const keyOf = (slot) => `${slot.floorId}:${normalize(slot.slotCode)}`;
 const isCompatibleSlot = (slot, vehicleType) => {
   const type = normalize(slot.slotType);
+  if (slot.isDedicatedToCurrentUser) return type !== 'SLOT-MOTO' && type !== 'SLOT-HANDICAP';
   return type === 'SLOT' || (vehicleType === 'electric_car' && type === 'SLOT-EV');
 };
 const stableHash = (value) => {
@@ -30,6 +31,11 @@ const stableHash = (value) => {
   return (hash ^ (hash >>> 16)) >>> 0;
 };
 const chooseAutoSlot = (slots, seed, vehicleType) => {
+  const dedicated = slots.filter((slot) => slot.isDedicatedToCurrentUser);
+  if (dedicated.length) {
+    const sorted = [...dedicated].sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
+    return sorted[stableHash(seed) % sorted.length];
+  }
   const preferredType = vehicleType === 'electric_car' ? 'SLOT-EV' : 'SLOT';
   const preferred = slots.filter((slot) => normalize(slot.slotType) === preferredType);
   const eligible = preferred.length ? preferred : slots.filter((slot) => normalize(slot.slotType) === 'SLOT');
@@ -45,6 +51,12 @@ const floorMatches = (slot, requested) => {
   if (name === target || floorCode(name) === floorCode(target)) return true;
   const code = floorCode(target);
   return /^\d+$/.test(code) && normalize(slot.floorNumber) === String(Number(code));
+};
+const zoneMatches = (slot, requested) => {
+  if (!requested) return true;
+  const zone = normalize(slot.zoneName).replace(/^ZONE\s+/, '');
+  const target = normalize(requested).replace(/^ZONE\s+/, '');
+  return zone === target;
 };
 const dayLabel = (date) => date.split('-').reverse().join('/');
 const rangeLabel = (request) => `${dayLabel(request.date)} ${request.startTime} đến ${dayLabel(request.endDate)} ${request.endTime}`;
@@ -97,9 +109,18 @@ export function getMissingBookingFields(draft, vehicles = [], now = Date.now()) 
     const count = requestedCount || reservationItems.length;
     for (let index = 0; index < count; index += 1) {
       const item = reservationItems[index] || {};
-      if (!(item.startDate || draft.startDate)) missing.push(`Xe ${index + 1} đỗ ngày nào?`);
-      else if (!(item.startTime || draft.startTime)) missing.push(`Xe ${index + 1} bắt đầu đỗ lúc mấy giờ?`);
-      else if (!(item.endTime || draft.endTime)) missing.push(`Xe ${index + 1} muốn đỗ đến mấy giờ?`);
+      if (!(item.startDate || draft.startDate)) {
+        missing.push(`Xe ${index + 1} đỗ ngày nào?`);
+        break;
+      }
+      if (!(item.startTime || draft.startTime)) {
+        missing.push(`Xe ${index + 1} bắt đầu đỗ lúc mấy giờ?`);
+        break;
+      }
+      if (!(item.endTime || draft.endTime)) {
+        missing.push(`Xe ${index + 1} muốn đỗ đến mấy giờ?`);
+        break;
+      }
     }
   } else {
     if (!draft.startDate) missing.push('Bạn muốn bắt đầu đỗ ngày nào?');
@@ -160,12 +181,20 @@ export async function checkAiAvailability(draft, gateway, now = Date.now()) {
     const endTime = new Date(`${schedule.endDate}T${schedule.endTime}:00+07:00`);
     if (endTime <= startTime) throw new Error('Khoảng thời gian chưa hợp lệ.');
     if (startTime.getTime() <= now) throw new Error(`Giờ bắt đầu ngày ${dayLabel(schedule.date)} đã qua.`);
-    const response = await gateway.getAvailableBookingSlots({ startTime: startTime.toISOString(), endTime: endTime.toISOString() });
+    const response = await gateway.getAvailableBookingSlots({
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      bookingSource: 'AI_QUICK',
+    });
     if (!response.ok) throw resultError(response, `Không thể kiểm tra khoảng từ ngày ${dayLabel(schedule.date)} đến ${dayLabel(schedule.endDate)}.`);
-    const matching = (response.data?.data?.slots || []).filter((slot) =>
+    const compatible = (response.data?.data?.slots || []).filter((slot) =>
       isCompatibleSlot(slot, draft.vehicleType || 'car')
-      && floorMatches(slot, draft.floorName)
-      && (!draft.slotCode || normalize(slot.slotCode) === normalize(draft.slotCode)));
+      && floorMatches(slot, draft.floorName));
+    const zoneMatchesOnly = draft.zoneName ? compatible.filter((slot) => zoneMatches(slot, draft.zoneName)) : compatible;
+    const scoped = draft.zoneName && !zoneMatchesOnly.length
+      ? compatible.filter((slot) => normalize(slot.slotCode) === normalize(draft.zoneName))
+      : zoneMatchesOnly;
+    const matching = scoped.filter((slot) => !draft.slotCode || normalize(slot.slotCode) === normalize(draft.slotCode));
     results.push({ date: schedule.date, endDate: schedule.endDate, bookingMode: schedule.bookingMode,
       count: matching.length, suggestions: matching.slice(0, 3) });
   }
@@ -186,25 +215,42 @@ export async function findAiActionBookings(intent, draft, gateway) {
   return bookings;
 }
 
-export async function prepareAiExistingAction(intent, booking, gateway) {
-  if (intent !== 'CANCEL_BOOKING') return {};
-  const response = await gateway.getBookingCancellationQuote(booking._id);
-  if (!response.ok) throw resultError(response, 'Không thể tính tiền hoàn khi hủy.');
+const bookingModificationPayload = (booking, edit) => {
+  if (!validDate(edit?.startDate) || !validDate(edit?.endDate) || !validTime(edit?.startTime) || !validTime(edit?.endTime)) {
+    throw new Error('Thời gian sửa booking chưa hợp lệ.');
+  }
+  const start = new Date(`${edit.startDate}T${edit.startTime}:00+07:00`);
+  const end = new Date(`${edit.endDate}T${edit.endTime}:00+07:00`);
+  if (start >= end) throw new Error('Thời gian sửa booking chưa hợp lệ.');
+  return {
+    bookingId: booking._id,
+    newStart: start.toISOString(),
+    newEnd: end.toISOString(),
+    bookingSource: 'AI_QUICK',
+  };
+};
+
+export async function prepareAiExistingAction(intent, booking, gateway, edit = null) {
+  const response = intent === 'MODIFY_BOOKING'
+    ? await gateway.quoteBookingTimeModification(booking._id, bookingModificationPayload(booking, edit))
+    : await gateway.getBookingCancellationQuote(booking._id);
+  if (!response.ok) throw resultError(response, intent === 'MODIFY_BOOKING'
+    ? 'Không thể tính chi phí sửa booking.' : 'Không thể tính tiền hoàn khi hủy.');
   return response.data?.data || {};
 }
 
-export async function confirmAiExistingAction(intent, booking, edit, gateway) {
+export async function confirmAiExistingAction(intent, booking, edit, gateway, quote = null) {
   let response;
   if (intent === 'CANCEL_BOOKING') {
     response = await gateway.cancelBooking(booking._id);
   } else if (intent === 'MODIFY_BOOKING') {
-    if (!validDate(edit?.startDate) || !validDate(edit?.endDate) || !validTime(edit?.startTime) || !validTime(edit?.endTime)) {
-      throw new Error('Thời gian sửa booking chưa hợp lệ.');
-    }
-    const start = new Date(`${edit.startDate}T${edit.startTime}:00+07:00`);
-    const end = new Date(`${edit.endDate}T${edit.endTime}:00+07:00`);
-    if (start >= end) throw new Error('Thời gian sửa booking chưa hợp lệ.');
-    response = await gateway.extendBooking(booking._id, { newStart: start.toISOString(), newEnd: end.toISOString() });
+    const payload = bookingModificationPayload(booking, edit);
+    response = await gateway.extendBooking(booking._id, {
+      newStart: payload.newStart,
+      newEnd: payload.newEnd,
+      bookingSource: 'AI_QUICK',
+      ...(quote?.newPrice !== undefined ? { expectedNewPrice: quote.newPrice } : {}),
+    });
   } else {
     throw new Error('Thao tác booking không hợp lệ.');
   }
@@ -277,6 +323,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
   const existing = bookingResult.data?.data || [];
   const candidates = [];
   const conflicts = [];
+  const suggestions = [];
   const availabilityCache = new Map();
   const shortageRanges = new Set();
 
@@ -286,7 +333,11 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     if (startTime.getTime() <= now) throw new Error(`Ngày ${dayLabel(request.date)} đã qua hoặc giờ bắt đầu không còn hợp lệ.`);
     const rangeKey = `${startTime.toISOString()}|${endTime.toISOString()}`;
     if (!availabilityCache.has(rangeKey)) {
-      const response = await gateway.getAvailableBookingSlots({ startTime: startTime.toISOString(), endTime: endTime.toISOString() });
+      const response = await gateway.getAvailableBookingSlots({
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        bookingSource: 'AI_QUICK',
+      });
       if (!response.ok) throw resultError(response, `Không thể kiểm tra chỗ ngày ${dayLabel(request.date)}.`);
       availabilityCache.set(rangeKey, response.data?.data?.slots || []);
     }
@@ -312,17 +363,21 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const preferredFloor = normalize(request.floorName);
     const preferredZone = normalize(request.zoneName);
     const preferredSlot = normalize(request.slotCode);
-    const matchingZoneSlots = preferredZone ? compatibleSlots.filter((slot) => (
-      normalize(slot.zoneName) === preferredZone
-      || normalize(slot.zoneName).replace(/^ZONE\s+/, '') === preferredZone.replace(/^ZONE\s+/, '')
-    )) : [];
+    const matchingZoneSlots = preferredZone ? compatibleSlots.filter((slot) => zoneMatches(slot, preferredZone)) : [];
     const zoneSlots = preferredZone
       ? (matchingZoneSlots.length
         ? matchingZoneSlots
         : compatibleSlots.filter((slot) => normalize(slot.slotCode) === preferredZone))
       : compatibleSlots;
     const floorSlots = preferredFloor ? zoneSlots.filter((slot) => floorMatches(slot, preferredFloor)) : zoneSlots;
-    const exact = preferredSlot ? floorSlots.find((slot) => normalize(slot.slotCode) === preferredSlot) : null;
+    const exactMatches = preferredSlot ? floorSlots.filter((slot) => normalize(slot.slotCode) === preferredSlot) : [];
+    const exactFloors = new Set(exactMatches.map((slot) => String(slot.floorId || slot.floorName || '')));
+    if (preferredSlot && !preferredFloor && exactFloors.size > 1) {
+      const floorNames = [...new Set(exactMatches.map((slot) => slot.floorName).filter(Boolean))].join(', ');
+      conflicts.push(`Ô ${preferredSlot} tồn tại ở nhiều tầng${floorNames ? ` (${floorNames})` : ''}. Hãy chọn tầng cụ thể.`);
+      continue;
+    }
+    const exact = exactMatches[0] || null;
     const seed = `${vehicle.licensePlate}:${request.date}:${request.startTime}:${request.endTime}`;
     const chosen = exact || (!preferredSlot ? chooseAutoSlot(floorSlots, seed, vehicleType) : null);
     if (!chosen) {
@@ -333,7 +388,24 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         shortageRanges.add(rangeKey);
         conflicts.push(`Hiện chỉ còn ${allCompatibleSlots.length} chỗ trống trong toàn bộ khoảng ${rangeLabel(request)}, nên chưa thể đặt đủ ${sameRangeRequests.length} xe. Bạn muốn giảm số xe hay chọn thời gian khác?`);
       } else if (!shortageRanges.has(rangeKey)) {
-        const suggestion = chooseAutoSlot(floorSlots, seed, vehicleType) || chooseAutoSlot(compatibleSlots, seed, vehicleType);
+        const isReservedByAnotherRequest = (slot) => requestSpecs.some((other) => {
+          if (other === request || !other.slotCode || normalize(other.slotCode) !== normalize(slot.slotCode)) return false;
+          if (other.floorName && !floorMatches(slot, other.floorName)) return false;
+          const otherStart = new Date(`${other.date}T${other.startTime}:00+07:00`);
+          const otherEnd = new Date(`${other.endDate}T${other.endTime}:00+07:00`);
+          return rangesOverlap(startTime, endTime, otherStart, otherEnd);
+        });
+        const suggestionFloorSlots = floorSlots.filter((slot) => !isReservedByAnotherRequest(slot));
+        const suggestionCompatibleSlots = compatibleSlots.filter((slot) => !isReservedByAnotherRequest(slot));
+        const suggestion = chooseAutoSlot(suggestionFloorSlots, seed, vehicleType)
+          || chooseAutoSlot(suggestionCompatibleSlots, seed, vehicleType);
+        if (suggestion) suggestions.push({
+          sourceIndex: request.sourceIndex,
+          licensePlate: vehicle.licensePlate,
+          floorId: suggestion.floorId,
+          floorName: suggestion.floorName,
+          slotCode: suggestion.slotCode,
+        });
         conflicts.push(`Không có chỗ phù hợp cho toàn bộ khoảng ${rangeLabel(request)}. Xe ${vehicle.licensePlate} ${preferredSlot
           ? `không thể dùng ô ${preferredSlot} vì ô không còn trống hoặc không phù hợp với loại xe`
           : preferredZone
@@ -348,7 +420,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       slot: chosen, availableSlots: floorSlots,
     });
   }
-  if (conflicts.length || candidates.length !== requestSpecs.length) return { conflicts, days };
+  if (conflicts.length || candidates.length !== requestSpecs.length) return { conflicts, suggestions, days };
 
   const items = candidates.map((candidate, index) => ({
     clientItemId: `ai-${index}-${candidate.date}-${candidate.vehicle.licensePlate}`,
@@ -363,7 +435,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     bookingMode: candidate.bookingMode,
     floorName: candidate.slot.floorName,
   }));
-  const quote = await gateway.quoteBulkBooking({ items });
+  const quote = await gateway.quoteBulkBooking({ bookingSource: 'AI_QUICK', items });
   const itemErrors = quote.data?.data?.itemErrors || [];
   const vipError = itemErrors.find(isVipBookingRestriction);
   if (vipError) {
@@ -402,12 +474,14 @@ export async function confirmAiBooking(preview, draft, gateway, vehicles, idempo
   const holds = [];
   try {
     for (const item of fresh.items) {
-      const held = await gateway.createBookingHold(item);
+      const held = await gateway.createBookingHold({ ...item, bookingSource: 'AI_QUICK' });
       if (!held.ok || !held.data?.data?._id) throw resultError(held, `Không thể giữ ô ${item.slotCode} ngày ${dayLabel(item.date)}.`);
       holds.push(held.data.data._id);
     }
     const result = await gateway.createBulkBooking({
       idempotencyKey,
+      bookingSource: 'AI_QUICK',
+      expectedTotal: fresh.total,
       items: fresh.items.map((item, index) => ({ ...item, holdId: holds[index] })),
     });
     if (!result.ok) throw resultError(result, 'Không thể tạo booking.');

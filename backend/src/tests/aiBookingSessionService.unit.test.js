@@ -33,6 +33,10 @@ test('AI booking progress resumes at the first missing booking field', () => {
     bookingDraft: { startDate: '2026-09-25', startTime: '08:00', endTime: '09:00', licensePlate: '43A12345' },
     phase: 'WAITING_CONFIRMATION',
   }), { currentStep: 'CONFIRM_BOOKING', completionPercent: 90 });
+  assert.deepEqual(service.deriveSessionProgress({
+    bookingDraft: { startDate: '2026-09-25', startTime: '08:00', endTime: '09:00', licensePlate: '43A12345' },
+    phase: 'WAITING_PAYMENT',
+  }), { currentStep: 'PAYMENT', completionPercent: 95 });
 });
 
 test('snapshot keeps only recent valid messages and derives its summary', () => {

@@ -10,6 +10,9 @@ const ENGLISH_WORDS = new Set([
   'space', 'car', 'vehicle', 'plate', 'license', 'registration', 'arrive', 'leave', 'start',
   'end', 'change', 'confirm', 'cancel', 'yes', 'no', 'not', 'wrong', 'right', 'hour', 'hours',
   'make', 'it', 'there', 'therefore', 'somewhere', 'bring', 'bringing', 'park', 'save', 'get',
+  'hold', 'keep', 'someplace', 'tonight', 'noon', 'midnight', 'half', 'quarter', 'past',
+  'through', 'whole', 'week', 'weekend', 'month', 'days', 'minutes', 'first', 'second',
+  'third', 'other', 'both', 'another', 'exactly', 'sure', 'yep', 'yeah', 'ready', 'proceed',
 ]);
 
 const VIETNAMESE_WORDS = new Set([
@@ -18,6 +21,7 @@ const VIETNAMESE_WORDS = new Set([
   'sang', 'chieu', 'toi', 'trua', 'bien', 'so', 'tang', 'khu', 'huy', 'dong', 'y', 'xac',
   'nhan', 'khong', 'dung', 'thoi', 'doi', 'sua', 'them', 'nap', 'vi', 'tien', 'roi', 'nhe',
   'nha', 'duoc', 'vui', 'long', 'giup', 'bay', 'tam', 'chin', 'muoi', 'phut', 'tieng',
+  'lay', 'chon', 'o', 'goi', 'y', 'lien', 'tuc', 'vai', 'tuan', 'thang', 'ca', 'doi',
 ]);
 
 const countMatches = (text, patterns) => patterns.reduce(

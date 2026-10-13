@@ -7,11 +7,14 @@ const english = new Set([
   'tomorrow', 'today', 'next', 'morning', 'afternoon', 'evening', 'want', 'need', 'please',
   'book', 'reserve', 'parking', 'spot', 'space', 'car', 'vehicle', 'plate', 'license',
   'arrive', 'leave', 'change', 'confirm', 'cancel', 'yes', 'no', 'top', 'up', 'show', 'qr',
+  'hold', 'keep', 'save', 'somewhere', 'tonight', 'noon', 'midnight', 'half', 'quarter',
+  'week', 'weekend', 'month', 'days', 'minutes', 'both', 'another', 'other', 'sure', 'yep',
 ]);
 const vietnamese = new Set([
   'toi', 'minh', 'ban', 'cho', 'muon', 'can', 'dat', 'giu', 'do', 'xe', 'ngay', 'mai',
   'hom', 'gio', 'luc', 'tu', 'den', 'sang', 'chieu', 'bien', 'so', 'tang', 'khu', 'huy',
   'dong', 'y', 'xac', 'nhan', 'khong', 'doi', 'sua', 'them', 'nap', 'vi', 'tien',
+  'lay', 'chon', 'goi', 'tuan', 'thang', 'lien', 'tuc', 'vai', 'ca',
 ]);
 
 export function detectAiBookingLanguage(value, previousLanguage = 'vi') {
@@ -24,4 +27,14 @@ export function detectAiBookingLanguage(value, previousLanguage = 'vi') {
   if (/[ăâđêôơưáàảãạếềốồớờứừ]/iu.test(raw)) vi += 4;
   if (en === vi || (!en && !vi)) return previousLanguage === 'en' ? 'en' : 'vi';
   return en > vi ? 'en' : 'vi';
+}
+
+export function inferAiBookingConversationLanguage(draft = {}, messages = [], fallback = 'vi') {
+  if (draft?.__language === 'en' || draft?.__language === 'vi') return draft.__language;
+  const history = Array.isArray(messages) ? messages : [];
+  const lastUser = [...history].reverse().find((message) => message?.role === 'user');
+  const lastAssistant = [...history].reverse().find((message) => message?.role === 'assistant');
+  const sample = lastUser?.text ?? lastUser?.content
+    ?? lastAssistant?.text ?? lastAssistant?.content ?? '';
+  return detectAiBookingLanguage(sample, fallback);
 }

@@ -220,7 +220,27 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   }
   if (!intents.length) return null;
 
-  const bookingEntities = parseBookingUtterance(raw, today, draft, currentTime)?.changes || {};
+  const bookingInterpretation = parseBookingUtterance(raw, today, draft, currentTime);
+  const bookingEntities = bookingInterpretation?.changes || {};
+  const vehicleChanges = extractVehicleChanges(raw, text);
+  const hasActiveBookingDraft = draft.__intent === 'CREATE_BOOKING'
+    && (Number(draft.requestedVehicleCount || 0) > 0
+      || Boolean(draft.startDate || draft.endDate || draft.startTime || draft.endTime)
+      || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > 0));
+  const editsBookingItem = Array.isArray(bookingEntities.reservationItems)
+    || bookingInterpretation?.pendingReservationEditField !== undefined
+    || bookingInterpretation?.pendingReservationEditIndex !== undefined;
+  const explicitlyEditsVehicleProfile = Object.keys(vehicleChanges).length > 0;
+
+  // "Đổi xe 44B11122 thành từ 8 giờ đến 9 giờ" is an edit to the
+  // in-progress booking, not a request to mutate the registered vehicle.
+  // Let the booking interpreter handle it so the named reservation item is
+  // retained and only its schedule/slot is changed.
+  if (hasActiveBookingDraft && editsBookingItem && !explicitlyEditsVehicleProfile) {
+    intents = intents.filter((intent) => intent !== 'UPDATE_VEHICLE');
+    if (!intents.length) return null;
+  }
+
   const directPlates = Array.isArray(bookingEntities.licensePlates) ? bookingEntities.licensePlates : [];
   const licensePlate = compactPlate(bookingEntities.licensePlate || directPlates[0] || context.licensePlate);
   const zone = raw.match(/\b(?:zone|khu)\s*([a-z0-9-]{1,12})\b/i)?.[1]?.toUpperCase() || '';
@@ -236,7 +256,7 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
     startDate: bookingEntities.startDate || '', endDate: bookingEntities.endDate || '',
     startTime: bookingEntities.startTime || '', endTime: bookingEntities.endTime || '',
     serviceName,
-    vehicleChanges: extractVehicleChanges(raw, text),
+    vehicleChanges,
     bookingId: context.bookingId || '', sessionId: context.sessionId || '',
     pendingAction: context.pendingAction || null,
   };

@@ -29,6 +29,28 @@ test('local fallback restores the same account after refresh', () => {
   assert.equal(readLocalAiBookingSession('user-b', storage, Date.parse('2026-09-24T08:05:00.000Z')), null);
 });
 
+test('local fallback preserves the complete multi-turn booking context', () => {
+  const storage = memoryStorage();
+  const bookingDraft = {
+    startDate: '2026-10-10', endDate: '2026-10-10', startTime: '19:00', endTime: '20:00',
+    requestedVehicleCount: 2, licensePlates: ['43A6798', '43A6788'], slotCode: 'E8',
+    reservationItems: [
+      { licensePlate: '43A6798', startDate: '2026-10-10', endDate: '2026-10-10', startTime: '19:00', endTime: '20:00', slotCode: 'E8' },
+      { licensePlate: '43A6788', startDate: '2026-10-10', endDate: '2026-10-10', startTime: '19:00', endTime: '20:00' },
+    ],
+  };
+  const snapshot = createAiBookingSnapshot({
+    sessionId: 'context-1', bookingDraft,
+    messages: [{ role: 'user', text: 'Đổi sang 19h đến 20h' }],
+    updatedAt: '2026-10-08T08:00:00.000Z',
+  });
+  assert.equal(saveLocalAiBookingSession('user-a', snapshot, storage), true);
+  const restored = readLocalAiBookingSession('user-a', storage, Date.parse('2026-10-08T08:05:00.000Z'));
+  assert.deepEqual(restored.bookingDraft.reservationItems, bookingDraft.reservationItems);
+  assert.deepEqual(restored.bookingDraft.licensePlates, bookingDraft.licensePlates);
+  assert.equal(restored.messages[0].content, 'Đổi sang 19h đến 20h');
+});
+
 test('local draft becomes expired after thirty minutes but keeps messages', () => {
   const storage = memoryStorage();
   const updatedAt = '2026-09-24T08:00:00.000Z';
@@ -50,6 +72,16 @@ test('multi-vehicle draft resumes at vehicle selection until all plates exist', 
     startDate: '2026-09-25', startTime: '08:00', endTime: '09:00',
     requestedVehicleCount: 2, licensePlates: ['43A12345', '43B54321'],
   } }), { currentStep: 'SELECT_SLOT', completionPercent: 70 });
+});
+
+test('a QR payment in progress resumes at the payment step', () => {
+  assert.deepEqual(deriveAiBookingProgress({
+    bookingDraft: {
+      startDate: '2026-09-25', startTime: '08:00', endTime: '09:00',
+      requestedVehicleCount: 1, licensePlate: '43A12345',
+    },
+    phase: 'WAITING_PAYMENT',
+  }), { currentStep: 'PAYMENT', completionPercent: 95 });
 });
 
 test('newest session wins while a local completed marker prevents stale resume', () => {

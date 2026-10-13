@@ -41,9 +41,14 @@ const topUpPhrases = new Set([
   'show qr', 'show qr code', 'bank transfer', 'make payment',
 ]);
 
-export function routeBookingReply(phase, message) {
+export function routeBookingReply(phase, message, { hasSlotSuggestion = false } = {}) {
   const value = normalize(message).replace(/^(?:da|vang)\s+/, '').replace(/\s+(?:nhe|nha)$/, '');
   if (phase !== 'WAITING_CONFIRMATION') {
+    if (hasSlotSuggestion && (confirmationPhrases.has(value)
+      || /^(?:lay|chon|dung)\s+(?:o\s+)?(?:goi y|de xuat)$/i.test(value)
+      || /^(?:use|take|choose|select)\s+(?:the\s+)?suggest(?:ed|ion)(?:\s+slot)?$/i.test(value))) {
+      return 'accept_suggestion';
+    }
     if (confirmationPhrases.has(value)) return 'no_preview';
     if (cancellationPhrases.has(value)) return 'cancel_draft';
     return 'interpret';
@@ -133,6 +138,221 @@ export function vipPlatePrompt(plate, language = 'vi') {
   return language === 'en'
     ? `Vehicle ${plate} has a VIP subscription. Please say or enter another license plate; I will keep the date and time.`
     : `Xe ${plate} có VIP. Hãy đọc hoặc nhập biển số khác; mình giữ nguyên ngày giờ.`;
+}
+
+export function resolveContextualVehicleReply(message, vehicles = [], draft = {}, language = 'vi') {
+  // While editing a multi-vehicle preview, ordinals refer to the preview rows,
+  // not to the account's registered-vehicle order. Let the booking interpreter
+  // resolve that target from reservationItems so "xe 1" cannot select another car.
+  if (draft.pendingReservationEditField === 'target'
+    || Number.isInteger(draft.pendingReservationEditIndex)) {
+    return String(message || '');
+  }
+  const value = normalize(message);
+  const approved = vehicles.filter((vehicle) => vehicle?.status === 'approved'
+    && (!draft.vehicleType || vehicle.vehicleType === draft.vehicleType));
+  const ordinalWords = {
+    first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
+    nhat: 1, mot: 1, hai: 2, ba: 3, tu: 4, bon: 4, nam: 5,
+  };
+  const ordinal = value.match(/^(?:the\s+)?(first|second|third|fourth|fifth)(?:\s+(?:one|car|vehicle))?$/)
+    || value.match(/^(?:lay|chon|dung|la)?\s*(?:xe\s+)?(?:thu\s+)?(nhat|mot|hai|ba|tu|bon|nam|[1-5])(?:\s+nhe)?$/);
+  let selected = null;
+  if (ordinal) {
+    const position = Number(ordinalWords[ordinal[1]] || ordinal[1]);
+    selected = approved[position - 1] || null;
+  } else if (/^(?:the\s+)?other\s+(?:one|car|vehicle)$|^(?:xe\s+)?(?:con\s+lai|khac)$/.test(value)) {
+    const currentPlate = String(draft.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const alternatives = approved.filter((vehicle) => String(vehicle.licensePlate || '')
+      .replace(/[^A-Z0-9]/gi, '').toUpperCase() !== currentPlate);
+    if (alternatives.length === 1) selected = alternatives[0];
+  }
+  if (!selected?.licensePlate) return String(message || '');
+  return language === 'en'
+    ? `License plate ${selected.licensePlate}`
+    : `Biển số ${selected.licensePlate}`;
+}
+
+export function applySlotSuggestionToDraft(draft = {}, suggestion = null) {
+  const next = { ...draft };
+  delete next.pendingSlotSuggestion;
+  if (!suggestion?.slotCode) return next;
+
+  const existingItems = Array.isArray(next.reservationItems) ? next.reservationItems : [];
+  const plates = Array.isArray(next.licensePlates) && next.licensePlates.length
+    ? next.licensePlates : (next.licensePlate ? [next.licensePlate] : []);
+  const itemCount = Math.min(5, Math.max(existingItems.length, plates.length, Number(next.requestedVehicleCount || 0)));
+  const sourceIndex = Number(suggestion.sourceIndex);
+  const targetIndex = Number.isInteger(sourceIndex) && sourceIndex >= 0 && sourceIndex < 5 ? sourceIndex : 0;
+
+  if (existingItems.length || itemCount > 1) {
+    const count = Math.max(itemCount, targetIndex + 1);
+    next.reservationItems = Array.from({ length: count }, (_, index) => {
+      const existing = existingItems[index] || {};
+      const item = {
+        ...existing,
+        licensePlate: existing.licensePlate || plates[index] || '',
+        startDate: existing.startDate || next.startDate || '',
+        endDate: existing.endDate || next.endDate || next.startDate || '',
+        startTime: existing.startTime || next.startTime || '',
+        endTime: existing.endTime || next.endTime || '',
+        floorName: existing.floorName || next.floorName || '',
+        zoneName: existing.zoneName || next.zoneName || '',
+        slotCode: existing.slotCode || '',
+      };
+      return index === targetIndex ? {
+        ...item,
+        floorName: suggestion.floorName || '',
+        zoneName: '',
+        slotCode: suggestion.slotCode,
+      } : item;
+    });
+    return next;
+  }
+
+  return {
+    ...next,
+    floorName: suggestion.floorName || '',
+    zoneName: '',
+    slotCode: suggestion.slotCode,
+  };
+}
+
+export function applyMapSlotSelectionToDraft(draft = {}, selection = null) {
+  const slotCode = String(selection?.slotCode || '').trim().toUpperCase();
+  if (!slotCode) return { ...draft };
+  const floorName = String(selection?.floorName || '').trim();
+  const existingItems = Array.isArray(draft.reservationItems) ? draft.reservationItems : [];
+  const plates = Array.isArray(draft.licensePlates) && draft.licensePlates.length
+    ? draft.licensePlates : (draft.licensePlate ? [draft.licensePlate] : []);
+  const itemCount = Math.min(5, Math.max(
+    existingItems.length,
+    plates.length,
+    Number(draft.requestedVehicleCount || 0),
+  ));
+  const sourceIndex = Number(selection?.sourceIndex);
+  const targetIndex = Number.isInteger(sourceIndex) && sourceIndex >= 0 && sourceIndex < itemCount
+    ? sourceIndex : 0;
+  const next = {
+    ...draft,
+    floorName,
+    zoneName: '',
+    slotCode,
+  };
+  delete next.pendingSlotSuggestion;
+  if (itemCount > 1) {
+    next.floorName = '';
+    next.zoneName = '';
+    next.slotCode = '';
+    next.reservationItems = Array.from({ length: itemCount }, (_, index) => {
+      const existing = existingItems[index] || {};
+      const item = {
+        ...existing,
+        licensePlate: existing.licensePlate || plates[index] || '',
+        startDate: existing.startDate || draft.startDate || '',
+        endDate: existing.endDate || draft.endDate || draft.startDate || '',
+        startTime: existing.startTime || draft.startTime || '',
+        endTime: existing.endTime || draft.endTime || '',
+      };
+      return index === targetIndex ? { ...item, floorName, zoneName: '', slotCode } : item;
+    });
+  } else if (existingItems.length === 1) {
+    next.reservationItems = [{ ...existingItems[0], floorName, zoneName: '', slotCode }];
+  }
+  return next;
+}
+
+export function applySingleVehicleSelectionToDraft(draft = {}, vehicle = null) {
+  const vehicleId = vehicle?._id || '';
+  const licensePlate = String(vehicle?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const next = {
+    ...draft,
+    vehicleId,
+    licensePlate,
+    licensePlates: [],
+    requestedVehicleCount: vehicle ? 1 : 0,
+    blockedVipPlate: '',
+  };
+  delete next.pendingSlotSuggestion;
+  if (vehicle && Array.isArray(draft.reservationItems) && draft.reservationItems.length) {
+    next.reservationItems = [{ ...draft.reservationItems[0], vehicleId, licensePlate }];
+  } else {
+    next.reservationItems = [];
+  }
+  return next;
+}
+
+export function applyBookingDraftField(draft = {}, field, value, options = {}) {
+  const sourceIndex = Number(options.sourceIndex);
+  const existingItems = Array.isArray(draft.reservationItems) ? draft.reservationItems : [];
+  const plates = Array.isArray(draft.licensePlates) && draft.licensePlates.length
+    ? draft.licensePlates : (draft.licensePlate ? [draft.licensePlate] : []);
+  const itemCount = Math.min(5, Math.max(
+    existingItems.length,
+    plates.length,
+    Number(draft.requestedVehicleCount || 0),
+  ));
+  if (itemCount > 1 && Number.isInteger(sourceIndex) && sourceIndex >= 0 && sourceIndex < itemCount) {
+    const next = { ...draft };
+    delete next.pendingSlotSuggestion;
+    next.reservationItems = Array.from({ length: itemCount }, (_, index) => {
+      const original = existingItems[index] || {};
+      const item = {
+        ...original,
+        licensePlate: original.licensePlate || plates[index] || '',
+        startDate: original.startDate || draft.startDate || '',
+        endDate: original.endDate || draft.endDate || draft.startDate || '',
+        startTime: original.startTime || draft.startTime || '',
+        endTime: original.endTime || draft.endTime || '',
+      };
+      if (index !== sourceIndex) return item;
+      const updated = { ...item, [field]: value };
+      if (field === 'startDate' && (!item.endDate || item.endDate === item.startDate)) updated.endDate = value;
+      if (field === 'floorName') {
+        updated.zoneName = '';
+        updated.slotCode = '';
+      }
+      return updated;
+    });
+    const values = next.reservationItems.map((item) => item[field] || '');
+    next[field] = values.every((entry) => entry === values[0]) ? values[0] : '';
+    if (field === 'startDate') {
+      const endDates = next.reservationItems.map((item) => item.endDate || '');
+      next.endDate = endDates.every((entry) => entry === endDates[0]) ? endDates[0] : '';
+    }
+    if (['startTime', 'endTime'].includes(field)) {
+      next.pendingStartTime = '';
+      next.pendingEndTime = '';
+    }
+    if (field === 'floorName') {
+      next.zoneName = '';
+      next.slotCode = '';
+    }
+    return next;
+  }
+
+  const next = { ...draft, [field]: value };
+  delete next.pendingSlotSuggestion;
+  if (field === 'startDate' && (!draft.endDate || draft.endDate === draft.startDate)) next.endDate = value;
+  if (['startTime', 'endTime'].includes(field)) {
+    next.pendingStartTime = '';
+    next.pendingEndTime = '';
+  }
+  if (field === 'floorName') {
+    next.zoneName = '';
+    next.slotCode = '';
+  }
+  if (!Array.isArray(draft.reservationItems) || !draft.reservationItems.length) return next;
+  next.reservationItems = draft.reservationItems.map((item) => {
+    const updated = { ...item, [field]: value };
+    if (field === 'startDate' && (!item.endDate || item.endDate === item.startDate)) updated.endDate = value;
+    if (field === 'floorName') {
+      updated.zoneName = '';
+      updated.slotCode = '';
+    }
+    return updated;
+  });
+  return next;
 }
 
 export function bookingSuccessSummary(items = [], language = 'vi') {
