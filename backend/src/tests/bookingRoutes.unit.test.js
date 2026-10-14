@@ -49,9 +49,6 @@ test('available slots permits staff while customer booking routes stay customer/
     delete require.cache[routePath];
   }
 
-  const staffAuthorization = authorizations.find(({ roles }) =>
-    JSON.stringify(roles) === JSON.stringify(['customer', 'staff', 'admin'])
-  );
   const customerAuthorization = authorizations.find(({ roles }) =>
     JSON.stringify(roles) === JSON.stringify(['customer', 'admin'])
   );
@@ -66,11 +63,9 @@ test('available slots permits staff while customer booking routes stay customer/
     ({ method, path }) => method === 'get' && path === '/my'
   );
 
-  assert.ok(staffAuthorization, 'customer/staff/admin authorization should be registered');
   assert.ok(customerAuthorization, 'customer/admin authorization should remain registered');
   assert.deepEqual(availableSlots.handlers, [
-    protect,
-    staffAuthorization.middleware,
+    softProtect,
     controllers.getAvailableSlots,
   ]);
   assert.ok(

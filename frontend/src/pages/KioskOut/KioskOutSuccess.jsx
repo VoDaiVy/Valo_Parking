@@ -40,7 +40,7 @@ export default function KioskOutSuccess({ onFinish }) {
             }
           }
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };

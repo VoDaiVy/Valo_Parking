@@ -94,7 +94,7 @@ const enhancePlateWithGemini = async (imageBase64) => {
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
 
     const prompt = `You are an expert AI for ALPR (Automatic License Plate Recognition) assisting with blurred, muddy, low-light, or damaged Vietnamese license plates.
 Carefully examine the image to reconstruct the exact Vietnamese license plate characters.

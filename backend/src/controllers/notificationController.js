@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const notificationService = require('../services/notificationService');
+const { sendSingleUserNotification } = require('../services/notificationDispatchService');
 const { emitNotification, broadcastNotification } = require('../sockets/notificationSocket');
 const NotificationRule = require('../models/NotificationRule');
 
@@ -57,16 +58,15 @@ const createNotification = async (req, res, next) => {
         });
       }
 
-      const notification = await notificationService.createForUser(
-        targetUsers[0],
-        { title, content, type, priority },
+      const { notification } = await sendSingleUserNotification({
+        io,
+        targetUserId: targetUsers[0],
+        title,
+        content,
+        type,
+        priority,
         createdBy,
-        { requireActive: true }
-      );
-
-      if (io) {
-        await emitNotification(io, notification.targetUsers[0], notification);
-      }
+      });
 
       return res.status(201).json({
         success: true,

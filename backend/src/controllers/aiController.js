@@ -129,7 +129,7 @@ exports.scanRegistrationCard = async (req, res) => {
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
 
     const prompt = `You are reading a Vietnamese vehicle registration card.
 Extract ONLY the following fields and return ONLY a valid JSON object with no extra text:
@@ -254,7 +254,9 @@ const { getOccupancyForecast } = require('../services/demandForecastingService')
 
 exports.getOccupancyForecast = async (req, res, next) => {
   try {
+    const dynamicPricingEngine = require('../services/dynamicPricingEngine');
     const { date, hour, vehicleType, floorId, timeframe, selectedIndex } = req.query;
+    const pricingConfig = await dynamicPricingEngine.getActiveConfig();
     const forecast = await getOccupancyForecast({
       date,
       hour: hour !== undefined ? Number(hour) : undefined,
@@ -262,6 +264,7 @@ exports.getOccupancyForecast = async (req, res, next) => {
       floorId,
       timeframe,
       selectedIndex: selectedIndex !== undefined ? Number(selectedIndex) : undefined,
+      forecastHorizonHours: pricingConfig.forecastHorizonHours,
     });
 
     res.status(200).json({

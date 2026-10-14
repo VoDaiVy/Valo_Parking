@@ -3,7 +3,6 @@ import { ShieldCheck, Loader2, X, FileText, Info } from 'lucide-react';
 import { getPolicyBySlug, acceptPolicy } from '../../services/policyService';
 
 export default function BookingPolicyModal({ open, onClose, onConfirm, title = "Review Policies & Terms" }) {
-  const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [policyData, setPolicyData] = useState(null);
@@ -13,11 +12,12 @@ export default function BookingPolicyModal({ open, onClose, onConfirm, title = "
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
+    if (!open) return undefined;
+
+    const timerId = window.setTimeout(() => {
       setLoading(true);
       setError(null);
       setHasScrolledToBottom(false);
-      setAgreed(false);
       
       getPolicyBySlug('booking-policy')
         .then(res => {
@@ -39,7 +39,9 @@ export default function BookingPolicyModal({ open, onClose, onConfirm, title = "
         })
         .catch(err => setError(err.message))
         .finally(() => setLoading(false));
-    }
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
   }, [open]);
 
   const handleScroll = (e) => {

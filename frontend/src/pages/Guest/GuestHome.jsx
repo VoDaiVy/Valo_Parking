@@ -230,7 +230,8 @@ const PremiumCarServicesSection = () => {
                       </p>
                     </div>
                     <Link
-                      to={`/services/${activeService.id}`}
+                      to={`/services`}
+                      state={{ selectedServiceId: activeService.id }}
                       className="inline-flex items-center justify-center gap-1.5 rounded-full bg-gold-gradient px-4 py-2.5 text-xs font-extrabold text-charcoal shadow-[0_10px_24px_rgba(212,175,55,0.24)] transition-all hover:scale-105"
                     >
                       Book Now

@@ -23,6 +23,22 @@ const statisticsQueryValidator = [
     .optional()
     .isISO8601()
     .withMessage('endDate must be a valid ISO date'),
+  query('mode')
+    .optional()
+    .isIn(['7d', 'month', 'quarter', 'year'])
+    .withMessage('mode must be 7d, month, quarter, or year'),
+  query('year')
+    .optional()
+    .isInt({ min: 2020, max: 2099 })
+    .withMessage('year must be between 2020 and 2099'),
+  query('month')
+    .optional()
+    .isInt({ min: 1, max: 12 })
+    .withMessage('month must be between 1 and 12'),
+  query('quarter')
+    .optional()
+    .isInt({ min: 1, max: 4 })
+    .withMessage('quarter must be between 1 and 4'),
 ];
 
 module.exports = { statisticsQueryValidator };

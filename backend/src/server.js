@@ -20,6 +20,7 @@ const serviceRoutes = require('./routes/serviceRoutes');
 const ticketPackageRoutes = require('./routes/ticketPackageRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const policyRoutes = require('./routes/policyRoutes');
+const pricingRoutes = require('./routes/pricingRoutes');
 
 // Initialize express app
 const app = express();
@@ -55,12 +56,15 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/wallet", require("./routes/walletRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/ai", require("./routes/aiRoutes"));
+app.use('/api/ai-copilot', require('./routes/aiCopilotRoutes'));
 app.use("/api/vehicles", require("./routes/vehicleRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/policies", policyRoutes);
 app.use('/api', serviceRoutes);
 app.use('/api/ticket-packages', ticketPackageRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/pricing', pricingRoutes);
+app.use('/api/loyalty', require('./routes/loyaltyRoutes'));
 app.use("/api/staff", require("./routes/staffRoutes"));
 app.use("/api/sessions", require("./routes/sessionRoutes"));
 app.use("/api/parking-floors", require("./routes/parkingFloorRoutes"));
@@ -119,6 +123,10 @@ const startServer = async () => {
 
       // Start parking session scheduler
       startScheduler(app);
+      require('./services/aiCopilot/monitor').startMonitor(app);
+      require('./services/aiCopilot/floorFullMonitor').startFloorMonitor(app);
+      require('./services/aiCopilot/sessionOverdueMonitor').startSessionOverdueMonitor(app);
+      require('./services/aiCopilot/refundCompletedMonitor').startRefundMonitor(app);
 
       // Seed default notification rules (upsert, won't overwrite existing)
       seedRules().catch(err => {

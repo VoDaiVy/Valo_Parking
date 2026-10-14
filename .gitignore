@@ -3,6 +3,9 @@
 docs/*
 plans/*
 
+node_modules/
+.kiro/
+
 # Excel reports
 Report5_Test_Report_VALOParking.xlsx
 *.xlsx
@@ -12,7 +15,7 @@ Report5_Test_Report_VALOParking.xlsx
 */.DS_Store
 .AppleDouble
 .LSOverride
-._*
+.-*
 .Spotlight-V100
 .Trashes
 

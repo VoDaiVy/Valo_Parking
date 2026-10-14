@@ -39,7 +39,6 @@ function StandardStep3({ onConfirm, onBack }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    setLoading(true);
     getPolicyBySlug('booking-policy')
       .then(res => {
         if (res.ok && res.data?.success) {

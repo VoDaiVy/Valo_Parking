@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, Loader2, AlertCircle, Save, CheckCircle2, RotateCcw, Clock3 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import DynamicPricingAdminTabs from '../../components/Admin/DynamicPricingAdminTabs';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
 
@@ -134,7 +135,7 @@ function PricingHeader({ status }) {
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
           <Edit2 size={12} /> Pricing
         </div>
-        <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Pricing Management</h1>
+        <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Pricing Management</h1>
         <p className="mt-1 text-sm font-medium text-blue-100/65">Configure time blocks and price caps for parking sessions.</p>
       </div>
       <div className={`group inline-flex h-9 w-fit items-center gap-2 rounded-full border px-3 text-xs font-black transition hover:shadow-[0_0_22px_rgba(34,197,94,0.14)] ${
@@ -457,6 +458,7 @@ function PricingSaveBar({ saving, onSave, onReset, error, success, hasUnsavedCha
 }
 
 export default function PricingManagement() {
+  const [activeTab, setActiveTab] = useState('time-blocks');
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -638,31 +640,57 @@ export default function PricingManagement() {
 
   return (
     <div className="min-h-[calc(100vh-70px)] overflow-auto bg-[#080808] px-6 py-7 md:px-8">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="mx-auto max-w-7xl">
         <PricingHeader status={scheduleStatus} config={config} />
+        <nav className="mb-7 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.035] p-1.5" aria-label="Pricing sections">
+          {[
+            ['time-blocks', 'Time Blocks'],
+            ['dynamic', 'Dynamic Pricing'],
+            ['rules', 'Pricing Rules'],
+            ['suggestions', 'Suggestions'],
+            ['history', 'History & Stats'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setActiveTab(value)}
+              className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-black transition ${
+                activeTab === value ? 'bg-gold text-black shadow-lg shadow-gold/10' : 'text-blue-100/55 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
 
-        <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} />
-
-        <TimeBlockEditor
-          timeBlocks={timeBlocks}
-          onAdd={handleAddTimeBlock}
-          onChange={handleTimeBlockChange}
-          onRemove={handleRemoveTimeBlock}
-        />
-
-        <PriceCapsSection caps={caps} setCaps={handleCapsChange} />
-
-        <PricingSummary timeBlocks={timeBlocks} caps={caps} status={scheduleStatus} />
+        {activeTab === 'time-blocks' ? (
+          <>
+            <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} />
+            <TimeBlockEditor
+              timeBlocks={timeBlocks}
+              onAdd={handleAddTimeBlock}
+              onChange={handleTimeBlockChange}
+              onRemove={handleRemoveTimeBlock}
+            />
+            <PriceCapsSection caps={caps} setCaps={handleCapsChange} />
+            <PricingSummary timeBlocks={timeBlocks} caps={caps} status={scheduleStatus} />
+          </>
+        ) : (
+          <DynamicPricingAdminTabs activeTab={activeTab} />
+        )}
       </div>
 
-      <PricingSaveBar
-        saving={saving}
-        onSave={handleSave}
-        onReset={handleResetChanges}
-        error={error}
-        success={success}
-        hasUnsavedChanges={hasUnsavedChanges}
-      />
+      {activeTab === 'time-blocks' && (
+        <PricingSaveBar
+          saving={saving}
+          onSave={handleSave}
+          onReset={handleResetChanges}
+          error={error}
+          success={success}
+          hasUnsavedChanges={hasUnsavedChanges}
+        />
+      )}
     </div>
   );
 }

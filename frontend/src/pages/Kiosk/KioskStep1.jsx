@@ -10,7 +10,6 @@ import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 export default function KioskStep1({ formData, updateFormData, onNext }) {
   const [activeField, setActiveField] = useState('plate'); // Default to plate
   const [isVerifying, setIsVerifying] = useState(false);
-  const [duplicateError, setDuplicateError] = useState('');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showReallocationModal, setShowReallocationModal] = useState(false);
   const [reallocationMessage, setReallocationMessage] = useState('');
@@ -73,7 +72,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
   // Auto-verify logic
   useEffect(() => {
     const plate = formData.licensePlate || '';
-    setDuplicateError(''); // Clear error on edit
     // Trigger auto-verify if plate is valid and we are actively typing it
     if (isValidLicensePlate(plate) && activeField === 'plate') {
       const timerId = setTimeout(async () => {
@@ -107,7 +105,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
                 isMonthly: verifyData.isMonthly,
                 membershipType: verifyData.membershipType || null,
                 hasPreBooking: verifyData.hasPreBooking,
-          isVipReallocation: !!verifyData.requiresSlotReallocation,
                 isVipReallocation: !!verifyData.requiresSlotReallocation,
                 selectedSlot: verifyData.assignedSlot,
                 floorId: verifyData.assignedFloorId || null,
@@ -510,11 +507,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
           {!isValidLicensePlate(formData.licensePlate || '') && (formData.licensePlate || '').length > 0 && (
             <div className="absolute -top-10 flex items-center gap-2 text-rose-600 bg-white/80 px-4 py-1 rounded-full font-bold shadow-sm animate-pulse">
               <AlertCircle size={16} /> License plate format is incorrect.
-            </div>
-          )}
-          {duplicateError && (
-            <div className="absolute -top-10 flex items-center gap-2 text-rose-600 bg-white/80 px-4 py-1 rounded-full font-bold shadow-sm animate-pulse">
-              <AlertCircle size={16} /> {duplicateError}
             </div>
           )}
           <div

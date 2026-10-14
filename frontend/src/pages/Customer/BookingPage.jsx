@@ -23,8 +23,11 @@ import {
   updateBookingVehicle,
 } from '../../services/bookingService';
 import { getMyVehicles } from '../../services/vehicleService';
+import { getAllFloors } from '../../services/parkingFloorService';
 import { useSocket } from '../../hooks/useSocket';
 import CustomerPageHeader from '../../components/Customer/CustomerPageHeader';
+import { formatLicensePlateDisplay } from '../../utils/licensePlate';
+import { buildFloorLookup, getBookingFloorLabel } from '../../utils/bookingFloor';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
@@ -51,12 +54,12 @@ const getBookingPaidAmount = (booking) => {
 
 const statusClass = (status) => {
   const normalizedStatus = String(status || '').toUpperCase();
-  if (normalizedStatus === 'PAID') return 'bg-blue-500/10 text-blue-300 border-blue-500/30';
-  if (normalizedStatus === 'ACTIVE') return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
-  if (normalizedStatus === 'PAUSED') return 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30';
-  if (normalizedStatus === 'COMPLETED') return 'bg-white/10 text-white/70 border-white/10';
-  if (normalizedStatus === 'CANCELLED') return 'bg-rose-500/10 text-rose-300 border-rose-500/30';
-  return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+  if (normalizedStatus === 'PAID') return 'bg-[#f5d76d]/10 text-[#f7d76b] border border-[#f5d76d]/30';
+  if (normalizedStatus === 'ACTIVE') return 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30';
+  if (normalizedStatus === 'PAUSED') return 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30';
+  if (normalizedStatus === 'COMPLETED') return 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30';
+  if (normalizedStatus === 'CANCELLED') return 'bg-rose-500/10 text-rose-300 border border-rose-500/30';
+  return 'bg-amber-500/10 text-amber-300 border border-amber-500/30';
 };
 
 const addMinutesLocalInput = (dateValue, minutes) => {
@@ -87,6 +90,7 @@ const getBookingTiming = (booking) => {
 export default function BookingPage() {
   const socket = useSocket();
   const [bookings, setBookings] = useState([]);
+  const [floorsById, setFloorsById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -107,12 +111,14 @@ export default function BookingPage() {
     setError('');
 
     try {
-      const [bookingRes, vehicleRes] = await Promise.all([
+      const [bookingRes, vehicleRes, floorRes] = await Promise.all([
         getMyBookings(),
-        getMyVehicles()
+        getMyVehicles(),
+        getAllFloors(),
       ]);
       if (bookingRes.ok) setBookings(bookingRes.data?.data || []);
       if (vehicleRes.ok) setVehicles(vehicleRes.data?.data || []);
+      if (floorRes.ok) setFloorsById(buildFloorLookup(floorRes.data?.data || []));
     } catch {
       setError('Could not load data.');
     } finally {
@@ -326,7 +332,7 @@ export default function BookingPage() {
         </div>
       )}
 
-      <section className="rounded-3xl bg-[#101010] border border-white/10 p-5 md:p-6">
+      <div className="">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-lg font-black">All Reservations</h2>
@@ -361,39 +367,36 @@ export default function BookingPage() {
               const isCancelQuoteBusy = cancelQuoteLoading === booking._id;
 
               return (
-                <div key={booking._id} className={`rounded-2xl border bg-white/[0.03] p-5 flex flex-col lg:flex-row lg:items-center gap-4 justify-between transition hover:border-white/20 ${
-                  timing.isNearExpiry ? 'border-amber-400/40' : 'border-white/10'
+                <div key={booking._id} className={`rounded-[24px] border border-[#f4c95d]/15 bg-[#0d1112] p-5 flex flex-col lg:flex-row lg:items-center gap-4 justify-between transition hover:border-[#f4c95d]/25 ${
+                  timing.isNearExpiry ? 'border-amber-400/40' : 'border-[#f4c95d]/15'
                 }`}>
                   <div className="min-w-0">
                     <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-xl font-black text-white">{getBookingSlot(booking)}</span>
-                      <span className={`px-2.5 py-1 rounded-full border text-xs font-bold uppercase ${statusClass(booking.status)}`}>
-                        {booking.status}
-                      </span>
-                      <span className="text-sm text-white/45">{booking.floorId?.name || 'Floor'}</span>
-                      {timing.isNearExpiry && (
-                        <span className="px-2.5 py-1 rounded-full border border-amber-400/30 bg-amber-400/10 text-xs font-bold uppercase text-amber-200">
-                          {timing.minutesToEnd} min left
-                        </span>
-                      )}
-                      {getBookingStatus(booking) === 'PAID' && timing.minutesToStart <= 15 && timing.minutesToStart >= -15 && (
-                        <span className="px-2.5 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-xs font-bold uppercase text-cyan-200">
-                          Arrival window
-                        </span>
-                      )}
+                        <span className="text-xl font-black text-white">{getBookingSlot(booking)}</span>
+                        <span className="text-sm text-[#a9c1bc]">{getBookingFloorLabel(booking, floorsById)}</span>
+                        {timing.isNearExpiry && (
+                          <span className="px-2.5 py-1 rounded-full border border-amber-400/30 bg-amber-400/10 text-xs font-bold uppercase text-amber-200">
+                            {timing.minutesToEnd} min left
+                          </span>
+                        )}
+                        {getBookingStatus(booking) === 'PAID' && timing.minutesToStart <= 15 && timing.minutesToStart >= -15 && (
+                          <span className="px-2.5 py-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 text-xs font-bold uppercase text-cyan-200">
+                            Arrival window
+                          </span>
+                        )}
                     </div>
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-y-2 gap-x-6 text-sm text-white/60">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold tracking-widest uppercase text-white/30 mb-0.5">License Plate</span>
-                        <span className="font-semibold text-white/80">{booking.licensePlate}</span>
+                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">License Plate</span>
+                        <span className="font-semibold text-white">{formatLicensePlateDisplay(booking.licensePlate)}</span>
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold tracking-widest uppercase text-white/30 mb-0.5">Time</span>
-                        <span className="font-semibold text-white/80">{formatDateTime(getBookingStart(booking))} - {formatDateTime(getBookingEnd(booking))}</span>
+                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">Time</span>
+                        <span className="font-semibold text-white">{formatDateTime(getBookingStart(booking))} - {formatDateTime(getBookingEnd(booking))}</span>
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold tracking-widest uppercase text-white/30 mb-0.5">Paid</span>
-                        <span className="font-bold text-yellow-400/90">{formatMoney(getBookingPaidAmount(booking))}</span>
+                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">Paid</span>
+                        <span className="font-bold text-[#f7d76b]">{formatMoney(getBookingPaidAmount(booking))}</span>
                       </div>
                     </div>
                     {booking.services?.length > 0 && (
@@ -413,69 +416,75 @@ export default function BookingPage() {
                     )}
                   </div>
 
-                  <div className="flex flex-wrap lg:justify-end gap-2 shrink-0">
-                    {['PAID', 'ACTIVE', 'PAUSED'].includes(getBookingStatus(booking)) && (
-                      <button
-                        type="button"
-                        disabled={qrLoading}
-                        onClick={() => openQrDialog(booking)}
-                        className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/20 transition flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {qrLoading ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
-                        Show QR
-                      </button>
-                    )}
-                    {timing.canExtend && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => openExtendDialog(booking, timing.isNearExpiry ? 30 : 60)}
-                        className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400/20 transition flex items-center gap-2 disabled:opacity-50"
-                      >
-                        <TimerReset size={14} />
-                        Extend
-                      </button>
-                    )}
-                    {timing.canEditBeforeCheckIn && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => openPlateDialog(booking)}
-                        className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:text-white hover:bg-white/5 transition flex items-center gap-2 disabled:opacity-50"
-                      >
-                        <Edit3 size={14} />
-                        Change plate
-                      </button>
-                    )}
-                    {timing.canEditBeforeCheckIn && (
-                      <button
-                        type="button"
-                        disabled={isBusy || Boolean(cancelQuoteLoading)}
-                        onClick={() => handleCancel(booking)}
-                        className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-400/20 transition flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {isCancelQuoteBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                        Cancel
-                      </button>
-                    )}
-                    {!timing.canExtend && !timing.canEditBeforeCheckIn && (
-                      <button
-                        type="button"
-                        onClick={() => { window.location.href = '/booking'; }}
-                        className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-white/60 hover:text-white hover:bg-white/5 transition flex items-center gap-2"
-                      >
-                        <RotateCcw size={14} />
-                        Book again
-                      </button>
-                    )}
-                    {isBusy && <Loader2 size={16} className="animate-spin text-white/40 mt-2" />}
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <span className={`px-2.5 py-1 rounded-full border text-xs font-bold uppercase ${statusClass(booking.status)}`}>
+                      {booking.status}
+                    </span>
+
+                    <div className="flex flex-wrap lg:justify-end gap-2">
+                      {['PAID', 'ACTIVE', 'PAUSED'].includes(getBookingStatus(booking)) && (
+                        <button
+                          type="button"
+                          disabled={qrLoading}
+                          onClick={() => openQrDialog(booking)}
+                          className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/20 transition flex items-center gap-2 disabled:opacity-50"
+                        >
+                          {qrLoading ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
+                          Show QR
+                        </button>
+                      )}
+                      {timing.canExtend && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => openExtendDialog(booking, timing.isNearExpiry ? 30 : 60)}
+                          className="rounded-xl border border-[#f4c95d]/20 bg-[#f4c95d]/5 px-3 py-2 text-xs font-bold text-[#f1d77b] hover:bg-[#f4c95d]/10 transition flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <TimerReset size={14} />
+                          Extend
+                        </button>
+                      )}
+                      {timing.canEditBeforeCheckIn && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => openPlateDialog(booking)}
+                          className="rounded-xl border border-[#dfe9e5]/10 bg-[#111915] px-3 py-2 text-xs font-bold text-[#dfe9e5] hover:border-[#dfe9e5]/20 hover:bg-[#18221f] transition flex items-center gap-2 disabled:opacity-50"
+                        >
+                          <Edit3 size={14} />
+                          Change plate
+                        </button>
+                      )}
+                      {timing.canEditBeforeCheckIn && (
+                        <button
+                          type="button"
+                          disabled={isBusy || Boolean(cancelQuoteLoading)}
+                          onClick={() => handleCancel(booking)}
+                          className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs font-bold text-rose-200 hover:bg-rose-400/20 transition flex items-center gap-2 disabled:opacity-50"
+                        >
+                          {isCancelQuoteBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                          Cancel
+                        </button>
+                      )}
+                      {!timing.canExtend && !timing.canEditBeforeCheckIn && (
+                        <button
+                          type="button"
+                          onClick={() => { window.location.href = '/booking'; }}
+                          className="rounded-xl border border-[#dfe9e5]/10 bg-[#111915] px-3 py-2 text-xs font-bold text-[#dfe9e5] hover:border-[#dfe9e5]/20 hover:bg-[#18221f] transition flex items-center gap-2"
+                        >
+                          <RotateCcw size={14} />
+                          Book again
+                        </button>
+                      )}
+                      {isBusy && <Loader2 size={16} className="animate-spin text-white/40 mt-2" />}
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
-      </section>
+      </div>
 
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -486,7 +495,7 @@ export default function BookingPage() {
                   {dialog.type === 'plate' ? 'Change License Plate' : 'Extend Parking'}
                 </h3>
                 <p className="text-sm text-white/45 mt-1">
-                  Slot {getBookingSlot(dialog.booking)} - {dialog.booking.floorId?.name || 'Floor'}
+                  Slot {getBookingSlot(dialog.booking)} - {getBookingFloorLabel(dialog.booking, floorsById)}
                 </p>
               </div>
               <button
@@ -518,7 +527,7 @@ export default function BookingPage() {
                     <option value="manual">Manual plate</option>
                     {approvedVehicles.map(v => (
                       <option key={v._id} value={v._id}>
-                        {v.licensePlate} ({v.type})
+                        {formatLicensePlateDisplay(v.licensePlate)} ({v.type})
                       </option>
                     ))}
                   </select>
@@ -596,7 +605,7 @@ export default function BookingPage() {
               <div>
                 <h3 className="text-xl font-black text-white">Cancel booking?</h3>
                 <p className="mt-1 text-sm leading-6 text-white/45">
-                  Slot {getBookingSlot(cancelDialog.booking)} - {cancelDialog.booking.licensePlate}
+                  Slot {getBookingSlot(cancelDialog.booking)} - {formatLicensePlateDisplay(cancelDialog.booking.licensePlate)}
                 </p>
               </div>
             </div>
@@ -647,7 +656,7 @@ export default function BookingPage() {
               <div>
                 <h3 className="text-xl font-black text-white">Booking QR</h3>
                 <p className="mt-1 text-sm text-white/45">
-                  {getBookingSlot(qrDialog.booking)} · {qrDialog.booking.licensePlate}
+                  {getBookingSlot(qrDialog.booking)} · {formatLicensePlateDisplay(qrDialog.booking.licensePlate)}
                 </p>
               </div>
               <button

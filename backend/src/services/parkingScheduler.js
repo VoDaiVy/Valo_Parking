@@ -1,13 +1,25 @@
+const mongoose = require('mongoose');
 const Session = require('../models/Session');
 const Booking = require('../models/Booking');
 const notifTriggers = require('./notificationTriggers');
 const contractService = require('./contractService');
 const bookingRefundService = require('./bookingRefundService');
 const { isEnabled } = require('../utils/featureFlags');
-const { emitToUser } = require('../sockets/notificationSocket');
+const { emitToUser, broadcastNotification } = require('../sockets/notificationSocket');
+const DynamicPricingConfig = require('../models/DynamicPricingConfig');
+const PricingSuggestion = require('../models/PricingSuggestion');
+const TicketPackage = require('../models/TicketPackage');
+const ParkingFloor = require('../models/ParkingFloor');
+const dynamicPricingEngine = require('./dynamicPricingEngine');
+const { getOccupancyForecast } = require('./demandForecastingService');
+const notificationService = require('./notificationService');
+const loyaltyService = require('./loyaltyService');
+const voucherService = require('./voucherService');
+const { bangkokDateParts } = require('../utils/pricingHorizon');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
 const CONTRACT_EXPIRATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DYNAMIC_PRICING_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const LOW_BALANCE_THRESHOLD = 30000; // 30,000 VND
 const NO_SHOW_GRACE_MS = 15 * 60 * 1000;
 const CHECKIN_REMINDER_MINUTES = [15, 30];
@@ -15,6 +27,104 @@ const BOOKING_END_REMINDER_MINUTES = [5, 15, 30];
 
 let schedulerInterval = null;
 let contractSchedulerInterval = null;
+let dynamicPricingInterval = null;
+
+async function checkExpiredSuggestions() {
+  return PricingSuggestion.updateMany(
+    { status: 'pending', validUntil: { $lt: new Date() } },
+    { $set: { status: 'expired' } }
+  );
+}
+
+async function notifyAdminsOfPricingFailure(app) {
+  try {
+    const result = await notificationService.createForRole('admin', {
+      title: 'Dynamic pricing disabled',
+      content: 'Dynamic pricing failed for 3 consecutive cycles and was switched to manual mode.',
+      type: 'SYSTEM',
+      priority: 'WARNING',
+      metadata: { feature: 'dynamic-pricing', reason: 'consecutive-failures' },
+    });
+    const io = app?.get?.('io');
+    if (io) broadcastNotification(io, result.notification, result.userIds);
+  } catch (error) {
+    console.error('[DynamicPricing] Failed to notify administrators:', error.message);
+  }
+}
+
+async function checkDynamicPricing(app) {
+  try {
+    await checkExpiredSuggestions();
+    const config = await dynamicPricingEngine.getActiveConfig({ create: true });
+    if (!config.isEnabled || config.pricingMode === 'manual') return null;
+
+    const now = new Date();
+    const { date: targetDate, hour: targetHour } = bangkokDateParts(now);
+    const floors = await ParkingFloor.find({}).select('_id').lean();
+    const packages = await TicketPackage.find({ isActive: true }).select('_id').lean();
+    const results = [];
+
+    for (const floor of floors) {
+      const forecast = await getOccupancyForecast({
+        date: targetDate,
+        hour: targetHour,
+        floorId: floor._id,
+        timeframe: 'day',
+        forecastHorizonHours: config.forecastHorizonHours,
+      });
+      const selected = forecast.selectedForecast || forecast.selectedItem;
+      if (!selected || !Number.isFinite(Number(selected.busynessScore))) {
+        throw new Error(`Forecast did not return a busynessScore for floor ${floor._id}`);
+      }
+
+      const scopedInput = {
+        busynessScore: selected.busynessScore,
+        targetDate,
+        targetHour,
+        floorId: floor._id,
+        force: true,
+      };
+      const hourlyInput = { ...scopedInput, priceType: 'hourly' };
+      results.push(config.pricingMode === 'semi-auto'
+        ? await dynamicPricingEngine.generateSuggestion(hourlyInput)
+        : await dynamicPricingEngine.applyAutoAdjustment(hourlyInput));
+
+      await Promise.all(packages.map((ticketPackage) => {
+        const packageInput = { ...scopedInput, priceType: 'package', packageId: ticketPackage._id };
+        return config.pricingMode === 'semi-auto'
+          ? dynamicPricingEngine.generateSuggestion(packageInput)
+          : dynamicPricingEngine.applyAutoAdjustment(packageInput);
+      }));
+    }
+    const firstResult = results.find(Boolean) || null;
+
+    if (config.pricingMode === 'auto') {
+      await DynamicPricingConfig.updateOne(
+        { _id: config._id },
+        { $set: { consecutiveFailures: 0 } }
+      );
+    }
+    return firstResult;
+  } catch (error) {
+    console.error('[DynamicPricing] Scheduler check failed:', error.message);
+    try {
+      const config = await dynamicPricingEngine.getActiveConfig({ create: true });
+      if (config.pricingMode === 'auto') {
+        config.consecutiveFailures += 1;
+        if (config.consecutiveFailures >= 3) {
+          config.pricingMode = 'manual';
+          await config.save();
+          await notifyAdminsOfPricingFailure(app);
+        } else {
+          await config.save();
+        }
+      }
+    } catch (configError) {
+      console.error('[DynamicPricing] Could not record scheduler failure:', configError.message);
+    }
+    return null;
+  }
+}
 
 function getUpcomingMilestone(targetTime, now = new Date(), milestones = []) {
   const target = new Date(targetTime);
@@ -83,6 +193,17 @@ async function checkBookings(app) {
 
     // 1. Tự động hủy các booking PENDING VietQR quá 15 phút chưa thanh toán
     const fifteenMinsAgo = new Date(now.getTime() - 15 * 60 * 1000);
+    let pendingVoucherBookings = [];
+    try {
+      pendingVoucherBookings = await Booking.find({
+        status: 'PENDING',
+        paymentMethod: 'vietqr',
+        createdAt: { $lt: fifteenMinsAgo },
+        'paymentBreakdownSnapshot.voucherId': { $ne: null },
+      }).select('_id').lean();
+    } catch (error) {
+      console.error('[Loyalty] Could not load stale voucher reservations:', error.message);
+    }
     const pendingCancelResult = await Booking.updateMany(
       {
         status: 'PENDING',
@@ -91,6 +212,9 @@ async function checkBookings(app) {
       },
       { status: 'CANCELLED' }
     );
+    await Promise.all(pendingVoucherBookings.map(({ _id }) => (
+      voucherService.releaseVoucherReservation({ bookingId: _id })
+    )));
     if (pendingCancelResult.modifiedCount > 0) {
       console.log(`[ParkingScheduler] Đã tự động hủy ${pendingCancelResult.modifiedCount} đặt chỗ chờ thanh toán VietQR.`);
     }
@@ -192,6 +316,12 @@ async function checkBookings(app) {
         });
         const booking = result.booking;
 
+        if (mongoose.connection.readyState === 1) loyaltyService.revokePoints({
+          userId: booking.userId,
+          refSource: 'booking',
+          refSourceId: booking._id,
+        }).catch((error) => console.error('[Loyalty] scheduler revoke failed:', error.message));
+
         console.log(`[ParkingScheduler] Đặt chỗ ${booking._id} của xe ${booking.licensePlate} bị hủy hoàn toàn do trễ quá 30 phút.`);
 
         if (booking.userId) {
@@ -288,6 +418,14 @@ async function checkBookings(app) {
           },
         });
         const booking = result.booking;
+
+        if (mongoose.connection.readyState === 1) loyaltyService.earnPoints({
+          userId: booking.userId,
+          amount: booking.prepaidAmount,
+          refSource: 'booking',
+          refSourceId: booking._id,
+          app,
+        }).catch((error) => console.error('[Loyalty] scheduler earn failed:', error.message));
 
         emitBookingChanged(app, booking);
         console.log(`[ParkingScheduler] Booking PAUSED ${booking._id} tự động chuyển sang COMPLETED do hết thời gian chờ quay lại.`);
@@ -630,6 +768,9 @@ function startScheduler(app) {
   checkPendingSubscriptions().catch((err) =>
     console.error('[ParkingScheduler] Initial pending subscriptions check error:', err.message)
   );
+  checkDynamicPricing(app).catch((err) =>
+    console.error('[DynamicPricing] Initial check error:', err.message)
+  );
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
@@ -655,6 +796,12 @@ function startScheduler(app) {
       console.error('[ParkingScheduler] VIP subscription interval error:', err.message)
     );
   }, CONTRACT_EXPIRATION_INTERVAL_MS);
+
+  dynamicPricingInterval = setInterval(() => {
+    checkDynamicPricing(app).catch((err) =>
+      console.error('[DynamicPricing] Interval check error:', err.message)
+    );
+  }, DYNAMIC_PRICING_INTERVAL_MS);
 }
 
 /**
@@ -669,6 +816,10 @@ function stopScheduler() {
     clearInterval(contractSchedulerInterval);
     contractSchedulerInterval = null;
   }
+  if (dynamicPricingInterval) {
+    clearInterval(dynamicPricingInterval);
+    dynamicPricingInterval = null;
+  }
   console.log('[ParkingScheduler] Scheduler stopped.');
 }
 
@@ -681,6 +832,8 @@ module.exports = {
   checkExpiredMembershipTransfers,
   checkVIPSubscriptions,
   checkPendingSubscriptions,
+  checkDynamicPricing,
+  checkExpiredSuggestions,
   getUpcomingMilestone,
   LOW_BALANCE_THRESHOLD,
 };
