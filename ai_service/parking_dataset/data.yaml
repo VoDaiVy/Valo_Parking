@@ -1,0 +1,6 @@
+train: /Users/vodaivy/FPT University/WDP301/ValoParking/ai_service/parking_dataset/train/images
+val: /Users/vodaivy/FPT University/WDP301/ValoParking/ai_service/parking_dataset/valid/images
+test: /Users/vodaivy/FPT University/WDP301/ValoParking/ai_service/parking_dataset/test/images
+
+nc: 1
+names: ['parking space']
