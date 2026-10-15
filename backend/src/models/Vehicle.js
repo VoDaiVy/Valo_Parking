@@ -15,8 +15,8 @@ const vehicleSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
       match: [
-        /^[A-Z0-9]{4,12}$/,
-        'License plate must be 4-12 alphanumeric characters',
+        /^[1-9]\d[A-Z]{1,2}\d{4,5}$/,
+        'Biển số ô tô không hợp lệ. Ví dụ: 43A12345.',
       ],
     },
     vehicleType: {

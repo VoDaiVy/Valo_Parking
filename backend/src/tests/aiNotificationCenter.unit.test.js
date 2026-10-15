@@ -131,18 +131,52 @@ test('floor detector reuses booking availability for every real blocker and igno
   let maintenance = ['A03'];
   ParkingFloor.find = () => query([floor]);
   Booking.find = () => query([{ floorId: 'floor-1', parkingSlot: 'A01' }]);
-  Session.find = () => query([{ floorId: 'floor-1', parkingSlot: 'A02' }]);
+  Session.find = () => query([{
+    floorId: 'floor-1', parkingSlot: 'A02', checkInTime: new Date(), expectedDurationHours: 1,
+  }]);
   Slot.find = (filter) => query(filter.status === 'maintenance'
     ? maintenance.map((slotNumber) => ({ floorID: 'floor-1', slotNumber }))
     : [{ floorID: 'floor-1', slotNumber: 'A05' }]);
   BookingHold.find = () => query([{ floorId: 'floor-1', slotCode: 'A04' }]);
-  MembershipSlotEntitlement.find = () => query([{ floorId: 'floor-1', slotCode: 'A06', sourceSubscriptionId: 'subscription-1' }]);
+  MembershipSlotEntitlement.find = () => query([{
+    ownerId: 'owner-1', floorId: 'floor-1', slotCode: 'A06',
+    sourceSubscriptionId: 'subscription-1', expireAt: new Date('2099-01-01T00:00:00Z'),
+  }]);
   Subscription.find = () => query([]);
   try {
     const start = new Date();
     const end = new Date(start.getTime() + 60000);
     assert.equal((await bookingController.getAllBookableSlots()).length, 7);
     assert.deepEqual((await bookingController.getAvailableSlotsForRange(start, end)).map((slot) => slot.slotCode), ['A07']);
+    assert.deepEqual(
+      (await bookingController.getAvailableSlotsForRange(start, end, 'owner-1'))
+        .map((slot) => slot.slotCode),
+      ['A07'],
+    );
+    const ownerSlots = await bookingController.getAvailableSlotsForRange(
+      start,
+      end,
+      'owner-1',
+      { allowExpectedSessionCheckout: true, includeOwnedDedicatedSlots: true }
+    );
+    assert.deepEqual(ownerSlots.map((slot) => slot.slotCode), ['A06', 'A07']);
+    assert.equal(ownerSlots.find((slot) => slot.slotCode === 'A06').isDedicatedToCurrentUser, true);
+    const futureStart = new Date(start.getTime() + (2 * 60 * 60 * 1000));
+    const futureEnd = new Date(futureStart.getTime() + 60000);
+    assert.deepEqual(
+      (await bookingController.getAvailableSlotsForRange(futureStart, futureEnd))
+        .map((slot) => slot.slotCode),
+      ['A07'],
+    );
+    assert.deepEqual(
+      (await bookingController.getAvailableSlotsForRange(
+        futureStart,
+        futureEnd,
+        null,
+        { allowExpectedSessionCheckout: true, includeOwnedDedicatedSlots: true }
+      )).map((slot) => slot.slotCode),
+      ['A02', 'A07'],
+    );
     maintenance = ['A03', 'A07'];
     assert.equal((await bookingController.getAvailableSlotsForRange(start, end)).length, 0);
   } finally { originals.forEach(([model, find]) => { model.find = find; }); }

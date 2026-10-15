@@ -178,6 +178,7 @@ const bookingSchema = new mongoose.Schema(
 // Indexes
 bookingSchema.index({ vehicleId: 1, scheduledStart: 1, scheduledEnd: 1 });
 bookingSchema.index({ status: 1 });
+  bookingSchema.index({ completedAt: 1, userId: 1 });
 
 const lifecycleTimestampForStatus = (status) => {
   if (status === 'PAID') return 'paidAt';

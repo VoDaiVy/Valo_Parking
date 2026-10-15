@@ -13,6 +13,7 @@ const calculateDiscountedTotal = (amount, discountPercent) => Math.floor(
 );
 
 const getVoucherStateError = (voucher, now = new Date()) => {
+  if (voucher.status === 'revoked') return { message: 'Voucher was revoked after a refund', code: 'VOUCHER_REVOKED' };
   if (new Date(now).getTime() >= new Date(voucher.expiresAt).getTime()) {
     return { message: 'Voucher has expired', code: 'VOUCHER_EXPIRED' };
   }
@@ -48,6 +49,14 @@ async function previewVoucher({ voucherId, userId, amount, serviceIds = [], sess
   }
 
   const benefit = voucher.benefitSnapshot;
+  if (!Number.isFinite(Number(amount)) || Number(amount) < 0) throw businessError('Invalid booking amount');
+  if (Number(amount) < Number(benefit.minimumAmount || 0)) {
+    throw businessError(`Minimum booking amount is ${benefit.minimumAmount} VND`, 400, 'VOUCHER_MINIMUM_AMOUNT');
+  }
+  if (benefit.type === 'FIXED_DISCOUNT') {
+    const voucherDiscount = Math.min(Number(amount), Number(benefit.discountAmount));
+    return { voucher, type: benefit.type, discountedAmount: Number(amount) - voucherDiscount, voucherDiscount, freeService: null };
+  }
   if (benefit.type === 'PERCENT_DISCOUNT') {
     const discountedAmount = calculateDiscountedTotal(amount, benefit.discountPercent);
     return {
@@ -94,6 +103,9 @@ async function validateAndApplyVoucher({ voucherId, booking, serviceIds = [], se
     serviceIds,
     session,
   });
+  if (preview.voucher.source === 'spending' && booking.createdAt && new Date(booking.createdAt) < preview.voucher.redeemedAt) {
+    throw businessError('This reward applies to new bookings only', 400, 'VOUCHER_NEW_BOOKING_ONLY');
+  }
 
   const reserved = await UserVoucher.findOneAndUpdate(
     {
@@ -154,7 +166,9 @@ async function markVoucherUsed({ bookingId, session }) {
   if (!voucherId) return null;
 
   return UserVoucher.findOneAndUpdate(
-    { _id: voucherId, bookingId, status: 'available', expiresAt: { $gt: new Date() } },
+    // Honour a reservation made while valid if the payment callback arrives after expiry.
+    // New reservations still require expiresAt > now; cancelled bookings release them.
+    { _id: voucherId, bookingId, status: { $in: ['available', 'expired'] } },
     { $set: { status: 'used', usedAt: new Date() } },
     { new: true, session }
   );

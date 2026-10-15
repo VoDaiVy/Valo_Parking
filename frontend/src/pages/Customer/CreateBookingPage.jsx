@@ -24,8 +24,6 @@ import AIBusynessForecast from '../../components/AIBusynessForecast';
 
 import AiBookingPanel from '../../components/Customer/AiBookingPanel';
 
-import PriceBadge from '../../components/PriceBadge';
-import { useDynamicPricing } from '../../hooks/useDynamicPricing';
 
 
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
@@ -53,6 +51,7 @@ import {
   writeBookingCart,
 } from '../../utils/bookingCartStorage';
 import { findRequestedService } from '../../utils/bookingNavigation';
+import { getVipBookingSelection } from '../../utils/vipBookingPolicy';
 import { getMyVouchers } from '../../services/loyaltyService';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
@@ -793,7 +792,6 @@ export default function CreateBookingPage() {
   const [floors, setFloors] = useState([]);
   const [pricingConfig, setPricingConfig] = useState(null);
   const [currentFloorId, setCurrentFloorId] = useState(null);
-  const dynamicPricing = useDynamicPricing(startTime, endTime, currentFloorId);
   const [dbSlots, setDbSlots] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [activeHolds, setActiveHolds] = useState([]);
@@ -1003,38 +1001,20 @@ export default function CreateBookingPage() {
 
   const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey);
   const selectedVehicle = vehicles.find((vehicle) => vehicle._id === vehicleId);
-  const activeMembershipType = useMemo(() => {
-    const membership = profile?.membership;
-    if (!membership?.isVip || !membership?.expireAt) return null;
-    const expireAt = new Date(membership.expireAt);
-    if (Number.isNaN(expireAt.getTime()) || expireAt <= new Date()) return null;
-    return ['monthly', 'yearly'].includes(membership.packageType) ? membership.packageType : null;
-  }, [profile?.membership]);
-  const selectedDbSlot = selectedSlot
-    ? dbSlots.find((slot) => slot.slotNumber === selectedSlot.slotCode)
-    : null;
-  const selectedSlotReservedFor = selectedDbSlot?.reservedFor?._id || selectedDbSlot?.reservedFor || null;
-  const rawManualPlateForCheck = manualPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-  const currentLicensePlate = vehicleId ? selectedVehicle?.licensePlate : rawManualPlateForCheck;
-  const isRegisteredPlate = vehicles.some(
-    v => v.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === currentLicensePlate
-  );
-
-  const selectedSlotIsOwnVipSlot = Boolean(
-    activeMembershipType &&
-    isRegisteredPlate &&
-    selectedSlot &&
-    selectedSlotReservedFor &&
-    String(selectedSlotReservedFor) === String(profile?.id)
-  );
-
-  const selectedRegisteredVehicleBlockedByVip = Boolean(
-    activeMembershipType &&
-    isRegisteredPlate &&
-    selectedSlot &&
-    selectedDbSlot &&
-    !selectedSlotIsOwnVipSlot
-  );
+  const {
+    activeMembershipType,
+    isRegisteredPlate,
+    selectedSlotIsOwnVipSlot,
+    selectedRegisteredVehicleBlockedByVip,
+  } = getVipBookingSelection({
+    membership: profile?.membership,
+    vehicles,
+    selectedVehicle,
+    manualPlate,
+    selectedSlot,
+    startTime,
+    endTime,
+  });
   const pricePreview = useMemo(
     () => calculateBookingPrice(startTime, endTime, { 
       waiveOpeningFee: selectedSlotIsOwnVipSlot,
@@ -1043,9 +1023,7 @@ export default function CreateBookingPage() {
     [endTime, selectedSlotIsOwnVipSlot, startTime, pricingConfig]
   );
   const baseParkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
-  const parkingTotal = selectedSlotIsOwnVipSlot
-    ? 0
-    : dynamicPricing.computeAdjustedTotal(pricePreview.usageAmount);
+  const parkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
   const baseGrandTotal = parkingTotal + serviceTotal;
   const grandTotal = selectedVoucher?.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
     ? Math.floor(baseGrandTotal * (1 - Number(selectedVoucher.benefitSnapshot.discountPercent || 0) / 100))
@@ -1074,10 +1052,6 @@ export default function CreateBookingPage() {
     (total, item) => total + Number(item.baseTotalAmount ?? item.totalAmount ?? 0),
     0
   );
-  const cartHasDynamicPricing = cartItems.some((item) => {
-    const quotedItem = cartQuote?.items?.find((quote) => quote.clientItemId === item.clientItemId);
-    return Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1) !== 1;
-  });
   const cartHasVoucher = cartItems.some((item) => Boolean(item.voucherId));
   const cartWalletShortfall = Math.max(cartGrandTotal - walletBalance, 0);
   const hasCartErrors = Object.keys(cartItemErrors).length > 0;
@@ -1325,7 +1299,7 @@ export default function CreateBookingPage() {
     }
 
     if (selectedRegisteredVehicleBlockedByVip) {
-      setError('This vehicle is already covered by your active VIP membership. Please use your assigned VIP slot instead of booking another slot.');
+      setError('Your VIP pass only covers assigned slots during its valid period. Choose an assigned slot within the pass dates or renew your pass.');
       return;
     }
 
@@ -1409,9 +1383,9 @@ export default function CreateBookingPage() {
       serviceAmount: serviceTotal,
       totalAmount: grandTotal,
       baseTotalAmount: baseParkingTotal + grossServiceTotal,
-      dynamicMultiplier: dynamicPricing.multiplier,
-      priceLabel: dynamicPricing.priceLabel,
-      busynessScore: dynamicPricing.busynessScore,
+      dynamicMultiplier: 1,
+      priceLabel: pricePreview.appliedPolicies?.map((policy) => policy.name).join(', ') || null,
+      busynessScore: null,
       pricingDetails: pricePreview,
       holdId: holdRes.data?.data?._id,
       holdExpiresAt: holdRes.data?.data?.expiresAt,
@@ -1768,7 +1742,7 @@ export default function CreateBookingPage() {
 
         <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
           <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Tự chọn chỗ</button>
-          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>✨ Đặt nhanh với AI</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Trợ lý đỗ xe AI</button>
         </div>
 
         {(error || success) && (
@@ -1781,7 +1755,17 @@ export default function CreateBookingPage() {
           </div>
         )}
 
-        {bookingMode === 'ai' ? <AiBookingPanel vehicles={vehicles} onSwitchToManual={() => setBookingMode('manual')} /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
+        {bookingMode === 'ai' ? <AiBookingPanel
+          vehicles={vehicles}
+          onVehiclesChanged={loadData}
+          onSwitchToManual={() => setBookingMode('manual')}
+          mapFloors={floors}
+          mapFloorId={currentFloorId}
+          onMapFloorSelect={setCurrentFloorId}
+          mapActiveSessions={activeSessions}
+          mapDbSlots={dbSlots}
+          mapActiveHolds={activeHolds}
+        /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
@@ -1877,7 +1861,7 @@ export default function CreateBookingPage() {
                   }`}>
                     {selectedSlotIsOwnVipSlot
                       ? 'This is your assigned VIP slot, so this registered vehicle can use it while your membership is active.'
-                      : 'This registered vehicle is covered by an active VIP membership. Please use your assigned VIP slot instead of booking another slot.'}
+                      : 'Your VIP pass only covers assigned slots during its valid period. Choose an assigned slot within the pass dates or renew your pass.'}
                   </div>
                 )}
               </div>
@@ -1964,14 +1948,7 @@ export default function CreateBookingPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> Parking</span>
                   <span className="font-bold text-gray-900 text-right">
-                    {dynamicPricing.loading ? (
-                      <span className="inline-block h-4 w-24 animate-pulse rounded bg-gray-200" />
-                    ) : dynamicPricing.effectiveMultiplier !== 1 && !dynamicPricing.error ? (
-                      <span className="flex flex-col items-end gap-1">
-                        <span className="text-xs text-gray-400 line-through">{formatMoney(baseParkingTotal)}</span>
-                        <span>{formatMoney(parkingTotal)}</span>
-                      </span>
-                    ) : formatMoney(baseParkingTotal)}
+                    {formatMoney(parkingTotal)}
                     {pricePreview.capApplied && (
                       <span className="block text-[10px] text-emerald-600">Cap {pricePreview.capHours}h applied</span>
                     )}
@@ -1988,12 +1965,13 @@ export default function CreateBookingPage() {
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
                   <span className="flex items-center gap-2 font-black text-gray-900">
                     Wallet charge
-                    {!dynamicPricing.error && <PriceBadge multiplier={dynamicPricing.effectiveMultiplier} label={dynamicPricing.promotion?.label || dynamicPricing.priceLabel} />}
+                    {pricePreview.appliedPolicies?.length > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">
+                        {pricePreview.appliedPolicies.map((policy) => policy.name).join(', ')}
+                      </span>
+                    )}
                   </span>
                   <span className="text-right">
-                    {dynamicPricing.effectiveMultiplier !== 1 && !dynamicPricing.error && (
-                      <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(baseParkingTotal + grossServiceTotal)}</span>
-                    )}
                     <span className="text-xl font-black text-gold">{formatMoney(grandTotal)}</span>
                   </span>
                 </div>
@@ -2040,7 +2018,6 @@ export default function CreateBookingPage() {
                     const itemError = cartItemErrors[item.clientItemId];
                     const quotedItem = cartQuote?.items?.find((quoteItem) => quoteItem.clientItemId === item.clientItemId);
                     const itemTotal = quotedItem?.totalAmount ?? item.totalAmount;
-                    const itemMultiplier = Number(quotedItem?.dynamicMultiplier ?? item.dynamicMultiplier ?? 1);
                     const itemVoucherDiscount = Number(quotedItem?.voucherDiscount || 0);
                     const baseItemTotal = Number(item.baseTotalAmount ?? item.totalAmount ?? 0);
 
@@ -2098,9 +2075,8 @@ export default function CreateBookingPage() {
                             {itemError ? itemError.message : 'Ready'}
                           </span>
                           <span className="flex flex-col items-end gap-1 text-sm font-black text-gray-900">
-                            {(itemMultiplier !== 1 || itemVoucherDiscount > 0) && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
+                            {itemVoucherDiscount > 0 && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
                             <span>{formatMoney(itemTotal)}</span>
-                            <PriceBadge multiplier={itemMultiplier} />
                           </span>
                         </div>
                       </div>
@@ -2119,7 +2095,7 @@ export default function CreateBookingPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500 font-semibold">Cart total</span>
                       <span className="text-right">
-                        {(cartHasDynamicPricing || cartHasVoucher) && cartBaseGrandTotal !== cartGrandTotal && (
+                        {cartHasVoucher && cartBaseGrandTotal !== cartGrandTotal && (
                           <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(cartBaseGrandTotal)}</span>
                         )}
                         <span className="font-black text-gold text-lg">{formatMoney(cartGrandTotal)}</span>
@@ -2259,10 +2235,10 @@ export default function CreateBookingPage() {
             </div>
             <h2 className="text-2xl font-black text-gray-900">Confirm booking payment</h2>
             <p className="mt-2 text-sm font-medium text-gray-500">
-              Review the final demand-adjusted amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
+              Review the final amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
             </p>
             <div className="my-5 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-              {(cartHasDynamicPricing || cartHasVoucher) && cartBaseGrandTotal !== cartGrandTotal && (
+              {cartHasVoucher && cartBaseGrandTotal !== cartGrandTotal && (
                 <div className="mb-1 flex items-center justify-between text-sm text-gray-400">
                   <span>Base total</span><span className="font-bold line-through">{formatMoney(cartBaseGrandTotal)}</span>
                 </div>
