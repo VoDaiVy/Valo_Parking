@@ -123,6 +123,7 @@ const sessionSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    settledPaidAmount: { type: Number, min: 0, default: null },
     pricingBreakdown: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
@@ -139,5 +140,6 @@ sessionSchema.pre('validate', function normalizePlate(next) {
 });
 
 sessionSchema.index({ licensePlate: 1, status: 1, checkInTime: 1 });
+sessionSchema.index({ checkOutTime: 1, bookingId: 1, userId: 1 });
 
 module.exports = mongoose.model('Session', sessionSchema);

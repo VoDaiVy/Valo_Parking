@@ -42,8 +42,12 @@ const ticketPackageSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    aiDraftId: { type: mongoose.Schema.Types.ObjectId, ref: 'AIDraft' },
+    aiAppliedDraftIds: { type: [mongoose.Schema.Types.ObjectId], default: [] },
   },
   { timestamps: true }
 );
+
+ticketPackageSchema.index({ aiDraftId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('TicketPackage', ticketPackageSchema);

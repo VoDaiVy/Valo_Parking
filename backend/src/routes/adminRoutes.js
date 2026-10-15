@@ -40,6 +40,9 @@ router.use(authorize("admin"));
 // Policies
 router.use("/policies", require("./adminPolicyRoutes"));
 
+// Loyalty voucher catalog
+router.use("/voucher-templates", require("./voucherTemplateRoutes"));
+
 // Vehicle 3D models
 router.get("/vehicles/models", listVehicleModels);
 router.post(

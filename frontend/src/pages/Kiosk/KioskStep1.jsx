@@ -4,17 +4,19 @@ import KioskQrScannerModal from './KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
 import { isValidLicensePlate } from '../../utils/licensePlate';
 import ParkingFullModal from './ParkingFullModal';
+import PlateMismatchModal from './PlateMismatchModal';
+import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 export default function KioskStep1({ formData, updateFormData, onNext }) {
   const [activeField, setActiveField] = useState('plate'); // Default to plate
   const [isVerifying, setIsVerifying] = useState(false);
-  const [duplicateError, setDuplicateError] = useState('');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showReallocationModal, setShowReallocationModal] = useState(false);
   const [reallocationMessage, setReallocationMessage] = useState('');
   const [modalTitle, setModalTitle] = useState(undefined);
   const [modalMessage, setModalMessage] = useState(undefined);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [mismatchData, setMismatchData] = useState(null);
 
   const handleQrScan = async (qrPayload) => {
     setShowQrModal(false);
@@ -23,33 +25,53 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrPayload })
+        body: JSON.stringify({
+          qrPayload,
+          entryImageBase64: formData.entryImageBase64 || null,
+        }),
       });
       const data = await response.json();
-      if (data.success) {
-        updateFormData({
-          licensePlate: data.licensePlate,
-          phone: data.phone
-        });
-        // Immediately trigger normal license plate verification with the scanned data
-        setTimeout(() => {
-          setActiveField('plate');
-        }, 100);
-      } else {
+
+      if (!data.success) {
         setIsVerifying(false);
-        alert(data.message || 'Invalid QR code');
+        alert(data.message || 'Mã QR không hợp lệ');
+        return;
       }
+
+      // Check anti-fraud plate mismatch
+      if (data.isPlateMatched === false) {
+        setIsVerifying(false);
+        setMismatchData({
+          qrPlate: data.licensePlate,
+          detectedPlate: data.detectedPlate,
+          reason: data.mismatchReason,
+          entryImageBase64: formData.entryImageBase64 || null,
+        });
+        return;
+      }
+
+      updateFormData({
+        licensePlate: data.licensePlate,
+        phone: data.phone,
+      });
+      setIsVerifying(false);
+      // Trigger auto-verify with new plate
+      setTimeout(() => {
+        setActiveField('plate');
+      }, 100);
     } catch (err) {
       console.error(err);
       setIsVerifying(false);
-      alert('Network error while verifying QR code.');
+      alert('Lỗi kết nối khi xác thực mã QR.');
     }
   };
+
+  useQrScannerListener(handleQrScan, !isVerifying);
+
 
   // Auto-verify logic
   useEffect(() => {
     const plate = formData.licensePlate || '';
-    setDuplicateError(''); // Clear error on edit
     // Trigger auto-verify if plate is valid and we are actively typing it
     if (isValidLicensePlate(plate) && activeField === 'plate') {
       const timerId = setTimeout(async () => {
@@ -83,7 +105,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
                 isMonthly: verifyData.isMonthly,
                 membershipType: verifyData.membershipType || null,
                 hasPreBooking: verifyData.hasPreBooking,
-          isVipReallocation: !!verifyData.requiresSlotReallocation,
                 isVipReallocation: !!verifyData.requiresSlotReallocation,
                 selectedSlot: verifyData.assignedSlot,
                 floorId: verifyData.assignedFloorId || null,
@@ -488,11 +509,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
               <AlertCircle size={16} /> License plate format is incorrect.
             </div>
           )}
-          {duplicateError && (
-            <div className="absolute -top-10 flex items-center gap-2 text-rose-600 bg-white/80 px-4 py-1 rounded-full font-bold shadow-sm animate-pulse">
-              <AlertCircle size={16} /> {duplicateError}
-            </div>
-          )}
           <div
             className={`relative bg-white rounded-2xl h-[52px] flex items-center justify-between px-2 w-[90%] mx-auto transition-all border-2 cursor-pointer ${activeField === 'plate' ? 'border-[#0f172a] shadow-[0_4px_15px_rgba(0,0,0,0.05)]' : 'border-transparent'}`}
             onClick={() => setActiveField('plate')}
@@ -549,7 +565,16 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       </div>
 
       {/* Actions Row */}
-      <div className="flex items-center justify-center mt-4 mb-1">
+      <div className="flex items-center justify-center gap-4 mt-4 mb-1">
+        <button
+          type="button"
+          onClick={() => setShowQrModal(true)}
+          className="flex items-center gap-2 font-bold text-[16px] px-8 h-[52px] rounded-full transition-all border-2 border-[#0f172a] bg-white text-[#0f172a] hover:bg-slate-50 shadow-sm active:scale-95"
+        >
+          <ScanLine size={20} />
+          <span>Scan QR</span>
+        </button>
+
         <button
           onClick={handleManualNext}
           disabled={isVerifying || !(formData.licensePlate || '') || !isValidLicensePlate(formData.licensePlate || '')}
@@ -600,6 +625,19 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
           </div>
         </div>
       )}
+
+      {/* Plate Mismatch & Anti-Fraud Alert Modal */}
+      <PlateMismatchModal
+        isOpen={!!mismatchData}
+        qrPlate={mismatchData?.qrPlate || ''}
+        detectedPlate={mismatchData?.detectedPlate || ''}
+        entryImageBase64={mismatchData?.entryImageBase64 || null}
+        reason={mismatchData?.reason || ''}
+        onClose={() => {
+          setMismatchData(null);
+        }}
+      />
     </div>
   );
 }
+

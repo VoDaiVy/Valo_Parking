@@ -28,6 +28,7 @@ const {
 const {
   buildAdminSubscriptionProjection,
 } = require('../services/adminSubscriptionProjectionService');
+const { notifySubscriptionActivatedSafely } = require('../services/aiCopilot/notificationEvents');
 
 const buildExpirationDate = (packageType, fromDate = new Date()) => {
   const expireAt = new Date(fromDate);
@@ -38,6 +39,7 @@ const buildExpirationDate = (packageType, fromDate = new Date()) => {
   }
   return expireAt;
 };
+
 
 // Create payment order for subscription
 exports.createSubscriptionPayment = async (req, res, next) => {
@@ -56,7 +58,6 @@ exports.createSubscriptionPayment = async (req, res, next) => {
       slots,
     });
 
-    // Amount to pay (price * number of slots)
     const amount = ticketPackage.price * Math.max(1, slots.length);
 
     // Generate Order Code for PayOS
@@ -165,6 +166,9 @@ exports.verifyPayment = async (req, res, next) => {
     
     if (isPaymentSuccessful) {
       if (isRenewal) {
+        if (!subscription.rewardPayments.some((payment) => payment.orderCode === subscription.pendingRenewal.orderCode)) {
+          subscription.rewardPayments.push({ orderCode: subscription.pendingRenewal.orderCode, userId: subscription.user, amount: subscription.pendingRenewal.amount, paidAt: new Date() });
+        }
         subscription.expireAt = subscription.pendingRenewal.newExpireAt;
         subscription.status = 'active';
         subscription.expireWarningSent = false;
@@ -208,7 +212,13 @@ exports.verifyPayment = async (req, res, next) => {
         } finally {
           activationSession.endSession();
         }
+        
+        if (subscription.status === 'active') {
+          const tp = await TicketPackage.findById(subscription.ticketPackage).lean();
+          notifySubscriptionActivatedSafely(subscription, tp, req.app);
+        }
       }
+
 
       return res.status(200).json({ success: true, message: isRenewal ? 'Subscription renewed successfully!' : 'Subscription activated successfully!' });
     } else {
@@ -247,7 +257,6 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       slots,
     });
 
-    // Amount to pay (price * number of slots)
     const amount = ticketPackage.price * Math.max(1, slots.length);
 
     // Calculate expiration date
@@ -298,6 +307,10 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
       });
     } finally {
       dbSession.endSession();
+    }
+    
+    if (subscription.status === 'active') {
+      notifySubscriptionActivatedSafely(subscription, ticketPackage, req.app);
     }
 
     return res.status(200).json({ success: true, message: 'Subscription activated successfully via Valo Wallet!' });
@@ -664,12 +677,13 @@ exports.renewSubscription = async (req, res, next) => {
 
     if (paymentMethod === 'WALLET') {
       try {
-        await walletService.debitWallet(req.user._id, amount, `Renew VIP Package - ${ticketPackage.type}`, {
+        const renewalDebit = await walletService.debitWallet(req.user._id, amount, `Renew VIP Package - ${ticketPackage.type}`, {
           refSource: 'subscription_renewal',
           refSourceId: subscription._id.toString()
         });
         
         subscription.expireAt = newExpireAt;
+        subscription.rewardPayments.push({ paymentKey: `wallet:${renewalDebit.transaction._id}`, userId: req.user._id, amount, paidAt: now });
         subscription.status = 'active';
         subscription.expireWarningSent = false;
         

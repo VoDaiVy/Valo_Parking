@@ -28,24 +28,24 @@ export default function KioskOutFlow() {
   return (
     <div className="w-screen h-[100dvh] overflow-hidden bg-[#0a0a0a] text-white selection:bg-gold/30">
       <Routes>
-        <Route 
-          path="/" 
-          element={<KioskOutWelcome onScanSuccess={handleScanSuccess} />} 
+        <Route
+          path="/"
+          element={<KioskOutWelcome onScanSuccess={handleScanSuccess} />}
         />
-        <Route 
-          path="invoice" 
+        <Route
+          path="invoice"
           element={
-            <KioskOutInvoice 
-              sessionData={sessionData} 
+            <KioskOutInvoice
+              sessionData={sessionData}
               exitImage={exitImage}
               onCheckoutSuccess={handleCheckoutSuccess}
               onBack={handleRestart}
             />
-          } 
+          }
         />
-        <Route 
-          path="success" 
-          element={<KioskOutSuccess onFinish={handleRestart} />} 
+        <Route
+          path="success"
+          element={<KioskOutSuccess onFinish={handleRestart} />}
         />
       </Routes>
     </div>

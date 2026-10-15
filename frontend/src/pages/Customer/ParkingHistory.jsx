@@ -16,6 +16,7 @@ import {
   LogOut
 } from "lucide-react";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
+import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 
 export default function ParkingHistory() {
   const [sessions, setSessions] = useState([]);
@@ -218,7 +219,7 @@ export default function ParkingHistory() {
                         )}
                       </div>
                       <h4 className="text-xl md:text-2xl font-black text-white tracking-wide">
-                        {session.licensePlate}
+                        {formatLicensePlateDisplay(session.licensePlate)}
                       </h4>
                     </div>
                   </div>
@@ -303,7 +304,7 @@ export default function ParkingHistory() {
                   Session Details
                 </p>
                 <h2 className="text-2xl md:text-3xl font-black text-white">
-                  {selectedSession.licensePlate}
+                  {formatLicensePlateDisplay(selectedSession.licensePlate)}
                 </h2>
                 <p className="text-sm text-gray-400 mt-2">
                   Slot {selectedSession.parkingSlot || "Unassigned"} •{" "}

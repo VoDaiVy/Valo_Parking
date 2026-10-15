@@ -19,8 +19,12 @@ export const getActiveMapBookings = () => {
   });
 };
 
-export const getAvailableBookingSlots = ({ startTime, endTime }) => {
-  const query = new URLSearchParams({ startTime, endTime }).toString();
+export const getAvailableBookingSlots = ({ startTime, endTime, bookingSource }) => {
+  const query = new URLSearchParams({
+    startTime,
+    endTime,
+    ...(bookingSource ? { bookingSource } : {}),
+  }).toString();
 
   return apiFetch(`/bookings/available-slots?${query}`, {
     method: 'GET',
@@ -142,6 +146,20 @@ export const updateBookingVehicle = (bookingId, payload) =>
 
 export const extendBooking = (bookingId, payload) =>
   apiFetch(`/bookings/${bookingId}/time`, {
+    method: 'PUT',
+    headers: authHeader(),
+    body: JSON.stringify(payload),
+  });
+
+export const quoteBookingTimeModification = (bookingId, payload) =>
+  apiFetch(`/bookings/${bookingId}/ai-time/quote`, {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify(payload),
+  });
+
+export const modifyAiBookingTime = (bookingId, payload) =>
+  apiFetch(`/bookings/${bookingId}/ai-time`, {
     method: 'PUT',
     headers: authHeader(),
     body: JSON.stringify(payload),

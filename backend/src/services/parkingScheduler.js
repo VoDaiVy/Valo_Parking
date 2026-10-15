@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Session = require('../models/Session');
 const Booking = require('../models/Booking');
 const notifTriggers = require('./notificationTriggers');
@@ -5,6 +6,7 @@ const contractService = require('./contractService');
 const bookingRefundService = require('./bookingRefundService');
 const { isEnabled } = require('../utils/featureFlags');
 const { emitToUser } = require('../sockets/notificationSocket');
+const voucherService = require('./voucherService');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
 const CONTRACT_EXPIRATION_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -15,7 +17,6 @@ const BOOKING_END_REMINDER_MINUTES = [5, 15, 30];
 
 let schedulerInterval = null;
 let contractSchedulerInterval = null;
-
 function getUpcomingMilestone(targetTime, now = new Date(), milestones = []) {
   const target = new Date(targetTime);
   const current = new Date(now);
@@ -83,6 +84,17 @@ async function checkBookings(app) {
 
     // 1. Tự động hủy các booking PENDING VietQR quá 15 phút chưa thanh toán
     const fifteenMinsAgo = new Date(now.getTime() - 15 * 60 * 1000);
+    let pendingVoucherBookings = [];
+    try {
+      pendingVoucherBookings = await Booking.find({
+        status: 'PENDING',
+        paymentMethod: 'vietqr',
+        createdAt: { $lt: fifteenMinsAgo },
+        'paymentBreakdownSnapshot.voucherId': { $ne: null },
+      }).select('_id').lean();
+    } catch (error) {
+      console.error('[Loyalty] Could not load stale voucher reservations:', error.message);
+    }
     const pendingCancelResult = await Booking.updateMany(
       {
         status: 'PENDING',
@@ -91,6 +103,9 @@ async function checkBookings(app) {
       },
       { status: 'CANCELLED' }
     );
+    await Promise.all(pendingVoucherBookings.map(({ _id }) => (
+      voucherService.releaseVoucherReservation({ bookingId: _id })
+    )));
     if (pendingCancelResult.modifiedCount > 0) {
       console.log(`[ParkingScheduler] Đã tự động hủy ${pendingCancelResult.modifiedCount} đặt chỗ chờ thanh toán VietQR.`);
     }
@@ -192,6 +207,7 @@ async function checkBookings(app) {
         });
         const booking = result.booking;
 
+
         console.log(`[ParkingScheduler] Đặt chỗ ${booking._id} của xe ${booking.licensePlate} bị hủy hoàn toàn do trễ quá 30 phút.`);
 
         if (booking.userId) {
@@ -288,6 +304,7 @@ async function checkBookings(app) {
           },
         });
         const booking = result.booking;
+
 
         emitBookingChanged(app, booking);
         console.log(`[ParkingScheduler] Booking PAUSED ${booking._id} tự động chuyển sang COMPLETED do hết thời gian chờ quay lại.`);
@@ -610,6 +627,7 @@ function startScheduler(app) {
   }
 
   console.log(`⏰ Parking scheduler started (interval: ${CHECK_INTERVAL_MS / 1000}s)`);
+  require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));
 
   // Run immediately on start
   checkActiveSessions(app).catch((err) =>
@@ -633,6 +651,7 @@ function startScheduler(app) {
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
+    require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));
     checkActiveSessions(app).catch((err) =>
       console.error('[ParkingScheduler] Interval check error:', err.message)
     );
@@ -655,6 +674,7 @@ function startScheduler(app) {
       console.error('[ParkingScheduler] VIP subscription interval error:', err.message)
     );
   }, CONTRACT_EXPIRATION_INTERVAL_MS);
+
 }
 
 /**

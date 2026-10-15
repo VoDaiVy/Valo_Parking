@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { format, addDays, subDays, startOfDay, differenceInMinutes } from 'date-fns';
 import {
   ChevronLeft, ChevronRight, Clock, MapPin, User, CheckCircle,
@@ -209,6 +210,10 @@ const ProgressBar = ({ start, end, now }) => {
 };
 
 export default function BookingManagement() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryBookingId = searchParams.get('bookingId');
+  const [hasResolvedDeepLink, setHasResolvedDeepLink] = useState(false);
+
   const [currentDate, setCurrentDate] = useState(startOfDay(new Date()));
   const [floors, setFloors] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -243,6 +248,45 @@ export default function BookingManagement() {
     const liveClock = setInterval(() => setClockNow(new Date()), 30000);
     return () => clearInterval(liveClock);
   }, []);
+
+  useEffect(() => {
+    if (!queryBookingId || hasResolvedDeepLink) return;
+
+    const existing = bookings.find((b) => String(b._id) === queryBookingId);
+    if (existing) {
+      setTimeout(() => {
+        setSelectedBooking(existing);
+        setHasResolvedDeepLink(true);
+        setSearchParams({});
+      }, 0);
+      return;
+    }
+
+    if (!loading) {
+      const fetchDeepLinkBooking = async () => {
+        try {
+          const res = await getAllBookings({ bookingId: queryBookingId });
+          if (res.ok && res.data && res.data.length > 0) {
+            const b = res.data[0];
+            const bookingDate = startOfDay(new Date(b.scheduledStart));
+            if (bookingDate.getTime() !== currentDate.getTime()) {
+              setCurrentDate(bookingDate);
+            } else {
+              setHasResolvedDeepLink(true);
+              setSearchParams({});
+            }
+          } else {
+            setHasResolvedDeepLink(true);
+            setSearchParams({});
+          }
+        } catch (err) {
+          console.error('Failed to resolve deep link booking', err);
+          setHasResolvedDeepLink(true);
+        }
+      };
+      fetchDeepLinkBooking();
+    }
+  }, [queryBookingId, hasResolvedDeepLink, bookings, currentDate, loading, setSearchParams]);
 
   useEffect(() => {
     const fetchData = async () => {

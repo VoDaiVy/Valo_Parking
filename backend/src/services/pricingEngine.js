@@ -9,8 +9,89 @@ const DEFAULT_CONFIG = {
     { startHour: 22, endHour: 7, price: 25000 }
   ],
   cap12h: 100000,
-  cap24h: 180000
+  cap24h: 180000,
+  dayNightPricing: {
+    day: { isActive: false, startHour: 6, price: 50000 },
+    night: { isActive: false, startHour: 18, price: 70000 },
+  },
+  pricePolicies: [],
 };
+
+const hourInBlock = (hour, startHour, duration = 12) => {
+  const normalized = ((hour - startHour) % 24 + 24) % 24;
+  return normalized < duration;
+};
+
+function resolvePricingBlocks(config = DEFAULT_CONFIG) {
+  const baseBlocks = config.timeBlocks?.length ? config.timeBlocks : DEFAULT_CONFIG.timeBlocks;
+  const dayNight = config.dayNightPricing || DEFAULT_CONFIG.dayNightPricing;
+  const normalizeOverride = (key, value, fallback) => ({
+    key,
+    isActive: value?.isActive === true,
+    startHour: Number(value?.startHour ?? fallback.startHour),
+    price: Number(value?.price ?? fallback.price),
+  });
+  const overrides = [
+    normalizeOverride('day', dayNight.day, DEFAULT_CONFIG.dayNightPricing.day),
+    normalizeOverride('night', dayNight.night, DEFAULT_CONFIG.dayNightPricing.night),
+  ];
+
+  const hourly = Array.from({ length: 24 }, (_, hour) => {
+    const baseIndex = baseBlocks.findIndex((block) => block.startHour < block.endHour
+      ? hour >= block.startHour && hour < block.endHour
+      : hour >= block.startHour || hour < block.endHour);
+    const baseBlock = baseBlocks[baseIndex] || DEFAULT_CONFIG.timeBlocks[0];
+    const override = overrides.find((block) => block.isActive && hourInBlock(hour, Number(block.startHour), 12));
+    return override
+      ? { price: Number(override.price) || 0, source: `day-night:${override.key}`, label: override.key }
+      : { price: Number(baseBlock.price) || 0, source: `time-block:${baseIndex}`, label: null };
+  });
+
+  const runs = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    const current = hourly[hour];
+    const previous = runs[runs.length - 1];
+    if (previous && previous.source === current.source && previous.price === current.price) {
+      previous.endHour = hour + 1;
+    } else {
+      runs.push({ startHour: hour, endHour: hour + 1, ...current });
+    }
+  }
+
+  if (runs.length > 1) {
+    const first = runs[0];
+    const last = runs[runs.length - 1];
+    if (first.source === last.source && first.price === last.price) {
+      runs[0] = { ...first, startHour: last.startHour };
+      runs.pop();
+    }
+  }
+  return runs;
+}
+
+const dateKey = (date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+
+function findPricePolicy(policies, localDate) {
+  const key = dateKey(localDate);
+  const matches = (Array.isArray(policies) ? policies : []).filter((policy) => {
+    if (!policy?.isActive) return false;
+    if (policy.scope === 'weekday') return (policy.daysOfWeek || []).includes(localDate.getUTCDay());
+    if (policy.scope === 'month') return (policy.months || []).includes(localDate.getUTCMonth() + 1);
+    if (policy.scope === 'date_range') return policy.startDate && policy.endDate && key >= policy.startDate && key <= policy.endDate;
+    return false;
+  });
+  const specificity = { date_range: 3, month: 2, weekday: 1 };
+  return matches.sort((left, right) =>
+    Number(right.priority || 0) - Number(left.priority || 0)
+    || specificity[right.scope] - specificity[left.scope]
+  )[0] || null;
+}
+
+function applyPricePolicy(price, policy) {
+  if (!policy) return Number(price) || 0;
+  const adjusted = Math.max(0, (Number(price) || 0) * (1 + Number(policy.adjustmentPercent || 0) / 100));
+  return Math.ceil(adjusted / 1000) * 1000;
+}
 
 /**
  * Lấy cấu hình giá mới nhất từ database
@@ -36,7 +117,7 @@ async function calculatePrice(checkIn, checkOut, includeSessionFee = true, confi
   if (!config) {
     config = await getActivePricingConfig();
   }
-  const blocks = config.timeBlocks && config.timeBlocks.length > 0 ? config.timeBlocks : DEFAULT_CONFIG.timeBlocks;
+  const blocks = resolvePricingBlocks(config);
 
   const start = new Date(checkIn);
   const end = new Date(checkOut);
@@ -58,6 +139,8 @@ async function calculatePrice(checkIn, checkOut, includeSessionFee = true, confi
   endOfDay.setUTCHours(23, 59, 59, 999);
   
   let rawTotal = 0;
+  let baseRawTotal = 0;
+  const appliedPolicies = new Map();
   
   for (let d = new Date(startOfDay); d <= endOfDay; d.setUTCDate(d.getUTCDate() + 1)) {
     const year = d.getUTCFullYear();
@@ -75,8 +158,14 @@ async function calculatePrice(checkIn, checkOut, includeSessionFee = true, confi
       
       // Điều kiện overlap: start < blockEnd && end > blockStart
       if (startVn < blockEnd && endVn > blockStart) {
-        console.log("Hits block", block.startHour, "-", block.endHour, "of date", date, "price:", block.price);
-        rawTotal += block.price;
+        const policy = findPricePolicy(config.pricePolicies, d);
+        baseRawTotal += block.price;
+        rawTotal += applyPricePolicy(block.price, policy);
+        if (policy) appliedPolicies.set(String(policy._id || policy.name), {
+          name: policy.name,
+          scope: policy.scope,
+          adjustmentPercent: policy.adjustmentPercent,
+        });
       }
     }
   }
@@ -104,6 +193,8 @@ async function calculatePrice(checkIn, checkOut, includeSessionFee = true, confi
   return {
     durationHours,
     rawTotal,
+    baseRawTotal,
+    appliedPolicies: [...appliedPolicies.values()],
     capApplied,
     finalTotal,
   };
@@ -119,7 +210,7 @@ async function calculateTotalForIntervals(intervals, config = null) {
   if (!config) {
     config = await getActivePricingConfig();
   }
-  const blocks = config.timeBlocks && config.timeBlocks.length > 0 ? config.timeBlocks : DEFAULT_CONFIG.timeBlocks;
+  const blocks = resolvePricingBlocks(config);
 
   if (!intervals || intervals.length === 0) {
     return { finalTotal: 0, rawTotal: 0, durationHours: 0 };
@@ -169,6 +260,8 @@ async function calculateTotalForIntervals(intervals, config = null) {
   endOfDay.setUTCHours(23, 59, 59, 999);
   
   let rawTotal = 0;
+  let baseRawTotal = 0;
+  const appliedPolicies = new Map();
   
   for (let d = new Date(startOfDay); d <= endOfDay; d.setUTCDate(d.getUTCDate() + 1)) {
     const year = d.getUTCFullYear();
@@ -190,7 +283,14 @@ async function calculateTotalForIntervals(intervals, config = null) {
         return ivStartVn < blockEnd && ivEndVn > blockStart;
       });
       if (isOverlap) {
-        rawTotal += block.price;
+        const policy = findPricePolicy(config.pricePolicies, d);
+        baseRawTotal += block.price;
+        rawTotal += applyPricePolicy(block.price, policy);
+        if (policy) appliedPolicies.set(String(policy._id || policy.name), {
+          name: policy.name,
+          scope: policy.scope,
+          adjustmentPercent: policy.adjustmentPercent,
+        });
       }
     }
   }
@@ -218,9 +318,11 @@ async function calculateTotalForIntervals(intervals, config = null) {
   return {
     durationHours,
     rawTotal,
+    baseRawTotal,
+    appliedPolicies: [...appliedPolicies.values()],
     capApplied,
     finalTotal,
   };
 }
 
-module.exports = { calculatePrice, getActivePricingConfig, calculateTotalForIntervals };
+module.exports = { calculatePrice, getActivePricingConfig, calculateTotalForIntervals, findPricePolicy, applyPricePolicy, resolvePricingBlocks };

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, ExternalLink } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import NotificationItem from './NotificationItem';
+import { getSafeCustomerNotificationLink } from '../../utils/notificationLinks';
 
 export default function NotificationBell({ dark = false, contextRole }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const {
@@ -79,7 +81,13 @@ export default function NotificationBell({ dark = false, contextRole }) {
                     notification={n}
                     onRead={markAsRead}
                     compact
-                    onClick={() => setOpen(false)}
+                    onClick={() => {
+                      setOpen(false);
+                      if (!contextRole || contextRole === 'customer') {
+                        const destination = getSafeCustomerNotificationLink(n);
+                        if (destination) navigate(destination);
+                      }
+                    }}
                   />
                 ))
               )}
@@ -151,6 +159,10 @@ export default function NotificationBell({ dark = false, contextRole }) {
                   onClick={() => {
                     if (!n.isRead) markAsRead(n.notificationId || n._id);
                     setOpen(false);
+                    if (!contextRole || contextRole === 'customer') {
+                      const destination = getSafeCustomerNotificationLink(n);
+                      if (destination) navigate(destination);
+                    }
                   }}
                   className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-all duration-200 border-b border-gray-100/60 last:border-0 ${
                     n.isRead ? 'hover:bg-gray-50/50' : 'bg-amber-50/30 hover:bg-amber-50/50'

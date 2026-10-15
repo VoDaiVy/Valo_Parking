@@ -299,6 +299,36 @@ async function notifyLowBalance(app, userId, balance) {
 
 // ─── PAYMENT ────────────────────────────────────────────────────────────────────
 
+async function notifyLoyaltyPointsEarned(app, userId, details = {}) {
+  try {
+    const points = Math.max(0, Number(details.points) || 0);
+    if (!points) return;
+    if (!(await shouldTriggerRule('loyalty.points_earned', userId, 'LOYALTY_POINTS_EARNED'))) return;
+
+    const referenceId = `${details.refSource || 'loyalty'}_${details.refSourceId}`;
+    const notification = await notificationService.createAutoNotification(
+      'LOYALTY_POINTS_EARNED',
+      referenceId,
+      userId,
+      'LOYALTY_POINTS_EARNED',
+      {
+        points,
+        balance: Math.max(0, Number(details.balance) || 0),
+        refSource: details.refSource || null,
+        refSourceId: String(details.refSourceId || ''),
+        deepLink: '/customer/rewards',
+      }
+    );
+    if (notification) {
+      const io = getIO(app);
+      if (io) await emitNotification(io, userId, notification);
+      await updateRuleLastTriggered('loyalty.points_earned');
+    }
+  } catch (err) {
+    console.error('[NotifTrigger] notifyLoyaltyPointsEarned error:', err.message);
+  }
+}
+
 async function notifyPaymentSuccess(app, userId, amount, sessionId) {
   try {
     if (!(await shouldTriggerRule('wallet.payment_success', userId, 'PAYMENT_SUCCESS'))) return;
@@ -1160,6 +1190,8 @@ module.exports = {
   notifyTopUpFailed,
   notifyRefundSuccess,
   notifyLowBalance,
+  // Loyalty
+  notifyLoyaltyPointsEarned,
   // Payment
   notifyPaymentSuccess,
   notifyPaymentFailed,

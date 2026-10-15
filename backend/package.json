@@ -13,7 +13,8 @@
     "audit:membership-entitlements": "node src/scripts/auditMembershipEntitlements.js",
     "audit:refunds": "node src/scripts/auditRefundPolicyRollout.js",
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
-    "test:notification": "node src/tests/notificationService.test.js"
+    "test:notification": "node src/tests/notificationService.test.js",
+    "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js"
   },
   "keywords": [],
   "author": "",
@@ -43,6 +44,8 @@
     "streamifier": "^0.1.1"
   },
   "devDependencies": {
+    "fast-check": "^4.10.0",
+    "mongodb-memory-server": "^11.3.0",
     "nodemon": "^3.1.10"
   }
 }

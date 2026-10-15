@@ -53,6 +53,12 @@ const bookingSchema = new mongoose.Schema(
         enum: ['calculated', 'legacy-derived'],
         default: null,
       },
+      dynamicMultiplier: { type: Number, min: 0.5, max: 3, default: 1 },
+      busynessScore: { type: Number, min: 0, max: 100, default: null },
+      adjustedTotal: { type: Number, min: 0, default: null },
+      voucherId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserVoucher', default: null },
+      voucherDiscount: { type: Number, min: 0, default: null },
+      discountedTotal: { type: Number, min: 0, default: null },
     },
     refundPolicySnapshot: {
       source: {
@@ -172,6 +178,7 @@ const bookingSchema = new mongoose.Schema(
 // Indexes
 bookingSchema.index({ vehicleId: 1, scheduledStart: 1, scheduledEnd: 1 });
 bookingSchema.index({ status: 1 });
+  bookingSchema.index({ completedAt: 1, userId: 1 });
 
 const lifecycleTimestampForStatus = (status) => {
   if (status === 'PAID') return 'paidAt';

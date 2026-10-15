@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 
 const resolveZoneLabel = (slotRecord, slotCode) => {
@@ -20,8 +22,9 @@ const resolveZoneLabel = (slotRecord, slotCode) => {
   return '--';
 };
 
-export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete }) {
-  const [status, setStatus] = useState('checking-in');
+export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete, successSession }) {
+  const socket = useSocket();
+  const [status, setStatus] = useState(successSession ? 'ready' : 'checking-in');
   const [errorMessage, setErrorMessage] = useState('');
   const [floors, setFloors] = useState([]);
   const [dbSlots, setDbSlots] = useState([]);
@@ -29,37 +32,93 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const [availableSlots, setAvailableSlots] = useState(null);
   const [activeHolds, setActiveHolds] = useState([]);
   const [vipRedirectInfo, setVipRedirectInfo] = useState(null);
-  const [currentSlot, setCurrentSlot] = useState(formData.selectedSlot);
+  const [currentSlot, setCurrentSlot] = useState(successSession?.parkingSlot || formData.selectedSlot);
   const hasStartedRef = useRef(false);
-  const hasCompletedRef = useRef(false);
+  const mountTimeRef = useRef(Date.now());
+  const hasSeenOpenRef = useRef(false);
+  const isRedirectingRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
-  useEffect(() => {
-    const returnToStart = () => {
-      if (hasCompletedRef.current) return;
-      hasCompletedRef.current = true;
+  const returnToStart = () => {
+    if (isRedirectingRef.current) return;
+    isRedirectingRef.current = true;
 
+    try {
+      onCompleteRef.current?.();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      window.location.replace('/kiosk');
+    }
+  };
+
+  // Màn hình tự động quay trở lại màn hình chính (Click to start) khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
+  useEffect(() => {
+    // 1. Kiểm tra trạng thái đóng của Barrier ENTRY_1 qua Polling
+    const checkBarrier = async () => {
       try {
-        onCompleteRef.current?.();
-      } finally {
-        window.setTimeout(() => {
-          window.location.assign('/kiosk');
-        }, 0);
+        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=ENTRY_1&_t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        const data = await res.json();
+        if (data.success && data.data) {
+          const isOpen = Boolean(data.data.open);
+          if (isOpen) {
+            hasSeenOpenRef.current = true;
+          } else if (hasSeenOpenRef.current || data.data.forceClose) {
+            // Cổng đã đóng lại sau khi mở -> tự động chuyển về Welcome
+            returnToStart();
+          }
+        }
+      } catch {
+        // ignore
       }
     };
 
-    const returnTimer = window.setTimeout(returnToStart, 15000); // Increased to 15s so user can read message
+    // Initial check immediately
+    checkBarrier();
+    const interval = setInterval(checkBarrier, 300);
+
+    // Bộ đếm an toàn 35s chỉ kích hoạt nếu ESP32 mất kết nối hoàn toàn
+    const maxTimeoutTimer = setTimeout(() => {
+      returnToStart();
+    }, 35000);
+
+    // 2. Lắng nghe real-time qua Socket.IO
+    const handleBarrierControl = (data) => {
+      if (data && (data.gate === 'ENTRY_1' || !data.gate)) {
+        if (data.open) {
+          hasSeenOpenRef.current = true;
+        } else if (!data.open && hasSeenOpenRef.current) {
+          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ
+          returnToStart();
+        }
+      }
+    };
+
+    if (socket) {
+      socket.on('gate:barrier_control', handleBarrierControl);
+    }
 
     return () => {
-      window.clearTimeout(returnTimer);
+      clearInterval(interval);
+      clearTimeout(maxTimeoutTimer);
+      if (socket) {
+        socket.off('gate:barrier_control', handleBarrierControl);
+      }
     };
-  }, []);
+  }, [socket]);
 
   useEffect(() => {
+    if (successSession) {
+      const timerId = window.setTimeout(() => setStatus('ready'), 0);
+      return () => window.clearTimeout(timerId);
+    }
+
     if (hasStartedRef.current) return undefined;
     hasStartedRef.current = true;
     let ignore = false;
@@ -88,7 +147,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     return () => {
       ignore = true;
     };
-  }, [onAutoCheckIn]);
+  }, [onAutoCheckIn, successSession]);
 
   useEffect(() => {
     if (!formData.floorId) return undefined;
@@ -142,6 +201,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const selectedSlotRecord = dbSlots.find((slot) => slot.slotNumber === currentSlot);
   const zoneLabel = resolveZoneLabel(selectedSlotRecord, currentSlot);
   const floorLabel = floorRecord?.name || formData.bookingFloorName || (isSubscriptionFlow ? 'Member floor' : 'Reserved floor');
+  const qrCodeValue = successSession?._id || successSession?.sessionId || null;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 items-center overflow-hidden">
@@ -159,23 +219,37 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
             </div>
           </div>
         )}
-        
+
         <div className="bg-white rounded-[26px] border border-gray-100 shadow-[0_20px_40px_rgba(15,23,42,0.08)] px-5 py-4">
-          <div className="flex flex-col gap-3 min-w-0">
-            <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-600">
-              Parking Access
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 min-w-0 flex-1">
+              <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-600">
+                Parking Access
+              </div>
+
+              <div className="grid min-w-0 grid-cols-[minmax(0,1.45fr)_minmax(88px,0.58fr)_minmax(112px,0.74fr)_minmax(112px,0.74fr)] gap-3">
+                <SummaryItem
+                  label="License Plate"
+                  value={formatLicensePlateDisplay(successSession?.licensePlate || formData.licensePlate) || '--'}
+                  valueClassName="text-[18px] md:text-[20px]"
+                />
+                <SummaryItem label="Slot" value={currentSlot || '--'} />
+                <SummaryItem label="Zone" value={zoneLabel} />
+                <SummaryItem label="Floor" value={floorLabel} />
+              </div>
             </div>
 
-            <div className="grid min-w-0 grid-cols-[minmax(0,1.45fr)_minmax(88px,0.58fr)_minmax(112px,0.74fr)_minmax(112px,0.74fr)] gap-3">
-              <SummaryItem
-                label="License Plate"
-                value={formatLicensePlateDisplay(formData.licensePlate) || '--'}
-                valueClassName="text-[18px] md:text-[20px]"
-              />
-              <SummaryItem label="Slot" value={currentSlot || '--'} />
-              <SummaryItem label="Zone" value={zoneLabel} />
-              <SummaryItem label="Floor" value={floorLabel} />
-            </div>
+            {/* Mã QR dành cho khách vãng lai chụp lại để check-out */}
+            {qrCodeValue && (
+              <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl p-2.5 shrink-0">
+                <QRCodeSVG value={qrCodeValue} size={64} />
+                <div className="flex flex-col justify-center pr-1">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Exit QR Code</span>
+                  <span className="text-[11px] font-bold text-gray-700">Scan at exit</span>
+                  <span className="text-[9px] font-mono text-gray-400">{qrCodeValue.slice(0, 8)}...</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -190,7 +264,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
               Parking Layout
             </div>
             <div className="rounded-full bg-gray-50 border border-gray-200 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-gray-600 shrink-0">
-              {zoneLabel} · {formData.selectedSlot || '--'}
+              {zoneLabel} · {currentSlot || formData.selectedSlot || '--'}
             </div>
           </div>
 

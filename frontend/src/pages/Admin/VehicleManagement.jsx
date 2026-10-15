@@ -10,6 +10,7 @@ import CarViewer from '../../components/CarViewer';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
+import { useSearchParams } from 'react-router-dom';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 const authHeader = () => {
@@ -534,6 +535,9 @@ export default function VehicleManagement() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [preview3D, setPreview3D] = useState(null);
+  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const vehicleIdQuery = searchParams.get('vehicleId');
 
   // ── Pending tab state ──
   const [pending, setPending] = useState([]);
@@ -597,6 +601,30 @@ export default function VehicleManagement() {
 
     return () => window.clearTimeout(timerId);
   }, []);
+
+  useEffect(() => {
+    if (vehicleIdQuery && (!pendingLoading || !approvedLoading)) {
+      // Find vehicle in pending or approved
+      const pendingMatch = pending.find(v => v._id === vehicleIdQuery);
+      const approvedMatch = approved.find(v => v._id === vehicleIdQuery);
+      
+      setTimeout(() => {
+        if (pendingMatch) {
+          setTab('pending');
+          setPendingSearch(pendingMatch.licensePlate || pendingMatch.licensePlateDisplay || pendingMatch.brand);
+        } else if (approvedMatch) {
+          setTab('approved');
+          setApprovedSearch(approvedMatch.licensePlate || approvedMatch.licensePlateDisplay || approvedMatch.brand);
+        }
+        
+        if (pendingMatch || approvedMatch) {
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('vehicleId');
+          setSearchParams(newParams, { replace: true });
+        }
+      }, 0);
+    }
+  }, [pending, approved, vehicleIdQuery, pendingLoading, approvedLoading, searchParams, setSearchParams]);
 
   // ── Approve handler ────────────────────────────────────────────────────────
   const handleApprove = async (vehicle, existingModelUrl, localFile) => {
@@ -807,7 +835,7 @@ export default function VehicleManagement() {
             className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
           >
             <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
-            Refresh
+            Sync
           </button>
         </motion.header>
 
@@ -908,9 +936,8 @@ export default function VehicleManagement() {
                 {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
                 Sync
               </button>
-              <button type="button" onClick={loadModels} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
+              <button type="button" onClick={loadModels} className="inline-flex h-12 items-center justify-center gap-0 rounded-[14px] border border-white/[0.08] px-3 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200" title="Refresh list">
                 <RefreshCw size={15} className={modelsLoading ? 'animate-spin' : ''} />
-                Refresh
               </button>
             </div>
           )}

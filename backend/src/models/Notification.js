@@ -96,6 +96,10 @@ const notificationSchema = new mongoose.Schema(
 // Index for admin history queries
 notificationSchema.index({ createdAt: -1 });
 notificationSchema.index({ createdBy: 1, createdAt: -1 });
+notificationSchema.index(
+  { 'metadata.aiDraftId': 1 },
+  { unique: true, partialFilterExpression: { 'metadata.aiDraftId': { $type: 'string' } } }
+);
 
 const Notification = mongoose.model('Notification', notificationSchema);
 

@@ -13,7 +13,6 @@ import GuestHome from "./pages/Guest/GuestHome";
 import LoginPage from "./pages/Guest/LoginPage";
 import ParkingMap from "./pages/Guest/ParkingMap";
 import ServiceList from "./pages/Guest/ServiceList";
-import ServiceDetail from "./pages/Guest/ServiceDetail";
 import PolicyList from "./pages/Guest/PolicyList";
 import PolicyDetail from "./pages/Guest/PolicyDetail";
 import OAuthCallback from "./pages/OAuthCallback";
@@ -34,6 +33,7 @@ import AccountManagement from "./pages/Admin/AccountManagement";
 import PolicyManagement from "./pages/Admin/PolicyManagement";
 import SubscriptionManagement from "./pages/Admin/SubscriptionManagement";
 import RevenueAnalytics from "./pages/Admin/RevenueAnalytics";
+import VoucherManagement from "./pages/Admin/VoucherManagement";
 
 // Pages – Staff
 import StaffDashboard from "./pages/Staff/Dashboard";
@@ -43,6 +43,7 @@ import StaffAccountManagement from "./pages/Staff/AccountManagement";
 import NotificationManagement from "./pages/Staff/NotificationManagement";
 import LiveGridMonitor from "./pages/Staff/LiveGridMonitor";
 import BookingManagement from "./pages/Staff/BookingManagement";
+import GateControl from "./pages/Staff/GateControl";
 
 // Pages – Customer
 import CustomerProfile from "./pages/Customer/CustomerProfile";
@@ -54,6 +55,7 @@ import ParkingHistory from "./pages/Customer/ParkingHistory";
 import CustomerNotifications from "./pages/Customer/CustomerNotifications";
 import BookingPage from "./pages/Customer/BookingPage";
 import CreateBookingPage from "./pages/Customer/CreateBookingPage";
+import LoyaltyRewards from "./pages/Customer/LoyaltyRewards";
 
 // Misc
 import UnauthorizedPage from "./pages/UnauthorizedPage";
@@ -103,7 +105,6 @@ export default function App() {
             <Route path="/" element={<GuestHome />} />
             <Route path="/parking-map" element={<ParkingMap />} />
             <Route path="/services" element={<ServiceList />} />
-            <Route path="/services/:id" element={<ServiceDetail />} />
             <Route path="/policies" element={<PolicyList />} />
             <Route path="/policies/:slug" element={<PolicyDetail />} />
             <Route path="/policy" element={<Navigate to="/policies" replace />} />
@@ -151,11 +152,13 @@ export default function App() {
             <Route path="/admin/services" element={<AdminServiceManager />} />
             <Route path="/admin/policies" element={<PolicyManagement />} />
             <Route path="/admin/parking-lots" element={<ParkingLots />} />
+            <Route path="/admin/bookings" element={<BookingManagement />} />
             <Route path="/admin/sessions" element={<StaffSessionManagement />} />
             <Route path="/admin/pricing" element={<PricingManagement />} />
             <Route path="/admin/tickets" element={<TicketPackages />} />
             <Route path="/admin/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/admin/revenue" element={<RevenueAnalytics />} />
+            <Route path="/admin/vouchers" element={<VoucherManagement />} />
             <Route path="/admin/profile" element={<AdminProfile />} />
             <Route
               path="/admin/notifications"
@@ -197,7 +200,8 @@ export default function App() {
               element={<CustomerNotifications contextRole="staff" />}
             />
             <Route path="/staff/live-grid" element={<LiveGridMonitor />} />
-            <Route path="/staff/parking-lots" element={<ParkingLots />} />
+            <Route path="/staff/gate" element={<GateControl />} />
+            <Route path="/staff/parking-lots" element={<LiveGridMonitor />} />
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/staff/tickets" element={<TicketPackages />} />
@@ -226,6 +230,7 @@ export default function App() {
             />
             <Route path="/customer/vehicles" element={<MyVehicles />} />
             <Route path="/customer/wallet" element={<WalletPage />} />
+            <Route path="/customer/rewards" element={<LoyaltyRewards />} />
             <Route path="/customer/history" element={<ParkingHistory />} />
             <Route path="/customer/booking" element={<BookingPage />} />
             <Route

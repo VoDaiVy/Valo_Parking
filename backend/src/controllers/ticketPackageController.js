@@ -7,17 +7,33 @@ exports.getActivePackages = async (req, res) => {
       isActive: true,
       type: { $in: ['monthly', 'yearly'] },
     }).sort({ type: -1, price: 1 });
-    res.status(200).json({
-      success: true,
-      data: packages.map((pkg) => ({
-        ...pkg.toObject(),
+    const pricedPackages = packages.map((pkg) => {
+      const base = pkg.toObject();
+      const common = {
         durationMonths: pkg.type === 'yearly' ? 12 : 1,
-        benefits:
-          pkg.type === 'yearly'
-            ? ['Reserved VIP slots', '12 free services', 'Priority parking access']
-            : ['Reserved VIP slots', 'Priority parking access'],
-      })),
+        benefits: pkg.type === 'yearly'
+          ? ['Reserved VIP slots', '12 free services', 'Priority parking access']
+          : ['Reserved VIP slots', 'Priority parking access'],
+      };
+      const price = {
+        basePrice: pkg.price,
+        adjustedPrice: pkg.price,
+        changePercent: 0,
+        busynessScore: null,
+        level: null,
+      };
+        return {
+          ...base,
+          ...common,
+          adjustedPrice: price.adjustedPrice,
+          changePercent: price.changePercent,
+          busynessScore: price.busynessScore,
+          level: price.level,
+          ...(price.adjustedPrice < price.basePrice ? { priceLabel: 'Giá ưu đãi' } : {}),
+          ...(price.adjustedPrice > price.basePrice ? { priceLabel: 'Giá cao điểm' } : {}),
+        };
     });
+    res.status(200).json({ success: true, data: pricedPackages });
   } catch (error) {
     console.error('Error fetching active ticket packages:', error);
     res.status(500).json({ message: 'Server error while fetching ticket packages' });
@@ -50,39 +66,28 @@ exports.getPackageById = async (req, res) => {
 // Create new ticket package (For Admin)
 exports.createPackage = async (req, res) => {
   try {
-    const { name, type, price, description, isActive } = req.body;
-    const newPackage = new TicketPackage({ name, type, price, description, isActive });
-    await newPackage.save();
-
-    const AdminActionLog = require('../models/AdminActionLog');
-    await AdminActionLog.create({
-      action: "Created Ticket Package",
-      target: `${name} • ${type}`,
-      type: "create",
-      adminId: req.user._id
-    });
-
-    res.status(201).json({ success: true, data: newPackage });
+    const { cleanPayload } = require('../services/aiCopilot/draftService');
+    const { createPackage } = require('../services/adminCatalogWriteService');
+    const payload = cleanPayload('CREATE_TICKET_PACKAGE', req.body);
+    const created = await createPackage(payload, { adminId: req.user._id });
+    res.status(201).json({ success: true, data: created });
   } catch (error) {
-    console.error('Error creating ticket package:', error);
-    res.status(500).json({ message: 'Server error while creating ticket package', error: error.message, stack: error.stack });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Kh?ng th? t?o g?i v?.' });
   }
 };
 
-// Update ticket package (For Admin)
 exports.updatePackage = async (req, res) => {
   try {
-    const { name, type, price, description, isActive } = req.body;
-    const updatedPackage = await TicketPackage.findByIdAndUpdate(
-      req.params.id,
-      { name, type, price, description, isActive },
-      { new: true, runValidators: true }
-    );
-    if (!updatedPackage) return res.status(404).json({ success: false, message: 'Ticket package not found' });
-    res.status(200).json({ success: true, data: updatedPackage });
+    const { cleanPayload } = require('../services/aiCopilot/draftService');
+    const { updatePackage } = require('../services/adminCatalogWriteService');
+    const existing = await TicketPackage.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ success: false, message: 'Không tìm thấy gói vé.' });
+    const payload = cleanPayload('UPDATE_TICKET_PACKAGE', { ...existing, ...req.body });
+    const updated = await updatePackage(req.params.id, payload, { adminId: req.user._id });
+    if (!updated) return res.status(404).json({ success: false, message: 'Kh?ng t?m th?y g?i v?.' });
+    res.status(200).json({ success: true, data: updated });
   } catch (error) {
-    console.error('Error updating ticket package:', error);
-    res.status(500).json({ message: 'Server error while updating ticket package' });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Kh?ng th? c?p nh?t g?i v?.' });
   }
 };
 

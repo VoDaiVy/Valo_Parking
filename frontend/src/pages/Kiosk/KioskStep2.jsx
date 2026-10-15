@@ -1,14 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, CarFront, Clock, CreditCard, Minus, Plus, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertCircle, ArrowRight, CarFront, CreditCard, X } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import { API_BASE } from '../../services/api';
 import { getAvailableBookingSlots, getActiveHolds } from '../../services/bookingService';
-
-const DEFAULT_PRICING = {
-  name: 'Standard',
-  type: 'hourly',
-  price: 10000,
-};
 
 export default function KioskStep2({ formData, updateFormData, onNext, onBack, isHoldingSlot = false }) {
   const [floors, setFloors] = useState([]);

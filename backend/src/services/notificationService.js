@@ -17,6 +17,24 @@ function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+async function searchEligibleRecipients(query = '', limit = 20) {
+  const normalizedQuery = String(query || '').trim();
+  const actualLimit = Math.min(Math.max(Number(limit) || 20, 1), 20);
+  const filter = { status: true };
+  if (normalizedQuery) {
+    const escapedQuery = escapeRegex(normalizedQuery);
+    filter.$or = [
+      { username: { $regex: escapedQuery, $options: 'i' } },
+      { email: { $regex: escapedQuery, $options: 'i' } },
+    ];
+  }
+  const [items, total] = await Promise.all([
+    User.find(filter).select('_id username email role status').limit(actualLimit).lean(),
+    User.countDocuments(filter),
+  ]);
+  return { items, total, query: normalizedQuery, limit: actualLimit };
+}
+
 function normalizeUserIds(userIds) {
   const values = (Array.isArray(userIds) ? userIds : [userIds])
     .filter((value) => value !== undefined && value !== null && value !== '')
@@ -143,6 +161,14 @@ const NOTIFICATION_TEMPLATES = {
     content: 'Your wallet balance is only {balance} VND. Please top up to continue using the service.',
     type: 'WALLET',
     priority: 'WARNING',
+  },
+
+  // LOYALTY
+  LOYALTY_POINTS_EARNED: {
+    title: 'You earned {points} loyalty points',
+    content: 'Your reward balance is now {balance} points. These points are valid for 30 days. Tap to view rewards.',
+    type: 'PROMOTION',
+    priority: 'SUCCESS',
   },
 
   // PAYMENT
@@ -914,6 +940,7 @@ module.exports = {
   fillTemplate,
   normalizeUserIds,
   resolveRecipients,
+  searchEligibleRecipients,
   createForUser,
   createForUsers,
   createForAllUsers,
