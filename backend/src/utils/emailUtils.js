@@ -4,15 +4,19 @@ const { buildWebOtpLine } = require('./otpAutofillUtils');
 /**
  * Create reusable transporter using env credentials
  */
-const createTransporter = () => {
+const createTransporter = (options = {}) => {
+  // Gmail displays App Passwords in groups separated by spaces. SMTP expects
+  // the 16-character token without formatting whitespace.
+  const smtpPassword = String(process.env.EMAIL_PASS || '').replace(/\s+/g, '');
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: parseInt(process.env.EMAIL_PORT) || 587,
     secure: process.env.EMAIL_PORT === '465',
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      pass: smtpPassword,
     },
+    ...options,
   });
 };
 
@@ -355,7 +359,34 @@ const sendCheckoutEmail = async (toEmail, checkoutDetails) => {
   });
 };
 
-module.exports = { 
+const sendSpendRewardEmail = async (toEmail, voucher) => {
+  const benefit = voucher.benefitSnapshot;
+  const expiry = new Date(voucher.expiresAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const detail = benefit.type === 'FIXED_DISCOUNT'
+    ? `Giảm ${benefit.discountAmount.toLocaleString('vi-VN')} VND`
+    : benefit.type === 'PERCENT_DISCOUNT' ? `Giảm ${benefit.discountPercent}%` : 'Miễn phí dịch vụ được ghi trên voucher';
+  const minimum = Number(benefit.minimumAmount || 0).toLocaleString('vi-VN');
+  const rewardsUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/customer/rewards`;
+  const voucherCode = voucher.code || `VALO-${String(voucher._id).slice(-8).toUpperCase()}`;
+  return createTransporter({ connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 30000 }).sendMail({
+    from: `"VALO Parking" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    messageId: `<voucher-${voucher._id}@valo-parking.local>`,
+    subject: 'Bạn vừa nhận được voucher từ VALO Parking',
+    text: [
+      `Bạn đã nhận voucher: ${benefit.name}`,
+      detail,
+      `Đơn tối thiểu: ${minimum} VND.`,
+      `Hạn sử dụng: ${expiry} (giờ Việt Nam).`,
+      'Voucher dành riêng cho tài khoản của bạn và chỉ sử dụng một lần cho mỗi booking.',
+      rewardsUrl,
+    ].join('\n\n'),
+    html: `<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>Bạn có một voucher mới từ VALO Parking</title></head><body style="margin:0;padding:0;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#e9edf0"><div style="display:none;max-height:0;overflow:hidden">${detail} — một món quà từ VALO Parking dành riêng cho bạn.</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff"><tr><td align="center" style="padding:30px 12px"><table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#050505;border-radius:16px;overflow:hidden"><tr><td align="center" style="padding:25px 24px 24px;background:#000;border-bottom:3px solid #ffe500"><img src="https://id-preview--1e58645b-edcc-4b45-96e3-fcbbfc049c18.lovable.app/__l5e/assets-v1/b8f2f965-863f-4465-b4e2-2f1b27de3255/valo-logo.png" alt="VALO Parking" width="60" height="57" style="display:block;width:60px;height:57px;border:0"></td></tr><tr><td style="padding:32px 32px 20px"><p style="margin:0 0 14px;font-size:12px;font-weight:bold;letter-spacing:1.5px;color:#00d56a">VOUCHER MỚI</p><h1 style="font-size:24px;line-height:1.35;margin:0 0 20px;font-weight:700;color:#e9edf0">Một đặc quyền dành riêng cho bạn.</h1><p style="font-size:14px;line-height:1.7;margin:0;color:#c7d0db">Xin chào,<br>Cảm ơn bạn đã đồng hành cùng VALO Parking. Đây là món quà dành cho hành trình tiếp theo của bạn.</p></td></tr><tr><td style="padding:0 32px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #34404c"><tr><td colspan="2" style="padding:20px 0 18px;border-bottom:1px solid #34404c"><p style="margin:0 0 7px;font-size:11px;color:#9ba8b8">ĐẶC QUYỀN CỦA BẠN</p><p style="margin:0;font-size:21px;font-weight:bold;line-height:1.4;color:#ffe500">${benefit.name}</p><p style="margin:6px 0 0;font-size:12px;color:#9ba8b8">${detail}</p></td></tr><tr><td style="padding:15px 8px 15px 0;font-size:12px;color:#9ba8b8;border-bottom:1px solid #34404c">MÃ VOUCHER</td><td align="right" style="padding:15px 0;font-family:Courier New,monospace;font-size:14px;word-break:break-word;font-weight:bold;color:#e9edf0;border-bottom:1px solid #34404c">${voucherCode}</td></tr><tr><td style="padding:15px 8px 15px 0;font-size:12px;color:#9ba8b8;border-bottom:1px solid #34404c">ĐƠN TỐI THIỂU</td><td align="right" style="padding:15px 0;font-size:13px;font-weight:bold;color:#e9edf0;border-bottom:1px solid #34404c">${minimum} VND</td></tr><tr><td style="padding:15px 8px 15px 0;font-size:12px;color:#9ba8b8;border-bottom:1px solid #34404c">CÓ HIỆU LỰC ĐẾN</td><td align="right" style="padding:15px 0;font-size:13px;font-weight:bold;color:#e9edf0;border-bottom:1px solid #34404c">${expiry}</td></tr></table></td></tr><tr><td align="center" style="padding:30px 24px 26px"><table role="presentation" cellspacing="0" cellpadding="0"><tr><td align="center" bgcolor="#ffe500" style="border-radius:28px;background:#ffe500"><a href="${rewardsUrl}" style="display:inline-block;padding:16px 28px;color:#000;text-decoration:none;font-weight:bold;font-size:13px;line-height:1.2">XEM VOUCHER CỦA TÔI</a></td></tr></table><p style="font-size:11px;line-height:1.6;color:#9ba8b8;margin:17px 0 0">Giờ Việt Nam</p></td></tr><tr><td style="padding:0 32px 26px;font-size:11px;line-height:1.8;color:#9ba8b8">Voucher chỉ dành cho tài khoản của bạn và được sử dụng một lần.<br>Mỗi booking áp dụng tối đa một voucher.</td></tr><tr><td align="center" style="padding:23px 24px 20px;background:#000;border-radius:0 0 16px 16px;font-size:11px;color:#707070;line-height:1.8">© 2026 Valo Parking. All rights reserved.<br><span style="font-size:10px">Đỗ xe an tâm. Hành trình trọn vẹn.</span></td></tr></table></td></tr></table></body></html>`,
+  });
+};
+
+module.exports = {
+  sendSpendRewardEmail,
   generateOTP, 
   sendOTPEmail, 
   sendResetPasswordEmail,

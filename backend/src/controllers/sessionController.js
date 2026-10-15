@@ -16,7 +16,6 @@ const aiNotificationEvents = require('../services/aiCopilot/notificationEvents')
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
-const loyaltyService = require('../services/loyaltyService');
 const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrService');
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
@@ -1384,6 +1383,12 @@ exports.kioskCheckout = async (req, res, next) => {
                 });
               }
               currentBooking.status = 'COMPLETED';
+              if (paymentMethod !== 'wallet' && amountToPay > 0) {
+                currentBooking.paidOverageAdjustments.push({
+                  eventKey: `booking:${currentBooking._id}:session:${session._id}:checkout-extra`,
+                  amount: amountToPay, paymentMethod, sessionId: session._id, paidAt: now,
+                });
+              }
               const updatedSession = await Session.findOneAndUpdate(
                 { _id: session._id, status: 'active' },
                 {
@@ -1406,13 +1411,6 @@ exports.kioskCheckout = async (req, res, next) => {
             },
           });
           booking = settled.booking;
-          loyaltyService.earnPoints({
-            userId: booking.userId,
-            amount: booking.prepaidAmount,
-            refSource: 'booking',
-            refSourceId: booking._id,
-            app: req.app,
-          }).catch((error) => console.error('[Loyalty] kiosk checkout earn failed:', error.message));
           payoutStatus = settled.settlement.payoutStatus;
           suppressionReason = settled.settlement.suppressionReason;
           sessionFinalizedAtomically = true;
@@ -1423,6 +1421,7 @@ exports.kioskCheckout = async (req, res, next) => {
     session.status = 'completed';
     session.checkOutTime = now;
     session.totalPrice = refundBreakdown?.actualParkingCharge ?? pricing.finalTotal;
+    session.settledPaidAmount = amountToPay;
     session.pricingBreakdown = pricing;
     if (exitImage_url) session.exitImage_url = exitImage_url;
     if (exitCamera) session.exitCamera = exitCamera;

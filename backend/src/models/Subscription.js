@@ -65,6 +65,13 @@ const subscriptionSchema = new mongoose.Schema(
       newExpireAt: Date,
       amount: Number
     },
+    rewardPayments: [{
+      orderCode: { type: Number },
+      paymentKey: String,
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      amount: { type: Number, required: true, min: 0 },
+      paidAt: { type: Date, required: true },
+    }],
     renewalCount: {
       type: Number,
       default: 0,
@@ -80,6 +87,14 @@ const subscriptionSchema = new mongoose.Schema(
   }
 );
 
+subscriptionSchema.pre('save', function recordRewardPayment(next) {
+  if (this.paymentStatus === 'paid' && this.isModified('paymentStatus')
+    && !this.rewardPayments.some((payment) => payment.orderCode === this.orderCode)) {
+    this.rewardPayments.push({ orderCode: this.orderCode, userId: this.user, amount: this.amount, paidAt: new Date() });
+  }
+  next();
+});
+subscriptionSchema.index({ 'rewardPayments.paidAt': 1 });
 subscriptionSchema.index({ user: 1, status: 1, expireAt: -1 });
 subscriptionSchema.index({ status: 1, paymentStatus: 1, expireAt: 1 });
 

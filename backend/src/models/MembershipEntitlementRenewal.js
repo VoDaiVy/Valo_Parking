@@ -54,6 +54,7 @@ const membershipEntitlementRenewalSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+membershipEntitlementRenewalSchema.index({ paidAt: 1 });
 membershipEntitlementRenewalSchema.index(
   { entitlementId: 1 },
   {

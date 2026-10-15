@@ -14,8 +14,8 @@ const Slot = require('../models/Slot');
 const payos = require('../config/payos');
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
-const loyaltyService = require('../services/loyaltyService');
 const voucherService = require('../services/voucherService');
+const { queuePaidBookingRewards } = require('../services/spendRewardService');
 const notifTriggers = require('../services/notificationTriggers');
 const contractService = require('../services/contractService');
 const bookingRefundService = require('../services/bookingRefundService');
@@ -683,6 +683,7 @@ exports.createBooking = async (req, res, next) => {
         });
         await paymentSession.commitTransaction();
         notifyBookingPaidSafely(newBooking, req.app);
+        queuePaidBookingRewards(newBooking._id, req.app);
       } catch (error) {
         await paymentSession.abortTransaction();
         throw error;
@@ -725,6 +726,7 @@ exports.createBooking = async (req, res, next) => {
           source: 'calculated',
         });
         await voucherService.markVoucherUsed({ bookingId: newBooking._id });
+        queuePaidBookingRewards(newBooking._id, req.app);
       } else {
       const orderCode = Number(
         `${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`
@@ -871,6 +873,7 @@ exports.checkVietQRStatus = async (req, res, next) => {
               slotInfo: `${paidBooking.parkingSlot}`
             }).catch(err => console.error('Error sending notifyBookingSuccess:', err));
             notifyBookingPaidSafely(paidBooking, req.app);
+            queuePaidBookingRewards(paidBooking._id, req.app);
           }
 
           return res.status(200).json({
@@ -934,6 +937,7 @@ exports.handleBookingWebhook = async (req, res, next) => {
             slotInfo: `${paidBooking.parkingSlot}`
           }).catch(err => console.error('Failed to notify success:', err));
           notifyBookingPaidSafely(paidBooking, req.app);
+          queuePaidBookingRewards(paidBooking._id, req.app);
         }
 
         console.log(`✅ Webhook: Booking ${paidBooking._id} paid successfully.`);
@@ -987,11 +991,6 @@ exports.cancelBooking = async (req, res, next) => {
     });
 
     booking.status = 'CANCELLED';
-    loyaltyService.revokePoints({
-      userId: settled.booking.userId,
-      refSource: 'booking',
-      refSourceId: settled.booking._id,
-    }).catch((error) => console.error('[Loyalty] revokePoints failed:', error.message));
 
     // Gửi thông báo hủy thành công
     notifTriggers.notifyBookingCancelled(req.app, req.user._id, {
@@ -1603,13 +1602,6 @@ exports.checkOutBooking = async (req, res, next) => {
       evidenceImageUrl,
     });
 
-    loyaltyService.earnPoints({
-      userId: settled.booking.userId,
-      amount: settled.booking.prepaidAmount,
-      refSource: 'booking',
-      refSourceId: settled.booking._id,
-      app: req.app,
-    }).catch((error) => console.error('[Loyalty] earnPoints failed:', error.message));
 
     emitBookingChanged(req.app, booking, { action: 'checked-out' });
     notifTriggers.notifyVehicleExit(
@@ -2543,6 +2535,7 @@ exports.createBulkBooking = async (req, res, next) => {
     await session.commitTransaction();
     session.endSession();
     paidBookings.forEach((booking) => notifyBookingPaidSafely(booking, req.app));
+    if (paidBookings.length) queuePaidBookingRewards(paidBookings.map((booking) => booking._id), req.app);
 
     res.status(201).json({
       success: true,

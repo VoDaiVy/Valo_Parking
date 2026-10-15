@@ -80,7 +80,7 @@ exports.getVouchers = async (req, res, next) => {
     );
     const filter = { userId: req.user._id };
     if (req.query.status) {
-      if (!['available', 'used', 'expired'].includes(req.query.status)) {
+      if (!['available', 'used', 'expired', 'revoked'].includes(req.query.status)) {
         return res.status(400).json({ success: false, message: 'Invalid voucher status' });
       }
       filter.status = req.query.status;

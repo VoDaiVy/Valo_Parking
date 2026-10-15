@@ -5,18 +5,24 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const userVoucherSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'VoucherTemplate', required: true },
+    templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'VoucherTemplate', required: function () { return this.source !== 'spending'; } },
+    source: { type: String, enum: ['loyalty', 'spending', 'manual'], default: 'loyalty' },
+    rewardKey: { type: String },
+    rewardMonth: String,
+    rewardThreshold: Number,
     benefitSnapshot: {
       name: { type: String, required: true },
       description: { type: String, default: '' },
-      type: { type: String, enum: ['PERCENT_DISCOUNT', 'FREE_SERVICE'], required: true },
-      pointCost: { type: Number, required: true, min: 1 },
+      type: { type: String, enum: ['PERCENT_DISCOUNT', 'FREE_SERVICE', 'FIXED_DISCOUNT'], required: true },
+      pointCost: { type: Number, required: true, min: 0 },
+      discountAmount: { type: Number, min: 0, default: 0 },
+      minimumAmount: { type: Number, min: 0, default: 0 },
       discountPercent: { type: Number, default: null },
       serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', default: null },
     },
     status: {
       type: String,
-      enum: ['available', 'used', 'expired'],
+      enum: ['available', 'used', 'expired', 'revoked'],
       default: 'available',
     },
     redeemedAt: { type: Date, default: Date.now },
@@ -35,6 +41,7 @@ userVoucherSchema.pre('validate', function setExpiry(next) {
 });
 
 userVoucherSchema.index({ userId: 1, status: 1 });
+userVoucherSchema.index({ rewardKey: 1 }, { unique: true, partialFilterExpression: { rewardKey: { $type: 'string' } } });
 userVoucherSchema.index({ bookingId: 1 }, { sparse: true });
 
 userVoucherSchema.statics.THIRTY_DAYS_MS = THIRTY_DAYS_MS;

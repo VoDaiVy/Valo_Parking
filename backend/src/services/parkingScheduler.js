@@ -6,7 +6,6 @@ const contractService = require('./contractService');
 const bookingRefundService = require('./bookingRefundService');
 const { isEnabled } = require('../utils/featureFlags');
 const { emitToUser } = require('../sockets/notificationSocket');
-const loyaltyService = require('./loyaltyService');
 const voucherService = require('./voucherService');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // 1 minute
@@ -208,11 +207,6 @@ async function checkBookings(app) {
         });
         const booking = result.booking;
 
-        if (mongoose.connection.readyState === 1) loyaltyService.revokePoints({
-          userId: booking.userId,
-          refSource: 'booking',
-          refSourceId: booking._id,
-        }).catch((error) => console.error('[Loyalty] scheduler revoke failed:', error.message));
 
         console.log(`[ParkingScheduler] Đặt chỗ ${booking._id} của xe ${booking.licensePlate} bị hủy hoàn toàn do trễ quá 30 phút.`);
 
@@ -311,13 +305,6 @@ async function checkBookings(app) {
         });
         const booking = result.booking;
 
-        if (mongoose.connection.readyState === 1) loyaltyService.earnPoints({
-          userId: booking.userId,
-          amount: booking.prepaidAmount,
-          refSource: 'booking',
-          refSourceId: booking._id,
-          app,
-        }).catch((error) => console.error('[Loyalty] scheduler earn failed:', error.message));
 
         emitBookingChanged(app, booking);
         console.log(`[ParkingScheduler] Booking PAUSED ${booking._id} tự động chuyển sang COMPLETED do hết thời gian chờ quay lại.`);
@@ -640,6 +627,7 @@ function startScheduler(app) {
   }
 
   console.log(`⏰ Parking scheduler started (interval: ${CHECK_INTERVAL_MS / 1000}s)`);
+  require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));
 
   // Run immediately on start
   checkActiveSessions(app).catch((err) =>
@@ -654,9 +642,6 @@ function startScheduler(app) {
   checkVIPSubscriptions(app).catch((err) =>
     console.error('[ParkingScheduler] Initial VIP subscription check error:', err.message)
   );
-  loyaltyService.expireAllPoints().catch((err) =>
-    console.error('[ParkingScheduler] Initial loyalty point expiry error:', err.message)
-  );
   checkExpiredMembershipTransfers().catch((err) =>
     console.error('[ParkingScheduler] Initial transfer hold check error:', err.message)
   );
@@ -666,6 +651,7 @@ function startScheduler(app) {
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
+    require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));
     checkActiveSessions(app).catch((err) =>
       console.error('[ParkingScheduler] Interval check error:', err.message)
     );
@@ -686,9 +672,6 @@ function startScheduler(app) {
     );
     checkVIPSubscriptions(app).catch((err) =>
       console.error('[ParkingScheduler] VIP subscription interval error:', err.message)
-    );
-    loyaltyService.expireAllPoints().catch((err) =>
-      console.error('[ParkingScheduler] Loyalty point expiry error:', err.message)
     );
   }, CONTRACT_EXPIRATION_INTERVAL_MS);
 
