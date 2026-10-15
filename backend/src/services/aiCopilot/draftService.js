@@ -16,7 +16,7 @@ function cleanPayload(type, input) {
   if (['APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'ARCHIVE_SERVICE', 'ARCHIVE_TICKET_PACKAGE'].includes(type)) return {};
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Nội dung bản nháp không hợp lệ.');
   if (type === 'MODIFY_PRICING') {
-    const { timeBlocks, cap12h, cap24h } = input;
+    const { timeBlocks, cap12h, cap24h, pricePolicies = [], dayNightPricing = {} } = input;
     if (!Array.isArray(timeBlocks) || !timeBlocks.length || timeBlocks.length > 24) fail('Bảng giá cần các khung giờ hợp lệ.');
     const hours = Array(24).fill(0);
     const blocks = timeBlocks.map(({ startHour, endHour, price }) => {
@@ -26,7 +26,45 @@ function cleanPayload(type, input) {
       return { startHour, endHour, price };
     });
     if (hours.some((n) => n !== 1) || ![cap12h, cap24h].every((n) => Number.isFinite(n) && n >= 0)) fail('Bảng giá phải phủ đủ 24 giờ và có mức trần hợp lệ.');
-    return { timeBlocks: blocks, cap12h, cap24h };
+    if (!Array.isArray(pricePolicies) || pricePolicies.length > 100) fail('Danh sÃ¡ch chÃ­nh sÃ¡ch giÃ¡ khÃ´ng há»£p lá»‡.');
+    const normalizeTwelveHourBlock = (value, fallbackStart, fallbackPrice) => {
+      const block = value && typeof value === 'object' ? value : {};
+      const startHour = block.startHour === undefined ? fallbackStart : Number(block.startHour);
+      const price = block.price === undefined ? fallbackPrice : Number(block.price);
+      if (!Number.isInteger(startHour) || startHour < 0 || startHour > 23
+        || !Number.isFinite(price) || price < 0 || typeof (block.isActive ?? false) !== 'boolean') {
+        fail('Day/night pricing block is invalid.');
+      }
+      return { isActive: block.isActive === true, startHour, price };
+    };
+    const normalizedDayNight = {
+      day: normalizeTwelveHourBlock(dayNightPricing.day, 6, 50000),
+      night: normalizeTwelveHourBlock(dayNightPricing.night, 18, 70000),
+    };
+    if (normalizedDayNight.day.isActive && normalizedDayNight.night.isActive
+      && (normalizedDayNight.day.startHour + 12) % 24 !== normalizedDayNight.night.startHour) {
+      fail('Day and night pricing blocks must be consecutive and exactly 12 hours each.');
+    }
+    const policies = pricePolicies.map((policy) => {
+      const name = typeof policy.name === 'string' ? policy.name.trim() : '';
+      const scope = policy.scope;
+      const adjustmentPercent = Number(policy.adjustmentPercent);
+      const priority = Number(policy.priority || 0);
+      if (!name || !['weekday', 'month', 'date_range'].includes(scope)
+        || !Number.isFinite(adjustmentPercent) || adjustmentPercent < -100 || adjustmentPercent > 500
+        || !Number.isInteger(priority) || priority < 0 || priority > 10000) {
+        fail('ChÃ­nh sÃ¡ch giÃ¡ khÃ´ng há»£p lá»‡.');
+      }
+      const daysOfWeek = [...new Set((policy.daysOfWeek || []).map(Number))];
+      const months = [...new Set((policy.months || []).map(Number))];
+      const startDate = policy.startDate || null;
+      const endDate = policy.endDate || null;
+      if (scope === 'weekday' && (!daysOfWeek.length || daysOfWeek.some((day) => !Number.isInteger(day) || day < 0 || day > 6))) fail('Vui lÃ²ng chá»n thá»© Ã¡p dá»¥ng.');
+      if (scope === 'month' && (!months.length || months.some((month) => !Number.isInteger(month) || month < 1 || month > 12))) fail('Vui lÃ²ng chá»n thÃ¡ng Ã¡p dá»¥ng.');
+      if (scope === 'date_range' && (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '') || startDate > endDate)) fail('Khoáº£ng ngÃ y Ã¡p dá»¥ng khÃ´ng há»£p lá»‡.');
+      return { name, scope, daysOfWeek, months, startDate, endDate, adjustmentPercent, priority, isActive: policy.isActive !== false };
+    });
+    return { timeBlocks: blocks, cap12h, cap24h, dayNightPricing: normalizedDayNight, pricePolicies: policies };
   }
   if (type === 'UPDATE_USER_STATUS') {
     if (typeof input.status !== 'boolean') fail('Trạng thái không hợp lệ.');

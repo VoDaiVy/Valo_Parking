@@ -166,7 +166,7 @@ const NOTIFICATION_TEMPLATES = {
   // LOYALTY
   LOYALTY_POINTS_EARNED: {
     title: 'You earned {points} loyalty points',
-    content: 'Your reward balance is now {balance} points. Tap this notification to view and redeem rewards.',
+    content: 'Your reward balance is now {balance} points. These points are valid for 30 days. Tap to view rewards.',
     type: 'PROMOTION',
     priority: 'SUCCESS',
   },

@@ -2,17 +2,17 @@ const mongoose = require('mongoose');
 
 const voucherTemplateSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    description: { type: String, default: '', trim: true },
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    description: { type: String, default: '', trim: true, maxlength: 500 },
     type: {
       type: String,
-      enum: ['PERCENT_DISCOUNT', 'FREE_SERVICE'],
+      enum: ['PERCENT_DISCOUNT', 'FREE_SERVICE', 'FIXED_DISCOUNT'],
       required: true,
     },
     pointCost: {
       type: Number,
-      required: true,
-      min: 1,
+      default: 0,
+      min: 0,
       validate: { validator: Number.isInteger, message: 'pointCost must be an integer' },
     },
     discountPercent: {
@@ -26,6 +26,8 @@ const voucherTemplateSchema = new mongoose.Schema(
         message: 'discountPercent must be an integer',
       },
     },
+    discountAmount: { type: Number, default: 0, min: 0, max: 1000000000, validate: Number.isSafeInteger },
+    minimumAmount: { type: Number, default: 0, min: 0, max: 1000000000, validate: Number.isSafeInteger },
     serviceId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Service',
@@ -56,6 +58,12 @@ const voucherTemplateSchema = new mongoose.Schema(
 );
 
 voucherTemplateSchema.pre('validate', function validateBenefit(next) {
+  if (this.type === 'FIXED_DISCOUNT') {
+    if (!Number.isSafeInteger(this.discountAmount) || this.discountAmount < 1000) this.invalidate('discountAmount', 'Fixed discount must be at least 1,000 VND');
+    if (this.discountAmount > this.minimumAmount) this.invalidate('minimumAmount', 'Minimum order must cover the discount');
+    this.discountPercent = null;
+    this.serviceId = null;
+  }
   if (this.type === 'PERCENT_DISCOUNT') {
     if (!Number.isInteger(this.discountPercent)) {
       this.invalidate('discountPercent', 'discountPercent is required for percentage vouchers');

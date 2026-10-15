@@ -20,7 +20,6 @@ const serviceRoutes = require('./routes/serviceRoutes');
 const ticketPackageRoutes = require('./routes/ticketPackageRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const policyRoutes = require('./routes/policyRoutes');
-const pricingRoutes = require('./routes/pricingRoutes');
 
 // Initialize express app
 const app = express();
@@ -63,7 +62,6 @@ app.use("/api/policies", policyRoutes);
 app.use('/api', serviceRoutes);
 app.use('/api/ticket-packages', ticketPackageRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/pricing', pricingRoutes);
 app.use('/api/loyalty', require('./routes/loyaltyRoutes'));
 app.use("/api/staff", require("./routes/staffRoutes"));
 app.use("/api/sessions", require("./routes/sessionRoutes"));

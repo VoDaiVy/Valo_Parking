@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const VoucherTemplate = require('../models/VoucherTemplate');
-const { calculateEarnedPoints } = require('../services/loyaltyService');
+const PointTransaction = require('../models/PointTransaction');
+const { calculateEarnedPoints, POINT_VALIDITY_DAYS, POINT_VALIDITY_MS } = require('../services/loyaltyService');
 const { calculateDiscountedTotal, getVoucherStateError } = require('../services/voucherService');
 
 test('amounts below 1000 earn no points', () => {
@@ -10,6 +11,23 @@ test('amounts below 1000 earn no points', () => {
 
 test('point calculation never rounds up', () => {
   assert.equal(calculateEarnedPoints(1999), 1);
+});
+
+test('earned points are configured to expire after exactly 30 days', () => {
+  assert.equal(POINT_VALIDITY_DAYS, 30);
+  assert.equal(POINT_VALIDITY_MS, 30 * 24 * 60 * 60 * 1000);
+});
+
+test('point ledger accepts an expiry transaction', () => {
+  const transaction = new PointTransaction({
+    loyaltyAccountId: '64b000000000000000000001',
+    userId: '64b000000000000000000002',
+    type: 'EXPIRE',
+    amount: 10,
+    balanceBefore: 20,
+    balanceAfter: 10,
+  });
+  assert.equal(transaction.validateSync(), undefined);
 });
 
 test('a used voucher reports an idempotent rejection code', () => {

@@ -84,6 +84,7 @@ const subscriptionRenewalSchema = new mongoose.Schema(
 
 subscriptionRenewalSchema.index({ userId: 1, createdAt: -1 });
 subscriptionRenewalSchema.index({ subscriptionId: 1, status: 1, createdAt: -1 });
+subscriptionRenewalSchema.index({ paidAt: 1 });
 subscriptionRenewalSchema.index(
   { subscriptionId: 1 },
   {
