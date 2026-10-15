@@ -1,10 +1,24 @@
 const express = require('express');
 const router = express.Router();
-const { scanPlate, scanRegistrationCard, getOccupancyForecast, resolveUnclearPlate } = require('../controllers/aiController');
+const {
+  scanPlate,
+  scanRegistrationCard,
+  getOccupancyForecast,
+  resolveUnclearPlate,
+  scanParkingSlots,
+  autoDetectSlotGrid,
+} = require('../controllers/aiController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 const aiBookingController = require('../controllers/aiBookingController');
 
 router.post('/booking/interpret', protect, authorize('customer'), aiBookingController.interpret);
+router.get('/booking/sessions/latest', protect, authorize('customer'), aiBookingController.getLatestSession);
+router.get('/booking/sessions/:sessionId', protect, authorize('customer'), aiBookingController.getSession);
+router.post('/booking/sessions', protect, authorize('customer'), aiBookingController.createSession);
+router.post('/booking/sessions/:sessionId/messages', protect, authorize('customer'), aiBookingController.appendMessages);
+router.put('/booking/sessions/:sessionId', protect, authorize('customer'), aiBookingController.updateSession);
+router.post('/booking/sessions/:sessionId/complete', protect, authorize('customer'), aiBookingController.completeSession);
+router.delete('/booking/sessions/:sessionId', protect, authorize('customer'), aiBookingController.discardSession);
 
 // @route   POST /api/ai/scan-plate
 // @desc    Scan license plate from base64 image using PlateRecognizer
@@ -26,4 +40,15 @@ router.get('/occupancy-forecast', getOccupancyForecast);
 // @access  Public
 router.post('/resolve-unclear-plate', resolveUnclearPlate);
 
+// @route   POST /api/ai/scan-slots
+// @desc    Scan parking slots status & plates from live camera ROI
+// @access  Public / Staff
+router.post('/scan-slots', scanParkingSlots);
+
+// @route   POST /api/ai/auto-detect-grid
+// @desc    Auto-detect diorama grid ROI coordinates for parking slots
+// @access  Public / Staff
+router.post('/auto-detect-grid', autoDetectSlotGrid);
+
 module.exports = router;
+

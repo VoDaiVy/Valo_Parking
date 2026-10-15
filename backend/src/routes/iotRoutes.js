@@ -45,6 +45,7 @@ const getGateState = (gateName = 'ENTRY_1') => {
 
 // ESP32 & Web Kiosks gọi API này để kiểm tra lệnh mở Barrier theo cổng
 router.get('/barrier-status', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   const { gate } = req.query;
   if (gate) {
     const state = getGateState(gate);

@@ -30,14 +30,5 @@ export const formatLicensePlateDisplay = (plate = '') => {
 
 export const isValidLicensePlate = (plate = '') => {
   const clean = normalizeLicensePlate(plate);
-  if (!clean) return false;
-
-  if (clean.length === 9) {
-    return /^\d{2}[A-Z]\d{6}$/.test(clean) || /^\d{2}[A-Z]{2}\d{5}$/.test(clean);
-  } else if (clean.length === 8) {
-    return /^\d{2}[A-Z]\d{5}$/.test(clean) || /^\d{2}[A-Z]\d\d{4}$/.test(clean) || /^\d{2}[A-Z]{2}\d{4}$/.test(clean);
-  } else if (clean.length === 7) {
-    return /^\d{2}[A-Z]\d{4}$/.test(clean);
-  }
-  return false;
+  return /^[1-9]\d[A-Z]{1,2}\d{4,5}$/.test(clean);
 };
