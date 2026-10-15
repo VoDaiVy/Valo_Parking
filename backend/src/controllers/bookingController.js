@@ -550,7 +550,13 @@ const findOwnedBooking = (bookingId, user) => {
 exports.getAvailableSlots = async (req, res, next) => {
   try {
     const { startTime, endTime, bookingSource } = req.query;
-    const { start, end } = validateBookingTimeRange(startTime, endTime);
+    const now = new Date();
+    const effectiveStart = startTime || now.toISOString();
+    const effectiveEnd = endTime || new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+    const { start, end } = validateBookingTimeRange(effectiveStart, effectiveEnd, {
+      requireFuture: false,
+      minMinutes: 0,
+    });
     const slots = await getAvailableSlotsForRange(start, end, req.user?._id, {
       allowExpectedSessionCheckout: bookingSource === 'AI_QUICK',
       includeOwnedDedicatedSlots: bookingSource === 'AI_QUICK',
@@ -1986,7 +1992,9 @@ exports.createBookingHold = async (req, res, next) => {
     let start;
     let end;
     try {
-      ({ start, end } = validateBookingTimeRange(startTime, endTime));
+      ({ start, end } = validateBookingTimeRange(startTime, endTime, {
+        requireFuture: false,
+      }));
     } catch (timeError) {
       return res.status(timeError.statusCode || 400).json({
         success: false,

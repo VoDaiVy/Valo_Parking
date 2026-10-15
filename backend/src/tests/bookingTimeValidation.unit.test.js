@@ -44,3 +44,13 @@ test('booking time validation rejects malformed, reversed and short ranges', () 
     (error) => error.code === 'BOOKING_DURATION_TOO_SHORT',
   );
 });
+
+test('booking time validation accepts present/immediate ranges when requireFuture is false and minMinutes is 0', () => {
+  const result = validateBookingTimeRange(
+    '2026-09-23T08:00:00.000Z',
+    '2026-09-23T08:01:00.000Z',
+    { now, requireFuture: false, minMinutes: 0 },
+  );
+  assert.equal(result.durationMinutes, 1);
+});
+
