@@ -11,6 +11,7 @@ import { CustomerManagementScreen } from '../screens/staff/CustomerManagementScr
 import { ManagementHubScreen } from '../screens/staff/ManagementHubScreen';
 import { StaffBookingManagementScreen } from '../screens/staff/StaffBookingManagementScreen';
 import StaffDashboardScreen from '../screens/staff/StaffDashboardScreen';
+import StaffGateControlScreen from '../screens/staff/StaffGateControlScreen';
 import { StaffNotificationManagementScreen } from '../screens/staff/StaffNotificationManagementScreen';
 import StaffProfileScreen from '../screens/staff/StaffProfileScreen';
 import { StaffSubscriptionManagementScreen } from '../screens/staff/StaffSubscriptionManagementScreen';
@@ -78,6 +79,7 @@ function ProfileStackNavigator() {
 
 export type StaffTabParamList = {
   Dashboard: undefined;
+  Gates: undefined;
   LiveGrid: undefined;
   Sessions: undefined;
   Manage: NavigatorScreenParams<StaffManagementStackParamList>;
@@ -113,6 +115,14 @@ export default function StaffNavigator() {
         options={{
           tabBarLabel: 'Overview',
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'grid', 'grid-outline', color),
+        }}
+      />
+      <Tab.Screen
+        name="Gates"
+        component={StaffGateControlScreen}
+        options={{
+          tabBarLabel: 'Gates',
+          tabBarIcon: ({ focused, color }) => tabIcon(focused, 'radio', 'radio-outline', color),
         }}
       />
       <Tab.Screen
