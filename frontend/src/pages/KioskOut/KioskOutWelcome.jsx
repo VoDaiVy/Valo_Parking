@@ -118,13 +118,14 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     if (!videoRef.current) return null;
     try {
       const canvas = canvasRef.current;
-      // Scale down image to 50% to prevent UI stuttering on toDataURL
-      const scale = 0.5;
-      canvas.width = videoRef.current.videoWidth * scale;
-      canvas.height = videoRef.current.videoHeight * scale;
+      const vWidth = videoRef.current.videoWidth || 800;
+      const vHeight = videoRef.current.videoHeight || 600;
+      const scale = Math.min(1.0, 720 / Math.max(vWidth, vHeight));
+      canvas.width = Math.round(vWidth * scale);
+      canvas.height = Math.round(vHeight * scale);
       const ctx = canvas.getContext('2d');
       ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const imageBase64 = canvas.toDataURL('image/jpeg', 0.6);
+      const imageBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
       const response = await fetch(`${API_BASE}/ai/scan-plate`, {
         method: 'POST',
@@ -133,8 +134,9 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       });
 
       const data = await response.json();
-      if (response.ok && data.success && data.plate) {
-        return { plate: data.plate, imageBase64 };
+      const detectedPlate = data.plate || data.licensePlate || data.data?.licensePlate || data.data?.plate;
+      if (response.ok && data.success && detectedPlate) {
+        return { plate: detectedPlate, imageBase64 };
       }
     } catch (error) {
       console.error('Scan error:', error);

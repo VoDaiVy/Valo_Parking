@@ -362,6 +362,18 @@ const getUnavailableSlotKeys = async (
     .select('floorID slotNumber')
     .lean();
 
+  const isImmediate = start <= new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const physicalOccupiedSlotsPromise = isImmediate
+    ? Slot.find({
+        $or: [
+          { status: 'occupied' },
+          { 'aiObservation.occupied': true }
+        ]
+      })
+        .select('floorID slotNumber status aiObservation')
+        .lean()
+    : Promise.resolve([]);
+
   const BookingHold = require('../models/BookingHold');
   const activeHoldsPromise = BookingHold.find({
     status: 'active',
@@ -376,12 +388,14 @@ const getUnavailableSlotKeys = async (
     overlappingBookings,
     activeSessions,
     maintenanceSlots,
+    physicalOccupiedSlots,
     activeHolds,
     dedicatedKeys
   ] = await Promise.all([
     overlappingBookingsPromise,
     activeSessionsPromise,
     maintenanceSlotsPromise,
+    physicalOccupiedSlotsPromise,
     activeHoldsPromise,
     includeOwnedDedicatedSlots
       ? getAiDedicatedSlotKeys(userId, start, end)
@@ -406,6 +420,15 @@ const getUnavailableSlotKeys = async (
   maintenanceSlots.forEach((slot) => {
     unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
   });
+
+  // If the booking begins within the next 2 hours, physically occupied slots cannot be booked
+  if (isImmediate && Array.isArray(physicalOccupiedSlots)) {
+    physicalOccupiedSlots.forEach((slot) => {
+      if (slot.status === 'occupied' || slot.aiObservation?.occupied) {
+        unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
+      }
+    });
+  }
 
   activeHolds.forEach((hold) => {
     unavailable.add(buildSlotKey(hold.floorId, hold.slotCode));
@@ -2043,12 +2066,21 @@ exports.createBookingHold = async (req, res, next) => {
       status: 'active'
     });
 
+    const physicalSlotDoc = await Slot.findOne({
+      floorID: floorId,
+      slotNumber: slotCode,
+      $or: [{ status: 'occupied' }, { 'aiObservation.occupied': true }, { status: 'maintenance' }]
+    });
+
     const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
     const slotExpectedCheckout = isAiQuickRequest && slotOccupied
       ? expectedSessionCheckout(slotOccupied, now)
       : null;
     if (slotOccupied && (!isAiQuickRequest || !slotExpectedCheckout || slotExpectedCheckout > start)) {
       return res.status(400).json({ success: false, message: 'This slot is currently occupied by another vehicle' });
+    }
+    if (physicalSlotDoc && start <= new Date(now.getTime() + 60 * 60 * 1000)) {
+      return res.status(400).json({ success: false, message: 'This slot is currently occupied or unavailable on the physical parking lot' });
     }
 
     const overlappingBooking = await Booking.findOne({

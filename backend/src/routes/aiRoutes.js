@@ -7,6 +7,12 @@ const {
   resolveUnclearPlate,
   scanParkingSlots,
   autoDetectSlotGrid,
+  getViolationLogs,
+  getSlotLogs,
+  resolveViolation,
+  clearAllViolations,
+  getDriverContactInfo,
+  sendViolationEmail,
 } = require('../controllers/aiController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 const aiBookingController = require('../controllers/aiBookingController');
@@ -49,6 +55,36 @@ router.post('/scan-slots', scanParkingSlots);
 // @desc    Auto-detect diorama grid ROI coordinates for parking slots
 // @access  Public / Staff
 router.post('/auto-detect-grid', autoDetectSlotGrid);
+
+// @route   GET /api/ai/violation-logs
+// @desc    Get global parking lot violation logs
+// @access  Public / Staff
+router.get('/violation-logs', getViolationLogs);
+
+// @route   GET /api/ai/slot-logs/:slotCode
+// @desc    Get history logs for a specific parking slot
+// @access  Public / Staff
+router.get('/slot-logs/:slotCode', getSlotLogs);
+
+// @route   POST /api/ai/resolve-violation
+// @desc    Resolve slot violation (reassign or warning)
+// @access  Public / Staff
+router.post('/resolve-violation', resolveViolation);
+
+// @route   POST /api/ai/clear-all-violations
+// @desc    Clear/reset all active slot violations and pending audit logs (for clean testing)
+// @access  Public / Staff
+router.post('/clear-all-violations', clearAllViolations);
+
+// @route   GET /api/ai/driver-contact
+// @desc    Get phone/email of offending vehicle driver and VIP owner info
+// @access  Public / Staff
+router.get('/driver-contact', getDriverContactInfo);
+
+// @route   POST /api/ai/send-warning-email
+// @desc    Send urgent violation warning email to vehicle driver
+// @access  Public / Staff
+router.post('/send-warning-email', sendViolationEmail);
 
 module.exports = router;
 

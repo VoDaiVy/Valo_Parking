@@ -692,6 +692,44 @@ export default function SlotCameraMonitorModal({
       ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
       const base64Image = offscreen.toDataURL('image/jpeg', 0.95);
 
+      // Smart Cropping for each slot to provide focused evidence
+      const cropsMap = {};
+      try {
+        for (const s of slotsToScan) {
+          if (s.polygon && s.polygon.length >= 3) {
+            const xs = s.polygon.map((p) => p[0]);
+            const ys = s.polygon.map((p) => p[1]);
+            let minX = Math.min(...xs);
+            let maxX = Math.max(...xs);
+            let minY = Math.min(...ys);
+            let maxY = Math.max(...ys);
+
+            const padX = (maxX - minX) * 0.15;
+            const padY = (maxY - minY) * 0.15;
+            minX = Math.max(0, minX - padX);
+            maxX = Math.min(1, maxX + padX);
+            minY = Math.max(0, minY - padY);
+            maxY = Math.min(1, maxY + padY);
+
+            const sx = minX * offscreen.width;
+            const sy = minY * offscreen.height;
+            const sWidth = (maxX - minX) * offscreen.width;
+            const sHeight = (maxY - minY) * offscreen.height;
+
+            if (sWidth > 10 && sHeight > 10) {
+              const cropCanvas = document.createElement('canvas');
+              cropCanvas.width = 320;
+              cropCanvas.height = Math.round(320 * (sHeight / sWidth)) || 240;
+              const cctx = cropCanvas.getContext('2d');
+              cctx.drawImage(offscreen, sx, sy, sWidth, sHeight, 0, 0, cropCanvas.width, cropCanvas.height);
+              cropsMap[s.slotCode] = cropCanvas.toDataURL('image/jpeg', 0.85);
+            }
+          }
+        }
+      } catch (cropErr) {
+        console.warn('Slot crop error:', cropErr);
+      }
+
       const token = localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -702,6 +740,7 @@ export default function SlotCameraMonitorModal({
         body: JSON.stringify({
           image: base64Image,
           slots: slotsToScan,
+          crops: cropsMap,
           aiMode: forceDeep ? 'gemini' : aiMode,
           forceDeepScan: forceDeep,
           currentFloor: activeFloor ? {

@@ -174,15 +174,18 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth || !video.videoHeight) return null;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const vWidth = video.videoWidth || 800;
+    const vHeight = video.videoHeight || 600;
+    const scale = Math.min(1.0, 720 / Math.max(vWidth, vHeight));
+    canvas.width = Math.round(vWidth * scale);
+    canvas.height = Math.round(vHeight * scale);
 
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    return canvas.toDataURL('image/jpeg', 0.82);
+    return canvas.toDataURL('image/jpeg', 0.85);
   };
 
   const formatVietnamesePlate = (plate) => {
@@ -233,7 +236,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           message: data.message || 'AI plate scanning is temporarily unavailable.',
         };
       }
-      const normalizedPlate = normalizeLicensePlate(data.plate || '');
+      const plateVal = data.plate || data.licensePlate || data.data?.licensePlate || data.data?.plate || '';
+      const normalizedPlate = normalizeLicensePlate(plateVal);
       if (response.ok && data.success && isLikelyVietnamesePlate(normalizedPlate)) {
         return { plate: normalizedPlate, imageBase64 };
       }
