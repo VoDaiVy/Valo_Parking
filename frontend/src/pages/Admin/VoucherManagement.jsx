@@ -1,307 +1,130 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertCircle, Bell, Check, Coins, Edit2, Gift, Loader2, Percent,
-  Plus, Power, Sparkles, Trash2, Wrench, X,
-} from 'lucide-react';
-import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
-import AdminSelect from '../../components/Admin/AdminSelect';
+import { useCallback, useEffect, useState } from 'react';
+import { Gift, Plus, Send, Trash2, X } from 'lucide-react';
 import { getServices } from '../../services/extraServiceApi';
+import QuarterlyLeaderboard from './QuarterlyLeaderboard';
 import {
-  createVoucherTemplate,
-  deactivateVoucherTemplate,
-  deleteVoucherTemplate,
-  getVoucherTemplatesAdmin,
-  updateVoucherTemplate,
+  getVoucherTemplatesAdmin, createVoucherTemplate, updateVoucherTemplate,
+  getSpendingProgram, saveSpendingProgram, searchVoucherRecipients, distributeVouchers,
+  updateVoucherExpiry,
 } from '../../services/loyaltyService';
 
-const emptyForm = {
-  name: '', description: '', type: 'PERCENT_DISCOUNT', pointCost: 30,
-  discountPercent: 10, serviceId: '', isActive: true,
-  redemptionLimit: '', notifyCustomers: false,
-};
-const fieldClass = 'mt-2 w-full rounded-xl border border-white/[0.09] bg-white/[0.035] px-3.5 py-3 text-sm font-semibold text-white outline-none transition duration-200 placeholder:text-white/20 hover:border-white/15 focus:border-[#f3c43d]/70 focus:bg-white/[0.055] focus:ring-4 focus:ring-[#f3c43d]/[0.08]';
-const numberFieldClass = '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
-const actionClass = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#f3c43d]/40 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40';
-const rewardTypeOptions = [
-  { value: 'PERCENT_DISCOUNT', label: 'Percentage discount' },
-  { value: 'FREE_SERVICE', label: 'Free service' },
-];
-
-function BenefitMark({ template, large = false }) {
-  const Icon = template.type === 'PERCENT_DISCOUNT' ? Percent : Wrench;
-  return (
-    <div className={`flex shrink-0 items-center justify-center border border-[#f3c43d]/20 bg-[#f3c43d]/[0.08] text-[#f3c43d] ${large ? 'h-12 w-12 rounded-2xl' : 'h-10 w-10 rounded-xl'}`}>
-      <Icon size={large ? 20 : 17} strokeWidth={1.8} />
-    </div>
-  );
-}
-
-function VoucherSkeleton() {
-  return Array.from({ length: 4 }, (_, index) => (
-    <div key={index} className="grid grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] items-center gap-5 border-t border-white/[0.055] px-5 py-4 first:border-t-0">
-      <div className="flex items-center gap-3"><div className="h-10 w-10 animate-pulse rounded-xl bg-white/[0.06]" /><div className="space-y-2"><div className="h-3 w-32 animate-pulse rounded bg-white/[0.07]" /><div className="h-2.5 w-44 animate-pulse rounded bg-white/[0.04]" /></div></div>
-      <div className="h-3 w-48 animate-pulse rounded bg-white/[0.05]" />
-      <div className="h-3 w-16 animate-pulse rounded bg-white/[0.05]" />
-      <div className="h-7 w-20 animate-pulse rounded-lg bg-white/[0.05]" />
-      <div className="ml-auto h-9 w-28 animate-pulse rounded-lg bg-white/[0.05]" />
-    </div>
-  ));
-}
+const inputClass = 'mt-2 w-full rounded-xl border border-white/15 bg-[#161616] px-3 py-2.5 text-sm text-white outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400';
+const buttonClass = 'rounded-xl bg-yellow-400 px-4 py-2.5 text-sm font-bold text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50';
+const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+const emptyForm = { name: '', description: '', type: 'FIXED_DISCOUNT', discountAmount: 20000, minimumAmount: 100000, discountPercent: 10, serviceId: '', redemptionLimit: '', isActive: true };
+const unwrap = (response) => { if (!response.ok) throw new Error(response.data?.errors?.map((item) => item.message).join('; ') || response.data?.message || 'Không thể thực hiện. Vui lòng thử lại.'); return response.data.data; };
 
 export default function VoucherManagement() {
+  const [tab, setTab] = useState('auto');
+  const [program, setProgram] = useState(null);
+  const [stats, setStats] = useState({});
   const [templates, setTemplates] = useState([]);
+  const [vouchers, setVouchers] = useState([]);
   const [services, setServices] = useState([]);
-  const [editing, setEditing] = useState(undefined);
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(null);
+  const [sending, setSending] = useState(null);
+  const [sendExpiresAt, setSendExpiresAt] = useState('');
+  const [recipients, setRecipients] = useState([]);
+  const [query, setQuery] = useState('');
+  const [suggestedRecipient, setSuggestedRecipient] = useState('');
+  const [results, setResults] = useState([]);
+  const [requestId, setRequestId] = useState('');
+  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [actionId, setActionId] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
-  const activeCount = useMemo(
-    () => templates.filter((template) => template.isActive).length,
-    [templates]
-  );
-
   const load = useCallback(async () => {
     setLoading(true);
-    setError('');
-    const [templateResponse, serviceResponse] = await Promise.all([
-      getVoucherTemplatesAdmin(), getServices(),
-    ]);
-    if (templateResponse.ok) setTemplates(templateResponse.data?.data || []);
-    else setError(templateResponse.data?.message || 'Không thể tải danh sách voucher.');
-    if (serviceResponse.ok) setServices(serviceResponse.data?.data || []);
-    setLoading(false);
+    try {
+      const [settings, catalog, extras] = await Promise.all([getSpendingProgram(), getVoucherTemplatesAdmin(), getServices()]);
+      const data = unwrap(settings);
+      setProgram(data.program); setStats(data.stats); setVouchers(data.vouchers || []); setTemplates(unwrap(catalog));
+      if (extras.ok) setServices(extras.data?.data || []);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   }, []);
-
+  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [load]);
   useEffect(() => {
-    const timer = window.setTimeout(load, 0);
-    return () => window.clearTimeout(timer);
-  }, [load]);
-
-  const open = (template = null) => {
-    setEditing(template);
-    setForm(template
-      ? {
-        ...template,
-        serviceId: template.serviceId?._id || template.serviceId || '',
-        redemptionLimit: template.redemptionLimit ?? '',
-        notifyCustomers: false,
-      }
-      : emptyForm);
-    setError('');
-    setNotice('');
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (!sending || query.trim().length < 2) { setResults([]); return; }
+      try {
+        const found = unwrap(await searchVoucherRecipients(query.trim()));
+        if (!cancelled) setResults(found.filter((user) => user.role === 'customer' && !recipients.some((item) => item._id === user._id)));
+      } catch (err) { if (!cancelled) setError(err.message); }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, recipients, sending]);
+  const perform = async (work) => {
+    setBusy(true); setError(''); setNotice('');
+    try { await work(); } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
   };
-
-  const save = async (event) => {
+  const saveTemplate = (event) => {
     event.preventDefault();
-    if (form.type === 'FREE_SERVICE' && !form.serviceId) {
-      setError('Select an active service for this voucher.');
-      return;
-    }
-    setSaving(true);
-    setError('');
-    const payload = {
-      ...form,
-      pointCost: Number(form.pointCost),
-      discountPercent: form.type === 'PERCENT_DISCOUNT' ? Number(form.discountPercent) : null,
-      serviceId: form.type === 'FREE_SERVICE' ? form.serviceId : null,
-      redemptionLimit: form.redemptionLimit === '' ? null : Number(form.redemptionLimit),
-      notifyCustomers: !editing?._id && Boolean(form.notifyCustomers),
-    };
-    const response = editing?._id
-      ? await updateVoucherTemplate(editing._id, payload)
-      : await createVoucherTemplate(payload);
-    setSaving(false);
-    if (!response.ok) {
-      setError(response.data?.message || 'Không thể lưu voucher template.');
-      return;
-    }
-    setEditing(undefined);
-    const notificationAcknowledged = response.data?.notification?.requested === true;
-    const limitAcknowledged = payload.redemptionLimit === null
-      || Number(response.data?.data?.redemptionLimit) === payload.redemptionLimit;
-    if (response.data?.warning) setError(response.data.warning);
-    else if (payload.notifyCustomers && !notificationAcknowledged) {
-      setError('Voucher was saved, but the running backend did not process the notification. Restart the backend and try again.');
-    } else if (!limitAcknowledged) {
-      setError('Voucher was saved, but the running backend did not process the redemption limit. Restart the backend and try again.');
-    } else {
-      setNotice(notificationAcknowledged
-        ? `Voucher released and sent to ${response.data.notification.sentTo} customer(s).`
-        : 'Voucher saved without customer notification.');
-    }
-    await load();
+    void perform(async () => {
+      const payload = { ...form,
+        discountAmount: form.type === 'FIXED_DISCOUNT' ? Number(form.discountAmount) : 0,
+        minimumAmount: Number(form.minimumAmount),
+        discountPercent: form.type === 'PERCENT_DISCOUNT' ? Number(form.discountPercent) : null,
+        serviceId: form.type === 'FREE_SERVICE' ? form.serviceId : null,
+        redemptionLimit: form.redemptionLimit === '' ? null : Number(form.redemptionLimit),
+      };
+      unwrap(await (form._id ? updateVoucherTemplate(form._id, payload) : createVoucherTemplate(payload)));
+      setForm(null); await load(); setNotice('Đã lưu mẫu voucher. Chọn Gửi để cấp cho khách hàng.');
+    });
   };
-
-  const toggleActive = async (template) => {
-    setActionId(template._id);
-    setError('');
-    const response = template.isActive
-      ? await deactivateVoucherTemplate(template._id)
-      : await updateVoucherTemplate(template._id, { isActive: true });
-    setActionId('');
-    if (response.ok) await load();
-    else setError(response.data?.message || 'Không thể cập nhật trạng thái voucher.');
-  };
-
-  const remove = async () => {
-    if (!pendingDelete) return;
-    setActionId(pendingDelete._id);
-    setError('');
-    const response = await deleteVoucherTemplate(pendingDelete._id);
-    setActionId('');
-    if (!response.ok) {
-      setError(response.data?.message || 'Không thể xóa voucher template.');
-      setPendingDelete(null);
-      return;
-    }
-    setPendingDelete(null);
-    await load();
-  };
-
-  const describeBenefit = (template) => template.type === 'PERCENT_DISCOUNT'
-    ? `${template.discountPercent}% off booking total`
-    : `Free ${template.serviceId?.name || 'selected service'}`;
-
   return (
-    <main className="relative min-h-full overflow-hidden bg-[#080909] px-5 pb-16 pt-8 text-white sm:px-8 lg:px-10 lg:pt-10">
-      <AdminBackgroundOverlay opacity="0.04" size="46px" />
-      <div className="pointer-events-none absolute -right-32 -top-48 h-[34rem] w-[34rem] rounded-full bg-[#f3c43d]/[0.045] blur-[110px]" />
-      <div className="pointer-events-none absolute -bottom-56 left-1/3 h-96 w-96 rounded-full bg-[#f3c43d]/[0.025] blur-[120px]" />
-
-      <div className="relative mx-auto max-w-[1280px]">
-        <header className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#f3c43d]/25 bg-[#f3c43d]/[0.07] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-[#f3c43d]">
-              <Gift size={13} strokeWidth={2.2} /> Loyalty rewards
-            </div>
-            <h1 className="text-balance text-4xl font-black tracking-[-0.045em] text-white sm:text-5xl">Voucher management</h1>
-            <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-[#8992a3]">Build reward templates customers can redeem with loyalty points.</p>
-          </div>
-          <button type="button" onClick={() => open(null)} className="group inline-flex min-h-12 items-center justify-center gap-2.5 self-start rounded-xl bg-[#f3c43d] px-5 text-sm font-black text-[#17140a] shadow-[0_12px_35px_rgba(243,196,61,0.14)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#ffd75c] hover:shadow-[0_16px_40px_rgba(243,196,61,0.22)] focus:outline-none focus:ring-4 focus:ring-[#f3c43d]/20 active:translate-y-0 active:scale-[0.98] lg:self-auto">
-            <Plus size={17} strokeWidth={2.5} className="transition-transform duration-200 group-hover:rotate-90" /> Add template
-          </button>
-        </header>
-
-        <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/[0.07] bg-[#101111]/85 backdrop-blur-sm sm:grid-cols-3">
-          {[
-            { label: 'Total templates', value: templates.length, icon: Gift },
-            { label: 'Active rewards', value: activeCount, icon: Sparkles },
-            { label: 'Inactive', value: Math.max(0, templates.length - activeCount), icon: Power },
-          ].map(({ label, value, icon: Icon }, index) => (
-            <div key={label} className={`flex items-center gap-4 px-5 py-4 ${index ? 'border-t border-white/[0.06] sm:border-l sm:border-t-0' : ''}`}>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.045] text-[#f3c43d]"><Icon size={17} strokeWidth={1.8} /></div>
-              <div><p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/35">{label}</p><p className="mt-0.5 font-mono text-xl font-bold tabular-nums text-white">{loading ? '—' : value}</p></div>
-            </div>
-          ))}
-        </section>
-
-        {error && (
-          <div role="alert" className="mb-5 flex items-start justify-between gap-4 rounded-xl border border-rose-400/20 bg-rose-400/[0.07] px-4 py-3.5 text-sm font-semibold text-rose-200">
-            <span className="flex items-center gap-2.5"><AlertCircle size={17} className="shrink-0" />{error}</span>
-            <button type="button" onClick={() => setError('')} className="text-rose-200/60 transition hover:text-rose-100" aria-label="Dismiss error"><X size={16} /></button>
-          </div>
-        )}
-
-        {notice && (
-          <div className="mb-5 flex items-start justify-between gap-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.07] px-4 py-3.5 text-sm font-semibold text-emerald-200">
-            <span className="flex items-center gap-2.5"><Check size={17} className="shrink-0" />{notice}</span>
-            <button type="button" onClick={() => setNotice('')} className="text-emerald-200/60 transition hover:text-emerald-100" aria-label="Dismiss message"><X size={16} /></button>
-          </div>
-        )}
-
-        <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0e0e]/90 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-sm">
-          <div className="hidden grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] gap-5 border-b border-white/[0.08] bg-white/[0.025] px-5 py-3.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#778092] lg:grid">
-            <span>Template</span><span>Customer benefit</span><span>Point cost</span><span>Status</span><span className="text-right">Actions</span>
-          </div>
-
-          {loading ? (
-            <div className="hidden lg:block"><VoucherSkeleton /></div>
-          ) : templates.length === 0 ? (
-            <div className="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#f3c43d]/15 bg-[#f3c43d]/[0.06] text-[#f3c43d]"><Gift size={26} strokeWidth={1.6} /></div>
-              <h2 className="text-xl font-black tracking-tight">No reward templates yet</h2>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-white/40">Create a percentage discount or a free-service voucher for customers to redeem.</p>
-              <button type="button" onClick={() => open(null)} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-[#f3c43d]/25 px-4 py-2.5 text-sm font-bold text-[#f3c43d] transition hover:bg-[#f3c43d]/10 focus:outline-none focus:ring-2 focus:ring-[#f3c43d]/30"><Plus size={16} /> Create first template</button>
-            </div>
-          ) : (
-            <div>
-              {templates.map((template) => (
-                <article key={template._id} className={`group grid gap-4 border-t border-white/[0.06] px-5 py-4 transition duration-200 first:border-t-0 hover:bg-white/[0.022] lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] lg:items-center lg:gap-5 ${template.isActive ? '' : 'opacity-60 hover:opacity-80'}`}>
-                  <div className="flex min-w-0 items-center gap-3.5"><BenefitMark template={template} /><div className="min-w-0"><h2 className="truncate text-sm font-black tracking-[-0.01em] text-white">{template.name}</h2><p className="mt-1 truncate text-xs font-medium text-white/35">{template.description || 'No description provided'}</p></div></div>
-                  <div className="flex items-center justify-between gap-4 lg:block"><span className="text-[10px] font-black uppercase tracking-widest text-white/30 lg:hidden">Benefit</span><p className="text-sm font-semibold text-[#d8dbe1]">{describeBenefit(template)}</p></div>
-                  <div className="flex items-center justify-between gap-4 lg:block"><span className="text-[10px] font-black uppercase tracking-widest text-white/30 lg:hidden">Point cost</span><div><p className="flex items-center gap-2 font-mono text-sm font-bold tabular-nums text-[#f3c43d]"><Coins size={15} />{template.pointCost.toLocaleString('vi-VN')}</p><p className="mt-1 text-[10px] font-bold text-white/35">{template.redemptionLimit ? `${Number(template.redeemedCount || 0).toLocaleString('vi-VN')} / ${template.redemptionLimit.toLocaleString('vi-VN')} redeemed` : 'Unlimited quantity'}</p></div></div>
-                  <div className="flex items-center justify-between gap-4 lg:block"><span className="text-[10px] font-black uppercase tracking-widest text-white/30 lg:hidden">Status</span><span className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${template.isActive ? 'border-emerald-400/15 bg-emerald-400/[0.07] text-emerald-300' : 'border-white/10 bg-white/[0.035] text-white/40'}`}><span className={`h-1.5 w-1.5 rounded-full ${template.isActive ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-white/30'}`} />{template.isActive ? 'Active' : 'Inactive'}</span></div>
-                  <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-3 lg:border-0 lg:pt-0">
-                    <button type="button" onClick={() => open(template)} className={`${actionClass} border-white/[0.07] bg-white/[0.035] text-[#aeb6c5] hover:border-white/15 hover:bg-white/[0.07] hover:text-white`} title="Edit template" aria-label={`Edit ${template.name}`}><Edit2 size={15} /></button>
-                    <button type="button" onClick={() => toggleActive(template)} disabled={actionId === template._id} className={`${actionClass} ${template.isActive ? 'border-[#f3c43d]/15 bg-[#f3c43d]/[0.07] text-[#f3c43d] hover:bg-[#f3c43d]/15' : 'border-emerald-400/15 bg-emerald-400/[0.07] text-emerald-300 hover:bg-emerald-400/15'}`} title={template.isActive ? 'Deactivate template' : 'Activate template'} aria-label={`${template.isActive ? 'Deactivate' : 'Activate'} ${template.name}`}>{actionId === template._id ? <Loader2 size={15} className="animate-spin" /> : <Power size={15} />}</button>
-                    <button type="button" onClick={() => setPendingDelete(template)} disabled={actionId === template._id} className={`${actionClass} border-rose-400/10 bg-rose-400/[0.055] text-rose-300/80 hover:border-rose-400/20 hover:bg-rose-400/10 hover:text-rose-200`} title="Delete template" aria-label={`Delete ${template.name}`}><Trash2 size={15} /></button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-          {loading && <div className="space-y-3 p-4 lg:hidden">{Array.from({ length: 3 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-xl bg-white/[0.04]" />)}</div>}
-        </section>
-      </div>
-
-      {editing !== undefined && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditing(undefined); }}>
-          <form onSubmit={save} className="relative w-full max-w-2xl overflow-hidden rounded-[1.5rem] border border-white/[0.1] bg-[#101111] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#f3c43d]/70 to-transparent" />
-            <div className="flex items-start justify-between border-b border-white/[0.07] px-6 py-5">
-              <div className="flex items-center gap-3.5"><BenefitMark template={form} large /><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#f3c43d]">Reward template</p><h2 className="mt-1 text-xl font-black tracking-tight text-white">{editing?._id ? 'Edit voucher' : 'Create voucher'}</h2></div></div>
-              <button type="button" onClick={() => setEditing(undefined)} disabled={saving} className="flex h-9 w-9 items-center justify-center rounded-lg text-white/35 transition hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/20" aria-label="Close dialog"><X size={19} /></button>
-            </div>
-            <div className="grid gap-5 p-6 sm:grid-cols-2">
-              <label className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Template name</span><input required maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} placeholder="e.g. Weekend 15% off" /></label>
-              <label className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Description <span className="font-medium text-white/25">(optional)</span></span><textarea rows={3} maxLength={500} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className={`${fieldClass} resize-none`} placeholder="Explain when and how customers can use this reward." /></label>
-              <div><span className="text-xs font-bold text-white/55">Reward type</span><AdminSelect value={form.type} onChange={(value) => setForm({ ...form, type: value })} options={rewardTypeOptions} ariaLabel="Select reward type" icon={Gift} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuClassName="w-full border-white/[0.1] bg-[#151616] shadow-[0_20px_55px_rgba(0,0,0,0.55)]" /></div>
-              <label><span className="text-xs font-bold text-white/55">Point cost</span><div className="relative"><input type="number" min="1" required value={form.pointCost} onChange={(event) => setForm({ ...form, pointCost: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-16 font-mono tabular-nums`} /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">points</span></div><p className="mt-1.5 text-[10px] font-medium leading-4 text-white/30">Customers earn 1 point per 1,000 VND; each earned point lot expires after 30 days.</p></label>
-              <label><span className="text-xs font-bold text-white/55">Redemption limit <span className="font-medium text-white/25">(optional)</span></span><div className="relative"><input type="number" min={Math.max(1, Number(editing?.redeemedCount || 0))} step="1" value={form.redemptionLimit} onChange={(event) => setForm({ ...form, redemptionLimit: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-20 font-mono tabular-nums`} placeholder="Unlimited" /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">vouchers</span></div><p className="mt-1.5 text-[10px] font-medium text-white/30">Leave empty for unlimited availability.{editing?.redeemedCount ? ` Already redeemed: ${editing.redeemedCount}.` : ''}</p></label>
-              {form.type === 'PERCENT_DISCOUNT' ? (
-                <label className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Discount percentage</span><div className="relative"><input type="number" min="1" max="100" required value={form.discountPercent} onChange={(event) => setForm({ ...form, discountPercent: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-12 font-mono tabular-nums`} /><Percent size={15} className="pointer-events-none absolute bottom-3.5 right-3 text-white/25" /></div></label>
-              ) : (
-                <div className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Included service</span><AdminSelect value={form.serviceId} onChange={(value) => setForm({ ...form, serviceId: value })} options={[{ value: '', label: 'Select an active service', disabled: true }, ...services.map((service) => ({ value: service._id, label: `${service.name} · ${Number(service.price || 0).toLocaleString('vi-VN')} VND` }))]} ariaLabel="Select included service" icon={Wrench} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuClassName="w-full border-white/[0.1] bg-[#151616] shadow-[0_20px_55px_rgba(0,0,0,0.55)]" visibleItems={5} /></div>
-              )}
-              {!editing?._id && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={form.notifyCustomers}
-                  onClick={() => setForm({ ...form, notifyCustomers: !form.notifyCustomers })}
-                  className="sm:col-span-2 flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-left transition hover:border-white/[0.14] hover:bg-white/[0.04]"
-                >
-                  <span className="flex items-start gap-3"><Bell size={17} className="mt-0.5 shrink-0 text-[#f3c43d]" /><span><span className="block text-xs font-black text-white">Notify customers on release</span><span className="mt-1 block text-[11px] leading-4 text-white/35">Send a promotion notification linking directly to Rewards.</span></span></span>
-                  <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${form.notifyCustomers ? 'bg-[#f3c43d]' : 'bg-white/10'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.notifyCustomers ? 'translate-x-6' : 'translate-x-1'}`} /></span>
-                </button>
-              )}
-              <div className="sm:col-span-2 rounded-xl border border-[#f3c43d]/15 bg-[#f3c43d]/[0.045] px-4 py-3.5">
-                <div className="flex items-start gap-3"><Sparkles size={16} className="mt-0.5 shrink-0 text-[#f3c43d]" /><div><p className="text-xs font-black text-white">Customer preview</p><p className="mt-1 text-xs leading-5 text-white/45">{form.name || 'Untitled reward'} · {form.type === 'PERCENT_DISCOUNT' ? `${form.discountPercent || 0}% off the booking total` : 'one selected service at no charge'} · {Number(form.pointCost || 0).toLocaleString('vi-VN')} points</p></div></div>
-              </div>
-            </div>
-            <div className="flex flex-col-reverse gap-3 border-t border-white/[0.07] bg-black/10 px-6 py-4 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => setEditing(undefined)} disabled={saving} className="min-h-11 rounded-xl border border-white/[0.09] px-5 text-sm font-bold text-white/60 transition hover:border-white/15 hover:bg-white/[0.04] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/20 active:scale-[0.98]">Cancel</button>
-              <button disabled={saving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f3c43d] px-6 text-sm font-black text-[#17140a] transition hover:bg-[#ffd75c] focus:outline-none focus:ring-4 focus:ring-[#f3c43d]/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">{saving ? <><Loader2 size={16} className="animate-spin" />Saving</> : <><Check size={16} strokeWidth={2.6} />Save template</>}</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {pendingDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onMouseDown={(event) => { if (event.target === event.currentTarget && !actionId) setPendingDelete(null); }}>
-          <section role="alertdialog" aria-modal="true" aria-labelledby="delete-voucher-title" className="w-full max-w-md rounded-3xl border border-white/[0.1] bg-[#111212] p-6 shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-400/15 bg-rose-400/[0.07] text-rose-300"><Trash2 size={20} /></div>
-            <h2 id="delete-voucher-title" className="mt-5 text-xl font-black tracking-tight">Delete “{pendingDelete.name}”?</h2>
-            <p className="mt-2 text-sm leading-6 text-white/45">This removes the template permanently. Templates with available customer vouchers cannot be deleted.</p>
-            <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setPendingDelete(null)} disabled={Boolean(actionId)} className="min-h-11 rounded-xl border border-white/[0.09] px-4 text-sm font-bold text-white/60 transition hover:bg-white/[0.05] hover:text-white">Keep template</button><button type="button" onClick={remove} disabled={Boolean(actionId)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-rose-500 px-4 text-sm font-black text-white transition hover:bg-rose-400 focus:outline-none focus:ring-4 focus:ring-rose-400/20 active:scale-[0.98] disabled:opacity-50">{actionId ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}Delete</button></div>
-          </section>
-        </div>
-      )}
-    </main>
+    <main className="min-h-full bg-[#0c0d0d] px-5 py-8 text-white sm:px-8"><div className="mx-auto max-w-6xl">
+      <header className="mb-7"><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-400"><Gift size={16} /> VALO REWARDS</p><h1 className="text-4xl font-black">Voucher management</h1><p className="mt-3 text-sm text-white/55">Thưởng theo chi tiêu hoặc gửi quà trực tiếp. Mọi voucher mới có hạn 7 ngày, kèm thông báo và email.</p></header>
+      <div className="mb-6 flex flex-wrap gap-6 border-y border-white/10 py-4 text-sm text-white/60"><span>Đã cấp <strong className="ml-2 text-white">{stats.issued || 0}</strong></span><span>Đã dùng <strong className="ml-2 text-white">{stats.used || 0}</strong></span><span>Email chờ gửi <strong className="ml-2 text-yellow-300">{stats.pendingEmails || 0}</strong></span></div>
+      {stats.retryingEmails > 0 && <p role="alert" className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">Có {stats.retryingEmails} email voucher gửi chưa thành công. Hệ thống sẽ thử lại; admin cần kiểm tra cấu hình đăng nhập SMTP nếu tình trạng kéo dài.</p>}
+      <nav className="mb-6 flex flex-wrap gap-2" aria-label="Quản lý voucher">{[['auto', 'Tự động theo chi tiêu'], ['manual', 'Gửi trực tiếp'], ['leaderboard', 'Xếp hạng theo quý']].map(([key, label]) => <button key={key} onClick={() => { setTab(key); setError(''); }} aria-pressed={tab === key} className={`rounded-xl px-4 py-3 text-sm font-bold ${tab === key ? 'bg-yellow-400 text-black' : 'bg-white/5 text-white/60'}`}>{label}</button>)}</nav>
+      {error && <p role="alert" className="mb-4 rounded-xl bg-red-400/10 p-4 text-sm text-red-300">{error}</p>}
+      {notice && <p role="status" className="mb-4 rounded-xl bg-emerald-400/10 p-4 text-sm text-emerald-300">{notice}</p>}
+      {loading && <p className="py-6 text-white/50">Đang tải…</p>}
+      {!loading && !program && <button onClick={load} className={buttonClass}>Thử tải lại</button>}
+      {tab === 'leaderboard' && <QuarterlyLeaderboard onChooseRecipient={(row) => { setSuggestedRecipient(row.username); setTab('manual'); setNotice(`Chọn mẫu voucher để gửi cho ${row.username}.`); }} />}
+      {tab === 'auto' && program && <form onSubmit={(event) => { event.preventDefault(); void perform(async () => { setProgram(unwrap(await saveSpendingProgram(program))); setNotice('Đã lưu chương trình thưởng.'); }); }}>
+        <fieldset disabled={busy} className="rounded-2xl border border-white/10 p-5 sm:p-6">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-xl font-bold">Mốc thưởng hàng tháng</h2><p className="mt-2 text-sm text-white/55">Tính theo giờ Việt Nam. Bắt đầu ghi nhận từ lần bật đầu tiên.</p></div><div className="flex flex-wrap items-end gap-5"><label className="text-xs text-white/60">Hạn voucher (ngày)<input type="number" min="1" max="365" step="1" required value={program.validityDays ?? 7} onChange={(event) => setProgram({ ...program, validityDays: event.target.value === '' ? '' : Number(event.target.value) })} className="mt-2 w-36 rounded-xl border border-white/15 bg-[#161616] px-3 py-2.5 text-sm text-white outline-none focus:border-yellow-400" /></label><label className="flex items-center gap-3 pb-2 text-sm font-bold"><input type="checkbox" checked={program.enabled} onChange={(event) => setProgram({ ...program, enabled: event.target.checked })} className="h-5 w-5 accent-yellow-400" />{program.enabled ? 'Đang bật' : 'Đang tắt'}</label></div></div>
+          <div className="space-y-4">{program.tiers.map((tier, index) => <div key={index} className="grid items-end gap-3 border-t border-white/10 pt-4 sm:grid-cols-[1fr_1fr_1fr_auto]">{[['threshold', 'Chi tiêu đạt (VND)'], ['discountAmount', 'Giá trị voucher (VND)'], ['minimumAmount', 'Đơn tối thiểu (VND)']].map(([key, label]) => <label key={key} className="text-xs text-white/60">{label}<input type="number" min="1000" max="1000000000" step="1" required value={tier[key]} onChange={(event) => setProgram({ ...program, tiers: program.tiers.map((item, i) => i === index ? { ...item, [key]: event.target.value === '' ? '' : Number(event.target.value) } : item) })} className={inputClass} /></label>)}<button type="button" disabled={program.tiers.length === 1} onClick={() => setProgram({ ...program, tiers: program.tiers.filter((_, i) => i !== index) })} className="p-3 text-red-300 disabled:opacity-30" aria-label={`Xóa mốc ${index + 1}`}><Trash2 size={18} /></button></div>)}</div>
+          <button type="button" disabled={program.tiers.length >= 10} onClick={() => setProgram({ ...program, tiers: [...program.tiers, { threshold: '', discountAmount: '', minimumAmount: '' }] })} className="mt-4 flex items-center gap-2 text-sm font-bold text-yellow-300 disabled:opacity-40"><Plus size={16} /> Thêm mốc</button>
+          <p className="mt-6 text-sm leading-6 text-white/55">Mỗi mốc chỉ nhận một lần trong tháng. Voucher tự động có hạn {program.validityDays || 7} ngày từ lúc cấp. Một giao dịch vượt nhiều mốc chỉ nhận mốc cao nhất. Booking được tính ngay sau khi thanh toán thành công, theo số tiền thực trả sau giảm giá và hoàn tiền; không tính nạp ví, chuyển tiền hay tiền phạt. Voucher chưa dùng có thể bị thu hồi nếu hoàn tiền làm chi tiêu thấp hơn mốc.</p>
+          <p className="mt-2 text-xs leading-5 text-white/40">Thay đổi mốc không cấp bù cho giao dịch đã xử lý. Khi tạm dừng, chi tiêu vẫn được ghi nhận; giao dịch tiếp theo sau khi bật lại mới xét thưởng.</p>
+          <button type="submit" className={`${buttonClass} mt-6`}>{busy ? 'Đang lưu…' : 'Lưu chương trình'}</button>
+        </fieldset>
+      </form>}
+      {tab === 'manual' && <section>
+        <div className="mb-5 flex justify-between gap-4"><h2 className="text-xl font-bold">Mẫu voucher</h2><button onClick={() => { setForm({ ...emptyForm }); setError(''); }} className={buttonClass}>Tạo voucher</button></div>
+        <div className="space-y-3">{templates.map((template) => <article key={template._id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 p-5"><div><h3 className="font-bold">{template.name}</h3><p className="mt-1 text-sm text-white/55">{template.type === 'FIXED_DISCOUNT' ? `Giảm ${money(template.discountAmount)}` : template.type === 'PERCENT_DISCOUNT' ? `Giảm ${template.discountPercent}%` : `Miễn phí ${template.serviceId?.name || 'dịch vụ'}`} · Đơn từ {money(template.minimumAmount)} · {template.isActive ? 'Đang bật' : 'Đã tắt'}</p><p className="mt-1 text-xs text-white/40">Đã cấp {template.redeemedCount || 0}{template.redemptionLimit != null ? ` / ${template.redemptionLimit}` : ''}</p></div><div className="flex gap-3"><button onClick={() => { setForm({ ...emptyForm, ...template, serviceId: template.serviceId?._id || template.serviceId || '', redemptionLimit: template.redemptionLimit ?? '' }); setError(''); }} className="px-3 text-sm text-white/70">Chỉnh sửa</button><button disabled={!template.isActive || busy} onClick={() => { setSending(template); setSendExpiresAt(new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16)); setRecipients([]); setQuery(suggestedRecipient); setSuggestedRecipient(''); setRequestId(crypto.randomUUID()); setError(''); }} className={`${buttonClass} flex items-center gap-2`}><Send size={15} /> Gửi</button></div></article>)}</div>
+        {!loading && !templates.length && <p className="py-8 text-center text-white/50">Tạo mẫu đầu tiên để gửi ưu đãi cho khách hàng.</p>}
+        <div className="mt-8 rounded-2xl border border-white/10 p-5"><div className="mb-4"><h2 className="text-xl font-bold">Voucher đã phát</h2><p className="mt-1 text-sm text-white/50">Admin có thể gia hạn voucher chưa dùng. Voucher đã dùng hoặc thu hồi không thể chỉnh sửa.</p></div><div className="space-y-3">{vouchers.map((voucher) => <div key={voucher._id} className="grid gap-3 rounded-xl border border-white/10 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div><p className="font-bold">{voucher.benefitSnapshot?.name || 'Voucher'}</p><p className="text-xs text-white/50">{voucher.userId?.username || voucher.userId?.email || 'Khách hàng'} · {voucher.status}</p></div><span className="text-xs text-white/50">Hết hạn: {new Date(voucher.expiresAt).toLocaleString('vi-VN')}</span><button disabled={busy || ['used', 'revoked'].includes(voucher.status)} onClick={() => { const current = new Date(voucher.expiresAt); const value = window.prompt('Nhập ngày hết hạn mới (YYYY-MM-DD hoặc ISO):', current.toISOString().slice(0, 16)); if (!value) return; void perform(async () => { unwrap(await updateVoucherExpiry(voucher._id, new Date(value).toISOString())); await load(); setNotice('Đã cập nhật hạn dùng voucher.'); }); }} className="rounded-lg border border-yellow-400/40 px-3 py-2 text-xs font-bold text-yellow-300 disabled:cursor-not-allowed disabled:opacity-40">Chỉnh hạn</button></div>)}{!vouchers.length && <p className="py-5 text-sm text-white/50">Chưa có voucher nào.</p>}</div></div>
+      </section>}
+      {form && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"><form onSubmit={saveTemplate} role="dialog" aria-modal="true" aria-label="Mẫu voucher" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#111] p-6">
+        <div className="mb-5 flex justify-between"><h2 className="text-xl font-bold">{form._id ? 'Chỉnh sửa voucher' : 'Tạo voucher'}</h2><button type="button" disabled={busy} onClick={() => setForm(null)} aria-label="Đóng"><X /></button></div>
+        {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
+        <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
+          <label className="text-xs text-white/60 sm:col-span-2">Tên voucher<input required maxLength="120" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={inputClass} /></label>
+          <label className="text-xs text-white/60 sm:col-span-2">Mô tả<textarea maxLength="500" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className={inputClass} /></label>
+          <label className="text-xs text-white/60">Loại ưu đãi<select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })} className={inputClass}><option value="FIXED_DISCOUNT">Giảm số tiền</option><option value="PERCENT_DISCOUNT">Giảm phần trăm</option><option value="FREE_SERVICE">Miễn phí dịch vụ</option></select></label>
+          {form.type === 'FREE_SERVICE' ? <label className="text-xs text-white/60">Dịch vụ<select required value={form.serviceId} onChange={(event) => setForm({ ...form, serviceId: event.target.value })} className={inputClass}><option value="">Chọn dịch vụ</option>{services.filter((service) => service.isActive).map((service) => <option key={service._id} value={service._id}>{service.name}</option>)}</select></label> : <label className="text-xs text-white/60">{form.type === 'FIXED_DISCOUNT' ? 'Số tiền giảm (VND)' : 'Phần trăm giảm'}<input required type="number" min={form.type === 'FIXED_DISCOUNT' ? 1000 : 1} max={form.type === 'FIXED_DISCOUNT' ? 1000000000 : 100} step="1" value={form.type === 'FIXED_DISCOUNT' ? form.discountAmount : form.discountPercent} onChange={(event) => setForm({ ...form, [form.type === 'FIXED_DISCOUNT' ? 'discountAmount' : 'discountPercent']: event.target.value })} className={inputClass} /></label>}
+          <label className="text-xs text-white/60">Đơn tối thiểu (VND)<input required type="number" min="0" max="1000000000" step="1" value={form.minimumAmount} onChange={(event) => setForm({ ...form, minimumAmount: event.target.value })} className={inputClass} /></label>
+          <label className="text-xs text-white/60">Giới hạn số lượng (để trống = không giới hạn)<input type="number" min="1" step="1" value={form.redemptionLimit} onChange={(event) => setForm({ ...form, redemptionLimit: event.target.value })} className={inputClass} /></label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Cho phép gửi</label><p className="text-xs text-white/50">Có hạn 7 ngày kể từ lúc gửi.</p>
+          <button className={`${buttonClass} sm:col-span-2`} type="submit">{busy ? 'Đang lưu…' : 'Lưu mẫu voucher'}</button>
+        </fieldset>
+      </form></div>}
+      {sending && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"><section role="dialog" aria-modal="true" aria-label="Gửi voucher" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/15 bg-[#111] p-6">
+        <div className="flex justify-between gap-4"><h2 className="text-xl font-bold">Gửi {sending.name}</h2><button disabled={busy} onClick={() => setSending(null)} aria-label="Đóng"><X /></button></div><p className="mt-3 text-sm text-white/55">Chọn ngày hết hạn cho voucher. Email và thông báo sẽ hiển thị đúng ngày này.</p>
+        {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
+        <label className="mt-5 block text-xs text-white/60">Tìm khách hàng theo tên hoặc email<input value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} placeholder="Nhập ít nhất 2 ký tự" className={inputClass} /></label>
+        <label className="mt-4 block text-xs text-white/60">Ngày hết hạn<input required type="datetime-local" min={new Date().toISOString().slice(0, 16)} value={sendExpiresAt} disabled={busy} onChange={(event) => setSendExpiresAt(event.target.value)} className={inputClass} /></label>
+        <div className="mt-3 flex flex-wrap gap-2">{recipients.map((user) => <button key={user._id} disabled={busy} onClick={() => { setRecipients(recipients.filter((item) => item._id !== user._id)); setRequestId(crypto.randomUUID()); }} className="rounded-lg bg-yellow-400/10 px-3 py-2 text-xs text-yellow-300" aria-label={`Bỏ ${user.email}`}>{user.email} ×</button>)}</div>
+        <div className="mt-3 max-h-56 overflow-auto">{results.map((user) => <button key={user._id} disabled={busy || recipients.length >= 100} onClick={() => { setRecipients([...recipients, user]); setRequestId(crypto.randomUUID()); }} className="block w-full border-b border-white/10 px-2 py-3 text-left text-sm hover:bg-white/5">{user.username}<span className="ml-2 text-xs text-white/50">{user.email}</span></button>)}</div>
+        {query.trim().length >= 2 && !results.length && <p className="mt-3 text-xs text-white/50">Không có khách hàng phù hợp chưa được chọn.</p>}
+        <button disabled={busy || !recipients.length || !sendExpiresAt} onClick={() => void perform(async () => { const result = unwrap(await distributeVouchers(sending._id, { userIds: recipients.map((user) => user._id), requestId, expiresAt: new Date(sendExpiresAt).toISOString() })); setSending(null); await load(); setNotice(`Đã cấp voucher cho ${result.userIds.length} khách hàng. Email đang được gửi.`); })} className={`${buttonClass} mt-6 w-full`}>{busy ? 'Đang gửi…' : `Gửi cho ${recipients.length} người`}</button>
+      </section></div>}
+    </div></main>
   );
 }

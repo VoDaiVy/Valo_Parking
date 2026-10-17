@@ -26,6 +26,13 @@ export const getMyVouchers = (status = '') => request(
 );
 
 export const getVoucherTemplatesAdmin = () => request('/admin/voucher-templates');
+export const getSpendingProgram = () => request('/admin/voucher-templates/spending-program');
+export const saveSpendingProgram = (payload) => request('/admin/voucher-templates/spending-program', { method: 'PUT', body: JSON.stringify(payload) });
+export const getSpendingProgress = () => request('/loyalty/spending');
+export const getQuarterlyLeaderboardAdmin = (quarter) => request(`/admin/voucher-templates/leaderboard${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ''}`);
+export const searchVoucherRecipients = (query) => request(`/admin/voucher-templates/recipients?q=${encodeURIComponent(query)}`);
+export const distributeVouchers = (id, payload) => request(`/admin/voucher-templates/${id}/distribute`, { method: 'POST', body: JSON.stringify(payload) });
+export const updateVoucherExpiry = (id, expiresAt) => request(`/admin/voucher-templates/issued/${id}/expiry`, { method: 'PATCH', body: JSON.stringify({ expiresAt }) });
 
 export const createVoucherTemplate = (payload) => request('/admin/voucher-templates', {
   method: 'POST',
