@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   frameBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderColor: 'rgba(212,175,55,0.38)',
     borderRadius: RADIUS.md,
     borderWidth: 1,

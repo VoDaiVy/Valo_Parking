@@ -439,7 +439,7 @@ export const ParkingMap2D = ({
         ]}
       >
         {/* Background Grid Pattern (Simulated with absolute views or just plain background for simplicity) */}
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
           {/* React Native doesn't have a simple repeating linear gradient background like CSS.
               We'll stick to a solid color to maintain performance. */}
         </View>

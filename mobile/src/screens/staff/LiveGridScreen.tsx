@@ -989,7 +989,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   detailBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(2, 5, 9, 0.72)',
   },
   detailPanel: {

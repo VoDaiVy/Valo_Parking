@@ -33,7 +33,8 @@
         {
           "cameraPermission": "Allow VALO Parking to use the camera to photograph your vehicle registration."
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
