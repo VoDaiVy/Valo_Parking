@@ -550,13 +550,14 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
 
 const getVoucherBenefitLabel = (voucher) => {
   const benefit = voucher?.benefitSnapshot || {};
+  if (benefit.type === 'FIXED_DISCOUNT') return `${formatMoney(benefit.discountAmount)} off - minimum ${formatMoney(benefit.minimumAmount)}`;
   if (benefit.type === 'PERCENT_DISCOUNT') {
     return `${Number(benefit.discountPercent || 0)}% off this booking`;
   }
   if (benefit.type === 'FREE_SERVICE') {
     return `Free ${benefit.serviceId?.name || 'included service'}`;
   }
-  return benefit.description || 'Loyalty reward';
+  return benefit.description || 'Voucher reward';
 };
 
 const getVoucherExpiryLabel = (voucher) => {
@@ -664,7 +665,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
               >
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}><Ticket size={17} strokeWidth={2.2} /></span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Loyalty voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
                   <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher)}</span>
                   <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher)}</span>
                 </span>
@@ -674,7 +675,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
           })}
 
           {vouchers.length === 0 && (
-            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Redeem loyalty points to receive a reward.</p></div>
+            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Rewards are issued automatically after eligible spending or sent by VALO.</p></div>
           )}
         </div>
       )}
@@ -1025,9 +1026,11 @@ export default function CreateBookingPage() {
   const baseParkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
   const parkingTotal = selectedSlotIsOwnVipSlot ? 0 : pricePreview.totalAmount;
   const baseGrandTotal = parkingTotal + serviceTotal;
-  const grandTotal = selectedVoucher?.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
+  const meetsVoucherMinimum = !selectedVoucher || parkingTotal + grossServiceTotal >= Number(selectedVoucher.benefitSnapshot.minimumAmount || 0);
+  const grandTotal = !meetsVoucherMinimum ? parkingTotal + grossServiceTotal : selectedVoucher?.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
     ? Math.floor(baseGrandTotal * (1 - Number(selectedVoucher.benefitSnapshot.discountPercent || 0) / 100))
-    : baseGrandTotal;
+    : selectedVoucher?.benefitSnapshot?.type === 'FIXED_DISCOUNT' && baseGrandTotal >= Number(selectedVoucher.benefitSnapshot.minimumAmount || 0)
+      ? Math.max(0, baseGrandTotal - Number(selectedVoucher.benefitSnapshot.discountAmount)) : baseGrandTotal;
   const walletBalance = Number(wallet?.balance || 0);
   const walletShortfall = Math.max(grandTotal - walletBalance, 0);
   const hasEnoughWallet = walletShortfall <= 0;
@@ -1263,6 +1266,10 @@ export default function CreateBookingPage() {
 
   const handleAddOrUpdateCartItem = async () => {
     setError('');
+    if (!meetsVoucherMinimum) {
+      setError(`This voucher requires a booking of at least ${formatMoney(selectedVoucher.benefitSnapshot.minimumAmount)}.`);
+      return;
+    }
     setSuccess('');
 
     const startObj = new Date(startTime);
@@ -1917,8 +1924,8 @@ export default function CreateBookingPage() {
 
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Loyalty voucher</span>
-                  {selectedVoucher && <span className="text-xs font-black text-emerald-600">Applied</span>}
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Voucher</span>
+                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? 'Applied' : 'Minimum not met'}</span>}
                 </div>
                 <CustomVoucherPicker
                   value={selectedVoucherId}
@@ -1927,9 +1934,9 @@ export default function CreateBookingPage() {
                 />
                 {selectedVoucher && (
                   <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                    {selectedVoucher.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
+                    {!meetsVoucherMinimum ? `Minimum booking: ${formatMoney(selectedVoucher.benefitSnapshot.minimumAmount)}` : selectedVoucher.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
                       ? `Discount ${selectedVoucher.benefitSnapshot.discountPercent}%: -${formatMoney(baseGrandTotal - grandTotal)}`
-                      : `Free service: ${selectedVoucher.benefitSnapshot?.serviceId?.name || 'included service'}`}
+                      : selectedVoucher.benefitSnapshot?.type === 'FIXED_DISCOUNT' ? `Discount: -${formatMoney(baseGrandTotal - grandTotal)} (minimum ${formatMoney(selectedVoucher.benefitSnapshot.minimumAmount)})` : `Free service: ${selectedVoucher.benefitSnapshot?.serviceId?.name || 'included service'}`}
                   </p>
                 )}
               </div>
