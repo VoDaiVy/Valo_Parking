@@ -111,10 +111,22 @@ const attachPaidBookingSnapshots = async (booking, input = {}) => {
   booking.paymentBreakdownSnapshot = buildPaymentBreakdown(booking, input);
   booking.refundPolicySnapshot = snapshot;
   await booking.save(input.session ? { session: input.session } : undefined);
+  if (booking.status === 'PAID' && require('./parkingPassService').isPassIssuanceEnabled()) {
+    const pass = await require('./parkingPassService').ensureBookingPass(booking, { session: input.session });
+    if (process.env.TELEGRAM_BOT_TOKEN) await require('./telegramService').enqueueBookingTicket(booking, { session: input.session, passId: pass._id });
+  }
   return booking;
 };
 
 const transitionPendingBookingToPaid = async (booking, input = {}) => {
+  if (!input.session && require('./parkingPassService').isPassIssuanceEnabled()) {
+    const transaction = await require('mongoose').startSession();
+    let result;
+    try {
+      await transaction.withTransaction(async () => { result = await transitionPendingBookingToPaid(booking, { ...input, session: transaction }); });
+      return result;
+    } finally { await transaction.endSession(); }
+  }
   if (booking.status === 'PAID') {
     return { booking, transitioned: false };
   }
@@ -138,6 +150,10 @@ const transitionPendingBookingToPaid = async (booking, input = {}) => {
 
   const updated = await query;
   if (updated) {
+    if (require('./parkingPassService').isPassIssuanceEnabled()) {
+      const pass = await require('./parkingPassService').ensureBookingPass(updated, { session: input.session });
+      if (process.env.TELEGRAM_BOT_TOKEN) await require('./telegramService').enqueueBookingTicket(updated, { session: input.session, passId: pass._id });
+    }
     await voucherService.markVoucherUsed({ bookingId: updated._id, session: input.session });
     return { booking: updated, transitioned: true };
   }

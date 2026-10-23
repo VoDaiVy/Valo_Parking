@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import { API_BASE } from '../../services/api';
@@ -24,6 +24,7 @@ const resolveZoneLabel = (slotRecord, slotCode) => {
 
 export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete, successSession }) {
   const socket = useSocket();
+  const [issuedSession, setIssuedSession] = useState(successSession);
   const [status, setStatus] = useState(successSession ? 'ready' : 'checking-in');
   const [errorMessage, setErrorMessage] = useState('');
   const [floors, setFloors] = useState([]);
@@ -34,7 +35,6 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const [vipRedirectInfo, setVipRedirectInfo] = useState(null);
   const [currentSlot, setCurrentSlot] = useState(successSession?.parkingSlot || formData.selectedSlot);
   const hasStartedRef = useRef(false);
-  const mountTimeRef = useRef(Date.now());
   const hasSeenOpenRef = useRef(false);
   const isRedirectingRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
@@ -43,7 +43,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
-  const returnToStart = () => {
+  const returnToStart = useCallback(() => {
     if (isRedirectingRef.current) return;
     isRedirectingRef.current = true;
 
@@ -54,7 +54,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     } finally {
       window.location.replace('/kiosk');
     }
-  };
+  }, []);
 
   // Màn hình tự động quay trở lại màn hình chính (Click to start) khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
   useEffect(() => {
@@ -111,7 +111,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         socket.off('gate:barrier_control', handleBarrierControl);
       }
     };
-  }, [socket]);
+  }, [socket, returnToStart]);
 
   useEffect(() => {
     if (successSession) {
@@ -134,6 +134,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
           setCurrentSlot(resData.newSlot);
         }
         
+        setIssuedSession({ ...resData.data, pass: resData.pass });
         setStatus('ready');
       } catch (error) {
         if (ignore) return;
@@ -201,7 +202,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const selectedSlotRecord = dbSlots.find((slot) => slot.slotNumber === currentSlot);
   const zoneLabel = resolveZoneLabel(selectedSlotRecord, currentSlot);
   const floorLabel = floorRecord?.name || formData.bookingFloorName || (isSubscriptionFlow ? 'Member floor' : 'Reserved floor');
-  const qrCodeValue = successSession?._id || successSession?.sessionId || null;
+  const ticketSession = successSession || issuedSession;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 items-center overflow-hidden">
@@ -240,16 +241,11 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
             </div>
 
             {/* Mã QR dành cho khách vãng lai chụp lại để check-out */}
-            {qrCodeValue && (
-              <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-2xl p-2.5 shrink-0">
-                <QRCodeSVG value={qrCodeValue} size={64} />
-                <div className="flex flex-col justify-center pr-1">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Exit QR Code</span>
-                  <span className="text-[11px] font-bold text-gray-700">Scan at exit</span>
-                  <span className="text-[9px] font-mono text-gray-400">{qrCodeValue.slice(0, 8)}...</span>
-                </div>
-              </div>
-            )}
+            {status === 'ready' && ticketSession?.pass?.payload && <div className="shrink-0 rounded-2xl border border-slate-200 bg-white p-3 text-center">
+              <QRCodeSVG value={ticketSession.pass.payload} size={128} level="M" title="Parking ticket for checkout" />
+              <p className="mt-2 text-xs font-bold text-slate-800">Save your parking ticket</p>
+              <p className="mt-1 text-xs text-slate-600">Use this QR at checkout.</p>
+            </div>}
           </div>
         </div>
 

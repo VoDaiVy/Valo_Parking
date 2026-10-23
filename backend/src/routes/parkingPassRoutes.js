@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const controller = require('../controllers/parkingPassController');
+const { protect } = require('../middlewares/authMiddleware');
+const { authorizeParkingOperator } = require('../middlewares/kioskDeviceMiddleware');
+router.get('/:id/qr', protect, controller.getQr);
+router.post('/:id/reissue', protect, controller.reissue);
+router.post('/resolve', authorizeParkingOperator, controller.resolve);
+router.post('/:id/checkout-quote', authorizeParkingOperator, controller.quote);
+router.post('/:id/transition', authorizeParkingOperator, controller.transition);
+module.exports = router;

@@ -70,6 +70,9 @@ app.use("/api/maintenance", require("./routes/maintenanceRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/bookings", require("./routes/bookingRoutes"));
 app.use("/api/qr", require("./routes/qrRoutes"));
+app.use('/api/kiosk-devices', require('./routes/kioskDeviceRoutes'));
+app.use('/api/parking-passes', require('./routes/parkingPassRoutes'));
+app.use('/api/telegram', require('./routes/telegramRoutes'));
 app.use("/api/violations", require("./routes/violationRoutes"));
 app.use("/api/revenue", require("./routes/revenueRoutes"));
 app.use("/api/statistics", require("./routes/statisticsRoutes"));
@@ -96,6 +99,7 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
+    await require('./services/parkingInfrastructure').assertParkingInfrastructure();
 
     // Setup Socket.IO
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -121,6 +125,10 @@ const startServer = async () => {
 
       // Start parking session scheduler
       startScheduler(app);
+      const stopTelegramWorker = require('./services/telegramWorker').startTelegramWorker();
+      const stopOnShutdown = () => stopTelegramWorker();
+      process.once('SIGTERM', stopOnShutdown);
+      process.once('SIGINT', stopOnShutdown);
       require('./services/aiCopilot/monitor').startMonitor(app);
       require('./services/aiCopilot/floorFullMonitor').startFloorMonitor(app);
       require('./services/aiCopilot/sessionOverdueMonitor').startSessionOverdueMonitor(app);

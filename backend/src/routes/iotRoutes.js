@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { staffOnly, validateGate, bridgeOrStaffClose } = require('../middlewares/barrierAuthorization');
 
 const gateStates = {
   ENTRY_1: {
@@ -64,7 +65,7 @@ router.get('/barrier-status', (req, res) => {
 });
 
 // API kích hoạt mở Barrier (Dùng cho Kiosk hoặc nút bấm test)
-router.post('/open-barrier', (req, res) => {
+router.post('/open-barrier', staffOnly, validateGate, (req, res) => {
   const { licensePlate = 'TEST-VEHICLE', slotCode = 'A-01', gate = 'ENTRY_1', hold = false } = req.body;
   const normGate = (gate || 'ENTRY_1').toUpperCase();
 
@@ -91,7 +92,7 @@ router.post('/open-barrier', (req, res) => {
 });
 
 // Chế độ Tạm dừng Barrier (Vô hiệu hóa cảm biến & Giữ nguyên vị trí)
-router.post('/hold-barrier', (req, res) => {
+router.post('/hold-barrier', staffOnly, validateGate, (req, res) => {
   const { hold = true, gate = 'ENTRY_1' } = req.body;
   const normGate = (gate || 'ENTRY_1').toUpperCase();
   const current = getGateState(normGate);
@@ -122,7 +123,7 @@ router.post('/hold-barrier', (req, res) => {
 });
 
 // Đóng Barrier
-router.post('/close-barrier', (req, res) => {
+router.post('/close-barrier', bridgeOrStaffClose, validateGate, (req, res) => {
   const { gate = 'ENTRY_1', fromBridge = false } = req.body || {};
   const normGate = (gate || 'ENTRY_1').toUpperCase();
   const current = getGateState(normGate);

@@ -287,7 +287,7 @@ export default function StaffDashboard() {
       const fallbackPlate = gateType === 'ENTRY_1' ? 'STAFF-IN' : 'STAFF-OUT';
       const res = await fetch(`${API_BASE}/iot/open-barrier`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken') || ''}` },
         body: JSON.stringify({
           gate: gateType,
           licensePlate: fallbackPlate,
@@ -324,7 +324,7 @@ export default function StaffDashboard() {
     try {
       const res = await fetch(`${API_BASE}/iot/close-barrier`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken') || ''}` },
         body: JSON.stringify({ gate: gateType })
       });
       const data = await res.json();
@@ -357,7 +357,7 @@ export default function StaffDashboard() {
     try {
       const res = await fetch(`${API_BASE}/iot/hold-barrier`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken') || ''}` },
         body: JSON.stringify({ hold: newHold, gate: gateType })
       });
       const data = await res.json();
