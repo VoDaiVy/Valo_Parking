@@ -4,13 +4,14 @@ import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { createSessionVerification, verifiedSessionForQuery } from './sessionDeepLink.js';
 
 export default function SessionManagement() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedSession, setSelectedSession] = useState(null);
+  const [manualSession, setSelectedSession] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -20,6 +21,36 @@ export default function SessionManagement() {
   const [aiInitialImage, setAiInitialImage] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionIdQuery = searchParams.get('sessionId');
+  const location = useLocation();
+  const isAdminPage = location.pathname === '/admin/sessions';
+  const [verification, setVerification] = useState({ status: 'idle' });
+  const [verificationAttempt, setVerificationAttempt] = useState(0);
+  const verifier = useMemo(() => createSessionVerification(() => getAllSessions({ cache: 'no-store' }), (result) => {
+    setVerification(result);
+    if (result.sessions) {
+      setSessions(result.sessions);
+      setError('');
+      setLoading(false);
+    } else if (result.status !== 'loading') {
+      setLoading(false);
+      setError('Không thể tải danh sách phiên đỗ xe. Vui lòng thử lại.');
+    }
+  }), [setVerification, setSessions, setError, setLoading]);
+  const adminDeepLink = isAdminPage && Boolean(sessionIdQuery);
+  const verificationKey = `${location.key}:${verificationAttempt}`;
+  const selectedSession = adminDeepLink
+    ? verifiedSessionForQuery(verification, sessionIdQuery, verificationKey) : manualSession;
+  const verificationStatus = verification.sessionId === sessionIdQuery && verification.requestKey === verificationKey
+    ? verification.status : 'loading';
+  const selectManualSession = (session) => {
+    setSelectedSession(session);
+    if (adminDeepLink) {
+      verifier.cancel();
+      const params = new URLSearchParams(searchParams);
+      params.delete('sessionId');
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -41,9 +72,17 @@ export default function SessionManagement() {
   }, []);
 
   useEffect(() => {
+    if (adminDeepLink) return;
     const timerId = setTimeout(fetchSessions, 0);
     return () => clearTimeout(timerId);
-  }, [fetchSessions]);
+  }, [fetchSessions, adminDeepLink]);
+
+  useEffect(() => {
+    const timerId = setTimeout(() => {
+      verifier.verify(isAdminPage ? 'admin' : 'staff', sessionIdQuery, verificationKey);
+    }, 0);
+    return () => { clearTimeout(timerId); verifier.cancel(); };
+  }, [verifier, isAdminPage, sessionIdQuery, verificationKey]);
 
   useEffect(() => {
     const pageScroller = document.querySelector('main');
@@ -53,18 +92,19 @@ export default function SessionManagement() {
   }, []);
 
   useEffect(() => {
-    if (sessions.length > 0 && sessionIdQuery) {
+    if (!isAdminPage && sessions.length > 0 && sessionIdQuery) {
       const targetSession = sessions.find(s => s._id === sessionIdQuery);
       if (targetSession) {
-        setTimeout(() => {
+        const timerId = setTimeout(() => {
           setSelectedSession(targetSession);
           const newParams = new URLSearchParams(searchParams);
           newParams.delete('sessionId');
           setSearchParams(newParams, { replace: true });
         }, 0);
+        return () => clearTimeout(timerId);
       }
     }
-  }, [sessions, sessionIdQuery, searchParams, setSearchParams]);
+  }, [sessions, sessionIdQuery, searchParams, setSearchParams, isAdminPage]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -97,6 +137,18 @@ export default function SessionManagement() {
 
   return (
     <div className="min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
+      {adminDeepLink && verificationStatus !== 'verified' && (
+        <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+          {verificationStatus === 'loading' ? 'Đang xác minh phiên đỗ xe từ hệ thống...'
+            : verificationStatus === 'missing' ? 'Không tìm thấy phiên đỗ xe được liên kết. Phiên có thể đã bị xóa hoặc không còn khả dụng.'
+              : verificationStatus === 'unavailable' ? 'Không thể truy cập phiên đỗ xe. Vui lòng kiểm tra phiên đăng nhập và quyền truy cập.'
+                : 'Không thể tải lại phiên đỗ xe. Dữ liệu trước đó chưa được xác minh lại; chưa thể kết luận phiên đã bị xóa.'}
+          {verificationStatus !== 'loading' && <button type="button" className="ml-3 underline" onClick={() => {
+            setVerification({ sessionId: sessionIdQuery, status: 'loading', session: null });
+            setVerificationAttempt((attempt) => attempt + 1);
+          }}>Thử lại</button>}
+        </div>
+      )}
       <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
@@ -229,7 +281,7 @@ export default function SessionManagement() {
                     <td className="px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => setSelectedSession(session)}
+                        onClick={() => selectManualSession(session)}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
                         <ShieldCheck size={14} /> View Details
@@ -328,7 +380,7 @@ export default function SessionManagement() {
                 <p className="text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
               </div>
               <button 
-                onClick={() => setSelectedSession(null)}
+                onClick={() => selectManualSession(null)}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffd555]"
               >
                 <X size={18} />
@@ -387,7 +439,7 @@ export default function SessionManagement() {
 
             <div className="flex justify-end border-t border-white/[0.07] bg-[#0d0d0d] p-6">
               <button 
-                onClick={() => setSelectedSession(null)}
+                onClick={() => selectManualSession(null)}
                 className="rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
               >
                 Close

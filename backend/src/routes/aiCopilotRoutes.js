@@ -13,10 +13,12 @@ const staffRouter = express.Router();
 
 const sendError = (res, error) => res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'VALO AI đang tạm gián đoạn. Vui lòng thử lại.' });
 
+const sendAdminError = (res, error) => res.status(error.statusCode || 500).json({ success: false, message: error.statusCode === 409 ? 'This proposal is no longer pending or has expired.' : error.statusCode === 403 ? 'You do not have permission to perform this action.' : error.statusCode === 400 ? 'Unable to process this request. Check the provided values and try again.' : 'VALO AI is temporarily unavailable. Please try again later.' });
+
 // ---- ADMIN ROUTES ----
 adminRouter.post('/chat', async (req, res) => {
   try { res.json({ success: true, data: await chat({ message: req.body.message, conversationId: req.body.conversationId, actorId: req.user._id, actorRole: 'admin', adminUserId: req.user._id }) }); }
-  catch (error) { sendError(res, error); }
+  catch (error) { sendAdminError(res, error); }
 });
 adminRouter.get('/notifications', async (req, res) => {
   try {
@@ -31,20 +33,21 @@ adminRouter.get('/notifications', async (req, res) => {
         { targetRoles: { $size: 0 } }
       ]
     };
+    const unreadFilter = { ...filter, readBy: { $ne: userId } };
     if (req.query.filter === 'unread') filter.readBy = { $ne: userId };
     if (req.query.filter === 'warning') filter.severity = 'WARNING';
     if (req.query.filter === 'critical') filter.severity = 'CRITICAL';
     const [rows, total, unreadCount] = await Promise.all([
       AINotification.find(filter).sort({ detectedAt: -1 }).skip((page - 1) * limit).limit(limit).populate('resolvedBy', 'username').lean(),
       AINotification.countDocuments(filter),
-      AINotification.countDocuments({ ...filter, readBy: { $ne: userId } }),
+      AINotification.countDocuments(unreadFilter),
     ]);
     res.json({ success: true, data: { notifications: rows.map((row) => ({ ...row, isRead: row.readBy?.some((id) => String(id) === String(userId)), isDismissed: false, readBy: undefined, dismissedBy: undefined })), total, unreadCount } });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAdminError(res, error); }
 });
 adminRouter.get('/notifications/:id', async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'ID không hợp lệ.' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid notification or proposal ID.' });
     const filter = { 
       _id: req.params.id, 
       dismissedBy: { $ne: req.user._id },
@@ -55,42 +58,42 @@ adminRouter.get('/notifications/:id', async (req, res) => {
       ]
     };
     const item = await AINotification.findOne(filter).populate('resolvedBy', 'username').lean();
-    if (!item) return res.status(404).json({ success: false, message: 'Không tìm thấy cảnh báo.' });
+    if (!item) return res.status(404).json({ success: false, message: 'Notification not found.' });
     res.json({ success: true, data: { ...item, isRead: item.readBy?.some((id) => String(id) === String(req.user._id)), readBy: undefined, dismissedBy: undefined } });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAdminError(res, error); }
 });
 adminRouter.patch('/notifications/:id/read', async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'ID không hợp lệ.' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid notification or proposal ID.' });
     const item = await AINotification.findOneAndUpdate({ _id: req.params.id, $or: [{ targetRoles: 'admin' }, { targetRoles: { $exists: false } }, { targetRoles: { $size: 0 } }] }, { $addToSet: { readBy: req.user._id } }, { new: true });
-    if (!item) return res.status(404).json({ success: false, message: 'Không tìm thấy cảnh báo.' });
+    if (!item) return res.status(404).json({ success: false, message: 'Notification not found.' });
     res.json({ success: true });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAdminError(res, error); }
 });
 adminRouter.patch('/notifications/:id/dismiss', async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'ID không hợp lệ.' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid notification or proposal ID.' });
     const item = await AINotification.findOneAndUpdate({ _id: req.params.id, $or: [{ targetRoles: 'admin' }, { targetRoles: { $exists: false } }, { targetRoles: { $size: 0 } }] }, { $addToSet: { dismissedBy: req.user._id } }, { new: true });
-    if (!item) return res.status(404).json({ success: false, message: 'Không tìm thấy cảnh báo.' });
+    if (!item) return res.status(404).json({ success: false, message: 'Notification not found.' });
     res.json({ success: true });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAdminError(res, error); }
 });
 adminRouter.post('/drafts/:id/approve', async (req, res) => {
   try { res.json({ success: true, data: await approveDraft(req.params.id, req.user._id, 'admin', req.app) }); }
-  catch (error) { sendError(res, error); }
+  catch (error) { sendAdminError(res, error); }
 });
 adminRouter.post('/drafts/:id/reject', async (req, res) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'ID không hợp lệ.' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid notification or proposal ID.' });
     const draft = await AIDraft.findOneAndUpdate(
       { _id: req.params.id, adminUserId: req.user._id, status: 'PENDING' },
       { $set: { status: 'REJECTED', rejectedAt: new Date(), rejectedBy: req.user._id } },
       { new: true },
     );
-    if (!draft) return res.status(409).json({ success: false, message: 'Bản nháp không còn chờ duyệt.' });
+    if (!draft) return res.status(409).json({ success: false, message: 'This proposal is no longer awaiting approval.' });
     await AIAuditLog.create({ actorId: req.user._id, action: 'DRAFT_REJECTED', subjectId: draft._id, metadata: { type: draft.type } });
     res.json({ success: true });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAdminError(res, error); }
 });
 
 // ---- STAFF ROUTES ----
