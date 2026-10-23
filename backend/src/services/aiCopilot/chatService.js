@@ -1,3 +1,4 @@
+const { roleMessage, adminLanguageInstruction } = require('./adminLanguage');
 const { randomUUID } = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { tools, getToolsForRole, execute } = require('./toolRegistry');
@@ -36,12 +37,12 @@ function trace(stage, details = {}) { console.info('[VALO_AI_CHAT]', JSON.string
 
 async function chat({ message, conversationId, adminUserId, actorId, actorRole = 'admin' }) {
   const currentActorId = actorId || adminUserId;
-  if (typeof message !== 'string' || !message.trim() || message.length > 2000) { const error = new Error('Câu hỏi phải dài từ 1 đến 2000 ký tự.'); error.statusCode = 400; throw error; }
+  if (typeof message !== 'string' || !message.trim() || message.length > 2000) { const error = new Error(roleMessage(actorRole, 'Câu hỏi phải dài từ 1 đến 2000 ký tự.')); error.statusCode = 400; throw error; }
   const id = conversationId && /^[a-f\d-]{36}$/i.test(conversationId) ? conversationId : randomUUID();
   const key = `${currentActorId}:${id}`;
   const saved = conversations.get(key);
   const history = saved && saved.expiresAt > Date.now() ? saved.messages : [];
-  if (!process.env.GEMINI_API_KEY) return { type: 'error', message: 'VALO AI hiện chưa được cấu hình. Vui lòng thử lại sau.', evidence: [], suggestedActions: [], draft: null, conversationId: id };
+  if (!process.env.GEMINI_API_KEY) return { type: 'error', message: roleMessage(actorRole, 'VALO AI hiện chưa được cấu hình. Vui lòng thử lại sau.'), evidence: [], suggestedActions: [], draft: null, conversationId: id };
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const vietnamNow = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   const baseInstruction = [
@@ -51,15 +52,16 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
       : 'Bạn là trợ lý Admin VALO. Hiểu tiếng Việt có dấu/không dấu, viết tắt như dt hn, co rui ro k, check ht và câu hỏi nối tiếp. Khi Admin yêu cầu thêm Service mới nhưng chưa đủ dữ liệu, KHÔNG tạo Draft ngay, bắt buộc hỏi rõ: "Tôi có thể chuẩn bị bản nháp Service, nhưng VALO AI không thể tải hình ảnh lên. Sau khi duyệt, bạn cần bổ sung ảnh tại trang Services.\\n\\nVui lòng cung cấp:\\n**Service Name**\\n**Price (VND)**\\n**Duration (Min)**\\n**Description**". Thiếu field nào thì chỉ hỏi field đó. Không tự bịa placeholder image. Khi đủ 4 trường mới tạo draft CREATE_SERVICE. UPDATE_SERVICE chỉ thay đổi name, price, timeCost, description, không thay đổi các trường khác (delta update). Khi Admin yêu cầu thêm Ticket Package, PHẢI hỏi đủ: Package Name, Type (chỉ cho phép: hourly, daily, monthly, yearly), Price, Description. KHÔNG tạo draft CREATE_TICKET_PACKAGE nếu chưa đủ các trường bắt buộc trên. Không tự bịa thông tin. Revenue/financial data là READ-ONLY đối với VALO AI. AI tuyệt đối KHÔNG ĐƯỢC tạo Draft hay thực thi sửa revenue, sửa transaction amount, sửa wallet balance, sửa payment record, hoàn tiền (refund), hay chỉnh financial history (ví dụ: "Hoàn tiền 500k", "Sửa transaction thành 1tr" -> TỪ CHỐI thao tác và không tạo Draft). Khi Admin hỏi doanh thu một khoảng thời gian, gọi get_revenue_metrics với đúng khoảng đó. Khi Admin hỏi so sánh A với B (ví dụ: hôm nay với hôm qua, tuần này với tuần trước), PHẢI gọi get_revenue_metrics 2 LẦN (mỗi lần 1 khoảng). Câu trả lời phải có: doanh thu A, doanh thu B, chênh lệch VND, % tăng/giảm, khoảng thời gian của từng bên. Nếu kỳ trước = 0 thì không tạo % tăng giả/vô hạn mà phải nói rõ không thể tính phần trăm. Không suy đoán số liệu, không dùng demo number.',
     'Chỉ dùng công cụ được cung cấp để biết số liệu. Không bịa dữ liệu, phần trăm, nguyên nhân, ngưỡng hay confidence. Nếu chưa đủ dữ liệu, nói rõ: Hiện chưa đủ dữ liệu để kết luận.',
     'Không truy vấn DB trực tiếp. Không tự thay đổi dữ liệu. prepare_draft chỉ tạo bản nháp cần duyệt. Hãy gọi công cụ đọc (search/get) để lấy thông tin mục tiêu (user, vehicle, policy, ticket) TRƯỚC KHI tạo draft. KHÔNG tạo draft cho các hành động: REJECT_VEHICLE, START_SLOT_MAINTENANCE vì chưa được hỗ trợ.',
-    'Trả lời ngắn gọn bằng tiếng Việt, nêu nguồn và thời điểm nếu có số liệu. Không nhắc tên model hoặc thông tin kỹ thuật nội bộ.',
+    actorRole === 'staff' ? 'Trả lời ngắn gọn bằng tiếng Việt, nêu nguồn và thời điểm nếu có số liệu. Không nhắc tên model hoặc thông tin kỹ thuật nội bộ.' : 'Answer concisely in English. Include sources and timestamps for figures. Do not expose model names or internal implementation details.',
     actorRole === 'staff'
       ? 'Viết cho Staff vận hành: kết luận trước, số liệu quan trọng sau, đề xuất nếu có. Diễn đạt trạng thái bằng tiếng Việt tự nhiên; tránh tên tool, tên trường code.'
-      : 'Viết cho Admin vận hành: kết luận trước, số liệu quan trọng sau, đề xuất nếu có. Diễn đạt trạng thái và thời lượng bằng tiếng Việt tự nhiên (active: đang hoạt động, unpaid: chưa thanh toán, paid: đã thanh toán, expectedDurationHours: thời lượng dự kiến); tránh tên tool, tên trường code và giá trị enum trong câu trả lời. Chỉ mô tả đúng trạng thái đã có, không suy diễn nguyên nhân.',
+      : 'Write for Admin operators: lead with findings, then key figures and any recommendations. Describe statuses and durations in natural English; avoid tool names and code field names. Only describe verified states and do not infer causes.',
     'Giữ ObjectId trong ngữ cảnh để gọi công cụ chính xác ở lượt tiếp theo, nhưng chỉ hiển thị ID nội bộ khi người dùng hỏi trực tiếp ID; ưu tiên tên, biển số, email hoặc vị trí để nhận diện.',
     'Khi user dùng đại từ (người này, xe này, xe đầu tiên, booking đó...), hãy resolve chính xác identifier (ObjectId) từ kết quả tool/message gần nhất và gọi tool tiếp theo. Chỉ hỏi lại khi thực sự ambiguous. Không tự bịa identifier.',
     actorRole === 'staff'
       ? 'Khi Staff yêu cầu gửi thông báo, chỉ dùng search_notification_recipients để tìm người nhận. Nếu không có exact username match và có nhiều kết quả, hãy hỏi Staff chọn lại. Chỉ chuẩn bị SEND_NOTIFICATION draft với title và content; tuyệt đối không gửi trực tiếp.'
       : '',
+    adminLanguageInstruction(actorRole),
   ].join('\n');
   const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction: baseInstruction });
   const contents = [...history, { role: 'user', parts: [{ text: message.trim() }] }];
@@ -97,8 +99,8 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
       if (!calls.length) {
         stage = 'CHAT_RESPONSE_VALIDATION';
         trace(stage, { evidenceCount: evidence.length, hasDraft: !!draft });
-        const answer = response.text?.().trim() || 'Hiện chưa đủ dữ liệu để kết luận.';
-        const safeAnswer = evidence.length || draft ? answer : 'Hiện chưa đủ dữ liệu để kết luận. Hãy hỏi về một chỉ số cụ thể của VALO.';
+        const answer = response.text?.().trim() || roleMessage(actorRole, 'Hiện chưa đủ dữ liệu để kết luận.');
+        const safeAnswer = evidence.length || draft ? answer : roleMessage(actorRole, 'Hiện chưa đủ dữ liệu để kết luận. Hãy hỏi về một chỉ số cụ thể của VALO.');
         const allMsg = [...contents, { role: 'model', parts: [{ text: safeAnswer }] }];
         const starts = allMsg.map((m, i) => m.role === 'user' && m.parts?.some(p => p.text) ? i : -1).filter(i => i !== -1);
         conversations.set(key, { expiresAt: Date.now() + TTL_MS, messages: starts.length > MAX_TURNS ? allMsg.slice(starts[starts.length - MAX_TURNS]) : allMsg });
@@ -145,12 +147,12 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
       }
       contents.push({ role: 'user', parts: responses });
     }
-    return { type: 'error', message: 'VALO AI cần thu hẹp câu hỏi để trả lời chính xác.', evidence, suggestedActions: [], draft, conversationId: id };
+    return { type: 'error', message: roleMessage(actorRole, 'VALO AI cần thu hẹp câu hỏi để trả lời chính xác.'), evidence, suggestedActions: [], draft, conversationId: id };
   } catch (error) {
     const category = classifyError(error, stage);
     trace('CHAT_FAILED', { failedStage: stage, category, errorName: error.name, httpStatus: Number(error.status || error.response?.status) || null });
     await AIAuditLog.create({ actorId: currentActorId, action: 'GEMINI_ERROR', errorCode: category }).catch(() => {});
-    return { type: 'error', message: 'VALO AI đang tạm gián đoạn. Vui lòng thử lại sau.', evidence: [], suggestedActions: [], draft: null, conversationId: id };
+    return { type: 'error', message: roleMessage(actorRole, 'VALO AI đang tạm gián đoạn. Vui lòng thử lại sau.'), evidence: [], suggestedActions: [], draft: null, conversationId: id };
   }
 }
 module.exports = { chat, conversations, classifyError };

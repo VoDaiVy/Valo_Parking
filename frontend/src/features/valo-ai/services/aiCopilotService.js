@@ -15,7 +15,7 @@ const request = (path, options = {}) => apiFetch(`${getBasePrefix()}${path}`, {
   headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}`, ...options.headers },
 });
 export const sendAIMessage = (message, conversationId) => request('/chat', { method: 'POST', body: JSON.stringify({ message, conversationId }) });
-export const getAINotifications = (filter = 'all') => request(`/notifications?filter=${encodeURIComponent(filter)}`);
+export const getAINotifications = (filter = 'all', page = 1) => request(`/notifications?filter=${encodeURIComponent(filter)}&page=${page}`);
 export const getAINotification = (id) => request(`/notifications/${encodeURIComponent(id)}`);
 export const markAINotificationRead = (id) => request(`/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' });
 export const dismissAINotification = (id) => request(`/notifications/${encodeURIComponent(id)}/dismiss`, { method: 'PATCH' });

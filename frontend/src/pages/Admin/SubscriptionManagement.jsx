@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import SubscriptionDeepLink from './SubscriptionDeepLink.jsx';
+import { createSubscriptionLookup, includeLinkedSubscription } from './subscriptionDeepLink.js';
 import {
   getOperationalValue,
   getOperationalViewState,
@@ -153,7 +156,7 @@ function SlotBadge({ slot }) {
   );
 }
 
-function MembershipRow({ sub, index }) {
+function MembershipRow({ sub, index, cardRef }) {
   const remaining = daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
   const displayUser = getDisplayUser(sub);
@@ -162,6 +165,7 @@ function MembershipRow({ sub, index }) {
 
   return (
     <article
+      ref={cardRef}
       className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#141a25] motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 35}ms` }}
     >
@@ -305,6 +309,9 @@ function TransferReviewSection({ transfers, onReview }) {
 
 export default function SubscriptionManagement() {
   const isAdmin = useMemo(() => getStoredRole() === 'admin', []);
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const linkedId = isAdmin && location.pathname === '/admin/subscriptions' ? searchParams.get('subscriptionId') : null;
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState('');
@@ -314,6 +321,22 @@ export default function SubscriptionManagement() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [packageFilter, setPackageFilter] = useState('all');
   const [transfers, setTransfers] = useState([]);
+  const cardRef = useRef(null);
+  const requestGeneration = useRef(0);
+  const [linkedState, setLinkedState] = useState({ status: 'loading' });
+  const linkedKey = linkedId ? `${location.key}:${linkedId}` : null;
+  const lookup = useMemo(() => createSubscriptionLookup(() => apiFetch('/subscriptions/all', {
+    cache: 'no-store', headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}` },
+  }), (result) => {
+    setLinkedState({ ...result, key: linkedKey });
+    if (result.status !== 'loading') {
+      setSubscriptions(result.subscriptions || []);
+      setSubscriptionError(result.status === 'error' ? 'Unable to load subscriptions. Please try again.' : result.status === 'unavailable' ? 'Subscription data is unavailable for this account.' : '');
+    }
+  }), [linkedKey, setLinkedState, setSubscriptions, setSubscriptionError]);
+  const currentLinkedState = linkedState.key === linkedKey ? linkedState : { status: 'loading' };
+  const verifiedLinkedId = linkedId && currentLinkedState.status === 'ready' && !loading
+    ? currentLinkedState.subscription._id : null;
   const subscriptionState = getOperationalViewState({
     loading,
     error: subscriptionError,
@@ -323,7 +346,8 @@ export default function SubscriptionManagement() {
     error: isAdmin ? transferError : '',
   });
 
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptions = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     try {
       setLoading(true);
       setSubscriptionError('');
@@ -331,7 +355,7 @@ export default function SubscriptionManagement() {
       setTransferLoading(isAdmin);
       const token = localStorage.getItem('accessToken');
 
-      const subscriptionRequest = apiFetch('/subscriptions/all', {
+      const subscriptionRequest = linkedId ? lookup.load(linkedId) : apiFetch('/subscriptions/all', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const transferRequest = isAdmin
@@ -343,12 +367,15 @@ export default function SubscriptionManagement() {
         subscriptionRequest,
         transferRequest,
       ]);
+      if (isAdmin && generation !== requestGeneration.current) return;
 
-      const subscriptionResponse = getResponseAvailability(
+      const subscriptionResponse = linkedId ? null : getResponseAvailability(
         res,
         'Failed to fetch subscriptions'
       );
-      if (subscriptionResponse.isAvailable) {
+      if (linkedId) {
+        // The shared list request was already verified and published by lookup.
+      } else if (subscriptionResponse.isAvailable) {
         setSubscriptions(subscriptionResponse.data || []);
       } else {
         setSubscriptions([]);
@@ -370,6 +397,7 @@ export default function SubscriptionManagement() {
         setTransfers([]);
       }
     } catch (err) {
+      if (isAdmin && generation !== requestGeneration.current) return;
       console.error(err);
       setSubscriptions([]);
       setSubscriptionError('An error occurred while fetching subscriptions');
@@ -378,10 +406,12 @@ export default function SubscriptionManagement() {
         setTransferError('Membership transfer reviews are unavailable.');
       }
     } finally {
-      setLoading(false);
-      setTransferLoading(false);
+      if (!isAdmin || generation === requestGeneration.current) {
+        setLoading(false);
+        setTransferLoading(false);
+      }
     }
-  };
+  }, [isAdmin, linkedId, lookup]);
 
   const reviewTransfer = async (transferId, approved) => {
     const token = localStorage.getItem('accessToken');
@@ -406,8 +436,11 @@ export default function SubscriptionManagement() {
 
   useEffect(() => {
     const timerId = window.setTimeout(fetchSubscriptions, 0);
-    return () => window.clearTimeout(timerId);
-  }, []);
+    return () => {
+      window.clearTimeout(timerId);
+      if (isAdmin) { requestGeneration.current += 1; lookup.cancel(); }
+    };
+  }, [fetchSubscriptions, isAdmin, lookup]);
 
   const statusOptions = useMemo(() => {
     const actualStatuses = subscriptions.map((sub) => sub.status).filter(Boolean);
@@ -443,6 +476,7 @@ export default function SubscriptionManagement() {
       return matchesStatus && matchesPackage && matchesSearch;
     });
   }, [subscriptions, searchTerm, statusFilter, packageFilter]);
+  const visibleSubscriptions = useMemo(() => includeLinkedSubscription(filteredSubscriptions, subscriptions, verifiedLinkedId), [filteredSubscriptions, subscriptions, verifiedLinkedId]);
 
   const pendingTransfers = transfers.filter((item) => item.status === 'PENDING_ADMIN');
 
@@ -468,6 +502,7 @@ export default function SubscriptionManagement() {
       <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="relative mx-auto max-w-[1400px]">
+        {linkedId && <SubscriptionDeepLink key={linkedKey} state={currentLinkedState} loading={loading} cardRef={cardRef}/>}
         <header className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
@@ -623,7 +658,7 @@ export default function SubscriptionManagement() {
               <h2 className="mt-3 text-lg font-black text-red-200">Subscription data unavailable</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{subscriptionError}</p>
             </div>
-          ) : filteredSubscriptions.length === 0 ? (
+          ) : visibleSubscriptions.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-10 text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">
                 <Crown size={22} />
@@ -648,8 +683,8 @@ export default function SubscriptionManagement() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredSubscriptions.map((sub, index) => (
-                <MembershipRow key={sub._id} sub={sub} index={index} />
+              {visibleSubscriptions.map((sub, index) => (
+                <MembershipRow key={sub._id} sub={sub} index={index} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />
               ))}
             </div>
           )}

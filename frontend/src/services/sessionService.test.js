@@ -48,6 +48,13 @@ test('getActiveSessions requests the authenticated active-status endpoint', asyn
   assert.equal(requests[0].options.headers.Authorization, 'Bearer staff-token');
 });
 
+test('Admin verification can bypass browser cache without changing default Staff requests', async () => {
+  await getAllSessions({ cache: 'no-store' });
+  await getAllSessions();
+  assert.equal(requests[0].options.cache, 'no-store');
+  assert.equal(requests[1].options.cache, undefined);
+});
+
 test('getSessionResponseState invalidates session data after an unsuccessful response', () => {
   const result = getSessionResponseState({
     ok: false,

@@ -99,3 +99,78 @@
 @keyframes valo-dot { 50% { transform: translateY(-3px); opacity: .5; } }
 @media (max-width: 639px) { .valo-ai-panel { border-radius: 19px; }.valo-ai-message-stack { max-width: 83%; }.valo-ai-preview { width: min(245px, calc(100vw - 28px)); } }
 @media (prefers-reduced-motion: reduce) { .valo-ai-car svg, .valo-ai-trigger.has-notification .valo-ai-car, .valo-ai-trigger.is-thinking .valo-ai-platform, .valo-ai-badge, .valo-ai-message-row, .valo-ai-thinking i { animation: none; }.valo-ai-panel, .valo-ai-car { transition: none; } }
+.admin-ai-panel { font-family: Montserrat, sans-serif; border-color: #d7dde6; border-radius: 18px; background: #f8fafc; color: #1e293b; box-shadow: 0 24px 70px #0f172a40; }
+.admin-ai-panel *, .admin-ai-anchor * { box-sizing: border-box; }
+.admin-ai-panel button, .admin-ai-panel input { font: inherit; }
+.admin-ai-panel button:focus-visible, .admin-ai-panel summary:focus-visible, .admin-ai-anchor button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.admin-ai-panel .valo-ai-header { min-height: 80px; padding: 16px 20px; gap: 12px; }
+.admin-ai-panel .valo-ai-header h2 { font-size: 18px; font-weight: 700; line-height: 1.4; }
+.admin-ai-panel .valo-ai-header p { font-size: 12px; color: #64748b; line-height: 1.5; }
+.admin-ai-panel .valo-ai-header > button { width: 36px; height: 36px; }
+.admin-ai-panel .valo-ai-tabs { padding: 0 16px; }
+.admin-ai-panel .valo-ai-tabs button { min-height: 48px; font-size: 14px; gap: 8px; }
+.admin-ai-panel .valo-ai-tabs b { border-radius: 6px; min-width: 21px; padding: 2px 5px; height: auto; font-size: 12px; }
+.admin-ai-panel .valo-ai-conversation, .admin-ai-panel .valo-ai-notification-view { padding: 20px 16px; background: #f8fafc; }
+.admin-ai-panel .valo-ai-message-stack { max-width: 94%; }
+.admin-ai-panel .valo-ai-message-bubble { font-size: 14px; line-height: 1.7; padding: 12px 16px; background: #edf1f6; border-radius: 12px; }
+.admin-ai-panel .is-user .valo-ai-message-bubble { background: #fff0bd; }
+.admin-ai-panel .valo-ai-message-stack time { font-size: 12px; margin-top: 6px; color: #64748b; }
+.admin-ai-panel .valo-ai-evidence, .admin-ai-panel .valo-ai-draft p, .admin-ai-panel .valo-ai-draft summary { font-size: 13px; line-height: 1.6; }
+.admin-ai-panel .valo-ai-draft { padding: 14px; border-width: 1px; }
+.admin-ai-panel .valo-ai-draft h4 { margin: 12px 0 8px; font-size: 14px; }
+.admin-ai-panel .valo-ai-draft-header > strong, .admin-ai-panel .valo-ai-draft-badge { font-size: 12px; }
+.admin-ai-panel .valo-ai-draft-header { flex-wrap: wrap; }
+.admin-ai-panel .valo-ai-draft-actions button { min-height: 42px; font-size: 13px; }
+.admin-ai-panel .valo-ai-suggestions { padding: 12px 16px 4px; gap: 8px; }
+.admin-ai-panel .valo-ai-suggestions button { font-size: 12px; padding: 8px 10px; min-height: 36px; line-height: 1.5; }
+.admin-ai-panel .valo-ai-compose { margin: 12px 16px; padding: 6px 6px 6px 14px; border-radius: 12px; }
+.admin-ai-panel .valo-ai-compose input { font-size: 14px; min-height: 36px; }
+.admin-ai-panel .valo-ai-compose button { width: 40px; height: 40px; border-radius: 8px; }
+.admin-ai-panel footer { font-size: 12px; line-height: 1.5; padding: 12px 16px; border-top: 1px solid #e2e8f0; color: #64748b; }
+.admin-ai-panel .valo-ai-filters { gap: 8px; margin-bottom: 16px; }
+.admin-ai-panel .valo-ai-filters button { font-size: 13px; padding: 7px 12px; min-height: 36px; }
+.admin-ai-panel .valo-ai-notification { border-radius: 12px; margin-bottom: 12px; align-items: flex-start; }
+.admin-ai-panel .valo-ai-notification.is-unread { border-color: #d2ac42; box-shadow: inset 3px 0 #d2ac42; }
+.admin-ai-panel .valo-ai-notification.is-read { opacity: 1; }
+.admin-ai-panel .valo-ai-notification:focus-within { border-color: #2563eb; }
+.admin-ai-notice-primary:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.admin-ai-panel .valo-ai-notification strong { font-size: 14px; font-weight: 700; line-height: 1.5; margin: 10px 0 5px; }
+.admin-ai-panel .valo-ai-notification p { font-size: 13px; line-height: 1.7; color: #475569; -webkit-line-clamp: 3; }
+.admin-ai-panel .valo-ai-notification time { font-size: 12px; color: #64748b; }
+.admin-ai-panel .valo-ai-notification > button:last-child { min-width: 40px; min-height: 44px; padding: 12px 8px; }
+.admin-ai-panel .valo-ai-notification-detail { font-size: 14px; padding: 16px; }
+.admin-ai-panel .valo-ai-notification-detail h3 { font-size: 18px; line-height: 1.5; margin-top: 16px; }
+.admin-ai-panel .valo-ai-notification-detail small { font-size: 12px; }
+.admin-ai-panel .valo-ai-notification-detail > button { display: inline-flex; gap: 6px; align-items: center; min-height: 36px; font-size: 13px; }
+.admin-ai-panel .valo-ai-notification-detail pre { font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-ai-panel .valo-ai-notification-error { font-size: 13px; padding: 12px; margin-bottom: 12px; line-height: 1.6; }
+.admin-ai-panel .valo-ai-notification-error button { min-height: 36px; border: 1px solid #c05252; border-radius: 6px; background: white; padding: 4px 12px; }
+.admin-ai-panel .valo-ai-empty { font-size: 14px; line-height: 1.7; color: #64748b; }
+.admin-ai-panel .valo-ai-empty svg { margin: 0 auto 12px; }
+.admin-ai-notice-content { flex: 1; min-width: 0; padding: 16px 0 12px 16px; }
+.admin-ai-notice-primary { width: 100%; text-align: left; border: 0; padding: 0; background: none; color: inherit; }
+.admin-ai-notice-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; font-weight: 600; color: #475569; }
+.admin-ai-notice-meta b { border-radius: 4px; background: #fff4ce; color: #795600; padding: 2px 6px; font-size: 11px; }
+.admin-ai-panel .severity-critical .admin-ai-notice-meta { color: #b42318; }
+.admin-ai-panel .severity-warning .admin-ai-notice-meta { color: #946100; }
+.admin-ai-anchor .valo-ai-label { font-family: Montserrat, sans-serif; }
+.admin-ai-status { display: inline-block; margin-top: 6px; color: #64748b; font-size: 12px; }
+.admin-ai-details-button { margin-top: 8px; min-height: 32px; padding: 0; border: 0; background: none; font-size: 13px !important; font-weight: 600 !important; color: #2758a5; }
+.admin-ai-values { margin: 12px 0; }
+.admin-ai-panel .admin-ai-values > div { display: grid; grid-template-columns: minmax(90px, .8fr) minmax(0, 1.2fr); align-items: start; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+.admin-ai-panel .admin-ai-values dt { font-size: 13px; line-height: 1.6; color: #64748b; }
+.admin-ai-panel .admin-ai-values dd { margin: 0; font-size: 13px; line-height: 1.6; font-weight: 500; text-align: left; overflow-wrap: anywhere; }
+.admin-ai-technical { margin: 16px 0; font-size: 13px; }
+.admin-ai-technical summary { cursor: pointer; min-height: 36px; }
+.admin-ai-welcome { padding: 16px 8px 24px; line-height: 1.7; }
+.admin-ai-welcome > svg { color: #967018; }
+.admin-ai-welcome h3 { font-size: 20px; margin: 12px 0 8px; font-weight: 700; }
+.admin-ai-welcome p { margin: 0; font-size: 14px; color: #64748b; }
+.admin-ai-progress { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #64748b; line-height: 1.6; }
+.admin-ai-load-more, .admin-ai-open-record { min-height: 40px; padding: 8px 14px; border: 1px solid #cbd5e1 !important; border-radius: 8px; background: #fff !important; font-size: 13px !important; color: #2758a5 !important; }
+.admin-ai-load-more { display: block; margin: 16px auto 0; }
+.admin-ai-anchor .valo-ai-preview { position: fixed; left: auto; right: 12px; bottom: 20px; font-family: Montserrat, sans-serif; font-size: 13px; }
+.admin-ai-spin { animation: admin-ai-spin 1s linear infinite; flex: none; }
+@keyframes admin-ai-spin { to { transform: rotate(360deg); } }
+@media (max-width: 480px) { .admin-ai-panel .valo-ai-header { padding: 12px 16px; }.admin-ai-panel .valo-ai-header p { font-size: 12px; }.admin-ai-panel .valo-ai-conversation, .admin-ai-panel .valo-ai-notification-view { padding: 16px 12px; } }
+@media (prefers-reduced-motion: reduce) { .admin-ai-spin { animation: none; } }
