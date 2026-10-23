@@ -53,7 +53,7 @@ const endOfSpecificVietnamMonth = (year, month) =>
  * Returns { startDate, endDate, granularity, buckets }.
  * endDate is exclusive (start of next period).
  */
-const resolveModeDateRange = (filters = {}, now = new Date()) => {
+const resolveModeDateRange = (filters = {}, now = new Date(), firstRevenueYear = null) => {
   const mode = filters.mode || '7d';
   const localNow = toVietnamLocal(now);
   const currentYear = localNow.getUTCFullYear();
@@ -91,6 +91,17 @@ const resolveModeDateRange = (filters = {}, now = new Date()) => {
     return { startDate, endDate, granularity: 'month', mode };
   }
 
+  if (mode === 'years') {
+    const firstYear = Number.isInteger(firstRevenueYear)
+      ? Math.min(firstRevenueYear, currentYear) : currentYear;
+    return {
+      startDate: startOfSpecificVietnamMonth(firstYear, 1),
+      endDate: startOfSpecificVietnamMonth(currentYear + 1, 1),
+      granularity: 'year',
+      mode,
+    };
+  }
+
   throw Object.assign(new Error('Unsupported mode'), { statusCode: 400 });
 };
 
@@ -99,7 +110,13 @@ const resolveModeDateRange = (filters = {}, now = new Date()) => {
  */
 const generateBucketLabels = (startDate, endDate, granularity) => {
   const labels = [];
-  if (granularity === 'day') {
+  if (granularity === 'year') {
+    let year = toVietnamLocal(startDate).getUTCFullYear();
+    while (startOfSpecificVietnamMonth(year, 1) < endDate) {
+      labels.push(String(year));
+      year += 1;
+    }
+  } else if (granularity === 'day') {
     let cursor = new Date(startDate.getTime());
     while (cursor < endDate) {
       const local = toVietnamLocal(cursor);
@@ -452,9 +469,34 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
   }
 
   const now = new Date();
-  const { startDate, endDate, granularity, mode } = resolveModeDateRange(filters, now);
-  const bucketFormat = granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
+  // Annual bars cover the first realized revenue year through the current year.
+  // Check every revenue source so older renewal/transfer records are not lost.
+  const earliestRevenueRows = filters.mode === 'years'
+    ? await Promise.all([
+      [Booking, { status: 'COMPLETED' }, { $ifNull: ['$completedAt', '$updatedAt'] }],
+      [Subscription, { paymentStatus: 'paid' }, '$createdAt'],
+      [SubscriptionRenewal, { status: 'paid' }, { $ifNull: ['$paidAt', '$createdAt'] }],
+      [MembershipEntitlementRenewal, { status: 'paid' }, { $ifNull: ['$paidAt', '$createdAt'] }],
+      [WalletTransaction, { type: 'TRANSFER_FEE', status: 'COMPLETED' }, '$createdAt'],
+    ].map(([Model, match, date]) => Model.aggregate([
+      { $match: match },
+      { $group: { _id: null, earliest: { $min: date } } },
+    ])))
+    : [];
+  const earliestRevenueDates = earliestRevenueRows.flat()
+    .map(row => row.earliest)
+    .filter(date => date && !Number.isNaN(new Date(date).getTime()));
+  const firstRevenueYear = earliestRevenueDates.reduce(
+    (year, date) => Math.min(year, toVietnamLocal(new Date(date)).getUTCFullYear()),
+    toVietnamLocal(now).getUTCFullYear()
+  );
+  const { startDate, endDate, granularity, mode } = resolveModeDateRange(filters, now, firstRevenueYear);
+  const bucketFormat = granularity === 'year' ? '%Y' : granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
   const bucketLabels = generateBucketLabels(startDate, endDate, granularity);
+  // Keep traffic as a time-series line chart even when revenue is grouped by year.
+  const trafficGranularity = granularity === 'year' ? 'month' : granularity;
+  const trafficBucketFormat = trafficGranularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
+  const trafficBucketLabels = generateBucketLabels(startDate, endDate, trafficGranularity);
 
   // Build date matches for exclusive endDate
   const bookingDateMatch = buildLifecycleDateMatchExclusive(
@@ -629,7 +671,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
       { $match: { checkInTime: { $gte: startDate, $lt: endDate } } },
       {
         $group: {
-          _id: timelineDateExpression(bucketFormat, '$checkInTime'),
+          _id: timelineDateExpression(trafficBucketFormat, '$checkInTime'),
           count: { $sum: 1 },
         },
       },
@@ -640,7 +682,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
       { $match: { checkOutTime: { $gte: startDate, $lt: endDate } } },
       {
         $group: {
-          _id: timelineDateExpression(bucketFormat, '$checkOutTime'),
+          _id: timelineDateExpression(trafficBucketFormat, '$checkOutTime'),
           count: { $sum: 1 },
         },
       },
@@ -840,7 +882,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
   const entryByBucket = new Map(entryRows.map((r) => [r._id, r.count]));
   const exitByBucket = new Map(exitRows.map((r) => [r._id, r.count]));
 
-  const traffic = bucketLabels.map((label) => ({
+  const traffic = trafficBucketLabels.map((label) => ({
     period: label,
     entries: entryByBucket.get(label) || 0,
     exits: exitByBucket.get(label) || 0,
@@ -941,6 +983,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
   const earliestDates = [
     earliestBookingYear[0]?.earliest,
     earliestSubscriptionYear[0]?.earliest,
+    ...earliestRevenueDates,
   ].filter(Boolean);
   const currentYearVN = toVietnamLocal(now).getUTCFullYear();
   let minYear = currentYearVN;
@@ -968,6 +1011,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     },
     trend,
     traffic,
+    trafficGranularity,
     trafficSummary: {
       totalEntries,
       totalExits,

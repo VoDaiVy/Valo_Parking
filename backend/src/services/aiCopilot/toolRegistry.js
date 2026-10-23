@@ -15,6 +15,7 @@ const AINotification = require('../../models/AINotification');
 const pricingEngine = require('../pricingEngine');
 const { startOfVietnamDay, parseVietnamCalendarDate } = require('../../utils/bookingDateRange');
 const readTools = require('./readTools');
+const { getVehicleApprovalStatistics } = require('../vehicleApprovalStatisticsService');
 
 const dateProperties = {
   startDate: { type: 'string', description: 'ISO date, inclusive' },
@@ -154,6 +155,13 @@ const tools = [
   }),
   define('check_system_health', 'Chỉ số sức khỏe có thể xác minh: kết nối DB và số phiên đang hoạt động.', emptySchema, noArgs, async () => ({ databaseConnected: mongoose.connection.readyState === 1, activeSessions: await Session.countDocuments({ status: 'active' }), checkedAt: new Date().toISOString() })),
   define('get_ai_notifications', 'Cảnh báo AI mới nhất có bằng chứng.', emptySchema, noArgs, async () => AINotification.find({ status: 'OPEN' }).sort({ detectedAt: -1 }).limit(10).select('title summary severity evidence detectedAt').lean()),
+  define(
+    'get_vehicle_approval_statistics',
+    'Đếm số xe đã được duyệt theo thời điểm duyệt, gồm AI Gemini và admin. Dùng khi hỏi hôm nay đã duyệt bao nhiêu xe hoặc thống kê duyệt xe theo ngày; mặc định là hôm nay theo giờ Việt Nam.',
+    dateSchema,
+    validateDates,
+    async (params) => getVehicleApprovalStatistics(params),
+  ),
 
   /* ── 12 new drill-down read tools ──────────────────────────────────── */
 

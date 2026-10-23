@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   ScrollView,
   StatusBar,
@@ -26,6 +27,7 @@ import { useBooking } from '@/hooks/useBooking';
 import { bookingService } from '@/services/BookingService';
 import type { BookingStackParamList } from '@/navigation/BookingStackNavigator';
 import { vehiclesService } from '@/services/api/vehicles';
+import { telegramService } from '@/services/api/telegram';
 import type { BookingStatus, PaymentStatus } from '@/types/booking.types';
 import type { Vehicle } from '@/types/models';
 import { canExtendBookingBy, getBookingActionAvailability } from '@/utils/bookingActions';
@@ -365,6 +367,15 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                 <Text style={styles.qrHint}>
                   Present this same code on mobile or web to the kiosk or a staff member.
                 </Text>
+                <TouchableOpacity accessibilityRole="button" onPress={async () => {
+                  try {
+                    const response = await telegramService.link(booking._id);
+                    if (response.data?.deepLink) await Linking.openURL(response.data.deepLink);
+                  } catch (err) {
+                    setQrError(err instanceof Error ? err.message : 'Unable to connect Telegram.');
+                  }
+                }}><Text style={styles.qrHint}>Receive tickets on Telegram</Text></TouchableOpacity>
+                {qrError ? <Text style={styles.qrError}>{qrError}</Text> : null}
               </>
             ) : (
               <Text style={styles.qrError}>{qrError || 'This QR code is no longer available.'}</Text>

@@ -136,15 +136,29 @@ function notifySessionCreatedSafely(session, app) {
 
 async function notifyVehiclePending(vehicle, app) {
   if (!vehicle || vehicle.status !== 'pending') return false;
+  const reason = vehicle.registrationVerification?.reason || '';
+  const aiReviewed = reason.startsWith('mismatch:') || ['ai_unavailable', 'image_missing'].includes(reason);
+  const fieldNames = {
+    document: 'ảnh cà vẹt', licensePlate: 'biển số', brand: 'hãng xe',
+    model: 'mẫu xe', colorText: 'màu sơn',
+  };
+  const mismatch = reason.startsWith('mismatch:')
+    ? reason.slice('mismatch:'.length).split(',').map((field) => fieldNames[field] || field).join(', ')
+    : '';
+  const detail = mismatch
+    ? `Gemini chưa xác nhận được ${mismatch}.`
+    : reason === 'ai_unavailable' ? 'Gemini không thể kiểm tra ảnh.'
+      : reason === 'image_missing' ? 'Ảnh cà vẹt bị thiếu hoặc tải lên thất bại.'
+        : 'Cần admin kiểm tra thông tin và ảnh cà vẹt.';
   return insertEvent({
     app,
     deduplicationKey: `vehicle-pending:${vehicle._id}`,
     notificationType: 'VEHICLE_PENDING_VERIFICATION', severity: 'CRITICAL',
     targetRoles: ['admin'],
-    title: 'Xe đang chờ xác minh',
-    summary: `Biển số ${vehicle.licensePlate} vừa được đăng ký và cần Admin kiểm tra.`,
+    title: aiReviewed ? 'Gemini chưa duyệt được xe' : 'Xe đang chờ xác minh',
+    summary: `Biển số ${vehicle.licensePlate} đang chờ duyệt. ${detail}`,
     entityType: 'Vehicle', entityId: vehicle._id, targetRoute: `/admin/vehicle-models?vehicleId=${vehicle._id}`,
-    evidence: { licensePlate: vehicle.licensePlate, vehicleType: vehicle.vehicleType, owner: vehicle.userId, status: vehicle.status, createdAt: vehicle.createdAt },
+    evidence: { licensePlate: vehicle.licensePlate, vehicleType: vehicle.vehicleType, owner: vehicle.owner, status: vehicle.status, reason, createdAt: vehicle.createdAt },
     sourceModules: ['Vehicle'], detectedAt: new Date(),
   });
 }
@@ -153,6 +167,27 @@ function notifyVehiclePendingSafely(vehicle, app) {
   return notifyVehiclePending(vehicle, app).catch((error) => {
     console.error('[VALO AI Notification] VEHICLE_PENDING_VERIFICATION:', error);
     return false;
+  });
+}
+
+function resolveVehiclePendingSafely(vehicle, actorId, { session } = {}) {
+  return AINotification.updateMany(
+    { notificationType: 'VEHICLE_PENDING_VERIFICATION', entityId: vehicle._id, status: 'OPEN' },
+    { $set: { status: 'RESOLVED', resolvedBy: actorId, resolvedAt: new Date() } },
+    session ? { session } : {},
+  ).catch((error) => {
+    console.error('[VALO AI Notification] resolve vehicle pending:', error);
+    return null;
+  });
+}
+
+function clearVehiclePendingSafely(vehicle) {
+  return AINotification.updateMany(
+    { notificationType: 'VEHICLE_PENDING_VERIFICATION', entityId: vehicle._id, status: 'OPEN' },
+    { $set: { status: 'CLEARED', clearedAt: new Date() } },
+  ).catch((error) => {
+    console.error('[VALO AI Notification] clear vehicle pending:', error);
+    return null;
   });
 }
 
@@ -166,5 +201,7 @@ module.exports = {
   notifySubscriptionActivatedSafely,
   notifyUserRegisteredSafely,
   notifySessionCreatedSafely,
-  notifyVehiclePendingSafely
+  notifyVehiclePendingSafely,
+  resolveVehiclePendingSafely,
+  clearVehiclePendingSafely
 };

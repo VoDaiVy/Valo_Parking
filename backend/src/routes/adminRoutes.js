@@ -7,6 +7,8 @@ const {
   listVehicleModels,
   syncAllVehicleModels,
   getPendingVehicles,
+  getVehicleApprovalSettings,
+  updateVehicleApprovalSettings,
   getApprovedVehicles,
   approveVehicle,
   rejectVehicle,
@@ -62,6 +64,8 @@ router.put(
 router.put("/users/:id", require("../controllers/adminController").updateUser);
 router.delete("/users/:id", require("../controllers/adminController").deleteUser);
 // Vehicle approval
+router.get("/vehicles/approval-settings", getVehicleApprovalSettings);
+router.put("/vehicles/approval-settings", updateVehicleApprovalSettings);
 router.get("/vehicles/pending", getPendingVehicles);
 router.get("/vehicles/approved", getApprovedVehicles);
 router.patch("/vehicles/:id/approve", approveVehicle);

@@ -14,7 +14,12 @@
     "audit:refunds": "node src/scripts/auditRefundPolicyRollout.js",
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
     "test:notification": "node src/tests/notificationService.test.js",
-    "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js"
+    "test:telegram": "node --test --test-concurrency=1 src/tests/telegram.unit.test.js src/tests/telegram.integration.test.js src/tests/telegramPhoneReceipts.integration.test.js",
+    "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js",
+    "audit:parking-passes": "node src/scripts/auditParkingPasses.js",
+    "audit:telegram-phones": "node src/scripts/auditTelegramPhoneRecipients.js",
+    "migrate:parking-passes": "node src/scripts/backfillParkingPasses.js",
+    "test:parking-integration": "node --test --test-concurrency=1 src/tests/parkingPass.integration.test.js src/tests/telegram.integration.test.js src/tests/kioskDevice.integration.test.js"
   },
   "keywords": [],
   "author": "",
@@ -41,10 +46,11 @@
     "nodemailer": "^8.0.8",
     "pdfkit": "^0.19.1",
     "socket.io": "^4.8.3",
-    "streamifier": "^0.1.1"
+    "streamifier": "^0.1.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "fast-check": "^4.10.0",
+    "fast-check": "^4.10.2",
     "mongodb-memory-server": "^11.3.0",
     "nodemon": "^3.1.10"
   }
