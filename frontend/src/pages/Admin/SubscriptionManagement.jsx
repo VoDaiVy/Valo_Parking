@@ -116,7 +116,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
       </div>
       <div className="min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-        <p className="mt-1 font-mono text-xl font-black text-white">{value}</p>
+        <p className="admin-type-kpi mt-1 font-mono text-xl font-black text-white">{value}</p>
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{support}</p>
       </div>
     </div>

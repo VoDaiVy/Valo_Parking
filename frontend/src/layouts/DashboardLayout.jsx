@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { apiFetch } from "../services/api";
 import { logoutUser } from "../services/authService";
@@ -12,6 +12,8 @@ import { getDashboardDensityClass } from "./staffDensity";
 import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
+import { scopeAdminTypography } from './adminTypography';
+import '../styles/adminTypography.css';
 import {
   LayoutDashboard,
   Users,
@@ -229,6 +231,7 @@ export default function DashboardLayout() {
     useNotifications({ contextRole: user?.role });
 
   const role = user?.role;
+  useLayoutEffect(() => scopeAdminTypography(document.body, role), [role]);
   const densityClass = getDashboardDensityClass(role);
   const navItems = NAV_CONFIG[role] || [];
   const theme = ROLE_THEME[role] || ROLE_THEME.admin;

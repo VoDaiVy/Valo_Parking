@@ -590,7 +590,7 @@ export default function PolicyManagement() {
                     {item.label}
                   </p>
                   <div className="mt-1 flex items-end gap-2">
-                    <span className="text-2xl font-black leading-none text-white">{item.value}</span>
+                    <span className="admin-type-kpi text-2xl font-black leading-none text-white">{item.value}</span>
                     <span className="text-xs font-semibold text-slate-500">{item.note}</span>
                   </div>
                 </div>

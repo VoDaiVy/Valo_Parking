@@ -1,0 +1,192 @@
+/* Montserrat is already loaded by index.css and used by Home's font-sans.
+   Every rule is scoped to the active Admin layout, including body portals.
+   Important declarations are typography-only: existing utility/inline font
+   styles and widget styles must not override the role's shared type scale. */
+body[data-valo-typography="admin"] {
+  --admin-font-family: Montserrat, sans-serif;
+  --admin-type-page: 30px;
+  --admin-type-section: 20px;
+  --admin-type-card: 16px;
+  --admin-type-body: 14px;
+  --admin-type-label: 12px;
+  --admin-type-kpi: 30px;
+  --admin-leading-heading: 1.25;
+  --admin-leading-body: 1.55;
+  --admin-leading-label: 1.4;
+  font-family: var(--admin-font-family);
+  font-size: var(--admin-type-body);
+  font-weight: 400;
+  line-height: var(--admin-leading-body);
+}
+
+body[data-valo-typography="admin"] * {
+  font-family: var(--admin-font-family) !important;
+}
+
+body[data-valo-typography="admin"] :is([class*="tracking-"], [style*="letter-spacing"], .uppercase) {
+  letter-spacing: normal !important;
+  text-transform: none;
+}
+
+/* Profile/password forms use inline type sizes instead of Tailwind utilities. */
+body[data-valo-typography="admin"] [style*="font-size"]:not(svg, svg *) {
+  font-size: var(--admin-type-body) !important;
+  line-height: var(--admin-leading-body) !important;
+}
+
+body[data-valo-typography="admin"] :is(label, small, time)[style*="font-size"] {
+  font-size: var(--admin-type-label) !important;
+  font-weight: 500 !important;
+  line-height: var(--admin-leading-label) !important;
+}
+
+body[data-valo-typography="admin"] :is([class*="font-black"], [class*="font-extrabold"], [class*="font-bold"], strong, b) {
+  font-weight: 600 !important;
+}
+
+/* Normalize existing utility-based pages without changing their markup/layout.
+   SVG/canvas diagram labels keep their coordinate-dependent sizes. */
+body[data-valo-typography="admin"] :is([class*="text-xs"], small, time, [class*="text-[8px]"], [class*="text-[9px]"], [class*="text-[10px]"], [class*="text-[11px]"], [class*="text-[12px]"], [class*="text-[13px]"]):not(svg, svg *) {
+  font-size: var(--admin-type-label) !important;
+  font-weight: 500;
+  line-height: var(--admin-leading-label) !important;
+}
+
+body[data-valo-typography="admin"] :is([class*="text-sm"], [class*="text-base"], [class*="text-[14px]"], [class*="text-[15px]"], [class*="text-[16px]"]):not(svg, svg *) {
+  font-size: var(--admin-type-body) !important;
+  line-height: var(--admin-leading-body) !important;
+}
+
+body[data-valo-typography="admin"] :is([class*="text-lg"], [class*="text-xl"], [class*="text-[18px]"]):not(svg, svg *) {
+  font-size: var(--admin-type-card) !important;
+  line-height: var(--admin-leading-heading) !important;
+}
+
+body[data-valo-typography="admin"] :is([class*="text-2xl"], [class*="text-[22px]"]):not(svg, svg *) {
+  font-size: var(--admin-type-section) !important;
+  line-height: var(--admin-leading-heading) !important;
+}
+
+body[data-valo-typography="admin"] :is([class*="text-3xl"], [class*="text-4xl"], [class*="text-5xl"], [class*="text-6xl"]):not(svg, svg *) {
+  font-size: var(--admin-type-page) !important;
+  font-weight: 700 !important;
+  line-height: var(--admin-leading-heading) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Semantic roles take precedence over legacy size/weight utilities. */
+body[data-valo-typography="admin"] h1,
+body[data-valo-typography="admin"] h1[class] {
+  font-size: var(--admin-type-page) !important;
+  font-weight: 700 !important;
+  line-height: var(--admin-leading-heading) !important;
+  letter-spacing: normal !important;
+  overflow-wrap: anywhere;
+}
+
+body[data-valo-typography="admin"] h2,
+body[data-valo-typography="admin"] h2[class] {
+  font-size: var(--admin-type-section) !important;
+  font-weight: 600 !important;
+  line-height: var(--admin-leading-heading) !important;
+  letter-spacing: normal !important;
+}
+
+body[data-valo-typography="admin"] :is(h3, h4, h5, h6),
+body[data-valo-typography="admin"] :is(h3, h4, h5, h6)[class] {
+  font-size: var(--admin-type-card) !important;
+  font-weight: 600 !important;
+  line-height: var(--admin-leading-heading) !important;
+  letter-spacing: normal !important;
+}
+
+body[data-valo-typography="admin"] :is(p, li, dd) {
+  overflow-wrap: anywhere;
+}
+
+body[data-valo-typography="admin"] :is(label, dt, th),
+body[data-valo-typography="admin"] :is(label, dt, th)[class] {
+  font-size: var(--admin-type-label) !important;
+  font-weight: 500 !important;
+  line-height: var(--admin-leading-label) !important;
+}
+
+body[data-valo-typography="admin"] :is(td, td p, td span, td a, td code),
+body[data-valo-typography="admin"] :is(td, td p, td span, td a, td code)[class] {
+  font-size: var(--admin-type-body) !important;
+  font-weight: 400 !important;
+  line-height: var(--admin-leading-body) !important;
+}
+
+body[data-valo-typography="admin"] :is(button, input, select, textarea, [role="button"], [role="option"], [role="menuitem"]) {
+  font-size: var(--admin-type-body) !important;
+  font-weight: 500 !important;
+  line-height: var(--admin-leading-body) !important;
+  letter-spacing: normal !important;
+}
+
+body[data-valo-typography="admin"] :is(button, [role="button"], [role="option"], [role="menuitem"]) :is(span, p) {
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+}
+
+body[data-valo-typography="admin"] .staff-dashboard-sidebar nav :is(a, span) {
+  font-size: var(--admin-type-body) !important;
+  font-weight: 500 !important;
+  line-height: var(--admin-leading-label) !important;
+}
+
+body[data-valo-typography="admin"] .staff-dashboard-sidebar > div:first-child p:first-child {
+  font-size: var(--admin-type-body) !important;
+  font-weight: 700 !important;
+  letter-spacing: .04em !important;
+}
+
+body[data-valo-typography="admin"] :is(.font-mono, .tabular-nums, input[type="number"], td) {
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-valo-typography="admin"] :is(.admin-type-kpi, .font-mono.text-xl, .font-mono.text-2xl, .font-mono.text-3xl, .font-mono.text-4xl) {
+  font-size: var(--admin-type-kpi) !important;
+  font-weight: 700 !important;
+  line-height: var(--admin-leading-heading) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Six-column analytics metrics and the AI panel have deliberately compact roles. */
+body[data-valo-typography="admin"] .admin-type-kpi-compact {
+  font-size: 24px !important;
+}
+
+body[data-valo-typography="admin"] .valo-ai-panel :is(.valo-ai-message-bubble, .valo-ai-notification p, .valo-ai-notification-detail, .valo-ai-empty) {
+  font-size: var(--admin-type-body) !important;
+  font-weight: 400 !important;
+  line-height: var(--admin-leading-body) !important;
+}
+
+body[data-valo-typography="admin"] .valo-ai-panel :is(.valo-ai-header h2, .valo-ai-notification-detail h3) {
+  font-size: var(--admin-type-card) !important;
+  font-weight: 600 !important;
+  line-height: var(--admin-leading-heading) !important;
+}
+
+body[data-valo-typography="admin"] .valo-ai-panel .valo-ai-notification strong {
+  font-size: var(--admin-type-card) !important;
+  font-weight: 600 !important;
+  line-height: var(--admin-leading-heading) !important;
+}
+
+body[data-valo-typography="admin"] .valo-ai-panel :is(.valo-ai-header p, .valo-ai-notification time, .valo-ai-notification small, .valo-ai-draft-badge, .valo-ai-evidence, footer) {
+  font-size: var(--admin-type-label) !important;
+  line-height: var(--admin-leading-label) !important;
+}
+
+@media (max-width: 767px) {
+  body[data-valo-typography="admin"] {
+    --admin-type-kpi: 28px;
+  }
+}

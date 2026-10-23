@@ -413,7 +413,7 @@ function KPIStrip({ summary, reduceMotion }) {
             <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">
               {metric.label}
             </p>
-            <p className="mt-0.5 truncate text-[18px] font-black leading-tight tracking-tight text-white">
+            <p className="admin-type-kpi admin-type-kpi-compact mt-0.5 text-[18px] font-black leading-tight tracking-tight text-white">
               {metric.value}
             </p>
           </div>
