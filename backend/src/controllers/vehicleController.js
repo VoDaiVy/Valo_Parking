@@ -10,6 +10,11 @@ const {
   findVehicleDeletionBlocker,
 } = require('../services/vehicleDeletionService');
 const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
+const {
+  readRegistrationCard,
+  compareRegistrationCard,
+} = require('../services/registrationCardVerificationService');
+const { getVehicleApprovalConfig } = require('../services/vehicleApprovalConfigService');
 
 // ─── Cloudinary 3D model auto-discovery ──────────────────────────────────────
 const normalizeSlug = (str = '') =>
@@ -147,6 +152,43 @@ const addVehicle = async (req, res) => {
     // Auto-discover 3D model on Cloudinary by brand + model convention
     const modelUrl = await findVehicleModelUrl(brand, model || '');
 
+    let verification = { decision: 'not_checked', reason: '', checkedAt: null };
+    let approvalEnabled = false;
+    try {
+      approvalEnabled = (await getVehicleApprovalConfig()).enabled;
+    } catch (error) {
+      console.error('Vehicle approval settings unavailable:', error.message);
+    }
+    if (approvalEnabled) {
+      verification = { decision: 'review', reason: 'image_missing', checkedAt: new Date() };
+      if (registrationCardImage && cardImageUrl) {
+        try {
+          const card = await readRegistrationCard(registrationCardImage);
+          const comparison = compareRegistrationCard(card, {
+            licensePlate: normalizedPlate, brand, model, color,
+          });
+          verification = {
+            decision: comparison.matched ? 'matched' : 'review',
+            reason: comparison.matched ? '' : `mismatch:${comparison.mismatches.join(',')}`,
+            checkedAt: new Date(),
+          };
+        } catch (error) {
+          console.error('Registration card verification failed:', error.message);
+          verification = { decision: 'review', reason: 'ai_unavailable', checkedAt: new Date() };
+        }
+      }
+    }
+    if (verification.decision === 'matched') {
+      try {
+        if (!(await getVehicleApprovalConfig()).enabled) {
+          verification = { decision: 'review', reason: 'approval_disabled', checkedAt: new Date() };
+        }
+      } catch (error) {
+        console.error('Vehicle approval settings unavailable:', error.message);
+        verification = { decision: 'review', reason: 'settings_unavailable', checkedAt: new Date() };
+      }
+    }
+
     const vehicle = await Vehicle.create({
       owner: req.user._id,
       licensePlate: normalizedPlate,
@@ -159,9 +201,12 @@ const addVehicle = async (req, res) => {
       hexColor: hexColor || '#ffffff',
       modelUrl,
       registrationCardImage: cardImageUrl,
-      status: 'pending',
+      status: verification.decision === 'matched' ? 'approved' : 'pending',
+      approvedAt: verification.decision === 'matched' ? new Date() : null,
+      approvalSource: verification.decision === 'matched' ? 'ai' : null,
+      registrationVerification: verification,
     });
-    aiNotificationEvents.notifyVehiclePendingSafely(vehicle, req.app);
+    if (vehicle.status === 'pending') await aiNotificationEvents.notifyVehiclePendingSafely(vehicle, req.app);
 
     res.status(201).json({
       success: true,
@@ -206,6 +251,7 @@ const updateVehicle = async (req, res) => {
       req.body;
 
     // Check duplicate license plate (excluding this vehicle)
+    const previousIdentity = [vehicle.licensePlate, vehicle.vehicleType, vehicle.brand, vehicle.model, vehicle.color];
     if (licensePlate) {
       const normalizedPlate = normalizeLicensePlate(licensePlate);
       const duplicate = await Vehicle.findOne({
@@ -228,6 +274,13 @@ const updateVehicle = async (req, res) => {
     if (nickname !== undefined) vehicle.nickname = nickname;
     if (isDefault !== undefined) vehicle.isDefault = isDefault;
     if (hexColor !== undefined) vehicle.hexColor = hexColor;
+    if ([vehicle.licensePlate, vehicle.vehicleType, vehicle.brand, vehicle.model, vehicle.color]
+      .some((value, index) => value !== previousIdentity[index])) {
+      vehicle.status = 'pending';
+      vehicle.approvedAt = null;
+      vehicle.approvalSource = null;
+      vehicle.registrationVerification = { decision: 'not_checked', reason: 'vehicle_changed', checkedAt: null };
+    }
     // Re-discover 3D model when brand or model changes
     if (brand !== undefined || model !== undefined) {
       vehicle.modelUrl = await findVehicleModelUrl(
@@ -237,6 +290,9 @@ const updateVehicle = async (req, res) => {
     }
 
     await vehicle.save();
+    if (vehicle.status === 'pending' && vehicle.registrationVerification?.reason === 'vehicle_changed') {
+      await aiNotificationEvents.notifyVehiclePendingSafely(vehicle, req.app);
+    }
 
     res.status(200).json({
       success: true,
@@ -293,6 +349,7 @@ const deleteVehicle = async (req, res) => {
         .status(404)
         .json({ success: false, message: 'Vehicle not found' });
     }
+    await aiNotificationEvents.clearVehiclePendingSafely(vehicle);
 
     // If deleted vehicle was default, assign default to the newest remaining vehicle
     if (vehicle.isDefault) {

@@ -7,6 +7,7 @@ const Service = require('../models/Service');
 const BookingService = require('../models/BookingService');
 const Subscription = require('../models/Subscription');
 const UserDetail = require('../models/UserDetail');
+const aiNotificationEvents = require('./aiCopilot/notificationEvents');
 
 async function applyPricing(payload, { session, expectedConfigId } = {}) {
   const query = PricingConfig.findOne({ isActive: true }).sort({ createdAt: -1 });
@@ -71,7 +72,10 @@ async function approveVehicleSafely(id, { session, expectedStatus, adminId } = {
   if (vehicle.status === 'approved') return vehicle; // Already approved
   
   vehicle.status = 'approved';
+  vehicle.approvedAt = new Date();
+  vehicle.approvalSource = 'admin';
   await (session ? vehicle.save({ session }) : vehicle.save());
+  await aiNotificationEvents.resolveVehiclePendingSafely(vehicle, adminId, { session });
   
   // Missing log in original controller, but good to have
   if (adminId) {

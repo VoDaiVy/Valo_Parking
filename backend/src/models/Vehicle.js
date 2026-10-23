@@ -55,6 +55,13 @@ const vehicleSchema = new mongoose.Schema(
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
     },
+    approvedAt: { type: Date, default: null },
+    approvalSource: { type: String, enum: ['ai', 'admin', null], default: null },
+    registrationVerification: {
+      decision: { type: String, enum: ['not_checked', 'matched', 'review'], default: 'not_checked' },
+      reason: { type: String, default: '' },
+      checkedAt: { type: Date, default: null },
+    },
     nickname: {
       type: String,
       trim: true,
@@ -88,6 +95,7 @@ vehicleSchema.virtual('licensePlateDisplay').get(function licensePlateDisplay() 
 
 vehicleSchema.set('toJSON', { virtuals: true });
 vehicleSchema.set('toObject', { virtuals: true });
+vehicleSchema.index({ status: 1, approvedAt: -1 });
 
 vehicleSchema.pre('validate', function normalizePlate(next) {
   if (this.licensePlate) {

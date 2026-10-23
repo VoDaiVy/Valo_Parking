@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Upload, RefreshCw, CheckCircle2, AlertCircle,
@@ -194,6 +194,19 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
         <p className="mt-1 font-mono text-sm font-black tracking-[0.14em] text-blue-100/80">
           {formatLicensePlateDisplay(vehicle.licensePlateDisplay || vehicle.licensePlate)}
         </p>
+        {vehicle.registrationVerification?.reason && (
+          <p className="mt-1 text-xs text-amber-300">
+            {vehicle.registrationVerification.reason.startsWith('mismatch:')
+              ? `Image mismatch: ${vehicle.registrationVerification.reason.slice(9).split(',').join(', ')}`
+              : ({
+                  image_missing: 'Registration image missing or upload failed',
+                  ai_unavailable: 'AI could not verify the image',
+                  approval_disabled: 'AI approval was switched off during verification',
+                  settings_unavailable: 'AI approval setting was unavailable',
+                  vehicle_changed: 'Vehicle details changed after approval',
+                }[vehicle.registrationVerification.reason] || 'Awaiting manual review')}
+          </p>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
           <span className="inline-flex items-center gap-1">
             {vehicle.vehicleType === 'electric_car' ? <Zap size={12} /> : <Car size={12} />}
@@ -535,6 +548,8 @@ export default function VehicleManagement() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [preview3D, setPreview3D] = useState(null);
+  const [approvalSettings, setApprovalSettings] = useState(null);
+  const [approvalSaving, setApprovalSaving] = useState(false);
   
   const [searchParams, setSearchParams] = useSearchParams();
   const vehicleIdQuery = searchParams.get('vehicleId');
@@ -566,10 +581,10 @@ export default function VehicleManagement() {
   const [modelBrandFilter, setModelBrandFilter] = useState('all');
   const fileRef = useRef();
 
-  const showToast = (msg, type = 'success') => {
+  const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
-  };
+  }, []);
 
   const loadModels = async () => {
     setModelsLoading(true);
@@ -592,15 +607,38 @@ export default function VehicleManagement() {
     if (res.ok) setApproved(res.data?.data || []);
   };
 
+  const loadApprovalSettings = useCallback(async () => {
+    const res = await apiFetch('/admin/vehicles/approval-settings', { headers: authHeader() });
+    if (res.ok) setApprovalSettings(res.data.data);
+    else showToast(res.data?.message || 'Could not load AI approval setting', 'error');
+  }, [showToast]);
+
+  const changeApprovalSettings = async (enabled) => {
+    setApprovalSaving(true);
+    const res = await apiFetch('/admin/vehicles/approval-settings', {
+      method: 'PUT',
+      headers: authHeader(),
+      body: JSON.stringify({ enabled }),
+    });
+    setApprovalSaving(false);
+    if (res.ok) {
+      setApprovalSettings(res.data.data);
+      showToast(enabled ? 'AI approval enabled' : 'AI approval disabled');
+    } else {
+      showToast(res.data?.message || 'Could not update AI approval setting', 'error');
+    }
+  };
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadModels();
       loadPending();
       loadApproved();
+      loadApprovalSettings();
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [loadApprovalSettings]);
 
   useEffect(() => {
     if (vehicleIdQuery && (!pendingLoading || !approvedLoading)) {
@@ -829,14 +867,34 @@ export default function VehicleManagement() {
               Approve vehicle registrations, manage GLB model assets, and sync previews without leaving the workspace.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => { loadPending(); loadApproved(); loadModels(); }}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
-          >
-            <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
-            Sync
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-3 border-l border-white/10 pl-4">
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-white">AI approval</span>
+                <span className="block text-xs text-slate-400">
+                  {approvalSettings === null ? 'Loading...' : !approvalSettings.configured ? 'Gemini key not configured' : approvalSettings.enabled ? 'On - new registrations' : 'Off - manual review'}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="AI vehicle approval"
+                checked={approvalSettings?.enabled === true}
+                disabled={approvalSettings === null || approvalSaving || (!approvalSettings.configured && !approvalSettings.enabled)}
+                onChange={(event) => changeApprovalSettings(event.target.checked)}
+                className="peer sr-only"
+              />
+              <span aria-hidden="true" className="relative h-6 w-11 shrink-0 rounded-full bg-slate-600 transition-colors peer-checked:bg-yellow-400 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-yellow-400 peer-disabled:opacity-50 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+            </label>
+            <button
+              type="button"
+              onClick={() => { loadPending(); loadApproved(); loadModels(); loadApprovalSettings(); }}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
+            >
+              <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
+              Sync
+            </button>
+          </div>
         </motion.header>
 
         <motion.div {...motionProps} transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.06 }}>

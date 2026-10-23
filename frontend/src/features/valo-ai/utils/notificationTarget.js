@@ -1,5 +1,6 @@
 const ADMIN_NOTIFICATION_ROUTES = new Set([
   '/admin/parking-lots', '/admin/bookings', '/admin/revenue', '/admin/sessions', '/admin/subscriptions',
+  '/admin/vehicle-models',
 ]);
 
 export const notificationTarget = (route) => {
