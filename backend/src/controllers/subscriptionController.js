@@ -1,3 +1,4 @@
+const { isInRenewalWindow } = require('../utils/membershipRenewalWindow');
 const Subscription = require('../models/Subscription');
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
@@ -8,7 +9,6 @@ const walletService = require('../services/walletService');
 const {
   validateNewSubscriptionEligibility,
 } = require('../services/subscriptionEligibilityService');
-const { isEnabled, defaultForCurrentEnvironment } = require('../utils/featureFlags');
 const {
   buildAccountMembershipQrPayload,
   buildMembershipQrPayload,
@@ -21,6 +21,7 @@ const {
 } = require('../services/membershipEntitlementService');
 const {
   getUnmigratedLegacySlots,
+  preserveFloorReference,
 } = require('../services/membershipProjectionService');
 const {
   buildSubscriptionPaymentUrls,
@@ -341,7 +342,7 @@ exports.getMembership = async (req, res, next) => {
           'packageId',
           'name type price description isActive isRenewable renewalWindowDays maxSlots'
         )
-        .populate('floorId', 'name floorNumber')
+        .populate({ path: 'floorId', select: 'name floorNumber', transform: preserveFloorReference })
         .lean(),
       Subscription.find({
       user: req.user._id,
@@ -354,7 +355,7 @@ exports.getMembership = async (req, res, next) => {
           'ticketPackage',
           'name type price description isActive isRenewable renewalWindowDays maxSlots'
         )
-        .populate('slots.floorId', 'name floorNumber')
+        .populate({ path: 'slots.floorId', select: 'name floorNumber', transform: preserveFloorReference })
         .lean(),
     ]);
 
@@ -390,33 +391,16 @@ exports.getMembership = async (req, res, next) => {
       null;
 
     const renewalWindowDays = Number(pkg?.renewalWindowDays || 7);
-    const canRenew = Boolean(
-      isEnabled('SUBSCRIPTION_RENEWAL_ENABLED', defaultForCurrentEnvironment()) &&
-      isActive &&
-      latestSubscription?._id &&
-      pkg?.isRenewable !== false &&
-      daysUntilExpiration !== null &&
-      daysUntilExpiration <= renewalWindowDays
-    );
+    const legacyRenewal = latestSubscription && !entitlements.length
+      ? await require('../services/membershipDetailsService').renewalState(req.user._id, latestSubscription, 'subscription', now)
+      : { canRenew: false, renewalWindowDays, message: 'Select a space below to review its renewal eligibility.' };
+
 
     const reservedSlots = [
-      ...entitlements.map((entitlement) => ({
-          entitlementId: entitlement._id,
-          sourceSubscriptionId: entitlement.sourceSubscriptionId,
-          floorId: entitlement.floorId?._id || entitlement.floorId,
-          floorName: entitlement.floorId?.name || '',
-          floorNumber: entitlement.floorId?.floorNumber || null,
-          slotCode: entitlement.slotCode,
-          status: entitlement.status,
-          validFrom: entitlement.validFrom,
-          expireAt: entitlement.expireAt,
-          unitAmount: entitlement.unitAmount,
-          transferCount: entitlement.transferCount,
-          canTransfer:
-            entitlement.status === 'active' &&
-            Number(entitlement.transferCount || 0) < 1,
-      })),
-      ...legacySlots.map(({ subscription, slot }) => ({
+      ...await Promise.all(entitlements.map((entitlement) =>
+        require('../services/membershipDetailsService').presentEntitlement(req.user._id, entitlement, now)
+      )),
+      ...await Promise.all(legacySlots.map(async ({ subscription, slot }) => ({
         entitlementId: null,
         sourceSubscriptionId: subscription._id,
         floorId: slot.floorId?._id || slot.floorId,
@@ -432,7 +416,10 @@ exports.getMembership = async (req, res, next) => {
         transferCount: 0,
         canTransfer: false,
         legacy: true,
-      })),
+        daysRemaining: Math.max(0, Math.ceil((new Date(subscription.expireAt) - now) / 86400000)),
+        expiringSoon: isInRenewalWindow(subscription.expireAt, subscription.ticketPackage, now),
+        renewal: await require('../services/membershipDetailsService').renewalState(req.user._id, subscription, 'subscription', now),
+      }))),
     ];
 
     res.status(200).json({
@@ -445,7 +432,9 @@ exports.getMembership = async (req, res, next) => {
         entitlementCount: reservedSlots.length,
         expireAt,
         daysUntilExpiration,
-        expirationWarning: Boolean(isActive && daysUntilExpiration !== null && daysUntilExpiration <= 7),
+        expirationWarning: reservedSlots.some((slot) => slot.expiringSoon),
+        earliestExpireAt: reservedSlots.length ? new Date(Math.min(...reservedSlots.map((slot) => new Date(slot.expireAt).getTime()))) : null,
+        expiringEntitlementCount: reservedSlots.filter((slot) => slot.expiringSoon).length,
         freeServiceCount: user?.membership?.freeServiceCount || 0,
         package: pkg
           ? {
@@ -464,11 +453,7 @@ exports.getMembership = async (req, res, next) => {
           status: 'manual',
           nextRenewalDate: expireAt,
           price: pkg?.price || 0,
-          canRenew,
-          renewalWindowDays,
-          message: canRenew
-            ? 'Your renewal window is open. Renew now to keep your reserved spaces.'
-            : 'Manual renewal opens before your membership expires.',
+          ...legacyRenewal,
         },
       },
     });

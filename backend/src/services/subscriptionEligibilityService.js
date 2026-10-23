@@ -1,3 +1,5 @@
+const { renewalWindowDays: getRenewalWindowDays, isInRenewalWindow } = require('../utils/membershipRenewalWindow');
+const { validateMembershipSpace } = require('./membershipSpaceValidationService');
 const crypto = require('crypto');
 const Subscription = require('../models/Subscription');
 const SubscriptionRenewal = require('../models/SubscriptionRenewal');
@@ -248,9 +250,9 @@ const validateRenewalEligibility = async ({
     throw businessError('Renewal is disabled for this package.', 'PACKAGE_RENEWAL_DISABLED');
   }
 
-  const renewalWindowDays = Number(ticketPackage.renewalWindowDays || 7);
+  const renewalWindowDays = getRenewalWindowDays(ticketPackage);
   const daysUntilExpiration = Math.ceil((currentExpireAt.getTime() - now.getTime()) / DAY_MS);
-  if (daysUntilExpiration > renewalWindowDays) {
+  if (!isInRenewalWindow(currentExpireAt, ticketPackage, now)) {
     throw businessError(
       `Renewal opens ${renewalWindowDays} days before expiration.`,
       'RENEWAL_WINDOW_NOT_OPEN'
@@ -328,6 +330,10 @@ const validateRenewalEligibility = async ({
         'SLOT_NOT_FOUND'
       );
     }
+    await validateMembershipSpace({
+      floorId: selectedSlot.floorId, slotId: slot._id, slotCode: selectedSlot.slotCode,
+      ownerId: userId, subscriptionId: subscription._id,
+    }, { session });
     if (slot.status === 'maintenance') {
       throw businessError(
         `Slot ${selectedSlot.slotCode} is under maintenance.`,

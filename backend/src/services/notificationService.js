@@ -105,6 +105,18 @@ async function createWithRecipients(notificationData, userIds) {
 
 // ─── Notification Templates ────────────────────────────────────────────────────
 const NOTIFICATION_TEMPLATES = {
+  MEMBERSHIP_ENTITLEMENT_EXPIRING_SOON: {
+    title: 'Membership space expiring soon', content: '{packageName} - space {slotCode}, {floorName} expires on {expireDate} (Vietnam time). The renewal window is open. View your membership to review renewal eligibility.', type: 'SYSTEM', priority: 'WARNING',
+  },
+  MEMBERSHIP_ENTITLEMENT_EXPIRED: {
+    title: 'Membership space expired', content: '{packageName} - space {slotCode}, {floorName} expired on {expireDate} (Vietnam time).', type: 'SYSTEM', priority: 'WARNING',
+  },
+  MEMBERSHIP_ENTITLEMENT_RENEWAL_SUCCESS: {
+    title: 'Membership renewal successful', content: '{packageName} - space {slotCode}, {floorName} was renewed. The new expiration is {expireDate} (Vietnam time).', type: 'SYSTEM', priority: 'SUCCESS',
+  },
+  SUBSCRIPTION_RENEWAL_SUCCESS: {
+    title: 'Membership renewal successful', content: '{packageName} was renewed. The new expiration is {expireDate}.', type: 'SYSTEM', priority: 'SUCCESS',
+  },
   // ACCOUNT
   REGISTRATION_SUCCESS: {
     title: 'Welcome to VALO Parking!',
@@ -256,15 +268,15 @@ const NOTIFICATION_TEMPLATES = {
   },
   VIP_EXPIRING_SOON: {
     title: 'VIP Pass expiring soon',
-    content: 'Your monthly parking pass expires on {expireDate}. Renew it to keep your reserved parking benefits.',
+    content: '{packageName} - {floorName} expires on {expireDate} (Vietnam time).',
     type: 'SYSTEM',
     priority: 'WARNING',
   },
   VIP_EXPIRED: {
     title: 'VIP Pass expired',
-    content: 'Your monthly parking pass has expired. Its reserved parking slots have been released.',
+    content: '{packageName} - {floorName} expired on {expireDate} (Vietnam time).',
     type: 'SYSTEM',
-    priority: 'ERROR',
+    priority: 'WARNING',
   },
   TRANSFER_REQUEST_CREATED: {
     title: 'Booking transfer request created',
@@ -517,11 +529,18 @@ async function createForRole(roles, data, createdBy = null) {
 }
 
 // ─── Create auto notification with deduplication ────────────────────────────────
-async function createAutoNotification(eventType, referenceId, userId, templateKey, templateData = {}) {
+async function createAutoNotification(eventType, referenceId, userId, templateKey, templateData = {}, options = {}) {
   const template = NOTIFICATION_TEMPLATES[templateKey];
   if (!template) {
     console.error(`[NotificationService] Template not found: ${templateKey}`);
     return null;
+  }
+
+  if (options.atomicMembership) {
+    return require('./membershipNotificationDeliveryService').deliver(eventType, referenceId, userId, {
+      ...fillTemplate(template, templateData),
+      metadata: { eventType, referenceId, ...templateData },
+    }, options.guard);
   }
 
   // Check dedup

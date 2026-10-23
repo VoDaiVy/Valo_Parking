@@ -5,6 +5,7 @@ const { protect, authorize } = require('../middlewares/authMiddleware');
 const { requirePolicyAcceptance } = require('../middlewares/policyAcceptanceMiddleware');
 const renewalController = require('../controllers/subscriptionRenewalController');
 const entitlementRenewalController = require('../controllers/membershipEntitlementRenewalController');
+const membershipDetailsController = require('../controllers/membershipDetailsController');
 const { body, param } = require('express-validator');
 const {
   subscriptionIdValidator,
@@ -21,6 +22,9 @@ const renewalEnabled = (req, res, next) => {
 };
 
 router.use(protect);
+
+router.get('/entitlements/:entitlementId/details', authorize('customer'), param('entitlementId').isMongoId(), membershipDetailsController.detail);
+router.get('/:subscriptionId/details', authorize('customer'), param('subscriptionId').isMongoId(), membershipDetailsController.detail);
 
 router.get('/membership', subscriptionController.getMembership);
 router.get('/membership/qr', subscriptionController.getAccountMembershipQr);

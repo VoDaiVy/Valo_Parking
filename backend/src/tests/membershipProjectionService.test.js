@@ -4,9 +4,24 @@ const assert = require('node:assert/strict');
 const {
   deriveMembershipProjection,
   getUnmigratedLegacySlots,
+  preserveFloorReference,
 } = require('../services/membershipProjectionService');
 
 const NOW = new Date('2026-07-20T00:00:00.000Z');
+
+test('missing floor population preserves source identity, excludes migrated B1 and retains same code on another floor', () => {
+  const missingFloor = preserveFloorReference(null, 'deleted-floor');
+  const subscription = { _id: 'source-sub', slots: [
+    { floorId: missingFloor, slotCode: 'B1' },
+    { floorId: { _id: 'other-floor', name: 'Other floor' }, slotCode: 'B1' },
+  ] };
+  const migrated = [{ sourceSubscriptionId: 'source-sub', floorId: 'deleted-floor', slotCode: 'B1' }];
+  assert.equal(String(missingFloor._id), 'deleted-floor');
+  const legacy = getUnmigratedLegacySlots([subscription], migrated);
+  assert.equal(legacy.length, 1);
+  assert.equal(legacy[0].slot.floorId._id, 'other-floor');
+  assert.equal(preserveFloorReference(subscription.slots[1].floorId, 'other-floor'), subscription.slots[1].floorId);
+});
 
 test('projection is inactive without a usable entitlement', () => {
   assert.deepEqual(
