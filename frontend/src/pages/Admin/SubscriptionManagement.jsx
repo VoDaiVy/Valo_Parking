@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  Car,
   CheckCircle2,
   Clock3,
   Crown,
   Filter,
   Globe2,
-  Mail,
   ParkingCircle,
   RefreshCw,
   Search,
@@ -153,7 +153,7 @@ function SlotBadge({ slot }) {
   );
 }
 
-function MembershipRow({ sub, index }) {
+function MembershipRow({ sub, index, onCustomerClick }) {
   const remaining = daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
   const displayUser = getDisplayUser(sub);
@@ -162,13 +162,23 @@ function MembershipRow({ sub, index }) {
 
   return (
     <article
-      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#141a25] motion-reduce:transform-none motion-reduce:transition-none"
+      role="button"
+      tabIndex={0}
+      aria-label={`View vehicles for ${displayUser?.username || displayUser?.email || 'customer'}`}
+      onClick={() => onCustomerClick?.({ user: displayUser, vehicles })}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onCustomerClick?.({ user: displayUser, vehicles });
+        }
+      }}
+      className="group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-yellow-300/35 hover:bg-[#141a25] focus:outline-none focus:ring-2 focus:ring-yellow-300/60 motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 35}ms` }}
     >
       <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-yellow-300 to-amber-500 opacity-0 transition group-hover:opacity-80" />
       <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px] md:items-center md:px-5">
         <div className="min-w-0">
-          <div className="flex items-center gap-3">
+          <button type="button" onClick={() => onCustomerClick?.({ user: displayUser, vehicles })} className="flex w-full items-center gap-3 text-left focus:outline-none focus:ring-2 focus:ring-yellow-300/50">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300">
               <UserRound size={17} />
             </div>
@@ -176,11 +186,11 @@ function MembershipRow({ sub, index }) {
               <h3 className="truncate text-sm font-black text-white sm:text-base">{displayUser?.username || 'Unknown User'}</h3>
               <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || 'No email'}</p>
             </div>
-          </div>
-          <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500" title={vehicles.join(', ')}>
-            <Mail size={12} />
+          </button>
+          <button type="button" onClick={() => onCustomerClick?.({ user: displayUser, vehicles })} className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-300/50" title="View customer vehicles">
+            <Car size={12} />
             {vehicleText}
-          </p>
+          </button>
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
@@ -233,6 +243,27 @@ function MembershipRow({ sub, index }) {
         </div>
       </div>
     </article>
+  );
+}
+
+function CustomerVehiclesModal({ customer, onClose }) {
+  if (!customer) return null;
+  const user = customer.user || {};
+  const vehicles = customer.vehicles || [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="customer-vehicles-title" className="w-full max-w-md rounded-2xl border border-white/15 bg-[#11151d] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-yellow-300">Customer vehicles</p><h2 id="customer-vehicles-title" className="mt-2 text-2xl font-black text-white">{user.username || 'Unknown customer'}</h2><p className="mt-1 text-sm text-slate-400">{user.email || 'No email available'}</p></div>
+          <button type="button" onClick={onClose} aria-label="Close customer vehicles" className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"><X size={18} /></button>
+        </div>
+        <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Registered license plates</p>
+          {vehicles.length ? <div className="mt-3 space-y-2">{vehicles.map((plate) => <div key={plate} className="flex items-center gap-3 rounded-xl border border-yellow-400/15 bg-yellow-400/[0.06] px-4 py-3"><Car size={17} className="text-yellow-300" /><span className="font-mono text-base font-black tracking-wider text-white">{plate}</span></div>)}</div> : <p className="mt-3 text-sm text-slate-400">This customer has no registered vehicle.</p>}
+        </div>
+        <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300">Close</button>
+      </section>
+    </div>
   );
 }
 
@@ -313,6 +344,7 @@ export default function SubscriptionManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [packageFilter, setPackageFilter] = useState('all');
+  const [selectedCustomerVehicles, setSelectedCustomerVehicles] = useState(null);
   const [transfers, setTransfers] = useState([]);
   const subscriptionState = getOperationalViewState({
     loading,
@@ -649,12 +681,13 @@ export default function SubscriptionManagement() {
           ) : (
             <div className="space-y-2">
               {filteredSubscriptions.map((sub, index) => (
-                <MembershipRow key={sub._id} sub={sub} index={index} />
+                <MembershipRow key={sub._id} sub={sub} index={index} onCustomerClick={setSelectedCustomerVehicles} />
               ))}
             </div>
           )}
         </section>
       </div>
+      <CustomerVehiclesModal customer={selectedCustomerVehicles} onClose={() => setSelectedCustomerVehicles(null)} />
     </div>
   );
 }
