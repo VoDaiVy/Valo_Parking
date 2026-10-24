@@ -6,6 +6,7 @@ const SubscriptionRenewal = require('../models/SubscriptionRenewal');
 const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRenewal');
 const WalletTransaction = require('../models/WalletTransaction');
 const Session = require('../models/Session');
+const Revenue = require('../models/Revenue');
 const TicketPackage = require('../models/TicketPackage');
 const {
   DAY_MS,
@@ -437,11 +438,13 @@ const calculatePlatformRevenueTotal = ({
   bookingRevenue = 0,
   serviceRevenue = 0,
   membershipTransferFeeRevenue = 0,
+  parkingRevenue = 0,
 }) =>
   Number(vipRevenue || 0) +
   Number(bookingRevenue || 0) +
   Number(serviceRevenue || 0) +
-  Number(membershipTransferFeeRevenue || 0);
+  Number(membershipTransferFeeRevenue || 0) +
+  Number(parkingRevenue || 0);
 
 /* ── Enhanced platform revenue (mode-based, single source of truth) ──── */
 
@@ -727,6 +730,30 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     ]),
   ]);
 
+  const [parkingRevenueSummary, parkingRevenueTimelineRows] = await Promise.all([
+    aggregatePaidAmount(Revenue, {
+      type: 'PARKING',
+      sourceModel: 'Session',
+      ...createdAtMatchExclusive,
+    }),
+    Revenue.aggregate([
+      {
+        $match: {
+          type: 'PARKING',
+          sourceModel: 'Session',
+          ...createdAtMatchExclusive,
+        },
+      },
+      {
+        $group: {
+          _id: timelineDateExpression(bucketFormat),
+          amount: { $sum: '$amount' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+  ]);
+
   // ── Process booking revenues ──────────────────────────────────────────
   const bookingIds = completedBookings.map((b) => b._id);
   const [financialSummaries, completedServiceRows] = await Promise.all([
@@ -755,7 +782,8 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     subscriptionRenewals.amount +
     entitlementRenewals.amount;
   const membershipTransferFeeRevenue = membershipTransferFees.amount;
-  const totalRevenue = bookingRevenue + serviceRevenue + packageRevenue + membershipTransferFeeRevenue;
+  const parkingRevenue = parkingRevenueSummary.amount;
+  const totalRevenue = bookingRevenue + serviceRevenue + packageRevenue + membershipTransferFeeRevenue + parkingRevenue;
   const sourceCompositionTotal = totalRevenue;
 
   // ── Build timeline with per-bucket booking/service separation ─────────
@@ -796,6 +824,10 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     transferFeeByBucket.set(row._id, Number(row.amount || 0));
   }
 
+  const parkingRevenueByBucket = new Map(
+    parkingRevenueTimelineRows.map((row) => [row._id, Number(row.amount || 0)])
+  );
+
   // Compute per-bucket booking and service revenues
   const bookingRevenueByBucket = new Map();
   const serviceRevenueByBucket = new Map();
@@ -828,11 +860,13 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
       (bookingRevenueByBucket.get(label) || 0) +
       (serviceRevenueByBucket.get(label) || 0) +
       (packageByBucket.get(label) || 0) +
-      (transferFeeByBucket.get(label) || 0),
+      (transferFeeByBucket.get(label) || 0) +
+      (parkingRevenueByBucket.get(label) || 0),
     bookingRevenue: bookingRevenueByBucket.get(label) || 0,
     serviceRevenue: serviceRevenueByBucket.get(label) || 0,
     packageRevenue: packageByBucket.get(label) || 0,
     membershipTransferFees: transferFeeByBucket.get(label) || 0,
+    parkingRevenue: parkingRevenueByBucket.get(label) || 0,
     refunds: refundByBucket.get(label) || 0,
   }));
 
@@ -963,6 +997,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
       serviceRevenue,
       packageRevenue,
       membershipTransferFees: membershipTransferFeeRevenue,
+      parkingRevenue,
       refunds: refundTotal,
       sourceCompositionTotal,
     },
@@ -997,6 +1032,10 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     membershipTransferFeesDetail: {
       revenue: membershipTransferFeeRevenue,
       transactionCount: membershipTransferFees.count,
+    },
+    parking: {
+      revenue: parkingRevenue,
+      transactionCount: parkingRevenueSummary.count,
     },
     totalRevenue,
   };
@@ -1047,6 +1086,12 @@ const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
     }),
   ]);
 
+  const parkingRevenueSummary = await aggregatePaidAmount(Revenue, {
+    type: 'PARKING',
+    sourceModel: 'Session',
+    ...buildCreatedAtMatch(period),
+  });
+
   const bookingIds = completedBookings.map((booking) => booking._id);
   const [financialSummaries, completedServiceRows] = await Promise.all([
     getBookingFinancialSummaryMap(completedBookings),
@@ -1088,6 +1133,7 @@ const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
     bookingRevenue: bookingRevenueResult.bookingRevenue,
     serviceRevenue: bookingRevenueResult.serviceRevenue,
     membershipTransferFeeRevenue: membershipTransferFees.amount,
+    parkingRevenue: parkingRevenueSummary.amount,
   });
 
   return {
@@ -1112,6 +1158,10 @@ const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
     membershipTransferFees: {
       revenue: membershipTransferFees.amount,
       transactionCount: membershipTransferFees.count,
+    },
+    parking: {
+      revenue: parkingRevenueSummary.amount,
+      transactionCount: parkingRevenueSummary.count,
     },
     totalRevenue,
   };

@@ -211,7 +211,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const selectedSlotRecord = dbSlots.find((slot) => slot.slotNumber === currentSlot);
   const zoneLabel = resolveZoneLabel(selectedSlotRecord, currentSlot);
   const floorLabel = floorRecord?.name || formData.bookingFloorName || (isSubscriptionFlow ? 'Member floor' : 'Reserved floor');
-  const qrCodeValue = successSession?._id || successSession?.sessionId || null;
+  const qrCodeValue = successSession?.exitQrPayload || null;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 items-center overflow-hidden">

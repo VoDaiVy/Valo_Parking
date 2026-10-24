@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { Camera, ScanLine, Car, AlertCircle } from 'lucide-react';
+import { Camera, ScanLine, AlertCircle } from 'lucide-react';
 import { API_BASE } from '../../services/api';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
@@ -10,7 +10,6 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   const isScanningRef = useRef(false);
   const [streamError, setStreamError] = useState(false);
   const [recognizedText, setRecognizedText] = useState('');
-  const [manualInput, setManualInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [alarmState, setAlarmState] = useState(false);
 
@@ -47,22 +46,32 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licensePlate: plate })
+        body: JSON.stringify({
+          licensePlate: plate,
+          detectedPlate: plate,
+          exitImageBase64: imageBase64,
+        })
       });
       const data = await res.json();
       if (data.success) {
         onScanSuccess(data.data, imageBase64);
       } else {
+        lastScannedPlateRef.current = null;
         setAlarmState(Boolean(data.alarm));
         if (data.alarmReason === 'already_checked_out') {
           setErrorMessage(`Vehicle with plate ${plate} has already checked out.`);
+        } else if (data.code === 'EXIT_PLATE_UNREADABLE') {
+          setErrorMessage('Không đọc được biển số tại cổng ra. Vui lòng đưa biển số vào đúng khung camera.');
+        } else if (data.code === 'EXIT_PLATE_MISMATCH') {
+          setErrorMessage(data.message || 'Biển số tại cổng ra không khớp với session.');
         } else {
-          setErrorMessage(`Vehicle with plate ${plate} is not currently checked in.`);
+          setErrorMessage(data.message || `Vehicle with plate ${plate} is not currently checked in.`);
         }
         console.warn(data.message);
       }
     } catch (err) {
       console.error("API error", err);
+      lastScannedPlateRef.current = null;
       setErrorMessage('System error while verifying license plate.');
     }
   };
@@ -75,7 +84,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrPayload })
+        body: JSON.stringify({ qrPayload, exitImageBase64: null })
       });
       const data = await res.json();
       if (data.success) {
@@ -192,57 +201,6 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamError]);
 
-  // Manual fallback for Tester
-  const handleManualInputChange = (e) => {
-    const raw = e.target.value.toUpperCase();
-    const clean = raw.replace(/[^A-Z0-9]/g, '');
-    let formatted = formatVietnamesePlate(clean);
-
-    if (!formatted) {
-      if (clean.length >= 3) {
-        const seriesMatch = clean.substring(2).match(/^[A-Z][A-Z0-9]?/);
-        if (seriesMatch) {
-          const series = seriesMatch[0];
-          const numbers = clean.substring(2 + series.length);
-          if (numbers.length > 0) {
-            formatted = `${clean.substring(0, 2)}${series}-${numbers}`;
-            if (numbers.length > 3) {
-              formatted = `${clean.substring(0, 2)}${series}-${numbers.substring(0, 3)}.${numbers.substring(3)}`;
-            }
-          } else {
-            formatted = clean;
-          }
-        } else {
-          formatted = clean;
-        }
-      } else {
-        formatted = clean;
-      }
-    }
-    setManualInput(formatted);
-  };
-
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    if (manualInput) {
-      // Clean input and format
-      const cleaned = manualInput.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const formattedPlate = formatVietnamesePlate(cleaned) || manualInput.toUpperCase(); // fallback to raw if not matching standard format
-
-      // Capture current frame anyway
-      let imageBase64 = null;
-      if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-        const canvas = canvasRef.current;
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
-      }
-      handlePlateDetected(formattedPlate, imageBase64);
-    }
-  };
-
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center bg-black overflow-hidden">
 
@@ -311,28 +269,6 @@ export default function KioskOutWelcome({ onScanSuccess }) {
         )}
       </div>
 
-      {/* Tester Fallback Input (Subtle) */}
-      <form
-        onSubmit={handleManualSubmit}
-        className="absolute bottom-10 z-20 flex flex-col items-center opacity-30 hover:opacity-100 transition-opacity"
-      >
-        <p className="text-[10px] text-gray-400 mb-1 font-mono uppercase tracking-widest">Tester / Fallback Input</p>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={manualInput}
-            onChange={handleManualInputChange}
-            placeholder="e.g. 51H-595.65"
-            className="bg-white/10 border border-white/20 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-yellow-400"
-          />
-          <button
-            type="submit"
-            className="bg-yellow-500 hover:bg-yellow-400 text-black p-2 rounded-lg transition-colors"
-          >
-            <Car size={20} />
-          </button>
-        </div>
-      </form>
     </div>
   );
 }

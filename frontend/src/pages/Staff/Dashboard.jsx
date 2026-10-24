@@ -38,6 +38,7 @@ const EMPTY_REVENUE_STATISTICS = Object.freeze({
   vip: { revenue: 0, transactionCount: 0 },
   booking: { revenue: 0, completedCount: 0 },
   service: { revenue: 0, completedBookingCount: 0 },
+  parking: { revenue: 0, transactionCount: 0 },
   totalRevenue: 0,
 });
 
@@ -55,6 +56,10 @@ const normalizeRevenueStatistics = (statistics) => ({
     completedBookingCount: Number(
       statistics?.service?.completedBookingCount || 0
     ),
+  },
+  parking: {
+    revenue: Number(statistics?.parking?.revenue || 0),
+    transactionCount: Number(statistics?.parking?.transactionCount || 0),
   },
   totalRevenue: Number(statistics?.totalRevenue || 0),
 });
@@ -228,7 +233,10 @@ export default function StaffDashboard() {
   useEffect(() => {
     const fetchBarrierStatus = async () => {
       try {
-        const res = await fetch(`${API_BASE}/iot/barrier-status`);
+        const token = localStorage.getItem('accessToken');
+        const res = await fetch(`${API_BASE}/iot/barrier-status`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         const data = await res.json();
         if (data.success && data.gates) {
           setGatesState(prev => ({
@@ -287,7 +295,10 @@ export default function StaffDashboard() {
       const fallbackPlate = gateType === 'ENTRY_1' ? 'STAFF-IN' : 'STAFF-OUT';
       const res = await fetch(`${API_BASE}/iot/open-barrier`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+        },
         body: JSON.stringify({
           gate: gateType,
           licensePlate: fallbackPlate,
@@ -324,7 +335,10 @@ export default function StaffDashboard() {
     try {
       const res = await fetch(`${API_BASE}/iot/close-barrier`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+        },
         body: JSON.stringify({ gate: gateType })
       });
       const data = await res.json();
@@ -357,7 +371,10 @@ export default function StaffDashboard() {
     try {
       const res = await fetch(`${API_BASE}/iot/hold-barrier`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+        },
         body: JSON.stringify({ hold: newHold, gate: gateType })
       });
       const data = await res.json();
@@ -694,7 +711,9 @@ export default function StaffDashboard() {
               hoverBorder="hover:border-amber-500/30"
               label="Platform Revenue"
               value={getOperationalValue(revenueState, formatCurrency(revenueStatistics.totalRevenue))}
-              sub={revenueState.isAvailable ? 'VIP + booking + services' : 'Data unavailable'}
+              sub={revenueState.isAvailable
+                ? `VIP + booking + services + parking (${revenueStatistics.parking.transactionCount} sessions)`
+                : 'Data unavailable'}
             />
           </div>
         </section>

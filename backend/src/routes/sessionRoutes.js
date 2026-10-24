@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const sessionController = require('../controllers/sessionController');
 
-const { protect, authorize } = require('../middlewares/authMiddleware');
+const { protect, authorize, softProtect } = require('../middlewares/authMiddleware');
 
 // GET /api/sessions/active-status
 router.get('/active-status', sessionController.getActiveParkingStatus);
@@ -29,13 +29,16 @@ router.get('/my-history', protect, authorize('customer', 'admin'), sessionContro
 router.get('/', protect, authorize('staff', 'admin'), sessionController.getAllSessions);
 
 // POST /api/sessions/kiosk-exit-scan
-router.post('/kiosk-exit-scan', sessionController.kioskExitScan);
+router.post('/kiosk-exit-scan', softProtect, sessionController.kioskExitScan);
 
 // POST /api/sessions/kiosk-checkout
-router.post('/kiosk-checkout', sessionController.kioskCheckout);
+router.post('/kiosk-checkout', softProtect, sessionController.kioskCheckout);
 
 // GET /api/sessions/check-payos/:orderCode
 router.get('/check-payos/:orderCode', sessionController.checkPayosStatus);
+
+// POST /api/sessions/kiosk-payment-webhook
+router.post('/kiosk-payment-webhook', sessionController.handleKioskPaymentWebhook);
 
 // POST /api/sessions/:id/reassign-slot
 router.post('/:id/reassign-slot', protect, authorize('staff', 'admin'), sessionController.reassignSlot);

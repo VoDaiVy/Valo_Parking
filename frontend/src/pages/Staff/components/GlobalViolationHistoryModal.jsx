@@ -19,7 +19,8 @@ import {
   CheckCircle2,
   Camera,
   Layers,
-  Filter
+  Filter,
+  Info
 } from 'lucide-react';
 import { getViolationLogs, resolveViolation, clearAllViolationsApi } from '../../../services/aiSurveillanceService';
 import { formatLicensePlateDisplay } from '../../../utils/licensePlate';
@@ -973,27 +974,67 @@ export default function GlobalViolationHistoryModal({
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                       Hành động xử lý vi phạm:
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleReassign(selectedLog)}
-                        disabled={actionLoading}
-                        className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
-                      >
-                        <RotateCw size={15} className={actionLoading ? 'animate-spin' : ''} />
-                        <span>Chấp nhận cho đỗ ô {selectedLog.slotCode}</span>
-                      </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDismissOrWarning(selectedLog, 'ISSUE_WARNING')}
-                        disabled={actionLoading}
-                        className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
-                      >
-                        <Phone size={15} />
-                        <span>Nhắc nhở / Lập biên bản</span>
-                      </button>
-                    </div>
+                    {selectedLog.isVehicleGone || selectedLog.isSlotEmpty || selectedLog.isSessionEnded ? (
+                      <div className="space-y-2.5">
+                        <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 flex items-start gap-2.5 shadow-inner">
+                          <Info size={16} className="text-cyan-400 flex-shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-white">
+                              {selectedLog.isSessionEnded
+                                ? 'Phương tiện đã checkout hoàn tất khỏi bãi đỗ.'
+                                : 'Camera AI ghi nhận ô hiện đã trống (xe đã rời đi).'}
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Không khả dụng chức năng đổi ô do xe không còn hiện diện tại vị trí đỗ.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleDismissOrWarning(selectedLog, 'DISMISS')}
+                            disabled={actionLoading}
+                            className="py-2.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow disabled:opacity-50 active:scale-95"
+                          >
+                            <span>Đóng / Bỏ qua cảnh báo</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDismissOrWarning(selectedLog, 'ISSUE_WARNING')}
+                            disabled={actionLoading}
+                            className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
+                          >
+                            <Phone size={15} />
+                            <span>Lập biên bản / Lưu vết</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleReassign(selectedLog)}
+                          disabled={actionLoading}
+                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
+                        >
+                          <RotateCw size={15} className={actionLoading ? 'animate-spin' : ''} />
+                          <span>Chấp nhận cho đỗ ô {selectedLog.slotCode}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDismissOrWarning(selectedLog, 'ISSUE_WARNING')}
+                          disabled={actionLoading}
+                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
+                        >
+                          <Phone size={15} />
+                          <span>Nhắc nhở / Lập biên bản</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

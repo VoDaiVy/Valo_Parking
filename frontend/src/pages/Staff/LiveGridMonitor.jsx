@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import { getAllFloors, getFloorSlots } from "../../services/parkingFloorService";
 import { getActiveSessions } from "../../services/sessionService";
@@ -16,7 +16,8 @@ import {
   Phone,
   RotateCw,
   RotateCcw,
-  Maximize2
+  Maximize2,
+  Layers
 } from "lucide-react";
 import StaffCheckoutModal from "./StaffCheckoutModal";
 import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings } from "../../services/bookingService";
@@ -31,6 +32,11 @@ import { getSlotLogs, clearAllViolationsApi } from "../../services/aiSurveillanc
 import toast from "react-hot-toast";
 
 export default function LiveGridMonitor() {
+  const navigate = useNavigate();
+  const rawUser = sessionStorage.getItem('valo_user');
+  const currentUser = rawUser ? JSON.parse(rawUser) : null;
+  const isAdmin = currentUser?.role === 'admin';
+
   const [floors, setFloors] = useState([]);
   const [currentFloorId, setCurrentFloorId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -326,6 +332,19 @@ export default function LiveGridMonitor() {
           <History size={14} className="text-amber-400" />
           <span>Lịch Sử Vi Phạm</span>
         </button>
+
+        {/* Admin Action: Chuyển sang thiết kế sơ đồ bãi đỗ */}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => navigate('/admin/parking-lots')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-indigo-500/20 border border-purple-400/40 text-purple-300 font-bold text-xs hover:bg-purple-500 hover:text-white transition shadow-sm active:scale-95"
+            title="Chuyển sang trang Thiết Kế / Chỉnh Sửa Sơ Đồ Bãi Đỗ (Builder)"
+          >
+            <Layers size={14} className="text-purple-400" />
+            <span>Sơ Đồ / Builder</span>
+          </button>
+        )}
       </div>
 
       {/* Real-Time Violation Alert Banner */}
@@ -632,21 +651,37 @@ export default function LiveGridMonitor() {
                     const isViol = log.changeType === 'VIOLATION_DETECTED';
                     const isReassigned = log.changeType === 'SLOT_REASSIGNED';
                     const isMaintenance = log.changeType === 'MAINTENANCE' || log.changeType === 'MAINTENANCE_LOCKED' || log.changeType === 'MAINTENANCE_UNLOCKED';
+                    const isCheckout = log.resolutionAction === 'CHECKOUT_RELEASED';
+                    const isVehicleLeft = log.resolutionAction === 'VEHICLE_LEFT';
+                    const isVehicleParked = log.resolutionAction === 'VEHICLE_PARKED';
+
+                    let badgeText = 'Biến động đỗ xe';
+                    let badgeClass = 'bg-slate-700/40 text-slate-300';
+                    if (isViol) {
+                      badgeText = 'Phát hiện vi phạm';
+                      badgeClass = 'bg-red-500/20 text-red-400 border border-red-500/30';
+                    } else if (isMaintenance) {
+                      badgeText = 'Bảo trì ô đỗ';
+                      badgeClass = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                    } else if (isCheckout) {
+                      badgeText = 'Checkout - Ô trống';
+                      badgeClass = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+                    } else if (isVehicleLeft) {
+                      badgeText = 'Xe rời đi - Ô trống';
+                      badgeClass = 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
+                    } else if (isVehicleParked) {
+                      badgeText = 'Xe vào đỗ';
+                      badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                    } else if (isReassigned) {
+                      badgeText = 'Đã đổi ô';
+                      badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                    }
+
                     return (
                       <div key={log._id} className="py-3 space-y-1.5 text-xs">
                         <div className="flex items-center justify-between">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                              isViol
-                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                : isMaintenance
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : isReassigned
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : 'bg-slate-700/40 text-slate-300'
-                            }`}
-                          >
-                            {isViol ? 'Phát hiện vi phạm' : isMaintenance ? 'Bảo trì ô đỗ' : isReassigned ? 'Đã đổi ô' : 'Biến động đỗ xe'}
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${badgeClass}`}>
+                            {badgeText}
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono">
                             {new Date(log.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}

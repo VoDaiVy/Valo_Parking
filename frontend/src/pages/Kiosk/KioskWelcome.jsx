@@ -42,6 +42,17 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const fastPassKeyRef = useRef({ plate: '', key: '' });
+
+  const getFastPassKey = (plate) => {
+    if (fastPassKeyRef.current.plate !== plate) {
+      const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      fastPassKeyRef.current = { plate, key: `kiosk-entry:${plate}:${randomPart}` };
+    }
+    return fastPassKeyRef.current.key;
+  };
 
 
   const stopCamera = () => {
@@ -315,7 +326,10 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
           const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': getFastPassKey(formatted),
+            },
             body: JSON.stringify(entryPayload),
           });
           const entryData = await entryRes.json();
@@ -387,18 +401,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     setIsScanning(true);
     setScanMessage('Scanning Plate...');
 
-    try {
-      const fullRes = await fetch(`${API_BASE}/sessions/check-full`);
-      const fullData = await fullRes.json();
-      if (fullData.success && fullData.data && fullData.data.isFull) {
-        isParkingFullRef.current = true;
-      } else {
+    const checkFullPromise = fetch(`${API_BASE}/sessions/check-full`)
+      .then((res) => res.json())
+      .then((fullData) => {
+        isParkingFullRef.current = Boolean(fullData.success && fullData.data && fullData.data.isFull);
+      })
+      .catch((e) => {
+        console.error('Failed to check full status', e);
         isParkingFullRef.current = false;
-      }
-    } catch (e) {
-      console.error('Failed to check full status', e);
-      isParkingFullRef.current = false;
-    }
+      });
 
     try {
       if (!streamRef.current) {
@@ -418,7 +429,12 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
       }
 
-      await wait(CAMERA_WARMUP_MS);
+      const isCamAlreadyWarm = videoRef.current && videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      if (!isCamAlreadyWarm) {
+        await wait(CAMERA_WARMUP_MS);
+      }
+
+      await checkFullPromise;
 
       const detectedPlates = new Map();
       for (let i = 0; i < SCAN_ATTEMPTS; i++) {
@@ -442,7 +458,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               : { ...rawResult, plate: normalizedPlate, count: 1, fingerprint };
             detectedPlates.set(fingerprint, nextCandidate);
 
-            if (nextCandidate.count >= 2 || i >= 3) {
+            // Tối ưu hóa: Biển số chuẩn Việt Nam hợp lệ được kích hoạt xác thực ngay từ lần đầu
+            if (isLikelyVietnamesePlate(normalizedPlate) || nextCandidate.count >= 2 || i >= 2) {
               const handled = await verifyScannedPlate(nextCandidate);
               stopCamera();
               setIsScanning(false);
@@ -561,7 +578,10 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
         const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': getFastPassKey(cleanPlate),
+          },
           body: JSON.stringify(entryPayload),
         });
         const entryData = await entryRes.json();

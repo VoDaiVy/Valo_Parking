@@ -4,7 +4,7 @@ const revenueSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ['BOOKING', 'SUBSCRIPTION', 'VIOLATION', 'SERVICE'],
+      enum: ['BOOKING', 'SUBSCRIPTION', 'VIOLATION', 'SERVICE', 'PARKING'],
       required: true,
       index: true,
     },
@@ -22,13 +22,13 @@ const revenueSchema = new mongoose.Schema(
     },
     sourceModel: {
       type: String,
-      enum: ['Booking', 'Subscription', 'Violation', 'BookingService'],
+      enum: ['Booking', 'Subscription', 'Violation', 'BookingService', 'Session'],
       required: true,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false,
       index: true,
     },
     createdBy: {
@@ -40,6 +40,12 @@ const revenueSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    paymentIntentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PaymentIntent',
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -49,5 +55,9 @@ const revenueSchema = new mongoose.Schema(
 revenueSchema.index({ type: 1, createdAt: -1 });
 revenueSchema.index({ userId: 1, type: 1, createdAt: -1 });
 revenueSchema.index({ sourceModel: 1, sourceId: 1 });
+revenueSchema.index(
+  { type: 1, sourceModel: 1, sourceId: 1 },
+  { unique: true, partialFilterExpression: { type: 'PARKING', sourceModel: 'Session' } }
+);
 
 module.exports = mongoose.model('Revenue', revenueSchema);

@@ -22,6 +22,7 @@ import {
   BarChart2,
   DollarSign,
   Crown,
+  Layers,
   // Customer icons
   Home,
   User,

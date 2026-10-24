@@ -316,6 +316,8 @@ test('get_revenue_metrics correctly branches between platform and parking scope 
   
   statistics.getAdminPlatformRevenueStatistics = async () => ({
     period: { range: 'today' },
+    summary: { totalRevenue: 457000, bookingRevenue: 200000, serviceRevenue: 0, packageRevenue: 257000, membershipTransferFees: 0, refunds: 0, sourceCompositionTotal: 457000 },
+    trend: [{ period: '2026-09-17', totalRevenue: 457000, bookingRevenue: 200000, serviceRevenue: 0, packageRevenue: 257000, membershipTransferFees: 0 }],
     booking: { revenue: 362000, completedCount: 5 }
   });
   

@@ -9,18 +9,25 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
   const [isEarlyExitModalOpen, setIsEarlyExitModalOpen] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [keepPausedChoice, setKeepPausedChoice] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
 
-  const handleCheckout = useCallback(async (paymentMethod, keepPaused = false) => {
+  const handleCheckout = useCallback(async (paymentMethod, keepPaused = false, paymentIntentId = null) => {
     setIsProcessing(true);
     try {
+      const sessionId = sessionData?.session?._id;
       const res = await fetch(`${API_BASE}/sessions/kiosk-checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `kiosk-checkout:${sessionId}:${paymentIntentId || paymentMethod}`,
+        },
         body: JSON.stringify({
-          sessionId: sessionData?.session?._id,
+          sessionId,
           exitImageBase64: exitImage,
           paymentMethod,
-          keepPaused
+          paymentIntentId,
+          keepPaused,
+          checkoutToken: sessionData?.checkoutToken,
         })
       });
       const data = await res.json();
@@ -32,7 +39,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           onCheckoutSuccess();
         }
       } else {
-        alert(data.message);
+        setPaymentError(data.message || 'Không thể hoàn tất thanh toán.');
         setIsProcessing(false);
       }
     } catch (err) {
@@ -50,8 +57,11 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
     if (sessionData && sessionData.canAutoPay && !sessionData.isEarlyExit) {
       const timerId = setTimeout(() => handleCheckout('wallet', false), 0);
       timerIds.push(timerId);
-    } else if (sessionData && !sessionData.canAutoPay && sessionData.totalPrice > 0 && !sessionData.isEarlyExit) {
+    } else if (sessionData && !sessionData.canAutoPay && sessionData.amountToPay > 0 && !sessionData.isEarlyExit) {
       const timerId = setTimeout(() => handleCheckout('vietqr', false), 0);
+      timerIds.push(timerId);
+    } else if (sessionData && sessionData.amountToPay <= 0 && !sessionData.isEarlyExit) {
+      const timerId = setTimeout(() => handleCheckout('free', false), 0);
       timerIds.push(timerId);
     }
 
@@ -68,12 +78,16 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           const data = await res.json();
           if (data.success && data.isPaid) {
             clearInterval(intervalId);
-            handleCheckout('qr', keepPausedChoice); // Call handleCheckout to complete the session
+            handleCheckout('qr', keepPausedChoice, data.paymentIntentId || paymentData.paymentIntentId);
+          } else if (data.expired) {
+            clearInterval(intervalId);
+            setPaymentData(null);
+            setPaymentError('Mã QR đã hết hạn. Vui lòng tạo mã thanh toán mới.');
           }
         } catch (err) {
           console.error('Error polling payment status:', err);
         }
-      }, 3000); // Check every 3 seconds
+      }, 1500); // Check every 1.5 seconds for instant response upon payment
     }
     return () => {
       if (intervalId) clearInterval(intervalId);
@@ -88,7 +102,18 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
     );
   }
 
-  const { session, durationHours, expectedHours, totalPrice, walletBalance, canAutoPay, isEarlyExit, remainingHours, bookingEnd, isSubscriptionExpired } = sessionData;
+  const {
+    session,
+    durationHours,
+    expectedHours = session?.expectedDurationHours || 0,
+    amountToPay = Number(sessionData.amountToPay != null ? sessionData.amountToPay : (sessionData.totalPrice || 0)),
+    walletBalance = 0,
+    canAutoPay,
+    isEarlyExit,
+    remainingHours,
+    bookingEnd,
+    isSubscriptionExpired,
+  } = sessionData;
 
   // If AutoPay AND NOT early exit, show a loading screen while it processes
   if (canAutoPay && !isEarlyExit) {
@@ -96,10 +121,10 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
       <div className="w-full h-full flex flex-col items-center justify-center bg-black">
         <div className="w-20 h-20 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mb-8" />
         <h2 className="text-3xl font-bold text-yellow-400 mb-2">
-          {totalPrice > 0 ? 'Processing Auto-Pay (ETC)...' : 'Exit Authorized...'}
+          {amountToPay > 0 ? 'Processing Auto-Pay (ETC)...' : 'Exit Authorized...'}
         </h2>
         <p className="text-gray-400">
-          {totalPrice > 0
+          {amountToPay > 0
             ? 'Please wait while we verify your wallet and open the barrier.'
             : 'Your booking or membership is valid. The barrier is being opened now.'}
         </p>
@@ -193,9 +218,25 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
 
             <div className="mt-6 pt-6 border-t border-white/5 flex justify-between items-end">
               <span className="text-gray-400 text-sm font-semibold">TOTAL AMOUNT</span>
-              <span className="text-4xl font-black text-yellow-400">{formatVND(totalPrice)}</span>
+              <span className="text-4xl font-black text-yellow-400">{formatVND(amountToPay)}</span>
             </div>
           </div>
+
+          {paymentError && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl p-4 mb-6 text-sm flex items-center justify-between gap-3">
+              <span>{paymentError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentError('');
+                  handleCheckout('vietqr', keepPausedChoice);
+                }}
+                className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-lg text-xs font-bold uppercase tracking-wider shrink-0 transition-colors"
+              >
+                Thử lại
+              </button>
+            </div>
+          )}
 
           {/* Wallet Status Box (If User) */}
           {session.userId && (
@@ -216,8 +257,10 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
 
           {/* QR Code Section */}
           <div className="bg-white rounded-2xl p-6 flex flex-col items-center text-black">
-            <p className="font-bold text-sm mb-4">SCAN TO PAY</p>
-            {paymentData ? (
+            <p className="font-bold text-sm mb-4">{amountToPay > 0 ? 'SCAN TO PAY' : 'NO PAYMENT REQUIRED'}</p>
+            {amountToPay <= 0 ? (
+              <p className="text-green-700 font-bold text-center">Your parking session is authorized for exit.</p>
+            ) : paymentData ? (
               <QRCode value={paymentData.qrCode} size={160} />
             ) : (
               <div className="w-[160px] h-[160px] bg-gray-200 flex items-center justify-center text-gray-500 text-xs text-center p-4 rounded-lg">

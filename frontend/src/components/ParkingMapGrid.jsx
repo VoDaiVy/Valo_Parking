@@ -488,10 +488,10 @@ export default function ParkingMapGrid({
   return (
     <>
       {!is2DMode && (
-        <div className="absolute top-4 right-8 z-50 text-white/40 text-xs text-right pointer-events-none">
-          <p><strong>Left Click + Drag</strong>: Orbit 3D Space</p>
-          <p><strong>Shift + Drag / Right Click</strong>: Pan</p>
-          <p><strong>Mouse Wheel</strong>: Zoom</p>
+        <div className="absolute bottom-6 right-8 z-30 bg-[#111111]/80 backdrop-blur-md border border-white/10 rounded-xl px-3.5 py-2 text-white/50 text-[11px] text-right pointer-events-none shadow-lg space-y-0.5">
+          <p><strong className="text-white/80">Left Click + Drag</strong>: Orbit 3D Space</p>
+          <p><strong className="text-white/80">Shift + Drag / Right Click</strong>: Pan</p>
+          <p><strong className="text-white/80">Mouse Wheel</strong>: Zoom</p>
         </div>
       )}
 

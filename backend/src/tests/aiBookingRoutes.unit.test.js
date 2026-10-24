@@ -48,9 +48,12 @@ test('AI booking interpretation and session routes are customer-only', () => {
     'POST /booking/sessions/:sessionId/complete',
     'DELETE /booking/sessions/:sessionId',
   ]);
-  assert.equal(authorizeCalls.length, 8);
-  for (const registration of registrations.filter((item) => item.path.startsWith('/booking/'))) {
+  const bookingRegistrations = registrations.filter((item) => item.path.startsWith('/booking/'));
+  assert.equal(bookingRegistrations.length, 8);
+  for (const registration of bookingRegistrations) {
     assert.equal(registration.handlers[0], protect);
-    assert.deepEqual(authorizeCalls.shift().roles, ['customer']);
+    const authCall = authorizeCalls.find((call) => call.middleware === registration.handlers[1]);
+    assert.ok(authCall, `Missing authorize middleware for ${registration.path}`);
+    assert.deepEqual(authCall.roles, ['customer']);
   }
 });

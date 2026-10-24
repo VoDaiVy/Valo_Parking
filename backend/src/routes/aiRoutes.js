@@ -49,42 +49,41 @@ router.post('/resolve-unclear-plate', resolveUnclearPlate);
 // @route   POST /api/ai/scan-slots
 // @desc    Scan parking slots status & plates from live camera ROI
 // @access  Public / Staff
-router.post('/scan-slots', scanParkingSlots);
+router.post('/scan-slots', protect, authorize('staff', 'admin'), scanParkingSlots);
 
 // @route   POST /api/ai/auto-detect-grid
 // @desc    Auto-detect diorama grid ROI coordinates for parking slots
 // @access  Public / Staff
-router.post('/auto-detect-grid', autoDetectSlotGrid);
+router.post('/auto-detect-grid', protect, authorize('staff', 'admin'), autoDetectSlotGrid);
 
 // @route   GET /api/ai/violation-logs
 // @desc    Get global parking lot violation logs
 // @access  Public / Staff
-router.get('/violation-logs', getViolationLogs);
+router.get('/violation-logs', protect, authorize('staff', 'admin'), getViolationLogs);
 
 // @route   GET /api/ai/slot-logs/:slotCode
 // @desc    Get history logs for a specific parking slot
 // @access  Public / Staff
-router.get('/slot-logs/:slotCode', getSlotLogs);
+router.get('/slot-logs/:slotCode', protect, authorize('staff', 'admin'), getSlotLogs);
 
 // @route   POST /api/ai/resolve-violation
 // @desc    Resolve slot violation (reassign or warning)
 // @access  Public / Staff
-router.post('/resolve-violation', resolveViolation);
+router.post('/resolve-violation', protect, authorize('staff', 'admin'), resolveViolation);
 
 // @route   POST /api/ai/clear-all-violations
 // @desc    Clear/reset all active slot violations and pending audit logs (for clean testing)
 // @access  Public / Staff
-router.post('/clear-all-violations', clearAllViolations);
+router.post('/clear-all-violations', protect, authorize('admin'), clearAllViolations);
 
 // @route   GET /api/ai/driver-contact
 // @desc    Get phone/email of offending vehicle driver and VIP owner info
 // @access  Public / Staff
-router.get('/driver-contact', getDriverContactInfo);
+router.get('/driver-contact', protect, authorize('staff', 'admin'), getDriverContactInfo);
 
 // @route   POST /api/ai/send-warning-email
 // @desc    Send urgent violation warning email to vehicle driver
 // @access  Public / Staff
-router.post('/send-warning-email', sendViolationEmail);
+router.post('/send-warning-email', protect, authorize('staff', 'admin'), sendViolationEmail);
 
 module.exports = router;
-

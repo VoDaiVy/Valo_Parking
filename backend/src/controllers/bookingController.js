@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const cloudinary = require('../config/cloudinary');
 const Booking = require('../models/Booking');
 const BookingService = require('../models/BookingService');
@@ -56,6 +57,20 @@ const normalizeSlotCode = (slotCode = '') => String(slotCode).trim().toUpperCase
 const buildSlotKey = (floorId, slotCode) => `${String(floorId)}:${normalizeSlotCode(slotCode)}`;
 
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
+
+const buildBookingRequestHash = (body = {}) => crypto
+  .createHash('sha256')
+  .update(JSON.stringify({
+    vehicleId: body.vehicleId || null,
+    floorId: body.floorId || null,
+    parkingSlot: normalizeSlotCode(body.parkingSlot),
+    scheduledStart: body.scheduledStart || null,
+    scheduledEnd: body.scheduledEnd || null,
+    paymentMethod: body.paymentMethod || null,
+    voucherId: body.voucherId || null,
+    services: Array.isArray(body.services) ? body.services : [],
+  }))
+  .digest('hex');
 
 const withSession = (query, session) => (session ? query.session(session) : query);
 
@@ -605,16 +620,43 @@ exports.getAvailableSlots = async (req, res, next) => {
  * @access  Private (Customer)
  */
 exports.createBooking = async (req, res, next) => {
+  let idempotencyKey = '';
+  let idempotencyRequestHash = null;
   try {
     const { vehicleId, floorId, parkingSlot, scheduledStart, scheduledEnd, paymentMethod, voucherId } = req.body;
     const userId = req.user._id;
+    idempotencyKey = String(req.get('Idempotency-Key') || '').trim();
+    idempotencyRequestHash = idempotencyKey ? buildBookingRequestHash(req.body) : null;
+
+    if (idempotencyKey.length > 128) {
+      return res.status(400).json({ success: false, message: 'Idempotency-Key is too long' });
+    }
+
+    if (idempotencyKey) {
+      const existingBooking = await Booking.findOne({ userId, idempotencyKey });
+      if (existingBooking) {
+        if (existingBooking.idempotencyRequestHash !== idempotencyRequestHash) {
+          return res.status(409).json({
+            success: false,
+            code: 'IDEMPOTENCY_KEY_REUSED',
+            message: 'Idempotency-Key đã được dùng cho một yêu cầu khác',
+          });
+        }
+        return res.status(200).json({
+          success: true,
+          replayed: true,
+          message: 'Booking đã được tạo trước đó',
+          data: { booking: existingBooking },
+        });
+      }
+    }
 
     if (!vehicleId || !floorId || !parkingSlot || !scheduledStart || !scheduledEnd || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin bắt buộc' });
     }
 
     // 1. Kiểm tra xe đăng ký
-    const vehicle = await Vehicle.findOne({ _id: vehicleId, owner: userId });
+    const vehicle = await Vehicle.findOne({ _id: vehicleId, owner: userId, status: 'approved' });
     if (!vehicle) {
       return res.status(404).json({ success: false, message: 'Your valid vehicle not found' });
     }
@@ -698,6 +740,8 @@ exports.createBooking = async (req, res, next) => {
       durationHours: pricing.durationHours,
       prepaidAmount,
       paymentMethod,
+      idempotencyKey: idempotencyKey || undefined,
+      idempotencyRequestHash: idempotencyRequestHash || undefined,
       status: 'PENDING',
       paymentBreakdownSnapshot: {
         dynamicMultiplier: 1,
@@ -900,6 +944,20 @@ exports.createBooking = async (req, res, next) => {
       });
     }
   } catch (error) {
+    if (error?.code === 11000 && idempotencyKey) {
+      const existingBooking = await Booking.findOne({
+        userId: req.user._id,
+        idempotencyKey,
+      });
+      if (existingBooking && existingBooking.idempotencyRequestHash === idempotencyRequestHash) {
+        return res.status(200).json({
+          success: true,
+          replayed: true,
+          message: 'Booking đã được tạo trước đó',
+          data: { booking: existingBooking },
+        });
+      }
+    }
     console.error('Error in createBooking:', error);
     next(error);
   }
@@ -1978,6 +2036,7 @@ exports.suggestSmartSlot = async (req, res, next) => {
 exports.getActiveHolds = async (req, res, next) => {
   try {
     const BookingHold = require('../models/BookingHold');
+    const { maskLicensePlate } = require('../utils/publicParkingDto');
     const activeHolds = await BookingHold.find({
       status: 'active',
       expiresAt: { $gt: new Date() },
@@ -1989,7 +2048,7 @@ exports.getActiveHolds = async (req, res, next) => {
         holdId: hold._id,
         floorId: hold.floorId,
         slotCode: hold.slotCode,
-        licensePlate: hold.licensePlate,
+        maskedPlate: maskLicensePlate(hold.licensePlate),
         expiresAt: hold.expiresAt,
       })),
     });

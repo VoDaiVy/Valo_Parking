@@ -1,4 +1,5 @@
 import time
+import os
 import serial
 import serial.tools.list_ports
 import requests
@@ -11,7 +12,8 @@ import requests
 SERIAL_PORT = '/dev/cu.usbserial-0001'
 BAUD_RATE = 115200
 BACKEND_STATUS_URL = 'http://localhost:5001/api/iot/barrier-status'
-BACKEND_CLOSE_URL = 'http://localhost:5001/api/iot/close-barrier'
+BACKEND_CLOSE_URL = 'http://localhost:5001/api/iot/bridge/close-barrier'
+BRIDGE_TOKEN = os.getenv('IOT_BRIDGE_TOKEN') or os.getenv('SESSION_QR_SECRET') or os.getenv('JWT_SECRET') or 'VALO_IOT_INTERNAL_BRIDGE_DEFAULT_TOKEN'
 
 def find_esp32_port():
     ports = list(serial.tools.list_ports.comports())
@@ -108,6 +110,7 @@ def main():
                                     res_close = requests.post(
                                         BACKEND_CLOSE_URL,
                                         json={'fromBridge': True, 'gate': closed_gate},
+                                        headers={'x-bridge-token': BRIDGE_TOKEN},
                                         timeout=2
                                     )
                                     if res_close.status_code == 200:
@@ -126,6 +129,7 @@ def main():
                         res_close = requests.post(
                             BACKEND_CLOSE_URL,
                             json={'fromBridge': True, 'gate': g_name},
+                            headers={'x-bridge-token': BRIDGE_TOKEN},
                             timeout=2
                         )
                         if res_close.status_code == 200:

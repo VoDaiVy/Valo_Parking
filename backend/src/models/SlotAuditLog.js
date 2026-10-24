@@ -28,6 +28,7 @@ const slotAuditLogSchema = new mongoose.Schema(
         'OCCUPANCY_CHANGED',
         'SLOT_REASSIGNED',
         'WARNING_ISSUED',
+        'MAINTENANCE',
       ],
       required: true,
       index: true,
@@ -104,6 +105,7 @@ const slotAuditLogSchema = new mongoose.Schema(
 
 slotAuditLogSchema.index({ floorId: 1, createdAt: -1 });
 slotAuditLogSchema.index({ slotCode: 1, createdAt: -1 });
+slotAuditLogSchema.index({ slotCode: 1, floorId: 1, createdAt: -1 });
 slotAuditLogSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('SlotAuditLog', slotAuditLogSchema);

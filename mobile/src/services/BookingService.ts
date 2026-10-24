@@ -119,6 +119,7 @@ class BookingService {
   }
 
   createBooking(data: CreateBookingRequest) {
+    const idempotencyKey = data.idempotencyKey || globalThis.crypto?.randomUUID?.();
     return apiClient.post<CreateBookingResponse>('/bookings', {
       vehicleId: data.vehicleId,
       floorId: data.floorId,
@@ -127,6 +128,8 @@ class BookingService {
       scheduledEnd: data.endTime,
       paymentMethod: data.paymentMethod ?? 'wallet',
       services: data.services ?? [],
+    }, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
   }
 

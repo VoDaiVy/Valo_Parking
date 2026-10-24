@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Delete, AlertCircle, ScanLine } from 'lucide-react';
 import KioskQrScannerModal from './KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
@@ -69,14 +69,28 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
   useQrScannerListener(handleQrScan, !isVerifying);
 
 
+  const lastCheckedPlateRef = useRef(
+    formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : ''
+  );
+  const userTypedPlateRef = useRef(false);
+
   // Auto-verify logic
   useEffect(() => {
     const plate = formData.licensePlate || '';
-    // Trigger auto-verify if plate is valid and we are actively typing it
-    if (isValidLicensePlate(plate) && activeField === 'plate') {
+    const cleanPlate = plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+    // Trigger auto-verify if plate is valid, actively typed by user, and not yet verified
+    if (
+      activeField === 'plate' &&
+      userTypedPlateRef.current &&
+      isValidLicensePlate(plate) &&
+      cleanPlate !== lastCheckedPlateRef.current
+    ) {
       const timerId = setTimeout(async () => {
         try {
-          const cleanPlate = plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          lastCheckedPlateRef.current = cleanPlate;
+          userTypedPlateRef.current = false;
+
           const response = await fetch(`${API_BASE}/sessions/verify-plate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -93,12 +107,12 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
               return;
             }
 
-            // 1. Auto-fill phone if available and currently empty
-            if (verifyData.phone && !formData.phone) {
+            // 1. Auto-fill phone if available
+            if (verifyData.phone) {
               updateFormData({ phone: verifyData.phone });
             }
 
-            // 2. Auto-next for Bookings or Subscriptions
+            // 2. Auto-next for Bookings or Subscriptions (FastPass)
             if (verifyData.hasPreBooking || verifyData.isMonthly) {
               updateFormData({
                 step3Mode: verifyData.requiresSlotReallocation ? 'policy' : 'fastpass',
@@ -147,7 +161,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
                 onNext(verifyData.assignedSlot ? '3' : '2');
               }
             } else if (verifyData.phone && verifyData.phone.length >= 10) {
-              // Returning guests with phone number, subject to full check
+              // Returning guests with phone number: Tự động gán SĐT và pass thẳng qua Bước 2
               if (formData.isParkingFull || verifyData.isFull) {
                 setModalTitle(undefined);
                 setModalMessage(undefined);
@@ -167,6 +181,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
                 ticketPackageId: verifyData.pricingPackage?._id || null,
                 bookingMode: 'hourly',
               });
+              // Tự động pass qua Bước 2 tức thì, không bị delay lủng củng
               onNext('2');
             } else {
               if (formData.isParkingFull || verifyData.isFull) {
@@ -176,7 +191,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
                 updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
                 return;
               }
-              // It's a guest and parking is not full. Automatically switch to phone input.
+              // Khách mới chưa có SĐT: Tự động chuyển focus xuống ô SĐT để nhập
               setActiveField('phone');
             }
           } else {
@@ -190,10 +205,10 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         } catch (e) {
           console.error("Auto verify failed", e);
         }
-      }, 800); // 0.8s debounce to allow user to finish typing
+      }, 900); // Ngưng gõ khoảng 0.9s (giữa nửa giây và 1 giây) mới bắt đầu kiểm tra biển số
       return () => clearTimeout(timerId);
     }
-  }, [formData.licensePlate, activeField]);
+  }, [formData.licensePlate, activeField, onNext]);
 
   // Auto-verify phone
   useEffect(() => {
@@ -256,6 +271,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         updateFormData({ phone: currentPhone + key });
       }
     } else if (activeField === 'plate') {
+      userTypedPlateRef.current = true;
       if ((formData.licensePlate || '').length < 15) {
         const currentRaw = (formData.licensePlate || '') + key;
         const clean = currentRaw.replace(/[^A-Z0-9]/g, '');
@@ -274,12 +290,14 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
     if (activeField === 'phone' && (formData.phone || '').length > 0) {
       updateFormData({ phone: (formData.phone || '').slice(0, -1) });
     } else if (activeField === 'plate' && (formData.licensePlate || '').length > 0) {
+      userTypedPlateRef.current = true;
       updateFormData({ licensePlate: (formData.licensePlate || '').slice(0, -1) });
     }
   };
 
   const handleSpace = () => {
     if (activeField === 'plate') {
+      userTypedPlateRef.current = true;
       updateFormData({ licensePlate: (formData.licensePlate || '') + ' ' });
     }
   };

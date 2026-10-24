@@ -249,19 +249,27 @@ exports.getFloorSlots = async (req, res) => {
   try {
     const { id } = req.params;
     const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
+    const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
 
     const slots = await Slot.find({ floorID: id }).populate('zoneID', 'zoneName zoneType').lean();
 
-    const rawEntitlements = await MembershipSlotEntitlement.find({
-      floorId: id,
-      status: { $in: ['active', 'transfer_locked'] },
-      expireAt: { $gt: new Date() },
-    })
-      .populate('packageId', 'type name price')
-      .populate('ownerId', 'username email phone');
+    const [rawEntitlements, activeMaintenanceLogs] = await Promise.all([
+      MembershipSlotEntitlement.find({
+        floorId: id,
+        status: { $in: ['active', 'transfer_locked'] },
+        expireAt: { $gt: new Date() },
+      })
+        .populate('packageId', 'type name price')
+        .populate('ownerId', 'username email phone'),
+      SlotMaintenanceLog.find({
+        slotID: { $in: slots.map(s => s._id) },
+        $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
+      }).select('slotID').lean()
+    ]);
       
     // Lọc bỏ những entitlement của user đã bị xoá (orphan)
     const activeEntitlements = rawEntitlements.filter(e => e.ownerId);
+    const maintenanceSet = new Set(activeMaintenanceLogs.map(m => String(m.slotID)));
 
     const slotPackageMap = {};
     const slotSubscriptionMap = {};
@@ -279,11 +287,12 @@ exports.getFloorSlots = async (req, res) => {
 
     const enrichedSlots = slots.map(slot => {
       const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
+      const isUnderMaintenance = slot.status === 'maintenance' || maintenanceSet.has(String(slot._id));
       let resolvedStatus = slot.status;
-      if (slot.status !== 'maintenance') {
-        if (isPhysicallyOccupied || slot.status === 'occupied') {
-          resolvedStatus = 'occupied';
-        }
+      if (isUnderMaintenance) {
+        resolvedStatus = 'maintenance';
+      } else if (isPhysicallyOccupied || slot.status === 'occupied') {
+        resolvedStatus = 'occupied';
       }
       return {
         ...slot,

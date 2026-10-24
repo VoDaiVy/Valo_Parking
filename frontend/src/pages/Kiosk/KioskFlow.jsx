@@ -8,6 +8,11 @@ import KioskLayout from './KioskLayout';
 import { API_BASE } from '../../services/api';
 import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
 
+const createRequestKey = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `kiosk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 const createEmptyKioskFormData = () => ({
   licensePlate: '',
   phone: '',
@@ -30,6 +35,7 @@ const createEmptyKioskFormData = () => ({
   hasPreBooking: false,
   isVIP: false,
   isRegisteredVehicle: false,
+  entryIdempotencyKey: createRequestKey(),
 });
 
 export default function KioskFlow() {
@@ -111,7 +117,7 @@ export default function KioskFlow() {
         licensePlate: cleanPlate,
         startTime: now.toISOString(),
         endTime: endTime.toISOString(),
-      });
+      }, { anonymous: true });
 
       if (!res.ok) {
         alert('Ô đỗ này vừa có người khác chọn. Vui lòng chọn ô khác!');
@@ -152,7 +158,10 @@ export default function KioskFlow() {
       const cleanPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
       const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': formData.entryIdempotencyKey,
+        },
         body: JSON.stringify({
           licensePlate: cleanPlate,
           phone: formData.phone,
@@ -192,7 +201,10 @@ export default function KioskFlow() {
   const handleFastPassEntry = async () => {
     const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': formData.entryIdempotencyKey,
+      },
       body: JSON.stringify({
         licensePlate: formData.licensePlate,
         phone: formData.phone,

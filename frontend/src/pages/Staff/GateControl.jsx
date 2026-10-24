@@ -45,7 +45,7 @@ export default function GateControl() {
   const [isExitScanning, setIsExitScanning] = useState(false);
   const [isExitCheckingOut, setIsExitCheckingOut] = useState(false);
   const [exitCameraActive, setExitCameraActive] = useState(true);
-  const [cashReceived, setCashReceived] = useState(false);
+  const [cashReceivedAmount, setCashReceivedAmount] = useState('');
 
   // ─── AI RESOLUTION MODAL STATE ───
   const [showAiModal, setShowAiModal] = useState(false);
@@ -65,7 +65,10 @@ export default function GateControl() {
   // ─── 1. FETCH STATUS VÀ SOCKET LẮNG NGHE ───
   const fetchBarrierStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/iot/barrier-status`);
+      const token = localStorage.getItem('accessToken');
+      const res = await fetch(`${API_BASE}/iot/barrier-status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await res.json();
       if (data.success && data.gates) {
         setGatesState(prev => ({ ...prev, ...data.gates }));
@@ -245,7 +248,10 @@ export default function GateControl() {
       // 1. Quét AI OCR
       const scanRes = await fetch(`${API_BASE}/ai/scan-plate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+        },
         body: JSON.stringify({ image: imageToScan })
       });
       const scanData = await scanRes.json();
@@ -278,7 +284,10 @@ export default function GateControl() {
     try {
       const res = await fetch(`${API_BASE}/sessions/verify-plate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+        },
         body: JSON.stringify({ licensePlate: cleanPlate })
       });
       const data = await res.json();
@@ -323,7 +332,11 @@ export default function GateControl() {
     try {
       const res = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+          'Idempotency-Key': `staff-entry:${plate}:${Date.now()}`,
+        },
         body: JSON.stringify({
           licensePlate: plate,
           phone: entryPhone || verify?.phone || '',
@@ -406,19 +419,26 @@ export default function GateControl() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': `staff-exit-scan:${cleanPlate}`,
         },
-        body: JSON.stringify({ licensePlate: cleanPlate })
+        body: JSON.stringify({ licensePlate: cleanPlate, exitImageBase64: exitSnapshot || null })
       });
       const data = await res.json();
       if (data.success) {
-        setExitInvoiceData(data);
-        setCashReceived(false);
+        const invoice = data.data || data;
+        setExitInvoiceData({
+          ...invoice,
+          checkoutToken: invoice.checkoutToken || data.checkoutToken || null,
+          totalAmount: Number(invoice.amountToPay || 0),
+          parkingFee: Number(invoice.totalPrice || 0),
+        });
+        setCashReceivedAmount('');
         toast.success(`Đã tìm thấy phiên gửi xe của ${cleanPlate}`);
 
         // Nếu là VIP miễn phí hoặc tổng tiền = 0 và đang bật Auto-Pilot
-        if (autoPilot && data.totalAmount === 0) {
-          handleExitCheckOut(data);
+        if (autoPilot && Number(invoice.amountToPay || 0) === 0) {
+          handleExitCheckOut(invoice);
         }
       } else {
         setExitInvoiceData(null);
@@ -444,26 +464,32 @@ export default function GateControl() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': `staff-checkout:${inv.session._id}:${cashReceivedAmount || 'payos'}`,
         },
         body: JSON.stringify({
           sessionId: inv.session._id,
           exitImageBase64: exitSnapshot || null,
-          paymentMethod: cashReceived ? 'CASH' : 'PAYOS',
+          paymentMethod: cashReceivedAmount ? 'CASH' : 'PAYOS',
+          cashReceivedAmount: cashReceivedAmount ? Number(cashReceivedAmount) : null,
+          checkoutToken: inv.checkoutToken || null,
           exitCamera: 'CAM_GATE_EXIT_01',
           exitGate: 'EXIT_1'
         })
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`✅ Check-out thành công cho xe ${inv.session.licensePlate}! Đang mở cổng Làn ra...`);
+        const changeMessage = data.data?.changeAmount != null
+          ? ` Tiền thừa: ${formatCurrency(data.data.changeAmount)}.`
+          : '';
+        toast.success(`✅ Check-out thành công cho xe ${inv.session.licensePlate}!${changeMessage} Đang mở cổng Làn ra...`);
         // Mở Barrier Làn ra
         await triggerBarrier('open', 'EXIT_1', inv.session.licensePlate);
         // Reset form
         setExitPlate('');
         setExitInvoiceData(null);
         setExitSnapshot(null);
-        setCashReceived(false);
+        setCashReceivedAmount('');
         fetchFloorsAndSessions();
       } else {
         toast.error(data.message || 'Check-out thất bại');
@@ -492,7 +518,10 @@ export default function GateControl() {
 
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+        },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -992,23 +1021,46 @@ export default function GateControl() {
           </div>
 
           {/* Quick Select from Active Sessions in Lot */}
-          <div className="mt-2 flex items-center justify-between text-[11px] text-white/40 px-1">
-            <span>Hoặc chọn nhanh xe đang trong bãi:</span>
-            <select
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val) {
-                  setExitPlate(val);
-                  lookupExitSession(val);
-                }
+          <div className="mt-2 space-y-2 px-1 text-[11px] text-white/40">
+            <div className="flex items-center justify-between gap-2">
+              <span>Hoặc chọn nhanh xe đang trong bãi:</span>
+              <select
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    setExitPlate(val);
+                    lookupExitSession(val);
+                  }
+                }}
+                className="min-w-0 flex-1 bg-black/60 text-sky-400 border border-white/15 rounded px-2 py-1 text-[10px] font-bold focus:outline-none"
+              >
+                <option value="">-- Danh sách xe đang gửi ({activeSessionsList.length}) --</option>
+                {activeSessionsList.map(s => (
+                  <option key={s._id} value={s.licensePlate}>{s.licensePlate} ({s.parkingSlot || 'Chưa gán'})</option>
+                ))}
+              </select>
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                lookupExitSession(exitPlate);
               }}
-              className="bg-black/60 text-sky-400 border border-white/15 rounded px-2 py-0.5 text-[10px] font-bold focus:outline-none"
+              className="flex items-center gap-2"
             >
-              <option value="">-- Danh sách xe đang gửi ({activeSessionsList.length}) --</option>
-              {activeSessionsList.map(s => (
-                <option key={s._id} value={s.licensePlate}>{s.licensePlate} ({s.parkingSlot || 'Chưa gán'})</option>
-              ))}
-            </select>
+              <input
+                value={exitPlate}
+                onChange={(event) => setExitPlate(event.target.value.toUpperCase())}
+                placeholder="Nhập biển số để tìm session"
+                className="min-w-0 flex-1 rounded border border-white/15 bg-black/60 px-3 py-2 text-xs font-bold text-white outline-none placeholder:text-white/30 focus:border-sky-400"
+              />
+              <button
+                type="submit"
+                disabled={!exitPlate.trim() || isExitScanning}
+                className="rounded bg-sky-500 px-3 py-2 text-[10px] font-black text-black hover:bg-sky-400 disabled:opacity-50"
+              >
+                Tìm xe
+              </button>
+            </form>
           </div>
 
           {/* Security Double-Check (Side-by-Side Images) */}
@@ -1048,6 +1100,54 @@ export default function GateControl() {
                 </div>
               </div>
 
+              {/* Cảnh báo vi phạm được Camera AI phát hiện */}
+              {exitInvoiceData.violationDetails && (
+                <div className="rounded-lg border border-red-500/50 bg-red-950/70 p-3 text-xs text-red-200 space-y-2">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-red-500/20">
+                    <span className="flex items-center gap-1.5 font-black text-red-400 uppercase tracking-wide text-[11px]">
+                      <AlertTriangle size={15} className="animate-pulse text-red-400" />
+                      Phát hiện vi phạm đỗ xe (Camera AI)
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-mono text-[10px] font-bold border border-red-500/30">
+                      CẢNH BÁO
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-white font-medium">
+                      <strong className="text-red-300">Lý do:</strong>{' '}
+                      {exitInvoiceData.violationDetails.violationMessage || `Đỗ sai vị trí tại ô ${exitInvoiceData.violationDetails.slotCode}`}
+                    </p>
+                    <div className="flex items-center gap-1.5 text-slate-300 text-[11px]">
+                      <Clock size={12} className="text-amber-400 flex-shrink-0" />
+                      <span>
+                        <strong>Thời gian:</strong> Từ{' '}
+                        <span className="text-white font-mono font-bold">
+                          {new Date(exitInvoiceData.violationDetails.detectedAt).toLocaleTimeString('vi-VN')}
+                        </span>{' '}
+                        đến{' '}
+                        <span className="text-white font-mono font-bold">
+                          {exitInvoiceData.violationDetails.resolvedAt
+                            ? new Date(exitInvoiceData.violationDetails.resolvedAt).toLocaleTimeString('vi-VN')
+                            : 'Hiện tại'}
+                        </span>{' '}
+                        ({exitInvoiceData.violationDetails.durationMinutes} phút)
+                      </span>
+                    </div>
+                  </div>
+
+                  {exitInvoiceData.violationDetails.evidenceSnapshot && (
+                    <div className="rounded-md overflow-hidden border border-red-500/30 max-h-[80px] bg-black/60 flex items-center justify-center">
+                      <img src={exitInvoiceData.violationDetails.evidenceSnapshot} alt="Evidence" className="w-full h-auto max-h-[80px] object-contain" />
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-amber-300/80 italic">
+                    * Nhân viên kiểm tra và giải thích lỗi vi phạm cho khách trước khi mở barrier ra.
+                  </p>
+                </div>
+              )}
+
               {/* Invoice Breakdown */}
               <div className="rounded-lg bg-black/60 p-3 text-xs space-y-1.5 border border-white/5">
                 <div className="flex justify-between text-white/60">
@@ -1070,17 +1170,25 @@ export default function GateControl() {
                 </div>
               </div>
 
-              {/* Cash Paid Confirmation Checkbox */}
+              {/* Cash Collection */}
               {exitInvoiceData.totalAmount > 0 && (
-                <label className="flex items-center gap-2 p-2.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 cursor-pointer text-xs font-bold text-yellow-300">
+                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
+                  <label className="font-bold">💵 Khách đưa tiền mặt</label>
                   <input
-                    type="checkbox"
-                    checked={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.checked)}
-                    className="h-4 w-4 rounded border-yellow-400 text-yellow-500 focus:ring-0"
+                    type="number"
+                    min={exitInvoiceData.totalAmount}
+                    step="1000"
+                    value={cashReceivedAmount}
+                    onChange={(e) => setCashReceivedAmount(e.target.value)}
+                    placeholder={`Tối thiểu ${formatCurrency(exitInvoiceData.totalAmount)}`}
+                    className="mt-2 w-full rounded-lg border border-yellow-500/40 bg-black/60 px-3 py-2 font-mono text-white outline-none"
                   />
-                  <span>💵 Đã thu tiền mặt trực tiếp từ khách hàng</span>
-                </label>
+                  {Number(cashReceivedAmount) >= Number(exitInvoiceData.totalAmount) && (
+                    <p className="mt-2 font-bold text-emerald-300">
+                      Tiền thừa: {formatCurrency(Number(cashReceivedAmount) - Number(exitInvoiceData.totalAmount))}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1105,7 +1213,12 @@ export default function GateControl() {
               <button
                 type="button"
                 onClick={() => handleExitCheckOut()}
-                disabled={isExitCheckingOut || !exitInvoiceData}
+                disabled={
+                  isExitCheckingOut
+                  || !exitInvoiceData
+                  || (Number(exitInvoiceData.totalAmount || 0) > 0
+                    && Number(cashReceivedAmount) < Number(exitInvoiceData.totalAmount))
+                }
                 className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-xs font-black text-black hover:bg-sky-400 disabled:opacity-50 transition shadow-lg shadow-sky-500/20"
               >
                 {isExitCheckingOut ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
