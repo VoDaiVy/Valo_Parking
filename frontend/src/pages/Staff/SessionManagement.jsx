@@ -3,6 +3,8 @@ import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, Shie
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
+import './components/staffManagement.css';
+import './components/sessionDetails.css';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createSessionVerification, verifiedSessionForQuery } from './sessionDeepLink.js';
@@ -136,7 +138,7 @@ export default function SessionManagement() {
   );
 
   return (
-    <div className="min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
+    <div className="g3-management-page g3-session-page min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
       {adminDeepLink && verificationStatus !== 'verified' && (
         <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
           {verificationStatus === 'loading' ? 'Đang xác minh phiên đỗ xe từ hệ thống...'
@@ -149,13 +151,15 @@ export default function SessionManagement() {
           }}>Thử lại</button>}
         </div>
       )}
-      <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="g3-management-content g3-header mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-            <MonitorCheck size={12} /> Session Manager
-          </div>
+          {isAdminPage && (
+            <div className="g3-eyebrow mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+              <MonitorCheck size={12} /> Session Manager
+            </div>
+          )}
           <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>
-          <p className="mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
+          <p className="g3-subtitle mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
         </div>
 
         {/* AI Blurred Plate Assistant Button */}
@@ -166,17 +170,17 @@ export default function SessionManagement() {
             setAiInitialImage(null);
             setShowAiModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
+          className="g4-ai-plate-trigger g3-header-action flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>AI Plate Assistant</span>
         </button>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0b0b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+      <section className="g3-management-content g3-session-panel overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0b0b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
         {!loading && !error && (
-          <div className="flex flex-col gap-3 border-b border-white/[0.07] bg-[#0d0d0d] p-4 lg:flex-row lg:items-center">
-            <label className="relative min-w-0 flex-1 lg:max-w-md">
+          <div className="g3-toolbar flex flex-col gap-3 border-b border-white/[0.07] bg-[#0d0d0d] p-4 lg:flex-row lg:items-center">
+            <label className="g3-search relative min-w-0 flex-1 lg:max-w-md">
               <span className="sr-only">Search sessions</span>
               <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600" />
               <input
@@ -248,7 +252,7 @@ export default function SessionManagement() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto [scrollbar-color:rgba(255,213,85,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#d7b94a]/25">
+            <div className="g3-table-scroll overflow-x-auto [scrollbar-color:rgba(255,213,85,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#d7b94a]/25">
               <table className="w-full border-collapse text-left text-sm whitespace-nowrap">
               <thead className="bg-[#14120c]">
                 <tr>
@@ -263,8 +267,8 @@ export default function SessionManagement() {
               </thead>
                 <tbody>
                 {pagination.items.map(session => (
-                  <tr key={session._id} className="border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
-                    <td className="px-4 py-3 font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
+                  <tr key={session._id} className="g3-data-row border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
+                    <td className="g3-plate px-4 py-3 font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
                     <td className="px-4 py-3 font-medium text-slate-400">{session.phone || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${
@@ -278,11 +282,11 @@ export default function SessionManagement() {
                     </td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkInTime)}</td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkOutTime)}</td>
-                    <td className="px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
+                    <td className="g3-price px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => selectManualSession(session)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
+                        className="g3-action inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
                         <ShieldCheck size={14} /> View Details
                       </button>
@@ -309,7 +313,7 @@ export default function SessionManagement() {
             </div>
 
             {pagination.totalItems > 0 && (
-              <div className="flex flex-col gap-4 border-t border-white/[0.07] bg-[#0d0d0d] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div className="g3-pagination flex flex-col gap-4 border-t border-white/[0.07] bg-[#0d0d0d] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p className="text-xs font-semibold text-slate-500">
                   Showing{' '}
                   <span className="text-slate-300">{pagination.startIndex + 1}-{pagination.endIndex}</span>
@@ -372,35 +376,35 @@ export default function SessionManagement() {
 
       {/* Detail Modal */}
       {selectedSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] text-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#ffd555]/15 bg-[#14120c] p-6">
+        <div className="g4-session-details fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="g4-session-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] text-white shadow-2xl">
+            <div className="g4-session-header flex items-center justify-between border-b border-[#ffd555]/15 bg-[#14120c] p-6">
               <div>
-                <h3 className="text-xl font-bold text-[#ffd555]">Session Details</h3>
-                <p className="text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
+                <h3 className="g4-session-title text-xl font-bold text-[#ffd555]">Session Details</h3>
+                <p className="g4-session-subtitle text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
               </div>
               <button 
                 onClick={() => selectManualSession(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffd555]"
+                className="g4-session-dismiss flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffd555]"
               >
                 <X size={18} />
               </button>
             </div>
             
-            <div className="p-6 grid grid-cols-2 gap-8">
+            <div className="g4-session-body p-6 grid grid-cols-2 gap-8">
               {/* Entry Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
+                  <div className="g4-session-icon flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
                   <h4 className="font-bold text-lg">Entry Record</h4>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
+                <div className="g4-session-time rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
                   <p className="mb-1 text-sm text-white/40">Check In Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkInTime)}</p>
                 </div>
-                <div className="group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
                   {selectedSession.entryImage_url ? (
                     <img src={selectedSession.entryImage_url} alt="Entry" className="w-full h-full object-cover" />
                   ) : (
@@ -415,16 +419,16 @@ export default function SessionManagement() {
               {/* Exit Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
+                  <div className="g4-session-icon flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
                   <h4 className="font-bold text-lg">Exit Record</h4>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
+                <div className="g4-session-time rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
                   <p className="mb-1 text-sm text-white/40">Check Out Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkOutTime)}</p>
                 </div>
-                <div className="group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
                   {selectedSession.exitImage_url ? (
                     <img src={selectedSession.exitImage_url} alt="Exit" className="w-full h-full object-cover" />
                   ) : (
@@ -437,10 +441,10 @@ export default function SessionManagement() {
               </div>
             </div>
 
-            <div className="flex justify-end border-t border-white/[0.07] bg-[#0d0d0d] p-6">
+            <div className="g4-session-footer flex justify-end border-t border-white/[0.07] bg-[#0d0d0d] p-6">
               <button 
                 onClick={() => selectManualSession(null)}
-                className="rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
+                className="g4-session-close rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
               >
                 Close
               </button>

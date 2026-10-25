@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import '../Staff/components/staffManagement.css';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import SubscriptionDeepLink from './SubscriptionDeepLink.jsx';
 import { createSubscriptionLookup, includeLinkedSubscription } from './subscriptionDeepLink.js';
@@ -110,13 +111,13 @@ const getStoredRole = () => {
 
 function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300' }) {
   return (
-    <div className="flex min-w-0 items-center gap-4 px-5 py-4 md:border-l md:border-white/10 md:first:border-l-0">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white/[0.03] ${tone}`}>
+    <div className="g3-summary-item flex min-w-0 items-center gap-4 px-5 py-4 md:border-l md:border-white/10 md:first:border-l-0">
+      <div className={`g3-summary-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white/[0.03] ${tone}`}>
         <Icon size={18} />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-        <p className="admin-type-kpi mt-1 font-mono text-xl font-black text-white">{value}</p>
+        <p className="g3-metric-label text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
+        <p className="g3-metric-value admin-type-kpi mt-1 font-mono text-xl font-black text-white">{value}</p>
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{support}</p>
       </div>
     </div>
@@ -148,7 +149,7 @@ function SlotBadge({ slot }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-2 rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2 text-xs font-black text-yellow-300 transition group-hover:border-yellow-300/35">
+    <span className="g3-slot-badge inline-flex items-center gap-2 rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2 text-xs font-black text-yellow-300 transition group-hover:border-yellow-300/35">
       <ParkingCircle size={14} />
       <span className="text-slate-300">{slot.floorId?.name || 'Floor'}</span>
       <span className="text-yellow-300">{slot.slotCode}</span>
@@ -166,11 +167,11 @@ function MembershipRow({ sub, index, cardRef }) {
   return (
     <article
       ref={cardRef}
-      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#141a25] motion-reduce:transform-none motion-reduce:transition-none"
+      className="g3-membership-row group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#141a25] motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 35}ms` }}
     >
-      <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-yellow-300 to-amber-500 opacity-0 transition group-hover:opacity-80" />
-      <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px] md:items-center md:px-5">
+      <div className="g3-membership-edge absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-yellow-300 to-amber-500 opacity-0 transition group-hover:opacity-80" />
+      <div className="g3-membership-grid grid gap-4 px-4 py-4 md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px] md:items-center md:px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300">
@@ -192,7 +193,7 @@ function MembershipRow({ sub, index, cardRef }) {
           <div className="text-right md:text-left">
             <p className="font-black text-slate-100">{sub.ticketPackage?.name || 'Unknown Package'}</p>
             {packageType && (
-              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getPackageClass(packageType)}`}>
+              <span className={`g3-package-badge mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getPackageClass(packageType)}`}>
                 {packageType}
               </span>
             )}
@@ -213,7 +214,7 @@ function MembershipRow({ sub, index, cardRef }) {
         <div className="flex items-start justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Amount</span>
           <div className="text-right md:text-left">
-            <p className="font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
+            <p className="g3-membership-amount font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
             {sub.paymentStatus && <p className="mt-1 text-xs font-semibold text-slate-500">{titleCase(sub.paymentStatus)}</p>}
           </div>
         </div>
@@ -498,32 +499,34 @@ export default function SubscriptionManagement() {
   const hasFilters = searchTerm || statusFilter !== 'all' || packageFilter !== 'all';
 
   return (
-    <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
-      <div className="relative mx-auto max-w-[1400px]">
+    <div className="g3-management-page g3-vip-page relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
+      <div className="g3-vip-ambient pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
+      <div className="g3-vip-grid pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
+      <div className="g3-management-content g3-vip-main relative mx-auto max-w-[1400px]">
         {linkedId && <SubscriptionDeepLink key={linkedKey} state={currentLinkedState} loading={loading} cardRef={cardRef}/>}
-        <header className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
+        <header className="g3-header mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-              <Crown size={12} /> VIP Subscriptions
-            </div>
+            {isAdmin && (
+              <div className="g3-eyebrow mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+                <Crown size={12} /> VIP Subscriptions
+              </div>
+            )}
             <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">VIP Memberships</h1>
-            <p className="mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
+            <p className="g3-subtitle mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
           </div>
 
           <button
             type="button"
             onClick={fetchSubscriptions}
             disabled={loading || transferLoading}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
+            className="g3-action g3-header-action inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
           >
             <RefreshCw className={`h-4 w-4 ${loading || transferLoading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </header>
 
-        <section className={`mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+        <section className={`g3-metrics-strip g3-vip-metrics mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
           <SummaryItem
             icon={Crown}
             label="Total VIP"
@@ -555,8 +558,8 @@ export default function SubscriptionManagement() {
           )}
         </section>
 
-        <section className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
+        <section className="g3-toolbar mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="g3-search relative flex-1">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
@@ -640,8 +643,8 @@ export default function SubscriptionManagement() {
           <TransferReviewSection transfers={transfers} onReview={reviewTransfer} />
         )}
 
-        <section>
-          <div className="hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
+        <section className="g3-membership-list">
+          <div className="g3-membership-columns hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
             <span>Customer</span>
             <span>Package</span>
             <span>VIP Slot</span>
@@ -675,14 +678,14 @@ export default function SubscriptionManagement() {
                     setStatusFilter('all');
                     setPackageFilter('all');
                   }}
-                  className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
+                  className="g3-action mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
                 >
                   Clear filters
                 </button>
               )}
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="g3-membership-rows space-y-2">
               {visibleSubscriptions.map((sub, index) => (
                 <MembershipRow key={sub._id} sub={sub} index={index} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />
               ))}

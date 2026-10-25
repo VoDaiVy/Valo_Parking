@@ -1,0 +1,184 @@
+/* Neutral operations foundation with emerald accents. Role scope also covers Staff body portals. */
+body[data-valo-typography="staff"] {
+  --staff-bg: #080B0F;
+  --staff-surface: #0D1117;
+  --staff-surface-raised: #111820;
+  --staff-hover-surface: #15212A;
+  --staff-primary: #10B981;
+  --staff-primary-hover: #54E3B0;
+  --staff-accent: #10B981;
+  --staff-text-primary: #F5F7FA;
+  --staff-text-secondary: #9AADC0;
+  --staff-border: #222D36;
+  --staff-warning: #E7C278;
+  --staff-error: #F2A5AF;
+  --staff-offline: #94A3B8;
+  --staff-occupied: #B7C8D1;
+  --staff-available: #6EE7B7;
+  --staff-maintenance: #F2A5AF;
+  --staff-font-family: Montserrat, sans-serif;
+  --staff-text-page: 30px;
+  --staff-text-section: 20px;
+  --staff-text-card: 16px;
+  --staff-text-body: 14px;
+  --staff-text-label: 13px;
+  --staff-text-kpi: 24px;
+  font-family: var(--staff-font-family);
+  font-size: var(--staff-text-body);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+body[data-valo-typography="staff"] .staff-type-page-title {
+  font-size: var(--staff-text-page);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--staff-text-primary);
+  letter-spacing: -0.025em;
+}
+body[data-valo-typography="staff"] .staff-type-section-title {
+  font-size: var(--staff-text-section);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--staff-text-primary);
+}
+body[data-valo-typography="staff"] .staff-type-card-title {
+  font-size: var(--staff-text-card);
+  font-weight: 600;
+  line-height: 1.4;
+}
+body[data-valo-typography="staff"] .staff-type-kpi {
+  font-size: var(--staff-text-kpi);
+  font-weight: 700;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+body[data-valo-typography="staff"] .staff-type-financial {
+  font-variant-numeric: tabular-nums;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell,
+body[data-valo-typography="staff"] .dashboard-page-content {
+  background: var(--staff-bg);
+  color: var(--staff-text-primary);
+}
+body[data-valo-typography="staff"] .staff-dashboard-sidebar,
+body[data-valo-typography="staff"] .staff-dashboard-topbar {
+  background: #0A0D12;
+  border-color: var(--staff-border);
+  box-shadow: 0 1px 0 #00000030;
+  transition-duration: 200ms;
+}
+body[data-valo-typography="staff"] .staff-dashboard-topbar { background: #0B0F14; }
+/* Normalize only page canvases and explicit legacy neutral utility surfaces.
+   Semantic status colors and the floating assistant sibling are excluded. */
+body[data-valo-typography="staff"] .dashboard-page-content :where(.bg-\[\#080808\], .bg-\[\#050505\], .bg-\[\#0D0D0D\]) { background-color: var(--staff-bg); }
+body[data-valo-typography="staff"] .dashboard-page-content :where(.bg-\[\#111111\], .bg-\[\#111\], .bg-\[\#0b0b0b\], .bg-\[\#0d0d0d\], .bg-\[\#14120c\]) { background-color: var(--staff-surface); }
+body[data-valo-typography="staff"] .staff-dashboard-topbar,
+body[data-valo-typography="staff"] .staff-dashboard-sidebar > div:first-child {
+  height: 70px;
+}
+body[data-valo-typography="staff"] .staff-sidebar-expanded { width: 272px; }
+body[data-valo-typography="staff"] .staff-shell-brand {
+  background: none;
+  color: var(--staff-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+body[data-valo-typography="staff"] .staff-shell-caption {
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--staff-text-secondary);
+}
+body[data-valo-typography="staff"] .staff-dashboard-sidebar nav a {
+  min-height: 44px;
+  padding: 10px 12px;
+  gap: 8px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--staff-text-secondary);
+  transition: color 200ms, background-color 200ms, border-color 200ms;
+}
+body[data-valo-typography="staff"] .staff-dashboard-sidebar nav a:hover {
+  background: var(--staff-hover-surface);
+  color: var(--staff-text-primary);
+  border-color: var(--staff-border);
+}
+body[data-valo-typography="staff"] .staff-dashboard-sidebar nav a[aria-current="page"] {
+  color: var(--staff-accent);
+  background: #10B98114;
+  border-color: #10B98155;
+}
+body[data-valo-typography="staff"] .staff-dashboard-sidebar nav svg { width: 18px; height: 18px; }
+body[data-valo-typography="staff"] .staff-sidebar-expanded nav a { white-space: normal; }
+body[data-valo-typography="staff"] .staff-sidebar-expanded .staff-shell-nav-label {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+body[data-valo-typography="staff"] .staff-dashboard-collapse {
+  width: 44px;
+  height: 44px;
+  right: -22px;
+  background: var(--staff-surface-raised);
+  color: var(--staff-text-secondary);
+  border-color: var(--staff-border);
+}
+body[data-valo-typography="staff"] .staff-dashboard-topbar > button,
+body[data-valo-typography="staff"] .staff-shell-toolbar > button,
+body[data-valo-typography="staff"] .staff-shell-toolbar > .relative > button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--staff-text-secondary);
+  background: var(--staff-surface-raised);
+  border-color: var(--staff-border);
+  transition: color 200ms, background-color 200ms, border-color 200ms;
+}
+body[data-valo-typography="staff"] .staff-dashboard-topbar > button:hover,
+body[data-valo-typography="staff"] .staff-shell-toolbar > button:hover,
+body[data-valo-typography="staff"] .staff-shell-toolbar > .relative > button:hover { background: var(--staff-hover-surface); color: var(--staff-text-primary); border-color: var(--staff-primary); }
+body[data-valo-typography="staff"] .staff-shell-toolbar > button[title="Logout"]:hover { color: var(--staff-error); border-color: #F2A5AF66; }
+body[data-valo-typography="staff"] .staff-shell-role-badge { background: var(--staff-surface-raised); color: var(--staff-text-secondary); border-color: var(--staff-border); }
+body[data-valo-typography="staff"] .staff-shell-role-badge span { font-size: 12px; font-weight: 600; text-transform: none; }
+body[data-valo-typography="staff"] .staff-shell-avatar { background: var(--staff-surface-raised); color: var(--staff-text-primary); }
+body[data-valo-typography="staff"] .staff-shell-notifications { width: min(320px, calc(100vw - 24px)); border-color: var(--staff-border); background: var(--staff-surface); }
+body[data-valo-typography="staff"] .staff-shell-notifications > div:first-child,
+body[data-valo-typography="staff"] .staff-shell-notifications > div:last-child { background: var(--staff-surface-raised); border-color: var(--staff-border); }
+body[data-valo-typography="staff"] .staff-shell-notifications p { font-size: 13px; line-height: 1.5; }
+body[data-valo-typography="staff"] .staff-dashboard-sidebar button:focus-visible,
+body[data-valo-typography="staff"] .staff-dashboard-sidebar a:focus-visible,
+body[data-valo-typography="staff"] .staff-dashboard-topbar button:focus-visible { outline: 2px solid var(--staff-accent); outline-offset: 3px; }
+
+@media (min-width: 1024px) and (max-width: 1600px), (min-width: 1024px) and (max-height: 900px) {
+  body[data-valo-typography="staff"] .staff-sidebar-expanded { width: 256px; }
+  body[data-valo-typography="staff"] .staff-dashboard-topbar { padding-inline: 20px; }
+}
+@media (min-width: 1024px) and (max-width: 1400px), (min-width: 1024px) and (max-height: 780px) {
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar nav { padding-block: 8px; }
+  body[data-valo-typography="staff"] .staff-shell-toolbar { gap: 8px; }
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="staff"] .staff-dashboard-topbar { padding-inline: 12px; }
+  body[data-valo-typography="staff"] .staff-shell-toolbar { gap: 6px; }
+  body[data-valo-typography="staff"] .staff-shell-role-badge { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-valo-typography="staff"] .staff-dashboard-shell,
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar,
+  body[data-valo-typography="staff"] .staff-dashboard-topbar,
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar nav a,
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar button,
+  body[data-valo-typography="staff"] .staff-dashboard-topbar button,
+  body[data-valo-typography="staff"] .staff-dashboard-topbar .staff-shell-toolbar > .relative > button { transition: none; }
+}

@@ -9,6 +9,7 @@ import {
   RefreshCw, Eye, Lock
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import './components/staffManagement.css';
 import {
   getOperationalViewState,
   getResponseAvailability,
@@ -119,7 +120,7 @@ function SkeletonRow() {
 function StatCard({ icon: Icon, label, value, gradient, glow, loading, unavailable }) {
   return (
     <div
-      className="relative rounded-xl p-3 overflow-hidden cursor-default group transition-all duration-300 hover:scale-[1.02]"
+      className="g3-metric relative rounded-xl p-3 overflow-hidden cursor-default group transition-all duration-300 hover:scale-[1.02]"
       style={{
         background: 'rgba(255,255,255,0.03)',
         border: '1px solid rgba(255,255,255,0.08)',
@@ -129,15 +130,15 @@ function StatCard({ icon: Icon, label, value, gradient, glow, loading, unavailab
       onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(0,0,0,0.3)'; }}
     >
       {/* sweep shimmer */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+      <div className="g3-metric-decor absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
         style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%)' }} />
       {/* gradient blob */}
-      <div className={`absolute -top-6 -right-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-xl`} />
+      <div className={`g3-metric-decor absolute -top-6 -right-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-xl`} />
 
       <div className="relative flex items-start justify-between">
         <div>
-          <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold mb-1">{label}</p>
-          <p className="text-2xl font-bold text-white">
+          <p className="g3-metric-label text-[10px] text-white/40 uppercase tracking-widest font-semibold mb-1">{label}</p>
+          <p className="g3-metric-value text-2xl font-bold text-white">
             {loading
               ? <span className="inline-block w-12 h-8 rounded bg-white/10 animate-skeleton" />
               : unavailable
@@ -145,7 +146,7 @@ function StatCard({ icon: Icon, label, value, gradient, glow, loading, unavailab
                 : <AnimatedCounter target={value} />}
           </p>
         </div>
-        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
+        <div className={`g3-metric-icon w-8 h-8 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
           <Icon size={16} className="text-white" />
         </div>
       </div>
@@ -407,7 +408,7 @@ export default function AccountManagement() {
   const avatarGrad = (u) => (ROLES[u?.role] || ROLES.customer).gradient;
 
   return (
-    <div className="flex h-[calc(100vh-70px)] bg-[#080808] text-white relative overflow-hidden">
+    <div className="g3-management-page g3-customer-page flex h-[calc(100vh-70px)] bg-[#080808] text-white relative overflow-hidden">
       <style>{`
         @keyframes skeletonShimmer {
           0% { background-position: -400px 0; }
@@ -461,22 +462,22 @@ export default function AccountManagement() {
       `}</style>
 
       {/* ═══════════════ LEFT: MAIN PANEL ═══════════════ */}
-      <div className={`flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300`}>
+      <div className={`g3-management-content g3-customer-main flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300`}>
 
         {/* -- Header -- */}
-        <div className="bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="g3-header bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
+          <div className="g3-header-line flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-[#ffd555] tracking-tight">Customer Management</h1>
-              <p className="text-sm text-white/40 mt-0.5">Manage customer accounts and access permissions</p>
+              <p className="g3-subtitle text-sm text-white/40 mt-0.5">Manage customer accounts and access permissions</p>
             </div>
-            <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
+            <button onClick={fetchUsers} className="g3-action g3-header-action flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
             </button>
           </div>
 
           {/* -- Stat Cards -- */}
-          <div className="grid grid-cols-4 gap-3 mt-4">
+          <div className="g3-metrics-strip g3-customer-metrics grid grid-cols-4 gap-3 mt-4">
             <StatCard icon={Users} label="Total Customers" value={totalAccounts} gradient="from-cyan-400 to-blue-500" glow="rgba(6,182,212,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
             <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
             <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} gradient="from-rose-500 to-red-600" glow="rgba(239,68,68,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
@@ -485,8 +486,8 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Controls Bar -- */}
-        <div className="flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
-          <div className="relative flex-1 min-w-[240px] max-w-sm">
+        <div className="g3-toolbar flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
+          <div className="g3-search relative flex-1 min-w-[240px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
               value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
@@ -559,7 +560,7 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Table -- */}
-        <div className="flex-1 overflow-auto min-h-0">
+        <div className="g3-table-scroll flex-1 overflow-auto min-h-0">
           <table className="w-full min-w-[800px] border-collapse">
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#14120c] border-b border-[#ffd555]/20">
@@ -594,15 +595,15 @@ export default function AccountManagement() {
               {!loading && pageUsers.map(u => {
                 const isActive = panelUser?._id === u._id;
                 return (
-                  <tr key={u._id} className={`group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
+                  <tr key={u._id} className={`g3-data-row group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
                     onClick={() => openPanel(u)}>
                     <td className="w-4"></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="relative flex-shrink-0">
                           {u.profile?.avatar
-                            ? <img src={u.profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-white/10" />
-                            : <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>{initials(u)}</div>
+                            ? <img src={u.profile.avatar} alt="" className="g3-avatar w-9 h-9 rounded-full object-cover ring-2 ring-white/10" />
+                            : <div className={`g3-avatar w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>{initials(u)}</div>
                           }
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#080808] ${u.status ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                         </div>
@@ -614,13 +615,13 @@ export default function AccountManagement() {
                     </td>
                     <td className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
                     <td className="px-4 py-3 text-[13px] text-white/55">{u.profile?.phone || '-'}</td>
-                    <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
+                    <td className="px-4 py-3" data-role={u.role}><RoleBadge role={u.role} /></td>
                     <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
                     <td className="px-4 py-3 text-[12px] text-white/35">{formatDate(u.createdAt)}</td>
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" className="w-8 h-8 rounded-xl border border-[#ffd555]/10 bg-[#ffd555]/[0.02] hover:bg-[#ffd555]/10 hover:border-[#ffd555]/30 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
+                          title="Edit account" className="g3-action g3-edit w-8 h-8 rounded-xl border border-[#ffd555]/10 bg-[#ffd555]/[0.02] hover:bg-[#ffd555]/10 hover:border-[#ffd555]/30 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
                           <Edit3 size={14} />
                         </button>
                       </div>
@@ -633,7 +634,7 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Pagination -- */}
-        <div className="flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
+        <div className="g3-pagination flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
           <span className="text-xs text-white/30">
             {accountState.isAvailable
               ? `Page ${page} of ${totalPages} · ${filtered.length} results`
@@ -646,7 +647,7 @@ export default function AccountManagement() {
               const p = i + 1;
               return (
                 <button key={p} onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${p === page ? 'bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>
+                  className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${p === page ? 'g3-page-active bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>
                   {p}
                 </button>
               );
