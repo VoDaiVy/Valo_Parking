@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Image, Linking, StyleSheet } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
 import { AppText, Button, Card } from '@/components/common';
 import { Screen } from '@/components/layout/Screen';
@@ -17,17 +18,28 @@ export const SubscriptionPaymentStatusScreen = ({ navigation, route }: Props) =>
 
   useEffect(() => {
     let stopped = false;
+    let inFlight = false;
     const startedAt = Date.now();
 
     const poll = async () => {
-      if (stopped || Date.now() - startedAt > 300000 || status !== 'PENDING') {
+      if (stopped || inFlight || status !== 'PENDING') {
         return;
       }
+      if (Date.now() - startedAt > 300000) {
+        setMessage('Payment confirmation has not arrived. Check your membership or return later; review the transaction before paying again.');
+        return;
+      }
+      inFlight = true;
       try {
-        if (route.params.renewal) {
-          await subscriptionsService.verifyRenewalPayment(route.params.orderCode);
+        if (route.params.entitlementRenewal) {
+          const response = await subscriptionsService.verifyEntitlementRenewalPayment(route.params.orderCode);
+          if (response.data?.status !== 'paid') return;
+        } else if (route.params.renewal) {
+          const response = await subscriptionsService.verifyRenewalPayment(route.params.orderCode);
+          if (response.data?.status !== 'paid') return;
         } else {
-          await subscriptionsService.verifyPayment({ orderCode: route.params.orderCode });
+          const response = await subscriptionsService.verifyPayment({ orderCode: route.params.orderCode });
+          if (!response.success) return;
         }
         if (!stopped) {
           setStatus('PAID');
@@ -37,6 +49,8 @@ export const SubscriptionPaymentStatusScreen = ({ navigation, route }: Props) =>
         if (!stopped && error instanceof Error) {
           setMessage(error.message);
         }
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -47,7 +61,7 @@ export const SubscriptionPaymentStatusScreen = ({ navigation, route }: Props) =>
       stopped = true;
       clearInterval(interval);
     };
-  }, [route.params.orderCode, route.params.renewal, status]);
+  }, [route.params.orderCode, route.params.renewal, route.params.entitlementRenewal, status]);
 
   return (
     <Screen scrollable>
@@ -59,9 +73,9 @@ export const SubscriptionPaymentStatusScreen = ({ navigation, route }: Props) =>
         <AppText>Order: {route.params.orderCode}</AppText>
         {route.params.amount ? <AppText>Amount: {formatCurrency(route.params.amount)}</AppText> : null}
         <AppText>{message}</AppText>
-        {route.params.qrCode ? <Image source={{ uri: route.params.qrCode }} style={styles.qr} /> : null}
+        {route.params.qrCode ? <QRCode value={route.params.qrCode} size={220} /> : null}
         {route.params.checkoutUrl ? (
-          <Button title="Open PayOS Checkout" onPress={() => Linking.openURL(route.params.checkoutUrl || '')} />
+          <Button title="Open PayOS Checkout" onPress={() => { void Linking.openURL(route.params.checkoutUrl || '').catch(() => setMessage('Unable to open checkout. Please try again.')); }} />
         ) : null}
       </Card>
       <Button title="Check Membership" onPress={() => navigation.navigate('Membership')} />

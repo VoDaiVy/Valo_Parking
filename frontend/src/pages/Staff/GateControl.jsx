@@ -251,8 +251,9 @@ export default function GateControl() {
       const scanData = await scanRes.json();
 
       let detectedPlate = '';
-      if (scanData.success && scanData.data?.licensePlate) {
-        detectedPlate = normalizeLicensePlate(scanData.data.licensePlate);
+      const plateVal = scanData.data?.licensePlate || scanData.data?.plate || scanData.plate || scanData.licensePlate;
+      if (scanData.success && plateVal) {
+        detectedPlate = normalizeLicensePlate(plateVal);
         setEntryPlate(detectedPlate);
         toast.success(`Đã nhận diện biển số: ${detectedPlate}`);
       } else {
@@ -375,8 +376,9 @@ export default function GateControl() {
       const scanData = await scanRes.json();
 
       let detectedPlate = '';
-      if (scanData.success && scanData.data?.licensePlate) {
-        detectedPlate = normalizeLicensePlate(scanData.data.licensePlate);
+      const plateVal = scanData.data?.licensePlate || scanData.data?.plate || scanData.plate || scanData.licensePlate;
+      if (scanData.success && plateVal) {
+        detectedPlate = normalizeLicensePlate(plateVal);
         setExitPlate(detectedPlate);
         toast.success(`Đã nhận diện xe ra: ${detectedPlate}`);
       } else {

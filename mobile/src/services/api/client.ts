@@ -9,7 +9,7 @@ import { API_BASE_URL } from '@/config/env';
 import { tokenStorage } from '@/services/storage/tokenStorage';
 import { AuthenticationError, NetworkError, ValidationError } from '@/types/errors';
 
-type QueuedRequest = (token: string) => void;
+type QueuedRequest = { resolve: (token: string) => void; reject: (error: unknown) => void };
 
 export type NormalizedApiError = Error & {
   status?: number;
@@ -114,11 +114,12 @@ class APIClient {
 
         if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
           if (this.isRefreshing) {
-            return new Promise((resolve) => {
-              this.refreshQueue.push((token: string) => {
+            originalRequest._retry = true;
+            return new Promise((resolve, reject) => {
+              this.refreshQueue.push({ reject, resolve: (token: string) => {
                 originalRequest.headers.Authorization = `Bearer ${token}`;
                 resolve(this.client(originalRequest));
-              });
+              } });
             });
           }
 
@@ -144,13 +145,14 @@ class APIClient {
             }
 
             await tokenStorage.saveAccessToken(accessToken);
-            this.refreshQueue.forEach((callback) => callback(accessToken));
+            this.refreshQueue.forEach((request) => request.resolve(accessToken));
             this.refreshQueue = [];
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
 
             return this.client(originalRequest);
           } catch (refreshError) {
             console.error('[API] Refresh token failed or original request got 401. Logging out. URL was:', originalRequest?.url);
+            this.refreshQueue.forEach((request) => request.reject(refreshError));
             this.refreshQueue = [];
             await tokenStorage.clearTokens();
             this.logoutHandler?.();
@@ -171,13 +173,9 @@ class APIClient {
           return Promise.reject(new NetworkError(message));
         }
 
-        if (status === 400) {
-          return Promise.reject(new ValidationError(message));
-        }
-
-        const normalizedError = new Error(message) as NormalizedApiError;
+        const normalizedError = (status === 400 ? new ValidationError(message) : new Error(message)) as NormalizedApiError;
         normalizedError.status = status;
-        normalizedError.code = error.code;
+        normalizedError.code = (error.response?.data as { code?: string } | undefined)?.code || error.code;
         normalizedError.data = error.response?.data;
 
         return Promise.reject(normalizedError);

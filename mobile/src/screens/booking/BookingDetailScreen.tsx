@@ -224,13 +224,17 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
     });
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (!booking) return;
-
-    setActionDialog({
+    setActionLoading(true);
+    try {
+      const response = await bookingService.getCancellationQuote(booking._id);
+      const amount = response.data?.refundAmount;
+      if (typeof amount !== 'number' || !Number.isFinite(amount)) throw new Error('Unable to load the refund amount. Please try again.');
+      setActionDialog({
       variant: 'error',
       title: 'Cancel booking?',
-      message: `${formatCurrency(booking.prepaidAmount)} will be refunded to your VALO Wallet after cancellation.`,
+      message: `Estimated refund: ${formatCurrency(amount)}. The booking refund policy applies; the final amount is calculated when cancellation is confirmed.`,
       primaryLabel: 'Confirm cancellation',
       secondaryLabel: 'Keep booking',
       destructive: true,
@@ -238,10 +242,13 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
         runAction(
           () => cancelBooking(booking._id),
           'Booking cancelled',
-          'Your prepayment has been refunded to your VALO Wallet.',
+          'Booking cancelled. Check your wallet and transaction history for the policy-based refund.',
           'Cancellation failed',
         ),
-    });
+      });
+    } catch (error) {
+      showFeedback('error', 'Unable to load refund quote', error instanceof Error ? error.message : 'Please try again.');
+    } finally { setActionLoading(false); }
   };
 
   const handleExtend = async (minutes: number) => {
@@ -254,7 +261,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
     }
 
     if (!canExtendBookingBy(booking, minutes)) {
-      showFeedback('warning', 'Time limit exceeded', 'The total booking duration cannot exceed 24 hours.');
+      showFeedback('warning', 'Invalid extension', 'The new end time must be in the future and total duration must be at least one hour.');
       return;
     }
 

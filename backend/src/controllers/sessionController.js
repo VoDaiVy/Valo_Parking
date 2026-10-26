@@ -6,6 +6,7 @@ const Vehicle = require('../models/Vehicle');
 const Booking = require('../models/Booking');
 const BookingHold = require('../models/BookingHold');
 const ParkingFloor = require('../models/ParkingFloor');
+const Slot = require('../models/Slot');
 const mongoose = require('mongoose');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Subscription = require('../models/Subscription');
@@ -257,13 +258,14 @@ exports.verifyPlate = async (req, res, next) => {
         }
       }
       
-      const Slot = require('../models/Slot');
       const unavailableKeys = new Set();
 
-      // Add maintenance and reserved slots
+      // Add maintenance, physically occupied, AI-detected vehicles, and reserved slots
       const overrideSlots = await Slot.find({
         $or: [
           { status: 'maintenance' },
+          { status: 'occupied' },
+          { 'aiObservation.occupied': true },
           { reservedFor: { $ne: null } }
         ]
       });
@@ -368,7 +370,6 @@ exports.checkParkingFull = async (req, res, next) => {
       }
     }
     
-    const Slot = require('../models/Slot');
     const maintenanceSlots = await Slot.find({ status: 'maintenance' });
     let validMaintenanceCount = 0;
     for (const mSlot of maintenanceSlots) {
@@ -669,8 +670,9 @@ exports.kioskVerifyQr = async (req, res) => {
         }, {
           timeout: 4000
         });
-        if (pythonRes.data && pythonRes.data.success && pythonRes.data.plate) {
-          detectedPlate = normalizeLicensePlate(pythonRes.data.plate);
+        const found = pythonRes.data?.plate || pythonRes.data?.licensePlate;
+        if (pythonRes.data && pythonRes.data.success && found) {
+          detectedPlate = normalizeLicensePlate(found);
         }
       } catch (aiErr) {
         console.warn('[kioskVerifyQr] AI camera plate scan failed/timeout:', aiErr.message);
@@ -860,10 +862,17 @@ exports.createKioskSession = async (req, res, next) => {
             status: 'active'
           });
 
-          if (!occupyingSession) {
+          // Check physical occupancy via camera ground truth or slot status
+          const isPhysicallyBlocked = await Slot.findOne({
+            floorID: floorId,
+            slotNumber: normalizeSlotCode(slotCode),
+            $or: [{ status: 'occupied' }, { 'aiObservation.occupied': true }]
+          });
+
+          if (!occupyingSession && !isPhysicallyBlocked) {
             availableSlot = slot;
             break;
-          } else if (occupyingSession.userId && occupyingSession.userId.toString() === userId.toString()) {
+          } else if (occupyingSession && occupyingSession.userId && occupyingSession.userId.toString() === userId.toString()) {
             occupiedBySelfCount++;
           }
         }
@@ -886,7 +895,12 @@ exports.createKioskSession = async (req, res, next) => {
             // FIRST: Check if the user already selected a slot on the kiosk map (Step 2)
             if (parkingSlot && floorId) {
               // Validate if the selected slot is indeed free
-              const isOccupied = await Session.findOne({ floorId, parkingSlot: normalizeSlotCode(parkingSlot), status: 'active' });
+              const isOccupiedSession = await Session.findOne({ floorId, parkingSlot: normalizeSlotCode(parkingSlot), status: 'active' });
+              const isPhysicallyBlocked = await Slot.findOne({
+                floorID: floorId,
+                slotNumber: normalizeSlotCode(parkingSlot),
+                $or: [{ status: 'occupied' }, { 'aiObservation.occupied': true }, { status: 'maintenance' }],
+              });
               const isBooked = await Booking.findOne({
                 floorId,
                 parkingSlot: normalizeSlotCode(parkingSlot),
@@ -895,7 +909,7 @@ exports.createKioskSession = async (req, res, next) => {
                 scheduledEnd: { $gte: now }
               });
               
-              if (!isOccupied && !isBooked) {
+              if (!isOccupiedSession && !isPhysicallyBlocked && !isBooked) {
                 alternativeSlot = parkingSlot;
                 altFloorId = floorId;
               }
@@ -913,9 +927,17 @@ exports.createKioskSession = async (req, res, next) => {
                 const slotCode = slot.name;
                 if (!slotCode || slotCode.trim() === '') continue;
                 
-                // check if occupied
+                // check if occupied in session
                 const occupied = await Session.findOne({ floorId: floor._id, parkingSlot: normalizeSlotCode(slotCode), status: 'active' });
                 if (occupied) continue;
+
+                // check if physically occupied or in maintenance
+                const physicallyBlocked = await Slot.findOne({
+                  floorID: floor._id,
+                  slotNumber: normalizeSlotCode(slotCode),
+                  $or: [{ status: 'occupied' }, { 'aiObservation.occupied': true }, { status: 'maintenance' }],
+                });
+                if (physicallyBlocked) continue;
                 
                 // check if it's someone else's VIP slot
                 const isVIP =
@@ -1187,6 +1209,17 @@ exports.createKioskSession = async (req, res, next) => {
       paymentStatus: 'unpaid'
     });
     aiNotificationEvents.notifySessionCreatedSafely(newSession, req.app);
+
+    if (normalizedFinalSlot && finalFloorId) {
+      try {
+        await Slot.updateOne(
+          { floorID: finalFloorId, slotNumber: normalizedFinalSlot },
+          { status: 'occupied', 'aiObservation.sessionId': newSession._id }
+        );
+      } catch (slotErr) {
+        console.warn('Failed to update slot status on kiosk entry:', slotErr.message);
+      }
+    }
 
     if (holdToConsume) {
       holdToConsume.status = 'consumed';
@@ -1832,6 +1865,27 @@ exports.kioskCheckout = async (req, res, next) => {
         notifTriggers.notifyPaymentSuccess(
           req.app, uid, pricing.finalTotal, session._id.toString()
         ).catch(err => console.error('Failed to send payment notification:', err));
+      }
+    }
+
+    // Release slot to available if vehicle is no longer physically occupying it
+    if (session.parkingSlot && session.floorId) {
+      const slotCode = normalizeSlotCode(session.parkingSlot);
+      const floorId = session.floorId;
+      try {
+        const slotDoc = await Slot.findOne({ floorID: floorId, slotNumber: slotCode });
+        if (slotDoc && slotDoc.status !== 'maintenance') {
+          const isPhysicallyStillThere = Boolean(slotDoc.aiObservation?.occupied);
+          if (!isPhysicallyStillThere) {
+            slotDoc.status = 'available';
+            if (slotDoc.aiObservation) {
+              slotDoc.aiObservation.sessionId = null;
+            }
+            await slotDoc.save();
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to release slot on checkout:', err.message);
       }
     }
 

@@ -1,9 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -21,12 +18,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { config } from '@/config/env';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
+import { useGoogleSignIn } from '@/hooks/useGoogleSignIn';
 import { useAppAlert } from '@/contexts/AppAlertContext';
 
-WebBrowser.maybeCompleteAuthSession();
 
 const LogoImg = require('../../../assets/logo.png') as number;
 
@@ -107,69 +103,13 @@ function Field({
 }
 
 export default function LoginScreen({ navigation }: LoginScreenProps) {
-  const { login, googleLogin } = useAuth();
+  const { login } = useAuth();
   const { alert } = useAppAlert();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordHidden, setPasswordHidden] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-
-  const [googleRequest, googleResponse, googlePromptAsync] = Google.useIdTokenAuthRequest({
-    androidClientId: config.googleAndroidClientId || undefined,
-    clientId: config.googleClientId,
-    iosClientId: config.googleIosClientId || undefined,
-    webClientId: config.googleClientId,
-    scopes: ['openid', 'profile', 'email'],
-    selectAccount: true,
-  });
-
-  const handleGoogleLogin = useCallback(
-    async (idToken: string) => {
-      setGoogleLoading(true);
-      try {
-        await googleLogin({ idToken });
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
-        alert('Google sign-in failed', message);
-      } finally {
-        setGoogleLoading(false);
-      }
-    },
-    [alert, googleLogin],
-  );
-
-  useEffect(() => {
-    if (googleResponse?.type !== 'success') return;
-
-    const idToken =
-      googleResponse.authentication?.idToken ??
-      (googleResponse.params as Record<string, string>)?.id_token;
-
-    if (idToken) {
-      void handleGoogleLogin(idToken);
-    } else {
-      alert('Error', 'Unable to retrieve the Google ID token.');
-    }
-  }, [alert, googleResponse, handleGoogleLogin]);
-
-  const promptGoogleLogin = async () => {
-    if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-      alert(
-        'Google sign-in requires a development build',
-        'Expo Go cannot use this app\'s OAuth redirect. Install and open the VALO development build, then try again.',
-      );
-      return;
-    }
-
-    if (!config.googleClientId) {
-      alert('Google sign-in unavailable', 'Missing EXPO_PUBLIC_GOOGLE_CLIENT_ID.');
-      return;
-    }
-
-    await googlePromptAsync();
-  };
+  const { loading: googleLoading, enabled: googleEnabled, signIn: promptGoogleLogin } = useGoogleSignIn();
 
   const handleLogin = async () => {
     const trimEmail = email.trim();
@@ -299,8 +239,8 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
             <TouchableOpacity
               activeOpacity={0.85}
-              disabled={!googleRequest || googleLoading}
-              style={[styles.googleBtn, (!googleRequest || googleLoading) && styles.disabled]}
+              disabled={!googleEnabled || googleLoading}
+              style={[styles.googleBtn, (!googleEnabled || googleLoading) && styles.disabled]}
               onPress={promptGoogleLogin}
             >
               {googleLoading ? (

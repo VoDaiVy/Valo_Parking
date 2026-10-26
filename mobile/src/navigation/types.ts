@@ -60,6 +60,7 @@ export type NotificationStackParamList = {
 
 export type WalletStackParamList = {
   Wallet: undefined;
+  Rewards: undefined;
   TopUp: undefined;
   TransactionHistory: undefined;
   TransactionDetail: { transactionId: string };
@@ -74,5 +75,6 @@ export type WalletStackParamList = {
     qrCode?: string;
     amount?: number;
     renewal?: boolean;
+    entitlementRenewal?: boolean;
   };
 };

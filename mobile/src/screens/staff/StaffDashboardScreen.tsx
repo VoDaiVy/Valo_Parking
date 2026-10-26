@@ -4,6 +4,7 @@ import { RefreshControl, ScrollView, StatusBar, StyleSheet, Text, View } from 'r
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ErrorState } from '@/components/common';
+import { GateControlPanel } from '@/components/staff/dashboard/GateControlPanel';
 import {
   DashboardEntry,
   EmptyRecentActivity,
@@ -153,6 +154,10 @@ export default function StaffDashboardScreen({ navigation }: Props) {
                 capacityTone={capacityTone}
                 vehicles={metrics.bookings}
               />
+            </DashboardEntry>
+
+            <DashboardEntry delay={160}>
+              <GateControlPanel />
             </DashboardEntry>
 
             <StaffPrimaryActions

@@ -659,6 +659,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
           qrCode: response.data?.qrCode,
           amount: response.data?.amount,
           renewal: true,
+          entitlementRenewal: Boolean(renewalEntitlementId),
         });
       }
     } catch (renewError) {
@@ -1163,7 +1164,7 @@ const styles = StyleSheet.create({
     width: 300,
   },
   vignette: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.06)',
   },
   scroll: {
@@ -1192,12 +1193,12 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
   },
   heroRim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
   },
   heroTexture: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.28,
   },
   textureLineA: {

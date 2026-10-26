@@ -14,6 +14,8 @@ import {
   StatusBadge,
 } from '@/components/staff';
 import { COLORS, SPACING } from '@/constants/theme';
+import { useStaffAssistant } from '@/contexts/StaffAssistantContext';
+import { ValoAIMascot } from '@/components/staff/ValoAIMascot';
 import type { StaffManagementStackParamList } from '@/navigation/StaffNavigator';
 
 type Props = NativeStackScreenProps<StaffManagementStackParamList, 'ManagementHome'>;
@@ -27,6 +29,10 @@ const TOOLS: Array<{
   meta: string;
   tone?: 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
 }> = [
+  { screen: 'StaffAssistant', icon: 'sparkles-outline', title: 'VALO AI assistant', description: 'Operational insights and suggested actions', meta: 'AI', tone: 'brand' },
+  { screen: 'ParkingOperations', icon: 'construct-outline', title: 'Monitoring & maintenance', description: 'Violations, maintenance and parking history', meta: 'Operations', tone: 'warning' },
+  { screen: 'Inbox', icon: 'mail-unread-outline', title: 'My inbox', description: 'Staff notifications', meta: 'Inbox', tone: 'info' },
+  { screen: 'Communication', icon: 'chatbubbles-outline', title: 'Internal communications', description: 'Reports and automation rules', meta: 'Internal', tone: 'info' },
   { screen: 'Bookings', icon: 'qr-code-outline', title: 'Booking QR', description: 'Scan and inspect reservations', meta: 'Critical', tone: 'success' },
   { screen: 'Customers', icon: 'people-outline', title: 'Customers', description: 'Profiles and account access', meta: 'Support', tone: 'info' },
   { screen: 'Subscriptions', icon: 'diamond-outline', title: 'Memberships', description: 'Plans and reserved spaces', meta: 'Plans', tone: 'brand' },
@@ -36,6 +42,7 @@ const TOOLS: Array<{
 
 export function ManagementHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
+  const { openAssistant } = useStaffAssistant();
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
@@ -63,11 +70,12 @@ export function ManagementHubScreen({ navigation }: Props) {
               <OperationalRow
                 key={tool.screen}
                 icon={tool.icon}
+                iconElement={tool.screen === 'StaffAssistant' ? <ValoAIMascot size={38} /> : undefined}
                 meta={tool.meta}
                 subtitle={tool.description}
                 title={tool.title}
                 tone={tool.tone}
-                onPress={() => navigation.navigate(tool.screen)}
+                onPress={() => tool.screen === 'StaffAssistant' ? openAssistant() : navigation.navigate(tool.screen)}
               />
             ))}
           </View>

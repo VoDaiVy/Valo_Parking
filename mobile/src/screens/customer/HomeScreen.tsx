@@ -69,6 +69,8 @@ const PREMIUM = {
 };
 
 const QUICK_ACTIONS: QuickAction[] = [
+  { icon: 'calendar-outline', label: 'My bookings', description: 'Reservations & QR', screen: 'Bookings', params: { screen: 'BookingList' } },
+  { icon: 'gift-outline', label: 'Voucher', description: 'Rewards & spending', screen: 'WalletTab', params: { screen: 'Rewards' } },
   {
     icon: 'car-outline',
     label: 'My vehicles',

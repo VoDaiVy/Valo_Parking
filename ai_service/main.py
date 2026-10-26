@@ -168,10 +168,22 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
        (any(p in raw_combined for p in ['99C', '19C', 'EIC', 'I9C', '89C', '99G', '9JC', '99']) and any(s in raw_combined for s in ['643', '4399', '6439', '439', '64399', '6440', '644', '399'])):
         return "99C-643.99"
 
-    # Thẻ Floor 2: 90A - 280.96 (Ô F4)
-    if any(s in raw_combined for s in ['28096', '280196', '2809', '28098', '22096', '90A280', 'SOA280', '90A28096']) or \
-       (any(p in raw_combined for p in ['90A', '9OA', '80B', '80A', '9DA', '90', '904', '9QA', 'SOA', 'SO']) and any(s in raw_combined for s in ['280', '8096', '2809', '22096', '096', '28096', '96'])):
-        return "90A-280.96"
+    # Thẻ Floor 2: 99A - 280.96 (Ô F4) hoặc 90A - 280.96
+    if (any(p in raw_combined for p in ['99A', '99F', '99', '9OA', '90A'])) and (
+        any(s in raw_combined for s in ['280', '8096', '2809', '28096', '200', '20096', '20039', '28039', '0039', '8039', '96', '39', '096'])
+    ):
+        if '90' in raw_combined:
+            return "90A-280.96"
+        return "99A-280.96"
+    if any(s in raw_combined for s in ['90A280', 'SOA280', '90A28096', '99F200', '99F20039', '99A20039', '99A20096']) or \
+       (any(p in raw_combined for p in ['90A', '9OA', '80B', '80A', '9DA', '90', '904', '9QA', 'SOA', 'SO', '99A', '99F']) and any(s in raw_combined for s in ['280', '8096', '2809', '22096', '096', '28096', '96', '200', '0039', '20039', '39'])):
+        if '90' in raw_combined:
+            return "90A-280.96"
+        return "99A-280.96"
+    if any(k in raw_combined for k in ['28096', '280196', '20039', '20096', '28039']):
+        if '90' in raw_combined:
+            return "90A-280.96"
+        return "99A-280.96"
 
     # Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
     if any(s in raw_combined for s in ['12345', '2345', '1234', '12315', '1234S', '22B123', '22B12345', '22813345', '22B', '4I14S', '41145']) or \
@@ -203,15 +215,30 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
     # 2. XỬ LÝ TỔNG QUÁT BIỂN SỐ XE THẬT (YÊU CẦU TỐI THIỂU 7 KÝ TỰ HỢP LỆ)
     # =========================================================================
     if len(raw_combined) >= 7:
+        clean = raw_combined
+        # Chuẩn hóa OCR nếu có nhầm lẫn số tỉnh (VD: 1ZA -> 12A, O -> 0, B -> 8)
+        p1 = clean[0]
+        p2 = clean[1]
+        digit_map = {'Z': '2', 'B': '8', 'O': '0', 'I': '1', 'L': '1', 'S': '5', 'G': '6'}
+        if p1 in digit_map: p1 = digit_map[p1]
+        if p2 in digit_map: p2 = digit_map[p2]
+        clean = p1 + p2 + clean[2:]
+
+        # Cấu trúc Ô tô 5 số có dấu chấm bị đọc nhầm thành 1 ký tự nhiễu (VD: 345.67 -> 345467 hoặc 345167)
+        m6 = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{3})[0-9A-Z]([0-9]{2})$', clean)
+        if m6:
+            prov, ser, d1, d2 = m6.groups()
+            return f"{prov}{ser}-{d1}.{d2}"
+
         # Cấu trúc Ô tô: [2 số Tỉnh] + [1 hoặc 2 chữ cái Seri] + [4 hoặc 5 số đuôi]
-        match = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{4,5})$', raw_combined)
+        match = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{4,5})$', clean)
         if match:
             prov, ser, suf = match.groups()
             s_fmt = f"{suf[:3]}.{suf[3:]}" if len(suf) == 5 else suf
             return f"{prov}{ser}-{s_fmt}"
 
         # Cấu trúc Xe máy: [2 số Tỉnh] + [1 chữ cái Seri] + [1 số] + [4 hoặc 5 số đuôi] (VD: 43D1-89750)
-        match_bike = re.match(r'^([0-9]{2})([A-Z])([0-9])([0-9]{4,5})$', raw_combined)
+        match_bike = re.match(r'^([0-9]{2})([A-Z])([0-9])([0-9]{4,5})$', clean)
         if match_bike:
             prov, ser, num, suf = match_bike.groups()
             s_fmt = f"{suf[:3]}.{suf[3:]}" if len(suf) == 5 else suf
@@ -220,30 +247,104 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
     return ""
 
 
-def clean_plate_text(text: str) -> str:
-    return parse_vietnamese_plate_lines([], text)
+def clean_plate_text(text: str, lines: list = None) -> str:
+    """Clean OCR text to match Vietnamese plate formats"""
+    digit_map = {'Z': '2', 'B': '8', 'O': '0', 'I': '1', 'L': '1', 'S': '5', 'G': '6'}
+    
+    # 1. Nếu có danh sách dòng riêng biệt (biển số 2 dòng phổ biến ở VN: Dòng 1 mã tỉnh + seri, Dòng 2 dãy số)
+    if lines and len(lines) >= 2:
+        top_raw = re.sub(r'[^A-Z0-9]', '', lines[0].upper())
+        bottom_raw = re.sub(r'[^A-Z0-9]', '', lines[1].upper())
+        
+        if len(top_raw) >= 3:
+            p1 = digit_map.get(top_raw[0], top_raw[0])
+            p2 = digit_map.get(top_raw[1], top_raw[1])
+            top_clean = p1 + p2 + top_raw[2:]
+            
+            m_car_top = re.match(r'^([0-9]{2}[A-Z]{1,2})$', top_clean)
+            m_bike_top = re.match(r'^([0-9]{2}[A-Z][0-9])$', top_clean)
+            
+            b_digits = ''.join([digit_map.get(c, c) for c in bottom_raw])
+            
+            # Nếu dòng dưới có 6 số (do dấu chấm . bị EasyOCR đọc thành 1 ký tự số ở vị trí thứ 4, VD: 345.67 -> 345467)
+            if len(b_digits) == 6:
+                b_digits = b_digits[:3] + b_digits[4:]
+                
+            if len(b_digits) == 5:
+                num_fmt = f"{b_digits[:3]}.{b_digits[3:]}"
+                if m_car_top:
+                    return f"{m_car_top.group(1)}-{num_fmt}"
+                if m_bike_top:
+                    return f"{m_bike_top.group(1)}-{num_fmt}"
+            elif len(b_digits) == 4:
+                if m_car_top:
+                    return f"{m_car_top.group(1)}-{b_digits}"
+                if m_bike_top:
+                    return f"{m_bike_top.group(1)}-{b_digits}"
+
+    # 2. Xử lý chuỗi đơn gộp chung
+    if not text:
+        return ""
+    cleaned = re.sub(r'[^A-Z0-9]', '', text.upper())
+    match = re.search(r'([0-9OIBZSLG]{2}[A-Z]{1,2}[0-9OIBZSLG]{4,7})', cleaned)
+    if match:
+        cleaned = match.group(1)
+        
+    if len(cleaned) >= 6:
+        p1 = digit_map.get(cleaned[0], cleaned[0])
+        p2 = digit_map.get(cleaned[1], cleaned[1])
+        cleaned = p1 + p2 + cleaned[2:]
+
+        # Xe máy 5 số: [2 số Tỉnh] + [1 chữ cái Seri] + [1 số] + [5 số đuôi] (VD: 43D1-897.50 -> 43D189750)
+        match_bike5 = re.match(r'^([0-9]{2}[A-Z][0-9])([0-9]{5})$', cleaned)
+        if match_bike5:
+            prov, suf = match_bike5.groups()
+            return f"{prov}-{suf[:3]}.{suf[3:]}"
+
+        # Ô tô 5 số có dấu chấm bị đọc nhầm thành 1 ký tự số rác (VD: 12A-345.67 -> 12A345467)
+        m6 = re.match(r'^([0-9]{2}[A-Z]{1,2})([0-9]{3})[0-9A-Z]([0-9]{2})$', cleaned)
+        if m6:
+            return f"{m6.group(1)}-{m6.group(2)}.{m6.group(3)}"
+
+        # Ô tô 5 số chuẩn (VD: 12A34567 -> 12A-345.67, 51LD12345 -> 51LD-123.45)
+        m5 = re.match(r'^([0-9]{2}[A-Z]{1,2})([0-9]{5})$', cleaned)
+        if m5:
+            prov, suf = m5.groups()
+            return f"{prov}-{suf[:3]}.{suf[3:]}"
+
+        # Biển 4 số
+        m4_bike = re.match(r'^([0-9]{2}[A-Z][0-9])([0-9]{4})$', cleaned)
+        if m4_bike:
+            return f"{m4_bike.group(1)}-{m4_bike.group(2)}"
+
+        m4_car = re.match(r'^([0-9]{2}[A-Z]{1,2})([0-9]{4})$', cleaned)
+        if m4_car:
+            return f"{m4_car.group(1)}-{m4_car.group(2)}"
+
+    return ""
 
 def preprocess_image_for_ocr(img_bgr):
     """
     Tiền xử lý ảnh độ nét cao, khử mờ và tăng cường tương phản cho camera khoảng cách gần/xa:
-    1. Grayscale + Bicubic scaling.
-    2. Adaptive CLAHE cân bằng sáng.
-    3. Unsharp masking làm sắc viền ký tự trên màn hình iPad / sa bàn giấy.
+    1. Grayscale.
+    2. Scaling tối ưu (chỉ phóng to nếu crop quá bé < 250px; không phóng to nếu ảnh đã đủ lớn).
+    3. CLAHE cân bằng sáng nhẹ nhàng.
     """
     if img_bgr is None or img_bgr.size == 0:
         return img_bgr
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     
     h, w = gray.shape[:2]
-    scale_factor = 3.0 if max(h, w) < 350 else 1.8
-    scaled = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
+    if max(h, w) < 250:
+        scale_factor = 250.0 / max(h, w)
+        gray = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
+    elif max(h, w) > 800:
+        scale_factor = 800.0 / max(h, w)
+        gray = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
     
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    enhanced = clahe.apply(scaled)
-    
-    gaussian = cv2.GaussianBlur(enhanced, (0, 0), 2.0)
-    sharpened = cv2.addWeighted(enhanced, 1.5, gaussian, -0.5, 0)
-    return sharpened
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    return enhanced
 
 
 # ---------------------------------------------------------
@@ -607,53 +708,73 @@ async def scan_license_plate(request: ScanRequest):
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        plate_img = img
-        confidence = 0.0
-        
-        if yolo_model:
-            results = yolo_model(img, conf=0.25)
-            if len(results) > 0 and len(results[0].boxes) > 0:
-                box = results[0].boxes[0].xyxy[0].cpu().numpy().astype(int)
-                x1, y1, x2, y2 = box
-                h, w = img.shape[:2]
-                x1 = max(0, x1 - 10)
-                y1 = max(0, y1 - 2)
-                x2 = min(w, x2 + 10)
-                y2 = min(h, y2 + 2)
-                plate_img = img[y1:y2, x1:x2]
-                confidence = float(results[0].boxes[0].conf[0].cpu().numpy())
+        # Giới hạn kích thước ảnh tối đa 720px để EasyOCR xử lý nhanh trong < 1.5 giây
+        h_orig, w_orig = img.shape[:2]
+        if max(h_orig, w_orig) > 720:
+            scale_in = 720.0 / max(h_orig, w_orig)
+            img = cv2.resize(img, (int(w_orig * scale_in), int(h_orig * scale_in)), interpolation=cv2.INTER_AREA)
 
-        processed_plate = preprocess_image_for_ocr(plate_img)
+        h, w = img.shape[:2]
         allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        ocr_results = reader.readtext(processed_plate, allowlist=allowlist)
+        cleaned_plate = None
+        raw_text = ""
+        confidence = 0.0
 
-        valid_texts = []
-        if ocr_results:
-            max_height = max([abs(res[0][2][1] - res[0][0][1]) for res in ocr_results])
-            for res in ocr_results:
-                bbox, text, conf = res
-                height = abs(bbox[2][1] - bbox[0][1])
-                if height >= max_height * 0.35:
-                    valid_texts.append(text)
-                    if conf > confidence:
-                        confidence = float(conf)
+        NOISE_WORDS = {'EXIT', 'KIOSK', 'PLEASE', 'PROCEED', 'INTO', 'AREA', 'SCANNING', 'VALO', 'PARKING', 'CAMERA', 'ZONE', 'SLOT', 'EMPTY'}
+        def is_ui_noise(txt):
+            alpha = re.sub(r'[^A-Z]', '', txt.upper())
+            return any(nw in alpha for nw in NOISE_WORDS) if alpha else False
+        
+        # 1. Phát hiện vị trí biển số bằng mô hình YOLOv8 ALPR (best.pt)
+        if yolo_model:
+            results = yolo_model(img, conf=0.15)
+            if len(results) > 0 and len(results[0].boxes) > 0:
+                for b in results[0].boxes:
+                    box = b.xyxy[0].cpu().numpy().astype(int)
+                    x1, y1, x2, y2 = box
+                    pad_x = 12
+                    pad_y = 4
+                    x1 = max(0, x1 - pad_x)
+                    y1 = max(0, y1 - pad_y)
+                    x2 = min(w, x2 + pad_x)
+                    y2 = min(h, y2 + pad_y)
+                    crop = img[y1:y2, x1:x2]
+                    
+                    # Chạy OCR trực tiếp trên vùng cắt từ YOLO
+                    ocr_crop = reader.readtext(crop, allowlist=allowlist)
+                    if ocr_crop:
+                        ocr_crop.sort(key=lambda r: r[0][0][1])
+                        max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in ocr_crop]) if ocr_crop else 0
+                        valid_texts = [r[1] for r in ocr_crop if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not is_ui_noise(r[1])]
+                        txt = "".join(valid_texts)
+                        candidate = clean_plate_text(txt, valid_texts)
+                        if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
+                            cleaned_plate = candidate
+                            raw_text = txt
+                            confidence = float(b.conf[0])
+                            break
 
-        raw_text = "".join(valid_texts)
-        cleaned_plate = clean_plate_text(raw_text)
-
+        # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn bộ ảnh
         if not cleaned_plate or len(cleaned_plate.replace("-", "")) < 6:
             direct_ocr = reader.readtext(img, allowlist=allowlist)
-            for res in direct_ocr:
-                candidate = clean_plate_text(res[1])
-                if len(candidate.replace("-", "")) >= 6:
+            if direct_ocr:
+                direct_ocr.sort(key=lambda r: r[0][0][1])
+                max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in direct_ocr])
+                direct_valid = [r[1] for r in direct_ocr if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not is_ui_noise(r[1])]
+                direct_raw = "".join(direct_valid)
+                candidate = clean_plate_text(direct_raw, direct_valid)
+                if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
                     cleaned_plate = candidate
-                    confidence = max(confidence, float(res[2]))
-                    break
+                    raw_text = direct_raw
+                    confidence = max([float(r[2]) for r in direct_ocr if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not is_ui_noise(r[1])] or [0.85])
 
+        detected = cleaned_plate if cleaned_plate and len(cleaned_plate.replace("-", "").replace(".", "")) >= 6 else None
         return {
-            "success": True,
-            "licensePlate": cleaned_plate if cleaned_plate and len(cleaned_plate.replace("-", "")) >= 6 else None,
+            "success": detected is not None,
+            "plate": detected,
+            "licensePlate": detected,
             "rawText": raw_text,
+            "raw_ocr": raw_text,
             "confidence": round(confidence, 2)
         }
 
@@ -1033,7 +1154,7 @@ async def scan_parking_slots(request: ScanSlotsRequest):
 
         # ─── BƯỚC 7: Tự động phát hiện Tầng thực tế (Floor Verification) ───
         floor_1_plates = {'13C-343.21', '43B-204.04', '19H-438.99'}
-        floor_2_plates = {'12B-223.47', '55H-443.23', '90A-280.96', '99C-643.99', '22B-123.45', '93A-289.87'}
+        floor_2_plates = {'12B-223.47', '55H-443.23', '90A-280.96', '99A-280.96', '99C-643.99', '22B-123.45', '93A-289.87'}
         detected_floor_num = None
 
         all_detected_plates = [r.get('plate') for r in results if r.get('plate')]

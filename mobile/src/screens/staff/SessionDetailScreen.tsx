@@ -21,6 +21,7 @@ import { FadeInView, StaffHeader, StatusBadge } from '@/components/staff';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { formatCurrency } from '@/utils/formatters';
 import type { StaffSessionStackParamList } from './SessionListScreen';
+import { SessionActionsPanel } from '@/components/staff/SessionActionsPanel';
 
 type Props = NativeStackScreenProps<StaffSessionStackParamList, 'SessionDetail'>;
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -128,7 +129,7 @@ function EvidenceRow({
 }
 
 export const SessionDetailScreen = ({ navigation, route }: Props) => {
-  const { session } = route.params;
+  const [session, setSession] = useState(route.params.session);
   const tabBarHeight = useBottomTabBarHeight();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -258,6 +259,7 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
           </FadeInView>
         ) : null}
 
+        <SessionActionsPanel session={session} onUpdated={setSession} />
         <Text style={styles.idRef}>ID: {session._id}</Text>
       </ScrollView>
 

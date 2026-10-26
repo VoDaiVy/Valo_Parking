@@ -37,6 +37,9 @@ export const formatDuration = (startTime: Date, endTime: Date) => {
 export const validateTimeRange = (startTime: Date, endTime: Date): ValidationResult => {
   const now = new Date();
 
+  if (!Number.isFinite(startTime.getTime()) || !Number.isFinite(endTime.getTime())) {
+    return { valid: false, error: 'Select a valid start and end time.' };
+  }
   if (startTime < now) {
     return { valid: false, error: 'Start time cannot be in the past.' };
   }
@@ -45,8 +48,8 @@ export const validateTimeRange = (startTime: Date, endTime: Date): ValidationRes
     return { valid: false, error: 'End time must be after start time.' };
   }
 
-  if (endTime.getTime() - startTime.getTime() < 60 * 60 * 1000) {
-    return { valid: false, error: 'Minimum booking duration is 1 hour.' };
+  if (endTime.getTime() - startTime.getTime() < 30 * 60 * 1000) {
+    return { valid: false, error: 'Minimum booking duration is 30 minutes.' };
   }
 
   return { valid: true };

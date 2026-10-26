@@ -149,6 +149,8 @@ public:
   int currentServoAngle;
   int sensorBaseline;
 
+  int obstacleLevel; // Mức logic khi có vật cản (ENTRY_1 = LOW, EXIT_1 = HIGH)
+
   unsigned long barrierOpenedAt;
   unsigned long clearDetectionStart;
   unsigned long carPassedAt;
@@ -159,10 +161,11 @@ public:
   int marqueeIndex;
   unsigned long lastMarqueeUpdate;
 
-  GateController(String gateName, int sPin, int irPin, SafeI2CLCD* display) {
+  GateController(String gateName, int sPin, int irPin, int obstLevel, SafeI2CLCD* display) {
     name = gateName;
     servoPin = sPin;
     sensorPin = irPin;
+    obstacleLevel = obstLevel;
     lcd = display;
     currentState = GATE_IDLE_CLOSED;
     stateBeforePause = GATE_IDLE_CLOSED;
@@ -185,7 +188,7 @@ public:
     currentServoAngle = 0;
     currentState = GATE_IDLE_CLOSED;
     stateBeforePause = GATE_IDLE_CLOSED;
-    sensorBaseline = -1;
+    sensorBaseline = 0; // Mức thông thoáng chuẩn mặc định (0 = thông thoáng, 1 = có xe)
 
     Serial.printf("[ESP32] >> Khoi tao Cổng %s (Servo Pin %d, Sensor Pin %d) -> SAN SANG!\n", 
                   name.c_str(), servoPin, sensorPin);
@@ -235,7 +238,9 @@ public:
     barrierOpenedAt = millis();
     clearDetectionStart = 0;
     carPassedAt = 0;
-    sensorBaseline = -1; // Sẽ tự động lấy mẫu mức chuẩn khi chưa có xe
+    // GIỮ NGUYÊN sensorBaseline (không reset về -1 khi mở cổng).
+    // Vì khi mở cổng (đặc biệt khi quét QR ở Kiosk), xe hoặc người có thể đang ở gần cảm biến,
+    // nếu lấy mẫu lại lúc này sẽ ghi nhận nhầm vật cản thành baseline gây đảo ngược logic chống kẹp!
     lastSensorLogTime = millis();
 
     Serial.printf("[ESP32] >> %s DA MO! DANG CHO XE DI QUA CAM BIEN (PIN %d)...\n", name.c_str(), sensorPin);
@@ -296,6 +301,19 @@ public:
       servo.attach(servoPin, 500, 2400);
     }
     for (int angle = currentServoAngle; angle >= 0; angle -= 5) {
+      // 🚗 CHỐNG KẸT XE TỰ ĐỘNG ĐẢO CHIỀU: Nếu phát hiện vật cản trong lúc đang hạ cần
+      if (digitalRead(sensorPin) == obstacleLevel) {
+        Serial.printf("\n🚨 [%s-CHỐNG KẸT] >> PHÁT HIỆN VẬT CẢN KHI ĐANG HẠ CẦN! ĐẢO CHIỀU MỞ CẤP TỐC 90 ĐỘ!\n", name.c_str());
+        servo.write(90);
+        currentServoAngle = 90;
+        currentState = GATE_CAR_UNDER;
+        clearDetectionStart = 0;
+        if (lcd) {
+          lcd->setCursor(0, 1);
+          lcd->print(" CHU Y VAT CAN! ");
+        }
+        return;
+      }
       servo.write(angle);
       currentServoAngle = angle;
       delay(15);
@@ -397,25 +415,21 @@ public:
       if (millis() - barrierOpenedAt >= 800) {
         int pinVal = digitalRead(sensorPin);
 
-        // Tự động thiết lập mức chuẩn thông thoáng ban đầu khi chưa có xe
-        if (sensorBaseline == -1) {
-          sensorBaseline = pinVal;
-          Serial.printf("   🎯 [%s - SENSOR PIN %d]: Da xac lap muc chuan thong thoang = %d\n",
-                        name.c_str(), sensorPin, sensorBaseline);
-        }
-
-        // CÓ VẬT CẢN (XE QUA) = Khi mức điện áp thay đổi khác mức thông thoáng chuẩn
-        bool isObstacle = (pinVal != sensorBaseline);
+        // Mức vật cản được cấu hình riêng cho từng cổng:
+        // • ENTRY_1: obstacleLevel = LOW (0)
+        // • EXIT_1 : obstacleLevel = HIGH (1) [Giữ nguyên chuẩn xác cho Checkout]
+        bool isObstacle = (pinVal == obstacleLevel);
 
         // In log định kỳ mỗi 1.5 giây để theo dõi
         if (millis() - lastSensorLogTime >= 1500) {
           lastSensorLogTime = millis();
           const char* stateStr = "CHO XE QUA";
-          if (currentState == GATE_CAR_UNDER) stateStr = "XE DANG DUOI CONG (GIU MO 100%)";
+          if (currentState == GATE_CAR_UNDER) stateStr = "XE DANG DUOI CONG (CHONG KET - GIU MO 100%)";
           else if (currentState == GATE_CAR_PASSED) stateStr = "XE DA QUA - DANG DEM 1S DONG";
 
-          Serial.printf("   [%s - SENSOR PIN %d]: Muc=%d (Chuan=%d) | VatCan=%s | TT=%s\n",
-                        name.c_str(), sensorPin, pinVal, sensorBaseline, isObstacle ? "CO" : "KHONG", stateStr);
+          Serial.printf("   [%s - SENSOR PIN %d]: Muc=%d (VatCan=%s) | TT=%s\n",
+                        name.c_str(), sensorPin, pinVal, 
+                        isObstacle ? "CO" : "KHONG", stateStr);
         }
 
         // ── GIAI ĐOẠN 1: Cổng đang mở, chờ xe tiến vào che tia hồng ngoại ──
@@ -423,7 +437,7 @@ public:
           if (isObstacle) {
             currentState = GATE_CAR_UNDER;
             clearDetectionStart = 0;
-            Serial.printf("\n🚗 [%s-SENSOR] >> ĐÃ CẮT TIA HỒNG NGOẠI: XE ĐANG QUA CỔNG!\n", name.c_str());
+            Serial.printf("\n🚗 [%s-SENSOR] >> ĐÃ CẮT TIA HỒNG NGOẠI: XE ĐANG QUA CỔNG (CHỐNG KẸT KÍCH HOẠT)!\n", name.c_str());
           } else {
             // Timeout 30s an toàn nếu mở cổng nhưng không có xe nào đi vào
             if (millis() - barrierOpenedAt >= 30000) {
@@ -433,20 +447,20 @@ public:
           }
         }
 
-        // ── GIAI ĐOẠN 2: Xe đang ở dưới thanh chắn -> chờ xe đi qua hẳn (hết che tia) ──
+        // ── GIAI ĐOẠN 2: Xe đang ở dưới thanh chắn / chưa qua cảm biến -> giữ mở tuyệt đối ──
         else if (currentState == GATE_CAR_UNDER) {
           if (!isObstacle) {
-            // Khi rút tay ra / xe qua khỏi -> yêu cầu thông thoáng liên tục 80ms
+            // Khi rút tay ra / xe qua khỏi -> yêu cầu thông thoáng liên tục 200ms để lọc nhiễu
             if (clearDetectionStart == 0) {
               clearDetectionStart = millis();
-            } else if (millis() - clearDetectionStart >= 80) {
+            } else if (millis() - clearDetectionStart >= 200) {
               currentState = GATE_CAR_PASSED;
               carPassedAt = millis();
-              Serial.printf("\n✅ [%s-SENSOR] >> XE ĐÃ QUA KHỎI TIA HỒNG NGOẠI! ĐÓNG SAU 1 GIÂY...\n", name.c_str());
+              Serial.printf("\n✅ [%s-SENSOR] >> XE ĐÃ QUA KHỎI CẢM BIẾN! ĐÓNG SAU 1 GIÂY...\n", name.c_str());
             }
           } else {
-            // CHỪNG NÀO CÒN VẬT CẢN CHE TIA -> LUÔN RESET BỘ ĐẾM THÔNG THOÁNG VỀ 0
-            // KHÔNG BAO GIỜ TỰ ĐỘNG ĐÓNG DÙ CHE BAO LÂU!
+            // CHỪNG NÀO CÒN VẬT CẢN CHE TIA (XE CHƯA QUA CẢM BIẾN):
+            // LUÔN RESET BỘ ĐẾM THÔNG THOÁNG VỀ 0 -> GIỮ NGUYÊN 90 ĐỘ KHÔNG BAO GIỜ ĐÓNG!
             clearDetectionStart = 0;
           }
         }
@@ -454,7 +468,7 @@ public:
         // ── GIAI ĐOẠN 3: Xe đã qua khỏi -> đợi đúng 1.0 giây thông thoáng -> đóng barrier ──
         else if (currentState == GATE_CAR_PASSED) {
           if (isObstacle) {
-            // NẾU CÓ VẬT CẢN TRỞ LẠI TRONG LÚC ĐANG ĐẾM 1S:
+            // NẾU CÓ VẬT CẢN TRỞ LẠI TRONG LÚC ĐANG ĐẾM 1S (XE PHANH HOẶC LÙI LẠI):
             currentState = GATE_CAR_UNDER;
             clearDetectionStart = 0;
             Serial.printf("\n⚠️ [%s-SENSOR] >> CÓ VẬT CẢN TRỞ LẠI -> GIỮ NGUYÊN CỔNG MỞ AN TOÀN!\n", name.c_str());
@@ -468,8 +482,8 @@ public:
   }
 };
 
-GateController entryGate("ENTRY_1", ENTRY_SERVO_PIN, ENTRY_SENSOR_PIN, &lcdEntry);
-GateController exitGate("EXIT_1", EXIT_SERVO_PIN, EXIT_SENSOR_PIN, &lcdExit);
+GateController entryGate("ENTRY_1", ENTRY_SERVO_PIN, ENTRY_SENSOR_PIN, LOW, &lcdEntry);
+GateController exitGate("EXIT_1", EXIT_SERVO_PIN, EXIT_SENSOR_PIN, HIGH, &lcdExit);
 
 // ════════════════════════════════════════════════════════════════════
 // SETUP
@@ -590,7 +604,16 @@ void loop() {
     else if (command.startsWith("CHECKOUT")) {
       exitGate.open("  TAM BIET!  ", "TAM BIET QUY KHACH - CHUC BAN THUONG LO BINH AN - HEN GAP LAI!");
     }
-    else if (command.startsWith("FORCE_CLOSE") || command.startsWith("CLOSE")) {
+    else if (command.startsWith("CLOSE")) {
+      // Khi nhận lệnh CLOSE từ Kiosk hoặc Web: Nếu xe đang dưới cổng hoặc cảm biến còn che, TUYỆT ĐỐI KHÔNG ĐÓNG!
+      if (targetGate.currentState == GATE_CAR_UNDER || digitalRead(targetGate.sensorPin) == targetGate.obstacleLevel) {
+        Serial.printf("[ESP32] >> LỆNH CLOSE NHẬN ĐƯỢC NHƯNG %s ĐANG CÓ XE CHƯA QUA -> GIỮ CỔNG AN TOÀN!\n", targetGate.name.c_str());
+      } else {
+        targetGate.close();
+      }
+    }
+    else if (command.startsWith("FORCE_CLOSE")) {
+      // Đóng cưỡng chế khẩn cấp từ Staff Panel
       targetGate.close();
     }
   }

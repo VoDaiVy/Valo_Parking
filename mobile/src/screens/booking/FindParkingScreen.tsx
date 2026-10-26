@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ParkingMap2D } from '@/components/booking/ParkingMap2D';
+import { OccupancyForecast } from '@/components/booking/OccupancyForecast';
 import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useBooking } from '@/hooks/useBooking';
@@ -171,6 +172,7 @@ export const FindParkingScreen = ({ navigation, route }: Props) => {
       ) : null}
 
       <ScrollView style={styles.mapScroll}>
+        <OccupancyForecast floorId={selectedFloorId || undefined} onSelectTime={(initialStartTime, initialEndTime) => navigation.navigate('CreateBooking', { initialStartTime, initialEndTime, selectedFloorId: selectedFloorId || undefined })} />
         <View style={styles.mapCanvas}>
             {isLoading ? (
               <View style={styles.mapState}>
