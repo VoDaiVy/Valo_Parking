@@ -140,10 +140,6 @@ export default function StaffDashboardScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={COLORS.gold} onRefresh={refresh} />}
         showsVerticalScrollIndicator={false}
       >
-        <DashboardEntry delay={80}>
-          <GateControlPanel />
-        </DashboardEntry>
-
         {loading ? (
           <StaffDashboardSkeleton />
         ) : error ? (
@@ -158,6 +154,10 @@ export default function StaffDashboardScreen({ navigation }: Props) {
                 capacityTone={capacityTone}
                 vehicles={metrics.bookings}
               />
+            </DashboardEntry>
+
+            <DashboardEntry delay={160}>
+              <GateControlPanel />
             </DashboardEntry>
 
             <StaffPrimaryActions

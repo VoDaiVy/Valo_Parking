@@ -72,14 +72,14 @@ describe('walletSubscription properties', () => {
     expect(calculateSubscriptionTotal(100_000, 3)).toBe(300_000);
   });
 
-  it('prevents buying the active package or downgrading a yearly package', () => {
+  it('allows purchasing independent slot entitlements with a different duration', () => {
     const membership = {
       isVip: true,
       package: { id: 'year', type: 'yearly' },
     } as any;
 
-    expect(getSubscriptionPackageRestriction(membership, { _id: 'year', type: 'yearly' } as any)).toBeTruthy();
-    expect(getSubscriptionPackageRestriction(membership, { _id: 'month', type: 'monthly' } as any)).toBeTruthy();
+    expect(getSubscriptionPackageRestriction(membership, { _id: 'year', type: 'yearly' } as any)).toBeNull();
+    expect(getSubscriptionPackageRestriction(membership, { _id: 'month', type: 'monthly' } as any)).toBeNull();
     expect(getSubscriptionPackageRestriction({ ...membership, package: { id: 'month', type: 'monthly' } }, { _id: 'year', type: 'yearly' } as any)).toBeNull();
   });
 

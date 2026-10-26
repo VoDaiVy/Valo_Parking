@@ -8,7 +8,6 @@ interface BookingActionInput {
 }
 
 const MINUTE = 60_000;
-const MAX_DURATION = 24 * 60 * MINUTE;
 
 export const getBookingActionAvailability = (booking: BookingActionInput, now = Date.now()) => {
   const start = new Date(booking.startTime).getTime();
@@ -46,7 +45,6 @@ export const canExtendBookingBy = (booking: BookingActionInput, minutes: number,
     Number.isFinite(end) &&
     minutes > 0 &&
     extendedEnd > now &&
-    extendedEnd - start >= 60 * MINUTE &&
-    extendedEnd - start <= MAX_DURATION
+    extendedEnd - start >= 60 * MINUTE
   );
 };

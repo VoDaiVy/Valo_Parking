@@ -67,6 +67,7 @@ export type NotificationNavigationTarget =
     }
   | { tab: 'WalletTab'; screen: 'Membership' }
   | { tab: 'WalletTab'; screen: 'Wallet' }
+  | { tab: 'WalletTab'; screen: 'Rewards' }
   | { tab: 'ProfileTab'; screen: 'Profile' };
 
 const getMarketplaceTransferId = (metadata: Record<string, unknown>) => {
@@ -93,6 +94,9 @@ const getMarketplaceTransferId = (metadata: Record<string, unknown>) => {
 
 export const getNotificationNavigationTarget = (item: UserNotification) => {
   const metadata = item.metadata || {};
+  if (typeof metadata.deepLink === 'string' && /^(?:valo:\/\/|\/)(?:customer\/)?rewards\/?(?:[?#].*)?$/.test(metadata.deepLink.trim())) {
+    return { tab: 'WalletTab', screen: 'Rewards' } satisfies NotificationNavigationTarget;
+  }
   if (
     metadata.eventType === 'MEMBERSHIP_TRANSFER_CLAIMED' ||
     metadata.eventType === 'MEMBERSHIP_TRANSFER_COMPLETED'

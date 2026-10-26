@@ -25,7 +25,11 @@ npm install
 npx expo start
 ```
 
-Then open the app with Expo Go, an emulator, or a simulator.
+Use a development build, an emulator, or a simulator. Native Google Sign-In requires a custom build and is unavailable in Expo Go.
+
+## Google Sign-In and Android APK
+
+See [Google Sign-In setup](./GOOGLE_SIGN_IN_SETUP.md) for Google Cloud OAuth clients, APK signing SHA-1, backend audience, EAS environment variables, and APK build instructions.
 
 ## API URL
 

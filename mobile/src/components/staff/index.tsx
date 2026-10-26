@@ -296,6 +296,7 @@ export function OperationalRow({
   subtitle,
   meta,
   icon,
+  iconElement,
   tone = 'brand',
   right,
   onPress,
@@ -304,6 +305,7 @@ export function OperationalRow({
   subtitle?: string;
   meta?: string;
   icon?: IconName;
+  iconElement?: React.ReactNode;
   tone?: Tone;
   right?: React.ReactNode;
   onPress?: () => void;
@@ -311,9 +313,9 @@ export function OperationalRow({
   const color = toneColor[tone];
   const body = (
     <View style={styles.row}>
-      {icon ? (
+      {icon || iconElement ? (
         <View style={[styles.rowIcon, { backgroundColor: `${color}14` }]}>
-          <Ionicons name={icon} size={20} color={color} />
+          {iconElement ?? <Ionicons name={icon} size={20} color={color} />}
         </View>
       ) : null}
       <View style={styles.rowCopy}>

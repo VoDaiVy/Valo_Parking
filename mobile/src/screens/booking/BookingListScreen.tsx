@@ -21,6 +21,9 @@ import { AnimatedPressable, StatusChip, StaggeredView } from '@/components/profi
 import { ErrorState } from '@/components/common';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useBooking } from '@/hooks/useBooking';
+import { useBookingCart } from '@/contexts/BookingCartContext';
+import { WorkflowChip, workflowStyles } from '@/components/common/WorkflowUI';
+import { useFocusEffect } from '@react-navigation/native';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import type { Booking, BookingStatus, ParkingFloor } from '@/types/booking.types';
 import { formatCurrency } from '@/utils/formatters';
@@ -244,12 +247,13 @@ function BookingRow({
 }
 
 export const BookingListScreen = ({ navigation }: Props) => {
+  const cart = useBookingCart();
   const { bookings, isLoading, error, fetchBookings } = useBooking();
   const [filter, setFilter] = useState<FilterType>('all');
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void fetchBookings();
-  }, [fetchBookings]);
+  }, [fetchBookings]));
 
   const filtered = filter === 'all' ? bookings : bookings.filter((booking) => booking.status === filter);
 
@@ -281,6 +285,12 @@ export const BookingListScreen = ({ navigation }: Props) => {
         </View>
         <NewBookingButton onPress={openCreateBooking} />
       </StaggeredView>
+
+      <View style={[workflowStyles.row, { paddingHorizontal: 20, paddingBottom: 12 }]}>
+        <WorkflowChip onPress={() => navigation.getParent()?.navigate('Bookings', { screen: 'FindParking' })}>Parking map</WorkflowChip>
+        <WorkflowChip onPress={() => navigation.getParent()?.navigate('Bookings', { screen: 'BookingCart' })}>Booking cart ({cart.items.length})</WorkflowChip>
+        <WorkflowChip onPress={() => navigation.getParent()?.navigate('Bookings', { screen: 'BookingAssistant' })}>AI assistant</WorkflowChip>
+      </View>
 
       <ScrollView
         horizontal

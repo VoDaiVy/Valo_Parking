@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { WalletScreen }                  from '../screens/wallet/WalletScreen';
+import { RewardsScreen } from '../screens/wallet/RewardsScreen';
 import { TopUpScreen }                   from '../screens/wallet/TopUpScreen';
 import { TransactionHistoryScreen }      from '../screens/wallet/TransactionHistoryScreen';
 import { MembershipScreen }              from '../screens/wallet/MembershipScreen';
@@ -22,6 +23,7 @@ export const WalletStackNavigator = () => (
     }}
   >
     <Stack.Screen name="Wallet"                     component={WalletScreen} />
+    <Stack.Screen name="Rewards" component={RewardsScreen} />
     <Stack.Screen name="TopUp"                      component={TopUpScreen} />
     <Stack.Screen name="TransactionHistory"         component={TransactionHistoryScreen} />
     <Stack.Screen name="Membership"                 component={MembershipScreen} />

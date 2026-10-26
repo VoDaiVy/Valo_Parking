@@ -1,10 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as Google from 'expo-auth-session/providers/google';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -24,16 +21,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { config } from '@/config/env';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useAppAlert } from '@/contexts/AppAlertContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useGoogleSignIn } from '@/hooks/useGoogleSignIn';
 import type { AuthStackParamList } from '@/navigation/types';
 import { authService } from '@/services/api/auth';
 import type { RegisterRequest } from '@/types/api';
 import { isValidEmail, isValidPassword } from '@/utils/validation';
 
-WebBrowser.maybeCompleteAuthSession();
 
 const LogoImg = require('../../../assets/logo.png') as number;
 
@@ -1041,7 +1037,7 @@ const createUsername = (name: string, email: string) => {
 };
 
 export default function AuthScreen({ navigation, route }: Props) {
-  const { login, googleLogin } = useAuth();
+  const { login } = useAuth();
   const { alert } = useAppAlert();
   const [mode, setMode] = useState<AuthMode>(route.name === 'Register' ? 'signup' : 'signin');
 
@@ -1049,7 +1045,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginPasswordHidden, setLoginPasswordHidden] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const { loading: googleLoading, enabled: googleEnabled, signIn: promptGoogleLogin } = useGoogleSignIn();
 
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
@@ -1060,62 +1056,6 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [registerConfirmPasswordHidden, setRegisterConfirmPasswordHidden] = useState(true);
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState('');
-
-  const [googleRequest, googleResponse, googlePromptAsync] = Google.useIdTokenAuthRequest({
-    androidClientId: config.googleAndroidClientId || undefined,
-    clientId: config.googleClientId,
-    iosClientId: config.googleIosClientId || undefined,
-    webClientId: config.googleClientId,
-    scopes: ['openid', 'profile', 'email'],
-    selectAccount: true,
-  });
-
-  const handleGoogleLogin = useCallback(
-    async (idToken: string) => {
-      setGoogleLoading(true);
-      try {
-        await googleLogin({ idToken });
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
-        alert('Google sign-in failed', message);
-      } finally {
-        setGoogleLoading(false);
-      }
-    },
-    [alert, googleLogin],
-  );
-
-  useEffect(() => {
-    if (googleResponse?.type !== 'success') return;
-
-    const idToken =
-      googleResponse.authentication?.idToken ??
-      (googleResponse.params as Record<string, string>)?.id_token;
-
-    if (idToken) {
-      void handleGoogleLogin(idToken);
-    } else {
-      alert('Error', 'Unable to retrieve the Google ID token.');
-    }
-  }, [alert, googleResponse, handleGoogleLogin]);
-
-  const promptGoogleLogin = async () => {
-    if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-      alert(
-        'Google sign-in requires a development build',
-        "Expo Go cannot use this app's OAuth redirect. Install and open the VALO development build, then try again.",
-      );
-      return;
-    }
-
-    if (!config.googleClientId) {
-      alert('Google sign-in unavailable', 'Missing EXPO_PUBLIC_GOOGLE_CLIENT_ID.');
-      return;
-    }
-
-    await googlePromptAsync();
-  };
 
   const handleLogin = async () => {
     const trimEmail = loginEmail.trim();
@@ -1218,7 +1158,7 @@ export default function AuthScreen({ navigation, route }: Props) {
                 {mode === 'signin' ? (
                   <SignInForm
                     email={loginEmail}
-                    googleEnabled={Boolean(googleRequest)}
+                    googleEnabled={googleEnabled}
                     googleLoading={googleLoading}
                     loading={loginLoading}
                     password={loginPassword}

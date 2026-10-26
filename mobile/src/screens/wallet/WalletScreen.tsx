@@ -74,6 +74,8 @@ export const WalletScreen = ({ navigation }: Props) => {
               <ActionBtn icon="time-outline" label="History" color="#60B4FF" bg="rgba(96,180,255,0.12)" onPress={() => navigation.navigate('TransactionHistory')} />
               <ActionBtn icon="ribbon-outline" label="Membership" color="#FFD700" bg="rgba(255,215,0,0.12)" onPress={() => navigation.navigate('Membership')} />
               <ActionBtn icon="cube-outline" label="Plans" color="#E07BE0" bg="rgba(224,123,224,0.12)" onPress={() => navigation.navigate('SubscriptionPackages')} />
+              <ActionBtn icon="gift-outline" label="Voucher" color={COLORS.gold} bg="rgba(212,175,55,0.12)" onPress={() => navigation.navigate('Rewards')} />
+              <ActionBtn icon="swap-horizontal-outline" label="Transfers" color={COLORS.gold} bg="rgba(212,175,55,0.12)" onPress={() => navigation.navigate('MembershipMarketplace')} />
             </View>
             {wallet && <>
               <Text style={styles.sectionTitle}>This month</Text>
@@ -128,8 +130,8 @@ const styles = StyleSheet.create({
   balanceLabel:{fontSize:FONT_SIZES.sm,color:COLORS.textSecondary,marginBottom:SPACING.sm},
   balanceValue:{fontSize:36,fontWeight:'800',color:COLORS.gold,letterSpacing:1},
   overdraftText:{fontSize:FONT_SIZES.xs,color:COLORS.textMuted,marginTop:SPACING.sm},
-  actionsRow:{flexDirection:'row',justifyContent:'space-around',paddingHorizontal:SPACING.lg,marginBottom:SPACING.sm},
-  actionBtn:{alignItems:'center',gap:SPACING.xs},
+  actionsRow:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:SPACING.lg,paddingHorizontal:SPACING.lg,marginBottom:SPACING.sm},
+  actionBtn:{alignItems:'center',gap:SPACING.xs,width:'31%',minHeight:80},
   actionIconWrap:{width:52,height:52,borderRadius:RADIUS.md,justifyContent:'center',alignItems:'center'},
   actionLabel:{fontSize:FONT_SIZES.xs,color:COLORS.textSecondary},
   sectionTitle:{fontSize:FONT_SIZES.sm,fontWeight:'600',color:COLORS.textMuted,textTransform:'uppercase',letterSpacing:0.5,paddingHorizontal:SPACING.lg,paddingTop:SPACING.lg,paddingBottom:SPACING.sm},

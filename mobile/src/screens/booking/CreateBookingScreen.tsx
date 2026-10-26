@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EmptyState, ErrorState, ScreenHeader, SectionTitle } from '@/components/common';
+import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
 import {
   BookingActionModal,
   type BookingModalVariant,
@@ -40,8 +40,13 @@ import type { Vehicle } from '@/types/models';
 import type { MembershipStatus } from '@/types/subscription.types';
 import { formatCurrency } from '@/utils/formatters';
 import { subscriptionsService } from '@/services/api/subscriptions';
-import { walletService } from '@/services/api/wallet';
-import { isPolicyAcceptanceRequired } from '@/utils/policyErrors';
+import { loyaltyService } from '@/services/api/loyalty';
+import { useBookingCart } from '@/contexts/BookingCartContext';
+import { WorkflowChip, workflowStyles as workflow } from '@/components/common/WorkflowUI';
+import type { UserVoucher } from '@/types/loyalty.types';
+import * as Crypto from 'expo-crypto';
+import { normalizeLicensePlate } from '@/utils/profileValidation';
+
 
 type Props = NativeStackScreenProps<BookingStackParamList, 'CreateBooking'>;
 
@@ -69,14 +74,6 @@ for (let h = 0; h < 24; h++) {
   }
 }
 
-// next 14 days
-const DATE_OPTIONS: Date[] = Array.from({ length: 14 }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() + i);
-  d.setHours(0, 0, 0, 0);
-  return d;
-});
-
 // ── Time Picker Modal ────────────────────────────────────────────────────────
 type TimePickerModalProps = {
   visible: boolean;
@@ -90,11 +87,17 @@ type TimePickerModalProps = {
 function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onClose }: TimePickerModalProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => initialDate);
   const [selectedTime, setSelectedTime] = useState<string>(() => format(initialDate, 'HH:mm'));
+  const [dateText, setDateText] = useState(() => format(initialDate, 'yyyy-MM-dd'));
+  const dateOptions = useMemo(() => Array.from({ length: 14 }, (_, index) => {
+    const day = new Date(minDate || new Date());
+    day.setDate(day.getDate() + index); day.setHours(0, 0, 0, 0); return day;
+  }), [visible, minDate?.getDate(), minDate?.getMonth()]);
 
   useEffect(() => {
     if (visible) {
       setSelectedDate(initialDate);
       setSelectedTime(format(initialDate, 'HH:mm'));
+      setDateText(format(initialDate, 'yyyy-MM-dd'));
     }
   }, [visible, initialDate]);
 
@@ -125,7 +128,7 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
           {/* Date selection */}
           <Text style={mpStyles.label}>Date</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={mpStyles.dateRow}>
-            {DATE_OPTIONS.map((date) => {
+            {dateOptions.map((date) => {
               const dateStr = format(date, 'yyyy-MM-dd');
               const active = format(selectedDate, 'yyyy-MM-dd') === dateStr;
               const disabled = minDateStr ? dateStr < minDateStr : false;
@@ -133,7 +136,7 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
                 <TouchableOpacity
                   key={dateStr}
                   style={[mpStyles.datePill, active && mpStyles.datePillActive, disabled && mpStyles.datePillDisabled]}
-                  onPress={() => !disabled && setSelectedDate(date)}
+                  onPress={() => { if (!disabled) { setSelectedDate(date); setDateText(dateStr); } }}
                   disabled={disabled}
                 >
                   <Text style={[mpStyles.datePillDay, active && mpStyles.datePillTextActive, disabled && mpStyles.datePillTextDisabled]}>
@@ -146,6 +149,15 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
               );
             })}
           </ScrollView>
+
+          <Text style={mpStyles.label}>Or enter a date (YYYY-MM-DD)</Text>
+          <TextInput accessibilityLabel="Booking date" placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.textMuted} style={workflow.input} value={dateText} onChangeText={(value) => {
+            setDateText(value);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+              const day = new Date(`${value}T00:00:00`);
+              if (Number.isFinite(day.getTime()) && format(day, 'yyyy-MM-dd') === value) setSelectedDate(day);
+            }
+          }} />
 
           {/* Time selection */}
           <Text style={mpStyles.label}>Time</Text>
@@ -170,7 +182,7 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
             </View>
           </ScrollView>
 
-          <TouchableOpacity style={mpStyles.confirmBtn} onPress={handleConfirm} activeOpacity={0.85}>
+          <TouchableOpacity disabled={dateText !== format(selectedDate, 'yyyy-MM-dd') || Boolean(minDateStr && dateText < minDateStr) || Boolean(minTimeStr && selectedTime < minTimeStr)} style={mpStyles.confirmBtn} onPress={handleConfirm} activeOpacity={0.85}>
             <LinearGradient
               colors={[COLORS.goldLight, COLORS.gold, COLORS.goldDark]}
               start={{ x: 0, y: 0 }}
@@ -449,6 +461,8 @@ function VehicleSelector({
           </Pressable>
         </ScrollView>
       )}
+
+      {vehicles.length === 0 && !vehicleError ? <WorkflowChip selected={selectedVehicleId === 'manual'} onPress={() => onSelectVehicle('manual')}>Enter another license plate</WorkflowChip> : null}
 
       {selectedVehicleId === 'manual' ? (
         <View style={styles.manualInputWrap}>
@@ -751,6 +765,7 @@ function StickyBookingFooter({
   submitting,
   disabledReason,
   onSubmit,
+  submitLabel,
 }: {
   grandTotal: number;
   walletBalance: number;
@@ -759,6 +774,7 @@ function StickyBookingFooter({
   submitting: boolean;
   disabledReason: string;
   onSubmit: () => void;
+  submitLabel: string;
 }) {
   const entrance = useEntrance(500);
   const press = useRef(new Animated.Value(0)).current;
@@ -820,7 +836,7 @@ function StickyBookingFooter({
         </View>
         <Animated.View style={[styles.footerSubmitWrap, { transform: [{ scale }] }]}>
           <Pressable
-            accessibilityLabel="Confirm booking"
+            accessibilityLabel={submitLabel}
             accessibilityRole="button"
             accessibilityState={{ disabled: !canBook, busy: submitting }}
             disabled={!canBook}
@@ -840,7 +856,7 @@ function StickyBookingFooter({
                 <>
                   <Ionicons name="checkmark-circle-outline" size={19} color={canBook ? COLORS.textInverse : COLORS.textMuted} />
                   <Text style={[styles.footerSubmitText, !canBook && styles.footerSubmitTextDisabled]}>
-                    Confirm booking
+                    {submitLabel}
                   </Text>
                 </>
               )}
@@ -862,7 +878,6 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     isLoading,
     error,
     fetchWalletBalance,
-    fetchBookings,
     fetchParkingFloors,
     fetchServices,
     getAvailableSlots,
@@ -883,21 +898,38 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [hourlyRate, setHourlyRate] = useState(10000);
   const [submitting, setSubmitting] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<CreateFeedback | null>(null);
   const [dbSlots, setDbSlots] = useState<any[] | null>(null);
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [activeHolds, setActiveHolds] = useState<any[]>([]);
   const [selectedFloor, setSelectedFloor] = useState<ParkingFloor | null>(null);
   const [serverQuoteTotal, setServerQuoteTotal] = useState<number | null>(null);
-  const [confirmedTotal, setConfirmedTotal] = useState<number | null>(null);
+  const cart = useBookingCart();
+  const [step, setStep] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [step]);
+  const [vouchers, setVouchers] = useState<UserVoucher[]>([]);
+  const [voucherError, setVoucherError] = useState('');
+  const [selectedVoucherId, setSelectedVoucherId] = useState(route.params?.selectedVoucherId || '');
+  useEffect(() => {
+    void loyaltyService.getVouchers('available').then((response) => setVouchers(response.data || []))
+      .catch((e) => setVoucherError(e instanceof Error ? e.message : 'Unable to load vouchers.'));
+  }, []);
+  useEffect(() => { if (route.params?.selectedVoucherId) setSelectedVoucherId(route.params.selectedVoucherId); }, [route.params?.selectedVoucherId]);
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
 
   const selectedFloorId = route.params?.selectedFloorId;
   const selectedSlotCode = route.params?.selectedSlotCode;
   const selectedFloorName = route.params?.selectedFloorName;
   const selectedServiceId = route.params?.selectedServiceId;
+
+  useEffect(() => {
+    const start = new Date(route.params?.initialStartTime || '');
+    const end = new Date(route.params?.initialEndTime || '');
+    if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime()) && start > new Date() && end.getTime() - start.getTime() >= 30 * 60_000) {
+      setStartTime(start); setEndTime(end);
+    }
+  }, [route.params?.initialStartTime, route.params?.initialEndTime]);
 
   const fetchExtraData = useCallback(async () => {
     try {
@@ -939,12 +971,16 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       const res = await vehiclesService.getMyVehicles();
       const approved = (res.data ?? []).filter((v) => !v.status || v.status === 'approved');
       setVehicles(approved);
-      const defaultVehicle = approved.find((v) => v.isDefault) ?? approved[0];
-      setSelectedVehicleId(defaultVehicle?.id ?? defaultVehicle?._id ?? '');
+      const requestedPlate = route.params?.initialLicensePlate;
+      const requested = requestedPlate ? approved.find((v) => normalizeLicensePlate(v.licensePlate) === normalizeLicensePlate(requestedPlate)) : null;
+      const defaultVehicle = requested || approved.find((v) => v.isDefault) || approved[0];
+      if (requestedPlate && !requested) {
+        setSelectedVehicleId('manual'); setManualPlate(requestedPlate);
+      } else setSelectedVehicleId(defaultVehicle?.id ?? defaultVehicle?._id ?? '');
     } catch (e: unknown) {
       setVehicleError(e instanceof Error ? e.message : 'Unable to load vehicles.');
     }
-  }, []);
+  }, [route.params?.initialLicensePlate]);
 
   const loadHourlyRate = useCallback(async () => {
     try {
@@ -1058,18 +1094,21 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const grandTotal = serverQuoteTotal ?? localGrandTotal;
   const parkingCost = Math.max(grandTotal - serviceTotal, 0);
   const hasEnoughBalance = walletBalance >= grandTotal;
-  const selectedVehicle = vehicles.find((v) => (v.id ?? v._id ?? '') === selectedVehicleId);
+  const selectedVehicle = vehicles.find((v) => selectedVehicleId === 'manual'
+    ? normalizeLicensePlate(v.licensePlate) === normalizeLicensePlate(manualPlate)
+    : (v.id ?? v._id ?? '') === selectedVehicleId);
   const activeVipMembership = Boolean(
     membership?.isVip &&
     membership.status === 'active' &&
     membership.expireAt &&
-    new Date(membership.expireAt).getTime() > Date.now() &&
+    new Date(membership.expireAt).getTime() > startTime.getTime() &&
     (membership.package?.type === 'monthly' || membership.package?.type === 'yearly'),
   );
   const selectedSlotIsOwnVipSlot = Boolean(
-    selectedSlot && membership?.reservedSlots.some((slot) => (
+    activeVipMembership && selectedSlot && membership?.expireAt && new Date(membership.expireAt) >= endTime && membership?.reservedSlots.some((slot) => (
       String(slot.floorId) === String(selectedSlot.floorId) &&
-      slot.slotCode.toUpperCase() === selectedSlot.slotCode.toUpperCase()
+      slot.slotCode.toUpperCase() === selectedSlot.slotCode.toUpperCase() &&
+      (!slot.expireAt || new Date(slot.expireAt) >= endTime)
     )),
   );
   const membershipBlocksRegisteredVehicle = Boolean(
@@ -1078,11 +1117,9 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const canBook = Boolean(
     selectedSlot &&
     selectedVehicleId &&
-    hasEnoughBalance &&
     !membershipBlocksRegisteredVehicle &&
     !submitting &&
-    durationMs >= 30 * 60 * 1000 &&
-    durationMs <= 24 * 60 * 60 * 1000,
+    durationMs >= 30 * 60 * 1000,
   );
   const selectedRouteSlotUnavailable =
     Boolean(selectedFloorId && selectedSlotCode) && !selectedSlot && !isLoading && availableSlots.length > 0;
@@ -1092,11 +1129,9 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       ? 'Choose an available space'
       : membershipBlocksRegisteredVehicle
         ? 'Use your VIP space first'
-        : durationMs < 30 * 60 * 1000 || durationMs > 24 * 60 * 60 * 1000
+        : durationMs < 30 * 60 * 1000
           ? 'Adjust booking duration'
-          : !hasEnoughBalance
-            ? 'Top up your wallet'
-            : '';
+          : '';
 
   useEffect(() => {
     if (!selectedSlot || !selectedVehicleId || startTime <= new Date() || endTime <= startTime) {
@@ -1123,6 +1158,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         serviceIds: selectedServiceIds,
+        voucherId: selectedVoucherId || undefined,
       }]).then((response) => {
         if (active) setServerQuoteTotal(Number(response.data?.grandTotal || 0));
       }).catch(() => {
@@ -1134,7 +1170,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       active = false;
       clearTimeout(timeoutId);
     };
-  }, [endTime, manualPlate, selectedServiceIds, selectedSlot, selectedVehicle, selectedVehicleId, startTime]);
+  }, [endTime, manualPlate, selectedServiceIds, selectedVoucherId, selectedSlot, selectedVehicle, selectedVehicleId, startTime]);
 
   // ── Toggle service ────────────────────────────────────────────────────────
   const toggleService = (serviceId: string) => {
@@ -1163,119 +1199,33 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     setFeedback({ variant, title, message });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!selectedSlot || !selectedVehicleId) return;
-    const now = new Date();
-    if (startTime < now) {
-      showFeedback('error', 'Invalid time', 'The start time cannot be in the past.');
-      return;
-    }
-    if (durationMs < 30 * 60 * 1000) {
-      showFeedback('warning', 'Duration too short', 'The minimum booking duration is 30 minutes.');
-      return;
-    }
-    if (durationMs > 24 * 60 * 60 * 1000) {
-      showFeedback('warning', 'Duration too long', 'The maximum booking duration is 24 hours.');
-      return;
+    if (startTime <= new Date() || durationMs < 30 * 60_000) {
+      showFeedback('warning', 'Invalid time', 'Choose a future time with a minimum duration of 30 minutes.'); return;
     }
     if (membershipBlocksRegisteredVehicle) {
-      showFeedback(
-        'warning',
-        'Use your VIP space first',
-        'Your membership includes an available VIP space. Assign a vehicle to it before booking a regular space for another vehicle.',
-      );
-      return;
+      showFeedback('warning', 'Check VIP space', 'Please use your membership space first.'); return;
     }
-    if (!hasEnoughBalance && serverQuoteTotal !== null) {
-      showFeedback(
-        'warning',
-        'Insufficient balance',
-        `You need ${formatCurrency(grandTotal)}, but your wallet only has ${formatCurrency(walletBalance)}. Please top up your wallet.`,
-      );
-      return;
-    }
+    const plate = selectedVehicleId === 'manual' ? manualPlate.trim().toUpperCase() : selectedVehicle?.licensePlate;
+    if (!plate) { showFeedback('warning', 'Select a vehicle', 'Please enter a license plate or select a vehicle.'); return; }
     setSubmitting(true);
-    let holdId: string | null = null;
-    let holdConsumed = false;
     try {
-      const licensePlate = selectedVehicleId === 'manual'
-        ? manualPlate.trim()
-        : selectedVehicle?.licensePlate;
-      if (!licensePlate) throw new Error('Please select a vehicle or enter a license plate.');
-
-      const item = {
-        clientItemId: `mobile-${Date.now()}`,
+      cart.add({
+        clientItemId: Crypto.randomUUID(),
         vehicleId: selectedVehicleId === 'manual' ? undefined : selectedVehicleId,
-        licensePlate: selectedVehicleId === 'manual' ? licensePlate : undefined,
-        floorId: selectedSlot.floorId,
-        slotCode: selectedSlot.slotCode,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        serviceIds: selectedServiceIds,
-      };
-
-      const [quoteResponse, walletResponse] = await Promise.all([
-        bookingService.quoteBulkBooking([item]),
-        walletService.getWallet(),
-      ]);
-      const authoritativeTotal = Number(quoteResponse.data?.grandTotal || 0);
-      const latestBalance = Number(walletResponse.data?.balance || 0);
-      setServerQuoteTotal(authoritativeTotal);
-
-      if (latestBalance < authoritativeTotal) {
-        showFeedback(
-          'warning',
-          'Insufficient balance',
-          `You need ${formatCurrency(authoritativeTotal)}, but your wallet only has ${formatCurrency(latestBalance)}.`,
-        );
-        return;
-      }
-
-      const holdResponse = await bookingService.createBookingHold({
-        floorId: item.floorId,
-        slotCode: item.slotCode,
-        licensePlate,
-        startTime: item.startTime,
-        endTime: item.endTime,
+        licensePlate: selectedVehicleId === 'manual' ? plate : undefined,
+        floorId: selectedSlot.floorId, slotCode: selectedSlot.slotCode,
+        startTime: startTime.toISOString(), endTime: endTime.toISOString(),
+        serviceIds: selectedServiceIds, voucherId: selectedVoucherId || undefined,
+        plateLabel: plate, floorLabel: selectedFloor?.name || selectedSlot.floorName || '',
+        voucherLabel: vouchers.find((v) => v._id === selectedVoucherId)?.benefitSnapshot.name,
       });
-      holdId = holdResponse.data?._id || null;
-      if (!holdId) throw new Error('Unable to create a parking hold.');
-
-      const response = await bookingService.createBulkBooking({
-        idempotencyKey: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        items: [{ ...item, holdId }],
-      });
-      holdConsumed = true;
-      const booking = bookingService.normalizeBooking(response.data?.bookings?.[0]);
-      const bookingId = booking?._id;
-      setConfirmedTotal(authoritativeTotal);
-      await Promise.all([fetchBookings(), fetchWalletBalance(), fetchExtraData()]);
-      setCreatedBookingId(bookingId ?? null);
-      setShowSuccessModal(true);
-    } catch (submitError) {
-      if (holdId && !holdConsumed) {
-        await bookingService.releaseBookingHold(holdId).catch(() => undefined);
-      }
-      if (isPolicyAcceptanceRequired(submitError)) {
-        setFeedback({
-          variant: 'warning',
-          title: 'Policy acceptance required',
-          message: 'Please read and accept the latest policy before booking.',
-          primaryLabel: 'View policy',
-          onPrimary: () => navigation
-            .getParent<BottomTabNavigationProp<CustomerTabParamList>>()
-            ?.navigate('ProfileTab', { screen: 'Policies' }),
-        });
-        return;
-      }
-      showFeedback(
-        'error',
-        'Booking failed',
-        submitError instanceof Error ? submitError.message : 'Please try again.',
-      );
-    } finally {
-      setSubmitting(false);
-    }
+      setSelectedSlot(null); setSelectedVoucherId('');
+      setStep(0);
+      navigation.navigate('BookingCart');
+    } catch (e) { showFeedback('warning', 'Unable to add to cart', e instanceof Error ? e.message : 'Please try again.'); }
+    finally { setSubmitting(false); }
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1288,15 +1238,21 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
         headerIconBackground="rgba(226,186,75,0.12)"
         headerIconColor={COLORS.gold}
         progressVariant="accent"
-        subtitle="Time & vehicle · Parking · Review"
+        subtitle="Time & vehicle → Parking space → Cart & payment"
         title="New booking"
-        onBack={() => navigation.goBack()}
+        onBack={() => step > 0 ? setStep(step - 1) : navigation.goBack()}
       />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View style={workflow.row}>
+            {['1. Time & vehicle', '2. Parking space', '3. Services & rewards'].map((label, index) => (
+              <WorkflowChip key={label} selected={step === index} onPress={() => { if (index < step) setStep(index); }}>{label}</WorkflowChip>
+            ))}
+          </View>
 
           {/* ── Time Pickers ──────────────────────────────────── */}
+          {step === 0 ? <>
           <TimeTimeline
             durationHours={durationHours}
             endTime={endTime}
@@ -1321,7 +1277,9 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
             onRetry={loadVehicles}
             onSelectVehicle={setSelectedVehicleId}
           />
+          </> : null}
 
+          {step === 1 ?
           <ParkingMapSection
             activeHolds={activeHolds}
             activeSessions={activeSessions}
@@ -1347,7 +1305,9 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
             }}
             onSelectSlot={setSelectedSlot}
           />
+          : null}
 
+          {step === 2 ? <>
           <ServiceList
             selectedServiceIds={selectedServiceIds}
             serviceTotal={serviceTotal}
@@ -1355,291 +1315,39 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
             onToggleService={toggleService}
           />
 
+          <View style={workflow.panel}>
+            <Text style={workflow.title}>Vouchers & rewards</Text>
+            {voucherError ? <Text style={workflow.error}>{voucherError}</Text> : null}
+            <WorkflowChip selected={!selectedVoucherId} onPress={() => setSelectedVoucherId('')}>No voucher</WorkflowChip>
+            {vouchers.filter((v) => !v.bookingId && !cart.items.some((item) => item.voucherId === v._id)).map((v) => (
+              <WorkflowChip key={v._id} selected={selectedVoucherId === v._id} onPress={() => setSelectedVoucherId(v._id)}>
+                {v.benefitSnapshot.name} · minimum spend {formatCurrency(v.benefitSnapshot.minimumAmount)}
+              </WorkflowChip>
+            ))}
+            <Text style={workflow.body}>The final price and rewards are verified before payment.</Text>
+            <WorkflowChip onPress={() => navigation.navigate('BookingCart')}>View cart ({cart.items.length})</WorkflowChip>
+          </View>
+
           <PriceBreakdown
             hourlyRate={hourlyRate}
             paidHours={paidHours}
             parkingCost={parkingCost}
             serviceTotal={serviceTotal}
           />
+          </> : null}
 
-          {/* ── Slot Map ──────────────────────────────────────── */}
-          <View style={styles.hiddenLegacySection}>
-            {false ? <SectionTitle>Parking space</SectionTitle> : null}
-
-            {selectedSlot ? (
-              <View style={styles.selectedSlotCard}>
-                <View style={styles.selectedSlotIcon}>
-                  <Ionicons name="location" size={20} color={COLORS.gold} />
-                </View>
-                <View style={styles.selectedSlotInfo}>
-                  <Text style={styles.selectedSlotCode}>{selectedSlot.slotCode}</Text>
-                  <Text style={styles.selectedSlotMeta}>
-                    {selectedSlot.floorName ?? selectedFloorName ?? selectedSlot.floorId}
-                    {selectedVehicle ? ` • ${selectedVehicle.licensePlate}` : ''}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setSelectedSlot(null)}
-                  style={styles.clearSlotBtn}
-                  accessibilityLabel="Clear selected space"
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="close-circle" size={20} color={COLORS.textMuted} />
-                </TouchableOpacity>
-              </View>
-            ) : selectedRouteSlotUnavailable ? (
-              <View style={styles.warningBox}>
-                <Ionicons name="alert-circle-outline" size={18} color={COLORS.warning} />
-                <Text style={styles.warningText}>
-                  Space {selectedSlotCode} is no longer available. Please choose another space.
-                </Text>
-              </View>
-            ) : null}
-
-            {parkingFloors.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.floorTabs}
-                style={styles.floorTabScroll}
-              >
-                {parkingFloors.map((floor) => {
-                  const floorId = floor._id ?? floor.id ?? String(floor.floorNumber);
-                  const active = selectedFloor && (selectedFloor._id ?? selectedFloor.id ?? String(selectedFloor.floorNumber)) === floorId;
-                  const floorCount = availableSlots.filter((s) => s.floorId === floorId).length;
-                  return (
-                    <Pressable
-                      key={floorId}
-                      style={[styles.floorTab, active && styles.floorTabActive]}
-                      onPress={() => { setSelectedFloor(floor); setSelectedSlot(null); }}
-                    >
-                      <Text style={[styles.floorTabText, active && styles.floorTabTextActive]}>{floor.name}</Text>
-                      <View style={[styles.floorCount, active && styles.floorCountActive]}>
-                        <Text style={[styles.floorCountText, active && styles.floorCountTextActive]}>{floorCount}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#7EE8A2' }]} />
-                <Text style={styles.legendText}>Available</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FF6B6B' }]} />
-                <Text style={styles.legendText}>Occupied</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FFD700' }]} />
-                <Text style={styles.legendText}>VIP</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#FFA500' }]} />
-                <Text style={styles.legendText}>Reserved</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#A0A0A0' }]} />
-                <Text style={styles.legendText}>Maintenance</Text>
-              </View>
-            </View>
-
-            <View style={styles.mapCanvas}>
-                {isLoading || dbSlots === null ? (
-                  <View style={styles.mapState}>
-                    <ActivityIndicator color={COLORS.gold} size="large" />
-                    <Text style={styles.mapStateText}>Loading parking map...</Text>
-                  </View>
-                ) : error ? (
-                  <View style={styles.mapState}>
-                    <ErrorState
-                      message={error}
-                      onRetry={() => {
-                        void fetchParkingFloors();
-                        void getAvailableSlots(startTime, endTime);
-                      }}
-                    />
-                  </View>
-                ) : !selectedFloor ? (
-                  <View style={styles.mapState}>
-                    <EmptyState icon="layers-outline" title="No floors available" message="No parking floors were found." />
-                  </View>
-                ) : (
-                  <ParkingMap2D
-                    floor={selectedFloor}
-                    floorSlots={availableSlots.filter(
-                      (s) => s.floorId === (selectedFloor._id ?? selectedFloor.id ?? String(selectedFloor.floorNumber)),
-                    )}
-                    selectedSlot={selectedSlot}
-                    onSelectSlot={setSelectedSlot}
-                    dbSlots={dbSlots}
-                    activeSessions={activeSessions}
-                    activeHolds={activeHolds}
-                  />
-                )}
-            </View>
-          </View>
-
-          {/* ── Extra Services ────────────────────────────────── */}
-          <View style={styles.hiddenLegacySection}>
-            <View style={styles.sectionHeader}>
-              <SectionTitle>Additional services</SectionTitle>
-              {serviceTotal > 0 && (
-                <Text style={styles.serviceTotalBadge}>+{formatCurrency(serviceTotal)}</Text>
-              )}
-            </View>
-
-            {services.length === 0 ? (
-              <View style={styles.emptyServices}>
-                <Text style={styles.emptyServicesText}>No services are currently available.</Text>
-              </View>
-            ) : (
-              <View style={styles.serviceList}>
-                {services.map((service) => {
-                  const serviceId = getServiceId(service);
-                  const selected = selectedServiceIds.includes(serviceId);
-                  return (
-                    <TouchableOpacity
-                      key={serviceId}
-                      style={[styles.serviceItem, selected && styles.serviceItemActive]}
-                      onPress={() => toggleService(serviceId)}
-                      activeOpacity={0.7}
-                      accessibilityLabel={`${service.name}, ${formatCurrency(service.price)}`}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: selected }}
-                    >
-                      <View style={[styles.serviceCheckbox, selected && styles.serviceCheckboxActive]}>
-                        {selected && <Ionicons name="checkmark" size={12} color={COLORS.textInverse} />}
-                      </View>
-                      <View style={styles.serviceInfo}>
-                        <Text style={styles.serviceName}>{service.name}</Text>
-                        {(service.estimatedTime || service.estimatedTimeMinutes) ? (
-                          <Text style={styles.serviceDuration}>
-                            {service.estimatedTime ?? service.estimatedTimeMinutes} min
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.servicePrice}>{formatCurrency(service.price)}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* ── Price Summary ─────────────────────────────────── */}
-          <View style={styles.hiddenLegacySection}>
-            <View style={styles.summaryHeader}>
-              <View style={styles.summaryIcon}>
-                <Ionicons name="receipt-outline" size={19} color={COLORS.gold} />
-              </View>
-              <View style={styles.summaryCopy}>
-                <Text style={styles.summaryTitle}>Payment summary</Text>
-                <Text style={styles.summarySubtitle}>Review the cost before reserving your space</Text>
-              </View>
-            </View>
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Hourly rate</Text>
-              <Text style={styles.priceValue}>{formatCurrency(hourlyRate)}</Text>
-            </View>
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Billable time</Text>
-              <Text style={styles.priceValue}>{paidHours} hours</Text>
-            </View>
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Parking fee</Text>
-              <Text style={styles.priceValue}>{formatCurrency(parkingCost)}</Text>
-            </View>
-            {serviceTotal > 0 && (
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Additional services</Text>
-                <Text style={styles.priceValue}>{formatCurrency(serviceTotal)}</Text>
-              </View>
-            )}
-            <View style={[styles.priceRow, styles.priceTotal]}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>{formatCurrency(grandTotal)}</Text>
-            </View>
-            <View style={styles.walletRow}>
-              <Ionicons
-                name="wallet-outline"
-                size={14}
-                color={hasEnoughBalance ? COLORS.success : COLORS.error}
-              />
-              <Text style={[styles.walletText, { color: hasEnoughBalance ? COLORS.success : COLORS.error }]}>
-                Wallet balance: {formatCurrency(walletBalance)}
-                {hasEnoughBalance ? '' : ' · insufficient'}
-              </Text>
-            </View>
-          </View>
-
-          {/* ── Submit Button ─────────────────────────────────── */}
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={!canBook}
-            style={[styles.submitBtn, !canBook && styles.submitDisabled]}
-            onPress={handleSubmit}
-            accessibilityLabel="Confirm booking"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !canBook, busy: submitting }}
-          >
-            <LinearGradient
-              colors={[COLORS.goldLight, COLORS.gold, COLORS.goldDark]}
-              end={{ x: 1, y: 0 }}
-              start={{ x: 0, y: 0 }}
-              style={styles.submitGrad}
-            >
-              {submitting ? (
-                <ActivityIndicator color={COLORS.textInverse} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={20} color={COLORS.textInverse} />
-                  <Text style={styles.submitText}>Confirm booking</Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
 
       <StickyBookingFooter
-        canBook={canBook}
+        canBook={step === 0 ? Boolean(selectedVehicleId && (selectedVehicleId !== 'manual' || manualPlate.trim()) && startTime > new Date() && durationMs >= 30 * 60_000) : step === 1 ? Boolean(selectedSlot && !membershipBlocksRegisteredVehicle) : canBook}
         disabledReason={disabledReason}
         grandTotal={grandTotal}
         hasEnoughBalance={hasEnoughBalance}
         submitting={submitting}
         walletBalance={walletBalance}
-        onSubmit={handleSubmit}
-      />
-
-      <BookingActionModal
-        message={`Space ${selectedSlot?.slotCode ?? '--'} has been reserved.\nAmount paid: ${formatCurrency(confirmedTotal ?? grandTotal)}`}
-        primaryLabel="View booking details"
-        secondaryLabel="View all bookings"
-        title="Booking confirmed"
-        variant="success"
-        visible={showSuccessModal}
-        onClose={() => setShowSuccessModal(false)}
-        onPrimary={() => {
-          setShowSuccessModal(false);
-          const parentNavigation = navigation.getParent<BottomTabNavigationProp<CustomerTabParamList>>();
-          if (createdBookingId) {
-            parentNavigation?.navigate('ProfileTab', {
-              screen: 'BookingDetail',
-              params: { bookingId: createdBookingId },
-            });
-          } else {
-            parentNavigation?.navigate('ProfileTab', { screen: 'BookingList' });
-          }
-        }}
-        onSecondary={() => {
-          setShowSuccessModal(false);
-          navigation
-            .getParent<BottomTabNavigationProp<CustomerTabParamList>>()
-            ?.navigate('ProfileTab', { screen: 'BookingList' });
-        }}
+        submitLabel={step < 2 ? 'Continue' : 'Add to cart'}
+        onSubmit={() => step < 2 ? setStep(step + 1) : handleSubmit()}
       />
 
       <BookingActionModal

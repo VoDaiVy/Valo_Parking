@@ -43,14 +43,14 @@ describe('booking action availability', () => {
     });
   });
 
-  it('blocks extension choices that make total duration exceed 24 hours', () => {
+  it('allows multi-day extensions like the shared booking backend', () => {
     const nearLimit = {
       ...booking,
       endTime: '2026-07-14T06:30:00.000Z',
     };
 
     expect(canExtendBookingBy(nearLimit, 30, NOW)).toBe(true);
-    expect(canExtendBookingBy(nearLimit, 60, NOW)).toBe(false);
+    expect(canExtendBookingBy(nearLimit, 60, NOW)).toBe(true);
   });
 
   it('blocks an extension option when the resulting end time is still in the past', () => {

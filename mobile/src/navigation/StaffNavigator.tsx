@@ -6,12 +6,16 @@ import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { COLORS, FONT_SIZES, RADIUS } from '../constants/theme';
+import { StaffAssistantProvider } from '@/contexts/StaffAssistantContext';
 import LiveGridScreen from '../screens/staff/LiveGridScreen';
 import { CustomerManagementScreen } from '../screens/staff/CustomerManagementScreen';
 import { ManagementHubScreen } from '../screens/staff/ManagementHubScreen';
 import { StaffBookingManagementScreen } from '../screens/staff/StaffBookingManagementScreen';
 import StaffDashboardScreen from '../screens/staff/StaffDashboardScreen';
-import StaffGateControlScreen from '../screens/staff/StaffGateControlScreen';
+import { StaffParkingOperationsScreen } from '@/screens/staff/StaffParkingOperationsScreen';
+import { StaffCommunicationScreen } from '@/screens/staff/StaffCommunicationScreen';
+import { StaffAssistantScreen } from '@/screens/staff/StaffAssistantScreen';
+import { NotificationsScreen } from '@/screens/notifications/NotificationsScreen';
 import { StaffNotificationManagementScreen } from '../screens/staff/StaffNotificationManagementScreen';
 import StaffProfileScreen from '../screens/staff/StaffProfileScreen';
 import { StaffSubscriptionManagementScreen } from '../screens/staff/StaffSubscriptionManagementScreen';
@@ -33,6 +37,10 @@ export type StaffManagementStackParamList = {
   Subscriptions: undefined;
   TicketPackages: undefined;
   StaffNotifications: undefined;
+  Inbox: undefined;
+  Communication: undefined;
+  StaffAssistant: undefined;
+  ParkingOperations: undefined;
 };
 
 export type StaffProfileStackParamList = {
@@ -57,6 +65,10 @@ function ManagementStackNavigator() {
   return (
     <ManagementStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.background } }}>
       <ManagementStack.Screen name="ManagementHome" component={ManagementHubScreen} />
+      <ManagementStack.Screen name="Inbox" component={NotificationsScreen} />
+      <ManagementStack.Screen name="Communication" component={StaffCommunicationScreen} />
+      <ManagementStack.Screen name="StaffAssistant" component={StaffAssistantScreen} />
+      <ManagementStack.Screen name="ParkingOperations" component={StaffParkingOperationsScreen} />
       <ManagementStack.Screen name="Customers" component={CustomerManagementScreen} />
       <ManagementStack.Screen name="Bookings" component={StaffBookingManagementScreen} />
       <ManagementStack.Screen name="BookingScanner" component={StaffBookingQrScreen} />
@@ -79,7 +91,6 @@ function ProfileStackNavigator() {
 
 export type StaffTabParamList = {
   Dashboard: undefined;
-  Gates: undefined;
   LiveGrid: undefined;
   Sessions: undefined;
   Manage: NavigatorScreenParams<StaffManagementStackParamList>;
@@ -99,6 +110,7 @@ function tabIcon(focused: boolean, activeIcon: IoniconName, inactiveIcon: Ionico
 
 export default function StaffNavigator() {
   return (
+    <StaffAssistantProvider>
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
@@ -115,14 +127,6 @@ export default function StaffNavigator() {
         options={{
           tabBarLabel: 'Overview',
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'grid', 'grid-outline', color),
-        }}
-      />
-      <Tab.Screen
-        name="Gates"
-        component={StaffGateControlScreen}
-        options={{
-          tabBarLabel: 'Gates',
-          tabBarIcon: ({ focused, color }) => tabIcon(focused, 'radio', 'radio-outline', color),
         }}
       />
       <Tab.Screen
@@ -163,6 +167,7 @@ export default function StaffNavigator() {
         }}
       />
     </Tab.Navigator>
+    </StaffAssistantProvider>
   );
 }
 

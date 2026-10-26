@@ -148,7 +148,7 @@ class BookingService {
     return apiClient.delete<APIResponse>(`/bookings/holds/${holdId}`);
   }
 
-  createBulkBooking(data: { idempotencyKey: string; items: BulkBookingItem[] }) {
+  createBulkBooking(data: { idempotencyKey: string; items: BulkBookingItem[]; expectedTotal?: number }) {
     return apiClient.post<BulkBookingResponse>('/bookings/bulk', data);
   }
 
@@ -166,6 +166,14 @@ class BookingService {
 
   getBookingQr(bookingId: string) {
     return apiClient.get<APIResponse<BookingQrData>>(`/bookings/${bookingId}/qr`);
+  }
+
+  getCancellationQuote(bookingId: string) {
+    return apiClient.get<APIResponse<{
+      bookingId: string;
+      paidAmount: number;
+      refundAmount: number;
+    }>>(`/bookings/${bookingId}/cancel-quote`);
   }
 
   checkInBooking(bookingId: string) {

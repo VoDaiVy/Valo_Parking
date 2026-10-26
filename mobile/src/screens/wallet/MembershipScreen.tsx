@@ -659,6 +659,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
           qrCode: response.data?.qrCode,
           amount: response.data?.amount,
           renewal: true,
+          entitlementRenewal: Boolean(renewalEntitlementId),
         });
       }
     } catch (renewError) {

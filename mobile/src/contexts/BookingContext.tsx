@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useSocket } from '@/hooks/useSocket';
+import { useAuth } from '@/hooks/useAuth';
 import bookingService from '@/services/BookingService';
 import parkingFloorService from '@/services/ParkingFloorService';
 import serviceService from '@/services/ServiceService';
@@ -56,6 +57,7 @@ export const BookingContext = createContext<BookingContextValue | undefined>(und
 
 export const BookingProvider = ({ children }: { children: ReactNode }) => {
   const socket = useSocket();
+  const { user } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [bookingPolicy, setBookingPolicy] = useState<BookingMembershipPolicy | null>(null);
@@ -65,6 +67,10 @@ export const BookingProvider = ({ children }: { children: ReactNode }) => {
   const [walletBalance, setWalletBalance] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setBookings([]); setAvailableSlots([]); setBookingPolicy(null); setWalletBalance(0); setError('');
+  }, [user?.id]);
 
   const fetchBookings = useCallback(async () => {
     setIsLoading(true);

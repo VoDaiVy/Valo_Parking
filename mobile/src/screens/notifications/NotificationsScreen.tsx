@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import type { NavigationProp } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NavigationProp, ParamListBase } from '@react-navigation/native';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,7 +20,7 @@ import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
-import type { NotificationStackParamList } from '@/navigation/types';
+import { useAuth } from '@/hooks/useAuth';
 import {
   getNotificationId,
   getNotificationNavigationTarget,
@@ -29,7 +28,7 @@ import {
   type NotificationFilter,
 } from '@/utils/notifications';
 
-type Props = NativeStackScreenProps<NotificationStackParamList, 'Notifications'>;
+type Props = { navigation: NavigationProp<ParamListBase> };
 
 const filters: NotificationFilter[] = ['ALL', 'UNREAD', 'READ', ...NOTIFICATION_TYPES];
 
@@ -49,6 +48,7 @@ const FILTER_LABELS: Record<NotificationFilter, string> = {
 };
 
 export const NotificationsScreen = ({ navigation }: Props) => {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<NotificationFilter>('ALL');
   const {
     notifications,
@@ -66,6 +66,11 @@ export const NotificationsScreen = ({ navigation }: Props) => {
 
   const openNotification = async (id: string, notification: Parameters<typeof getNotificationNavigationTarget>[0]) => {
     if (id) await markAsRead(id).catch(() => undefined);
+    if (user?.role === 'staff' || user?.role === 'admin') {
+      if (notification.type === 'BOOKING') navigation.navigate('Bookings');
+      else if (notification.type === 'VIOLATION' || notification.type === 'CAMERA') navigation.navigate('ParkingOperations');
+      return;
+    }
     const target = getNotificationNavigationTarget(notification);
     const tabs = navigation.getParent<NavigationProp<CustomerTabParamList>>();
     if (!target || !tabs) return;
@@ -73,6 +78,8 @@ export const NotificationsScreen = ({ navigation }: Props) => {
     if (target.tab === 'WalletTab') {
       if (target.screen === 'Wallet') {
         tabs.navigate('WalletTab', { screen: 'Wallet' });
+      } else if (target.screen === 'Rewards') {
+        tabs.navigate('WalletTab', { screen: 'Rewards' });
       } else if (target.screen === 'Membership') {
         tabs.navigate('WalletTab', { screen: 'Membership' });
       } else {
@@ -117,6 +124,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#080808" />
       <ScreenHeader
+        onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
         title="Notifications"
         subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'Up to date'}
         right={
