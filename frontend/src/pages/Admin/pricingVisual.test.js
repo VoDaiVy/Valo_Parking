@@ -16,12 +16,12 @@ const render = (name, props) => renderToStaticMarkup(React.createElement(panels[
 const noop = () => {};
 const blocks = [{ startHour: 7, endHour: 12, price: 10000 }, { startHour: 12, endHour: 22, price: 34000 }, { startHour: 22, endHour: 7, price: 25000 }];
 
-test('mocked KPI cards derive their values and include noninteractive chart silhouettes', () => {
+test('flat KPI strip preserves derived values without decorative chart silhouettes', () => {
   const html = render('PricingOverview', { timeBlocks: blocks });
   assert.ok(html.includes('<dd>3</dd>'));
   assert.ok(html.includes('10.000 VND'));
   assert.ok(html.includes('34.000 VND'));
-  assert.equal((html.match(/class="pricing-metric-chart"/g) || []).length, 3);
+  assert.ok(!html.includes('pricing-metric-chart'));
   assert.ok(!html.includes('<button'));
   const empty = render('PricingOverview', { timeBlocks: [] });
   assert.equal((empty.match(/<dd>—<\/dd>/g) || []).length, 2);

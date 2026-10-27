@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Menu, Listbox, Transition } from '@headlessui/react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
@@ -15,6 +15,8 @@ import {
   WalletCards,
   Wrench,
 } from 'lucide-react';
+import { inspectRevenueResponse } from './revenueAnalyticsData';
+import './revenueAnalytics.css';
 import { getAdminPlatformRevenueByMode } from '../../services/statisticsService';
 
 /* ── Constants ────────────────────────────────────────────────────────── */
@@ -49,14 +51,12 @@ const SOURCE_LABELS = {
 /* ── Utilities ────────────────────────────────────────────────────────── */
 
 const safe = (v) => {
+  if (typeof v !== 'number' && (typeof v !== 'string' || !v.trim())) return null;
   const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 };
-
-const formatCurrency = (value) =>
-  `${safe(value).toLocaleString('vi-VN')} VND`;
-
-const formatNumber = (value) => safe(value).toLocaleString('vi-VN');
+const formatCurrency = (value) => safe(value) === null ? 'Unavailable' : `${safe(value).toLocaleString('vi-VN')} VND`;
+const formatNumber = (value) => safe(value) === null ? 'Unavailable' : safe(value).toLocaleString('vi-VN');
 
 const formatAxisCurrency = (value) => {
   const number = safe(value);
@@ -110,7 +110,7 @@ const getCurrentVietnamDate = () => {
 const statusTone = (status = '') => {
   const normalized = String(status).toUpperCase();
   if (normalized === 'COMPLETED') return { color: '#34D399', label: 'Completed' }; // emerald-400
-  if (['PAID', 'ACTIVE', 'PAUSED'].includes(normalized)) return { color: '#3B82F6', label: 'Active' }; // blue-500
+  if (['PAID', 'ACTIVE', 'PAUSED'].includes(normalized)) return { color: '#3B82F6', label: {PAID: 'Paid', ACTIVE: 'Active', PAUSED: 'Paused'}[normalized] }; // blue-500
   if (normalized === 'CANCELLED') return { color: '#FB7185', label: 'Cancelled' }; // rose-400
   if (normalized === 'EXPIRED') return { color: '#64748B', label: 'Expired' }; // slate-500
   if (normalized === 'PENDING') return { color: '#FBBF24', label: 'Pending' }; // amber-400
@@ -134,7 +134,7 @@ function CustomSelect({ value, options, onChange }) {
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <Listbox.Options className="absolute right-0 mt-1 max-h-60 w-auto min-w-full overflow-auto rounded-lg border border-white/10 bg-[#121212] py-1 text-sm shadow-xl shadow-black/80 ring-1 ring-black ring-opacity-5 focus:outline-none">
+          <Listbox.Options className="ra-select-options absolute right-0 mt-1 max-h-60 w-auto min-w-full overflow-auto rounded-lg border border-white/10 bg-[#121212] py-1 text-sm shadow-xl shadow-black/80 ring-1 ring-black ring-opacity-5 focus:outline-none">
             {options.map((option, idx) => (
               <Listbox.Option
                 key={idx}
@@ -171,6 +171,7 @@ export default function RevenueAnalytics() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState(null);
   const reduceMotion = useReducedMotion();
 
   const availableYears = data?.availableYears || [vnYear];
@@ -189,6 +190,7 @@ export default function RevenueAnalytics() {
       if (!active) return;
       if (result?.ok && result.data?.success) {
         setData(result.data.data);
+        setUpdatedAt(new Date());
         setError('');
       } else {
         setData(null);
@@ -200,33 +202,34 @@ export default function RevenueAnalytics() {
     return () => { active = false; };
   }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey]);
 
-  const summary = data?.summary || {};
-  const trend = data?.trend || [];
-  const traffic = data?.traffic || [];
+  const report = inspectRevenueResponse(data);
+  const summary = report.summary;
+  const trend = report.trend;
+  const traffic = data?.traffic ?? null;
   const trafficSummary = data?.trafficSummary || {};
-  const statusDistribution = data?.statusDistribution || {};
-  const packageBreakdown = data?.packageBreakdown || [];
+  const statusDistribution = data?.statusDistribution ?? null;
+  const packageBreakdown = report.packages;
   const granularity = data?.period?.granularity || 'day';
   const trafficGranularity = data?.trafficGranularity || granularity;
 
   return (
-    <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-5 text-slate-200 lg:px-8">
+    <div className="admin-revenue-analytics relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-5 text-slate-200 lg:px-8">
       <div className="pointer-events-none absolute right-10 top-0 h-[300px] w-[300px] rounded-full bg-yellow-400/5 blur-[120px]" />
       <div className="pointer-events-none absolute left-20 top-60 h-64 w-64 rounded-full bg-blue-500/5 blur-[120px]" />
       
-      <div className="relative mx-auto max-w-[1400px]">
+      <div className="ra-workspace relative mx-auto max-w-[1400px]">
         {/* Header */}
-        <header className="mb-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
+        <header className="ra-header mb-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <BarChart3 size={11} strokeWidth={2.5} />
-              Analytics
+              VALO / ADMIN ANALYTICS
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
               Revenue Analytics
             </h1>
             <p className="mt-1 text-[13px] text-slate-400">
-              Platform revenue, vehicle traffic and booking insights.
+              Track platform revenue, payment sources, and operational performance.
             </p>
           </div>
 
@@ -256,6 +259,7 @@ export default function RevenueAnalytics() {
           </div>
         </header>
 
+        <div className="ra-update"><span>{loading ? 'Updating...' : updatedAt ? `Last updated: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : 'Not updated'}</span><span>All amounts are in VND</span></div>
         {error && (
           <div className="mb-5 flex flex-col gap-3 rounded-lg border-l-2 border-amber-400 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center">
             <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-300" />
@@ -266,53 +270,22 @@ export default function RevenueAnalytics() {
         {loading ? (
           <RevenueSkeleton />
         ) : data ? (
-          <div className="flex flex-col gap-6 pb-8">
-            {/* KPI Strip */}
+          <div className="ra-content">
             <KPIStrip summary={summary} reduceMotion={reduceMotion} />
-
-            <div className="border-t border-white/[0.04] my-2" />
-
-            {/* Revenue Trend */}
-            <RevenueTrendChart
-              trend={trend}
-              granularity={granularity}
-              reduceMotion={reduceMotion}
-            />
-
-            <div className="border-t border-white/[0.04] my-2" />
-
-            {/* Row: Revenue by Source + Vehicle Traffic */}
-            <section className="grid items-start gap-8 lg:grid-cols-12 xl:gap-0">
-              <div className="lg:col-span-5 xl:border-r xl:border-white/[0.04] xl:pr-10 h-full">
-                <RevenueBySourceSection summary={summary} reduceMotion={reduceMotion} />
-              </div>
-              <div className="lg:col-span-7 xl:pl-10">
-                <VehicleTrafficSection
-                  traffic={traffic}
-                  trafficSummary={trafficSummary}
-                  granularity={trafficGranularity}
-                  reduceMotion={reduceMotion}
-                />
-              </div>
-            </section>
-
-            <div className="border-t border-white/[0.04] my-2" />
-
-            {/* Row: Status Distribution + Value by Package */}
-            <section className="grid items-start gap-8 lg:grid-cols-12 xl:gap-0">
-              <div className="lg:col-span-5 xl:border-r xl:border-white/[0.04] xl:pr-10 h-full">
-                <StatusDistributionSection
-                  statusDistribution={statusDistribution}
-                  reduceMotion={reduceMotion}
-                />
-              </div>
-              <div className="lg:col-span-7 xl:pl-10">
-                <PackageValueSection
-                  packageBreakdown={packageBreakdown}
-                  reduceMotion={reduceMotion}
-                />
-              </div>
-            </section>
+            <details className="ra-basis"><summary>Reporting basis &amp; data coverage - Legacy renewal totals may be incomplete</summary><p>Booking and service revenue use completed bookings, net of recorded refunds. Refunds follow the booking completion period, not the refund transaction date. Packages include paid purchases and supported renewals; legacy renewal coverage is incomplete and purchases use record creation dates. Transfer fees include completed wallet fee records. Walk-in parking and violation income are outside this report. Prior-period data and transaction records are unavailable.</p></details>
+            {report.issues.length > 0 && <div className="ra-integrity" role="status">{report.issues.map((issue) => <p key={issue}>{issue}</p>)}</div>}
+            <div className="ra-row ra-primary">
+              <RevenueTrendChart trend={trend} granularity={granularity} reduceMotion={reduceMotion} />
+              <RevenueBySourceSection summary={summary} reduceMotion={reduceMotion} />
+            </div>
+            <div className="ra-row ra-secondary">
+              <PackageValueSection packageBreakdown={packageBreakdown} reduceMotion={reduceMotion} />
+              <VehicleTrafficSection traffic={traffic} trafficSummary={trafficSummary} granularity={trafficGranularity} reduceMotion={reduceMotion} />
+            </div>
+            <div className="ra-row ra-bottom">
+              <StatusDistributionSection statusDistribution={statusDistribution} reduceMotion={reduceMotion} />
+              <RecentRevenueTransactions />
+            </div>
           </div>
         ) : null}
       </div>
@@ -405,9 +378,9 @@ function KPIStrip({ summary, reduceMotion }) {
     <motion.section
       initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      className="grid grid-cols-2 gap-y-4 md:grid-cols-3 xl:grid-cols-6"
+      className="ra-kpis grid grid-cols-2 gap-y-4 md:grid-cols-3 xl:grid-cols-6"
     >
-      {metrics.map((metric, index) => (
+      {metrics.map((metric) => (
         <div key={metric.label} className="flex items-center gap-3 border-r border-white/[0.04] px-2 last:border-0">
           <div className={`flex shrink-0 items-center justify-center ${metric.colorClass}`}>
             <metric.icon size={16} strokeWidth={2.5} />
@@ -429,363 +402,137 @@ function KPIStrip({ summary, reduceMotion }) {
 /* ── Revenue Trend Chart ──────────────────────────────────────────────── */
 
 function RevenueTrendChart({ trend, granularity, reduceMotion }) {
-  const [viewMode, setViewMode] = useState('total'); // 'total' | 'bySource'
+  const [viewMode, setViewMode] = useState('total');
   const [hoveredIndex, setHoveredIndex] = useState(null);
-
-  const width = 1200;
-  const height = 300; // COMPACT HEIGHT
-  const padding = { top: 16, right: 16, bottom: 24, left: 60 };
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom;
-  const isBarChart = granularity === 'year';
-  const bandWidth = isBarChart
-    ? plotWidth / Math.max(trend.length, 1)
-    : trend.length > 1 ? plotWidth / (trend.length - 1) : plotWidth;
-
-  const sourceKeys = useMemo(() =>
-    viewMode === 'total'
-      ? ['totalRevenue']
-      : ['bookingRevenue', 'serviceRevenue', 'packageRevenue', 'membershipTransferFees'],
-    [viewMode]
-  );
-
-  const maxValue = useMemo(() => {
-    let max = 1;
-    for (const point of trend) {
-      for (const key of sourceKeys) {
-        const v = safe(point[key]);
-        if (v > max) max = v;
-      }
-    }
-    return max * 1.1;
-  }, [trend, sourceKeys]);
-
-  const xForIndex = (index) =>
-    padding.left + (isBarChart
-      ? bandWidth * (index + 0.5)
-      : trend.length <= 1 ? plotWidth / 2 : (index / (trend.length - 1)) * plotWidth);
-  const yForValue = (value) =>
-    padding.top + plotHeight - (safe(value) / maxValue) * plotHeight;
-
-  const makePath = (field) =>
-    trend.map((point, index) => `${index === 0 ? 'M' : 'L'} ${xForIndex(index).toFixed(2)} ${yForValue(point[field]).toFixed(2)}`).join(' ');
-
-  const makeAreaPath = (field) => {
-    if (trend.length === 0) return '';
-    return `${makePath(field)} L ${xForIndex(trend.length - 1).toFixed(2)} ${yForValue(0).toFixed(2)} L ${xForIndex(0).toFixed(2)} ${yForValue(0).toFixed(2)} Z`;
-  };
-
-  const hasActivity = trend.some((p) => sourceKeys.some((k) => safe(p[k]) > 0));
-
-  const labelCount = Math.min(trend.length, granularity === 'day' ? 7 : 12);
-  const labelIndexes = useMemo(() => {
-    if (trend.length <= labelCount) return new Set(trend.map((_, i) => i));
-    const step = (trend.length - 1) / (labelCount - 1);
-    const set = new Set();
-    for (let i = 0; i < labelCount; i++) set.add(Math.round(i * step));
-    return set;
-  }, [trend.length, labelCount]);
-
-  const barGroupWidth = Math.min(bandWidth * 0.72, 72);
-  const barGap = sourceKeys.length > 1 ? Math.min(3, barGroupWidth / (sourceKeys.length * 3)) : 0;
-  const barWidth = (barGroupWidth - barGap * (sourceKeys.length - 1)) / sourceKeys.length;
-  const lineColors = viewMode === 'total' ? { totalRevenue: '#FACC15' } : SOURCE_COLORS;
-
-  return (
-    <motion.section
-      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-      animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      className="mt-1"
-    >
-      <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h2 className="text-[18px] font-bold text-white">Revenue Trend</h2>
-          <p className="mt-1 text-[12px] text-slate-400">
-            {isBarChart
-              ? 'Annual revenue across years. Each column represents one year; the current year is year to date.'
-              : `${viewMode === 'total' ? 'Total realized platform revenue' : 'Revenue broken down by source'} over the selected period.`}
-          </p>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="hidden flex-wrap gap-x-4 text-[11px] font-semibold sm:flex">
-            {sourceKeys.map((key) => (
-              <span key={key} className="flex items-center gap-1.5 text-slate-400">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: lineColors[key] || '#FACC15' }} />
-                {SOURCE_LABELS[key] || 'Total'}
-              </span>
-            ))}
-          </div>
-          <div className="inline-flex rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5">
-            <button onClick={() => setViewMode('total')} className={`rounded-md px-3 py-1 text-xs font-bold transition ${viewMode === 'total' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`}>
-              Total
-            </button>
-            <button onClick={() => setViewMode('bySource')} className={`rounded-md px-3 py-1 text-xs font-bold transition ${viewMode === 'bySource' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`}>
-              By Source
-            </button>
-          </div>
-        </div>
+  const points = trend || [];
+  const keys = viewMode === 'total' ? ['totalRevenue'] : Object.keys(SOURCE_COLORS);
+  const width = 720; const height = 310;
+  const pad = {left: 64, right: 16, top: 20, bottom: 36};
+  const plotWidth = width - pad.left - pad.right; const plotHeight = height - pad.top - pad.bottom;
+  const band = plotWidth / Math.max(points.length, 1);
+  const barWidth = Math.min(64, band * .7);
+  const max = Math.max(1, ...points.map((point) => keys.reduce((sum, key) => sum + safe(point[key]), 0))) * 1.1;
+  const x = (i) => pad.left + band * (i + .5);
+  const y = (value) => pad.top + plotHeight * (1 - value / max);
+  const active = hoveredIndex !== null ? points[hoveredIndex] : null;
+  const tooltipKeys = viewMode === 'total' ? ['totalRevenue'] : [...Object.keys(SOURCE_COLORS), 'refunds', 'totalRevenue'];
+  const tooltipDate = active && /^\d{4}-\d{2}-\d{2}$/.test(active.period) ? new Date(`${active.period}T00:00:00Z`).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric', timeZone:'UTC'}) : active?.period;
+  const hasActivity = points.some((point) => keys.some((key) => safe(point[key]) > 0));
+  return <section className="ra-trend">
+    <div className="ra-section-heading"><div><h2><BarChart3 size={20} />Revenue Trend</h2><p>Total revenue over the selected period.</p></div>
+      <div className="ra-switch" aria-label="Revenue chart view">
+        <button type="button" aria-pressed={viewMode === 'total'} onClick={() => { setViewMode('total'); setHoveredIndex(null); }}>Total</button>
+        <button type="button" aria-pressed={viewMode === 'bySource'} onClick={() => { setViewMode('bySource'); setHoveredIndex(null); }}>By Source</button>
       </div>
-
-      {hasActivity ? (
-        <div className="relative w-full overflow-x-auto">
-          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[700px] w-full" role="img" aria-label={isBarChart ? 'Annual revenue bar chart' : 'Revenue trend chart'}>
-            <defs>
-              {sourceKeys.map((key) => (
-                <linearGradient key={`grad-${key}`} id={`grad-${key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={lineColors[key] || '#FACC15'} stopOpacity={viewMode === 'total' ? '0.15' : '0.08'} />
-                  <stop offset="100%" stopColor={lineColors[key] || '#FACC15'} stopOpacity="0" />
-                </linearGradient>
-              ))}
-            </defs>
-
-            {[0, 0.333, 0.666, 1].map((ratio) => {
-              const y = padding.top + plotHeight * ratio;
-              const value = maxValue * (1 - ratio);
-              return (
-                <g key={ratio}>
-                  <line x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth="1" strokeDasharray="4 4" />
-                  <text x={padding.left - 10} y={y + 4} textAnchor="end" fill="rgba(148,163,184,0.5)" fontSize="10" fontWeight="600">{formatAxisCurrency(value)}</text>
-                </g>
-              );
-            })}
-
-            {isBarChart ? trend.map((point, index) => (
-              <g key={`bars-${point.period}`}>
-                {sourceKeys.map((key, sourceIndex) => {
-                  const value = Math.max(0, safe(point[key]));
-                  return <rect
-                    key={key}
-                    x={xForIndex(index) - barGroupWidth / 2 + sourceIndex * (barWidth + barGap)}
-                    y={yForValue(value)}
-                    width={barWidth}
-                    height={yForValue(0) - yForValue(value)}
-                    rx="3"
-                    fill={lineColors[key] || '#FACC15'}
-                    opacity={hoveredIndex === null || hoveredIndex === index ? 1 : 0.6}
-                  />;
-                })}
-              </g>
-            )) : <>
-              {sourceKeys.map((key) => (
-                <path key={`area-${key}`} d={makeAreaPath(key)} fill={`url(#grad-${key})`} />
-              ))}
-              {sourceKeys.map((key) => (
-                <path key={`line-${key}`} d={makePath(key)} fill="none" stroke={lineColors[key] || '#FACC15'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              ))}
-            </>}
-
-            {trend.map((point, index) => {
-              const isHovered = hoveredIndex === index;
-              return (
-                <g key={point.period} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)}>
-                  <rect x={xForIndex(index) - bandWidth / 2} y={padding.top} width={bandWidth} height={plotHeight} fill="transparent" cursor="crosshair" />
-                  {isHovered && <line x1={xForIndex(index)} x2={xForIndex(index)} y1={padding.top} y2={padding.top + plotHeight} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />}
-                  {!isBarChart && sourceKeys.map((key) => safe(point[key]) > 0 ? (
-                    <circle key={`dot-${key}`} cx={xForIndex(index)} cy={yForValue(point[key])} r={isHovered ? '4' : '0'} fill="#111111" stroke={lineColors[key] || '#FACC15'} strokeWidth="2" className="pointer-events-none" />
-                  ) : null)}
-                  {labelIndexes.has(index) && (
-                    <text x={xForIndex(index)} y={height - 4} textAnchor={isBarChart ? 'middle' : index === 0 ? 'start' : index === trend.length - 1 ? 'end' : 'middle'} fill={isHovered ? 'rgba(255,255,255,0.8)' : 'rgba(148,163,184,0.6)'} fontSize="10" fontWeight="600" className="pointer-events-none">
-                      {formatPeriodLabel(point.period, granularity)}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-
-            {hoveredIndex !== null && trend[hoveredIndex] && (
-              <g className="pointer-events-none">
-                <foreignObject x={xForIndex(hoveredIndex) < width / 2 ? xForIndex(hoveredIndex) + 12 : xForIndex(hoveredIndex) - 192} y={padding.top} width="180" height="150">
-                  <div className="rounded-xl border border-white/10 bg-[#121212]/95 px-3 py-2.5 shadow-[0_8px_30px_rgb(0,0,0,0.8)] backdrop-blur-md">
-                    <p className="mb-2 text-[11px] font-bold text-white">{formatPeriodLabel(trend[hoveredIndex].period, granularity)}</p>
-                    <div className="space-y-1.5">
-                      {sourceKeys.map((key) => (
-                        <div key={key} className="flex items-center justify-between text-[10px]">
-                          <span className="flex items-center gap-1.5 text-slate-400">
-                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lineColors[key] || '#FACC15' }} />
-                            {SOURCE_LABELS[key] || 'Total'}
-                          </span>
-                          <span className="font-bold tabular-nums text-white">{formatCurrency(trend[hoveredIndex][key])}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {viewMode === 'bySource' && (
-                      <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[10px]">
-                        <span className="font-bold text-slate-400">Total</span>
-                        <span className="font-black tabular-nums text-yellow-400">{formatCurrency(trend[hoveredIndex].totalRevenue)}</span>
-                      </div>
-                    )}
-                  </div>
-                </foreignObject>
-              </g>
-            )}
-          </svg>
-        </div>
-      ) : (
-        <div className="py-10">
-          <EmptyState text="No revenue recorded in this period." />
-        </div>
-      )}
-    </motion.section>
-  );
+    </div>
+    {trend === null ? <EmptyState text="Revenue trend unavailable: the reporting data is missing or does not reconcile." /> : hasActivity ? <div className="ra-chart-scroll">
+      <svg className="ra-revenue-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={granularity === 'year' ? 'Annual revenue bar chart' : 'Revenue bar chart'}>
+        <defs>{keys.map((key) => <linearGradient key={key} id={`ra-revenue-${key}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={key === 'totalRevenue' ? '#FFE894' : SOURCE_COLORS[key]} stopOpacity="1" />
+          <stop offset="15%" stopColor={key === 'totalRevenue' ? '#F5C84C' : SOURCE_COLORS[key]} stopOpacity=".95" />
+          <stop offset="100%" stopColor={key === 'totalRevenue' ? '#B88622' : SOURCE_COLORS[key]} stopOpacity=".18" />
+        </linearGradient>)}</defs>
+        {[0, .333, .666, 1].map((ratio) => <g key={ratio}>
+          <line x1={pad.left} x2={width-pad.right} y1={pad.top+plotHeight*ratio} y2={pad.top+plotHeight*ratio} stroke="#24313A" strokeWidth="1" />
+          <text x={pad.left-10} y={pad.top+plotHeight*ratio+4} textAnchor="end" fill="#9AADC0" fontSize="12">{formatAxisCurrency(max*(1-ratio))}</text>
+        </g>)}
+        {points.map((point,i) => <g key={point.period} className={hoveredIndex === i ? 'ra-trend-active' : undefined}>
+          {keys.map((key,j) => {
+            const amount = safe(point[key]);
+            const base = keys.slice(0,j).reduce((sum, source) => sum + safe(point[source]), 0);
+            const top = y(base + amount);
+            return amount > 0 ? <g key={key}>
+              <rect data-series={key} data-amount={amount} x={x(i)-barWidth/2} y={top} width={barWidth} height={y(base)-top} rx={viewMode === 'total' ? 3 : 0} fill={`url(#ra-revenue-${key})`} opacity={hoveredIndex===null || hoveredIndex===i ? 1 : .55}><title>{`${point.period} - ${SOURCE_LABELS[key] || 'Total'}: ${formatCurrency(amount)}`}</title></rect>
+              <line x1={x(i)-barWidth/2+2} x2={x(i)+barWidth/2-2} y1={top+1} y2={top+1} stroke={key==='totalRevenue' ? '#FFF0B0' : SOURCE_COLORS[key]} opacity=".7" />
+            </g> : null;
+          })}
+          {(points.length<=8 || i===0 || i===points.length-1 || i%Math.ceil(points.length/6)===0) && <text x={x(i)} y={height-10} fill="#9AADC0" textAnchor="middle" fontSize="12">{formatPeriodLabel(point.period,granularity)}</text>}
+          <rect x={x(i)-band/2} y={pad.top} width={band} height={plotHeight} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: ${formatCurrency(point.totalRevenue)}`} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(i)} onBlur={() => setHoveredIndex(null)} onKeyDown={(event) => {if(event.key==='Escape') setHoveredIndex(null);}} />
+        </g>)}
+        {active && <foreignObject x={Math.min(width-300,Math.max(pad.left,x(hoveredIndex)-140))} y={pad.top} width="285" height={viewMode === 'total' ? 100 : 245} pointerEvents="none"><div className="ra-tooltip" role="tooltip"><strong>{tooltipDate}</strong>{tooltipKeys.map((key) => <div key={key}><span>{SOURCE_LABELS[key] || (key==='refunds' ? 'Refunds (already deducted)' : 'Total Revenue')}</span><b>{formatCurrency(active[key])}</b></div>)}</div></foreignObject>}
+      </svg>
+    </div> : <EmptyState text="No revenue recorded in this period." />}
+    {viewMode === 'bySource' && <div className="ra-chart-legend ra-trend-legend" aria-label="Revenue sources">{Object.keys(SOURCE_COLORS).map((key) => <span key={key}><i style={{background:SOURCE_COLORS[key]}} />{SOURCE_LABELS[key]}</span>)}</div>}
+    <span className="sr-only">{reduceMotion ? 'Reduced motion enabled.' : ''}</span>
+  </section>;
 }
 
 /* ── Revenue by Source ─────────────────────────────────────────────────── */
 
-function RevenueBySourceSection({ summary, reduceMotion }) {
+function RevenueBySourceSection({ summary }) {
   const total = safe(summary.sourceCompositionTotal);
-  const sources = [
-    { key: 'bookingRevenue', label: 'Booking Revenue', color: SOURCE_COLORS.bookingRevenue },
-    { key: 'serviceRevenue', label: 'Service Revenue', color: SOURCE_COLORS.serviceRevenue },
-    { key: 'packageRevenue', label: 'Package Revenue', color: SOURCE_COLORS.packageRevenue },
-    { key: 'membershipTransferFees', label: 'Transfer Fees', color: SOURCE_COLORS.membershipTransferFees },
-  ];
+  const sources = Object.keys(SOURCE_COLORS);
+  const valid = total !== null && sources.every((key) => safe(summary[key]) !== null);
 
-  return (
-    <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
-      <div className="mb-5">
-        <h3 className="text-[16px] font-bold text-white">Revenue by Source</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Composition total: <span className="font-semibold text-white">{formatCurrency(total)}</span></p>
-      </div>
-      <div className="space-y-4">
-        {sources.map((source) => {
-          const value = safe(summary[source.key]);
-          const percentage = pct(value, total);
-          return (
-            <div key={source.key}>
-              <div className="mb-1.5 flex items-center justify-between text-xs">
-                <span className="flex items-center gap-2 font-bold text-slate-200">
-                  <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: source.color }} />
-                  {source.label}
-                </span>
-                <span className="tabular-nums font-semibold text-slate-400">
-                  <span className="mr-2 text-white">{formatCurrency(value)}</span>{percentage.toFixed(1)}%
-                </span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.04]">
-                <div className="h-full rounded-full" style={{ width: `${Math.max(percentage, value > 0 ? 1 : 0)}%`, backgroundColor: source.color, boxShadow: `0 0 8px ${source.color}40` }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </motion.section>
-  );
+  return <section className="ra-sources"><div className="ra-section-heading"><div><h2><BarChart3 size={20} />Revenue by Source</h2><p>Same selected period; refunds already deducted from booking/service.</p></div></div>
+    {valid && total > 0 ? <div className="ra-donut-layout"><div className="ra-donut">
+      <svg viewBox="0 0 200 200" role="img" aria-label="Revenue composition"><circle cx="100" cy="100" r="78" fill="none" stroke="#16212A" strokeWidth="26" />
+        {sources.map((key,index) => {const length=Number(summary[key])/total*100; const start=sources.slice(0,index).reduce((sum,item)=>sum+Number(summary[item])/total*100,0); return length>0 ? <circle key={key} cx="100" cy="100" r="78" fill="none" stroke={SOURCE_COLORS[key]} strokeWidth="26" pathLength="100" strokeDasharray={`${length} ${100-length}`} strokeDashoffset={-start} transform="rotate(-90 100 100)"><title>{`${SOURCE_LABELS[key]}: ${formatCurrency(summary[key])}`}</title></circle> : null;})}
+      </svg><div><strong>{formatNumber(total)}</strong><span>VND</span><small>Total Revenue</small></div>
+    </div><div className="ra-source-legend">{sources.map((key) => <div key={key}><span><i style={{background:SOURCE_COLORS[key]}} />{SOURCE_LABELS[key]}</span><span>{pct(summary[key],total).toFixed(1)}%</span><b>{formatCurrency(summary[key])}</b></div>)}</div></div> : <EmptyState text={valid ? 'No revenue recorded in this period.' : 'Revenue composition unavailable.'} />}
+  </section>;
 }
 
 /* ── Vehicle Traffic ──────────────────────────────────────────────────── */
 
-function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMotion }) {
-  const maxTraffic = Math.max(...traffic.flatMap((p) => [safe(p.entries), safe(p.exits)]), 1);
-  const width = 800;
-  const height = 160; // COMPACT HEIGHT
-  const pad = { top: 12, right: 12, bottom: 20, left: 36 };
-  const pw = width - pad.left - pad.right;
-  const ph = height - pad.top - pad.bottom;
-
-  const xFor = (i) => pad.left + (traffic.length <= 1 ? pw / 2 : (i / (traffic.length - 1)) * pw);
-  const yFor = (v) => pad.top + ph - (safe(v) / maxTraffic) * ph;
-  const makeLine = (field) => traffic.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(p[field]).toFixed(1)}`).join(' ');
-  const makeArea = (field) => traffic.length === 0 ? '' : `${makeLine(field)} L ${xFor(traffic.length - 1).toFixed(1)} ${yFor(0).toFixed(1)} L ${xFor(0).toFixed(1)} ${yFor(0).toFixed(1)} Z`;
-
-  const hasTraffic = traffic.some((p) => safe(p.entries) > 0 || safe(p.exits) > 0);
-
-  return (
-    <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
-      <div className="mb-5 flex items-end justify-between">
-        <div>
-          <h3 className="text-[16px] font-bold text-white">Vehicle Traffic</h3>
-          <p className="mt-0.5 text-[12px] text-slate-400">Vehicles entering and exiting.</p>
-        </div>
-        <div className="flex gap-4 text-[10px] font-bold text-slate-400">
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Entries</span>
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-400" /> Exits</span>
-        </div>
-      </div>
-
-      <div className="mb-4 grid grid-cols-3 gap-2">
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Entries</p>
-          <p className="text-xl font-black tabular-nums text-white">{formatNumber(trafficSummary.totalEntries)}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Exits</p>
-          <p className="text-xl font-black tabular-nums text-white">{formatNumber(trafficSummary.totalExits)}</p>
-        </div>
-        <div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Parked</p>
-          <div className="flex items-baseline gap-1.5">
-            <p className="text-xl font-black tabular-nums text-white">{formatNumber(trafficSummary.currentlyParked)}</p>
-            <p className="text-[9px] font-bold text-sky-400">Active</p>
-          </div>
-        </div>
-      </div>
-
-      {hasTraffic ? (
-        <div className="w-full overflow-x-auto">
-          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[400px] w-full" role="img" aria-label="Vehicle traffic chart">
-            <defs>
-              <linearGradient id="grad-entries" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34D399" stopOpacity="0.15" /><stop offset="100%" stopColor="#34D399" stopOpacity="0" /></linearGradient>
-              <linearGradient id="grad-exits" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#FB7185" stopOpacity="0.15" /><stop offset="100%" stopColor="#FB7185" stopOpacity="0" /></linearGradient>
-            </defs>
-            {[0, 0.5, 1].map((r) => (
-              <g key={r}>
-                <line x1={pad.left} x2={width - pad.right} y1={pad.top + ph * r} y2={pad.top + ph * r} stroke="rgba(255,255,255,0.04)" strokeWidth="1" strokeDasharray="4 4" />
-                <text x={pad.left - 8} y={pad.top + ph * r + 3} textAnchor="end" fill="rgba(148,163,184,0.5)" fontSize="9" fontWeight="600">{formatNumber(maxTraffic * (1 - r))}</text>
-              </g>
-            ))}
-            <path d={makeArea('entries')} fill="url(#grad-entries)" />
-            <path d={makeArea('exits')} fill="url(#grad-exits)" />
-            <path d={makeLine('entries')} fill="none" stroke="#34D399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d={makeLine('exits')} fill="none" stroke="#FB7185" strokeWidth="2" strokeDasharray="5 3" strokeLinecap="round" strokeLinejoin="round" />
-            {traffic.length === 1 && <>
-              <circle cx={xFor(0)} cy={yFor(traffic[0].entries)} r="4" fill="#34D399"><title>{`Entries: ${formatNumber(traffic[0].entries)}`}</title></circle>
-              <circle cx={xFor(0)} cy={yFor(traffic[0].exits)} r="4" fill="#FB7185"><title>{`Exits: ${formatNumber(traffic[0].exits)}`}</title></circle>
-            </>}
-            {traffic.map((p, i) => {
-              if (traffic.length <= 7 || i === 0 || i === traffic.length - 1 || i === Math.floor(traffic.length / 2)) {
-                return <text key={p.period} x={xFor(i)} y={height - 2} textAnchor={traffic.length === 1 ? 'middle' : i === 0 ? 'start' : i === traffic.length - 1 ? 'end' : 'middle'} fill="rgba(148,163,184,0.6)" fontSize="9" fontWeight="600">{formatPeriodLabel(p.period, granularity)}</text>;
-              }
-              return null;
-            })}
-          </svg>
-        </div>
-      ) : (
-        <div className="py-6">
-          <EmptyState text="No vehicle activity." />
-        </div>
-      )}
-    </motion.section>
-  );
+function VehicleTrafficSection({ traffic, trafficSummary, granularity }) {
+  const [activePeriod, setActivePeriod] = useState(null);
+  const valid = Array.isArray(traffic) && traffic.every((point) => point.period && ['entries','exits'].every((key) => safe(point[key]) !== null && Number.isInteger(Number(point[key]))));
+  const points = valid ? traffic : [];
+  const maxTraffic = Math.max(...points.flatMap((point) => [safe(point.entries),safe(point.exits)]),1);
+  const width=640; const height=230; const pad={left:36,right:12,top:14,bottom:32};
+  const band=(width-pad.left-pad.right)/Math.max(points.length,1); const bar=Math.min(22,band*.3);
+  const y=(value)=>pad.top+(height-pad.top-pad.bottom)*(1-value/maxTraffic);
+  const hasTraffic=points.some((point)=>point.entries>0 || point.exits>0);
+  const activeIndex = points.findIndex((point) => point.period === activePeriod);
+  const activePoint = points[activeIndex];
+  return <section className="ra-traffic"><div className="ra-section-heading"><div><h2><WalletCards size={20} />Vehicle Traffic</h2><p>Entry/exit events, not unique vehicles. Parked is the current snapshot.</p></div></div>
+    <div className="ra-traffic-summary"><span>Entries <b>{formatNumber(trafficSummary.totalEntries)}</b></span><span>Exits <b>{formatNumber(trafficSummary.totalExits)}</b></span><span>Parked now <b>{formatNumber(trafficSummary.currentlyParked)}</b></span></div>
+    {valid && hasTraffic ? <div className="ra-chart-scroll"><svg viewBox={`0 0 ${width} ${height}`} className="ra-traffic-chart" role="img" aria-label="Vehicle traffic chart">
+      <defs>{[['entries','#34D399'],['exits','#FB7185']].map(([key,color])=><linearGradient key={key} id={`ra-traffic-${key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} /><stop offset="100%" stopColor={color} stopOpacity=".25" /></linearGradient>)}</defs>
+      {[0,.5,1].map((ratio)=><g key={ratio}><line x1={pad.left} x2={width-pad.right} y1={y(maxTraffic*ratio)} y2={y(maxTraffic*ratio)} stroke="#24313A" /><text x={pad.left-6} y={y(maxTraffic*ratio)+4} fill="#9AADC0" textAnchor="end" fontSize="11">{formatNumber(Math.round(maxTraffic*ratio))}</text></g>)}
+      {points.map((point, i) => {
+        const center = pad.left + band * (i + .5);
+        return <g key={point.period}>
+          {['entries', 'exits'].map((key, j) => <rect key={key} data-series={key} data-count={point[key]} x={center + (j === 0 ? -bar - 1 : 1)} y={y(point[key])} width={bar} height={y(0) - y(point[key])} rx="2" fill={`url(#ra-traffic-${key})`} opacity={activePoint && activeIndex !== i ? .45 : 1} />)}
+          {(points.length <= 7 || i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 5) === 0) && <text x={center} y={height - 8} textAnchor="middle" fill="#9AADC0" fontSize="11">{formatPeriodLabel(point.period, granularity)}</text>}
+          <path d={`M ${center-band/2} ${pad.top} h ${band} v ${height-pad.top-pad.bottom} h ${-band} Z`} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: Entries: ${formatNumber(point.entries)}, Exits: ${formatNumber(point.exits)}`} onPointerEnter={() => setActivePeriod(point.period)} onPointerLeave={() => setActivePeriod(null)} onFocus={() => setActivePeriod(point.period)} onBlur={() => setActivePeriod(null)} onKeyDown={(event) => { if (event.key === 'Escape') setActivePeriod(null); }} />
+        </g>;
+      })}
+      {activePoint && <foreignObject x={Math.min(width - 222, Math.max(pad.left, pad.left + band * (activeIndex + .5) - 105))} y={pad.top + 4} width="210" height="130" pointerEvents="none"><div className="ra-tooltip ra-traffic-tooltip" role="tooltip"><strong>{activePoint.period}</strong><div><span>Entries</span><b style={{color:'#34D399'}}>{formatNumber(activePoint.entries)}</b></div><div><span>Exits</span><b style={{color:'#FB7185'}}>{formatNumber(activePoint.exits)}</b></div></div></foreignObject>}
+    </svg></div> : <EmptyState text={valid ? 'No vehicle activity.' : 'Vehicle traffic unavailable.'} />}
+    <div className="ra-chart-legend"><span><i style={{background:'#34D399'}} />Entries</span><span><i style={{background:'#FB7185'}} />Exits</span></div>
+  </section>;
 }
 
 /* ── Status Distribution ──────────────────────────────────────────────── */
 
 function StatusDistributionSection({ statusDistribution, reduceMotion }) {
   const statusRows = statusDistribution?.byStatus || [];
+  const valid = statusDistribution && safe(statusDistribution.totalBookings) !== null && Array.isArray(statusDistribution.byStatus) && statusRows.every((row)=>safe(row.count)!==null) && statusRows.reduce((sum,row)=>sum+Number(row.count),0)===Number(statusDistribution.totalBookings);
   const totalBookings = safe(statusDistribution?.totalBookings);
   const size = 130; // COMPACT
   const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
-  let currentOffset = 0;
+
 
   return (
     <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
       <div className="mb-5">
         <h3 className="text-[16px] font-bold text-white">Status Distribution</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Booking status in the selected period.</p>
+        <p className="mt-0.5 text-[12px] text-slate-400">Current status of bookings scheduled to start in the selected period.</p>
       </div>
-      {statusRows.length > 0 && totalBookings > 0 ? (
+      {valid && statusRows.length > 0 && totalBookings > 0 ? (
         <div className="flex flex-row items-center gap-8">
           <div className="relative shrink-0" style={{ width: size, height: size }}>
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
               <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={strokeWidth} />
-              {statusRows.map((row) => {
+              {statusRows.map((row, index) => {
                 const ratio = safe(row.count) / totalBookings;
                 if (ratio === 0) return null;
                 const dashArray = `${ratio * circumference} ${circumference}`;
-                const dashOffset = -currentOffset;
-                currentOffset += ratio * circumference;
+                const dashOffset = -statusRows.slice(0, index).reduce((sum, item) => sum + Number(item.count) / totalBookings * circumference, 0);
                 return (
                   <circle key={row.status} cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={statusTone(row.status).color} strokeWidth={strokeWidth} strokeDasharray={dashArray} strokeDashoffset={dashOffset} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
                 );
@@ -815,7 +562,7 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
           </div>
         </div>
       ) : (
-        <EmptyState text="No booking activity." />
+        <EmptyState text={valid ? "No booking activity." : "Booking status distribution unavailable."} />
       )}
     </motion.section>
   );
@@ -823,53 +570,16 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
 
 /* ── Package Value ────────────────────────────────────────────────────── */
 
-function PackageValueSection({ packageBreakdown, reduceMotion }) {
-  const maxAmount = Math.max(...packageBreakdown.map((p) => safe(p.totalAmount)), 0);
+function PackageValueSection({ packageBreakdown }) {
+  const rows = packageBreakdown ? [...packageBreakdown].sort((a,b)=>Number(b.totalAmount)-Number(a.totalAmount)) : null;
+  const total = rows?.reduce((sum,row)=>sum+Number(row.totalAmount),0) || 0;
+  return <section className="ra-packages"><div className="ra-section-heading"><div><h2><Crown size={20} />Value by Package</h2><p>Paid purchases and supported renewals in the selected period.</p></div></div>
+    {rows?.length ? <div className="ra-table-scroll"><table><thead><tr>{['#','Package Name','Type','Purchases','Renewals','Revenue','Share'].map((label)=><th key={label}>{label}</th>)}</tr></thead><tbody>{rows.map((row,index)=>{const share=total>0?Number(row.totalAmount)/total*100:0; return <tr key={row.packageId || `${row.packageName}-${index}`}><td>{index+1}</td><td><strong>{row.packageName || 'Archived package'}</strong>{!row.isActive && <small>Archived</small>}</td><td>{row.packageType || 'Unavailable'}</td><td>{formatNumber(row.purchaseCount)}</td><td>{formatNumber(row.renewalCount)}</td><td>{formatCurrency(row.totalAmount)}</td><td><span>{share.toFixed(1)}%</span><div className="ra-share-track"><i style={{width:`${share}%`}} /></div></td></tr>;})}</tbody></table></div> : <EmptyState text={rows ? 'No package transactions.' : 'Package breakdown unavailable: reporting attribution is missing or does not reconcile.'} />}
+  </section>;
+}
 
-  return (
-    <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
-      <div className="mb-5">
-        <h3 className="text-[16px] font-bold text-white">Value by Package</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Revenue generated by packages.</p>
-      </div>
-      <div>
-        {packageBreakdown.length ? (
-          <div className="space-y-1">
-            {packageBreakdown.slice(0, 5).map((row, index) => {
-              const amount = safe(row.totalAmount);
-              const barWidth = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
-              return (
-                <div key={row.packageId || row.packageName || index} className="group flex items-center justify-between gap-3 rounded-lg py-2 transition hover:bg-white/[0.02]">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-black text-yellow-400/80 bg-yellow-400/10">
-                      {String(index + 1).padStart(2, '0')}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-bold text-white">
-                        {row.packageName || 'Archived package'}
-                        {!row.isActive && row.packageName !== 'Archived package' && <span className="ml-1.5 text-[9px] font-medium text-slate-500">(archived)</span>}
-                      </p>
-                      <p className="text-[10px] font-medium text-slate-500">
-                        {formatNumber(row.purchaseCount)} purchases · {formatNumber(row.renewalCount)} renewals
-                      </p>
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-xs font-black tabular-nums text-yellow-400">{formatCurrency(amount)}</p>
-                    <div className="mt-1 h-0.5 w-20 overflow-hidden rounded-full bg-white/[0.04]">
-                      <div className="h-full rounded-full bg-yellow-400/80" style={{ width: `${barWidth}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <EmptyState text="No package transactions." />
-        )}
-      </div>
-    </motion.section>
-  );
+function RecentRevenueTransactions() {
+  return <section className="ra-transactions"><div className="ra-section-heading"><div><h2><WalletCards size={20} />Recent Revenue Transactions</h2><p>Individual payment records are not provided by the current reporting API.</p></div></div><div className="ra-table-scroll"><table><thead><tr>{['Date & Time','Type','Reference','Description','Amount','Status','Payment Method'].map((label)=><th key={label}>{label}</th>)}</tr></thead><tbody><tr><td colSpan={7}>Unavailable - no transaction records returned. Aggregate totals cannot be converted into individual payments.</td></tr></tbody></table></div></section>;
 }
 
 /* ── Shared Components ────────────────────────────────────────────────── */

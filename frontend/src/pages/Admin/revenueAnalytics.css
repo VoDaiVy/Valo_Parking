@@ -1,0 +1,98 @@
+/* Revenue Analytics only: shared Admin shell and other roles are excluded. */
+body[data-valo-typography="admin"] .admin-revenue-analytics { background: #080B0F; color: #F5F7FA; font-family: var(--admin-font-family, Montserrat, sans-serif); }
+body[data-valo-typography="admin"] .admin-revenue-analytics > .pointer-events-none { display: none; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-workspace { max-width: 1440px; min-width: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-header { padding: 10px 0 16px; margin-bottom: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-header > div:first-child > div:first-child { background: none; border: 0; padding: 0; color: #F5C84C; letter-spacing: .04em; font-size: 12px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-header h1 { color: #F5F7FA; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-header p { color: #A9C8D8; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-header button { background: #0D151C; border-color: #24313A; border-radius: 7px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-header button:hover { border-color: #F5C84C60; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-update { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: #9AADC0; padding-bottom: 18px; border-bottom: 1px solid #222D36; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-update span:last-child { color: #34D399; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-content { min-width: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis { padding: 22px 0; gap: 18px 0; border-bottom: 1px solid #222D36; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis > div { align-items: flex-start; padding: 0 16px; border-color: #222D36; min-width: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis > div:first-child { padding-left: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis > div > div:first-child { width: 36px; height: 36px; border-radius: 50%; border: 1px solid currentColor; background: #0D151C; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis svg { width: 18px; height: 18px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis p:first-child { font-size: 12px; text-transform: none; letter-spacing: normal; font-weight: 500; color: #F5F7FA; white-space: normal; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis p:last-child { overflow-wrap: anywhere; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-basis { padding: 12px 0; font-size: 12px; color: #9AADC0; border-bottom: 1px solid #222D36; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-basis summary { cursor: pointer; color: #E7C278; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-basis p { margin-top: 8px; max-width: 1100px; line-height: 1.7; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-integrity { color: #E7C278; font-size: 13px; padding: 12px 0; border-bottom: 1px solid #222D36; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-row { display: grid; gap: 24px; border-bottom: 1px solid #222D36; padding-block: 22px; align-items: start; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-row > section { min-width: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-primary { grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-secondary { grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-bottom { grid-template-columns: minmax(0,.85fr) minmax(0,1.65fr); }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-row > section + section { border-left: 1px solid #222D36; padding-left: 24px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-section-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-section-heading h2 { display: flex; align-items: center; gap: 10px; color: #F5F7FA; font-weight: 600; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-section-heading h2 svg { color: #F5C84C; flex-shrink: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-section-heading p { color: #9AADC0; font-size: 12px; margin-top: 5px; line-height: 1.5; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic .ra-section-heading h2 svg { color: #35D3DD; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-switch { display: flex; flex-shrink: 0; border: 1px solid #24313A; border-radius: 7px; overflow: hidden; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-switch button { padding: 8px 16px; color: #9AADC0; background: #0D151C; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-switch button[aria-pressed="true"] { color: #F5C84C; background: #F5C84C0D; box-shadow: inset 0 0 0 1px #F5C84C66; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-chart-scroll, body[data-valo-typography="admin"] .admin-revenue-analytics .ra-table-scroll { width: 100%; min-width: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #39515C transparent; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-revenue-chart { width: 100%; min-width: 640px; display: block; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-trend-active rect[data-series] { filter: brightness(1.12); }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-trend-legend { flex-wrap: wrap; justify-content: flex-start; margin-top: 12px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-chart { width: 100%; min-width: 380px; display: block; }
+body[data-valo-typography="admin"] .admin-revenue-analytics svg rect[data-series] { transition: filter 180ms, opacity 180ms; }
+body[data-valo-typography="admin"] .admin-revenue-analytics svg rect[data-series]:hover, body[data-valo-typography="admin"] .admin-revenue-analytics svg rect[data-series]:focus-visible { filter: brightness(1.2); outline: none; stroke: #F5F7FA; stroke-width: 1px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics svg rect[tabindex]:focus-visible { outline: none; stroke: #F5C84C; stroke-width: 1px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-chart path[tabindex]:focus-visible { outline: none; stroke: #54E3B0; stroke-width: 1px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-tooltip { background: #0A1117; border: 1px solid #33434F; border-radius: 8px; padding: 12px; color: #F5F7FA; font-size: 14px; box-shadow: 0 6px 20px #00000080; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-tooltip > strong { display: block; margin-bottom: 8px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-tooltip > div { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-tooltip span { color: #9AADC0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-tooltip b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-donut-layout { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-donut { position: relative; width: 160px; flex: 0 0 160px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-donut svg { width: 100%; display: block; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-donut > div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-donut strong { font-size: 16px; line-height: 1.3; font-weight: 700; font-variant-numeric: tabular-nums; max-width: 106px; text-align: center; overflow-wrap: anywhere; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-select-options { scrollbar-width: none; -ms-overflow-style: none; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-select-options::-webkit-scrollbar { display: none; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-donut small { color: #9AADC0; font-size: 11px; margin-top: 4px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend { flex: 1 1 200px; min-width: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend > div { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 8px; padding: 10px 0; border-bottom: 1px solid #1B252D; align-items: center; font-size: 12px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend > div > span:first-child { display: flex; align-items: center; gap: 6px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend b { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend i, body[data-valo-typography="admin"] .admin-revenue-analytics .ra-chart-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-summary { display: flex; flex-wrap: wrap; gap: 12px; color: #9AADC0; font-size: 12px; margin-bottom: 12px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-summary b { color: #F5F7FA; font-variant-numeric: tabular-nums; margin-left: 4px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-chart-legend { display: flex; gap: 16px; justify-content: flex-end; color: #9AADC0; font-size: 12px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics table { width: 100%; border-collapse: collapse; text-align: left; }
+body[data-valo-typography="admin"] .admin-revenue-analytics th { background: #0D151C; color: #A9C8D8; font-weight: 500; white-space: nowrap; }
+body[data-valo-typography="admin"] .admin-revenue-analytics :is(th,td) { padding: 10px 9px; border-bottom: 1px solid #1B252D; }
+body[data-valo-typography="admin"] .admin-revenue-analytics td { color: #F5F7FA; font-variant-numeric: tabular-nums; }
+body[data-valo-typography="admin"] .admin-revenue-analytics tbody tr:hover { background: #FFFFFF02; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-packages table { min-width: 640px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-packages td:nth-child(6) { color: #F5C84C; white-space: nowrap; text-align: right; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-packages td small { display: block; color: #9AADC0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-share-track { width: 90px; height: 4px; margin-top: 5px; background: #16212A; border-radius: 3px; overflow: hidden; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-share-track i { display: block; height: 100%; background: linear-gradient(90deg,#B88622,#F5C84C); }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions table { min-width: 660px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions td { color: #9AADC0; padding-block: 24px; line-height: 1.7; }
+body[data-valo-typography="admin"] .admin-revenue-analytics :is(button,summary):focus-visible { outline: 2px solid #F5C84C; outline-offset: 3px; }
+@media (max-width: 1100px) {
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-primary, body[data-valo-typography="admin"] .admin-revenue-analytics .ra-secondary { grid-template-columns: minmax(0,1fr); }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-row > section + section { border-left: 0; padding-left: 0; border-top: 1px solid #222D36; padding-top: 22px; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-bottom { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 639px) {
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-update { justify-content: flex-start; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis > div { padding-inline: 8px; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis > div:nth-child(odd) { padding-left: 0; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-kpis > div > div:first-child { width: 28px; height: 28px; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend > div { grid-template-columns: minmax(0,1fr) auto; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-source-legend b { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+ body[data-valo-typography="admin"] .admin-revenue-analytics *, body[data-valo-typography="admin"] .admin-revenue-analytics *::before, body[data-valo-typography="admin"] .admin-revenue-analytics *::after { animation: none; transition: none; }
+}

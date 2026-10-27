@@ -1,0 +1,132 @@
+/* Presentation only; every rule requires Staff role and this page root. */
+body[data-valo-typography="staff"] .staff-notification-management { background: #080B0F; color: #F5F7FA; font-family: Montserrat, sans-serif; font-size: 14px; line-height: 1.5; min-width: 0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-content { padding: 0 32px 28px; max-width: 1464px; min-width: 0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-header { padding-block: 22px; margin-bottom: 20px; border-bottom: 1px solid #222D36; position: relative; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-header::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 140px; height: 1px; background: #10B98180; pointer-events: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-eyebrow { display: block; margin-bottom: 10px; color: #54E3B0; font-size: 12px; font-weight: 600; letter-spacing: .06em; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-header h1 { color: #F5F7FA; font-size: 34px; line-height: 1.2; font-weight: 700; letter-spacing: -.03em; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-header p:not(.snm-eyebrow) { margin-top: 8px; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-title-line { flex-wrap: wrap; gap: 12px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-api-original { display: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-api-label { display: inline; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-api-state { font-size: 12px; white-space: nowrap; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-api-state .animate-pulse { animation: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0; border-block: 1px solid #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div { display: grid; grid-template-columns: 36px minmax(0,1fr); column-gap: 14px; padding: 18px 20px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div + div { border-left: 1px solid #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div:first-child { padding-left: 0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div > div:first-child { grid-row: 1 / 3; width: 36px; height: 36px; align-self: center; border: 0; background: #111820; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics svg { width: 18px; height: 18px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div > div:nth-child(2) { margin: 0; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div > div:last-child { margin: 0; font-size: 13px; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-tabs { margin-top: 20px; gap: 16px; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-tabs button { min-height: 44px; padding-inline: 4px; color: #9AADC0; font-weight: 600; border-color: transparent; transition: color 200ms, border-color 200ms; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-tabs button[aria-pressed="true"] { color: #54E3B0; border-color: #10B981; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar { gap: 8px; padding-bottom: 4px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar button { min-height: 36px; font-size: 12px; border-radius: 8px; transition: color 200ms, border-color 200ms, background-color 200ms; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar button[aria-pressed="true"]:first-child { color: #54E3B0; background: #10B98114; border-color: #10B98166; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar input { flex: 1 1 240px; width: auto; max-width: 360px; min-width: 0; border-radius: 10px; height: 44px; background: #111820; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar > button:last-child { min-height: 44px; background: #111820; color: #F5F7FA; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar > button:last-child:hover { color: #54E3B0; border-color: #10B98180; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-stream { background: #0D1117; border-color: #222D36; box-shadow: none; border-radius: 12px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-stream > div:first-child { background: #111820; border-color: #222D36; flex-wrap: wrap; gap: 8px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-stream > div:first-child > div:first-child { color: #A9C8D8; font-size: 14px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-stream ul > li + li { border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management [data-priority="INFO"] { --event-color: #67D7E5; }
+body[data-valo-typography="staff"] .staff-notification-management [data-priority="SUCCESS"] { --event-color: #54E3B0; }
+body[data-valo-typography="staff"] .staff-notification-management [data-priority="WARNING"] { --event-color: #E7C278; }
+body[data-valo-typography="staff"] .staff-notification-management [data-priority="ERROR"] { --event-color: #F2A5AF; }
+body[data-valo-typography="staff"] .staff-notification-management [data-priority="SYSTEM"] { --event-color: #C4A7F5; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-event { position: relative; background: transparent; padding: 18px 20px; gap: 14px; transition: background-color 200ms, box-shadow 200ms; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-event:hover { background: #15212A; box-shadow: inset 2px 0 var(--event-color, #67D7E5); }
+body[data-valo-typography="staff"] .staff-notification-management .snm-event > div:first-child { width: 32px; height: 32px; color: var(--event-color, #67D7E5); background: transparent; border-color: #222D36; border-radius: 8px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-event .text-\[10px\] { font-size: 12px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-event .text-gray-400, body[data-valo-typography="staff"] .staff-notification-management .snm-event .text-gray-500 { color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose { max-width: none; border: 0; border-top: 1px solid #222D36; border-radius: 0; background: transparent; box-shadow: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose > div:first-child { padding: 18px 0; background: transparent; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose > div:first-child > div:first-child > span { color: #54E3B0; background: #10B9810D; border-color: #10B98133; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose-grid { grid-template-columns: minmax(0,1.45fr) minmax(280px,.8fr); gap: 28px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose-grid > div { padding: 24px 0; min-width: 0; border: 0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-preview-column { padding: 24px 0 24px 24px; background: transparent; border-left: 1px solid #222D36; min-width: 0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose h3 { font-size: 16px; font-weight: 600; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose :where(.text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700) { color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose :where(.text-\[10px\], .text-\[11px\]) { font-size: 12px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose section > div:first-child > span:first-child { color: #54E3B0; background: #10B9810D; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button { transition: color 200ms, background-color 200ms, border-color 200ms, box-shadow 200ms; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed] { background: #0D1117; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed]:hover { background: #15212A; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed="true"] { background: #10B9810D; border-color: #10B98180; color: #54E3B0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed="true"] > span { color: #54E3B0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed="true"] > span:first-child { background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed="true"] > span:last-child:not(:first-child) { background: #10B98114; border-color: #10B98166; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[data-priority][aria-pressed="true"] { color: var(--event-color); border-color: var(--event-color); background: #111820; box-shadow: inset 2px 0 var(--event-color); }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose input, body[data-valo-typography="staff"] .staff-notification-management .snm-compose textarea { background: #111820; border-color: #222D36; color: #F5F7FA; font-size: 14px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose input::placeholder, body[data-valo-typography="staff"] .staff-notification-management .snm-compose textarea::placeholder, body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar input::placeholder { color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management :is(input, textarea, button):focus-visible { outline: 2px solid #54E3B0; outline-offset: 3px; box-shadow: 0 0 0 3px #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose section > .mt-4 > .rounded-xl { background: #0D1117; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker { background: #0D1117; border-color: #222D36; border-radius: 10px; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker > div { border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker ul { scrollbar-width: thin; scrollbar-color: #39515C transparent; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker button[aria-pressed] { border: 1px solid transparent; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker button[aria-pressed="true"] { border-color: #10B98166; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker > div:first-child > div:nth-child(2) > div > span { color: #54E3B0; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-user-picker button[aria-label^="Remove"] { color: #54E3B0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-preview { background: #0D1117; border-color: #222D36; box-shadow: inset 0 1px #10B98133; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-preview > div:first-child { border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-preview > div:last-child > span { color: #54E3B0; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-preview p { overflow-wrap: anywhere; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-send { background: #10B981; color: #051610; box-shadow: none; font-weight: 700; transform: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-send:hover:not(:disabled) { background: #54E3B0; box-shadow: 0 3px 14px #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-send:active:not(:disabled) { background: #059669; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-send:disabled { background: #111820; color: #9AADC0; box-shadow: none; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-feedback { font-size: 13px; }
+/* Selection colors belong to the nested labels too, not only their parent spans.
+   Keep legacy gold utilities intact for Admin's shared component. */
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option { background: #0D1117; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option[aria-pressed="true"] { background: #10B9810D; border-color: #10B98166; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option .snm-audience-title { color: #F5F7FA; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option[aria-pressed="true"] .snm-audience-title { color: #6EE7B7; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option .snm-audience-description { color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option .snm-audience-icon { color: #9AADC0; background: #111820; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option[aria-pressed="true"] .snm-audience-icon { color: #6EE7B7; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option .snm-audience-check { color: transparent; border-color: #222D36; background: transparent; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-audience-option[aria-pressed="true"] .snm-audience-check { color: #6EE7B7; border-color: #10B98166; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-option { background: #0D1117; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-option:hover { background: #15212A; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-option[aria-pressed="true"] { background: #10B9810D; border-color: #10B98166; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-name { color: #F5F7FA; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-option[aria-pressed="true"] .snm-recipient-name { color: #6EE7B7; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-email { color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-avatar { color: #9AADC0; background: #111820; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-option[aria-pressed="true"] .snm-recipient-avatar { color: #6EE7B7; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-check { color: transparent; border-color: #222D36; background: transparent; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-option[aria-pressed="true"] .snm-recipient-check { color: #6EE7B7; border-color: #10B98166; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-chip { color: #6EE7B7; background: #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-chip button { color: #6EE7B7; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-chip button:hover { color: #F5F7FA; background: #10B98133; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-role { color: #9AADC0; background: #111820; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-role[data-role="admin"] { color: #C4B5E0; background: #A78BFA0D; border-color: #A78BFA33; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-role[data-role="staff"] { color: #67D7E5; background: #67D7E50D; border-color: #67D7E533; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-user-picker .snm-recipient-role[data-role="customer"] { color: #A6C8BC; background: #10B9810A; border-color: #10B98133; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose :is(input, textarea):focus { border-color: #10B98180; box-shadow: 0 0 0 3px #10B98114; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose .snm-system-warning { background: #F59E0B12; border-color: #F59E0B40; }
+/* Role targeting uses a separate checkbox from the audience and recipient controls. */
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed] > .snm-role-check { border-color: #222D36; background: transparent; }
+body[data-valo-typography="staff"] .staff-notification-management .snm-compose button[aria-pressed="true"] > .snm-role-check { color: #6EE7B7; border-color: #10B98180; background: #10B98114; }
+@media (max-width: 1100px) {
+ body[data-valo-typography="staff"] .staff-notification-management .snm-compose-grid { grid-template-columns: minmax(0,1fr); gap: 0; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-preview-column { padding: 24px 0; border-left: 0; border-top: 1px solid #222D36; }
+}
+@media (max-width: 639px) {
+ body[data-valo-typography="staff"] .staff-notification-management .snm-content { padding-inline: 16px; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-header h1 { font-size: 30px; overflow-wrap: anywhere; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-metrics { grid-template-columns: minmax(0,1fr); }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div { padding: 14px 0; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-metrics > div + div { border-left: 0; border-top: 1px solid #222D36; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-toolbar input { flex-basis: 100%; max-width: none; width: 100%; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-stream > div:first-child, body[data-valo-typography="staff"] .staff-notification-management .snm-event { padding-inline: 14px; }
+ body[data-valo-typography="staff"] .staff-notification-management .snm-event .text-sm, body[data-valo-typography="staff"] .staff-notification-management .snm-event .font-semibold { overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+ body[data-valo-typography="staff"] .staff-notification-management *, body[data-valo-typography="staff"] .staff-notification-management *::before, body[data-valo-typography="staff"] .staff-notification-management *::after { transition: none; animation: none; scroll-behavior: auto; }
+}

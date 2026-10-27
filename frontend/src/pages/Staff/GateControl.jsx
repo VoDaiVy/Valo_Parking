@@ -11,6 +11,7 @@ import { useSocket } from '../../hooks/useSocket';
 import { getAllFloors } from '../../services/parkingFloorService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal';
+import './components/staffGateControl.css';
 import { STAFF_THEME } from './components/staffTheme';
 
 export default function GateControl() {
@@ -236,7 +237,7 @@ export default function GateControl() {
   const handleEntryScanPlate = async (manualImage = null) => {
     const imageToScan = manualImage || captureFrame('entry');
     if (!imageToScan) {
-      toast.error('Vui lòng cấp quyền Camera hoặc tải ảnh lên để quét');
+      toast.error('Allow camera access or upload an image to scan.');
       return;
     }
 
@@ -254,9 +255,9 @@ export default function GateControl() {
       if (scanData.success && scanData.data?.licensePlate) {
         detectedPlate = normalizeLicensePlate(scanData.data.licensePlate);
         setEntryPlate(detectedPlate);
-        toast.success(`Đã nhận diện biển số: ${detectedPlate}`);
+        toast.success(`Detected license plate: ${detectedPlate}`);
       } else {
-        toast.error('AI chưa nhận diện rõ biển số. Bạn có thể nhập tay hoặc dùng AI Trợ lý mờ.');
+        toast.error('The plate could not be read clearly. Enter it manually or use AI Plate Assistant.');
       }
 
       if (detectedPlate) {
@@ -264,7 +265,7 @@ export default function GateControl() {
       }
     } catch (err) {
       console.error('Scan plate error:', err);
-      toast.error('Lỗi khi quét biển số');
+      toast.error('License plate scan failed.');
     } finally {
       setIsEntryScanning(false);
     }
@@ -289,19 +290,19 @@ export default function GateControl() {
         if (v.assignedFloorId) setEntryFloorId(v.assignedFloorId);
 
         if (v.isActive) {
-          toast.error('⚠️ Xe này đã có lượt gửi xe đang HOẠT ĐỘNG trong bãi!');
+          toast.error('This vehicle already has an active parking session.');
         } else if (v.isMonthly) {
-          toast.success(`👑 Khách VIP (${v.membershipType || 'Monthly Pass'}) hợp lệ!`);
+          toast.success(`Valid VIP membership (${v.membershipType || 'Monthly Pass'}).`);
           if (autoPilot) {
             handleEntryCheckIn(cleanPlate, v);
           }
         } else if (v.hasPreBooking) {
-          toast.success(`📅 Khách có lịch đặt chỗ Slot [${v.assignedSlot || 'Chưa gán'}]`);
+          toast.success(`Existing reservation for slot [${v.assignedSlot || 'Unassigned'}]`);
           if (autoPilot) {
             handleEntryCheckIn(cleanPlate, v);
           }
         } else {
-          toast(`🎟️ Khách vãng lai hợp lệ. Vui lòng chọn Slot đỗ.`);
+          toast(`Valid walk-in vehicle. Please select a parking slot.`);
         }
       }
     } catch (e) {
@@ -314,7 +315,7 @@ export default function GateControl() {
     const verify = overrideVerify || entryVerifyData;
 
     if (!plate) {
-      toast.error('Vui lòng nhập hoặc quét biển số xe vào');
+      toast.error('Enter or scan the entry license plate.');
       return;
     }
 
@@ -337,7 +338,7 @@ export default function GateControl() {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`✅ Check-in thành công cho xe ${plate}! Đang mở cổng Làn vào...`);
+        toast.success(`Check-in successful for ${plate}. Opening the entry barrier...`);
         // Kích hoạt mở Barrier Làn vào
         await triggerBarrier('open', 'ENTRY_1', plate, entrySlotCode);
         // Reset form
@@ -347,11 +348,11 @@ export default function GateControl() {
         setEntrySnapshot(null);
         fetchFloorsAndSessions();
       } else {
-        toast.error(data.message || 'Check-in thất bại');
+        toast.error(data.message || 'Check-in failed.');
       }
     } catch (err) {
       console.error('Check-in error:', err);
-      toast.error('Lỗi kết nối máy chủ');
+      toast.error('Unable to connect to the server.');
     } finally {
       setIsEntryCheckingIn(false);
     }
@@ -361,7 +362,7 @@ export default function GateControl() {
   const handleExitScanPlate = async (manualImage = null) => {
     const imageToScan = manualImage || captureFrame('exit');
     if (!imageToScan) {
-      toast.error('Vui lòng cấp quyền Camera hoặc tải ảnh lên');
+      toast.error('Allow camera access or upload an image.');
       return;
     }
 
@@ -378,9 +379,9 @@ export default function GateControl() {
       if (scanData.success && scanData.data?.licensePlate) {
         detectedPlate = normalizeLicensePlate(scanData.data.licensePlate);
         setExitPlate(detectedPlate);
-        toast.success(`Đã nhận diện xe ra: ${detectedPlate}`);
+        toast.success(`Detected exit license plate: ${detectedPlate}`);
       } else {
-        toast.error('AI chưa nhận diện rõ biển số ra. Hãy nhập biển số hoặc dùng AI Trợ lý mờ.');
+        toast.error('The exit plate could not be read clearly. Enter it manually or use AI Plate Assistant.');
       }
 
       if (detectedPlate) {
@@ -388,7 +389,7 @@ export default function GateControl() {
       }
     } catch (err) {
       console.error('Exit scan plate error:', err);
-      toast.error('Lỗi khi quét biển số xe ra');
+      toast.error('Exit license plate scan failed.');
     } finally {
       setIsExitScanning(false);
     }
@@ -412,7 +413,7 @@ export default function GateControl() {
       if (data.success) {
         setExitInvoiceData(data);
         setCashReceived(false);
-        toast.success(`Đã tìm thấy phiên gửi xe của ${cleanPlate}`);
+        toast.success(`Parking session found for ${cleanPlate}`);
 
         // Nếu là VIP miễn phí hoặc tổng tiền = 0 và đang bật Auto-Pilot
         if (autoPilot && data.totalAmount === 0) {
@@ -420,18 +421,18 @@ export default function GateControl() {
         }
       } else {
         setExitInvoiceData(null);
-        toast.error(data.message || 'Không tìm thấy phiên gửi xe hoạt động');
+        toast.error(data.message || 'No active parking session found.');
       }
     } catch (e) {
       console.error('Lookup exit session error:', e);
-      toast.error('Lỗi tìm kiếm phiên gửi xe');
+      toast.error('Parking session lookup failed.');
     }
   };
 
   const handleExitCheckOut = async (overrideInvoice = null) => {
     const inv = overrideInvoice || exitInvoiceData;
     if (!inv || !inv.session) {
-      toast.error('Chưa có thông tin phiên đỗ để Check-out');
+      toast.error('Select a parking session before checking out.');
       return;
     }
 
@@ -454,7 +455,7 @@ export default function GateControl() {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`✅ Check-out thành công cho xe ${inv.session.licensePlate}! Đang mở cổng Làn ra...`);
+        toast.success(`Check-out successful for ${inv.session.licensePlate}. Opening the exit barrier...`);
         // Mở Barrier Làn ra
         await triggerBarrier('open', 'EXIT_1', inv.session.licensePlate);
         // Reset form
@@ -464,11 +465,11 @@ export default function GateControl() {
         setCashReceived(false);
         fetchFloorsAndSessions();
       } else {
-        toast.error(data.message || 'Check-out thất bại');
+        toast.error(data.message || 'Check-out failed.');
       }
     } catch (err) {
       console.error('Check-out error:', err);
-      toast.error('Lỗi máy chủ khi check-out');
+      toast.error('Server error during check-out.');
     } finally {
       setIsExitCheckingOut(false);
     }
@@ -495,12 +496,12 @@ export default function GateControl() {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`Lệnh ${action.toUpperCase()} cổng ${gate} thành công`);
+        toast.success(`${action.toUpperCase()} command sent successfully to gate ${gate}.`);
         fetchBarrierStatus();
       }
     } catch (e) {
       console.error('Barrier command error:', e);
-      toast.error(`Không thể gửi lệnh điều khiển cổng ${gate}`);
+      toast.error(`Unable to send a barrier command to gate ${gate}`);
     }
   };
 
@@ -514,7 +515,7 @@ export default function GateControl() {
       setExitPlate(selectedPlate);
       lookupExitSession(selectedPlate);
     }
-    toast.success(`Đã chọn biển số từ AI Assistant: ${selectedPlate}`);
+    toast.success(`License plate selected from AI Plate Assistant: ${selectedPlate}`);
   };
 
   // Format Helpers
@@ -522,15 +523,15 @@ export default function GateControl() {
   const formatDate = (dateStr) => (dateStr ? new Date(dateStr).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-');
 
   return (
-    <div className={`p-4 sm:p-6 lg:p-8 ${STAFF_THEME.page}`}>
+    <div className={`staff-gate-control p-4 sm:p-6 lg:p-8 ${STAFF_THEME.page}`}>
       <Toaster position="top-right" />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           HEADER & STATUS BAR
       ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="sgc-header mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="sgc-title-line flex items-center gap-3">
             <h1 className="text-2xl font-black tracking-tight text-[#ffd555]">
               Gate Control & Camera Stations
             </h1>
@@ -540,12 +541,12 @@ export default function GateControl() {
             </span>
           </div>
           <p className="mt-1 text-xs font-medium text-white/45">
-            Giám sát 2 làn đồng thời, nhận diện AI OCR thời gian thực, đối chiếu bảo mật an ninh và điều khiển Barrier.
+            Monitor entry and exit lanes, verify license plates, and manage barrier operations in real time.
           </p>
         </div>
 
         {/* Hardware badges & Global Mode */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="sgc-status-controls flex flex-wrap items-center gap-2 sm:gap-3">
           {/* ESP32 Status */}
           <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111111] px-3.5 py-2">
             <Radio size={15} className={isEspOnline ? 'text-emerald-400 animate-pulse' : 'text-red-400'} />
@@ -560,9 +561,10 @@ export default function GateControl() {
             type="button"
             onClick={() => {
               setAutoPilot(!autoPilot);
-              toast(autoPilot ? 'Chuyển sang chế độ xác nhận thủ công (Manual)' : 'Đã BẬT Auto-Pilot: Tự mở cổng cho VIP/Booking hợp lệ!');
+              toast(autoPilot ? 'Switched to manual confirmation mode.' : 'Auto-Pilot enabled: barriers open automatically for valid VIP memberships and reservations.');
             }}
-            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${
+            data-enabled={autoPilot}
+            className={`sgc-autopilot flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${
               autoPilot
                 ? 'border-[#ffd555] bg-[#ffd555]/20 text-[#ffd555] shadow-lg shadow-yellow-500/10'
                 : 'border-white/10 bg-[#111111] text-white/60 hover:text-white'
@@ -578,12 +580,12 @@ export default function GateControl() {
             onClick={() => {
               triggerBarrier('open', 'ENTRY_1', 'EMERGENCY_OPEN');
               triggerBarrier('open', 'EXIT_1', 'EMERGENCY_OPEN');
-              toast.success('🚨 Đã phát lệnh MỞ TOÀN BỘ CỔNG khẩn cấp!');
+              toast.success('Emergency open commands sent to all barriers.');
             }}
             className="flex items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2 font-bold text-xs text-red-300 hover:bg-red-500 hover:text-white transition shadow-lg shadow-red-500/10"
           >
             <AlertTriangle size={15} />
-            <span>Mở Khẩn Cấp (Xả trạm)</span>
+            <span>Emergency Open</span>
           </button>
         </div>
       </div>
@@ -591,25 +593,25 @@ export default function GateControl() {
       {/* ═══════════════════════════════════════════════════════════════════════
           DUAL-LANE SPLIT SCREEN (LÀN VÀO & LÀN RA)
       ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="sgc-stations grid grid-cols-1 gap-6 lg:grid-cols-2">
 
         {/* ──────────────────────────────────────────────────────────────────
             CỘT TRÁI: LÀN VÀO (ENTRY LANE - ENTRY_1)
         ────────────────────────────────────────────────────────────────── */}
-        <div className="flex flex-col rounded-2xl border border-emerald-500/20 bg-[#111111] p-5 shadow-2xl relative overflow-hidden">
+        <div className="sgc-station flex flex-col rounded-2xl border border-emerald-500/20 bg-[#111111] p-5 shadow-2xl relative overflow-hidden">
           <div className="pointer-events-none absolute -top-12 -left-12 h-36 w-36 rounded-full bg-emerald-500/10 blur-3xl" />
 
           {/* Lane Header */}
-          <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="sgc-station-header mb-4 flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 <Car size={18} />
               </div>
               <div>
                 <h2 className="text-base font-black uppercase tracking-wider text-emerald-400">
-                  Làn Vào (Entry Station - ENTRY_1)
+                  Entry Lane (Entry Station - ENTRY_1)
                 </h2>
-                <p className="text-[10px] text-white/40">Camera nhận diện biển số & Phân bổ vị trí đỗ</p>
+                <p className="text-[10px] text-white/40">License plate recognition & parking assignment</p>
               </div>
             </div>
 
@@ -621,7 +623,7 @@ export default function GateControl() {
                   : 'bg-red-500/20 text-red-300 border-red-500/40'
               }`}>
                 {gatesState.ENTRY_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
-                Barrier: {gatesState.ENTRY_1?.open ? 'ĐANG MỞ' : 'ĐANG ĐÓNG'}
+                Barrier: {gatesState.ENTRY_1?.open ? 'Open' : 'Closed'}
               </span>
             </div>
           </div>
@@ -647,7 +649,7 @@ export default function GateControl() {
             {/* Bounding Box Guide */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="h-28 w-64 rounded-lg border-2 border-dashed border-emerald-400/50 bg-emerald-400/5 flex flex-col items-center justify-center text-center p-2">
-                <span className="text-[10px] font-bold text-emerald-300 drop-shadow">KHUNG SOI BIỂN SỐ LÀN VÀO</span>
+                <span className="text-[10px] font-bold text-emerald-300 drop-shadow">Entry Plate Detection Area</span>
               </div>
             </div>
 
@@ -697,7 +699,7 @@ export default function GateControl() {
                     className="flex items-center gap-1 rounded bg-emerald-500 px-2.5 py-1 text-[10px] font-bold text-black hover:bg-emerald-400"
                   >
                     {isEntryScanning ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
-                    <span>Chụp & Quét AI</span>
+                    <span>Capture & Scan</span>
                   </button>
                 )}
               </div>
@@ -706,10 +708,10 @@ export default function GateControl() {
 
           {/* Quick Upload Test Option */}
           <div className="mt-2 flex items-center justify-between text-[11px] text-white/40 px-1">
-            <span>Hoặc tải ảnh chụp từ máy:</span>
+            <span>Or upload an image:</span>
             <label className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 cursor-pointer font-semibold">
               <Upload size={12} />
-              <span>Upload Ảnh xe</span>
+              <span>Upload Vehicle Image</span>
               <input
                 type="file"
                 accept="image/*"
@@ -730,29 +732,29 @@ export default function GateControl() {
           </div>
 
           {/* Entry Vehicle Details & Classification */}
-          <div className="mt-4 space-y-3 rounded-xl border border-white/10 bg-[#161618] p-4">
+          <div className="sgc-vehicle-fields mt-4 space-y-3 rounded-xl border border-white/10 bg-[#161618] p-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-black uppercase text-white/40">Biển số nhận diện</label>
+                <label className="text-[10px] font-black uppercase text-white/40">Detected License Plate</label>
                 <div className="relative mt-1">
                   <input
                     type="text"
                     value={entryPlate}
                     onChange={(e) => setEntryPlate(e.target.value.toUpperCase())}
                     onBlur={() => entryPlate && verifyEntryPlate(entryPlate)}
-                    placeholder="VD: 51K-889.99"
+                    placeholder="e.g. 51K-889.99"
                     className="w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm font-black tracking-wider text-emerald-400 placeholder:text-white/20 focus:border-emerald-400 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase text-white/40">Số điện thoại</label>
+                <label className="text-[10px] font-black uppercase text-white/40">Phone Number</label>
                 <input
                   type="text"
                   value={entryPhone}
                   onChange={(e) => setEntryPhone(e.target.value)}
-                  placeholder="Nhập SĐT khách (nếu có)"
+                  placeholder="Customer phone number (optional)"
                   className="mt-1 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm font-medium text-white placeholder:text-white/20 focus:border-emerald-400 focus:outline-none"
                 />
               </div>
@@ -773,17 +775,17 @@ export default function GateControl() {
                 <div className="text-xs">
                   <p className="font-bold">
                     {entryVerifyData.isActive
-                      ? '⚠️ CẢNH BÁO: Xe đang có trong bãi!'
+                      ? 'Warning: Vehicle already parked.'
                       : entryVerifyData.isMonthly
-                      ? `👑 Khách VIP: ${entryVerifyData.membershipType || 'Vé tháng'}`
+                      ? `VIP customer: ${entryVerifyData.membershipType || 'Monthly Pass'}`
                       : entryVerifyData.hasPreBooking
-                      ? `📅 Khách đã đặt chỗ trước (Booking ${entryVerifyData.bookingId || ''})`
-                      : '🎟️ Khách vãng lai hợp lệ'}
+                      ? `Reserved customer (Booking ${entryVerifyData.bookingId || ''})`
+                      : 'Valid walk-in vehicle'}
                   </p>
                   <p className="text-[10px] opacity-80 mt-0.5">
                     {entryVerifyData.assignedSlot
-                      ? `Vị trí chỉ định: Tầng ${entryVerifyData.assignedFloorName || '1'} - Ô ${entryVerifyData.assignedSlot}`
-                      : 'Chưa có vị trí cố định, hệ thống sẽ gán ô trống tối ưu.'}
+                      ? `Assigned space: Floor ${entryVerifyData.assignedFloorName || '1'} - Slot ${entryVerifyData.assignedSlot}`
+                      : 'No fixed space assigned. The system will select an available slot.'}
                   </p>
                 </div>
               </div>
@@ -792,25 +794,25 @@ export default function GateControl() {
             {/* Slot & Floor Assignment */}
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
-                <label className="text-[10px] font-black uppercase text-white/40">Tầng đỗ</label>
+                <label className="text-[10px] font-black uppercase text-white/40">Parking Floor</label>
                 <select
                   value={entryFloorId}
                   onChange={(e) => setEntryFloorId(e.target.value)}
                   className="mt-1 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-xs font-semibold text-white focus:outline-none"
                 >
                   {floors.map(f => (
-                    <option key={f._id} value={f._id}>Tầng {f.floorNumber} - {f.name}</option>
+                    <option key={f._id} value={f._id}>Floor {f.floorNumber} - {f.name}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase text-white/40">Vị trí Slot</label>
+                <label className="text-[10px] font-black uppercase text-white/40">Parking Slot</label>
                 <input
                   type="text"
                   value={entrySlotCode}
                   onChange={(e) => setEntrySlotCode(e.target.value.toUpperCase())}
-                  placeholder="VD: A-01, B-04"
+                  placeholder="e.g. A-01, B-04"
                   className="mt-1 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-xs font-bold text-emerald-400 uppercase placeholder:text-white/20 focus:outline-none"
                 />
               </div>
@@ -828,10 +830,10 @@ export default function GateControl() {
                   setAiModalInitialImage(entrySnapshot);
                   setShowAiModal(true);
                 }}
-                className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-400 hover:text-black transition"
+                className="sgc-ai-action flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-400 hover:text-black transition"
               >
                 <Sparkles size={14} className="text-amber-400" />
-                <span>AI Trợ lý biển mờ</span>
+                <span>AI Plate Assistant</span>
               </button>
 
               <button
@@ -841,7 +843,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-xs font-black text-black hover:bg-emerald-400 disabled:opacity-50 transition shadow-lg shadow-emerald-500/20"
               >
                 {isEntryCheckingIn ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                <span>Check-in & Mở Cổng</span>
+                <span>Check In & Open Gate</span>
               </button>
             </div>
 
@@ -853,7 +855,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Unlock size={12} className="text-emerald-400" />
-                <span>Mở Cổng Vào</span>
+                <span>Open Entry Barrier</span>
               </button>
 
               <button
@@ -862,7 +864,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Pause size={12} className="text-yellow-400" />
-                <span>Tạm dừng</span>
+                <span>Pause</span>
               </button>
 
               <button
@@ -871,7 +873,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Lock size={12} className="text-red-400" />
-                <span>Khóa Cổng</span>
+                <span>Lock Barrier</span>
               </button>
             </div>
           </div>
@@ -881,20 +883,20 @@ export default function GateControl() {
         {/* ──────────────────────────────────────────────────────────────────
             CỘT PHẢI: LÀN RA (EXIT LANE - EXIT_1)
         ────────────────────────────────────────────────────────────────── */}
-        <div className="flex flex-col rounded-2xl border border-sky-500/20 bg-[#111111] p-5 shadow-2xl relative overflow-hidden">
+        <div className="sgc-station flex flex-col rounded-2xl border border-sky-500/20 bg-[#111111] p-5 shadow-2xl relative overflow-hidden">
           <div className="pointer-events-none absolute -top-12 -right-12 h-36 w-36 rounded-full bg-sky-500/10 blur-3xl" />
 
           {/* Lane Header */}
-          <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="sgc-station-header mb-4 flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30">
                 <Car size={18} />
               </div>
               <div>
                 <h2 className="text-base font-black uppercase tracking-wider text-sky-400">
-                  Làn Ra (Exit Station - EXIT_1)
+                  Exit Lane (Exit Station - EXIT_1)
                 </h2>
-                <p className="text-[10px] text-white/40">Đối chiếu an ninh vào/ra & Thu phí cước xe</p>
+                <p className="text-[10px] text-white/40">Entry/exit verification & parking fee collection</p>
               </div>
             </div>
 
@@ -906,7 +908,7 @@ export default function GateControl() {
                   : 'bg-red-500/20 text-red-300 border-red-500/40'
               }`}>
                 {gatesState.EXIT_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
-                Barrier: {gatesState.EXIT_1?.open ? 'ĐANG MỞ' : 'ĐANG ĐÓNG'}
+                Barrier: {gatesState.EXIT_1?.open ? 'Open' : 'Closed'}
               </span>
             </div>
           </div>
@@ -932,7 +934,7 @@ export default function GateControl() {
             {/* Bounding Box Guide */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="h-28 w-64 rounded-lg border-2 border-dashed border-sky-400/50 bg-sky-400/5 flex flex-col items-center justify-center text-center p-2">
-                <span className="text-[10px] font-bold text-sky-300 drop-shadow">KHUNG SOI BIỂN SỐ LÀN RA</span>
+                <span className="text-[10px] font-bold text-sky-300 drop-shadow">Exit Plate Detection Area</span>
               </div>
             </div>
 
@@ -982,7 +984,7 @@ export default function GateControl() {
                     className="flex items-center gap-1 rounded bg-sky-500 px-2.5 py-1 text-[10px] font-bold text-black hover:bg-sky-400"
                   >
                     {isExitScanning ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
-                    <span>Chụp & Quét AI</span>
+                    <span>Capture & Scan</span>
                   </button>
                 )}
               </div>
@@ -991,7 +993,7 @@ export default function GateControl() {
 
           {/* Quick Select from Active Sessions in Lot */}
           <div className="mt-2 flex items-center justify-between text-[11px] text-white/40 px-1">
-            <span>Hoặc chọn nhanh xe đang trong bãi:</span>
+            <span>Or select a parked vehicle:</span>
             <select
               onChange={(e) => {
                 const val = e.target.value;
@@ -1002,39 +1004,39 @@ export default function GateControl() {
               }}
               className="bg-black/60 text-sky-400 border border-white/15 rounded px-2 py-0.5 text-[10px] font-bold focus:outline-none"
             >
-              <option value="">-- Danh sách xe đang gửi ({activeSessionsList.length}) --</option>
+              <option value="">-- Parked Vehicles ({activeSessionsList.length}) --</option>
               {activeSessionsList.map(s => (
-                <option key={s._id} value={s.licensePlate}>{s.licensePlate} ({s.parkingSlot || 'Chưa gán'})</option>
+                <option key={s._id} value={s.licensePlate}>{s.licensePlate} ({s.parkingSlot || 'Unassigned'})</option>
               ))}
             </select>
           </div>
 
           {/* Security Double-Check (Side-by-Side Images) */}
           {exitInvoiceData && (
-            <div className="mt-4 rounded-xl border border-white/10 bg-[#161618] p-3.5 space-y-3">
+            <div className="sgc-invoice mt-4 rounded-xl border border-white/10 bg-[#161618] p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-sky-400 flex items-center gap-1">
                   <ShieldCheck size={13} />
-                  Đối chiếu an ninh (Security Double-Check)
+                  Security Double-Check
                 </span>
-                <span className="text-[10px] font-bold text-white/50">Biển số: {exitInvoiceData.session?.licensePlate}</span>
+                <span className="text-[10px] font-bold text-white/50">License Plate: {exitInvoiceData.session?.licensePlate}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg border border-white/10 bg-black/40 p-1 text-center">
-                  <p className="text-[9px] font-bold text-emerald-400 mb-1">Ảnh Lúc Vào (Check-in)</p>
+                  <p className="text-[9px] font-bold text-emerald-400 mb-1">Entry Image (Check-in)</p>
                   <div className="aspect-video w-full overflow-hidden rounded bg-black flex items-center justify-center">
                     {exitInvoiceData.session?.entryImage ? (
                       <img src={exitInvoiceData.session.entryImage} alt="Entry" className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-[10px] text-white/30">Không có ảnh vào</span>
+                      <span className="text-[10px] text-white/30">No entry image</span>
                     )}
                   </div>
                   <p className="text-[9px] text-white/40 mt-1">{formatDate(exitInvoiceData.session?.checkInTime)}</p>
                 </div>
 
                 <div className="rounded-lg border border-white/10 bg-black/40 p-1 text-center">
-                  <p className="text-[9px] font-bold text-sky-400 mb-1">Ảnh Lúc Ra (Check-out)</p>
+                  <p className="text-[9px] font-bold text-sky-400 mb-1">Exit Image (Check-out)</p>
                   <div className="aspect-video w-full overflow-hidden rounded bg-black flex items-center justify-center">
                     {exitSnapshot ? (
                       <img src={exitSnapshot} alt="Exit" className="h-full w-full object-cover" />
@@ -1042,26 +1044,26 @@ export default function GateControl() {
                       <span className="text-[10px] text-white/30">Camera Ra</span>
                     )}
                   </div>
-                  <p className="text-[9px] text-white/40 mt-1">Hiện tại</p>
+                  <p className="text-[9px] text-white/40 mt-1">Now</p>
                 </div>
               </div>
 
               {/* Invoice Breakdown */}
               <div className="rounded-lg bg-black/60 p-3 text-xs space-y-1.5 border border-white/5">
                 <div className="flex justify-between text-white/60">
-                  <span>Thời lượng đỗ:</span>
-                  <span className="font-bold text-white">{exitInvoiceData.durationFormatted || '2 giờ'}</span>
+                  <span>Parking Duration:</span>
+                  <span className="font-bold text-white">{exitInvoiceData.durationFormatted || '2 hours'}</span>
                 </div>
                 <div className="flex justify-between text-white/60">
-                  <span>Loại hình:</span>
+                  <span>Session Type:</span>
                   <span className="font-bold text-white">{exitInvoiceData.session?.type || 'STANDARD'}</span>
                 </div>
                 <div className="flex justify-between text-white/60">
-                  <span>Phí đỗ xe:</span>
+                  <span>Parking Fee:</span>
                   <span className="font-mono text-white">{formatCurrency(exitInvoiceData.parkingFee || 0)}</span>
                 </div>
                 <div className="border-t border-white/10 pt-1.5 flex justify-between items-center">
-                  <span className="font-black text-white">Tổng thanh toán:</span>
+                  <span className="font-black text-white">Total Due:</span>
                   <span className="text-base font-black text-[#ffd555] font-mono">
                     {formatCurrency(exitInvoiceData.totalAmount || 0)}
                   </span>
@@ -1077,7 +1079,7 @@ export default function GateControl() {
                     onChange={(e) => setCashReceived(e.target.checked)}
                     className="h-4 w-4 rounded border-yellow-400 text-yellow-500 focus:ring-0"
                   />
-                  <span>💵 Đã thu tiền mặt trực tiếp từ khách hàng</span>
+                  <span>Cash payment received from the customer</span>
                 </label>
               )}
             </div>
@@ -1094,10 +1096,10 @@ export default function GateControl() {
                   setAiModalInitialImage(exitSnapshot);
                   setShowAiModal(true);
                 }}
-                className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-400 hover:text-black transition"
+                className="sgc-ai-action flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-400 hover:text-black transition"
               >
                 <Sparkles size={14} className="text-amber-400" />
-                <span>AI Trợ lý biển mờ</span>
+                <span>AI Plate Assistant</span>
               </button>
 
               <button
@@ -1107,7 +1109,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-xs font-black text-black hover:bg-sky-400 disabled:opacity-50 transition shadow-lg shadow-sky-500/20"
               >
                 {isExitCheckingOut ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                <span>Check-out & Mở Cổng</span>
+                <span>Check Out & Open Gate</span>
               </button>
             </div>
 
@@ -1119,7 +1121,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Unlock size={12} className="text-sky-400" />
-                <span>Mở Cổng Ra</span>
+                <span>Open Exit Barrier</span>
               </button>
 
               <button
@@ -1128,7 +1130,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Pause size={12} className="text-yellow-400" />
-                <span>Tạm dừng</span>
+                <span>Pause</span>
               </button>
 
               <button
@@ -1137,7 +1139,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Lock size={12} className="text-red-400" />
-                <span>Khóa Cổng</span>
+                <span>Lock Barrier</span>
               </button>
             </div>
           </div>

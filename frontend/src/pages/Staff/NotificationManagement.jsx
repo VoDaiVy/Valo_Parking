@@ -24,6 +24,7 @@ import {
   getOperationalViewState,
   getResponseAvailability,
 } from "../../utils/staffOperationalAvailability";
+import "./components/staffNotificationManagement.css";
 import { STAFF_THEME } from "./components/staffTheme.js";
 
 const TABS = [
@@ -128,11 +129,11 @@ export default function NotificationManagement() {
   }, [refreshHistory]);
 
   return (
-    <div className={STAFF_THEME.page}>
-      <div className="px-6 py-6 max-w-[1400px] mx-auto">
-        <header className="flex items-start justify-between gap-4 mb-6">
+    <div className={`staff-notification-management ${STAFF_THEME.page}`}>
+      <div className="snm-content px-6 py-6 max-w-[1400px] mx-auto">
+        <header className="snm-header flex items-start justify-between gap-4 mb-6">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="snm-title-line flex items-center gap-3">
               <div>
                 <h1 className={STAFF_THEME.title}>Notification Management</h1>
               </div>
@@ -146,10 +147,11 @@ export default function NotificationManagement() {
 
         <StatsRow stats={apiStats} state={historyState} />
 
-        <nav className="mt-6 flex flex-wrap gap-2 border-b border-white/10">
+        <nav aria-label="Notification views" className="snm-tabs mt-6 flex flex-wrap gap-2 border-b border-white/10">
           {TABS.map((t) => (
             <button
               key={t.id}
+              aria-pressed={tab === t.id}
               onClick={() => setTab(t.id)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.id
@@ -187,7 +189,7 @@ function LiveBadge({ state }) {
   const ok = state.status === "live";
   const loading = state.status === "loading";
   return (
-    <span className={`inline-flex items-center gap-2 text-xs px-2.5 py-1 rounded-full border ${
+    <span className={`snm-api-state inline-flex items-center gap-2 text-xs px-2.5 py-1 rounded-full border ${
       ok
         ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10"
         : loading
@@ -195,7 +197,8 @@ function LiveBadge({ state }) {
           : "border-red-500/40 text-red-400 bg-red-500/10"
     }`}>
       <span className={`w-2 h-2 rounded-full ${ok ? "bg-emerald-500 animate-pulse" : loading ? "bg-amber-500 animate-pulse" : "bg-red-500"}`} />
-      {ok ? "LIVE - API" : loading ? "Loading API" : "API unavailable"}
+      <span className="snm-api-original">{ok ? "LIVE - API" : loading ? "Loading API" : "API unavailable"}</span>
+      <span className="snm-api-label hidden">{ok ? "API available" : loading ? "Loading API" : "API unavailable"}</span>
     </span>
   );
 }
@@ -220,11 +223,11 @@ function StatsRow({ stats, state }) {
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="snm-metrics grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {cards.map((c) => {
         const IconComponent = iconMap[c.icon];
         return (
-          <div key={c.label} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)] transition-colors hover:border-white/15">
+          <div key={c.label} data-tone={c.tone} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)] transition-colors hover:border-white/15">
             <div className={`w-11 h-11 rounded-lg border ${toneMap[c.tone]} grid place-items-center`}>
               <IconComponent size={24} />
             </div>
@@ -279,8 +282,8 @@ function FeedTab({
     });
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="snm-feed space-y-4">
+      <div className="snm-toolbar flex flex-wrap items-center gap-2">
         <FilterChip label="All" active={filter === "ALL"} onClick={() => setFilter("ALL")} />
         {PRIORITIES.map((p) => (
           <FilterChip key={p} label={p} active={filter === p} onClick={() => setFilter(p)} tone={p} />
@@ -289,6 +292,7 @@ function FeedTab({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search notification history"
           placeholder="Search title or content..."
           className="w-72 max-w-full rounded-full border border-white/[0.08] bg-[#111] px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30"
         />
@@ -301,7 +305,7 @@ function FeedTab({
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#111111] shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
+      <div className="snm-stream overflow-hidden rounded-xl border border-white/[0.07] bg-[#111111] shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
           <div className="font-semibold text-white">Live Events (API Send History)</div>
           <div className="text-xs text-gray-400">
@@ -348,6 +352,7 @@ function FilterChip({ label, active, onClick, tone }) {
   return (
     <button
       onClick={onClick}
+      aria-pressed={active}
       className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
         active
           ? toneCls
@@ -369,7 +374,7 @@ function MessageRow({ m }) {
                       m.targetType === "SINGLE_USER" ? "One user" : "System";
 
   return (
-    <li className="px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
+    <li data-priority={m.priority || "INFO"} className="snm-event px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
       <div className={`w-10 h-10 rounded-lg border ${meta.bg} ${meta.color} ${meta.border} grid place-items-center text-xs font-bold shrink-0`}>
         {m.priority ? m.priority[0] : "I"}
       </div>
@@ -496,7 +501,7 @@ function ComposeTab({ onSent }) {
   }
 
   return (
-    <div className="max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+    <div className="snm-compose max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
       <div className="flex flex-col gap-3 border-b border-[#ffd555]/15 bg-gradient-to-r from-[#ffd555]/[0.06] to-transparent px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-[#ffd555]/20 bg-[#ffd555]/10 text-[#ffd555]">
@@ -516,7 +521,7 @@ function ComposeTab({ onSent }) {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
+      <div className="snm-compose-grid grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
         <div className="space-y-7 p-5 sm:p-7 lg:border-r lg:border-white/5">
           <section>
             <StepHeading number="1" title="Choose audience" description="Select exactly who should receive this message." />
@@ -528,23 +533,24 @@ function ComposeTab({ onSent }) {
                   <button
                     type="button"
                     key={option.id}
+                    aria-pressed={active}
                     onClick={() => changeAudience(option.id)}
-                    className={`group flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all ${
+                    className={`snm-audience-option group flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all ${
                       active
                         ? "border-[#ffd555]/50 bg-[#ffd555]/10"
                         : "border-white/10 bg-[#101010] hover:border-white/20 hover:bg-white/[0.03]"
                     }`}
                   >
-                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
+                    <span className={`snm-audience-icon grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
                       active ? "bg-[#ffd555]/15 text-[#ffd555]" : "bg-white/5 text-gray-500"
                     }`}>
                       <Icon size={18} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className={`block text-sm font-medium ${active ? "text-[#ffe58a]" : "text-gray-200"}`}>{option.label}</span>
-                      <span className="mt-0.5 block text-xs text-gray-500">{option.description}</span>
+                      <span className={`snm-audience-title block text-sm font-medium ${active ? "text-[#ffe58a]" : "text-gray-200"}`}>{option.label}</span>
+                      <span className="snm-audience-description mt-0.5 block text-xs text-gray-500">{option.description}</span>
                     </span>
-                    <span className={`grid h-5 w-5 place-items-center rounded-full border ${
+                    <span className={`snm-audience-check grid h-5 w-5 place-items-center rounded-full border ${
                       active ? "border-[#ffd555] bg-[#ffd555] text-black" : "border-white/15 text-transparent"
                     }`}>
                       <Check size={12} strokeWidth={3} />
@@ -565,6 +571,7 @@ function ComposeTab({ onSent }) {
                         <button
                           type="button"
                           key={role}
+                          aria-pressed={active}
                           onClick={() => setSelectedRoles((current) =>
                             active ? current.filter((item) => item !== role) : [...current, role]
                           )}
@@ -574,7 +581,7 @@ function ComposeTab({ onSent }) {
                               : "border-white/10 text-gray-400 hover:border-white/20"
                           }`}
                         >
-                          <span className={`grid h-4 w-4 place-items-center rounded border ${active ? "border-amber-400 bg-amber-400 text-black" : "border-white/20"}`}>
+                          <span className={`snm-role-check grid h-4 w-4 place-items-center rounded border ${active ? "border-amber-400 bg-amber-400 text-black" : "border-white/20"}`}>
                             {active && <Check size={10} strokeWidth={3} />}
                           </span>
                           {role}
@@ -592,7 +599,7 @@ function ComposeTab({ onSent }) {
                 <UserPicker multi={audienceKind === "multi"} value={selectedUsers} onChange={setSelectedUsers} />
               )}
               {audienceKind === "all" && (
-                <div className="flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-4">
+                <div className="snm-system-warning flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-4">
                   <AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={18} />
                   <div>
                     <p className="text-sm font-medium text-amber-300">System-wide delivery</p>
@@ -631,7 +638,7 @@ function ComposeTab({ onSent }) {
           </section>
         </div>
 
-        <aside className="space-y-6 bg-[#0d0d0d] p-5 sm:p-7">
+        <aside className="snm-preview-column space-y-6 bg-[#0d0d0d] p-5 sm:p-7">
           <section>
             <StepHeading number="3" title="Priority" description="Choose how prominently it appears." compact />
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -641,6 +648,8 @@ function ComposeTab({ onSent }) {
                   <button
                     type="button"
                     key={item}
+                    data-priority={item}
+                    aria-pressed={priority === item}
                     onClick={() => setPriority(item)}
                     className={`rounded-lg border px-3 py-2.5 text-xs font-semibold transition-colors ${
                       priority === item
@@ -657,7 +666,7 @@ function ComposeTab({ onSent }) {
 
           <section>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Preview</p>
-            <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D]">
+            <div className="snm-preview mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D]">
               <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
                 <span className="text-xs text-gray-500">Recipient inbox</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PRIORITY_META[priority].bg} ${PRIORITY_META[priority].color} ${PRIORITY_META[priority].border}`}>
@@ -685,7 +694,7 @@ function ComposeTab({ onSent }) {
           </section>
 
           {toast && (
-            <div className={`flex gap-2.5 rounded-xl border p-3 text-xs leading-5 ${
+            <div role="status" className={`snm-feedback flex gap-2.5 rounded-xl border p-3 text-xs leading-5 ${
               /error|required|select|at least|connection/i.test(toast)
                 ? "border-red-500/25 bg-red-500/[0.07] text-red-300"
                 : "border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-300"
@@ -707,7 +716,7 @@ function ComposeTab({ onSent }) {
               type="button"
               onClick={submit}
               disabled={!canSubmit}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] px-5 text-sm font-black text-[#080808] shadow-[0_10px_30px_rgba(255,213,85,0.14)] transition hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-600 disabled:shadow-none"
+              className="snm-send flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] px-5 text-sm font-black text-[#080808] shadow-[0_10px_30px_rgba(255,213,85,0.14)] transition hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-600 disabled:shadow-none"
             >
               {isSubmitting ? (
                 <><Loader2 className="animate-spin" size={17} />Sending...</>
@@ -797,7 +806,7 @@ function UserPicker({ multi, value, onChange }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#101010]">
+    <div className="snm-user-picker overflow-hidden rounded-xl border border-white/10 bg-[#101010]">
       <div className="border-b border-white/5 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" size={16} />
@@ -822,7 +831,7 @@ function UserPicker({ multi, value, onChange }) {
           <div className="mt-3 flex items-start gap-2">
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
               {value.map((user) => (
-                <span key={user._id} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-[#ffd555]/10 px-2 py-1 text-xs text-[#ffe58a]">
+                <span key={user._id} className="snm-recipient-chip inline-flex max-w-full items-center gap-1.5 rounded-md bg-[#ffd555]/10 px-2 py-1 text-xs text-[#ffe58a]">
                   <span className="max-w-40 truncate">{user.username}</span>
                   <button
                     type="button"
@@ -871,26 +880,27 @@ function UserPicker({ multi, value, onChange }) {
             <li key={user._id}>
               <button
                 type="button"
+                aria-pressed={selected}
                 onClick={() => toggle(user)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                className={`snm-recipient-option flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                   selected ? "bg-[#ffd555]/10" : "hover:bg-white/[0.04]"
                 }`}
               >
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold ${
+                <span className={`snm-recipient-avatar grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold ${
                   selected ? "bg-[#ffd555]/20 text-[#ffd555]" : "bg-white/5 text-gray-500"
                 }`}>
                   {initials}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={`block truncate text-sm font-medium ${selected ? "text-[#ffe58a]" : "text-gray-200"}`}>
+                  <span className={`snm-recipient-name block truncate text-sm font-medium ${selected ? "text-[#ffe58a]" : "text-gray-200"}`}>
                     {user.username}
                   </span>
-                  <span className="block truncate text-xs text-gray-600">{user.email}</span>
+                  <span className="snm-recipient-email block truncate text-xs text-gray-600">{user.email}</span>
                 </span>
-                <span className="rounded-md border border-white/10 px-2 py-0.5 text-[10px] uppercase text-gray-500">
+                <span data-role={user.role} className="snm-recipient-role rounded-md border border-white/10 px-2 py-0.5 text-[10px] uppercase text-gray-500">
                   {user.role}
                 </span>
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
+                <span className={`snm-recipient-check grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
                   selected ? "border-[#ffd555] bg-[#ffd555] text-black" : "border-white/15 text-transparent"
                 }`}>
                   <Check size={11} strokeWidth={3} />

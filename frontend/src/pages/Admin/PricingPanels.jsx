@@ -24,17 +24,10 @@ function SectionTitle({ icon: Icon, title, description }) {
 
 export function PricingHeader({ status }) {
   return <header className="pricing-header">
-    <div><p className="pricing-breadcrumb">Admin <span aria-hidden="true">/</span> Pricing</p>
+    <div>
       <h1>Pricing Management</h1><p className="pricing-subtitle">Manage time blocks and calendar pricing policies.</p>
     </div><Coverage status={status} />
   </header>;
-}
-
-function MetricSilhouette({ bars }) {
-  return <svg className="pricing-metric-chart" viewBox="0 0 160 70" aria-hidden="true" focusable="false">
-    {bars ? <g><rect x="90" y="40" width="10" height="30" rx="1" /><rect x="110" y="26" width="10" height="44" rx="1" /><rect x="130" y="8" width="10" height="62" rx="1" /></g>
-      : <path d="M0 70 L0 58 C20 55 25 68 40 62 S65 52 80 61 S100 20 120 44 S140 16 160 22 L160 70 Z" />}
-  </svg>;
 }
 
 export function PricingOverview({ timeBlocks }) {
@@ -44,11 +37,10 @@ export function PricingOverview({ timeBlocks }) {
     { label: 'Lowest block fee', value: metrics.low, note: 'Lowest configured fee per block', icon: ArrowDown },
     { label: 'Highest block fee', value: metrics.high, note: 'Highest configured fee per block', icon: ArrowUp },
   ];
-  return <dl className="pricing-metrics">{cards.map(({ label, value, note, icon: Icon }, index) =>
+  return <dl className="pricing-metrics">{cards.map(({ label, value, note, icon: Icon }) =>
     <div className="pricing-metric" key={label}>
-      <span className="pricing-metric-icon"><Icon size={28} strokeWidth={1.7} aria-hidden="true" /></span>
+      <span className="pricing-metric-icon"><Icon size={18} strokeWidth={1.7} aria-hidden="true" /></span>
       <div className="pricing-metric-copy"><dt>{label}</dt><dd>{value}</dd><p>{note}</p></div>
-      <MetricSilhouette bars={index === 2} />
     </div>)}
   </dl>;
 }

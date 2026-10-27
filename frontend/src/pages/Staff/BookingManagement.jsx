@@ -17,6 +17,7 @@ import {
 } from '../../utils/staffOperationalAvailability';
 import { Toaster } from 'react-hot-toast';
 import StaffDropdown from './components/StaffDropdown.jsx';
+import './components/staffBookingManagement.css';
 import { STAFF_THEME } from './components/staffTheme.js';
 
 const STATISTICS_RANGES = [
@@ -78,7 +79,7 @@ const formatStatisticsAvailability = (availability) => {
 const BookingStatCard = ({ icon, label, value, note, tone = 'emerald' }) => {
   const colors = STAT_CARD_TONES[tone];
   return (
-    <div className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121214]/90 p-4 shadow-xl transition hover:-translate-y-0.5 hover:border-white/15">
+    <div data-tone={tone} className="sbm-stat group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121214]/90 p-4 shadow-xl transition hover:-translate-y-0.5 hover:border-white/15">
       <div className={`pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full blur-3xl ${colors.glow}`} />
       <div className="relative flex items-center gap-3">
         <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${colors.icon}`}>
@@ -178,7 +179,7 @@ const ProgressBar = ({ start, end, now }) => {
     : '';
 
   return (
-    <div className="w-full mt-4">
+    <div className="sbm-progress w-full mt-4">
       <div className={`flex justify-between text-[10px] mb-2 font-bold uppercase tracking-widest ${isOverdue ? 'text-red-400' : 'text-emerald-400/80'}`}>
         <span className="flex items-center gap-1">
           {isOverdue
@@ -430,8 +431,10 @@ export default function BookingManagement() {
     return (
       <div
         key={booking._id}
+        data-selected={isSelected}
+        data-status={displayStatus}
         onClick={() => setSelectedBooking(booking)}
-        className={`group relative overflow-hidden rounded-2xl border p-3.5 cursor-pointer transition-all duration-300 ${isSelected
+        className={`sbm-booking-row group relative overflow-hidden rounded-2xl border p-3.5 cursor-pointer transition-all duration-300 ${isSelected
             ? 'bg-gradient-to-br from-white/10 to-transparent border-white/20 shadow-[0_5px_20px_rgba(0,0,0,0.3)] scale-[1.01]'
             : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.05] hover:border-white/15'
           }`}
@@ -473,15 +476,15 @@ export default function BookingManagement() {
   };
 
   return (
-    <div className={`${STAFF_THEME.page} relative flex min-h-[calc(100vh-70px)] flex-col overflow-hidden p-4 font-sans md:p-8`}
+    <div className={`staff-booking-management ${STAFF_THEME.page} relative flex min-h-[calc(100vh-70px)] flex-col overflow-hidden p-4 font-sans md:p-8`}
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '40px 40px' }}>
 
-      <div className="pointer-events-none absolute left-[20%] top-0 h-[600px] w-[600px] rounded-full bg-[#ffd555]/[0.035] blur-[120px]" />
+      <div className="sbm-ambient pointer-events-none absolute left-[20%] top-0 h-[600px] w-[600px] rounded-full bg-[#ffd555]/[0.035] blur-[120px]" />
 
       <Toaster position="top-right" toastOptions={{ className: 'bg-[#18181b] text-white border border-white/10 shadow-2xl' }} />
 
         {/* --- HEADER --- */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 shrink-0 relative z-10">
+      <div className="sbm-header flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 shrink-0 relative z-10">
         <div>
           <div className="mb-2 flex items-center gap-3">
             <h1 className={STAFF_THEME.title}>Booking Management</h1>
@@ -489,8 +492,8 @@ export default function BookingManagement() {
           <p className="text-white/50 text-sm max-w-xl font-medium">Monitor all reservations, active parking sessions, and historical data in real-time.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex bg-[#121214] border border-white/10 rounded-2xl p-1.5 shadow-lg">
+        <div className="sbm-header-controls flex flex-wrap items-center gap-4">
+          <div className="sbm-counts flex bg-[#121214] border border-white/10 rounded-2xl p-1.5 shadow-lg">
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Active</span>
               <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">{getOperationalValue(bookingState, active.length)}</span>
@@ -507,7 +510,7 @@ export default function BookingManagement() {
             </div>
           </div>
 
-          <div className="flex items-center bg-[#121214] rounded-2xl border border-white/10 p-1.5 shadow-lg relative overflow-hidden">
+          <div className="sbm-date flex items-center bg-[#121214] rounded-2xl border border-white/10 p-1.5 shadow-lg relative overflow-hidden">
             <button
               onClick={() => setCurrentDate(subDays(currentDate, 1))}
               className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-white/50 hover:text-white"
@@ -542,9 +545,9 @@ export default function BookingManagement() {
       </div>
 
       {/* --- BOOKING PERFORMANCE --- */}
-      <section className="relative z-10 mb-5 shrink-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] md:p-5">
-        <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#ffd555]/[0.05] blur-[90px]" />
-        <div className="relative flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <section className="sbm-performance relative z-10 mb-5 shrink-0 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] md:p-5">
+        <div className="sbm-ambient pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#ffd555]/[0.05] blur-[90px]" />
+        <div className="sbm-performance-heading relative flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#ffd555]/25 bg-[#ffd555]/15 text-[#ffd555]">
@@ -584,7 +587,7 @@ export default function BookingManagement() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="sbm-scope-controls flex flex-wrap items-center gap-2">
             {STATISTICS_RANGES.map((option) => (
               <button
                 key={option.value}
@@ -619,7 +622,7 @@ export default function BookingManagement() {
           </div>
         )}
 
-        <div className={`relative mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${statisticsLoading ? 'opacity-60' : ''}`}>
+        <div className={`sbm-metric-strip relative mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${statisticsLoading ? 'opacity-60' : ''}`}>
           <BookingStatCard
             icon={<CircleDollarSign size={17} />}
             label="Completed Gross Revenue"
@@ -660,7 +663,7 @@ export default function BookingManagement() {
       </section>
 
       {/* --- CONTROLS --- */}
-      <div className="relative z-30 mb-6 flex shrink-0 flex-wrap items-center gap-4">
+      <div className="sbm-controls relative z-30 mb-6 flex shrink-0 flex-wrap items-center gap-4">
         <div className="relative w-full md:w-[350px] group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition-colors group-focus-within:text-[#ffd555]" size={18} />
           <input
@@ -689,10 +692,10 @@ export default function BookingManagement() {
       </div>
 
       {/* --- MAIN CONTENT SPLIT VIEW --- */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-8 relative z-10">
+      <div className="sbm-workspace flex-1 min-h-0 flex flex-col lg:flex-row gap-8 relative z-10">
 
         {/* LEFT PANEL: Booking List */}
-        <div className="w-full lg:w-[420px] xl:w-[480px] shrink-0 flex flex-col gap-8 overflow-y-auto custom-scrollbar pr-4 pb-6">
+        <div className="sbm-list w-full lg:w-[420px] xl:w-[480px] shrink-0 flex flex-col gap-8 overflow-y-auto custom-scrollbar pr-4 pb-6">
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center text-white/30 gap-4">
               <Loader2 className="animate-spin text-emerald-500" size={32} />
@@ -714,7 +717,7 @@ export default function BookingManagement() {
               {/* Active Section */}
               {active.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sticky top-0 z-20 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
+                  <div className="sbm-group-heading sticky top-0 z-20 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-emerald-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                       Currently Parked ({active.length})
@@ -729,7 +732,7 @@ export default function BookingManagement() {
               {/* Upcoming Section */}
               {upcoming.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
+                  <div className="sbm-group-heading sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-amber-400 flex items-center gap-2">
                       <Clock size={14} />
                       Arriving Soon ({upcoming.length})
@@ -744,7 +747,7 @@ export default function BookingManagement() {
               {/* History Section */}
               {history.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
+                  <div className="sbm-group-heading sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-white/50 flex items-center gap-2">
                       <CheckCircle size={14} />
                       History ({history.length})
@@ -760,7 +763,7 @@ export default function BookingManagement() {
         </div>
 
         {/* RIGHT PANEL: Details View */}
-        <div className="flex-1 bg-[#121214]/60 backdrop-blur-2xl border border-white/10 rounded-[40px] shadow-2xl overflow-hidden hidden md:flex flex-col relative">
+        <div className="sbm-detail flex-1 bg-[#121214]/60 backdrop-blur-2xl border border-white/10 rounded-[40px] shadow-2xl overflow-hidden hidden md:flex flex-col relative">
           {!currentBooking ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white/30 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/5 to-transparent">
               <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-[#080808] shadow-inner shadow-white/5">
@@ -771,7 +774,7 @@ export default function BookingManagement() {
           ) : (
             <div className="h-full flex flex-col">
               {/* Hero Header */}
-              <div className="relative shrink-0 bg-gradient-to-b from-[#18181b] to-[#121214] border-b border-white/5 p-10 overflow-hidden">
+              <div className="sbm-detail-identity relative shrink-0 bg-gradient-to-b from-[#18181b] to-[#121214] border-b border-white/5 p-10 overflow-hidden">
                 <div className="absolute -right-20 -top-20 w-80 h-80 bg-emerald-500 rounded-full mix-blend-overlay blur-[100px] opacity-10" />
                 <div className="absolute left-0 bottom-0 w-64 h-64 bg-blue-500 rounded-full mix-blend-overlay blur-[80px] opacity-10" />
 
@@ -782,7 +785,7 @@ export default function BookingManagement() {
                       <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/40 mb-3 flex items-center gap-2">
                         <ShieldCheck size={14} className="text-emerald-400" /> Booking Reference
                       </p>
-                      <div className="flex items-end gap-5">
+                      <div className="sbm-reference flex items-end gap-5">
                         <LicensePlate plate={currentBooking.licensePlate} size="lg" />
                         <div className="mb-1">
                           <p className="text-xs font-semibold text-white/50 mb-1">Internal Ref ID</p>
@@ -812,16 +815,16 @@ export default function BookingManagement() {
               </div>
 
               {/* Scrollable Details */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
-                <div className="max-w-4xl mx-auto space-y-8">
+              <div className="sbm-detail-body flex-1 overflow-y-auto custom-scrollbar p-10">
+                <div className="sbm-detail-content max-w-4xl mx-auto space-y-8">
 
                   {/* Timeline Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+                  <div className="sbm-schedule grid grid-cols-1 md:grid-cols-2 gap-6 relative">
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-10 h-10 rounded-full bg-[#121214] border border-white/10 text-white/40">
                       <ArrowRight size={18} />
                     </div>
 
-                    <div className="group rounded-[32px] bg-gradient-to-br from-[#18181b] to-[#121214] border border-white/5 p-8 hover:border-white/10 transition-all shadow-xl">
+                    <div className="sbm-schedule-endpoint group rounded-[32px] bg-gradient-to-br from-[#18181b] to-[#121214] border border-white/5 p-8 hover:border-white/10 transition-all shadow-xl">
                       <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/40 mb-6 flex items-center gap-2">
                         <Clock size={14} className="text-sky-400" /> Start Schedule
                       </p>
@@ -831,7 +834,7 @@ export default function BookingManagement() {
                       </div>
                     </div>
 
-                    <div className="group rounded-[32px] bg-gradient-to-br from-[#18181b] to-[#121214] border border-white/5 p-8 hover:border-white/10 transition-all shadow-xl">
+                    <div className="sbm-schedule-endpoint group rounded-[32px] bg-gradient-to-br from-[#18181b] to-[#121214] border border-white/5 p-8 hover:border-white/10 transition-all shadow-xl">
                       <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/40 mb-6 flex items-center gap-2">
                         <Clock size={14} className="text-amber-400" /> End Schedule
                       </p>
@@ -843,9 +846,9 @@ export default function BookingManagement() {
                   </div>
 
                   {/* Info Grid */}
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <div className="sbm-info-grid grid grid-cols-1 xl:grid-cols-2 gap-6">
                     {/* Customer */}
-                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
+                    <div className="sbm-info-block overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center border border-indigo-500/30 text-indigo-400 shrink-0">
                           <User size={20} />
@@ -868,7 +871,7 @@ export default function BookingManagement() {
                     </div>
 
                     {/* Location */}
-                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
+                    <div className="sbm-info-block overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-emerald-500/30 text-emerald-400 shrink-0">
                           <MapPin size={20} />
@@ -893,7 +896,7 @@ export default function BookingManagement() {
                     </div>
 
                     {/* Payment */}
-                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
+                    <div className="sbm-info-block overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center border border-amber-500/30 text-amber-400 shrink-0">
                           <CreditCard size={20} />
@@ -940,7 +943,7 @@ export default function BookingManagement() {
                     </div>
 
                     {/* Summary */}
-                    <div className="overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
+                    <div className="sbm-info-block overflow-hidden rounded-2xl border border-white/5 bg-[#0b0b0b] p-6 transition-colors hover:bg-white/[0.02]">
                       <div className="flex items-center gap-4 mb-5">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 flex items-center justify-center border border-sky-500/30 text-sky-400 shrink-0">
                           <Activity size={20} />

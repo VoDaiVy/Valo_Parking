@@ -1,0 +1,45 @@
+/* Staff Gate Control presentation only. Camera geometry and operational states are untouched. */
+body[data-valo-typography="staff"] .staff-gate-control { background: #080B0F; color: #F5F7FA; padding: 0 32px 28px; font-family: Montserrat, sans-serif; font-size: 14px; line-height: 1.5; min-width: 0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-header { padding-block: 22px; margin-bottom: 24px; border-bottom: 1px solid #222D36; position: relative; align-items: flex-start; gap: 20px; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-header::after { content: ''; position: absolute; left: 0; bottom: -1px; width: 140px; height: 1px; background: #10B98180; pointer-events: none; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-eyebrow { color: #54E3B0; font-size: 12px; font-weight: 600; letter-spacing: .06em; margin-bottom: 10px; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-title-line { flex-wrap: wrap; gap: 12px; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-header h1 { font-size: 34px; font-weight: 700; line-height: 1.2; letter-spacing: -.03em; color: #F5F7FA; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-header > div:first-child > p:last-child { color: #9AADC0; font-size: 14px; font-weight: 500; line-height: 1.5; margin-top: 8px; max-width: 680px; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-status-controls { flex-shrink: 0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-status-controls > div { background: #111820; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-status-controls > div p:first-child { font-size: 12px; font-weight: 500; letter-spacing: normal; text-transform: none; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-status-controls > button { min-height: 44px; font-size: 13px; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-autopilot { box-shadow: none; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-autopilot[data-enabled="true"] { border-color: #10B98166; background: #10B98114; color: #6EE7B7; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-autopilot[data-enabled="true"] svg { fill: #6EE7B7; color: #6EE7B7; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station { min-width: 0; background: #0D1117; box-shadow: none; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station > .pointer-events-none { display: none; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station-header { flex-wrap: wrap; gap: 12px; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station-header > div:first-child { min-width: 0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station-header h2 { font-size: 16px; font-weight: 600; text-transform: none; letter-spacing: normal; overflow-wrap: anywhere; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station-header p { font-size: 12px; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-station-header > div:last-child > span { font-size: 12px; font-weight: 600; text-transform: none; white-space: nowrap; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-vehicle-fields, body[data-valo-typography="staff"] .staff-gate-control .sgc-invoice { background: #111820; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-vehicle-fields label { font-size: 12px; font-weight: 600; text-transform: none; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-vehicle-fields input, body[data-valo-typography="staff"] .staff-gate-control .sgc-vehicle-fields select { background: #080B0F; border-color: #222D36; font-family: inherit; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-vehicle-fields input::placeholder { color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-ai-action { background: #8B5CF614; background-image: none; border-color: #A78BFA66; color: #C4B5FD; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-ai-action svg { color: #C4B5FD; }
+body[data-valo-typography="staff"] .staff-gate-control .sgc-ai-action:hover { background: #8B5CF626; color: #EDE9FE; }
+body[data-valo-typography="staff"] .staff-gate-control button { transition: color 200ms, background-color 200ms, border-color 200ms; }
+body[data-valo-typography="staff"] .staff-gate-control button:disabled { cursor: not-allowed; }
+body[data-valo-typography="staff"] .staff-gate-control :is(button, input, select):focus-visible { outline: 2px solid #54E3B0; outline-offset: 3px; }
+@media (max-width: 1279px) {
+ body[data-valo-typography="staff"] .staff-gate-control .sgc-header { flex-direction: column; }
+}
+@media (max-width: 767px) {
+ body[data-valo-typography="staff"] .staff-gate-control { padding-inline: 16px; }
+ body[data-valo-typography="staff"] .staff-gate-control .sgc-header h1 { font-size: 30px; }
+ body[data-valo-typography="staff"] .staff-gate-control .sgc-station { padding: 16px; }
+ body[data-valo-typography="staff"] .staff-gate-control .sgc-status-controls { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+ body[data-valo-typography="staff"] .staff-gate-control button { transition: none; }
+ body[data-valo-typography="staff"] .staff-gate-control .sgc-header .animate-pulse { animation: none; }
+}

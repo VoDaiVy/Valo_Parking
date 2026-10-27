@@ -11,7 +11,7 @@ const source = fs.readFileSync(new URL('./RevenueAnalytics.jsx', import.meta.url
 const utilities = source.slice(source.indexOf('const MONTHS ='), source.indexOf('/* ── UI Components'));
 const chart = source.slice(source.indexOf('function VehicleTrafficSection('), source.indexOf('/* ── Status Distribution'));
 const emptyState = source.slice(source.indexOf('function EmptyState('), source.indexOf('function RevenueSkeleton('));
-const compiled = await transformWithOxc(`${utilities}\n${chart}\n${emptyState}`, 'TrafficTest.jsx', { jsx: { runtime: 'classic' } });
+const compiled = await transformWithOxc(`${utilities}\nconst useState = React.useState;\nconst WalletCards = () => null;\n${chart}\n${emptyState}`, 'TrafficTest.jsx', { jsx: { runtime: 'classic' } });
 const VehicleTraffic = new Function('React', 'motion', `${compiled.code}\nreturn VehicleTrafficSection;`)(React, motion);
 
 function renderTraffic(traffic, granularity = 'year') {
@@ -26,43 +26,50 @@ function renderTraffic(traffic, granularity = 'year') {
 }
 
 const rectangles = html => [...html.matchAll(/<rect\b[^>]*>/g)].map(match => match[0]);
-test('one year of monthly traffic renders continuous green and dashed pink lines', () => {
-  const traffic = Array.from({ length: 12 }, (_, index) => ({
-    period: `2026-${String(index + 1).padStart(2, '0')}`,
-    entries: index === 8 ? 158 : 0,
-    exits: index === 8 ? 156 : 0,
-  }));
-  const html = renderTraffic(traffic, 'month');
-  assert.equal(rectangles(html).length, 0);
-  const paths = [...html.matchAll(/<path\b[^>]*stroke="(?:#34D399|#FB7185)"[^>]*>/g)].map(match => match[0]);
-  assert.equal(paths.length, 2);
-  assert.ok(paths.every(path => [...path.match(/\bd="([^"]+)"/)[1].matchAll(/L /g)].length === 11));
-  assert.match(html, /stroke="#FB7185"[^>]*stroke-dasharray="5 3"/);
-  assert.match(html, /Jan 2026/);
-  assert.match(html, /Dec 2026/);
+test('monthly traffic renders exactly two grouped bars per API bucket, including true zeros', () => {
+  const traffic = Array.from({length:12}, (_,index)=>({period:`2026-${String(index+1).padStart(2,'0')}`, entries:index===8?158:0, exits:index===8?156:0}));
+  const html = renderTraffic(traffic,'month');
+  assert.equal(rectangles(html).length,24);
+  assert.equal((html.match(/data-series="entries"/g)||[]).length,12);
+  assert.equal((html.match(/data-count="158"/g)||[]).length,1);
+  assert.equal((html.match(/data-count="156"/g)||[]).length,1);
+  assert.match(html,/Jan 2026/); assert.match(html,/Dec 2026/);
+  assert.match(html,/url\(#ra-traffic-entries\)/); assert.match(html,/url\(#ra-traffic-exits\)/);
 });
-
-test('a legacy response with one annual point stays visible using point markers', () => {
-  const html = renderTraffic([{ period: '2026', entries: 158, exits: 156 }]);
-  assert.equal(rectangles(html).length, 0);
-  assert.equal([...html.matchAll(/<circle\b/g)].length, 2);
-  assert.match(html, /Entries: 158/);
-  assert.match(html, /Exits: 156/);
+test('one legacy annual point uses its real counts without interpolated months', () => {
+  const html = renderTraffic([{period:'2026',entries:158,exits:156}]);
+  assert.equal(rectangles(html).length,2);
+  assert.match(html,/Entries: 158/); assert.match(html,/Exits: 156/);
 });
-
-test('monthly traffic keeps line charts and a single nonannual point has visible markers', () => {
-  const monthly = renderTraffic([{ period: '2026-01', entries: 20, exits: 15 }, { period: '2026-02', entries: 30, exits: 25 }], 'month');
-  assert.equal(rectangles(monthly).length, 0);
-  assert.match(monthly, /<path[^>]+stroke="#34D399"/);
-  assert.match(monthly, /<path[^>]+stroke="#FB7185"/);
-  const single = renderTraffic([{ period: '2026-01', entries: 20, exits: 15 }], 'month');
-  assert.equal([...single.matchAll(/<circle\b/g)].length, 2);
+test('two monthly buckets preserve all four event counts', () => {
+  const html=renderTraffic([{period:'2026-01',entries:20,exits:15},{period:'2026-02',entries:30,exits:25}],'month');
+  assert.equal(rectangles(html).length,4);
+  for(const value of [20,15,30,25]) assert.ok(html.includes(`data-count="${value}"`));
 });
-
-test('zero traffic keeps the empty state without fabricated activity', () => {
-  for (const traffic of [[], [{ period: '2026', entries: 0, exits: 0 }]]) {
-    const html = renderTraffic(traffic);
-    assert.match(html, /No vehicle activity/);
-    assert.equal(rectangles(html).length, 0);
+test('zero and missing traffic remain different states', () => {
+  for(const traffic of [[],[{period:'2026',entries:0,exits:0}]]) {
+    const html=renderTraffic(traffic); assert.match(html,/No vehicle activity/); assert.equal(rectangles(html).length,0);
   }
+  const html=renderTraffic([{period:'2026',entries:null,exits:0}]);
+  assert.match(html,/Vehicle traffic unavailable/); assert.equal(rectangles(html).length,0);
+});
+
+test('traffic hover and focus show both actual counts; leave, blur and Escape dismiss the tooltip', () => {
+  let active = null;
+  const runtime = {...React, useState: () => [active, value => { active = value; }]};
+  const Chart = new Function('React', 'motion', `${compiled.code}\nreturn VehicleTrafficSection;`)(runtime, motion);
+  const props = {traffic:[{period:'2026-07-14',entries:5,exits:3}],trafficSummary:{totalEntries:5,totalExits:3,currentlyParked:0},granularity:'day'};
+  const walk = node => !node || typeof node !== 'object' ? [] : [node, ...React.Children.toArray(node.props?.children).flatMap(walk)];
+  const target = () => walk(Chart(props)).find(node => node.type === 'path' && node.props.onPointerEnter);
+  const html = () => renderToStaticMarkup(Chart(props));
+  assert.ok(!html().includes('role="tooltip"'));
+  target().props.onPointerEnter();
+  assert.match(html(), /role="tooltip"/);
+  assert.match(html(), /2026-07-14<\/strong>/);
+  assert.match(html(), /Entries<\/span><b[^>]*>5<\/b>/);
+  assert.match(html(), /Exits<\/span><b[^>]*>3<\/b>/);
+  target().props.onPointerLeave(); assert.ok(!html().includes('role="tooltip"'));
+  target().props.onFocus(); assert.ok(html().includes('role="tooltip"'));
+  target().props.onKeyDown({key:'Escape'}); assert.ok(!html().includes('role="tooltip"'));
+  target().props.onFocus(); target().props.onBlur(); assert.ok(!html().includes('role="tooltip"'));
 });
