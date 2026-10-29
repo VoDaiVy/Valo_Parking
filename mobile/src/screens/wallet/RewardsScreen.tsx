@@ -1,142 +1,59 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
 import { WorkflowButton, WorkflowChip, workflowStyles as s } from '@/components/common/WorkflowUI';
-import { COLORS } from '@/constants/theme';
+import { COLORS, RADIUS, SPACING } from '@/constants/theme';
 import { loyaltyService } from '@/services/api/loyalty';
 import type { WalletStackParamList } from '@/navigation/types';
 import type { SpendingProgress, UserVoucher, VoucherStatus } from '@/types/loyalty.types';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency } from '@/utils/formatters';
+import { useLanguage } from '@/contexts/LanguageContext';
 
-const STATUS: Record<VoucherStatus, string> = {
-  available: 'Available',
-  used: 'Used',
-  expired: 'Expired',
-  revoked: 'Revoked',
+export const STATUS: Record<VoucherStatus, string> = { available: 'Available', used: 'Used', expired: 'Expired', revoked: 'Revoked' };
+const STATUS_COLORS: Record<VoucherStatus, { backgroundColor: string; color: string }> = {
+  available: { backgroundColor: 'rgba(76,175,80,0.15)', color: COLORS.success },
+  used: { backgroundColor: 'rgba(133,139,148,0.15)', color: COLORS.textMuted },
+  expired: { backgroundColor: 'rgba(133,139,148,0.15)', color: COLORS.textMuted },
+  revoked: { backgroundColor: 'rgba(255,77,77,0.15)', color: COLORS.error },
 };
 
-export function voucherBenefit(voucher: UserVoucher) {
-  const benefit = voucher.benefitSnapshot;
-  if (benefit.type === 'FIXED_DISCOUNT')
-    return `Save ${formatCurrency(benefit.discountAmount || 0)}`;
-  if (benefit.type === 'PERCENT_DISCOUNT') return `Save ${benefit.discountPercent}%`;
-  return `Free ${typeof benefit.serviceId === 'object' && benefit.serviceId ? benefit.serviceId.name : 'service'}`;
+export function formatMonth(month: string): string { const match = /^(\d{4})-(\d{1,2})$/.exec(month || ''); return match ? `${Number(match[2])}/${match[1]}` : month; }
+export function formatDateVN(iso?: string): string { if (!iso) return ''; const date = new Date(iso); if (Number.isNaN(date.getTime())) return ''; return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }).format(date); }
+export function getSourceLabel(source?: string): string { if (source === 'spending') return 'Spending reward'; if (source === 'manual') return 'Gift from VALO'; return 'VALO voucher'; }
+export function getNextTier(progress: SpendingProgress) { const current = Math.max(progress.total, progress.highestAwardedThreshold); return progress.tiers.find((tier) => tier.threshold > current); }
+export function voucherBenefit(voucher: UserVoucher) { const benefit = voucher.benefitSnapshot; if (benefit.type === 'FIXED_DISCOUNT') return `${formatCurrency(benefit.discountAmount || 0)} off`; if (benefit.type === 'PERCENT_DISCOUNT') return `${benefit.discountPercent || 0}% off`; return `Free ${typeof benefit.serviceId === 'object' && benefit.serviceId ? benefit.serviceId.name : 'service'}`; }
+
+function ProgressBar({ total, tiers }: { total: number; tiers: SpendingProgress['tiers'] }) {
+  const [trackWidth, setTrackWidth] = useState(0); const maxThreshold = Math.max(...tiers.map((tier) => tier.threshold), 1); const ratio = Math.min(Math.max(total / maxThreshold, 0), 1);
+  return <View accessible accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: maxThreshold, now: Math.min(total, maxThreshold) }} style={styles.progressWrap}><View onLayout={(event: LayoutChangeEvent) => setTrackWidth(event.nativeEvent.layout.width)} style={styles.progressTrack}><View style={[styles.progressFill, { width: trackWidth * ratio }]} />{tiers.map((tier) => { const achieved = total >= tier.threshold; return <View key={tier.threshold} style={[styles.marker, { left: Math.max(0, trackWidth * (tier.threshold / maxThreshold) - 7) }, achieved && styles.markerAchieved]}>{achieved ? <Ionicons name="checkmark" size={10} color={COLORS.textInverse} /> : null}</View>; })}</View><View style={styles.progressLabels}><Text style={styles.progressLabel}>0 VND</Text><Text style={styles.progressLabel}>{formatCurrency(maxThreshold)}</Text></View></View>;
 }
 
-export function RewardsScreen({
-  navigation,
-}: NativeStackScreenProps<WalletStackParamList, 'Rewards'>) {
-  const [vouchers, setVouchers] = useState<UserVoucher[]>([]);
-  const [progress, setProgress] = useState<SpendingProgress | null>(null);
-  const [filter, setFilter] = useState<VoucherStatus | 'all'>('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [owned, spending] = await Promise.all([
-        loyaltyService.getVouchers(),
-        loyaltyService.getSpending(),
-      ]);
-      setVouchers(owned.data || []);
-      setProgress(spending.data || null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to load rewards.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load]),
-  );
-  const visible = vouchers.filter((v) => filter === 'all' || v.status === filter);
-  const next = progress?.tiers.find(
-    (tier) => tier.threshold > Math.max(progress.total, progress.highestAwardedThreshold),
-  );
-  return (
-    <SafeAreaView edges={['top']} style={s.safe}>
-      <ScreenHeader
-        title="Vouchers & rewards"
-        subtitle="The same rewards as your web account"
-        onBack={() => navigation.goBack()}
-      />
-      <ScrollView
-        contentContainerStyle={s.content}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={load} tintColor={COLORS.gold} />
-        }
-      >
-        {error ? <ErrorState message={error} onRetry={load} /> : null}
-        {progress ? (
-          <View style={s.panel}>
-            <Text style={s.title}>Monthly spending · {progress.month}</Text>
-            <Text style={s.amount}>{formatCurrency(progress.total)}</Text>
-            <Text style={s.body}>
-              {!progress.enabled
-                ? 'The rewards program is currently paused.'
-                : next
-                  ? `Spend ${formatCurrency(Math.max(0, next.threshold - progress.total))} more to receive a voucher worth ${formatCurrency(next.discountAmount)}.`
-                  : 'You have reached all reward milestones this month.'}
-            </Text>
-            {progress.tiers.map((tier) => (
-              <Text key={tier.threshold} style={s.body}>
-                {progress.total >= tier.threshold ? '✓' : '○'} {formatCurrency(tier.threshold)} →
-                save {formatCurrency(tier.discountAmount)} · minimum spend{' '}
-                {formatCurrency(tier.minimumAmount)}
-              </Text>
-            ))}
-            <Text style={s.body}>
-              Rewards are issued automatically for eligible transactions, excluding top-ups and fines. Refunds may revoke unused vouchers.
-            </Text>
-          </View>
-        ) : null}
-        <View style={s.row}>
-          {(['all', ...Object.keys(STATUS)] as Array<VoucherStatus | 'all'>).map((value) => (
-            <WorkflowChip key={value} selected={filter === value} onPress={() => setFilter(value)}>
-              {value === 'all' ? 'All' : STATUS[value]}
-            </WorkflowChip>
-          ))}
-        </View>
-        {loading && !vouchers.length ? <ActivityIndicator color={COLORS.gold} /> : null}
-        {visible.map((voucher) => (
-          <View key={voucher._id} style={s.panel}>
-            <Text style={s.body}>
-              {STATUS[voucher.status]}
-              {voucher.bookingId ? ' · Reserved for a booking' : ''}
-            </Text>
-            <Text style={s.title}>{voucher.benefitSnapshot.name}</Text>
-            <Text style={[s.title, { color: COLORS.gold }]}>{voucherBenefit(voucher)}</Text>
-            <Text style={s.body}>
-              Minimum spend {formatCurrency(voucher.benefitSnapshot.minimumAmount)} · Single use
-            </Text>
-            <Text style={s.body}>Expires {formatDate(voucher.expiresAt)}</Text>
-            {voucher.status === 'available' && !voucher.bookingId ? (
-              <WorkflowButton
-                title="Use in a booking"
-                onPress={() =>
-                  navigation.getParent()?.navigate('Bookings', {
-                    screen: 'CreateBooking',
-                    params: { selectedVoucherId: voucher._id },
-                  })
-                }
-              />
-            ) : null}
-          </View>
-        ))}
-        {!loading && !error && !visible.length ? (
-          <EmptyState
-            icon="gift-outline"
-            title="No vouchers yet"
-            message="VALO offers and spending rewards will appear here."
-          />
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
-  );
+function MilestoneCard({ tier, achieved }: { tier: SpendingProgress['tiers'][number]; achieved: boolean }) { return <View style={[styles.milestone, achieved ? styles.milestoneAchieved : styles.milestonePending]}><View style={styles.milestoneIcon}><Ionicons name={achieved ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={achieved ? COLORS.gold : COLORS.textMuted} /></View><View style={styles.milestoneCopy}><Text style={styles.milestoneThreshold}>{formatCurrency(tier.threshold)}</Text><Text style={styles.milestoneDetail}>Receive {formatCurrency(tier.discountAmount)} voucher</Text><Text style={styles.milestoneMinimum}>Minimum order {formatCurrency(tier.minimumAmount)}</Text></View><Text style={[styles.milestoneState, achieved && { color: COLORS.gold }]}>{achieved ? 'Reached' : 'In progress'}</Text></View>; }
+
+function SpendingProgressCard({ progress }: { progress: SpendingProgress }) {
+  const nextTier = getNextTier(progress); const accessibilityLabel = `Spending for ${formatMonth(progress.month)}: ${formatCurrency(progress.total)}`;
+  return <View accessible accessibilityLabel={accessibilityLabel} style={styles.progressCard}><View style={styles.cardEyebrowRow}><View><Text style={styles.eyebrow}>VALO REWARDS</Text><Text style={styles.cardTitle}>Monthly rewards</Text></View><View style={styles.monthPill}><Text style={styles.monthPillText}>{formatMonth(progress.month)}</Text></View></View><Text style={styles.amount}>{formatCurrency(progress.total)}</Text><Text style={styles.body}>{!progress.enabled ? 'The rewards programme is paused.' : nextTier ? `${formatCurrency(Math.max(0, nextTier.threshold - progress.total))} more to unlock a ${formatCurrency(nextTier.discountAmount)} voucher.` : 'You reached every reward tier this month.'}</Text>{progress.enabled && progress.tiers.length > 0 ? <ProgressBar total={progress.total} tiers={progress.tiers} /> : null}{progress.enabled && progress.tiers.length > 0 ? <View style={styles.milestones}>{progress.tiers.map((tier) => <MilestoneCard key={tier.threshold} tier={tier} achieved={progress.total >= tier.threshold} />)}</View> : null}<Text style={styles.footnote}>Spending is recorded after successful payment. Vouchers are issued automatically and may be revoked after a refund.</Text></View>;
 }
+
+function VoucherCard({ voucher, onUseInBooking }: { voucher: UserVoucher; onUseInBooking: (id: string) => void }) {
+  const benefit = voucherBenefit(voucher); const statusStyle = STATUS_COLORS[voucher.status]; const cardLabel = `${voucher.benefitSnapshot.name}, ${benefit}, ${STATUS[voucher.status]}, expires ${formatDateVN(voucher.expiresAt)}`;
+  return <View accessible accessibilityLabel={cardLabel} style={styles.voucherCard}><View style={styles.voucherTopRow}><View style={styles.giftIcon}><Ionicons name="gift-outline" size={21} color={COLORS.gold} /></View><View style={[styles.statusBadge, { backgroundColor: statusStyle.backgroundColor }]}><Text style={[styles.statusText, { color: statusStyle.color }]}>{STATUS[voucher.status]}</Text></View></View><Text style={styles.voucherName}>{voucher.benefitSnapshot.name}</Text><Text style={styles.voucherBenefit}>{benefit}</Text><View style={styles.voucherMeta}><Text style={styles.metaLabel}>Minimum order</Text><Text style={styles.metaValue}>{formatCurrency(voucher.benefitSnapshot.minimumAmount)}</Text></View><View style={styles.voucherMeta}><Text style={styles.metaLabel}>Expires</Text><Text style={styles.metaValue}>{formatDateVN(voucher.expiresAt)}</Text></View><Text style={styles.sourceLabel}>{voucher.bookingId ? 'Reserved for booking' : getSourceLabel(voucher.source)}</Text>{voucher.status === 'available' && !voucher.bookingId ? <WorkflowButton title="Use in booking" onPress={() => onUseInBooking(voucher._id)} /> : null}</View>;
+}
+
+function RewardsSkeleton() { return <><View style={styles.skeletonCard}><View style={styles.skeletonLineWide} /><View style={styles.skeletonAmount} /><View style={styles.skeletonLine} /><View style={styles.skeletonLineShort} /></View><View style={styles.skeletonCard}><View style={styles.skeletonIcon} /><View style={styles.skeletonLineWide} /><View style={styles.skeletonLine} /><View style={styles.skeletonLineShort} /></View><View style={styles.skeletonCard}><View style={styles.skeletonIcon} /><View style={styles.skeletonLineWide} /><View style={styles.skeletonLine} /><View style={styles.skeletonLineShort} /></View></>; }
+
+export function RewardsScreen({ navigation }: NativeStackScreenProps<WalletStackParamList, 'Rewards'>) {
+  const { language, t } = useLanguage();
+  const [vouchers, setVouchers] = useState<UserVoucher[]>([]); const [progress, setProgress] = useState<SpendingProgress | null>(null); const [filter, setFilter] = useState<VoucherStatus | 'all'>('all'); const [loading, setLoading] = useState(true); const [hasData, setHasData] = useState(false); const [error, setError] = useState('');
+  const load = useCallback(async () => { setLoading(true); setError(''); try { const [owned, spending] = await Promise.all([loyaltyService.getVouchers(), loyaltyService.getSpending()]); setVouchers(owned.data || []); setProgress(spending.data || null); setHasData(true); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load rewards.'); } finally { setLoading(false); } }, []);
+  useFocusEffect(useCallback(() => { void load(); }, [load])); const visible = useMemo(() => vouchers.filter((voucher) => filter === 'all' || voucher.status === filter), [filter, vouchers]); const useVoucher = (voucherId: string) => navigation.getParent()?.navigate('Bookings', { screen: 'CreateBooking', params: { selectedVoucherId: voucherId } });
+  return <SafeAreaView edges={['top']} style={s.safe}><ScreenHeader title={t('rewards')} subtitle={language === 'vi' ? 'Ưu đãi tự động theo chi tiêu của bạn' : 'Automatic benefits based on your spending'} onBack={() => navigation.goBack()} /><ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={loading && hasData} onRefresh={load} tintColor={COLORS.gold} colors={[COLORS.gold]} />}>{error ? <ErrorState message={error} onRetry={load} /> : null}{loading && !hasData ? <RewardsSkeleton /> : null}{!loading && progress ? <SpendingProgressCard progress={progress} /> : null}{hasData ? <View style={styles.filterSection}><Text style={styles.sectionLabel}>{language === 'vi' ? 'Voucher của bạn' : 'Your vouchers'}</Text><View style={s.row}>{(['all', ...Object.keys(STATUS)] as Array<VoucherStatus | 'all'>).map((value) => <WorkflowChip key={value} selected={filter === value} onPress={() => setFilter(value)}>{value === 'all' ? t('all') : STATUS[value]}</WorkflowChip>)}</View></View> : null}{visible.map((voucher) => <VoucherCard key={voucher._id} voucher={voucher} onUseInBooking={useVoucher} />)}{!loading && !error && hasData && !visible.length ? <EmptyState icon="gift-outline" title="No vouchers yet" message={filter === 'all' ? 'VALO benefits will appear here.' : 'No vouchers in this status.'} /> : null}</ScrollView></SafeAreaView>;
+}
+
+const styles = StyleSheet.create({
+  progressCard: { backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, padding: SPACING.lg, gap: 12 }, cardEyebrowRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }, eyebrow: { color: COLORS.gold, fontSize: 11, fontWeight: '800', letterSpacing: 1.5 }, cardTitle: { color: COLORS.textPrimary, fontSize: 20, fontWeight: '800', marginTop: 5 }, monthPill: { borderRadius: RADIUS.round, borderWidth: 1, borderColor: COLORS.borderLight, paddingHorizontal: 10, paddingVertical: 6 }, monthPillText: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '700' }, amount: { color: COLORS.gold, fontSize: 36, fontWeight: '900', fontVariant: ['tabular-nums'], marginTop: 2 }, body: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 21 }, footnote: { color: COLORS.textMuted, fontSize: 11, lineHeight: 17, marginTop: 4 }, progressWrap: { marginTop: 8 }, progressTrack: { height: 8, borderRadius: 8, backgroundColor: COLORS.surfaceElevated, position: 'relative', overflow: 'visible' }, progressFill: { height: 8, borderRadius: 8, backgroundColor: COLORS.gold }, marker: { position: 'absolute', top: -5, width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: COLORS.textMuted, backgroundColor: COLORS.surface }, markerAchieved: { borderColor: COLORS.gold, backgroundColor: COLORS.gold, alignItems: 'center', justifyContent: 'center' }, progressLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }, progressLabel: { color: COLORS.textMuted, fontSize: 10 }, milestones: { gap: 8, marginTop: 2 }, milestone: { flexDirection: 'row', alignItems: 'center', borderRadius: RADIUS.md, borderWidth: 1, padding: 12, gap: 10 }, milestoneAchieved: { backgroundColor: COLORS.surfaceElevated, borderColor: 'rgba(226,186,75,0.35)' }, milestonePending: { backgroundColor: COLORS.surface, borderColor: COLORS.border }, milestoneIcon: { width: 24, alignItems: 'center' }, milestoneCopy: { flex: 1, gap: 2 }, milestoneThreshold: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '800' }, milestoneDetail: { color: COLORS.gold, fontSize: 12, fontWeight: '700' }, milestoneMinimum: { color: COLORS.textMuted, fontSize: 11 }, milestoneState: { color: COLORS.textMuted, fontSize: 11, fontWeight: '700' }, filterSection: { gap: 10 }, sectionLabel: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800' }, voucherCard: { backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, padding: SPACING.lg, gap: 10 }, voucherTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, giftIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(226,186,75,0.12)', alignItems: 'center', justifyContent: 'center' }, statusBadge: { borderRadius: RADIUS.round, paddingHorizontal: 10, paddingVertical: 6 }, statusText: { fontSize: 11, fontWeight: '800' }, voucherName: { color: COLORS.textPrimary, fontSize: 19, fontWeight: '800', marginTop: 3 }, voucherBenefit: { color: COLORS.gold, fontSize: 16, fontWeight: '800' }, voucherMeta: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 9, marginTop: 1 }, metaLabel: { color: COLORS.textMuted, fontSize: 12 }, metaValue: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700' }, sourceLabel: { color: COLORS.textMuted, fontSize: 12, marginBottom: 2 }, skeletonCard: { backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, padding: SPACING.lg, gap: 14, opacity: 0.7 }, skeletonIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: COLORS.surfaceElevated }, skeletonLineWide: { width: '68%', height: 16, borderRadius: 8, backgroundColor: COLORS.surfaceElevated }, skeletonLine: { width: '90%', height: 12, borderRadius: 6, backgroundColor: COLORS.surfaceElevated }, skeletonLineShort: { width: '46%', height: 12, borderRadius: 6, backgroundColor: COLORS.surfaceElevated }, skeletonAmount: { width: '42%', height: 38, borderRadius: 10, backgroundColor: COLORS.surfaceElevated },
+});

@@ -17,6 +17,7 @@ import {
 } from '@/components/staff';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
 import type { StaffProfileStackParamList, StaffTabParamList } from '@/navigation/StaffNavigator';
 
 type Props = NativeStackScreenProps<StaffProfileStackParamList, 'StaffProfileHome'>;
@@ -24,6 +25,7 @@ type Props = NativeStackScreenProps<StaffProfileStackParamList, 'StaffProfileHom
 export default function StaffProfileScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,8 +63,8 @@ export default function StaffProfileScreen({ navigation }: Props) {
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <StaffHeader
-        eyebrow="Staff profile"
-        title="Profile"
+        eyebrow={t('staffProfile')}
+        title={t('profile')}
         right={<StatusBadge label="Ops" />}
       />
 
@@ -89,36 +91,36 @@ export default function StaffProfileScreen({ navigation }: Props) {
                 </>
               )}
               <View style={styles.roleLine}>
-                <StatusBadge label="Operations staff" tone="success" />
+                <StatusBadge label={t('operationsStaff')} tone="success" />
               </View>
             </View>
           </View>
         </FadeInView>
 
         <FadeInView delay={70} style={styles.block}>
-          <SectionTitle title="Work shortcuts" />
+          <SectionTitle title={t('workShortcuts')} />
           <View style={styles.list}>
-            <OperationalRow icon="qr-code-outline" meta="Fast" title="Booking scanner" onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'BookingScanner' })} />
-            <OperationalRow icon="map-outline" title="Live parking grid" onPress={() => goToTab('LiveGrid')} />
-            <OperationalRow icon="car-sport-outline" title="Parking sessions" onPress={() => goToTab('Sessions')} />
-            <OperationalRow icon="notifications-outline" title="Operational notices" onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'StaffNotifications' })} />
+            <OperationalRow icon="qr-code-outline" meta={t('fast')} title={t('bookingScanner')} onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'BookingScanner' })} />
+            <OperationalRow icon="map-outline" title={t('liveParkingGrid')} onPress={() => goToTab('LiveGrid')} />
+            <OperationalRow icon="car-sport-outline" title={t('parkingSessions')} onPress={() => goToTab('Sessions')} />
+            <OperationalRow icon="notifications-outline" title={t('operationalNotices')} onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'StaffNotifications' })} />
           </View>
         </FadeInView>
 
         <FadeInView delay={120} style={styles.block}>
-          <SectionTitle title="Account" />
+          <SectionTitle title={t('account')} />
           <View style={styles.list}>
-            <OperationalRow icon="person-outline" title="Edit profile" onPress={() => navigation.navigate('EditProfile')} />
-            <OperationalRow icon="lock-closed-outline" title="Change password" tone="muted" onPress={() => navigation.navigate('ChangePassword')} />
-            <OperationalRow icon="log-out-outline" meta="Secure" title="Sign out" tone="danger" onPress={() => setLogoutOpen(true)} />
+            <OperationalRow icon="person-outline" title={t('editProfile')} onPress={() => navigation.navigate('EditProfile')} />
+            <OperationalRow icon="lock-closed-outline" title={t('changePassword')} tone="muted" onPress={() => navigation.navigate('ChangePassword')} />
+            <OperationalRow icon="log-out-outline" meta={t('secure')} title={t('signOut')} tone="danger" onPress={() => setLogoutOpen(true)} />
           </View>
         </FadeInView>
       </ScrollView>
 
       <ConfirmationPanel
-        confirmLabel="Sign out"
-        message="This will end the current staff session on this device."
-        title="Sign out?"
+        confirmLabel={t('signOut')}
+        message={t('signOutMessage')}
+        title={t('signOutQuestion')}
         tone="danger"
         visible={logoutOpen}
         onCancel={() => setLogoutOpen(false)}

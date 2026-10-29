@@ -19,7 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchProfile, type Profile } from '../../api/profile.api';
 import { useAuth } from '@/hooks/useAuth';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../../constants/theme';
+import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { useAppAlert } from '@/contexts/AppAlertContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { subscriptionsService } from '@/services/api/subscriptions';
 import type { MembershipStatus } from '@/types/subscription.types';
 import {
@@ -377,6 +379,7 @@ function SettingsSection({
 
 export default function ProfileScreen({ navigation }: { navigation?: any }) {
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const { alert } = useAppAlert();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
@@ -436,6 +439,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <CustomerAmbientBackground />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -450,7 +454,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
         }
       >
         <StaggeredView delay={20} style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Account</Text>
+          <Text style={styles.pageTitle}>{t('account')}</Text>
         </StaggeredView>
 
         <ProfileHero
@@ -466,7 +470,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
 
         <SettingsSection
           delay={190}
-          title="My account"
+            title="My account"
           rows={[
             {
               icon: 'person-outline',
@@ -515,6 +519,14 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
               label: 'VALO Wallet',
               sublabel: walletSublabel,
               onPress: () => navigation?.navigate?.('WalletTab'),
+            },
+            {
+              icon: 'gift-outline',
+              iconBg: 'rgba(226,186,75,0.12)',
+              iconColor: COLORS.gold,
+              label: 'Voucher & rewards',
+              sublabel: 'View your vouchers and spending rewards',
+              onPress: () => navigation?.navigate?.('WalletTab', { screen: 'Rewards' }),
             },
           ]}
         />

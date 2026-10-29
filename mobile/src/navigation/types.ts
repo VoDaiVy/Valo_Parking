@@ -65,6 +65,7 @@ export type WalletStackParamList = {
   TransactionHistory: undefined;
   TransactionDetail: { transactionId: string };
   Membership: undefined;
+  MembershipHub: undefined;
   MembershipMarketplace: undefined;
   MembershipMarketplaceDetail: { transferId: string };
   SubscriptionPackages: undefined;

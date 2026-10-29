@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const notificationService = require('../services/notificationService');
+const { sendPushNotification } = require('../services/expoPushNotificationService');
 const User = require('../models/User');
 
 // Map of userId -> Set of socket IDs
@@ -211,6 +212,12 @@ async function emitNotification(
   };
 
   emitToUser(io, userId, 'notification:new', payload);
+  // Push delivery is independent from Socket.IO so users receive alerts while
+  // the app is backgrounded or fully closed. Failures remain best-effort and
+  // must never block database or in-app notification delivery.
+  sendPushNotification(userId, payload).catch((error) => {
+    console.error('[Push] Notification delivery failed:', error.message);
+  });
   if (notifyAdmins) {
     emitToAdmins(io, 'notification:admin:new', payload);
   }
@@ -245,6 +252,9 @@ function broadcastNotification(io, notification, userIds = []) {
 
   for (const userId of new Set(userIds.map(String))) {
     emitToUser(io, userId, 'notification:new', payload);
+    sendPushNotification(userId, payload).catch((error) => {
+      console.error('[Push] Notification delivery failed:', error.message);
+    });
   }
   emitToAdmins(io, 'notification:admin:new', payload);
 }

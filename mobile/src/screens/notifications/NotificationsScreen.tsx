@@ -16,11 +16,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
+import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   getNotificationId,
   getNotificationNavigationTarget,
@@ -49,6 +51,7 @@ const FILTER_LABELS: Record<NotificationFilter, string> = {
 
 export const NotificationsScreen = ({ navigation }: Props) => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<NotificationFilter>('ALL');
   const {
     notifications,
@@ -123,9 +126,10 @@ export const NotificationsScreen = ({ navigation }: Props) => {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <CustomerAmbientBackground />
       <ScreenHeader
         onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
-        title="Notifications"
+        title={t('notifications')}
         subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'Up to date'}
         right={
           unreadCount > 0 ? (

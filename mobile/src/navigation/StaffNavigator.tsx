@@ -7,6 +7,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 
 import { COLORS, FONT_SIZES, RADIUS } from '../constants/theme';
 import { StaffAssistantProvider } from '@/contexts/StaffAssistantContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import LiveGridScreen from '../screens/staff/LiveGridScreen';
 import { CustomerManagementScreen } from '../screens/staff/CustomerManagementScreen';
 import { ManagementHubScreen } from '../screens/staff/ManagementHubScreen';
@@ -109,6 +110,8 @@ function tabIcon(focused: boolean, activeIcon: IoniconName, inactiveIcon: Ionico
 }
 
 export default function StaffNavigator() {
+  const { t } = useLanguage();
+
   return (
     <StaffAssistantProvider>
     <Tab.Navigator
@@ -125,7 +128,7 @@ export default function StaffNavigator() {
         name="Dashboard"
         component={StaffDashboardScreen}
         options={{
-          tabBarLabel: 'Overview',
+          tabBarLabel: t('overview'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'grid', 'grid-outline', color),
         }}
       />
@@ -133,7 +136,7 @@ export default function StaffNavigator() {
         name="LiveGrid"
         component={LiveGridScreen}
         options={{
-          tabBarLabel: 'Parking',
+          tabBarLabel: t('parking'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'map', 'map-outline', color),
         }}
       />
@@ -141,7 +144,7 @@ export default function StaffNavigator() {
         name="Sessions"
         component={SessionStackNavigator}
         options={{
-          tabBarLabel: 'Sessions',
+          tabBarLabel: t('sessions'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'car-sport', 'car-sport-outline', color),
         }}
       />
@@ -154,7 +157,7 @@ export default function StaffNavigator() {
           },
         })}
         options={{
-          tabBarLabel: 'Manage',
+          tabBarLabel: t('manage'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'briefcase', 'briefcase-outline', color),
         }}
       />
@@ -162,7 +165,7 @@ export default function StaffNavigator() {
         name="StaffProfile"
         component={ProfileStackNavigator}
         options={{
-          tabBarLabel: 'Profile',
+          tabBarLabel: t('profile'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'person', 'person-outline', color),
         }}
       />

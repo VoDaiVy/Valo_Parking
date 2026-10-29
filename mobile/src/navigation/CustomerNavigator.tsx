@@ -11,6 +11,7 @@ import { ProfileStackNavigator } from './ProfileStackNavigator';
 import { WalletStackNavigator } from './WalletStackNavigator';
 import type { NotificationStackParamList, ProfileStackParamList, WalletStackParamList } from './types';
 import HomeScreen from '../screens/customer/HomeScreen';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export type CustomerTabParamList = {
   Home: undefined;
@@ -32,6 +33,7 @@ function tabIcon(focused: boolean, activeIcon: IoniconName, inactiveIcon: Ionico
 }
 
 export default function CustomerNavigator() {
+  const { t } = useLanguage();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -47,7 +49,7 @@ export default function CustomerNavigator() {
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarLabel: 'Home',
+          tabBarLabel: t('home'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'home', 'home-outline', color),
         }}
       />
@@ -55,7 +57,7 @@ export default function CustomerNavigator() {
         name="Bookings"
         component={BookingStackNavigator}
         options={{
-          tabBarLabel: 'Bookings',
+          tabBarLabel: t('bookings'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'calendar', 'calendar-outline', color),
         }}
       />
@@ -63,7 +65,7 @@ export default function CustomerNavigator() {
         name="WalletTab"
         component={WalletStackNavigator}
         options={{
-          tabBarLabel: 'Wallet',
+          tabBarLabel: t('wallet'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'wallet', 'wallet-outline', color),
         }}
       />
@@ -71,7 +73,7 @@ export default function CustomerNavigator() {
         name="NotificationsTab"
         component={NotificationsStackNavigator}
         options={{
-          tabBarLabel: 'Alerts',
+          tabBarLabel: t('alerts'),
           tabBarBadge: undefined,
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'notifications', 'notifications-outline', color),
         }}
@@ -80,7 +82,7 @@ export default function CustomerNavigator() {
         name="ProfileTab"
         component={ProfileStackNavigator}
         options={{
-          tabBarLabel: 'Account',
+          tabBarLabel: t('account'),
           tabBarIcon: ({ focused, color }) => tabIcon(focused, 'person', 'person-outline', color),
         }}
         listeners={({ navigation }) => ({

@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedPressable, StatusChip, StaggeredView } from '@/components/profile/ProfileUI';
 import { ErrorState } from '@/components/common';
+import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useBooking } from '@/hooks/useBooking';
 import { useBookingCart } from '@/contexts/BookingCartContext';
@@ -27,6 +28,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import type { Booking, BookingStatus, ParkingFloor } from '@/types/booking.types';
 import { formatCurrency } from '@/utils/formatters';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type Props = { navigation: any };
 type FilterType = BookingStatus | 'all';
@@ -249,6 +251,7 @@ function BookingRow({
 export const BookingListScreen = ({ navigation }: Props) => {
   const cart = useBookingCart();
   const { bookings, isLoading, error, fetchBookings } = useBooking();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<FilterType>('all');
 
   useFocusEffect(useCallback(() => {
@@ -277,10 +280,11 @@ export const BookingListScreen = ({ navigation }: Props) => {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <CustomerAmbientBackground />
 
       <StaggeredView delay={20} style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>My bookings</Text>
+          <Text style={styles.headerTitle}>{t('myBookings')}</Text>
           <Text style={styles.headerSubtitle}>Manage your parking reservations</Text>
         </View>
         <NewBookingButton onPress={openCreateBooking} />

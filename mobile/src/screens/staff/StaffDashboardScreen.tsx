@@ -18,6 +18,7 @@ import {
 } from '@/components/staff/dashboard';
 import { COLORS, FONT_SIZES, SPACING } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
 import type { StaffTabParamList } from '@/navigation/StaffNavigator';
 import { staffService, type StaffBooking, type StaffSession } from '@/services/api/staff';
 import { parkingFloorService } from '@/services/ParkingFloorService';
@@ -37,6 +38,7 @@ const isToday = (value?: string) => Boolean(value && new Date(value).toDateStrin
 
 export default function StaffDashboardScreen({ navigation }: Props) {
   const { user } = useAuth();
+  const { t, language } = useLanguage();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [snapshot, setSnapshot] = useState<Snapshot>({ floors: [], sessions: [], bookings: [] });
@@ -116,8 +118,8 @@ export default function StaffDashboardScreen({ navigation }: Props) {
 
   const displayName = user?.username || 'Staff';
   const capacityTone: CapacityTone = metrics.occupancy >= 92 ? 'danger' : metrics.occupancy >= 82 ? 'warning' : 'success';
-  const capacityLabel = metrics.occupancy >= 92 ? 'Parking almost full' : metrics.occupancy >= 82 ? 'Capacity tightening' : 'Capacity stable';
-  const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+  const capacityLabel = metrics.occupancy >= 92 ? t('parkingAlmostFull') : metrics.occupancy >= 82 ? t('capacityTightening') : t('capacityStable');
+  const dateLabel = new Date().toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
   const bottomPadding = Math.max(tabBarHeight + insets.bottom + SPACING.lg, 112);
 
   const refresh = async () => {
@@ -147,7 +149,7 @@ export default function StaffDashboardScreen({ navigation }: Props) {
         ) : (
           <>
             <DashboardEntry delay={120}>
-              <Text style={styles.blockLabel}>Today</Text>
+              <Text style={styles.blockLabel}>{t('today')}</Text>
               <StaffMetricsStrip
                 active={metrics.active}
                 capacity={`${metrics.occupancy}%`}
@@ -181,9 +183,9 @@ export default function StaffDashboardScreen({ navigation }: Props) {
 
             <DashboardEntry delay={metrics.blocked > 0 ? 650 : 520} style={styles.activityBlock}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recent activity</Text>
+                <Text style={styles.sectionTitle}>{t('recentActivity')}</Text>
                 <Text numberOfLines={1} style={styles.sectionMeta}>
-                  {metrics.avgMinutes ? `${metrics.avgMinutes} min avg` : 'No completed sessions'}
+                  {metrics.avgMinutes ? `${metrics.avgMinutes} ${t('minAverage')}` : t('noCompletedSessions')}
                 </Text>
               </View>
               <View style={styles.activityList}>

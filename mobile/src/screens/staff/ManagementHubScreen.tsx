@@ -15,6 +15,7 @@ import {
 } from '@/components/staff';
 import { COLORS, SPACING } from '@/constants/theme';
 import { useStaffAssistant } from '@/contexts/StaffAssistantContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { ValoAIMascot } from '@/components/staff/ValoAIMascot';
 import type { StaffManagementStackParamList } from '@/navigation/StaffNavigator';
 
@@ -43,28 +44,29 @@ const TOOLS: Array<{
 export function ManagementHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
   const { openAssistant } = useStaffAssistant();
+  const { t } = useLanguage();
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <StaffHeader
-        eyebrow="Manage"
-        title="Operations tools"
-        subtitle="Staff workflows"
-        right={<StatusBadge label="Staff" />}
+        eyebrow={t('manage')}
+        title={t('operationsTools')}
+        subtitle={t('staffWorkflows')}
+        right={<StatusBadge label={t('staff')} />}
       />
 
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + SPACING.lg }]} showsVerticalScrollIndicator={false}>
         <FadeInView>
           <MetricStrip>
-            <OperationalMetric icon="shield-checkmark-outline" label="Access" tone="success" value="Live" />
-            <OperationalMetric icon="albums-outline" label="Modules" value={TOOLS.length} />
-            <OperationalMetric icon="flash-outline" label="Mode" tone="warning" value="Ops" />
+            <OperationalMetric icon="shield-checkmark-outline" label={t('access')} tone="success" value={t('live')} />
+            <OperationalMetric icon="albums-outline" label={t('modules')} value={TOOLS.length} />
+            <OperationalMetric icon="flash-outline" label={t('mode')} tone="warning" value={t('ops')} />
           </MetricStrip>
         </FadeInView>
 
         <FadeInView delay={70} style={styles.toolBlock}>
-          <SectionTitle title="Tools" />
+          <SectionTitle title={t('tools')} />
           <View style={styles.list}>
             {TOOLS.map((tool) => (
               <OperationalRow

@@ -6,7 +6,7 @@ export const navigationRef = createNavigationContainerRef<ParamListBase>();
 
 export function openNotification(item: UserNotification, role?: string) {
   if (!navigationRef.isReady()) return;
-  if (role === 'staff' || role === 'admin') {
+  if (role === 'staff') {
     const screen =
       item.type === 'BOOKING'
         ? 'Bookings'

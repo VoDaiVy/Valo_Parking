@@ -10,6 +10,7 @@ import { SubscriptionCheckoutScreen }    from '../screens/wallet/SubscriptionChe
 import { SubscriptionPaymentStatusScreen } from '../screens/wallet/SubscriptionPaymentStatusScreen';
 import { MembershipTransferMarketplaceScreen } from '../screens/wallet/MembershipTransferMarketplaceScreen';
 import { MembershipTransferMarketplaceDetailScreen } from '../screens/wallet/MembershipTransferMarketplaceDetailScreen';
+import { MembershipHubScreen } from '../screens/wallet/MembershipHubScreen';
 import type { WalletStackParamList }     from './types';
 
 const Stack = createNativeStackNavigator<WalletStackParamList>();
@@ -27,6 +28,7 @@ export const WalletStackNavigator = () => (
     <Stack.Screen name="TopUp"                      component={TopUpScreen} />
     <Stack.Screen name="TransactionHistory"         component={TransactionHistoryScreen} />
     <Stack.Screen name="Membership"                 component={MembershipScreen} />
+    <Stack.Screen name="MembershipHub"              component={MembershipHubScreen} />
     <Stack.Screen name="MembershipMarketplace"      component={MembershipTransferMarketplaceScreen} />
     <Stack.Screen name="MembershipMarketplaceDetail" component={MembershipTransferMarketplaceDetailScreen} />
     <Stack.Screen name="SubscriptionPackages"       component={SubscriptionPackagesScreen} />

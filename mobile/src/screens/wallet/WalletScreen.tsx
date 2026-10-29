@@ -6,10 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { ErrorState } from '@/components/common';
+import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { walletService } from '@/services/api/wallet';
 import { statisticsService, type CustomerBookingStatistics } from '@/services/api/statistics';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { formatCurrency } from '@/utils/formatters';
+import { useLanguage } from '@/contexts/LanguageContext';
 import type { WalletStackParamList } from '@/navigation/types';
 import type { Wallet } from '@/types/models';
 type Props = NativeStackScreenProps<WalletStackParamList, 'Wallet'>;
@@ -26,6 +28,7 @@ function ActionBtn({ icon, label, color, bg, onPress }: { icon: string; label: s
 }
 
 export const WalletScreen = ({ navigation }: Props) => {
+  const { t } = useLanguage();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -55,6 +58,7 @@ export const WalletScreen = ({ navigation }: Props) => {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <CustomerAmbientBackground />
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.gold} colors={[COLORS.gold]} />}>
         {error ? (
           <View style={styles.errorWrap}>
@@ -62,6 +66,14 @@ export const WalletScreen = ({ navigation }: Props) => {
           </View>
         ) : (
           <>
+            <View style={styles.pageHeader}>
+              <View>
+                <Text style={styles.pageEyebrow}>VALO WALLET</Text>
+                <Text style={styles.pageTitle}>{t('wallet')}</Text>
+                <Text style={styles.pageSubtitle}>Top up, track spending, and manage your parking benefits.</Text>
+              </View>
+              <View style={styles.pageIcon}><Ionicons name="wallet-outline" size={21} color={COLORS.gold} /></View>
+            </View>
             <View style={styles.balanceCard}>
               <LinearGradient colors={['#1C1A0F','#0D0D0D']} style={StyleSheet.absoluteFill} />
               <LinearGradient colors={[COLORS.gold,'transparent']} start={{x:0,y:0}} end={{x:1,y:0}} style={styles.topLine} />
@@ -69,13 +81,16 @@ export const WalletScreen = ({ navigation }: Props) => {
               {loading ? <ActivityIndicator color={COLORS.gold} size="large" style={{marginVertical:SPACING.lg}} /> : <Text style={styles.balanceValue}>{formatCurrency(wallet?.balance ?? 0)}</Text>}
               {wallet?.overdraftLimit !== undefined && wallet.overdraftLimit < 0 && <Text style={styles.overdraftText}>Overdraft: {formatCurrency(wallet.overdraftLimit)}</Text>}
             </View>
-            <View style={styles.actionsRow}>
-              <ActionBtn icon="add-circle-outline" label="Top up" color={COLORS.gold} bg="rgba(212,175,55,0.12)" onPress={() => navigation.navigate('TopUp')} />
-              <ActionBtn icon="time-outline" label="History" color="#60B4FF" bg="rgba(96,180,255,0.12)" onPress={() => navigation.navigate('TransactionHistory')} />
-              <ActionBtn icon="ribbon-outline" label="Membership" color="#FFD700" bg="rgba(255,215,0,0.12)" onPress={() => navigation.navigate('Membership')} />
-              <ActionBtn icon="cube-outline" label="Plans" color="#E07BE0" bg="rgba(224,123,224,0.12)" onPress={() => navigation.navigate('SubscriptionPackages')} />
-              <ActionBtn icon="gift-outline" label="Voucher" color={COLORS.gold} bg="rgba(212,175,55,0.12)" onPress={() => navigation.navigate('Rewards')} />
-              <ActionBtn icon="swap-horizontal-outline" label="Transfers" color={COLORS.gold} bg="rgba(212,175,55,0.12)" onPress={() => navigation.navigate('MembershipMarketplace')} />
+            <View style={styles.actionsPanel}>
+              <Text style={styles.sectionTitle}>Quick access</Text>
+              <View style={styles.actionsRow}>
+                <ActionBtn icon="add-circle-outline" label="Top up" color={COLORS.gold} bg="rgba(226,186,75,0.12)" onPress={() => navigation.navigate('TopUp')} />
+                <ActionBtn icon="time-outline" label="History" color={COLORS.gold} bg="rgba(226,186,75,0.12)" onPress={() => navigation.navigate('TransactionHistory')} />
+                <ActionBtn icon="ribbon-outline" label="Membership" color={COLORS.gold} bg="rgba(226,186,75,0.12)" onPress={() => navigation.navigate('MembershipHub')} />
+                <ActionBtn icon="cube-outline" label="Plans" color={COLORS.gold} bg="rgba(226,186,75,0.12)" onPress={() => navigation.navigate('SubscriptionPackages')} />
+                <ActionBtn icon="gift-outline" label="Voucher" color={COLORS.gold} bg="rgba(226,186,75,0.12)" onPress={() => navigation.navigate('Rewards')} />
+                <ActionBtn icon="swap-horizontal-outline" label="Transfers" color={COLORS.gold} bg="rgba(226,186,75,0.12)" onPress={() => navigation.navigate('MembershipMarketplace')} />
+              </View>
             </View>
             {wallet && <>
               <Text style={styles.sectionTitle}>This month</Text>
@@ -125,12 +140,18 @@ export const WalletScreen = ({ navigation }: Props) => {
 
 const styles = StyleSheet.create({
   safe:{flex:1,backgroundColor:COLORS.background},
+  pageHeader:{alignItems:'center',flexDirection:'row',gap:SPACING.md,justifyContent:'space-between',paddingHorizontal:SPACING.lg,paddingTop:SPACING.lg,paddingBottom:SPACING.md},
+  pageEyebrow:{color:COLORS.gold,fontSize:FONT_SIZES.xs,fontWeight:'900',letterSpacing:1.2},
+  pageTitle:{color:COLORS.textPrimary,fontSize:26,fontWeight:'900',marginTop:4},
+  pageSubtitle:{color:COLORS.textMuted,fontSize:FONT_SIZES.xs,lineHeight:18,marginTop:4,maxWidth:280},
+  pageIcon:{alignItems:'center',backgroundColor:'rgba(226,186,75,0.1)',borderColor:'rgba(226,186,75,0.24)',borderRadius:RADIUS.md,borderWidth:1,height:44,justifyContent:'center',width:44},
   balanceCard:{marginHorizontal:SPACING.lg,marginTop:SPACING.md,marginBottom:SPACING.md,borderRadius:RADIUS.xl,padding:SPACING.xl,borderWidth:1,borderColor:'rgba(212,175,55,0.25)',overflow:'hidden',alignItems:'center'},
   topLine:{position:'absolute',top:0,left:0,right:0,height:2},
   balanceLabel:{fontSize:FONT_SIZES.sm,color:COLORS.textSecondary,marginBottom:SPACING.sm},
   balanceValue:{fontSize:36,fontWeight:'800',color:COLORS.gold,letterSpacing:1},
   overdraftText:{fontSize:FONT_SIZES.xs,color:COLORS.textMuted,marginTop:SPACING.sm},
-  actionsRow:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:SPACING.lg,paddingHorizontal:SPACING.lg,marginBottom:SPACING.sm},
+  actionsPanel:{backgroundColor:'rgba(255,255,255,0.025)',borderColor:'rgba(226,186,75,0.16)',borderRadius:RADIUS.xl,borderWidth:1,marginHorizontal:SPACING.lg,marginBottom:SPACING.sm,paddingTop:SPACING.sm},
+  actionsRow:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',rowGap:SPACING.md,paddingHorizontal:SPACING.md,paddingBottom:SPACING.md},
   actionBtn:{alignItems:'center',gap:SPACING.xs,width:'31%',minHeight:80},
   actionIconWrap:{width:52,height:52,borderRadius:RADIUS.md,justifyContent:'center',alignItems:'center'},
   actionLabel:{fontSize:FONT_SIZES.xs,color:COLORS.textSecondary},

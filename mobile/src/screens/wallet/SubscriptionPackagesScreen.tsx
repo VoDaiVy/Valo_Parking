@@ -21,6 +21,18 @@ import { formatCurrency } from '@/utils/formatters';
 
 type Props = NativeStackScreenProps<WalletStackParamList, 'SubscriptionPackages'>;
 
+export const PriceBadge = ({ changePercent, priceLabel }: { changePercent: number; priceLabel?: string }) => {
+  const decrease = changePercent < 0;
+  return (
+    <View style={[styles.priceBadge, decrease ? styles.priceBadgeDiscount : styles.priceBadgePeak]}>
+      <Ionicons name={decrease ? 'trending-down' : 'trending-up'} size={14} color={decrease ? COLORS.success : COLORS.warning} />
+      <Text style={[styles.priceBadgeText, { color: decrease ? COLORS.success : COLORS.warning }]}>
+        {decrease ? '▼' : '▲'} {Math.abs(changePercent)}% · {priceLabel || (decrease ? 'Discounted price' : 'Peak price')}
+      </Text>
+    </View>
+  );
+};
+
 export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
   const [packages, setPackages] = useState<SubscriptionPackage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +57,10 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
 
   const renderPackage = ({ item }: { item: SubscriptionPackage }) => {
     const yearly = item.type === 'yearly';
+    const changePercent = Number(item.changePercent ?? 0);
+    const basePrice = Number(item.price || 0);
+    const adjustedPrice = Number.isFinite(Number(item.adjustedPrice)) ? Number(item.adjustedPrice) : basePrice;
+    const dynamicPricing = changePercent !== 0 && adjustedPrice !== basePrice;
 
     return (
       <Pressable
@@ -67,7 +83,9 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
             <Text style={styles.packageDuration}>{yearly ? '12 months' : '1 month'}</Text>
           </View>
         </View>
-        <Text style={styles.price}>{formatCurrency(item.price)}</Text>
+        {dynamicPricing ? <PriceBadge changePercent={changePercent} priceLabel={item.priceLabel} /> : null}
+        {dynamicPricing ? <Text style={styles.basePrice}>{formatCurrency(basePrice)}</Text> : null}
+        <Text style={styles.price}>{formatCurrency(dynamicPricing ? adjustedPrice : basePrice)}</Text>
         {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
         {(item.benefits ?? []).slice(0, 4).map((benefit) => (
           <View key={benefit} style={styles.benefitRow}>
@@ -192,6 +210,31 @@ const styles = StyleSheet.create({
     color: COLORS.gold,
     fontSize: 28,
     fontWeight: '900',
+  },
+  basePrice: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZES.sm,
+    textDecorationLine: 'line-through',
+    marginBottom: -8,
+  },
+  priceBadge: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: RADIUS.round,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  priceBadgeDiscount: {
+    backgroundColor: 'rgba(76,175,80,0.15)',
+  },
+  priceBadgePeak: {
+    backgroundColor: 'rgba(255,159,67,0.16)',
+  },
+  priceBadgeText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '800',
   },
   description: {
     color: COLORS.textSecondary,

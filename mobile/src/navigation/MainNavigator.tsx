@@ -8,7 +8,7 @@ const Stack = createNativeStackNavigator();
 
 export const MainNavigator = () => {
   const { user } = useAuth();
-  const isStaff = user?.role === 'staff' || user?.role === 'admin';
+  const isStaff = user?.role === 'staff';
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
