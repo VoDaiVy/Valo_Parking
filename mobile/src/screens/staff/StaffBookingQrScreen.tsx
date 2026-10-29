@@ -19,6 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StaffHeader, StatusBadge, StatusStrip } from '@/components/staff';
@@ -29,11 +30,13 @@ import {
   type StaffBookingQrAction,
   type StaffBookingQrResolution,
   type StaffMembershipQrResolution,
+  type StaffParkingPassResolution,
+  type ParkingCheckoutQuote,
 } from '@/services/api/staff';
 
 type Props = NativeStackScreenProps<StaffManagementStackParamList, 'BookingScanner'>;
 type Phase = 'scan' | 'detail' | 'capture' | 'confirm' | 'success';
-type QrResolution = StaffBookingQrResolution | StaffMembershipQrResolution;
+type QrResolution = StaffBookingQrResolution | StaffMembershipQrResolution | StaffParkingPassResolution;
 
 const actionLabel = (action: StaffBookingQrAction) =>
   action === 'CHECK_IN' ? 'Check in vehicle' : 'Check out vehicle';
@@ -43,6 +46,8 @@ const isMembershipResolution = (
 
 export function StaffBookingQrScreen({ navigation }: Props) {
   const cameraRef = useRef<CameraView | null>(null);
+  const resolvingRef = useRef(false);
+  const submittingRef = useRef(false);
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [permission, requestPermission] = useCameraPermissions();
@@ -58,7 +63,11 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [evidenceUri, setEvidenceUri] = useState('');
   const [evidenceBase64, setEvidenceBase64] = useState('');
-  const [reason, setReason] = useState('Kiosk unavailable');
+  const [reason, setReason] = useState('Staff assisted parking');
+  const [quote, setQuote] = useState<ParkingCheckoutQuote | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [payment, setPayment] = useState<{ orderCode?: number; qrCode?: string; checkoutUrl?: string; checkoutAttemptId?: string } | null>(null);
+  const [keepPaused, setKeepPaused] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState('');
 
   useEffect(() => {
@@ -80,28 +89,35 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     setSelectedSessionId('');
     setEvidenceUri('');
     setEvidenceBase64('');
-    setReason('Kiosk unavailable');
+    setReason('Staff assisted parking');
+    setQuote(null); setPayment(null); setPaymentMethod('cash'); setKeepPaused(false);
     setIdempotencyKey('');
   };
 
   const resolveQr = async (payload: string) => {
-    if (busy) return;
+    if (busy || resolvingRef.current) return;
+    resolvingRef.current = true;
     setBusy(true);
     setError('');
     try {
       const isMembershipQr =
         payload.startsWith('VALO_MEMBERSHIP:') ||
         payload.startsWith('VALO_MEMBERSHIP_ACCOUNT:');
-      const response = isMembershipQr
+      const isParkingPass = !isMembershipQr;
+      const response = isParkingPass ? await staffService.resolveParkingPass(payload) : isMembershipQr
         ? await staffService.resolveMembershipQr(payload)
         : await staffService.resolveBookingQr(payload);
       const result = response.data;
       if (
         !result ||
-        (!isMembershipQr && !('booking' in result)) ||
+        (!isMembershipQr && !isParkingPass && !('booking' in result)) ||
         (isMembershipQr && !('membership' in result))
       ) {
         throw new Error('Parking credential information was not returned.');
+      }
+      if (isParkingPass && result && 'pass' in result && result.allowedActions.includes('CHECK_OUT')) {
+        const response = await staffService.quoteParkingPass(result.pass._id, payload);
+        setQuote(response.data || null);
       }
       setQrPayload(payload);
       setResolution(result as QrResolution);
@@ -109,6 +125,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : 'Unable to resolve this QR code.');
     } finally {
+      resolvingRef.current = false;
       setBusy(false);
     }
   };
@@ -193,17 +210,19 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   };
 
   const submitTransition = async () => {
+    const passResolution = resolution && 'pass' in resolution ? resolution : null;
     const booking = resolution && 'booking' in resolution ? resolution.booking : null;
     const membershipResolution = isMembershipResolution(resolution) ? resolution : null;
     if (
-      (!booking && !membershipResolution) ||
+      (!booking && !membershipResolution && !passResolution) ||
       !selectedAction ||
       !evidenceBase64 ||
       !reason.trim() ||
       !idempotencyKey ||
-      busy
+      busy || submittingRef.current
     ) return;
 
+    submittingRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -214,7 +233,10 @@ export function StaffBookingQrScreen({ navigation }: Props) {
         idempotencyKey,
         reason: reason.trim(),
       };
-      if (booking) {
+      if (passResolution) {
+        const result = await staffService.transitionParkingPass(passResolution.pass._id, { ...commonPayload, paymentMethod: selectedAction === 'CHECK_OUT' ? (payment?.checkoutAttemptId ? 'qr' : paymentMethod) : undefined, checkoutAttemptId: payment?.checkoutAttemptId, keepPaused });
+        if (result.requiresPayment) { setPayment(result.data || null); setIdempotencyKey(Crypto.randomUUID()); return; }
+      } else if (booking) {
         await staffService.transitionBookingByQr(booking._id, commonPayload);
       } else if (membershipResolution) {
         const selectedSlot = membershipResolution.membership.slots?.find((slot) => {
@@ -236,17 +258,22 @@ export function StaffBookingQrScreen({ navigation }: Props) {
       }
       setPhase('success');
     } catch (transitionError) {
+      if (transitionError && typeof transitionError === 'object' && 'status' in transitionError) {
+        setIdempotencyKey(Crypto.randomUUID());
+      }
       setError(
         transitionError instanceof Error
           ? transitionError.message
           : 'Unable to update parking access.',
       );
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
 
-  const bookingResolution = resolution && 'booking' in resolution ? resolution : null;
+  const passResolution = resolution && 'pass' in resolution ? resolution : null;
+  const bookingResolution = resolution && !('pass' in resolution) && 'booking' in resolution ? resolution : null;
   const booking = bookingResolution?.booking || null;
   const membershipResolution = isMembershipResolution(resolution) ? resolution : null;
   const selectedVehicle = membershipResolution?.vehicles.find(
@@ -355,6 +382,28 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           {bookingResolution?.allowedActions.length === 0 ? (
             <ErrorMessage message="No manual action is allowed for this booking status." />
           ) : null}
+          <ActionButton label="Scan another QR" secondary onPress={reset} />
+        </ScrollView>
+      ) : null}
+
+      {phase === 'detail' && passResolution ? (
+        <ScrollView contentContainerStyle={styles.content}>
+          <StatusStrip icon="ticket-outline" label="Parking ticket" value="Verify vehicle" tone="success" />
+          <View style={styles.bookingCard}>
+            <Text style={styles.plate}>{passResolution.licensePlate}</Text>
+            <DetailRow label="Ticket status" value={passResolution.booking?.status || passResolution.session?.status || 'Unavailable'} />
+            <DetailRow label="Parking space" value={passResolution.session?.parkingSlot || passResolution.booking?.parkingSlot || 'Not assigned'} />
+            {passResolution.session ? <DetailRow label="Check-in" value={new Date(passResolution.session.checkInTime).toLocaleString()} /> : null}
+            {quote ? <><DetailRow label="Amount due" value={`${quote.amountToPay.toLocaleString('vi-VN')} VND`} /><DetailRow label="Refund" value={`${(quote.refundAmount || 0).toLocaleString('vi-VN')} VND`} /></> : null}
+          </View>
+          {quote ? <>
+            <Text style={styles.sectionLabel}>Checkout payment</Text>
+            {['cash', 'vietqr', ...(passResolution.session?.userId && passResolution.session.type !== 'WALK_IN' ? ['wallet'] : [])].map(method => <SelectionCard key={method} selected={paymentMethod === method} title={method === 'cash' ? 'Cash received by staff' : method === 'vietqr' ? 'Bank QR ? wait for verified payment' : 'Customer wallet'} onPress={() => setPaymentMethod(method)} />)}
+            {quote.isEarlyExit ? <SelectionCard selected={keepPaused} title={keepPaused ? 'Pause booking ? customer will return' : 'End booking and release space'} subtitle="Tap to change the departure choice" onPress={() => setKeepPaused(value => !value)} /> : null}
+          </> : null}
+          {passResolution.allowedActions.map(action => <ActionButton key={action} label={actionLabel(action)} onPress={() => startEvidenceCapture(action)} />)}
+          {!passResolution.allowedActions.length ? <ErrorMessage message="This ticket has no available parking action." /> : null}
+          {error ? <ErrorMessage message={error} /> : null}
           <ActionButton label="Scan another QR" secondary onPress={reset} />
         </ScrollView>
       ) : null}
@@ -479,20 +528,20 @@ export function StaffBookingQrScreen({ navigation }: Props) {
         </>
       ) : null}
 
-      {phase === 'confirm' && (booking || membershipResolution) && selectedAction ? (
+      {phase === 'confirm' && (booking || membershipResolution || passResolution) && selectedAction ? (
         <>
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: stickyContentPadding }]}>
             <StatusStrip icon="checkmark-done-outline" label="Final step" value="Confirm transition" tone="warning" />
             <Image source={{ uri: evidenceUri }} style={styles.preview} />
             <Text style={styles.title}>Confirm {actionLabel(selectedAction).toLowerCase()}</Text>
             <Text style={styles.helper}>
-              {booking
+              {passResolution ? `${passResolution.licensePlate} / ${passResolution.session?.parkingSlot || passResolution.booking?.parkingSlot || ''}` : booking
                 ? `${booking.licensePlate} / ${booking.parkingSlot}`
                 : selectedAction === 'CHECK_IN'
                   ? `${selectedVehicle?.licensePlate || 'Vehicle'} / ${selectedSlotKey.split(':')[1] || 'Parking space'}`
                   : `${selectedSession?.licensePlate || 'Vehicle'} / ${selectedSession?.parkingSlot || 'Parking space'}`}
             </Text>
-            <Text style={styles.inputLabel}>Override reason</Text>
+            <Text style={styles.inputLabel}>Staff action reason</Text>
             <TextInput
               maxLength={500}
               multiline
@@ -502,13 +551,21 @@ export function StaffBookingQrScreen({ navigation }: Props) {
               value={reason}
               onChangeText={setReason}
             />
+            {passResolution && selectedAction === 'CHECK_OUT' ? <Text style={styles.helper}>{quote?.amountToPay.toLocaleString('vi-VN')} VND ? {paymentMethod === 'cash' ? 'Confirm only after receiving cash.' : paymentMethod === 'wallet' ? 'Backend will verify wallet payment.' : 'Checkout completes after bank payment is verified.'}</Text> : null}
+            {payment?.qrCode ? <View style={styles.center}><QRCode value={payment.qrCode} size={200} /><Text style={styles.helper}>Ask the customer to pay. Then verify payment below.</Text></View> : null}
             {error ? <ErrorMessage message={error} /> : null}
           </ScrollView>
           <StickyActionBar bottom={stickyBottom} paddingBottom={stickyPaddingBottom}>
             <ActionButton
               disabled={busy || !reason.trim()}
-              label={busy ? 'Submitting...' : `Confirm ${actionLabel(selectedAction)}`}
-              onPress={() => void submitTransition()}
+              label={busy ? 'Submitting...' : payment ? 'Verify bank payment and checkout' : `Confirm ${actionLabel(selectedAction)}`}
+              onPress={() => void (async () => {
+                if (payment?.orderCode && payment.checkoutAttemptId) {
+                  try { const result = await staffService.checkParkingPayment(payment.orderCode, payment.checkoutAttemptId); if (!result.isPaid) { setError('Payment has not been confirmed yet.'); return; } }
+                  catch (err) { setError(err instanceof Error ? err.message : 'Unable to verify payment.'); return; }
+                }
+                await submitTransition();
+              })()}
             />
             <ActionButton label="Retake photo" secondary onPress={() => setPhase('capture')} />
           </StickyActionBar>

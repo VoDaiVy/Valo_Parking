@@ -93,19 +93,19 @@ test('Gemini 429 is classified at the exact failed call without business writes'
   }
 });
 
-test('read allowlist contains the 11 original aggregate tools plus 12 drill-down read tools', () => {
+test('read allowlist contains only supported aggregate and drill-down tools', async () => {
   assert.deepEqual(tools.map((tool) => tool.name), [
     'get_revenue_metrics', 'get_session_statistics', 'get_parking_occupancy',
     'get_user_summary', 'get_pricing_config', 'get_package_list',
     'get_subscription_stats', 'get_service_catalog', 'get_policy_summary',
-    'check_system_health', 'get_ai_notifications',
+    'check_system_health', 'get_ai_notifications', 'get_vehicle_approval_statistics',
     'get_active_sessions', 'search_sessions', 'get_session_detail',
     'search_users', 'get_user_detail', 'search_notification_recipients', 'search_vehicles',
     'search_bookings', 'get_booking_detail', 'get_parking_floors',
     'get_parking_slots', 'search_transactions', 'get_subscription_members',
     'search_ticket_packages', 'search_services'
   ]);
-  assert.rejects(execute('delete_user', {}), /allowlist/);
+  await assert.rejects(execute('delete_user', {}), /allowlist/);
 });
 test('date tool rejects reversed and oversized periods', () => {
   assert.throws(() => validateDates({ startDate: '2025-10-01', endDate: '2025-09-01' }));
@@ -309,38 +309,42 @@ test('standalone pricing approval refuses multi-document write and keeps draft p
   }
 });
 
-test('get_revenue_metrics correctly branches between platform and parking scope and combines timelines', async () => {
+test('get_revenue_metrics uses canonical platform revenue and preserves parking scope', async () => {
   const originalPlatform = statistics.getAdminPlatformRevenueStatistics;
-  const originalBooking = statistics.getAdminBookingStatistics;
-  const originalSubscription = statistics.getAdminSubscriptionStatistics;
-  
-  statistics.getAdminPlatformRevenueStatistics = async () => ({
-    period: { range: 'today' },
-    booking: { revenue: 362000, completedCount: 5 }
-  });
-  
-  statistics.getAdminBookingStatistics = async () => ({
-    money: { walletBookingCharges: 200000, walletBookingRefunds: 0 },
-    timeline: { points: [{ period: '2026-09-17', bookingCharges: 200000, bookingRefunds: 0 }] }
-  });
-  
-  statistics.getAdminSubscriptionStatistics = async () => ({
-    summary: { grossAmount: 257000, renewalAmount: 0 },
-    timeline: { points: [{ period: '2026-09-17', packageSales: 257000, renewalSales: 0 }] }
-  });
-  
+  const calls = [];
+  const summary = {
+    totalRevenue: 457000, bookingRevenue: 200000, serviceRevenue: 20000,
+    packageRevenue: 237000, membershipTransferFees: 5000, refunds: 5000,
+    sourceCompositionTotal: 462000,
+  };
+  statistics.getAdminPlatformRevenueStatistics = async (params) => {
+    calls.push(params);
+    return {
+      period: { range: 'today' },
+      booking: { revenue: 362000, completedCount: 5 },
+      summary,
+      trend: [{ period: '2026-09-17', ...summary }],
+    };
+  };
   try {
     const parkingResult = await execute('get_revenue_metrics', { scope: 'parking', startDate: '2026-09-17', endDate: '2026-09-17' });
     assert.equal(parkingResult.data.scope, 'parking');
     assert.equal(parkingResult.data.parkingRevenue, 362000);
-    
+    assert.equal(parkingResult.data.completedBookingCount, 5);
+    assert.equal(calls[0].scope, 'parking');
+    assert.equal(calls[0].startDate, '2026-09-16T17:00:00.000Z');
+    assert.equal(calls[0].endDate, '2026-09-17T16:59:59.999Z');
+
     const platformResult = await execute('get_revenue_metrics', { scope: 'platform', startDate: '2026-09-17', endDate: '2026-09-17' });
-    assert.equal(platformResult.data.scope, 'platform');
-    assert.equal(platformResult.data.recordedSales, 457000);
-    assert.equal(platformResult.data.timeline[0].recordedSales, 457000);
+    assert.deepEqual(calls[1], { mode: '7d' });
+    assert.deepEqual(platformResult.data, {
+      period: { range: 'today' }, scope: 'platform', ...summary,
+      timeline: [{
+        date: '2026-09-17', totalRevenue: 457000, bookingRevenue: 200000,
+        serviceRevenue: 20000, packageRevenue: 237000, membershipTransferFees: 5000,
+      }],
+    });
   } finally {
     statistics.getAdminPlatformRevenueStatistics = originalPlatform;
-    statistics.getAdminBookingStatistics = originalBooking;
-    statistics.getAdminSubscriptionStatistics = originalSubscription;
   }
 });

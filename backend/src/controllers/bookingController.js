@@ -1,3 +1,4 @@
+const parkingPassService = require('../services/parkingPassService');
 const mongoose = require('mongoose');
 const cloudinary = require('../config/cloudinary');
 const Booking = require('../models/Booking');
@@ -758,12 +759,12 @@ exports.createBooking = async (req, res, next) => {
       }
       // Thanh toán qua VietQR (payOS)
       if (prepaidAmount === 0) {
-        newBooking.status = 'PAID';
-        await attachPaidBookingSnapshots(newBooking, {
+        const paidFreeBooking = await transitionPendingBookingToPaid(newBooking, {
           parkingAmount: 0,
           serviceAmount: 0,
           source: 'calculated',
         });
+        newBooking.set(paidFreeBooking.booking.toObject());
         await voucherService.markVoucherUsed({ bookingId: newBooking._id });
         queuePaidBookingRewards(newBooking._id, req.app);
       } else {
@@ -1487,7 +1488,7 @@ exports.getBookingQr = async (req, res, next) => {
       data: {
         available,
         bookingStatus: booking.status,
-        payload: available ? buildBookingQrPayload(booking) : null,
+        payload: available && parkingPassService.isPassIssuanceEnabled() ? require('../services/parkingPassQrService').buildParkingPassQrPayload(await parkingPassService.ensureBookingPass(booking)) : available ? buildBookingQrPayload(booking) : null,
         reason: available ? null : 'BOOKING_QR_INACTIVE',
       },
     });
@@ -1670,10 +1671,14 @@ exports.checkInBooking = async (req, res, next) => {
       'CHECK_IN'
     );
 
-    booking.status = 'ACTIVE';
-    await booking.save();
+    const mongoSession = await mongoose.startSession();
+    let session;
+    try { await mongoSession.withTransaction(async () => {
+      const updated = await Booking.updateOne({ _id: booking._id, status: 'PAID' }, { $set: { status: 'ACTIVE' } }, { session: mongoSession });
+      if (!updated.modifiedCount) throw Object.assign(new Error('Booking already checked in'), { statusCode: 409 });
+      booking.status = 'ACTIVE';
 
-    const session = await Session.create({
+    [session] = await Session.create([{
       licensePlate: cleanPlate,
       userId: booking.userId,
       bookingId: booking._id,
@@ -1693,7 +1698,9 @@ exports.checkInBooking = async (req, res, next) => {
             entryGate: 'manual_override',
           }
         : {}),
-    });
+    }], { session: mongoSession });
+    if (parkingPassService.isPassIssuanceEnabled()) await parkingPassService.ensureSessionPass(session, { session: mongoSession });
+    }); } finally { await mongoSession.endSession(); }
     notifySessionCreatedSafely(session, req.app);
 
     await recordStaffBookingAction({
@@ -2756,7 +2763,7 @@ exports.createBulkBooking = async (req, res, next) => {
 
       createdBookingsResponse.push({
         bookingId: newBooking._id,
-        qrCode: buildBookingQrPayload(newBooking),
+        qrCode: parkingPassService.isPassIssuanceEnabled() ? require('../services/parkingPassQrService').buildParkingPassQrPayload(await parkingPassService.ensureBookingPass(newBooking, { session })) : buildBookingQrPayload(newBooking),
         slotCode: newBooking.parkingSlot,
         licensePlate: newBooking.licensePlate,
         startTime: newBooking.scheduledStart,

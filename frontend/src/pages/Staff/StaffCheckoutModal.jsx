@@ -104,7 +104,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         body: JSON.stringify({ 
           sessionId: session._id,
           exitImageBase64,
-          paymentMethod
+          paymentMethod: paymentMethod.toLowerCase()
         })
       });
       const data = await res.json();
@@ -115,6 +115,11 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         return;
       }
 
+      if (data.requiresPayment) {
+        setErrorMsg('Bank payment is required. Complete checkout at the exit kiosk or use the staff mobile QR scanner.');
+        setStep('invoice');
+        return;
+      }
       setStep('success');
       setTimeout(() => {
         onSuccess();

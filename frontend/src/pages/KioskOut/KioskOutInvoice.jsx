@@ -1,22 +1,32 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon } from 'lucide-react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { API_BASE } from '../../services/api';
 
 export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSuccess, onBack }) {
+  const processingRef = useRef(false);
+  const completedRef = useRef(false);
+  const [checkoutError, setCheckoutError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [isEarlyExitModalOpen, setIsEarlyExitModalOpen] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [keepPausedChoice, setKeepPausedChoice] = useState(false);
 
-  const handleCheckout = useCallback(async (paymentMethod, keepPaused = false) => {
+  const handleCheckout = useCallback(async (paymentMethod, keepPaused = false, checkoutAttemptId = null) => {
+    if (processingRef.current || completedRef.current) return;
+    processingRef.current = true;
+    setCheckoutError('');
     setIsProcessing(true);
     try {
       const res = await fetch(`${API_BASE}/sessions/kiosk-checkout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'EXIT_1' },
         body: JSON.stringify({
+          qrPayload: sessionData?.qrPayload,
+          licensePlate: sessionData?.observedLicensePlate || sessionData?.session?.licensePlate,
+          checkoutAttemptId,
           sessionId: sessionData?.session?._id,
           exitImageBase64: exitImage,
           paymentMethod,
@@ -29,16 +39,17 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           setPaymentData(data.data);
           setIsProcessing(false);
         } else {
+          completedRef.current = true;
           onCheckoutSuccess();
         }
       } else {
-        alert(data.message);
+        setCheckoutError(data.message || 'Checkout could not be completed.');
         setIsProcessing(false);
       }
     } catch (err) {
-      console.error(err);
+      setCheckoutError(err.message || 'Unable to complete checkout. Retry when connected.');
       setIsProcessing(false);
-    }
+    } finally { processingRef.current = false; }
   }, [exitImage, onCheckoutSuccess, sessionData]);
 
   useEffect(() => {
@@ -64,11 +75,10 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
     if (paymentData && paymentData.orderCode) {
       intervalId = setInterval(async () => {
         try {
-          const res = await fetch(`${API_BASE}/sessions/check-payos/${paymentData.orderCode}`);
+          const res = await fetch(`${API_BASE}/sessions/check-payos/${paymentData.orderCode}?checkoutAttemptId=${encodeURIComponent(paymentData.checkoutAttemptId || '')}`, { credentials: 'include', headers: { 'X-Kiosk-Gate': 'EXIT_1' } });
           const data = await res.json();
           if (data.success && data.isPaid) {
-            clearInterval(intervalId);
-            handleCheckout('qr', keepPausedChoice); // Call handleCheckout to complete the session
+            handleCheckout('qr', keepPausedChoice, paymentData.checkoutAttemptId); // Call handleCheckout to complete the session
           }
         } catch (err) {
           console.error('Error polling payment status:', err);
@@ -91,7 +101,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
   const { session, durationHours, expectedHours, totalPrice, walletBalance, canAutoPay, isEarlyExit, remainingHours, bookingEnd, isSubscriptionExpired } = sessionData;
 
   // If AutoPay AND NOT early exit, show a loading screen while it processes
-  if (canAutoPay && !isEarlyExit) {
+  if (canAutoPay && !isEarlyExit && !checkoutError) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-black">
         <div className="w-20 h-20 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mb-8" />
@@ -198,7 +208,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           </div>
 
           {/* Wallet Status Box (If User) */}
-          {session.userId && (
+          {session.userId && session.type !== 'WALK_IN' && (
             <div className="bg-blue-900/20 border border-blue-500/20 rounded-2xl p-5 mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Wallet className="text-blue-400" />
@@ -214,6 +224,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
             </div>
           )}
 
+          {checkoutError ? <p role="alert" className="mb-4 text-red-400">{checkoutError}</p> : null}
           {/* QR Code Section */}
           <div className="bg-white rounded-2xl p-6 flex flex-col items-center text-black">
             <p className="font-bold text-sm mb-4">SCAN TO PAY</p>

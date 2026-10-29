@@ -5,7 +5,6 @@ export default function KioskQrScannerModal({ isOpen, onClose, onScan }) {
   if (!isOpen) return null;
 
   const handleScan = (result) => {
-    console.log('KioskQrScannerModal handleScan result:', result);
     if (result && result.length > 0 && result[0] && result[0].rawValue) {
       onScan(result[0].rawValue);
     }
@@ -27,7 +26,7 @@ export default function KioskQrScannerModal({ isOpen, onClose, onScan }) {
         {/* Header */}
         <div className="p-4 bg-[#FFDF00] text-[#0f172a] flex items-center justify-between">
           <h3 className="font-bold text-lg tracking-widest uppercase flex items-center gap-2">
-            SCAN VIP / BOOKING QR
+            SCAN PARKING TICKET QR
           </h3>
           <button 
             onClick={onClose}
@@ -40,7 +39,7 @@ export default function KioskQrScannerModal({ isOpen, onClose, onScan }) {
         {/* Scanner Body */}
         <div className="p-6 flex flex-col items-center">
           <p className="text-gray-400 text-center mb-6 text-sm">
-            Please place your VIP membership or pre-booking QR code in front of the camera.
+            Please place your parking ticket or membership QR code in front of the camera.
           </p>
           
           <div className="w-full aspect-square rounded-2xl overflow-hidden border-4 border-dashed border-[#FFDF00]/50 relative bg-black flex items-center justify-center">

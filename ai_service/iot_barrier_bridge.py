@@ -1,4 +1,5 @@
 import time
+import os
 import serial
 import serial.tools.list_ports
 import requests
@@ -12,6 +13,7 @@ SERIAL_PORT = '/dev/cu.usbserial-0001'
 BAUD_RATE = 115200
 BACKEND_STATUS_URL = 'http://localhost:5001/api/iot/barrier-status'
 BACKEND_CLOSE_URL = 'http://localhost:5001/api/iot/close-barrier'
+BRIDGE_SECRET = os.environ.get('IOT_BRIDGE_SECRET', '')
 
 def find_esp32_port():
     ports = list(serial.tools.list_ports.comports())
@@ -51,8 +53,8 @@ def main():
 
     ser = None
     last_trigger_ids = {
-        'ENTRY_1': 0,
-        'EXIT_1': 0
+        'ENTRY_1': None,
+        'EXIT_1': None
     }
     was_hold_states = {
         'ENTRY_1': False,
@@ -91,6 +93,7 @@ def main():
                                 res_close = requests.post(
                                     BACKEND_CLOSE_URL,
                                     json={'fromBridge': True, 'gate': closed_gate},
+                                    headers={'X-IoT-Bridge-Secret': BRIDGE_SECRET},
                                     timeout=2
                                 )
                                 if res_close.status_code == 200:
@@ -122,8 +125,8 @@ def main():
                         force_close = gate_info.get('forceClose', False)
 
                         # Khởi tạo triggerId ban đầu
-                        if last_trigger_ids.get(norm_gate, 0) == 0:
-                            if should_open:
+                        if last_trigger_ids.get(norm_gate) is None:
+                            if should_open or is_hold or force_close:
                                 last_trigger_ids[norm_gate] = -1
                             else:
                                 last_trigger_ids[norm_gate] = trigger_id
