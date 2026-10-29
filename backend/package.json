@@ -14,6 +14,7 @@
     "audit:refunds": "node src/scripts/auditRefundPolicyRollout.js",
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
     "test:notification": "node src/tests/notificationService.test.js",
+    "telegram:webhook": "node src/scripts/telegramWebhook.js",
     "test:telegram": "node --test --test-concurrency=1 src/tests/telegram.unit.test.js src/tests/telegram.integration.test.js src/tests/telegramPhoneReceipts.integration.test.js",
     "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js",
     "audit:parking-passes": "node src/scripts/auditParkingPasses.js",
