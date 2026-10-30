@@ -30,14 +30,38 @@ const {
 } = require('../services/adminSubscriptionProjectionService');
 const { notifySubscriptionActivatedSafely } = require('../services/aiCopilot/notificationEvents');
 
+const { _private: { addMonthsClamped } } = require('../services/subscriptionEligibilityService');
+
+const isPayosChannelUnavailable = (error) => {
+  const providerCode = String(
+    error?.response?.data?.code
+    ?? error?.body?.code
+    ?? error?.cause?.code
+    ?? error?.code
+    ?? ''
+  );
+  const providerMessage = String(
+    error?.response?.data?.message
+    ?? error?.body?.message
+    ?? error?.desc
+    ?? error?.message
+    ?? ''
+  );
+
+  return providerCode === '215'
+    || /code\s*:\s*215|kh[oô]ng c[oó] g[oó]i n[aà]o [đd]ang ho[aạ]t [đd]ộng/i.test(providerMessage);
+};
+
+/**
+ * Build subscription expiration date from a base date.
+ * Uses addMonthsClamped to correctly handle end-of-month overflow
+ * (e.g. Jan 31 + 1 month → Feb 28, not Mar 3).
+ */
 const buildExpirationDate = (packageType, fromDate = new Date()) => {
-  const expireAt = new Date(fromDate);
-  if (packageType === 'monthly') {
-    expireAt.setMonth(expireAt.getMonth() + 1);
-  } else {
-    expireAt.setFullYear(expireAt.getFullYear() + 1);
-  }
-  return expireAt;
+  if (packageType === 'monthly') return addMonthsClamped(fromDate, 1);
+  if (packageType === 'yearly') return addMonthsClamped(fromDate, 12);
+  // Fallback: treat unknown type as monthly
+  return addMonthsClamped(fromDate, 1);
 };
 
 
@@ -60,8 +84,10 @@ exports.createSubscriptionPayment = async (req, res, next) => {
 
     const amount = ticketPackage.price * Math.max(1, slots.length);
 
-    // Generate Order Code for PayOS
-    const orderCode = Number(String(Date.now()).slice(-6) + Math.floor(Math.random() * 100));
+    // Keep the same 10-digit PayOS order-code format used by regular bookings.
+    const orderCode = Number(
+      `${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`
+    );
 
     // Calculate expiration date
     const expireAt = buildExpirationDate(ticketPackage.type);
@@ -71,7 +97,8 @@ exports.createSubscriptionPayment = async (req, res, next) => {
     const paymentData = {
       orderCode,
       amount: parseInt(amount),
-      description: `VIP ${ticketPackage.type === 'monthly' ? 'Thang' : 'Nam'}`,
+      // Keep this short and ASCII-safe for every PayOS-linked bank.
+      description: 'VALO VIP',
       returnUrl: paymentUrls.returnUrl,
       cancelUrl: paymentUrls.cancelUrl,
       items: [
@@ -83,7 +110,19 @@ exports.createSubscriptionPayment = async (req, res, next) => {
       ],
     };
 
-    const paymentLink = await payos.paymentRequests.create(paymentData);
+    let paymentLink;
+    try {
+      paymentLink = await payos.paymentRequests.create(paymentData);
+    } catch (payosError) {
+      if (isPayosChannelUnavailable(payosError)) {
+        return res.status(503).json({
+          success: false,
+          code: 'PAYOS_CHANNEL_UNAVAILABLE',
+          message: 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.',
+        });
+      }
+      throw payosError;
+    }
     const checkoutUrl = paymentLink.checkoutUrl;
 
     // Create pending subscription
@@ -720,7 +759,19 @@ exports.renewSubscription = async (req, res, next) => {
         items: [{ name: `Renew VIP ${ticketPackage.type}`, quantity: 1, price: parseInt(amount) }]
       };
 
-      const paymentLink = await payos.paymentRequests.create(paymentData);
+      let paymentLink;
+      try {
+        paymentLink = await payos.paymentRequests.create(paymentData);
+      } catch (payosError) {
+        if (isPayosChannelUnavailable(payosError)) {
+          return res.status(503).json({
+            success: false,
+            code: 'PAYOS_CHANNEL_UNAVAILABLE',
+            message: 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.',
+          });
+        }
+        throw payosError;
+      }
       
       subscription.pendingRenewal = {
         orderCode,
@@ -735,7 +786,9 @@ exports.renewSubscription = async (req, res, next) => {
           subscriptionId: subscription._id,
           orderCode,
           amount,
-          checkoutUrl: paymentLink.checkoutUrl
+          checkoutUrl: paymentLink.checkoutUrl,
+          qrCode: paymentLink.qrCode,
+          paymentLinkId: paymentLink.paymentLinkId,
         }
       });
     } else {

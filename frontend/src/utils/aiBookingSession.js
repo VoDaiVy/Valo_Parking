@@ -34,15 +34,15 @@ export const deriveAiBookingProgress = ({ bookingDraft = {}, phase = 'IDLE', sta
 };
 
 export const aiBookingStepLabel = (step) => ({
-  COLLECT_DATE: 'Chọn ngày',
-  COLLECT_TIME: 'Chọn giờ',
-  SELECT_VEHICLE: 'Chọn xe',
-  SELECT_SLOT: 'Kiểm tra vị trí đỗ',
-  SELECT_SERVICE: 'Chọn dịch vụ',
-  CONFIRM_BOOKING: 'Xác nhận đặt chỗ',
-  PAYMENT: 'Hoàn tất thanh toán',
-  COMPLETED: 'Đã hoàn tất',
-}[step] || 'Tiếp tục đặt chỗ');
+  COLLECT_DATE: 'Choose dates',
+  COLLECT_TIME: 'Choose times',
+  SELECT_VEHICLE: 'Choose a vehicle',
+  SELECT_SLOT: 'Check parking spaces',
+  SELECT_SERVICE: 'Choose services',
+  CONFIRM_BOOKING: 'Confirm booking',
+  PAYMENT: 'Complete payment',
+  COMPLETED: 'Completed',
+}[step] || 'Continue booking');
 
 export const sanitizeAiBookingPreview = (preview) => {
   if (!preview?.items) return null;
@@ -63,6 +63,8 @@ export const sanitizeAiBookingPreview = (preview) => {
       ? preview.quotes.map((quote) => ({ totalAmount: Number(quote?.totalAmount || 0) })) : [],
     total: Number(preview.total || 0),
     durationMinutes: preview.durationMinutes ?? null,
+    walletBalance: Number(preview.walletBalance || 0),
+    suggestVipPackage: Boolean(preview.suggestVipPackage),
   };
 };
 

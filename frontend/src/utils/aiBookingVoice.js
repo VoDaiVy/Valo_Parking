@@ -1,6 +1,16 @@
 const speechLocale = (language) => (language === 'en' || language === 'en-US' ? 'en-US' : 'vi-VN');
 
 const englishParkingTerms = /\b(?:book|booking|reserve|reservation|park|parking|spot|space|slot|vehicle|car|license|plate|availability|available|wallet|balance|fee|price|location|where|cancel|change|modify|confirm|tomorrow|today|morning|afternoon|evening|night|floor|entry|exit|arrive|leave)\b/gi;
+const vietnameseParkingTerms = /\b(?:dat|cho|do|xe|bai|bien|so|ngay|gio|hom|mai|tang|o|vi|phi|gia|huy|sua|doi|xac|nhan|trong|dich|vu|rua|nap|thanh|toan)\b/gi;
+
+const foldVoiceText = (value) => String(value || '').toLowerCase().normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
+
+const contextualVoiceScore = (value, contextPhrases = []) => {
+  const folded = foldVoiceText(value);
+  return [...new Set((contextPhrases || []).map(foldVoiceText).filter((item) => item.length >= 2))]
+    .reduce((score, phrase) => score + (folded.includes(phrase) ? 24 : 0), 0);
+};
 
 // Browser speech recognition often turns short booking phrases into nearby
 // sounding words. These corrections are deliberately context-bound so dates,
@@ -33,30 +43,63 @@ export function normalizeEnglishVoiceTranscript(transcript) {
   return text;
 }
 
-const englishVoiceScore = (value) => {
+const englishVoiceScore = (value, contextPhrases = []) => {
   const normalized = normalizeEnglishVoiceTranscript(value);
   const terms = normalized.match(englishParkingTerms)?.length || 0;
   const intentPhrase = /\b(?:want|need|like|please|can you|could you)\b.*\b(?:book|reserve|park|check|show|cancel|change|modify)\b/i.test(normalized)
     || /\b(?:where is|how much|how long|is there|are there|do i have)\b/i.test(normalized);
   const structured = /\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(normalized);
   const suspicious = /\b(?:wonder|wander|nick|knead|cooking|looking)\b/i.test(normalized);
-  return terms * 12 + (intentPhrase ? 30 : 0) + (structured ? 12 : 0) - (suspicious ? 20 : 0);
+  return terms * 12 + (intentPhrase ? 30 : 0) + (structured ? 12 : 0)
+    + contextualVoiceScore(normalized, contextPhrases) - (suspicious ? 20 : 0);
 };
 
-export function selectEnglishVoiceTranscript(alternatives = []) {
+export function selectEnglishVoiceTranscript(alternatives = [], contextPhrases = []) {
   const candidates = alternatives.map((alternative, index) => ({
     transcript: normalizeEnglishVoiceTranscript(alternative?.transcript ?? alternative),
     confidence: Number(alternative?.confidence || 0),
     index,
   })).filter((candidate) => candidate.transcript);
   candidates.sort((left, right) => (
-    (englishVoiceScore(right.transcript) + right.confidence * 5)
-    - (englishVoiceScore(left.transcript) + left.confidence * 5)
+    (englishVoiceScore(right.transcript, contextPhrases) + right.confidence * 5)
+    - (englishVoiceScore(left.transcript, contextPhrases) + left.confidence * 5)
   ) || left.index - right.index);
   return candidates[0]?.transcript || '';
 }
 
-export function resolveEnglishVoicePlateTranscript(transcript, vehicles = [], existingPlates = []) {
+export function normalizeVietnameseVoiceTranscript(transcript) {
+  return String(transcript || '').trim()
+    .replace(/đặc\s+chỗ/giu, 'đặt chỗ')
+    .replace(/biển\s+xố/giu, 'biển số')
+    .replace(/ô\s+đổ/giu, 'ô đỗ')
+    .replace(/\s+/g, ' ');
+}
+
+const vietnameseVoiceScore = (value, contextPhrases = []) => {
+  const normalized = normalizeVietnameseVoiceTranscript(value);
+  const folded = foldVoiceText(normalized);
+  const terms = folded.match(vietnameseParkingTerms)?.length || 0;
+  const intentPhrase = /\b(?:toi|minh|cho toi|giup toi)\b.*\b(?:dat|do|kiem tra|xem|huy|sua|doi)\b/.test(folded);
+  const structured = /\b(?:\d{1,2}(?::\d{2}|h\d{0,2})?|hom nay|ngay mai|thu (?:hai|ba|tu|nam|sau|bay)|chu nhat)\b/.test(folded);
+  const plate = /\b[1-9]\d\s*[a-z]{1,2}\s*\d{4,5}\b/i.test(folded) || /\bbien so\b/.test(folded);
+  return terms * 12 + (intentPhrase ? 30 : 0) + (structured ? 14 : 0) + (plate ? 24 : 0)
+    + contextualVoiceScore(normalized, contextPhrases);
+};
+
+export function selectVietnameseVoiceTranscript(alternatives = [], contextPhrases = []) {
+  const candidates = alternatives.map((alternative, index) => ({
+    transcript: normalizeVietnameseVoiceTranscript(alternative?.transcript ?? alternative),
+    confidence: Number(alternative?.confidence || 0),
+    index,
+  })).filter((candidate) => candidate.transcript);
+  candidates.sort((left, right) => (
+    (vietnameseVoiceScore(right.transcript, contextPhrases) + right.confidence * 5)
+    - (vietnameseVoiceScore(left.transcript, contextPhrases) + left.confidence * 5)
+  ) || left.index - right.index);
+  return candidates[0]?.transcript || '';
+}
+
+export function resolveKnownVehiclePlateTranscript(transcript, vehicles = [], existingPlates = []) {
   const original = String(transcript || '').trim();
   const heardDigits = original.replace(/\D/g, '');
   if (!/^\d{6,8}$/.test(heardDigits)) return original;
@@ -79,8 +122,26 @@ export function resolveEnglishVoicePlateTranscript(transcript, vehicles = [], ex
   return candidates.length === 1 ? candidates[0] : original;
 }
 
+export const resolveEnglishVoicePlateTranscript = resolveKnownVehiclePlateTranscript;
+
+const plateVoiceScore = (alternative, language) => {
+  const value = String(alternative?.transcript ?? alternative ?? '').trim();
+  const folded = foldVoiceText(value);
+  const nato = /\b(?:alpha|bravo|charlie|delta|echo|foxtrot|golf|hotel|india|juliett?|kilo|lima|mike|november|oscar|papa|quebec|romeo|sierra|tango|uniform|victor|whiskey|xray|yankee|zulu)\b/i.test(value);
+  const explicitLetter = /\d{2}[\s,.-]*[a-z][\s,.-]*\d{4,5}\b/i.test(value)
+    || /\b\d{2}[a-z]{1,2}\d{4,5}\b/i.test(value);
+  const mentionsPlate = language === 'vi' ? /\bbien so\b/.test(folded) : /\blicen[cs]e plate\b/i.test(value);
+  const digitsOnly = /^\s*(?:\d[\s,.-]*){6,8}\s*$/.test(value);
+  return (nato ? 100 : 0) + (explicitLetter ? 80 : 0) + (mentionsPlate ? 30 : 0)
+    + (digitsOnly ? 10 : 0) + Number(alternative?.confidence || 0) * 5;
+};
+
+const selectPlateVoiceTranscript = (alternatives, language) => [...alternatives]
+  .sort((left, right) => plateVoiceScore(right, language) - plateVoiceScore(left, language))[0]?.transcript || '';
+
 export function createAiBookingRecognition(browser, {
   onTranscript, onError, onEnd, continuous = false, language = 'vi', expectLicensePlate = false,
+  contextPhrases = [],
 }) {
   const SpeechRecognition = browser?.SpeechRecognition || browser?.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
@@ -88,7 +149,7 @@ export function createAiBookingRecognition(browser, {
   recognition.lang = speechLocale(language);
   recognition.continuous = continuous;
   recognition.interimResults = false;
-  recognition.maxAlternatives = language === 'en' ? 5 : 1;
+  recognition.maxAlternatives = 5;
   recognition.onresult = (event) => {
     for (let index = event.resultIndex || 0; index < (event.results?.length || 0); index += 1) {
       const result = event.results[index];
@@ -96,19 +157,11 @@ export function createAiBookingRecognition(browser, {
       const rawAlternatives = Array.from(result || []).filter((alternative) => (
         String(alternative?.transcript || '').trim()
       ));
-      const alternatives = rawAlternatives.map((alternative) => String(alternative.transcript).trim());
-      const transcript = expectLicensePlate && language === 'en'
-        ? alternatives.sort((left, right) => {
-          const score = (value) => {
-            const nato = /\b(?:alpha|bravo|charlie|delta|echo|foxtrot|golf|hotel|india|juliett?|kilo|lima|mike|november|oscar|papa|quebec|romeo|sierra|tango|uniform|victor|whiskey|xray|yankee|zulu)\b/i.test(value);
-            const explicitLetter = /\d{2}[\s,.-]*[a-z][\s,.-]*\d{4,5}\b/i.test(value)
-              || /\b\d{2}[a-z]{1,2}\d{4,5}\b/i.test(value);
-            const digitsOnly = /^\s*(?:\d[\s,.-]*){6,8}\s*$/.test(value);
-            return (nato ? 100 : 0) + (explicitLetter ? 80 : 0) - (digitsOnly ? 20 : 0);
-          };
-          return score(right) - score(left);
-        })[0]
-        : language === 'en' ? selectEnglishVoiceTranscript(rawAlternatives) : alternatives[0];
+      const transcript = expectLicensePlate
+        ? selectPlateVoiceTranscript(rawAlternatives, language)
+        : language === 'en'
+          ? selectEnglishVoiceTranscript(rawAlternatives, contextPhrases)
+          : selectVietnameseVoiceTranscript(rawAlternatives, contextPhrases);
       if (transcript) { onTranscript(transcript); break; }
     }
   };
@@ -139,6 +192,7 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
   let lastTranscriptAt = 0;
   let language = 'vi';
   let expectLicensePlate = false;
+  let contextPhrases = [];
   const schedule = () => {
     if (!active || paused || restartTimer !== null) return;
     restartTimer = setTimeout(() => { restartTimer = null; begin(); }, restartDelayMs);
@@ -149,6 +203,7 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
       continuous: true,
       language,
       expectLicensePlate,
+      contextPhrases,
       onTranscript: (text) => {
         if (!active || paused) return;
         const normalized = String(text).trim().toLowerCase();
@@ -212,6 +267,10 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
         try { recognition?.stop(); } catch { /* already stopped */ }
       } else if (active && !paused) schedule();
     },
+    setContextPhrases(value) {
+      contextPhrases = [...new Set((Array.isArray(value) ? value : [])
+        .map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 50);
+    },
     stop() {
       active = false; paused = false;
       if (restartTimer !== null) { clearTimeout(restartTimer); restartTimer = null; }
@@ -271,6 +330,19 @@ export function formatAiBookingSpeech(value, language = 'vi') {
     .replace(/\bslot\b/gi, 'ô đỗ')
     .replace(/\bOK\b/gi, 'ô kê')
     .replace(/\bVALO\b/g, 'Va lô')
+    .replace(/\bCar Wash\s*(?:&|and)?\s*Interior Vacuuming\b/gi, 'Rửa xe và hút bụi nội thất')
+    .replace(/\bCar Wash\b/gi, 'Rửa xe')
+    .replace(/\bInterior Vacuuming\b/gi, 'Hút bụi nội thất')
+    .replace(/\bGlass Water Spot Removal\s*(?:&|and)?\s*Coating\b/gi, 'Tẩy ố kính và phủ nano')
+    .replace(/\bWater Spot Removal\b/gi, 'Tẩy ố kính')
+    .replace(/\bPaint Polishing\s*(?:&|and)?\s*Scratch Removal\b/gi, 'Đánh bóng và xóa xước sơn')
+    .replace(/\bPaint Polishing\b/gi, 'Đánh bóng sơn')
+    .replace(/\bScratch Removal\b/gi, 'Xóa xước sơn')
+    .replace(/\bInterior Deep Cleaning\s*(?:&|and)?\s*Ozone(?:\s*Odor\s*Removal)?\b/gi, 'Vệ sinh nội thất và khử mùi ô zôn')
+    .replace(/\bEV Charging\b/gi, 'Sạc xe điện')
+    .replace(/\bFast EV Charging\b/gi, 'Sạc nhanh xe điện')
+    .replace(/\bdemo\b/gi, 'đê mô')
+    .replace(/\s*&\s*/g, ' và ')
     .replace(
       /\b([01]?\d|2[0-3]):([0-5]\d)\s*[\u2013\u2014-]\s*([01]?\d|2[0-3]):([0-5]\d)\b/g,
       (_, startHour, startMinute, endHour, endMinute) => (
@@ -295,8 +367,40 @@ export function formatAiBookingSpeech(value, language = 'vi') {
   return message;
 }
 
-// Kept as a public helper for tests and callers; every response is now one
-// Vietnamese utterance to avoid pauses caused by switching voices mid-sentence.
+export function createConciseAiBookingSpeech(value, language = 'vi', maximumLength = 160) {
+  const text = String(value || '').trim()
+    .replace(/^\s*[•-]\s*/gm, '')
+    .replace(/\s*\n+\s*/g, '. ')
+    .replace(/\s+/g, ' ')
+    .replace(/\.{2,}/g, '.')
+    .trim();
+  if (!text || text.length <= maximumLength) return text;
+
+  const sentences = text.match(/[^.!?]+[.!?]?/g)?.map((item) => item.trim()).filter(Boolean) || [text];
+  const selected = [];
+  let length = 0;
+  for (const sentence of sentences) {
+    if (selected.length >= 2) break;
+    const nextLength = length + (length ? 1 : 0) + sentence.length;
+    if (selected.length && nextLength > maximumLength) break;
+    if (!selected.length && sentence.length > maximumLength) {
+      const cutoff = sentence.slice(0, maximumLength - 1).lastIndexOf(' ');
+      selected.push(`${sentence.slice(0, Math.max(cutoff, maximumLength - 30)).trim()}…`);
+      break;
+    }
+    selected.push(sentence);
+    length = nextLength;
+  }
+
+  const summary = selected.join(' ').trim();
+  const suffix = language === 'en'
+    ? 'See full details on screen.'
+    : 'Xem thông tin đầy đủ trên màn hình.';
+  return `${summary} ${suffix}`.trim();
+}
+
+// Kept as a public helper for tests and callers; every response uses one
+// language-specific utterance to avoid pauses caused by switching voices.
 export function splitAiBookingSpeechSegments(value, language = 'vi') {
   const text = formatAiBookingSpeech(value, language);
   return text ? [{ text, lang: speechLocale(language) }] : [];
@@ -319,7 +423,10 @@ export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}
   return {
     speak(value, language = 'vi') {
       const message = String(value || '').trim();
-      this.cancel();
+      if (active) {
+        active = null;
+        synthesis.cancel();
+      }
       if (!message) return;
       const utterance = new Utterance(formatAiBookingSpeech(message, language));
       utterance.lang = speechLocale(language);

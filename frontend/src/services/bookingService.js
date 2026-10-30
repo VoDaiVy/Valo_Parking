@@ -32,6 +32,12 @@ export const getAvailableBookingSlots = ({ startTime, endTime, bookingSource }) 
   });
 };
 
+export const getPricingConfig = () =>
+  apiFetch('/bookings/pricing-config', {
+    method: 'GET',
+    headers: authHeader(),
+  });
+
 export const getActiveHolds = () => {
   return apiFetch(`/bookings/active-holds`, {
     method: 'GET',

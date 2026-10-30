@@ -41,6 +41,7 @@ const createTopUp = async (req, res, next) => {
 
     const { amount } = req.body;
     const userId = req.user._id;
+    const clientUrl = String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, '');
 
     // Generate unique order code (timestamp-based + random)
     const orderCode = Number(
@@ -56,10 +57,10 @@ const createTopUp = async (req, res, next) => {
       description: `VALO NapVi`,
       returnUrl:
         process.env.PAYOS_RETURN_URL ||
-        `${process.env.CLIENT_URL}/customer/wallet?orderCode=${orderCode}`,
+        `${clientUrl}/customer/wallet?orderCode=${orderCode}`,
       cancelUrl:
         process.env.PAYOS_CANCEL_URL ||
-        `${process.env.CLIENT_URL}/customer/wallet?orderCode=${orderCode}&cancel=true`,
+        `${clientUrl}/customer/wallet?orderCode=${orderCode}&cancel=true`,
       items: [
         {
           name: 'VALO wallet top-up',
@@ -94,6 +95,13 @@ const createTopUp = async (req, res, next) => {
       },
     });
   } catch (error) {
+    const providerCode = String(error?.response?.data?.code ?? error?.body?.code ?? error?.code ?? '');
+    const providerMessage = String(error?.desc ?? error?.message ?? '');
+    if (providerCode === '215' || /code\s*:\s*215|kh[oô]ng c[oó] g[oó]i n[aà]o [đd]ang ho[aạ]t [đd]ộng/i.test(providerMessage)) {
+      error.statusCode = 503;
+      error.code = 'PAYOS_CHANNEL_UNAVAILABLE';
+      error.message = 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.';
+    }
     next(error);
   }
 };

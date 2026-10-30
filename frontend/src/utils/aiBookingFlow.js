@@ -287,6 +287,8 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         floorName: source.floorName || draft.floorName || '',
         zoneName: source.zoneName || draft.zoneName || '',
         slotCode: source.slotCode || draft.slotCode || '',
+        serviceIds: Array.isArray(source.serviceIds) ? source.serviceIds : null,
+        voucherId: source.voucherId || '',
       });
     }
   } else {
@@ -297,6 +299,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         bookingMode: 'CONTINUOUS',
         startTime: draft.startTime, endTime: draft.endTime,
         floorName: draft.floorName || '', zoneName: draft.zoneName || '', slotCode: draft.slotCode || '',
+        serviceIds: null, voucherId: '',
       });
     }
   }
@@ -429,7 +432,11 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     slotCode: candidate.slot.slotCode,
     startTime: candidate.startTime,
     endTime: candidate.endTime,
-    serviceIds: Array.isArray(draft.serviceIds) ? draft.serviceIds : [],
+    serviceIds: Array.isArray(candidate.serviceIds)
+      ? candidate.serviceIds
+      : (Array.isArray(draft.serviceIds) ? draft.serviceIds : []),
+    ...((candidate.voucherId || (index === 0 && draft.voucherId))
+      ? { voucherId: candidate.voucherId || draft.voucherId } : {}),
     date: candidate.date,
     endDate: candidate.endDate,
     bookingMode: candidate.bookingMode,
@@ -450,7 +457,22 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     }
     throw resultError(quote, 'Không thể tính giá booking.');
   }
-  if (itemErrors.length) return { conflicts: itemErrors.map((error) => localizeAiBookingMessage(error.message)), days };
+  if (itemErrors.length) {
+    const bookingConflicts = itemErrors
+      .filter((error) => ['VEHICLE_BOOKING_OVERLAP', 'LICENSE_PLATE_BOOKING_CONFLICT'].includes(error.code))
+      .map((error) => ({
+        code: error.code,
+        licensePlate: normalizePlate(error.data?.licensePlate
+          || items.find((item) => item.clientItemId === error.clientItemId)?.licensePlate),
+        ownership: error.data?.ownership || '',
+        conflictBooking: error.data?.conflictBooking || null,
+      }));
+    return {
+      conflicts: itemErrors.map((error) => localizeAiBookingMessage(error.message)),
+      bookingConflicts,
+      days,
+    };
+  }
   if ((quote.data?.data?.items || []).length !== items.length) throw new Error('Báo giá chưa đầy đủ cho tất cả chỗ.');
   const wallet = await gateway.getWalletInfo();
   if (!wallet.ok) throw resultError(wallet, 'Không thể kiểm tra số dư ví.');
@@ -461,7 +483,8 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       - new Date(`${request.date}T${request.startTime}:00+07:00`).getTime()
   ) / 60000);
   const durationMinutes = durations.every((duration) => duration === durations[0]) ? durations[0] : null;
-  return { items, days, bookingMode: 'CONTINUOUS',
+  const suggestVipPackage = durations.some((duration) => duration > 7 * 24 * 60);
+  return { items, days, bookingMode: 'CONTINUOUS', suggestVipPackage,
     durationMinutes, total, walletBalance: Number(wallet.data?.data?.balance || 0), quotes: quote.data.data.items };
 }
 

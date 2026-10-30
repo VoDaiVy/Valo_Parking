@@ -94,15 +94,30 @@ exports.updatePackage = async (req, res) => {
 // Delete ticket package (For Admin)
 exports.deletePackage = async (req, res) => {
   try {
+    const Subscription = require('../models/Subscription');
+    const AdminActionLog = require('../models/AdminActionLog');
+
+    // Prevent deletion if any active or pending subscriptions reference this package.
+    // Deleting would leave dangling references and break getMembership / renewal flows.
+    const activeSub = await Subscription.findOne({
+      ticketPackage: req.params.id,
+      status: { $in: ['pending', 'active'] },
+    }).select('_id').lean();
+    if (activeSub) {
+      return res.status(409).json({
+        success: false,
+        message: 'Không thể xóa gói vé đang được khách hàng sử dụng (active/pending). Hãy vô hiệu hóa gói thay vì xóa.',
+      });
+    }
+
     const deletedPackage = await TicketPackage.findByIdAndDelete(req.params.id);
     if (!deletedPackage) return res.status(404).json({ success: false, message: 'Ticket package not found' });
 
-    const AdminActionLog = require('../models/AdminActionLog');
     await AdminActionLog.create({
-      action: "Deleted Ticket Package",
+      action: 'Deleted Ticket Package',
       target: `${deletedPackage.name} • ${deletedPackage.type}`,
-      type: "delete",
-      adminId: req.user._id
+      type: 'delete',
+      adminId: req.user._id,
     });
 
     res.status(200).json({ success: true, message: 'Ticket package deleted successfully' });

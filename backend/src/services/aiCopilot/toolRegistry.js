@@ -103,23 +103,27 @@ const tools = [
           ...modeFilters,
         });
 
+        const summary = stats.summary || {};
+        const recordedSales = summary.totalRevenue ?? 0;
         return {
           period: stats.period,
           scope: 'platform',
-          totalRevenue: stats.summary.totalRevenue,
-          bookingRevenue: stats.summary.bookingRevenue,
-          serviceRevenue: stats.summary.serviceRevenue,
-          packageRevenue: stats.summary.packageRevenue,
-          membershipTransferFees: stats.summary.membershipTransferFees,
-          refunds: stats.summary.refunds,
-          sourceCompositionTotal: stats.summary.sourceCompositionTotal,
+          totalRevenue: summary.totalRevenue ?? 0,
+          recordedSales,
+          bookingRevenue: summary.bookingRevenue ?? 0,
+          serviceRevenue: summary.serviceRevenue ?? 0,
+          packageRevenue: summary.packageRevenue ?? 0,
+          membershipTransferFees: summary.membershipTransferFees ?? 0,
+          refunds: summary.refunds ?? 0,
+          sourceCompositionTotal: summary.sourceCompositionTotal ?? 0,
           timeline: (stats.trend || []).map((pt) => ({
             date: pt.period,
-            totalRevenue: pt.totalRevenue,
-            bookingRevenue: pt.bookingRevenue,
-            serviceRevenue: pt.serviceRevenue,
-            packageRevenue: pt.packageRevenue,
-            membershipTransferFees: pt.membershipTransferFees,
+            totalRevenue: pt.totalRevenue ?? 0,
+            recordedSales: pt.totalRevenue ?? 0,
+            bookingRevenue: pt.bookingRevenue ?? 0,
+            serviceRevenue: pt.serviceRevenue ?? 0,
+            packageRevenue: pt.packageRevenue ?? 0,
+            membershipTransferFees: pt.membershipTransferFees ?? 0,
           })),
         };
       }

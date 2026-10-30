@@ -59,6 +59,34 @@ const sameObjectId = (a, b) => String(a || '') === String(b || '');
 
 const withSession = (query, session) => (session ? query.session(session) : query);
 
+const vehicleBookingOverlapError = ({ booking, licensePlate, userId, vehicleId }) => {
+  const plate = normalizeLicensePlate(licensePlate || booking?.licensePlate || '');
+  const belongsToCurrentUser = sameObjectId(booking?.userId, userId)
+    || (vehicleId && sameObjectId(booking?.vehicleId, vehicleId));
+  const error = new Error(belongsToCurrentUser
+    ? `Xe ${plate} đã có booking đang hiệu lực trùng khung giờ này. Hãy đổi thời gian hoặc sửa/hủy booking hiện tại.`
+    : `Biển số ${plate} đang được dùng bởi một booking còn hiệu lực trên hệ thống. Booking đó không thuộc tài khoản của bạn nên không thể hiển thị chi tiết. Hãy chọn xe đã đăng ký trong tài khoản hoặc đăng ký/xác minh biển số này.`);
+
+  error.code = belongsToCurrentUser
+    ? 'VEHICLE_BOOKING_OVERLAP'
+    : 'LICENSE_PLATE_BOOKING_CONFLICT';
+  error.statusCode = 409;
+  error.data = {
+    licensePlate: plate,
+    ownership: belongsToCurrentUser ? 'current_user' : 'other_user',
+    ...(belongsToCurrentUser ? {
+      conflictBooking: {
+        bookingId: String(booking._id),
+        scheduledStart: booking.scheduledStart,
+        scheduledEnd: booking.scheduledEnd,
+        parkingSlot: booking.parkingSlot,
+        status: booking.status,
+      },
+    } : {}),
+  };
+  return error;
+};
+
 const resolveCheckoutVehicle = async ({ userId, vehicleId, licensePlate, session = null }) => {
   if (vehicleId) {
     const vehicle = await withSession(Vehicle.findOne({ _id: vehicleId, owner: userId }), session);
@@ -2278,7 +2306,14 @@ exports.quoteBulkBooking = async (req, res, next) => {
         start,
         end,
       }));
-      if (overlappingBooking) throw new Error(`Xe ${vehicle.licensePlate} đã có lượt đặt chỗ trùng khung giờ này`);
+      if (overlappingBooking) {
+        throw vehicleBookingOverlapError({
+          booking: overlappingBooking,
+          licensePlate: vehicle.licensePlate,
+          userId,
+          vehicleId: vehicle._id,
+        });
+      }
 
       // Check slot occupation
       const slotOverlapBooking = await Booking.findOne({
@@ -2357,6 +2392,7 @@ exports.quoteBulkBooking = async (req, res, next) => {
           clientItemId,
           message: err.message,
           ...(typeof err.code === 'string' ? { code: err.code } : {}),
+          ...(err.data ? { data: err.data } : {}),
         });
       }
     }
@@ -2497,7 +2533,14 @@ exports.createBulkBooking = async (req, res, next) => {
         start,
         end,
       })).session(session);
-      if (overlappingBooking) throw new Error(`Xe ${vehicle.licensePlate} đã có lượt đặt chỗ trùng khung giờ này`);
+      if (overlappingBooking) {
+        throw vehicleBookingOverlapError({
+          booking: overlappingBooking,
+          licensePlate: vehicle.licensePlate,
+          userId,
+          vehicleId: vehicle._id,
+        });
+      }
 
       // Check slot occupation
       const slotOverlapBooking = await Booking.findOne({

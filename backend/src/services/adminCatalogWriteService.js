@@ -18,13 +18,44 @@ async function applyPricing(payload, { session, expectedConfigId } = {}) {
   const [created] = await PricingConfig.create([{ ...payload, isActive: true }], session ? { session } : {});
   return created;
 }
+function escapeRegex(str) {
+  return str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+}
+
 async function createPackage(payload, { session, draftId, adminId } = {}) {
+  if (payload.name) {
+    const trimmedName = String(payload.name).trim();
+    const query = TicketPackage.findOne({
+      name: { $regex: new RegExp('^' + escapeRegex(trimmedName) + '$', 'i') },
+      isActive: true,
+    });
+    const duplicate = await (session ? query.session(session) : query);
+    if (duplicate) {
+      const error = new Error(`Gói vé "${trimmedName}" đang hoạt động đã tồn tại. Vui lòng đặt tên khác hoặc chỉnh sửa gói hiện có.`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
   const doc = { ...payload, ...(draftId ? { _id: draftId, aiDraftId: draftId } : {}) };
   const [created] = await TicketPackage.create([doc], session ? { session } : {});
   if (adminId) await AdminActionLog.create([{ action: 'Created Ticket Package', target: `${created.name} • ${created.type}`, type: 'create', adminId }], session ? { session } : {});
   return created;
 }
 async function updatePackage(id, payload, { session, expectedUpdatedAt, draftId, adminId } = {}) {
+  if (payload.name && payload.isActive !== false) {
+    const trimmedName = String(payload.name).trim();
+    const query = TicketPackage.findOne({
+      _id: { $ne: id },
+      name: { $regex: new RegExp('^' + escapeRegex(trimmedName) + '$', 'i') },
+      isActive: true,
+    });
+    const duplicate = await (session ? query.session(session) : query);
+    if (duplicate) {
+      const error = new Error(`Gói vé "${trimmedName}" đang hoạt động đã tồn tại. Vui lòng đặt tên khác hoặc chỉnh sửa gói hiện có.`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
   const filter = { _id: id };
   if (expectedUpdatedAt) filter.updatedAt = expectedUpdatedAt;
   if (draftId) filter.aiAppliedDraftIds = { $ne: draftId };

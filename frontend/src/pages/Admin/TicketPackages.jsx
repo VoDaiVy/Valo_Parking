@@ -247,6 +247,9 @@ export default function TicketPackages() {
     price: '',
     description: '',
     isActive: true,
+    maxSlots: 3,
+    renewalWindowDays: 7,
+    isRenewable: true,
   });
 
   let isAdmin = false;
@@ -299,6 +302,9 @@ export default function TicketPackages() {
         price: pkg.price,
         description: pkg.description || '',
         isActive: pkg.isActive,
+        maxSlots: pkg.maxSlots ?? 3,
+        renewalWindowDays: pkg.renewalWindowDays ?? 7,
+        isRenewable: pkg.isRenewable ?? true,
       });
     } else {
       setEditingPackage(null);
@@ -308,6 +314,9 @@ export default function TicketPackages() {
         price: '',
         description: '',
         isActive: true,
+        maxSlots: 3,
+        renewalWindowDays: 7,
+        isRenewable: true,
       });
     }
     setShowModal(true);
@@ -325,25 +334,24 @@ export default function TicketPackages() {
         },
       };
 
-      if (editingPackage) {
-        await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${editingPackage._id}`, {
-          method: 'PUT',
-          ...config,
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages`, {
-          method: 'POST',
-          ...config,
-          body: JSON.stringify(payload),
-        });
+      const url = editingPackage
+        ? `${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${editingPackage._id}`
+        : `${import.meta.env.VITE_API_BASE_URL}/ticket-packages`;
+      const method = editingPackage ? 'PUT' : 'POST';
+
+      const res = await fetch(url, { method, ...config, body: JSON.stringify(payload) });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.success === false) {
+        setError(data?.message || 'Không thể lưu gói vé. Vui lòng thử lại.');
+        return; // Keep modal open so admin can see the error
       }
 
       setShowModal(false);
       fetchPackages();
     } catch (err) {
       console.error(err);
-      setError('Failed to save ticket package');
+      setError('Không thể kết nối đến server. Vui lòng kiểm tra mạng và thử lại.');
     }
   };
 
@@ -355,14 +363,22 @@ export default function TicketPackages() {
     const { packageId } = deleteModal;
     if (!packageId) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${packageId}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${packageId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
       });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.success === false) {
+        setError(data?.message || 'Không thể xóa gói vé.');
+        setDeleteModal({ isOpen: false, packageId: null });
+        return;
+      }
+
       fetchPackages();
     } catch (err) {
       console.error(err);
-      setError('Failed to delete package');
+      setError('Không thể kết nối đến server khi xóa gói vé.');
     } finally {
       setDeleteModal({ isOpen: false, packageId: null });
     }
@@ -659,6 +675,48 @@ export default function TicketPackages() {
                     />
                     <div className="peer h-6 w-11 rounded-full bg-white/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-gold peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
                     <span className="ml-3 text-sm font-bold text-white">Active Package</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Max Slots</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      max="10"
+                      value={formData.maxSlots}
+                      onChange={(e) => setFormData({ ...formData, maxSlots: Number(e.target.value) })}
+                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
+                      placeholder="e.g. 3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Renewal Window (days)</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      max="60"
+                      value={formData.renewalWindowDays}
+                      onChange={(e) => setFormData({ ...formData, renewalWindowDays: Number(e.target.value) })}
+                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
+                      placeholder="e.g. 7"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 py-1">
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={formData.isRenewable}
+                      onChange={(e) => setFormData({ ...formData, isRenewable: e.target.checked })}
+                    />
+                    <div className="peer h-6 w-11 rounded-full bg-white/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-gold peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
+                    <span className="ml-3 text-sm font-bold text-white">Allow Renewal</span>
                   </label>
                 </div>
 

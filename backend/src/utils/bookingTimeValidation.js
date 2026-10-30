@@ -1,4 +1,7 @@
 const MIN_BOOKING_MINUTES = 30;
+const VIP_SUGGESTION_DAYS = 7;
+const MAX_BOOKING_DAYS = 90;
+const MAX_BOOKING_MINUTES = MAX_BOOKING_DAYS * 24 * 60;
 
 const bookingTimeError = (message, code) => Object.assign(new Error(message), {
   statusCode: 400,
@@ -9,6 +12,7 @@ function validateBookingTimeRange(startTime, endTime, {
   now = new Date(),
   requireFuture = true,
   minMinutes = MIN_BOOKING_MINUTES,
+  maxMinutes = MAX_BOOKING_MINUTES,
 } = {}) {
   const start = new Date(startTime);
   const end = new Date(endTime);
@@ -28,10 +32,20 @@ function validateBookingTimeRange(startTime, endTime, {
   if (Number.isFinite(minMinutes) && durationMinutes < minMinutes) {
     throw bookingTimeError(`Thời gian đặt chỗ phải tối thiểu ${minMinutes} phút.`, 'BOOKING_DURATION_TOO_SHORT');
   }
-  return { start, end, durationMinutes };
+  if (Number.isFinite(maxMinutes) && durationMinutes > maxMinutes) {
+    throw bookingTimeError(
+      `Thời gian đặt chỗ tối đa là ${MAX_BOOKING_DAYS} ngày.`,
+      'BOOKING_DURATION_EXCEEDS_LIMIT',
+    );
+  }
+  const suggestVip = durationMinutes > VIP_SUGGESTION_DAYS * 24 * 60;
+  return { start, end, durationMinutes, suggestVip };
 }
 
 module.exports = {
   MIN_BOOKING_MINUTES,
+  VIP_SUGGESTION_DAYS,
+  MAX_BOOKING_DAYS,
+  MAX_BOOKING_MINUTES,
   validateBookingTimeRange,
 };

@@ -16,7 +16,7 @@ import {
 
 const emptyForm = {
   name: '', description: '', type: 'PERCENT_DISCOUNT', pointCost: 30,
-  discountPercent: 10, serviceId: '', isActive: true,
+  discountPercent: 10, discountAmount: 20000, minimumAmount: 50000, serviceId: '', isActive: true,
   redemptionLimit: '', notifyCustomers: false,
 };
 const fieldClass = 'mt-2 w-full rounded-xl border border-white/[0.09] bg-white/[0.035] px-3.5 py-3 text-sm font-semibold text-white outline-none transition duration-200 placeholder:text-white/20 hover:border-white/15 focus:border-[#f3c43d]/70 focus:bg-white/[0.055] focus:ring-4 focus:ring-[#f3c43d]/[0.08]';
@@ -24,11 +24,12 @@ const numberFieldClass = '[appearance:textfield] [&::-webkit-inner-spin-button]:
 const actionClass = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border transition duration-200 focus:outline-none focus:ring-2 focus:ring-[#f3c43d]/40 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40';
 const rewardTypeOptions = [
   { value: 'PERCENT_DISCOUNT', label: 'Percentage discount' },
+  { value: 'FIXED_DISCOUNT', label: 'Fixed discount (VND)' },
   { value: 'FREE_SERVICE', label: 'Free service' },
 ];
 
 function BenefitMark({ template, large = false }) {
-  const Icon = template.type === 'PERCENT_DISCOUNT' ? Percent : Wrench;
+  const Icon = template.type === 'PERCENT_DISCOUNT' ? Percent : template.type === 'FIXED_DISCOUNT' ? Coins : Wrench;
   return (
     <div className={`flex shrink-0 items-center justify-center border border-[#f3c43d]/20 bg-[#f3c43d]/[0.08] text-[#f3c43d] ${large ? 'h-12 w-12 rounded-2xl' : 'h-10 w-10 rounded-xl'}`}>
       <Icon size={large ? 20 : 17} strokeWidth={1.8} />
@@ -87,6 +88,8 @@ export default function VoucherManagement() {
     setForm(template
       ? {
         ...template,
+        discountAmount: template.discountAmount ?? 20000,
+        minimumAmount: template.minimumAmount ?? 50000,
         serviceId: template.serviceId?._id || template.serviceId || '',
         redemptionLimit: template.redemptionLimit ?? '',
         notifyCustomers: false,
@@ -102,12 +105,33 @@ export default function VoucherManagement() {
       setError('Select an active service for this voucher.');
       return;
     }
+    if (form.type === 'FIXED_DISCOUNT') {
+      const discount = Number(form.discountAmount);
+      const minimum = Number(form.minimumAmount);
+      if (Number.isNaN(discount) || discount < 1000) {
+        setError('Số tiền giảm giá (Discount amount) tối thiểu phải từ 1.000 VND.');
+        return;
+      }
+      if (Number.isNaN(minimum) || minimum < discount) {
+        setError('Giá trị đơn hàng tối thiểu (Minimum booking amount) phải lớn hơn hoặc bằng số tiền giảm giá.');
+        return;
+      }
+    }
+    if (form.type === 'PERCENT_DISCOUNT') {
+      const percent = Number(form.discountPercent);
+      if (Number.isNaN(percent) || percent < 1 || percent > 100) {
+        setError('Phần trăm giảm giá phải nằm trong khoảng từ 1% đến 100%.');
+        return;
+      }
+    }
     setSaving(true);
     setError('');
     const payload = {
       ...form,
       pointCost: Number(form.pointCost),
       discountPercent: form.type === 'PERCENT_DISCOUNT' ? Number(form.discountPercent) : null,
+      discountAmount: form.type === 'FIXED_DISCOUNT' ? Number(form.discountAmount) : 0,
+      minimumAmount: form.type === 'FIXED_DISCOUNT' ? Number(form.minimumAmount) : 0,
       serviceId: form.type === 'FREE_SERVICE' ? form.serviceId : null,
       redemptionLimit: form.redemptionLimit === '' ? null : Number(form.redemptionLimit),
       notifyCustomers: !editing?._id && Boolean(form.notifyCustomers),
@@ -163,9 +187,11 @@ export default function VoucherManagement() {
     await load();
   };
 
-  const describeBenefit = (template) => template.type === 'PERCENT_DISCOUNT'
-    ? `${template.discountPercent}% off booking total`
-    : `Free ${template.serviceId?.name || 'selected service'}`;
+  const describeBenefit = (template) => {
+    if (template.type === 'PERCENT_DISCOUNT') return `${template.discountPercent}% off booking total`;
+    if (template.type === 'FIXED_DISCOUNT') return `${Number(template.discountAmount || 0).toLocaleString('vi-VN')} VND off (min ${Number(template.minimumAmount || 0).toLocaleString('vi-VN')} VND)`;
+    return `Free ${template.serviceId?.name || 'selected service'}`;
+  };
 
   return (
     <main className="relative min-h-full overflow-hidden bg-[#080909] px-5 pb-16 pt-8 text-white sm:px-8 lg:px-10 lg:pt-10">
@@ -263,9 +289,16 @@ export default function VoucherManagement() {
               <div><span className="text-xs font-bold text-white/55">Reward type</span><AdminSelect value={form.type} onChange={(value) => setForm({ ...form, type: value })} options={rewardTypeOptions} ariaLabel="Select reward type" icon={Gift} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuClassName="w-full border-white/[0.1] bg-[#151616] shadow-[0_20px_55px_rgba(0,0,0,0.55)]" /></div>
               <label><span className="text-xs font-bold text-white/55">Point cost</span><div className="relative"><input type="number" min="1" required value={form.pointCost} onChange={(event) => setForm({ ...form, pointCost: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-16 font-mono tabular-nums`} /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">points</span></div><p className="mt-1.5 text-[10px] font-medium leading-4 text-white/30">Customers earn 1 point per 1,000 VND; each earned point lot expires after 30 days.</p></label>
               <label><span className="text-xs font-bold text-white/55">Redemption limit <span className="font-medium text-white/25">(optional)</span></span><div className="relative"><input type="number" min={Math.max(1, Number(editing?.redeemedCount || 0))} step="1" value={form.redemptionLimit} onChange={(event) => setForm({ ...form, redemptionLimit: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-20 font-mono tabular-nums`} placeholder="Unlimited" /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">vouchers</span></div><p className="mt-1.5 text-[10px] font-medium text-white/30">Leave empty for unlimited availability.{editing?.redeemedCount ? ` Already redeemed: ${editing.redeemedCount}.` : ''}</p></label>
-              {form.type === 'PERCENT_DISCOUNT' ? (
+              {form.type === 'PERCENT_DISCOUNT' && (
                 <label className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Discount percentage</span><div className="relative"><input type="number" min="1" max="100" required value={form.discountPercent} onChange={(event) => setForm({ ...form, discountPercent: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-12 font-mono tabular-nums`} /><Percent size={15} className="pointer-events-none absolute bottom-3.5 right-3 text-white/25" /></div></label>
-              ) : (
+              )}
+              {form.type === 'FIXED_DISCOUNT' && (
+                <>
+                  <label><span className="text-xs font-bold text-white/55">Discount amount (VND)</span><div className="relative"><input type="number" min="1000" step="1000" required value={form.discountAmount} onChange={(event) => setForm({ ...form, discountAmount: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-16 font-mono tabular-nums`} /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">VND</span></div></label>
+                  <label><span className="text-xs font-bold text-white/55">Minimum order (VND)</span><div className="relative"><input type="number" min={Number(form.discountAmount || 0)} step="1000" required value={form.minimumAmount} onChange={(event) => setForm({ ...form, minimumAmount: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-16 font-mono tabular-nums`} /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">VND</span></div></label>
+                </>
+              )}
+              {form.type === 'FREE_SERVICE' && (
                 <div className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Included service</span><AdminSelect value={form.serviceId} onChange={(value) => setForm({ ...form, serviceId: value })} options={[{ value: '', label: 'Select an active service', disabled: true }, ...services.map((service) => ({ value: service._id, label: `${service.name} · ${Number(service.price || 0).toLocaleString('vi-VN')} VND` }))]} ariaLabel="Select included service" icon={Wrench} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuClassName="w-full border-white/[0.1] bg-[#151616] shadow-[0_20px_55px_rgba(0,0,0,0.55)]" visibleItems={5} /></div>
               )}
               {!editing?._id && (

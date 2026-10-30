@@ -44,7 +44,13 @@ const sendMutationResult = (res, result) => {
 };
 
 exports.interpret = async (req, res) => {
-  const languageInfo = detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const lockedLanguage = req.body?.draft?.__languageLocked === true
+    && ['en', 'vi'].includes(req.body?.draft?.__language)
+    ? req.body.draft.__language
+    : '';
+  const languageInfo = lockedLanguage
+    ? { language: lockedLanguage, confidence: 1 }
+    : detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
   const responseMessage = (value) => languageInfo.language === 'en'
     ? toEnglishBookingMessage(value) : value;
   try {
@@ -106,6 +112,7 @@ exports.interpret = async (req, res) => {
           assistantResult: {
             message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
@@ -144,6 +151,7 @@ exports.interpret = async (req, res) => {
           assistantResult: {
             message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });

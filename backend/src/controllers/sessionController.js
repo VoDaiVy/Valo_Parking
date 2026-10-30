@@ -1883,12 +1883,17 @@ exports.getMyHistory = async (req, res, next) => {
     const Vehicle = require('../models/Vehicle');
     const Booking = require('../models/Booking');
     const myVehicles = await Vehicle.find({ owner: req.user._id, status: 'approved' }).distinct('licensePlate');
-    const myBookings = await Booking.find({ userId: req.user._id }).distinct('_id');
+    const myBookings = await Booking.find({
+      $or: [
+        { userId: req.user._id },
+        { licensePlate: { $in: myVehicles } },
+      ],
+    }).distinct('_id');
     
     const userDetail = await UserDetail.findOne({ userId: req.user._id });
     const orConditions = [
       { userId: req.user._id },
-      { licensePlate: { $in: myVehicles } },
+      { licensePlate: { $in: myVehicles }, userId: null, bookingId: null },
       { bookingId: { $in: myBookings } }
     ];
 
