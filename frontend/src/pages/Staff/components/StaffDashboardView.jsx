@@ -53,7 +53,7 @@ export default function StaffDashboardView({
   const { totalSlots, activeFloor, vehiclesInside, cancellationsToday, recentBookings, occupancyRate } = metrics;
   return <div className="staff-operations-dashboard" aria-busy={loading}>
     <header className="staff-dash-header">
-      <div className="staff-dash-header-identity"><p className="staff-dash-eyebrow">VALO Operations</p><h1 className="staff-type-page-title">Dashboard</h1><p className="staff-dash-subtitle">Parking command center</p></div>
+      <div className="staff-dash-header-identity"><p className="staff-dash-eyebrow">VALO Operations</p><h1 className="staff-type-page-title">Dashboard</h1></div>
       <div className="staff-dash-header-status"><p className={`staff-dash-sync ${initialLoading ? 'staff-dash-muted' : syncStatus.isAvailable ? 'staff-dash-success' : 'staff-dash-error'}`} role="status">
         {initialLoading ? <MonitorCheck size={16} aria-hidden="true" /> : syncStatus.isAvailable ? <CheckCircle2 size={16} aria-hidden="true" /> : <AlertTriangle size={16} aria-hidden="true" />}
         {initialLoading ? 'Updating data…' : syncStatus.isAvailable ? 'Data synchronized' : `Operational sync unavailable: ${syncStatus.error}`}

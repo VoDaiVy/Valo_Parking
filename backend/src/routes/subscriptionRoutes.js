@@ -6,7 +6,7 @@ const { requirePolicyAcceptance } = require('../middlewares/policyAcceptanceMidd
 const renewalController = require('../controllers/subscriptionRenewalController');
 const entitlementRenewalController = require('../controllers/membershipEntitlementRenewalController');
 const membershipDetailsController = require('../controllers/membershipDetailsController');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const {
   subscriptionIdValidator,
   renewalPaymentValidator,
@@ -23,6 +23,15 @@ const renewalEnabled = (req, res, next) => {
 
 router.use(protect);
 
+router.get('/membership/history', authorize('customer'),
+  query('page').optional().isInt({ min: 1, max: 10000 }),
+  query('limit').optional().isInt({ min: 1, max: 50 }),
+  query('filter').optional().isIn(['all', 'renewals', 'payments', 'notifications']),
+  require('../controllers/membershipActivityController').history);
+
+const historyQuery = [query('page').optional().isInt({ min: 1, max: 10000 }), query('limit').optional().isInt({ min: 1, max: 50 })];
+router.get('/entitlements/:entitlementId/renewals', authorize('customer'), param('entitlementId').isMongoId(), historyQuery, membershipDetailsController.history);
+router.get('/:subscriptionId/renewals', authorize('customer'), param('subscriptionId').isMongoId(), historyQuery, membershipDetailsController.history);
 router.get('/entitlements/:entitlementId/details', authorize('customer'), param('entitlementId').isMongoId(), membershipDetailsController.detail);
 router.get('/:subscriptionId/details', authorize('customer'), param('subscriptionId').isMongoId(), membershipDetailsController.detail);
 

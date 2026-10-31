@@ -159,3 +159,21 @@ test('normal text and primary action colors meet 4.5:1 contrast including hover'
   });
   assert.equal(actionPairs, 2);
 });
+
+
+test('slot interaction styles preserve status colors, selection and scroll-safe focus without motion', () => {
+  const css = postcss.parse(readFileSync(new URL('./staffDashboard.css', import.meta.url), 'utf8'));
+  const rules = [];
+  css.walkRules((rule) => rules.push(rule));
+  for (const [status, color] of Object.entries({ empty: '#54B88C', occupied: '#79A9D4', reserved: '#C6A15E', maintenance: '#CC8997' })) {
+    assert.ok(rules.some((rule) => rule.selector.endsWith(`.staff-dash-slot-${status}`) && rule.nodes.some((decl) => decl.prop === '--slot-interaction' && decl.value === color)));
+  }
+  const interaction = rules.find((rule) => rule.selector.includes('.staff-dash-slot:is(:hover, :focus-visible)'));
+  for (const guard of [':not(:active)', ':not([aria-selected="true"])', ':not([aria-pressed="true"])', ':not([data-selected="true"])', ':not(.selected)', ':not(.is-selected)']) assert.ok(interaction.selector.includes(guard));
+  assert.deepEqual(interaction.nodes.map((decl) => decl.prop), ['border-color']);
+  const focus = rules.find((rule) => rule.selector.endsWith('.staff-dash-slot:focus-visible'));
+  assert.ok(focus.nodes.some((decl) => decl.prop === 'outline-offset' && decl.value === '-4px'));
+  const slot = rules.find((rule) => rule.selector.endsWith(' .staff-dash-slot'));
+  assert.ok(slot.nodes.some((decl) => decl.prop === 'transition' && decl.value === 'border-color 180ms, background-color 180ms'));
+  assert.ok(!rules.some((rule) => rule.selector.includes('.staff-dash-slot') && rule.selector.includes(':hover') && rule.nodes.some((decl) => ['transform', 'box-shadow', 'background'].includes(decl.prop))));
+});

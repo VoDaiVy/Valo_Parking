@@ -1,4 +1,9 @@
-import { useEffect, useState } from "react";
+import { membershipTarget, createMembershipHighlightController } from '../../utils/membershipDeepLink';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
+import MembershipDetailModal from "./MembershipDetailModal";
+import { useMembershipClock } from '../../hooks/useMembershipClock';
+import { membershipDate, membershipTiming, membershipPresentation } from "../../utils/membershipDisplay";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowRight,
@@ -19,6 +24,7 @@ import {
   createRenewalPayment,
   getEntitlementRenewalQuote,
   getMembershipQr,
+  getMembershipDetail,
   getRenewalQuote,
   renewEntitlementWithWallet,
   renewSubscriptionWithWallet,
@@ -50,10 +56,55 @@ const makeIdempotencyKey = () =>
 
 export default function MembershipOwnershipPanel({
   membership,
+  membershipLoading = false,
   walletBalance,
   onRefresh,
   onTransfer,
 }) {
+  useMembershipClock();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const target = useMemo(() => membershipTarget(searchParams), [searchParams]);
+  const detailId = target?.invalid ? null : target?.id;
+  const detailKind = target?.kind;
+  const cardRefs = useRef(new Map());
+  const [highlightController] = useState(createMembershipHighlightController);
+  useEffect(() => {
+    highlightController.update({
+      target, navigationKey: location.key,
+      cards: membership?.reservedSlots || [], loading: membershipLoading,
+      getCard: (index) => cardRefs.current.get(index),
+    });
+  }, [highlightController, target, location.key, membership?.reservedSlots, membershipLoading]);
+  useEffect(() => () => highlightController.dispose(), [highlightController]);
+  const missingPackageIds = [...new Set((membership?.reservedSlots || []).filter((slot) => !slot.package?.name).map((slot) => String(slot.sourceSubscriptionId || '')).filter((id) => /^[a-f\d]{24}$/i.test(id)))].sort().join(',');
+  const [packageNames, setPackageNames] = useState({});
+  useEffect(() => {
+    if (!missingPackageIds) return;
+    let cancelled = false;
+    Promise.all(missingPackageIds.split(',').map(async (id) => {
+      try {
+        const response = await getMembershipDetail('subscription', id);
+        return [id, response.ok && response.data?.success ? response.data.data?.package?.name : null];
+      } catch { return [id, null]; }
+    })).then((entries) => { if (!cancelled) setPackageNames(Object.fromEntries(entries)); });
+    return () => { cancelled = true; };
+  }, [missingPackageIds]);
+  const [renewSubscriptionId, setRenewSubscriptionId] = useState('');
+  const openDetail = (slot) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('tab');
+    params.delete('entitlementId'); params.delete('subscriptionId');
+    params.set(slot.entitlementId ? 'entitlementId' : 'subscriptionId', slot.entitlementId || slot.sourceSubscriptionId);
+    setSearchParams(params);
+  };
+  const closeDetail = () => {
+    highlightController.close(target);
+    const params = new URLSearchParams(searchParams);
+    if (target && !target.invalid) params.delete('tab');
+    params.delete('entitlementId'); params.delete('subscriptionId');
+    setSearchParams(params, { replace: true });
+  };
   const [membershipQr, setMembershipQr] = useState("");
   const [membershipQrError, setMembershipQrError] = useState("");
   const [membershipQrOpen, setMembershipQrOpen] = useState(false);
@@ -128,7 +179,8 @@ export default function MembershipOwnershipPanel({
 
     if (params.get("cancel") === "true") {
       toast.error("Renewal payment was cancelled.");
-      window.history.replaceState({}, document.title, window.location.pathname);
+      ['renewOrderCode', 'entitlementRenewOrderCode', 'cancel', 'status', 'code', 'id', 'orderCode'].forEach((key) => params.delete(key));
+      setSearchParams(params, { replace: true });
       return undefined;
     }
 
@@ -145,7 +197,8 @@ export default function MembershipOwnershipPanel({
           await Promise.all([onRefresh(), syncCurrentUserProfile()]);
           setVerifying(false);
           toast.success("Membership renewal completed.");
-          window.history.replaceState({}, document.title, window.location.pathname);
+          ['renewOrderCode', 'entitlementRenewOrderCode', 'cancel', 'status', 'code', 'id', 'orderCode'].forEach((key) => params.delete(key));
+          setSearchParams(params, { replace: true });
         } else if (
           attempts >= 100 ||
           response.data?.code !== "PAYMENT_NOT_COMPLETED"
@@ -153,7 +206,8 @@ export default function MembershipOwnershipPanel({
           window.clearInterval(intervalId);
           setVerifying(false);
           toast.error(response.data?.message || "Renewal verification failed.");
-          window.history.replaceState({}, document.title, window.location.pathname);
+          ['renewOrderCode', 'entitlementRenewOrderCode', 'cancel', 'status', 'code', 'id', 'orderCode'].forEach((key) => params.delete(key));
+          setSearchParams(params, { replace: true });
         }
       } catch {
         if (attempts >= 100) {
@@ -168,21 +222,22 @@ export default function MembershipOwnershipPanel({
       window.clearTimeout(startTimerId);
       window.clearInterval(intervalId);
     };
-  }, [onRefresh]);
+  }, [onRefresh, setSearchParams]);
 
-  const openRenewal = async (entitlementId = "") => {
-    if (!entitlementId && !membership?.subscriptionId) return;
+  const openRenewal = async (entitlementId = "", subscriptionId = membership?.subscriptionId) => {
+    if (!entitlementId && !subscriptionId) return;
     setRenewLoading(true);
     try {
       const response = entitlementId
         ? await getEntitlementRenewalQuote(entitlementId)
-        : await getRenewalQuote(membership.subscriptionId);
+        : await getRenewalQuote(subscriptionId);
       if (!response.ok || !response.data?.success) {
         toast.error(response.data?.message || "Renewal is not available yet.");
         return;
       }
       setRenewQuote(response.data.data);
       setRenewEntitlementId(entitlementId);
+      setRenewSubscriptionId(subscriptionId || "");
       setRenewMethod(
         walletBalance >= Number(response.data.data.amount || 0) ? "wallet" : "payos",
       );
@@ -195,7 +250,7 @@ export default function MembershipOwnershipPanel({
   };
 
   const confirmRenewal = async () => {
-    if ((!membership?.subscriptionId && !renewEntitlementId) || !renewQuote) return;
+    if ((!renewSubscriptionId && !renewEntitlementId) || !renewQuote) return;
     if (renewMethod === "wallet" && walletBalance < renewQuote.amount) {
       toast.error("Your wallet balance is not enough for this renewal.");
       return;
@@ -209,7 +264,7 @@ export default function MembershipOwnershipPanel({
           ? renewEntitlementId
             ? await renewEntitlementWithWallet(renewEntitlementId, idempotencyKey)
             : await renewSubscriptionWithWallet(
-                membership.subscriptionId,
+                renewSubscriptionId,
                 idempotencyKey,
               )
           : renewEntitlementId
@@ -218,7 +273,7 @@ export default function MembershipOwnershipPanel({
                 idempotencyKey,
               )
             : await createRenewalPayment(
-                membership.subscriptionId,
+                renewSubscriptionId,
                 idempotencyKey,
               );
 
@@ -249,10 +304,10 @@ export default function MembershipOwnershipPanel({
     }
   };
 
-  if (!membership?.package && !membership?.reservedSlots?.length) return null;
-
   return (
     <>
+      {target?.invalid && <div role="alert" className="mt-4 text-sm text-amber-200">This membership link is invalid. <button type="button" onClick={closeDetail} className="min-h-11 underline">Dismiss</button></div>}
+      {detailId && !membershipLoading && !renewOpen && <MembershipDetailModal key={`${detailKind}-${detailId}`} id={detailId} kind={detailKind} refreshKey={membership} onClose={closeDetail} onRenew={openRenewal} renewLoading={renewLoading} />}
       {verifying && (
         <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-[#0D0D0D]/95">
           <Loader2 size={44} className="animate-spin text-[#DCA11D]" />
@@ -285,9 +340,9 @@ export default function MembershipOwnershipPanel({
                   <div className="mt-6 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/60">
                     <span className="flex items-center gap-2">
                       <CalendarClock size={16} className="text-[#E8B63E]" />
-                      {membership.daysUntilExpiration > 0
-                        ? `${membership.daysUntilExpiration} days remaining`
-                        : "Expired"}
+                      {membership.earliestExpireAt
+                        ? `Next space expiry: ${membershipTiming(membership.earliestExpireAt, membership.status).label}`
+                        : membershipTiming(membership.expireAt, membership.status).label}
                     </span>
                     <span className="flex items-center gap-2">
                       <MapPin size={16} className="text-[#E8B63E]" />
@@ -333,7 +388,7 @@ export default function MembershipOwnershipPanel({
                 onClick={() => openRenewal()}
                 disabled={
                   membership.reservedSlots?.some((slot) => slot.entitlementId) ||
-                  !membership.renewal?.canRenew ||
+                  !membershipPresentation(membership).canRenew ||
                   renewLoading
                 }
                 className="mt-5 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#DCA11D] px-5 text-sm font-black text-[#16130B] transition hover:bg-[#E8B63E] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35"
@@ -347,7 +402,7 @@ export default function MembershipOwnershipPanel({
                   ? "Renew each space below"
                   : membership.renewal?.canRenew
                     ? "Review renewal"
-                    : `Opens ${membership.renewal?.renewalWindowDays || 7} days before expiry`}
+                    : "Renewal unavailable"}
               </button>
             </div>
           </div>
@@ -370,42 +425,48 @@ export default function MembershipOwnershipPanel({
             </span>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {membership.reservedSlots.map((slot) => (
+            {membership.reservedSlots.map((slot, index) => (
               <article
                 key={slot.entitlementId || `${slot.floorId}-${slot.slotCode}`}
-                className="rounded-2xl border border-white/10 bg-white/[0.025] p-4"
+                ref={(element) => { if (element) cardRefs.current.set(index, element); else cardRefs.current.delete(index); }}
+                onClick={() => openDetail(slot)}
+                className="membership-space-card rounded-2xl border border-white/10 bg-white/[0.025] p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-lg font-black">Space {slot.slotCode}</p>
+                    <p className="text-xs font-semibold text-white/65">{slot.package?.name || packageNames[String(slot.sourceSubscriptionId)] || "Package unavailable"}</p>
+                    <p className="mt-1 text-lg font-black">Space {slot.slotCode}</p>
                     <p className="mt-1 text-xs text-white/40">
-                      {slot.floorName || `Floor ${slot.floorNumber || ""}`}
+                      {slot.floorName || (slot.floorNumber != null ? `Floor ${slot.floorNumber}` : "Floor unavailable")}
                     </p>
                   </div>
-                  <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-300">
-                    {slot.status || "active"}
+                  <span className={`membership-status membership-status--${membershipPresentation(slot).state.toLowerCase()}`}>
+                    {membershipPresentation(slot).statusLabel}
                   </span>
                 </div>
+                <p className="mt-2 text-xs text-white/60">{membershipTiming(slot.expireAt, slot.status || "active").label}</p>
+                <p className="mt-2 text-xs text-white/60">{membershipPresentation(slot).renewalMessage}</p>
+                <button type="button" onClick={(event) => { event.stopPropagation(); openDetail(slot); }} className="mt-3 min-h-10 text-sm text-amber-300 underline">View details</button>
                 {slot.expireAt && (
                   <p className="mt-4 text-xs text-white/45">
                     Valid until{" "}
                     <strong className="text-white/75">
-                      {new Date(slot.expireAt).toLocaleDateString("vi-VN")}
+                      {membershipDate(slot.expireAt)}
                     </strong>
                   </p>
                 )}
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => openRenewal(slot.entitlementId)}
-                    disabled={!slot.entitlementId || renewLoading}
+                    onClick={(event) => { event.stopPropagation(); openRenewal(slot.entitlementId || "", slot.sourceSubscriptionId); }}
+                    disabled={!membershipPresentation(slot).canRenew || renewLoading}
                     className="min-h-10 rounded-xl bg-white px-3 text-xs font-black text-black transition hover:bg-white/85 disabled:opacity-35"
                   >
                     Renew
                   </button>
                   <button
                     type="button"
-                    onClick={() => onTransfer(slot)}
+                    onClick={(event) => { event.stopPropagation(); onTransfer(slot); }}
                     disabled={!slot.canTransfer}
                     className="min-h-10 rounded-xl border border-[#DCA11D]/30 bg-[#DCA11D]/10 px-3 text-xs font-black text-[#E8B63E] transition hover:bg-[#DCA11D]/15 disabled:cursor-not-allowed disabled:opacity-35"
                   >

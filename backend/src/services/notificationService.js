@@ -112,7 +112,7 @@ const NOTIFICATION_TEMPLATES = {
     title: 'Membership space expired', content: '{packageName} - space {slotCode}, {floorName} expired on {expireDate} (Vietnam time).', type: 'SYSTEM', priority: 'WARNING',
   },
   MEMBERSHIP_ENTITLEMENT_RENEWAL_SUCCESS: {
-    title: 'Membership renewal successful', content: '{packageName} - space {slotCode}, {floorName} was renewed. The new expiration is {expireDate} (Vietnam time).', type: 'SYSTEM', priority: 'SUCCESS',
+    title: 'Membership renewed successfully', content: '{packageName} - space {slotCode}, {floorName} renewed until {renewedExpireDate}.', type: 'SYSTEM', priority: 'SUCCESS',
   },
   SUBSCRIPTION_RENEWAL_SUCCESS: {
     title: 'Membership renewal successful', content: '{packageName} was renewed. The new expiration is {expireDate}.', type: 'SYSTEM', priority: 'SUCCESS',

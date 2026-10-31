@@ -1,0 +1,52 @@
+@keyframes membership-history-enter {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.membership-history-drawer { animation: membership-history-enter 180ms ease-out; }
+.membership-history-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.membership-history-amount {
+  margin-left: auto;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.membership-history-package {
+  font-size: calc((var(--text-caption) + var(--text-sm)) / 2);
+  line-height: var(--leading-body);
+}
+.membership-history-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #34363a #101113;
+  scrollbar-gutter: stable;
+}
+.membership-history-scroll::-webkit-scrollbar { width: 6px; }
+.membership-history-scroll::-webkit-scrollbar-track { background: #101113; }
+.membership-history-scroll::-webkit-scrollbar-thumb { background: #34363a; border-radius: 6px; }
+.membership-history-scroll::-webkit-scrollbar-thumb:hover { background: #505258; }
+@media (prefers-reduced-motion: reduce) {
+  .membership-history-drawer { animation: none; }
+}
+
+.membership-recovered-dialog { --text-caption: .75rem; --text-sm: .875rem; --leading-body: 1.5; font-family: Montserrat, sans-serif; }
+.membership-recovered-dialog .type-card { font-size: 1.125rem; font-weight: 700; }
+.membership-recovered-dialog .type-label, .membership-recovered-dialog .type-button { font-size: .875rem; font-weight: 600; }
+.membership-recovered-dialog .type-caption, .membership-recovered-dialog .type-badge { font-size: .75rem; }
+
+.membership-target-highlight { outline: 2px solid #dca11d; outline-offset: 4px; scroll-margin-block: 24px; }
+.membership-status { display: inline-flex; border: 1px solid currentColor; border-radius: 999px; padding: 4px 9px; font-size: 10px; font-weight: 700; line-height: 1.4; color: #64748b; }
+.membership-status--active { color: #047857; background: rgb(16 185 129 / 10%); }
+.membership-status--expiring_soon, .membership-status--expires_today, .membership-status--transfer_locked { color: #8a5a07; background: rgb(245 158 11 / 10%); }
+.membership-status--expired { color: #be123c; background: rgb(244 63 94 / 10%); }
+ .membership-space-card .membership-status--active { color: #6ee7b7; }
+ .membership-space-card .membership-status--expiring_soon,  .membership-space-card .membership-status--expires_today,  .membership-space-card .membership-status--transfer_locked { color: #fcd34d; }
+.membership-history-details summary { width: fit-content; min-height: 40px; padding-top: 10px; cursor: pointer; color: #e6b94f; font-size: 12px; font-weight: 600; }
+.membership-history-details summary:focus-visible { outline: 2px solid #dca11d; outline-offset: 3px; border-radius: 4px; }
+
+.membership-space-card button:focus-visible { outline: 2px solid #dca11d; outline-offset: 3px; border-radius: 4px; }
+
+.membership-space-card .membership-status--expired { color: #fda4af; }

@@ -107,6 +107,7 @@ async function notifyRenewal(renewal, kind = 'entitlement', app = null) {
         floorName: entity.floorId?.name || (entity.floorId?.floorNumber != null ? `Floor ${entity.floorId.floorNumber}` : 'Floor unavailable'),
         packageName: renewal.packageSnapshot?.name || 'Membership',
         expireAt: renewal.newExpireAt,
+        renewedExpireDate: new Date(renewal.newExpireAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Ho_Chi_Minh' }),
         oldExpireAt: renewal.oldExpireAt,
         amount: renewal.amount,
       });

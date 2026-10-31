@@ -1,3 +1,6 @@
+import NotificationDropdownItem from '../components/notifications/NotificationDropdownItem';
+import NotificationDetailModal from '../components/notifications/NotificationDetailModal';
+import { useNotificationDetails } from '../hooks/useNotificationDetails';
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { apiFetch } from "../services/api";
@@ -225,6 +228,8 @@ export default function DashboardLayout() {
     notifications,
     unreadCount,
     loading: notificationsLoading,
+    error: notificationsError,
+    refresh: refreshNotifications,
     hasMore,
     fetchMore,
     markAsRead,
@@ -232,6 +237,7 @@ export default function DashboardLayout() {
   } =
     useNotifications({ contextRole: user?.role });
 
+  const { selectedNotification, openNotification, closeNotification } = useNotificationDetails(markAsRead);
   const role = user?.role;
   useLayoutEffect(() => scopeAdminTypography(document.body, role), [role]);
   useLayoutEffect(() => scopeStaffTypography(document.body, role), [role]);
@@ -346,6 +352,7 @@ export default function DashboardLayout() {
 
   return (
     <div className={`${densityClass} staff-dashboard-shell h-screen overflow-hidden bg-gray-100 dark:bg-[#0D0D0D] flex font-sans transition-colors duration-300`}>
+      {role === "customer" && <NotificationDetailModal notification={selectedNotification} onClose={() => { closeNotification(); notifRef.current?.querySelector("button")?.focus(); }} contextRole="customer" />}
       {/* ══════════ SIDEBAR ══════════ */}
       <aside
         className={`
@@ -479,11 +486,13 @@ export default function DashboardLayout() {
             </button>
 
             {/* Notifications */}
-            <div className="relative" ref={notifRef}>
+            <div className="relative" ref={notifRef} onKeyDown={(event) => {
+              if (role === 'customer' && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('button')?.focus(); }
+            }}>
               <button
                 onClick={() => setNotifOpen((o) => !o)}
-                aria-label={role === 'staff' ? 'Notifications' : undefined}
-                aria-expanded={role === 'staff' ? notifOpen : undefined}
+                aria-label={role === 'staff' || role === 'customer' ? 'Notifications' : undefined}
+                aria-expanded={role === 'staff' || role === 'customer' ? notifOpen : undefined}
                 className="relative w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
                 <Bell size={17} />
@@ -494,7 +503,7 @@ export default function DashboardLayout() {
                 )}
               </button>
               {notifOpen && (
-                <div className="staff-shell-notifications absolute right-0 top-[calc(100%+8px)] w-80 bg-white dark:bg-[#1A1A1A] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[400px]">
+                <div className={`${role === "customer" ? "customer-notification-dropdown" : ""} staff-shell-notifications absolute right-0 top-[calc(100%+8px)] w-80 bg-white dark:bg-[#1A1A1A] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[400px]`}>
                   <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50 dark:bg-[#111]">
                     <p className="text-gray-900 dark:text-white font-bold text-sm">
                       Notifications
@@ -509,12 +518,18 @@ export default function DashboardLayout() {
                     )}
                   </div>
                   <div className="overflow-y-auto flex-1">
-                    {notifications.length === 0 ? (
+                    {role === 'customer' && notificationsError ? (
+                      <div className="customer-notification-state" role="alert">Unable to load notifications.<button type="button" onClick={refreshNotifications}>Try again</button></div>
+                    ) : role === 'customer' && notificationsLoading && notifications.length === 0 ? (
+                      <div className="customer-notification-state" role="status">Loading notifications?</div>
+                    ) : notifications.length === 0 ? (
                       <div className="p-6 text-center text-gray-500 text-sm">
                         No notifications
                       </div>
                     ) : (
-                      notifications.map((n) => (
+                      notifications.map((n) => role === "customer" ? (
+                        <NotificationDropdownItem key={n.notificationId || n._id} notification={n} onRead={markAsRead} onOpen={() => { setNotifOpen(false); openNotification(n); }} />
+                      ) : (
                         <div
                           key={n._id || n.notificationId}
                           onClick={() => {

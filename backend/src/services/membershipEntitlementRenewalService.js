@@ -145,7 +145,15 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
 
 const renewWithWallet = async ({ userId, entitlementId, idempotencyKey, app = null }) => {
   const existing = await MembershipEntitlementRenewal.findOne({ userId, idempotencyKey });
-  if (existing?.status === 'paid') return publicResult(existing, { alreadyProcessed: true });
+  if (existing?.status === 'paid') {
+    if (String(existing.entitlementId) !== String(entitlementId)) {
+      throw businessError('Renewal request belongs to another membership.', 'RENEWAL_ENTITLEMENT_MISMATCH', 409);
+    }
+    if (String(existing.userId) !== String(userId) || existing.paymentMethod !== 'wallet') {
+      throw businessError('Renewal request does not match this operation.', 'RENEWAL_CONTEXT_MISMATCH', 409);
+    }
+    return publicResult(existing, { alreadyProcessed: true });
+  }
   if (existing) throw businessError('Renewal request already exists.', 'RENEWAL_EXISTS', 409);
   const quote = await getQuote(userId, entitlementId);
   const session = await mongoose.startSession();

@@ -17,8 +17,8 @@ export function SocketProvider({ children }) {
     const connect = () => {
       const token = localStorage.getItem('accessToken');
 
-      // If already connected with same token status
-      if (socketRef.current?.connected) {
+      // A connected guest/old-token socket must be replaced after authentication.
+      if (socketRef.current?.connected && socketRef.current.auth?.token === (token || undefined)) {
         return;
       }
 

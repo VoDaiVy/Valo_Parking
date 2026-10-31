@@ -149,8 +149,21 @@ body[data-valo-typography="staff"] .staff-dashboard-topbar > button:hover,
 body[data-valo-typography="staff"] .staff-shell-toolbar > button:hover,
 body[data-valo-typography="staff"] .staff-shell-toolbar > .relative > button:hover { background: var(--staff-hover-surface); color: var(--staff-text-primary); border-color: var(--staff-primary); }
 body[data-valo-typography="staff"] .staff-shell-toolbar > button[title="Logout"]:hover { color: var(--staff-error); border-color: #F2A5AF66; }
-body[data-valo-typography="staff"] .staff-shell-role-badge { background: var(--staff-surface-raised); color: var(--staff-text-secondary); border-color: var(--staff-border); }
-body[data-valo-typography="staff"] .staff-shell-role-badge span { font-size: 12px; font-weight: 600; text-transform: none; }
+body[data-valo-typography="staff"] .staff-shell-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(35, 211, 153, 0.45);
+  border-radius: 10px;
+  background: #0B211D;
+  color: #F5F7FA;
+  font-family: Montserrat, sans-serif;
+  white-space: nowrap;
+}
+body[data-valo-typography="staff"] .staff-shell-role-badge svg { width: 17px; height: 17px; flex-shrink: 0; color: #F5F7FA; }
+body[data-valo-typography="staff"] .staff-shell-role-badge span { font-size: 14px; line-height: 20px; font-weight: 600; color: #F5F7FA; text-transform: none; }
 body[data-valo-typography="staff"] .staff-shell-avatar { background: var(--staff-surface-raised); color: var(--staff-text-primary); }
 body[data-valo-typography="staff"] .staff-shell-notifications { width: min(320px, calc(100vw - 24px)); border-color: var(--staff-border); background: var(--staff-surface); }
 body[data-valo-typography="staff"] .staff-shell-notifications > div:first-child,
