@@ -14,9 +14,7 @@ import {
   StatusBadge,
 } from '@/components/staff';
 import { COLORS, SPACING } from '@/constants/theme';
-import { useStaffAssistant } from '@/contexts/StaffAssistantContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { ValoAIMascot } from '@/components/staff/ValoAIMascot';
 import type { StaffManagementStackParamList } from '@/navigation/StaffNavigator';
 
 type Props = NativeStackScreenProps<StaffManagementStackParamList, 'ManagementHome'>;
@@ -25,25 +23,21 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 const TOOLS: Array<{
   screen: Exclude<keyof StaffManagementStackParamList, 'ManagementHome'>;
   icon: IconName;
-  title: string;
-  description: string;
-  meta: string;
+  titleKey: string;
+  descriptionKey: string;
+  metaKey: string;
   tone?: 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
 }> = [
-  { screen: 'StaffAssistant', icon: 'sparkles-outline', title: 'VALO AI assistant', description: 'Operational insights and suggested actions', meta: 'AI', tone: 'brand' },
-  { screen: 'ParkingOperations', icon: 'construct-outline', title: 'Monitoring & maintenance', description: 'Violations, maintenance and parking history', meta: 'Operations', tone: 'warning' },
-  { screen: 'Inbox', icon: 'mail-unread-outline', title: 'My inbox', description: 'Staff notifications', meta: 'Inbox', tone: 'info' },
-  { screen: 'Communication', icon: 'chatbubbles-outline', title: 'Internal communications', description: 'Reports and automation rules', meta: 'Internal', tone: 'info' },
-  { screen: 'Bookings', icon: 'qr-code-outline', title: 'Booking QR', description: 'Scan and inspect reservations', meta: 'Critical', tone: 'success' },
-  { screen: 'Customers', icon: 'people-outline', title: 'Customers', description: 'Profiles and account access', meta: 'Support', tone: 'info' },
-  { screen: 'Subscriptions', icon: 'diamond-outline', title: 'Memberships', description: 'Plans and reserved spaces', meta: 'Plans', tone: 'brand' },
-  { screen: 'TicketPackages', icon: 'ticket-outline', title: 'Ticket packages', description: 'Parking plan catalog', meta: 'Catalog', tone: 'warning' },
-  { screen: 'StaffNotifications', icon: 'notifications-outline', title: 'Notices', description: 'Customer messages', meta: 'Broadcast', tone: 'brand' },
+  { screen: 'BookingScanner', icon: 'qr-code-outline', titleKey: 'staffScanner', descriptionKey: 'staffScannerDesc', metaKey: 'critical', tone: 'success' },
+  { screen: 'Bookings', icon: 'calendar-outline', titleKey: 'staffBookings', descriptionKey: 'staffBookingsDesc', metaKey: 'operations', tone: 'brand' },
+  { screen: 'Customers', icon: 'people-outline', titleKey: 'staffCustomers', descriptionKey: 'staffCustomersDesc', metaKey: 'support', tone: 'info' },
+  { screen: 'ParkingOperations', icon: 'construct-outline', titleKey: 'staffParkingOps', descriptionKey: 'staffParkingOpsDesc', metaKey: 'parking', tone: 'warning' },
+  { screen: 'Inbox', icon: 'mail-unread-outline', titleKey: 'staffInbox', descriptionKey: 'staffInboxDesc', metaKey: 'inbox', tone: 'info' },
+  { screen: 'Communication', icon: 'chatbubbles-outline', titleKey: 'staffCommunication', descriptionKey: 'staffCommunicationDesc', metaKey: 'internal', tone: 'info' },
 ];
 
 export function ManagementHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
-  const { openAssistant } = useStaffAssistant();
   const { t } = useLanguage();
 
   return (
@@ -72,12 +66,11 @@ export function ManagementHubScreen({ navigation }: Props) {
               <OperationalRow
                 key={tool.screen}
                 icon={tool.icon}
-                iconElement={tool.screen === 'StaffAssistant' ? <ValoAIMascot size={38} /> : undefined}
-                meta={tool.meta}
-                subtitle={tool.description}
-                title={tool.title}
+                meta={t(tool.metaKey)}
+                subtitle={t(tool.descriptionKey)}
+                title={t(tool.titleKey)}
                 tone={tool.tone}
-                onPress={() => tool.screen === 'StaffAssistant' ? openAssistant() : navigation.navigate(tool.screen)}
+                onPress={() => navigation.navigate(tool.screen)}
               />
             ))}
           </View>

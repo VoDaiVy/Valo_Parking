@@ -19,8 +19,6 @@ import { StaffAssistantScreen } from '@/screens/staff/StaffAssistantScreen';
 import { NotificationsScreen } from '@/screens/notifications/NotificationsScreen';
 import { StaffNotificationManagementScreen } from '../screens/staff/StaffNotificationManagementScreen';
 import StaffProfileScreen from '../screens/staff/StaffProfileScreen';
-import { StaffSubscriptionManagementScreen } from '../screens/staff/StaffSubscriptionManagementScreen';
-import { StaffTicketPackagesScreen } from '../screens/staff/StaffTicketPackagesScreen';
 import { StaffBookingQrScreen } from '../screens/staff/StaffBookingQrScreen';
 import { SessionDetailScreen } from '../screens/staff/SessionDetailScreen';
 import { SessionListScreen } from '../screens/staff/SessionListScreen';
@@ -35,8 +33,6 @@ export type StaffManagementStackParamList = {
   Customers: undefined;
   Bookings: undefined;
   BookingScanner: undefined;
-  Subscriptions: undefined;
-  TicketPackages: undefined;
   StaffNotifications: undefined;
   Inbox: undefined;
   Communication: undefined;
@@ -73,8 +69,6 @@ function ManagementStackNavigator() {
       <ManagementStack.Screen name="Customers" component={CustomerManagementScreen} />
       <ManagementStack.Screen name="Bookings" component={StaffBookingManagementScreen} />
       <ManagementStack.Screen name="BookingScanner" component={StaffBookingQrScreen} />
-      <ManagementStack.Screen name="Subscriptions" component={StaffSubscriptionManagementScreen} />
-      <ManagementStack.Screen name="TicketPackages" component={StaffTicketPackagesScreen} />
       <ManagementStack.Screen name="StaffNotifications" component={StaffNotificationManagementScreen} />
     </ManagementStack.Navigator>
   );

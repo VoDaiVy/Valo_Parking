@@ -9,7 +9,6 @@ import { useEffect, useState } from 'react';
 import { Linking } from 'react-native';
 
 import { LoadingSpinner } from '@/components/common';
-import { LanguageToggle } from '@/components/common/LanguageToggle';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 import { useAuth } from '@/hooks/useAuth';
@@ -104,7 +103,6 @@ export const AppNavigator = () => {
         <CustomerNavigator />
       )}
     </NavigationContainer>
-    <LanguageToggle />
     </LanguageProvider>
   );
 };

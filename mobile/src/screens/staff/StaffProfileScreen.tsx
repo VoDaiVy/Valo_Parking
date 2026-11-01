@@ -18,6 +18,7 @@ import {
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { LanguageToggle } from '@/components/common/LanguageToggle';
 import type { StaffProfileStackParamList, StaffTabParamList } from '@/navigation/StaffNavigator';
 
 type Props = NativeStackScreenProps<StaffProfileStackParamList, 'StaffProfileHome'>;
@@ -65,7 +66,7 @@ export default function StaffProfileScreen({ navigation }: Props) {
       <StaffHeader
         eyebrow={t('staffProfile')}
         title={t('profile')}
-        right={<StatusBadge label="Ops" />}
+        right={<View style={styles.headerActions}><LanguageToggle inline /><StatusBadge label="Ops" /></View>}
       />
 
       <ScrollView
@@ -135,6 +136,7 @@ export default function StaffProfileScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
+  headerActions: { alignItems: 'center', flexDirection: 'row', gap: SPACING.xs },
   scroll: { gap: SPACING.md, padding: SPACING.lg },
   identity: {
     alignItems: 'center',

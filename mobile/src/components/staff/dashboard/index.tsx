@@ -15,6 +15,7 @@ import {
 
 import { SkeletonBlock } from '@/components/staff';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 type Tone = 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
@@ -168,6 +169,7 @@ export function StaffCommandHeader({
   displayName: string;
   onAvatarPress?: () => void;
 }) {
+  const { t } = useLanguage();
   const { width } = useWindowDimensions();
   const titleSize = useMemo(() => {
     if (width < 360) return 26;
@@ -178,7 +180,7 @@ export function StaffCommandHeader({
 
   return (
     <DashboardEntry style={styles.header}>
-      <Text style={styles.eyebrow}>COMMAND CENTER</Text>
+      <Text style={styles.eyebrow}>{t('commandCenter').toUpperCase()}</Text>
       <View style={styles.commandRow}>
         <View style={styles.headerCopy}>
           <Text
@@ -186,7 +188,7 @@ export function StaffCommandHeader({
             numberOfLines={1}
             style={[styles.headerTitle, { fontSize: titleSize, lineHeight: titleSize + 5 }]}
           >
-            {`Ready for your shift, ${displayName}`}
+            {`${t('readyForShift')}, ${displayName}`}
           </Text>
           <Text numberOfLines={1} style={styles.dateText}>{dateLabel}</Text>
         </View>
@@ -200,7 +202,7 @@ export function StaffCommandHeader({
         <View style={styles.metaSpacer} />
         <View style={styles.livePill}>
           <StatusPulse />
-          <Text style={styles.liveText}>LIVE</Text>
+          <Text style={styles.liveText}>{t('liveLabel').toUpperCase()}</Text>
         </View>
       </View>
     </DashboardEntry>
@@ -241,13 +243,14 @@ export function StaffMetricsStrip({
   capacityTone: Tone;
   vehicles: number;
 }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.metricsStrip}>
-      <MetricCell icon="car-sport-outline" label="Vehicles" value={vehicles} />
+      <MetricCell icon="car-sport-outline" label={t('vehicles')} value={vehicles} />
       <View style={styles.metricDivider} />
-      <MetricCell icon="pulse-outline" label="Active" tone="success" value={active} />
+      <MetricCell icon="pulse-outline" label={t('active')} tone="success" value={active} />
       <View style={styles.metricDivider} />
-      <MetricCell icon="speedometer-outline" label="Capacity" tone={capacityTone} value={capacity} />
+      <MetricCell icon="speedometer-outline" label={t('capacity')} tone={capacityTone} value={capacity} />
     </View>
   );
 }
@@ -284,15 +287,16 @@ export function StaffPrimaryActions({
   onScanQr: () => void;
   onSessions: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <DashboardEntry delay={240} style={styles.actionsBlock}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Primary actions</Text>
+        <Text style={styles.sectionTitle}>{t('primaryActions')}</Text>
       </View>
-      <PrimaryButton icon="qr-code-outline" label="Scan QR" onPress={onScanQr} />
+      <PrimaryButton icon="qr-code-outline" label={t('scanQr')} onPress={onScanQr} />
       <View style={styles.secondaryActionRow}>
-        <PrimaryButton icon="map-outline" label="Live Parking" onPress={onLiveParking} secondary />
-        <PrimaryButton icon="car-sport-outline" label="Sessions" onPress={onSessions} secondary />
+        <PrimaryButton icon="map-outline" label={t('liveParking')} onPress={onLiveParking} secondary />
+        <PrimaryButton icon="car-sport-outline" label={t('sessions')} onPress={onSessions} secondary />
       </View>
     </DashboardEntry>
   );
@@ -338,29 +342,31 @@ export function StaffLiveStatus({
   reserved: number;
   tone: Tone;
 }) {
+  const { t } = useLanguage();
   const color = colorForTone(tone);
   return (
     <DashboardEntry delay={380} style={styles.liveBlock}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Live status</Text>
-        <Text style={styles.sectionMeta}>{capacity} spaces</Text>
+        <Text style={styles.sectionTitle}>{t('liveStatus')}</Text>
+        <Text style={styles.sectionMeta}>{capacity} {t('spaces')}</Text>
       </View>
       <View style={[styles.capacityStrip, { borderLeftColor: color }]}>
         <StatusPulse tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'success'} />
         <View style={styles.headerCopy}>
           <Text style={[styles.capacityLabel, { color }]}>{capacityLabel}</Text>
-          <Text numberOfLines={1} style={styles.capacityValue}>{available} available</Text>
+          <Text numberOfLines={1} style={styles.capacityValue}>{available} {t('availableSpaces')}</Text>
         </View>
       </View>
       <View style={styles.utilityRow}>
-        <UtilityStat icon="bookmark-outline" label="Reserved" tone="warning" value={reserved} />
-        <UtilityStat icon="construct-outline" label="Maintenance" tone={maintenance > 0 ? 'danger' : 'muted'} value={maintenance} />
+        <UtilityStat icon="bookmark-outline" label={t('reserved')} tone="warning" value={reserved} />
+        <UtilityStat icon="construct-outline" label={t('maintenance')} tone={maintenance > 0 ? 'danger' : 'muted'} value={maintenance} />
       </View>
     </DashboardEntry>
   );
 }
 
 export function StaffAlertRow({ count, onPress }: { count: number; onPress: () => void }) {
+  const { t } = useLanguage();
   return (
     <DashboardEntry delay={520}>
       <DashboardPressable accessibilityLabel="Review blocked bookings" onPress={onPress}>
@@ -369,8 +375,8 @@ export function StaffAlertRow({ count, onPress }: { count: number; onPress: () =
             <Ionicons name="alert-circle-outline" size={20} color={COLORS.error} />
           </View>
           <View style={styles.headerCopy}>
-            <Text numberOfLines={1} style={styles.alertTitle}>{count} blocked bookings</Text>
-            <Text numberOfLines={1} style={styles.alertMeta}>Review required</Text>
+            <Text numberOfLines={1} style={styles.alertTitle}>{count} {t('blockedBookings')}</Text>
+            <Text numberOfLines={1} style={styles.alertMeta}>{t('reviewRequired')}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={COLORS.error} />
         </View>

@@ -22,6 +22,7 @@ import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../../constants/theme';
 import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { useAppAlert } from '@/contexts/AppAlertContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { LanguageToggle } from '@/components/common/LanguageToggle';
 import { subscriptionsService } from '@/services/api/subscriptions';
 import type { MembershipStatus } from '@/types/subscription.types';
 import {
@@ -454,7 +455,10 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
         }
       >
         <StaggeredView delay={20} style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>{t('account')}</Text>
+          <View style={styles.pageHeaderRow}>
+            <Text style={styles.pageTitle}>{t('account')}</Text>
+            <LanguageToggle inline />
+          </View>
         </StaggeredView>
 
         <ProfileHero
@@ -599,6 +603,7 @@ const styles = StyleSheet.create({
   pageHeader: {
     paddingTop: SPACING.md,
   },
+  pageHeaderRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   pageTitle: {
     color: COLORS.textPrimary,
     fontSize: 32,
