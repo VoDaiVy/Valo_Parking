@@ -149,21 +149,43 @@ body[data-valo-typography="staff"] .staff-dashboard-topbar > button:hover,
 body[data-valo-typography="staff"] .staff-shell-toolbar > button:hover,
 body[data-valo-typography="staff"] .staff-shell-toolbar > .relative > button:hover { background: var(--staff-hover-surface); color: var(--staff-text-primary); border-color: var(--staff-primary); }
 body[data-valo-typography="staff"] .staff-shell-toolbar > button[title="Logout"]:hover { color: var(--staff-error); border-color: #F2A5AF66; }
+/* Match the shared Admin badge utilities and Admin's 12px / 1.4 label scale. */
 body[data-valo-typography="staff"] .staff-shell-role-badge {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border: 1px solid rgba(35, 211, 153, 0.45);
-  border-radius: 10px;
-  background: #0B211D;
-  color: #F5F7FA;
+  padding: 6px 12px;
+  border: 1px solid #176D52;
+  border-radius: 8px;
+  background: #0B241E;
+  color: #34DDA5;
   font-family: Montserrat, sans-serif;
   white-space: nowrap;
 }
-body[data-valo-typography="staff"] .staff-shell-role-badge svg { width: 17px; height: 17px; flex-shrink: 0; color: #F5F7FA; }
-body[data-valo-typography="staff"] .staff-shell-role-badge span { font-size: 14px; line-height: 20px; font-weight: 600; color: #F5F7FA; text-transform: none; }
+body[data-valo-typography="staff"] .staff-shell-role-badge svg { width: 13px; height: 13px; flex-shrink: 0; color: #34DDA5; }
+body[data-valo-typography="staff"] .staff-shell-role-badge span { font-size: 12px; line-height: 1.4; font-weight: 600; color: #34DDA5; text-transform: none; }
+/* Report Issue matches the compact role badge while retaining button semantics. */
+body[data-valo-typography="staff"] .staff-shell-toolbar > button[aria-label="Report an issue"],
+body[data-valo-typography="staff"] .staff-shell-toolbar > button[aria-label="Report an issue"]:hover {
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 6px 12px;
+  gap: 8px;
+  border: 1px solid #C65A25;
+  border-radius: 8px;
+  background: #26160F;
+  background-image: none;
+  color: #FF873D;
+  font-family: Montserrat, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: none;
+  transition: none;
+}
+body[data-valo-typography="staff"] .staff-shell-toolbar > button[aria-label="Report an issue"] svg { width: 13px; height: 13px; flex-shrink: 0; color: inherit; }
 body[data-valo-typography="staff"] .staff-shell-avatar { background: var(--staff-surface-raised); color: var(--staff-text-primary); }
 body[data-valo-typography="staff"] .staff-shell-notifications { width: min(320px, calc(100vw - 24px)); border-color: var(--staff-border); background: var(--staff-surface); }
 body[data-valo-typography="staff"] .staff-shell-notifications > div:first-child,

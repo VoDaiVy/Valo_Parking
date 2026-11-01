@@ -77,7 +77,8 @@ const mockFetch = (t, responseFor = () => ({success:true, gates:{}, data:[]})) =
 test('header, stations and operational buttons render professional English in original order', () => {
   seed(); const page = tree(); const html = htmlOf(page);
   assert.ok(!html.includes('VALO / STAFF OPERATIONS'));
-  for (const label of ['Gate Control &amp; Camera Stations', 'Monitor entry and exit lanes, verify license plates', 'LIVE TELEMETRY', 'ESP32 GATE BRIDGE', 'Entry Lane', 'ENTRY_1', 'Exit Lane', 'EXIT_1', 'Entry Plate Detection Area', 'Exit Plate Detection Area', 'Detected License Plate', 'Phone Number', 'Parking Floor', 'Parking Slot', 'Parked Vehicles', 'Upload Vehicle Image', 'Barrier: Closed']) assert.ok(html.includes(label), label);
+  assert.ok(!html.includes('LIVE TELEMETRY'));
+  for (const label of ['Gate Control', 'Monitor entry and exit lanes, cameras, and barrier operations.', 'ESP32 GATE BRIDGE', 'Entry Lane', 'ENTRY_1', 'Exit Lane', 'EXIT_1', 'Entry Plate Detection Area', 'Exit Plate Detection Area', 'Detected License Plate', 'Phone Number', 'Parking Floor', 'Parking Slot', 'Parked Vehicles', 'Upload Vehicle Image', 'Barrier: Closed']) assert.ok(html.includes(label), label);
   const labels = nodes(page).filter((node) => node.type === 'button').map(textOf);
   assert.deepEqual(labels, ['Auto-Pilot OFF','Emergency Open','Capture & Scan','AI Plate Assistant','Check In & Open Gate','Open Entry Barrier','Pause','Lock Barrier','Capture & Scan','AI Plate Assistant','Check Out & Open Gate','Open Exit Barrier','Pause','Lock Barrier']);
   assert.equal(button(page, 'Check In & Open Gate').props.disabled, true);

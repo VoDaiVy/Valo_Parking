@@ -143,7 +143,7 @@ export default function NotificationManagement() {
               <div>
                 <h1 className={STAFF_THEME.title}>Notification Management</h1>
               </div>
-              <LiveBadge state={historyState} />
+              {!isStaffView && <LiveBadge state={historyState} />}
             </div>
             <p className={STAFF_THEME.subtitle}>
               Send notifications to the whole system or selected users.

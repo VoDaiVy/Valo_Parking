@@ -533,15 +533,11 @@ export default function GateControl() {
         <div>
           <div className="sgc-title-line flex items-center gap-3">
             <h1 className="text-2xl font-black tracking-tight text-[#ffd555]">
-              Gate Control & Camera Stations
+              Gate Control
             </h1>
-            <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-0.5 text-xs font-bold text-emerald-400">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-              LIVE TELEMETRY
-            </span>
           </div>
           <p className="mt-1 text-xs font-medium text-white/45">
-            Monitor entry and exit lanes, verify license plates, and manage barrier operations in real time.
+            Monitor entry and exit lanes, cameras, and barrier operations.
           </p>
         </div>
 
@@ -551,7 +547,9 @@ export default function GateControl() {
           <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#111111] px-3.5 py-2">
             <Radio size={15} className={isEspOnline ? 'text-emerald-400 animate-pulse' : 'text-red-400'} />
             <div className="text-left">
-              <p className="text-[9px] font-black uppercase tracking-wider text-white/40">ESP32 GATE BRIDGE</p>
+              <div className="sgc-device-label">
+                <p className="text-[9px] font-black uppercase tracking-wider text-white/40">ESP32 GATE BRIDGE</p>
+              </div>
               <p className="text-xs font-bold text-white">{isEspOnline ? 'ONLINE (115200 BAUD)' : 'DISCONNECTED'}</p>
             </div>
           </div>
