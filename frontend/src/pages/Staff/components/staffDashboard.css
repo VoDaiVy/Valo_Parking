@@ -234,3 +234,7 @@ body[data-valo-typography="staff"] .staff-dash-state.staff-dash-error { color: v
   body[data-valo-typography="staff"] .staff-operations-dashboard button { transition: none; }
   body[data-valo-typography="staff"] .staff-dash-primary:hover:enabled { transform: none; }
 }
+
+/* Hide only the Staff Dashboard page scrollbar, preserving native scrolling. */
+body[data-valo-typography="staff"] .dashboard-page-content:has(> .staff-operations-dashboard) { scrollbar-width: none; }
+body[data-valo-typography="staff"] .dashboard-page-content:has(> .staff-operations-dashboard)::-webkit-scrollbar { display: none; }

@@ -230,3 +230,17 @@ test('G3 body, ice-blue headers and action labels meet normal-text contrast', ()
     assert.ok((light + 0.05) / (dark + 0.05) >= 4.5);
   }
 });
+
+
+test('Staff session summary and filtered pagination remain isolated from shared Admin view', () => {
+  const html = render(Session, '/staff/sessions', sessionState());
+  for (const label of ['Total Sessions', 'Currently Parked', 'Completed Today', 'Needs Attention', 'Page 1 of 1']) assert.ok(html.includes(label));
+  assert.ok(html.includes('aria-label="Session summary"'));
+  const admin = render(Session, '/admin/sessions', sessionState(), 'admin');
+  assert.ok(!admin.includes('aria-label="Session summary"'));
+  assert.ok(admin.includes('Showing'));
+  const empty = render(Session, '/staff/sessions', sessionState({ 0: [] }));
+  assert.ok(empty.includes('Page 1 of 1'));
+  assert.ok(empty.includes('0 results'));
+  assert.ok(empty.includes('aria-label="Session pagination"'));
+});

@@ -41,6 +41,7 @@ before(async () => {
             floorResponse = options.floors || {ok: true, data: {success: true, data: []}};
             statisticsResponse = options.statistics || {ok: true, data: {success: true, data: {completed: {}, cancelled: {}}}};
           };
+          export const useLocation = () => ({ pathname: '/staff/bookings' });
           export const useSearchParams = () => [new URLSearchParams(query), (value) => queryChanges.push(value)];
           export const getAllFloors = async () => { calls.push(['floors']); return floorResponse; };
           export const getAllBookings = async (params) => { calls.push(['bookings', params]); return bookingResponse; };
@@ -131,7 +132,7 @@ test('date picker and previous/next handlers keep selected calendar-day changes'
   controls[0].props.onClick(); assert.equal(hooks.values()[1].getDate(), initial - 1);
   page = tree(); const next = nodes(nodes(page).find((node) => node.props?.className?.includes('sbm-date'))).filter((node) => node.type === 'button')[1];
   next.props.onClick(); assert.equal(hooks.values()[1].getDate(), initial);
-  nodes(page).find((node) => node.type === 'input' && node.props.type === 'date').props.onChange({target: {value: '2026-10-20'}});
+  nodes(page).find((node) => node.type?.name === 'BookingDatePicker').props.onChange(new Date(2026, 9, 20));
   assert.equal(hooks.values()[1].getDate(), 20);
 });
 test('Daily and All time preserve statistics request scope and 30-second polling', async (t) => {

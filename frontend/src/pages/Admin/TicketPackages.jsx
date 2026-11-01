@@ -425,6 +425,10 @@ export default function TicketPackages() {
             <p className="mt-2 text-sm font-medium text-slate-400">Manage parking rates and ticket packages.</p>
           </div>
 
+          {!isAdmin && <button type="button" onClick={fetchPackages} disabled={loading} aria-busy={loading} aria-label="Refresh packages" title="Refresh packages" className="stp-refresh">
+            <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} /><span>Refresh</span>
+          </button>}
+
           {isAdmin && (
             <button
               type="button"
@@ -576,7 +580,7 @@ export default function TicketPackages() {
           )}
         </section>
 
-        <aside className="stp-note mb-4 flex items-start gap-3 rounded-2xl border border-yellow-300/15 bg-gradient-to-r from-yellow-300/[0.08] via-white/[0.025] to-transparent px-4 py-4 text-sm">
+        {isAdmin && <aside className="stp-note mb-4 flex items-start gap-3 rounded-2xl border border-yellow-300/15 bg-gradient-to-r from-yellow-300/[0.08] via-white/[0.025] to-transparent px-4 py-4 text-sm">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-yellow-300/20 bg-yellow-300/10 text-yellow-300">
             <Info size={17} />
           </div>
@@ -584,7 +588,7 @@ export default function TicketPackages() {
             <p className="font-black text-yellow-200">Package management</p>
             <p className="mt-1 font-medium text-slate-400">Review package changes carefully before saving.</p>
           </div>
-        </aside>
+        </aside>}
 
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { format, addDays, subDays, startOfDay, differenceInMinutes } from 'date-fns';
 import {
   ChevronLeft, ChevronRight, Clock, MapPin, User, CheckCircle,
@@ -17,6 +17,7 @@ import {
 } from '../../utils/staffOperationalAvailability';
 import { Toaster } from 'react-hot-toast';
 import StaffDropdown from './components/StaffDropdown.jsx';
+import BookingDatePicker from './components/BookingDatePicker.jsx';
 import './components/staffBookingManagement.css';
 import { STAFF_THEME } from './components/staffTheme.js';
 
@@ -54,6 +55,9 @@ const formatCurrency = (value) =>
     currency: 'VND',
     maximumFractionDigits: 0,
   }).format(Number(value || 0));
+
+const formatDetailNumber = (value) =>
+  new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value || 0));
 
 const formatStatisticsPeriod = (period, range) => {
   if (!period?.endDate) return '';
@@ -211,6 +215,8 @@ const ProgressBar = ({ start, end, now }) => {
 };
 
 export default function BookingManagement() {
+  const isStaffPage = useLocation().pathname.startsWith('/staff/');
+  const formatDetailAmount = isStaffPage ? formatDetailNumber : formatCurrency;
   const [searchParams, setSearchParams] = useSearchParams();
   const queryBookingId = searchParams.get('bookingId');
   const [hasResolvedDeepLink, setHasResolvedDeepLink] = useState(false);
@@ -432,7 +438,17 @@ export default function BookingManagement() {
       <div
         key={booking._id}
         data-selected={isSelected}
+        data-booking-group={groupType}
         data-status={displayStatus}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isSelected}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setSelectedBooking(booking);
+          }
+        }}
         onClick={() => setSelectedBooking(booking)}
         className={`sbm-booking-row group relative overflow-hidden rounded-2xl border p-3.5 cursor-pointer transition-all duration-300 ${isSelected
             ? 'bg-gradient-to-br from-white/10 to-transparent border-white/20 shadow-[0_5px_20px_rgba(0,0,0,0.3)] scale-[1.01]'
@@ -448,7 +464,7 @@ export default function BookingManagement() {
             <LicensePlate plate={booking.licensePlate} />
             <p className="text-xs font-semibold text-white/80 line-clamp-1">{booking.userId?.fullName || 'Guest'}</p>
           </div>
-          <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${s.bg} ${s.text} ${s.border} ${s.glow}`}>
+          <span data-booking-status={displayStatus} className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${s.bg} ${s.text} ${s.border} ${s.glow}`}>
             {displayStatus}
           </span>
         </div>
@@ -512,12 +528,13 @@ export default function BookingManagement() {
 
           <div className="sbm-date flex items-center bg-[#121214] rounded-2xl border border-white/10 p-1.5 shadow-lg relative overflow-hidden">
             <button
+              aria-label={isStaffPage ? 'Previous booking day' : undefined}
               onClick={() => setCurrentDate(subDays(currentDate, 1))}
               className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-white/50 hover:text-white"
             >
               <ChevronLeft size={18} />
             </button>
-            <label
+            {isStaffPage ? <BookingDatePicker value={currentDate} onChange={setCurrentDate} /> : <label
               className="relative flex min-w-[140px] cursor-pointer flex-col items-center justify-center px-4"
               title="Choose booking date"
             >
@@ -533,8 +550,9 @@ export default function BookingManagement() {
                 }}
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               />
-            </label>
+            </label>}
             <button
+              aria-label={isStaffPage ? 'Next booking day' : undefined}
               onClick={() => setCurrentDate(addDays(currentDate, 1))}
               className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-white/50 hover:text-white"
             >
@@ -626,7 +644,7 @@ export default function BookingManagement() {
           <BookingStatCard
             icon={<CircleDollarSign size={17} />}
             label="Completed Gross Revenue"
-            value={statistics ? formatCurrency(completedStatistics.grossRevenue) : '—'}
+            value={statistics ? (isStaffPage ? formatDetailNumber : formatCurrency)(completedStatistics.grossRevenue) : '—'}
             note={
               statistics
                 ? `${formatCurrency(completedStatistics.prepaidRevenue)} base + ${formatCurrency(completedStatistics.additionalRevenue)} additional`
@@ -651,7 +669,7 @@ export default function BookingManagement() {
           <BookingStatCard
             icon={<TrendingUp size={17} />}
             label="Actual Completed Revenue"
-            value={statistics ? formatCurrency(completedStatistics.actualRevenue) : '—'}
+            value={statistics ? (isStaffPage ? formatDetailNumber : formatCurrency)(completedStatistics.actualRevenue) : '—'}
             note={
               statistics
                 ? `${formatCurrency(completedStatistics.refundPaid)} refunded from Completed bookings`
@@ -797,13 +815,13 @@ export default function BookingManagement() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold uppercase tracking-[0.2em] border shadow-lg backdrop-blur-md
+                      <span data-booking-status={currentBookingDisplayStatus} className={`inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold uppercase tracking-[0.2em] border shadow-lg backdrop-blur-md
                         ${getStatusStyle(currentBookingDisplayStatus).bg}
                         ${getStatusStyle(currentBookingDisplayStatus).text}
                         ${getStatusStyle(currentBookingDisplayStatus).border}
                       `}>
-                        {currentBooking.status === 'CANCELLED' && <XCircle size={14} />}
-                        {currentBooking.status === 'COMPLETED' && <CheckCircle size={14} />}
+                        {!isStaffPage && currentBooking.status === 'CANCELLED' && <XCircle size={14} />}
+                        {!isStaffPage && currentBooking.status === 'COMPLETED' && <CheckCircle size={14} />}
                         {currentBookingDisplayStatus === 'ACTIVE' && <Activity size={14} className="animate-pulse" />}
                         {currentBookingDisplayStatus === 'OVERDUE' && <AlertTriangle size={14} />}
                         {currentBookingDisplayStatus}
@@ -865,7 +883,7 @@ export default function BookingManagement() {
                         </div>
                         <div className="flex items-center justify-between pt-1">
                           <p className="text-xs font-medium text-white/40 shrink-0">Phone</p>
-                          <p className="text-xs font-semibold text-white truncate">{currentBooking.userId?.phone || 'N/A'}</p>
+                          <p className="text-xs font-semibold text-white truncate">{currentBooking.userId?.phone || (isStaffPage ? '---' : 'N/A')}</p>
                         </div>
                       </div>
                     </div>
@@ -904,7 +922,7 @@ export default function BookingManagement() {
                         <div className="min-w-0">
                           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">Actual Revenue</p>
                           <p className="text-lg font-bold text-white truncate">
-                            {formatCurrency(
+                            {formatDetailAmount(
                               currentBooking.financialSummary?.actualRevenue ??
                               currentBooking.prepaidAmount
                             )}
@@ -915,7 +933,7 @@ export default function BookingManagement() {
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <p className="text-xs font-medium text-white/40 shrink-0">Base Payment</p>
                           <p className="text-xs font-semibold text-white">
-                            {formatCurrency(
+                            {formatDetailAmount(
                               currentBooking.financialSummary?.prepaidCollected ??
                               currentBooking.prepaidAmount
                             )}
@@ -924,13 +942,13 @@ export default function BookingManagement() {
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <p className="text-xs font-medium text-white/40 shrink-0">Additional Charges</p>
                           <p className="text-xs font-semibold text-amber-300">
-                            {formatCurrency(currentBooking.financialSummary?.additionalCollected)}
+                            {formatDetailAmount(currentBooking.financialSummary?.additionalCollected)}
                           </p>
                         </div>
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <p className="text-xs font-medium text-white/40 shrink-0">Refund Paid</p>
                           <p className="text-xs font-semibold text-red-300">
-                            {formatCurrency(currentBooking.financialSummary?.refundPaid)}
+                            {formatDetailAmount(currentBooking.financialSummary?.refundPaid)}
                           </p>
                         </div>
                         <div className="flex items-center justify-between pt-1">

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import './components/staffManagement.css';
+import './components/staffSessionManagement.css';
+import { sessionMetrics } from './sessionMetrics.js';
 import './components/sessionDetails.css';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -137,8 +139,16 @@ export default function SessionManagement() {
     [pagination.currentPage, pagination.totalPages],
   );
 
+  const [metricsNow, setMetricsNow] = useState(() => new Date());
+  useEffect(() => {
+    if (isAdminPage) return;
+    const timer = setInterval(() => setMetricsNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, [isAdminPage]);
+  const metrics = useMemo(() => sessionMetrics(sessions, metricsNow), [sessions, metricsNow]);
+
   return (
-    <div className="g3-management-page g3-session-page min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
+    <div className={`g3-management-page g3-session-page ${isAdminPage ? '' : 'staff-session-management'} min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8`}>
       {adminDeepLink && verificationStatus !== 'verified' && (
         <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
           {verificationStatus === 'loading' ? 'Đang xác minh phiên đỗ xe từ hệ thống...'
@@ -162,6 +172,10 @@ export default function SessionManagement() {
           <p className="g3-subtitle mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
         </div>
 
+        <div className={isAdminPage ? 'contents' : 'staff-session-header-actions'}>
+        {!isAdminPage && <button type="button" onClick={fetchSessions} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" className="staff-session-refresh">
+          <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
+        </button>}
         {/* AI Blurred Plate Assistant Button */}
         <button
           type="button"
@@ -175,7 +189,20 @@ export default function SessionManagement() {
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>AI Plate Assistant</span>
         </button>
+        </div>
       </div>
+
+      {!isAdminPage && <section aria-label="Session summary" className="g3-management-content staff-session-metrics">
+        {[
+          { label: 'Total Sessions', value: metrics.total, Icon: MonitorCheck, note: 'All sessions returned by the authorized session API; independent of table filters.' },
+          { label: 'Currently Parked', value: metrics.parked, Icon: Car, note: 'All sessions with active status.' },
+          { label: 'Completed Today', value: metrics.completedToday, Icon: CheckCircle2, note: 'Completed sessions checked out today in Asia/Ho_Chi_Minh.' },
+          { label: 'Needs Attention', value: metrics.needsAttention, Icon: Clock, note: metrics.needsAttention == null ? 'Unavailable: an active session has missing or invalid expected timing.' : 'Active sessions past their recorded expected duration, matching Staff diagnostics.' },
+        ].map(({ label, value, Icon, note }) => <article key={label} aria-label={label} title={loading ? 'Loading session data' : error ? 'Session data unavailable' : note} className="staff-session-metric">
+          <Icon size={19} aria-hidden="true" />
+          <div><p className="staff-session-metric-label">{label}</p><p className="staff-session-metric-value">{loading ? '...' : error ? '\u2014' : value == null ? <span className="staff-session-unavailable">Unavailable</span> : value}</p></div>
+        </article>)}
+      </section>}
 
       <section className="g3-management-content g3-session-panel overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0b0b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
         {!loading && !error && (
@@ -312,16 +339,16 @@ export default function SessionManagement() {
               </table>
             </div>
 
-            {pagination.totalItems > 0 && (
+            {(!isAdminPage || pagination.totalItems > 0) && (
               <div className="g3-pagination flex flex-col gap-4 border-t border-white/[0.07] bg-[#0d0d0d] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p className="text-xs font-semibold text-slate-500">
-                  Showing{' '}
+                  {!isAdminPage ? `Page ${pagination.currentPage} of ${pagination.totalPages} \u00b7 ${pagination.totalItems} results` : <>Showing{' '}
                   <span className="text-slate-300">{pagination.startIndex + 1}-{pagination.endIndex}</span>
                   {' '}of <span className="text-slate-300">{pagination.totalItems}</span> sessions
                   {pagination.totalItems !== sessions.length && (
                     <span className="ml-1 text-slate-600">({sessions.length} total)</span>
                   )}
-                  <span className="ml-2 text-[#d7b94a]/70">15 per page</span>
+                  <span className="ml-2 text-[#d7b94a]/70">15 per page</span></>}
                 </p>
 
                 <nav className="flex items-center gap-1.5" aria-label="Session pagination">

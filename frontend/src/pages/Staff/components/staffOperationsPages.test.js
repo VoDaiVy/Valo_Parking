@@ -61,7 +61,7 @@ before(async () => {
         let result = source.replace(/from ['"]react['"]/, "from 'virtual:operations-hooks'");
         if (path.endsWith('/NotificationManagement.jsx')) {
           result = result.replace(/from "\.\.\/\.\.\/services\/(notificationService|userService)"/g, "from 'virtual:operations-api'");
-          result += '\nexport { ComposeTab, UserPicker, FeedTab, StatsRow, LiveBadge, MessageRow };';
+          result += '\nexport { ComposeTab, UserPicker, FeedTab, StatsRow, LiveBadge, MessageRow, HistoryRefreshButton };';
         } else result += '\nexport { PackageRow };';
         return result;
       },
@@ -245,7 +245,11 @@ test('feed keeps local priority/search filters, rows, metadata and refresh', () 
   nodes(page).find((node) => node.props?.label === 'All').props.onClick(); page = tree(notifications.FeedTab, props);
   nodes(page).find((node) => node.type === 'input').props.onChange({target: {value: 'success event'}});
   page = tree(notifications.FeedTab, props); assert.equal(rowMessages(page).length, 1);
-  button(page, 'Refresh').props.onClick(); assert.equal(refreshed, 1);
+  const refresh = nodes(page).find(node => node.type === notifications.HistoryRefreshButton);
+  assert.ok(refresh);
+  assert.ok(htmlOf(refresh).includes('aria-label="Refresh notification history"'));
+  assert.ok(htmlOf(refresh).includes('snm-refresh-icon'));
+  refresh.props.onRefresh(); assert.equal(refreshed, 1);
   const html = htmlOf(page); for (const text of ['SUCCESS event', 'Parking update', 'Whole system', 'SENT', '1 shown']) assert.ok(html.includes(text));
   const row = notifications.MessageRow({m: message()}); assert.equal(row.type, 'li'); assert.equal(row.props.onClick, undefined);
 });
@@ -262,6 +266,7 @@ test('IntersectionObserver still requests the next page and disconnects on clean
   const cleanup = hooks.pendingEffects()[0](); assert.equal(observed, 'sentinel'); callback([{isIntersecting: true}]); assert.equal(loads, 1); cleanup(); assert.equal(disconnected, true);
 });
 test('history initial load, pagination deduplication, API stats and refresh retain existing requests', async (t) => {
+  userRole = 'admin';
   const timers = []; mockGlobal(t, 'window', {setTimeout: (fn) => { timers.push(fn); return 1; }, clearTimeout() {}});
   api.reset(); hooks.seed(['feed', [], true, false, '', 1, true, 0, {totalSent: 0, success: 0, errors: 0}]);
   tree(notifications.default); hooks.pendingEffects()[0]();
@@ -275,6 +280,7 @@ test('history initial load, pagination deduplication, API stats and refresh reta
   page = tree(notifications.default); feed = nodes(page).find((node) => node.type === notifications.FeedTab); feed.props.onRefresh(); await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(api.calls.at(-1), ['history', {page: 1, limit: 50}]);
   page = tree(notifications.default); button(page, 'Send Notification').props.onClick(); page = tree(notifications.default); assert.ok(nodes(page).some((node) => node.type === notifications.ComposeTab));
+  userRole = 'staff';
   button(page, 'Live Feed').props.onClick(); page = tree(notifications.default); assert.ok(!nodes(page).some((node) => node.type === notifications.ComposeTab));
 });
 test('API stats remain API values; both live and unavailable badges remain accurate', () => {
@@ -295,7 +301,7 @@ test('all new CSS is Staff/page scoped; package desktop columns match and motion
       assert.ok(selector.toString().trim().startsWith(`body[data-valo-typography="staff"] ${root}`), selector.toString());
     })).processSync(rule.selector));
     assert.ok(source.includes('prefers-reduced-motion: reduce'));
-    assert.ok(source.includes('#080B0F')); assert.ok(!source.includes('!important'));
+    assert.ok(source.includes(file === 'staffTicketPackages.css' ? '#080F10' : '#080B0F')); assert.ok(!source.includes('!important'));
   }
   const catalog = readFileSync(new URL('staffTicketPackages.css', import.meta.url), 'utf8');
   assert.ok(catalog.includes('.stp-columns, body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { grid-template-columns: minmax(180px,1.5fr) 100px minmax(125px,.8fr) 100px 140px; }'));
@@ -358,4 +364,201 @@ test('Staff CSS overrides nested gold labels directly and preserves semantic pri
     assert.equal(declaration(`[data-priority="${priority}"]`, '--event-color'), color);
   }
   assert.equal(declaration('.snm-compose button[data-priority][aria-pressed="true"]'), 'var(--event-color)');
+});
+
+
+test('Staff package refresh reloads the existing API and recomputes KPI without resetting filters', async t => {
+  userRole = 'staff'; hooks.seed(ticketState({ 4: 'Standard', 5: 'hourly', 6: 'active' }));
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const requests = [];
+  const refreshed = [...packages, { ...packages[0], _id: 'new-hourly', updatedAt: '2026-10-25T12:00:00Z' }];
+  mockGlobal(t, 'fetch', async (url, options) => {
+    requests.push({ url, options }); await gate;
+    return { ok: true, json: async () => ({ success: true, data: refreshed }) };
+  });
+  const page = tree(tickets.default);
+  const refresh = nodes(page).find(node => node.props?.['aria-label'] === 'Refresh packages');
+  assert.ok(refresh);
+  const pending = refresh.props.onClick();
+  assert.equal(hooks.values()[1], true);
+  const busy = tree(tickets.default);
+  assert.equal(nodes(busy).find(node => node.props?.['aria-label'] === 'Refresh packages').props.disabled, true);
+  release(); await pending;
+  assert.equal(requests.length, 1); assert.ok(requests[0].url.endsWith('/ticket-packages'));
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer fixture-token');
+  assert.deepEqual(hooks.values().slice(4, 7), ['Standard', 'hourly', 'active']);
+  assert.equal(hooks.values()[0].length, 4); assert.equal(hooks.values()[1], false);
+  const updated = tree(tickets.default);
+  const metrics = nodes(updated).find(node => node.props?.className?.includes('stp-metrics'));
+  const summaries = React.Children.toArray(metrics.props.children);
+  assert.equal(summaries[0].props.value, '4'); assert.equal(summaries[1].props.value, '3');
+  assert.equal(nodes(updated).filter(node => node.type === tickets.PackageRow).length, 2);
+  assert.ok(!htmlOf(updated).includes('Review package changes carefully'));
+});
+test('Staff refresh failure shows existing error/retry while preserving active filters and Admin UI', async t => {
+  userRole = 'staff'; hooks.seed(ticketState({ 4: 'Reserved', 5: 'monthly', 6: 'inactive' }));
+  mockGlobal(t, 'fetch', async () => ({ ok: false, json: async () => ({ success: false, message: 'Fixture refresh unavailable' }) }));
+  const refresh = nodes(tree(tickets.default)).find(node => node.props?.['aria-label'] === 'Refresh packages');
+  await refresh.props.onClick();
+  assert.equal(hooks.values()[1], false);
+  assert.deepEqual(hooks.values().slice(4, 7), ['Reserved', 'monthly', 'inactive']);
+  assert.ok(htmlOf(tree(tickets.default)).includes('Fixture refresh unavailable'));
+  assert.ok(button(tree(tickets.default), 'Retry'));
+  userRole = 'admin'; hooks.seed(ticketState());
+  const admin = htmlOf(tree(tickets.default));
+  assert.ok(!admin.includes('aria-label="Refresh packages"'));
+  assert.ok(admin.includes('Review package changes carefully'));
+  assert.ok(admin.includes('Add Package'));
+  userRole = 'staff';
+});
+
+
+test('Staff notification refresh appears once in header and is removed from search toolbar', () => {
+  userRole = 'staff'; hooks.seed([]);
+  const page = tree(notifications.default);
+  const header = nodes(page).find(node => node.type === 'header');
+  assert.equal(nodes(header).filter(node => node.type === notifications.HistoryRefreshButton).length, 1);
+  const feed = nodes(page).find(node => node.type === notifications.FeedTab);
+  assert.equal(feed.props.showRefresh, false);
+  hooks.seed(['ALL', '']);
+  const feedPage = tree(notifications.FeedTab, feed.props);
+  assert.equal(nodes(feedPage).filter(node => node.type === notifications.HistoryRefreshButton).length, 0);
+  userRole = 'admin'; hooks.seed([]);
+  const admin = tree(notifications.default);
+  assert.equal(nodes(admin).filter(node => node.type === notifications.HistoryRefreshButton).length, 0);
+  assert.equal(nodes(admin).find(node => node.type === notifications.FeedTab).props.showRefresh, true);
+  userRole = 'staff';
+});
+
+
+const paginatedFeed = (overrides = {}) => feedProps({
+  paginated: true, showRefresh: false, hasMore: true, total: 1157,
+  notifications: Array.from({ length: 10 }, (_, index) => message('INFO', { _id: `first-${index}` })),
+  ...overrides,
+});
+const pageButton = (page, label) => nodes(page).find(node => node.type === 'button' && textOf(node) === label);
+const mockFeedTimers = t => {
+  const scheduled = [];
+  t.mock.method(globalThis, 'setTimeout', (fn, delay) => { scheduled.push({ fn, delay }); return scheduled.length; });
+  t.mock.method(globalThis, 'clearTimeout', () => {});
+  return scheduled;
+};
+const historyResponse = (items, total, totalPages = Math.ceil(total / 10)) => ({ ok: true, data: { success: true, data: items, pagination: { total, totalPages, limit: 10 } } });
+
+test('Staff first page requests ten real records; reuses unfiltered page and API totals without infinite scroll', async t => {
+  userRole = 'staff'; api.reset(); const scheduled = [];
+  mockGlobal(t, 'window', { setTimeout: fn => { scheduled.push(fn); return 1; }, clearTimeout() {} });
+  const props = paginatedFeed(); api.setHistory(historyResponse(props.notifications, props.total));
+  hooks.seed(['feed', [], true, false, '', 1, true, 0, { totalSent: 0, success: 0, errors: 0 }]);
+  tree(notifications.default); hooks.pendingEffects()[0](); await scheduled[0](); await tickFeed();
+  assert.deepEqual(api.calls[0], ['history', { page: 1, limit: 10 }]);
+  hooks.seed(['ALL', '']); const page = tree(notifications.FeedTab, props);
+  assert.equal(rowMessages(page).length, 10); assert.ok(textOf(page).includes('Page 1 of 116'));
+  assert.ok(textOf(page).includes('1,157 results'));
+  assert.ok(pageButton(page, '3')); assert.ok(pageButton(page, '116'));
+  assert.equal(pageButton(page, 'Prev').props.disabled, true);
+  assert.equal(hooks.pendingEffects()[0](), undefined, 'paginated Staff feed has no IntersectionObserver');
+  assert.ok(!textOf(page).includes('Scroll down to load older'));
+});
+const tickFeed = () => new Promise(resolve => setImmediate(resolve));
+
+test('Staff page changes fetch exactly one server page, replace records and reset only list scroll', async t => {
+  api.reset(); const scheduled = mockFeedTimers(t); const props = paginatedFeed();
+  hooks.seed(['ALL', '']); let page = tree(notifications.FeedTab, props);
+  pageButton(page, 'Next').props.onClick(); page = tree(notifications.FeedTab, props);
+  assert.ok(textOf(page).includes('Loading history from API')); assert.equal(rowMessages(page).length, 0);
+  api.setHistory(historyResponse([message('ERROR', { _id: 'second-page-only' })], 1157));
+  hooks.pendingEffects()[1](); await scheduled.at(-1).fn();
+  assert.deepEqual(api.calls.at(-1), ['history', { page: 2, limit: 10, priority: undefined, search: undefined }]);
+  page = tree(notifications.FeedTab, props); assert.equal(rowMessages(page).length, 1);
+  assert.equal(rowMessages(page)[0].props.m._id, 'second-page-only');
+  assert.ok(textOf(page).includes('Page 2 of 116'));
+  const scroller = nodes(page).find(node => node.props?.className?.includes('snm-event-list'));
+  scroller.props.ref.current = { scrollTop: 400 }; hooks.pendingEffects()[2]();
+  assert.equal(scroller.props.ref.current.scrollTop, 0);
+});
+
+test('Staff search/priority reset page and filter on the server rather than only loaded rows', async t => {
+  api.reset(); const scheduled = mockFeedTimers(t); const props = paginatedFeed();
+  hooks.seed(['ALL', '', 5]); let page = tree(notifications.FeedTab, props);
+  nodes(page).find(node => node.props?.label === 'ERROR').props.onClick();
+  nodes(page).find(node => node.type === 'input').props.onChange({ target: { value: 'remote match' } });
+  tree(notifications.FeedTab, props);
+  api.setHistory(historyResponse([message('ERROR', { _id: 'not-in-first-page', title: 'remote match' })], 11));
+  hooks.pendingEffects()[1](); assert.equal(scheduled.at(-1).delay, 250); await scheduled.at(-1).fn();
+  assert.deepEqual(api.calls.at(-1), ['history', { page: 1, limit: 10, priority: 'ERROR', search: 'remote match' }]);
+  page = tree(notifications.FeedTab, props);
+  assert.equal(rowMessages(page)[0].props.m._id, 'not-in-first-page');
+  assert.ok(textOf(page).includes('Page 1 of 2')); assert.ok(textOf(page).includes('11 results'));
+  nodes(page).find(node => node.props?.label === 'All').props.onClick();
+  nodes(page).find(node => node.type === 'input').props.onChange({ target: { value: '' } });
+  page = tree(notifications.FeedTab, props); assert.equal(rowMessages(page).length, 10);
+  assert.ok(textOf(page).includes('1,157 results'));
+});
+
+test('Staff empty and failed server pages expose truthful counts/loading/error and retry', async t => {
+  api.reset(); const scheduled = mockFeedTimers(t); const props = paginatedFeed();
+  hooks.seed(['ERROR', '']); tree(notifications.FeedTab, props);
+  let page;
+  api.setHistory(historyResponse([], 0)); hooks.pendingEffects()[1](); await scheduled.at(-1).fn();
+  page = tree(notifications.FeedTab, props);
+  assert.ok(textOf(page).includes('No matching notifications')); assert.ok(textOf(page).includes('0 results'));
+  assert.equal(pageButton(page, 'Prev').props.disabled, true); assert.equal(pageButton(page, 'Next').props.disabled, true);
+  nodes(page).find(node => node.type === 'input').props.onChange({ target: { value: 'fail' } });
+  tree(notifications.FeedTab, props); api.setHistory({ ok: false, data: { message: 'Fixture history unavailable' } });
+  hooks.pendingEffects()[1](); await scheduled.at(-1).fn(); page = tree(notifications.FeedTab, props);
+  assert.ok(textOf(page).includes('Fixture history unavailable')); assert.ok(textOf(page).includes('Results unavailable'));
+  assert.equal(rowMessages(page).length, 0); pageButton(page, 'Retry').props.onClick();
+  tree(notifications.FeedTab, props); api.setHistory(historyResponse([message('ERROR')], 1));
+  hooks.pendingEffects()[1](); await scheduled.at(-1).fn(); page = tree(notifications.FeedTab, props);
+  assert.equal(rowMessages(page).length, 1); assert.ok(textOf(page).includes('1 results'));
+});
+
+test('Staff stale search responses are discarded and data shrink clamps to the server last page', async t => {
+  api.reset(); const scheduled = mockFeedTimers(t); const props = paginatedFeed();
+  let resolveOld;
+  hooks.seed(['ERROR', 'old']); tree(notifications.FeedTab, props);
+  api.setHistory(new Promise(resolve => { resolveOld = resolve; }));
+  const cleanup = hooks.pendingEffects()[1](); const oldRequest = scheduled.at(-1).fn();
+  cleanup(); hooks.values()[1] = 'new'; tree(notifications.FeedTab, props);
+  api.setHistory(historyResponse([message('ERROR', { _id: 'new-result' })], 1));
+  hooks.pendingEffects()[1](); await scheduled.at(-1).fn();
+  resolveOld(historyResponse([message('ERROR', { _id: 'stale-result' })], 1)); await oldRequest;
+  let page = tree(notifications.FeedTab, props); assert.equal(rowMessages(page)[0].props.m._id, 'new-result');
+  hooks.seed(['ALL', '', 116]); tree(notifications.FeedTab, props);
+  api.setHistory(historyResponse([], 12)); hooks.pendingEffects()[1](); await scheduled.at(-1).fn();
+  assert.equal(hooks.values()[2], 2); tree(notifications.FeedTab, props);
+  api.setHistory(historyResponse([message('INFO', { _id: 'last-page' })], 12));
+  hooks.pendingEffects()[1](); await scheduled.at(-1).fn(); page = tree(notifications.FeedTab, props);
+  assert.ok(textOf(page).includes('Page 2 of 2')); assert.equal(pageButton(page, 'Next').props.disabled, true);
+});
+
+
+test('Staff history shrinking to zero never restores stale bootstrap records or totals', async t => {
+  api.reset(); const scheduled = mockFeedTimers(t); const props = paginatedFeed();
+  hooks.seed(['ALL', '', 116]); tree(notifications.FeedTab, props);
+  api.setHistory(historyResponse([], 0)); hooks.pendingEffects()[1](); await scheduled.at(-1).fn();
+  assert.equal(hooks.values()[2], 1);
+  tree(notifications.FeedTab, props); hooks.pendingEffects()[1](); await scheduled.at(-1).fn();
+  const page = tree(notifications.FeedTab, props);
+  assert.equal(rowMessages(page).length, 0); assert.ok(textOf(page).includes('Page 1 of 1'));
+  assert.ok(textOf(page).includes('0 results')); assert.ok(!textOf(page).includes('1,157 results'));
+});
+
+
+test('compact Staff review keeps dynamic recipient summary outside the sole preview frame; Admin copy is retained', () => {
+  userRole = 'staff'; hooks.seed(composeState({ 0: 'multi', 1: users, 3: 'Parking update', 4: 'Actual draft content' }));
+  const page = tree(notifications.ComposeTab, {});
+  const preview = nodes(page).find(node => node.props?.className?.split(' ').includes('snm-preview'));
+  const summary = nodes(page).find(node => node.props?.className === 'snm-recipient-summary');
+  assert.ok(summary); assert.ok(textOf(summary).includes('2 recipients selected'));
+  assert.ok(!nodes(preview).includes(summary));
+  assert.ok(textOf(preview).includes('Parking update')); assert.ok(textOf(preview).includes('Actual draft content'));
+  assert.equal(nodes(page).filter(node => node.props?.className?.split(' ').includes('snm-preview')).length, 1);
+  userRole = 'admin'; hooks.seed(composeState({ 1: [users[0]] }));
+  const admin = tree(notifications.ComposeTab, {});
+  assert.ok(!nodes(admin).some(node => node.props?.className === 'snm-recipient-summary'));
+  assert.ok(htmlOf(admin).includes('Choose audience'));
+  assert.ok(textOf(admin).includes('Create notification'));
+  userRole = 'staff';
 });

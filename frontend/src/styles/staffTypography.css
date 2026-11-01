@@ -195,3 +195,9 @@ body[data-valo-typography="staff"] .staff-dashboard-topbar button:focus-visible 
   body[data-valo-typography="staff"] .staff-dashboard-topbar button,
   body[data-valo-typography="staff"] .staff-dashboard-topbar .staff-shell-toolbar > .relative > button { transition: none; }
 }
+
+/* Staff pages and portalled dialogs retain native scrolling without visible rails. */
+body[data-valo-typography="staff"],
+body[data-valo-typography="staff"] * { scrollbar-width: none !important; }
+body[data-valo-typography="staff"]::-webkit-scrollbar,
+body[data-valo-typography="staff"] *::-webkit-scrollbar { display: none; }

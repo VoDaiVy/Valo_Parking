@@ -1,37 +1,38 @@
 /* Staff-only rate catalog. Shared Admin markup and dialogs keep their existing styles. */
-body[data-valo-typography="staff"] .staff-ticket-packages { background: #080B0F; padding: 0 32px 28px; color: #F5F7FA; font-family: Montserrat, sans-serif; font-size: 14px; line-height: 1.5; min-width: 0; }
+body[data-valo-typography="staff"] .staff-ticket-packages { background: #080F10; padding: 0 24px 16px; color: #F5F7FA; font-family: Montserrat, sans-serif; font-size: 14px; line-height: 1.5; min-width: 0; }
 body[data-valo-typography="staff"] .staff-ticket-packages > .pointer-events-none { display: none; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-content { max-width: 1400px; min-width: 0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-header { padding-block: 22px; margin-bottom: 20px; border-bottom: 1px solid #222D36; animation: none; position: relative; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-header::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 140px; height: 1px; background: #10B98180; pointer-events: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-content { display: flex; flex-direction: column; height: 100%; width: 100%; max-width: none; min-width: 0; min-height: 0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header { padding: 16px 0 0; margin-bottom: 12px; border: 0; animation: none; position: relative; flex: 0 0 auto; flex-direction: row; align-items: flex-start; gap: 12px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header::after { display: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-eyebrow { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #54E3B0; margin-bottom: 10px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-legacy-label { display: none; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-header h1 { font-size: 34px; line-height: 1.2; font-weight: 700; letter-spacing: -.03em; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-header p:not(.stp-eyebrow) { margin-top: 8px; color: #9AADC0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics { background: transparent; border: 0; border-block: 1px solid #222D36; border-radius: 0; box-shadow: none; margin-bottom: 4px; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div { padding: 18px 20px; border-color: #222D36; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div:first-child { padding-left: 0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div > div:first-child { width: 36px; height: 36px; border: 0; border-radius: 8px; background: #111820; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics p:first-child { font-size: 13px; text-transform: none; letter-spacing: normal; font-weight: 500; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header h1 { font-size: 28px; line-height: 36px; font-weight: 700; letter-spacing: -.03em; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header p:not(.stp-eyebrow) { margin-top: 2px; color: #9AADC0; font-size: 13px; line-height: 20px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics { flex: 0 0 auto; grid-template-columns: repeat(3,minmax(0,1fr)); background: #0B1716; border: 1px solid #222D36; border-radius: 10px; box-shadow: none; margin-bottom: 0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div { min-height: 76px; padding: 10px 16px; gap: 10px; border-color: #222D36; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div:first-child { padding-left: 16px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div > div:first-child { width: 24px; height: 24px; border: 0; border-radius: 0; background: transparent; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics p:first-child { font-size: 12px; text-transform: none; letter-spacing: normal; font-weight: 500; color: #9AADC0; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics p:nth-child(2) { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics p:nth-child(3) { color: #9AADC0; font-weight: 500; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar { padding: 16px 0; margin-bottom: 0; gap: 12px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar { flex: 0 0 auto; padding: 10px 0; margin-bottom: 0; gap: 12px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar > .relative:first-child { min-width: 0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar input, body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar button[aria-haspopup] { height: 44px; border-radius: 10px; background: #111820; border-color: #222D36; color: #F5F7FA; font-size: 14px; font-weight: 500; box-shadow: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar input, body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar button[aria-haspopup] { height: 44px; border-radius: 10px; background: #111820; border-color: #222D36; color: #F5F7FA; font-size: 13px; font-weight: 500; box-shadow: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] { background: #111820; border-color: #222D36; backdrop-filter: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] button { font-size: 14px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] svg { color: #54E3B0; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar input::placeholder { color: #9AADC0; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar :is(input, button):focus-visible { outline: 2px solid #54E3B0; outline-offset: 2px; box-shadow: 0 0 0 3px #10B98114; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-catalog { border: 1px solid #222D36; border-radius: 12px; background: #0D1117; overflow: hidden; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns { padding: 14px 20px; background: #111820; color: #A9C8D8; font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: none; border-bottom: 1px solid #222D36; gap: 16px; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-rows > * + * { margin-top: 0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-row { border: 0; border-radius: 0; background: #0D1117; transform: none; transition: background-color 200ms, box-shadow 200ms; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-row + .stp-row { border-top: 1px solid #222D36; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-row:hover { background: #15212A; box-shadow: inset 2px 0 #10B98180; transform: none; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-row > .absolute { width: 2px; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { padding: 18px 20px; min-width: 0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-row h3 { font-weight: 600; font-size: 16px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-catalog { flex: 1 1 0%; min-height: 0; margin-bottom: 0; border: 0; border-radius: 0; background: transparent; overflow: auto; scrollbar-width: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns { position: sticky; top: 0; z-index: 10; min-height: 46px; align-items: center; padding: 14px 20px; background: #14212A; color: #A9C8D8; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: none; border: 1px solid #28414A; border-radius: 12px; gap: 16px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-rows { margin-top: 10px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-rows > * + * { margin-top: 10px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row { border: 1px solid var(--g3-border, var(--staff-border, #222D36)); border-radius: 10px; background: var(--g3-surface, var(--staff-surface, #0D1117)); background-image: none; transform: none; box-shadow: none; transition: border-color 180ms, background-color 180ms; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row:hover { border-color: #256C55; background: #0F191B; box-shadow: none; transform: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row > .absolute { display: block; width: 3px; top: 0; bottom: 0; height: auto; background: #10B981; opacity: 0; pointer-events: none; transition: opacity 180ms; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row:hover > .absolute { opacity: 1; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { min-height: 90px; padding: 18px 20px; min-width: 0; gap: 16px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row h3 { font-weight: 600; font-size: 14px; line-height: 21px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row p { overflow-wrap: anywhere; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row .font-mono { font-family: inherit; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row span.uppercase { font-size: 12px; letter-spacing: normal; text-transform: none; font-weight: 600; }
@@ -54,7 +55,7 @@ body[data-valo-typography="staff"] .staff-ticket-packages.stp-skeleton { padding
 }
 @media (max-width: 639px) {
  body[data-valo-typography="staff"] .staff-ticket-packages { padding-inline: 16px; }
- body[data-valo-typography="staff"] .staff-ticket-packages .stp-header h1 { font-size: 30px; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-header h1 { font-size: 28px; }
  body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div { padding: 14px 0; border: 0; }
  body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div + div { border-top: 1px solid #222D36; }
  body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { grid-template-columns: minmax(0,1fr); padding: 16px; }
@@ -62,5 +63,33 @@ body[data-valo-typography="staff"] .staff-ticket-packages.stp-skeleton { padding
  body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar > * { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
- body[data-valo-typography="staff"] .staff-ticket-packages .stp-row, body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar * { transition: none; animation: none; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-row, body[data-valo-typography="staff"] .staff-ticket-packages .stp-row > .absolute, body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar * { transition: none; animation: none; }
 }
+
+/* Compact Staff catalog viewport; all existing Admin selectors remain untouched. */
+body[data-valo-typography="staff"] .staff-ticket-packages { height: calc(100dvh - 70px); min-height: 0; overflow: hidden; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header > div:first-child { flex: 1 1 auto; min-width: 0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header p:not(.stp-eyebrow)::after { content: ""; display: block; height: 1px; margin-top: 14px; background: linear-gradient(to right, #29B98C, rgb(41 185 140 / 35%) 60%, transparent); box-shadow: 0 2px 5px -2px rgb(41 185 140 / 28%); pointer-events: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; width: auto; height: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; border: 1px solid #256C55; border-radius: 10px; background: #102A25; color: #B9F7DE; cursor: pointer; transition: background-color 150ms, border-color 150ms; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh:hover:not(:disabled) { background: #153B30; border-color: #54CFA2; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh:focus-visible { outline: 2px solid #54CFA2; outline-offset: 2px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh:disabled { opacity: .5; cursor: wait; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div + div { border-left: 1px solid #222D36; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div:nth-child(-n+2) p:nth-child(3) { display: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics p:nth-child(2) { line-height: 28px; margin-top: 0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-catalog::-webkit-scrollbar { display: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid > div:first-child { gap: 10px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid > div:first-child > div:first-child { width: 36px; height: 36px; box-shadow: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid > div:first-child p { margin-top: 2px; font-size: 12px; line-height: 18px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row span.uppercase { padding: 3px 10px; }
+@media (max-width: 639px) {
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div { min-height: 72px; padding: 8px; gap: 6px; align-items: flex-start; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div:first-child { padding-left: 8px; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div + div { border-top: 0; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div > div:first-child { display: none; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics p:first-child { font-size: 11px; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div:last-child p:nth-child(2) { font-size: 14px; white-space: normal; overflow-wrap: anywhere; }
+}
+
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns { text-transform: uppercase; }

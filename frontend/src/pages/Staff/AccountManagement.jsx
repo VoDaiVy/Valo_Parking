@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import './components/staffManagement.css';
+import './components/staffCustomerManagement.css';
 import {
   getOperationalViewState,
   getResponseAvailability,
@@ -117,41 +118,16 @@ function SkeletonRow() {
 }
 
 // --- Overview Card ------------------------------------------------------------
-function StatCard({ icon: Icon, label, value, gradient, glow, loading, unavailable }) {
-  return (
-    <div
-      className="g3-metric relative rounded-xl p-3 overflow-hidden cursor-default group transition-all duration-300 hover:scale-[1.02]"
-      style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 8px 40px ${glow}, 0 0 0 1px rgba(255,255,255,0.12)`; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(0,0,0,0.3)'; }}
-    >
-      {/* sweep shimmer */}
-      <div className="g3-metric-decor absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-        style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%)' }} />
-      {/* gradient blob */}
-      <div className={`g3-metric-decor absolute -top-6 -right-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-xl`} />
-
-      <div className="relative flex items-start justify-between">
-        <div>
-          <p className="g3-metric-label text-[10px] text-white/40 uppercase tracking-widest font-semibold mb-1">{label}</p>
-          <p className="g3-metric-value text-2xl font-bold text-white">
-            {loading
-              ? <span className="inline-block w-12 h-8 rounded bg-white/10 animate-skeleton" />
-              : unavailable
-                ? '—'
-                : <AnimatedCounter target={value} />}
-          </p>
-        </div>
-        <div className={`g3-metric-icon w-8 h-8 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
-          <Icon size={16} className="text-white" />
-        </div>
-      </div>
+function StatCard({ icon: Icon, label, value, loading, unavailable }) {
+  return <article className="g3-metric" aria-label={label}>
+    <div className="g3-metric-icon"><Icon size={19} aria-hidden="true" /></div>
+    <div className="g3-metric-copy">
+      <p className="g3-metric-label">{label}</p>
+      <p className="g3-metric-value">{loading
+        ? <span className="inline-block w-12 h-6 rounded bg-white/10 animate-skeleton" />
+        : unavailable ? '?' : <AnimatedCounter target={value} />}</p>
     </div>
-  );
+  </article>;
 }
 
 export default function AccountManagement() {
@@ -477,12 +453,12 @@ export default function AccountManagement() {
           </div>
 
           {/* -- Stat Cards -- */}
-          <div className="g3-metrics-strip g3-customer-metrics grid grid-cols-4 gap-3 mt-4">
-            <StatCard icon={Users} label="Total Customers" value={totalAccounts} gradient="from-cyan-400 to-blue-500" glow="rgba(6,182,212,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} gradient="from-rose-500 to-red-600" glow="rgba(239,68,68,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} gradient="from-amber-400 to-orange-500" glow="rgba(251,191,36,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-          </div>
+          <section aria-label="Customer summary" className="g3-metrics-strip g3-customer-metrics grid grid-cols-4 gap-3 mt-4">
+            <StatCard icon={Users} label="Total Customers" value={totalAccounts} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+          </section>
         </div>
 
         {/* -- Controls Bar -- */}
@@ -490,7 +466,7 @@ export default function AccountManagement() {
           <div className="g3-search relative flex-1 min-w-[240px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
-              value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
+              aria-label="Search customers" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
               placeholder="Search name, email, phone..."
               className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
             />
@@ -501,7 +477,7 @@ export default function AccountManagement() {
             
             {/* Status Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
+              <Menu.Button aria-label="Filter customers by status" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Eye size={14} className="text-white/40" />
                 <span className="font-medium">{filterStatus === 'all' ? 'All Status' : filterStatus === 'active' ? 'Active' : 'Blocked'}</span>
                 <ChevronDown size={14} className="text-white/40" />
@@ -527,7 +503,7 @@ export default function AccountManagement() {
 
             {/* Sort Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
+              <Menu.Button aria-label="Sort customers" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Clock size={14} className="text-white/40" />
                 <span className="font-medium"> {sortOrder === 'newest' ? 'Newest' : 'Oldest'}</span>
                 <ChevronDown size={14} className="text-white/40" />
@@ -552,11 +528,7 @@ export default function AccountManagement() {
             </Menu>
           </div>
 
-          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">
-            {accountState.isAvailable
-              ? `${filtered.length} of ${users.length} accounts`
-              : 'Customer counts unavailable'}
-          </div>
+
         </div>
 
         {/* -- Table -- */}
@@ -608,12 +580,12 @@ export default function AccountManagement() {
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#080808] ${u.status ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-white truncate">{displayName(u)}</p>
+                          <p title={displayName(u)} className="text-[13px] font-semibold text-white truncate">{displayName(u)}</p>
                           <p className="text-[11px] text-white/40 truncate">{u.username || '-'}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
+                    <td title={u.email} className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
                     <td className="px-4 py-3 text-[13px] text-white/55">{u.profile?.phone || '-'}</td>
                     <td className="px-4 py-3" data-role={u.role}><RoleBadge role={u.role} /></td>
                     <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
@@ -621,7 +593,7 @@ export default function AccountManagement() {
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" className="g3-action g3-edit w-8 h-8 rounded-xl border border-[#ffd555]/10 bg-[#ffd555]/[0.02] hover:bg-[#ffd555]/10 hover:border-[#ffd555]/30 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
+                          title="Edit account" aria-label="Edit account" className="g3-edit">
                           <Edit3 size={14} />
                         </button>
                       </div>

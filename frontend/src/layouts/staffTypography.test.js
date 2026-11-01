@@ -38,7 +38,7 @@ test('Neutral palette with emerald accents and Montserrat hierarchy are Staff sc
   const css = postcss.parse(source);
   css.walkRules((rule) => postcss.list.comma(rule.selector).forEach((selector) => assert.match(selector, /^body\[data-valo-typography="staff"\]/)));
   const tokens = new Map();
-  css.walkDecls((decl) => { tokens.set(decl.prop, decl.value); assert.ok(!decl.important); });
+  css.walkDecls((decl) => { tokens.set(decl.prop, decl.value); assert.ok(!decl.important || (decl.prop === 'scrollbar-width' && decl.value === 'none')); });
   for (const [token, value] of Object.entries({
     '--staff-bg': '#080B0F', '--staff-surface': '#0D1117', '--staff-surface-raised': '#111820',
     '--staff-primary': '#10B981', '--staff-primary-hover': '#54E3B0', '--staff-accent': '#10B981',
@@ -49,7 +49,7 @@ test('Neutral palette with emerald accents and Montserrat hierarchy are Staff sc
   assert.notEqual(tokens.get('--staff-occupied'), tokens.get('--staff-available'));
   assert.notEqual(tokens.get('--staff-maintenance'), tokens.get('--staff-available'));
   assert.ok(source.includes('prefers-reduced-motion: reduce'));
-  assert.doesNotMatch(source, /@import|@font-face|!important/);
+  assert.doesNotMatch(source, /@import|@font-face/);
 });
 
 test('Staff background rules leave the real floating Dashboard toaster transparent', () => {

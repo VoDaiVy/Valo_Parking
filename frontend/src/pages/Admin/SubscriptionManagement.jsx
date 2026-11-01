@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Crown,
   Filter,
@@ -19,6 +21,8 @@ import {
 import { apiFetch } from '../../services/api';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import '../Staff/components/staffManagement.css';
+import '../Staff/components/staffSubscriptionsPagination.css';
+import { getPaginationPages } from '../Staff/sessionPagination.js';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import SubscriptionDeepLink from './SubscriptionDeepLink.jsx';
 import { createSubscriptionLookup, includeLinkedSubscription } from './subscriptionDeepLink.js';
@@ -496,6 +500,20 @@ export default function SubscriptionManagement() {
     };
   }, [subscriptions, pendingTransfers.length]);
 
+  const [staffPage, setStaffPage] = useState(1);
+  const staffRowsRef = useRef(null);
+  const staffTotalPages = Math.max(1, Math.ceil(filteredSubscriptions.length / 6));
+  const staffCurrentPage = Math.min(staffPage, staffTotalPages);
+  const staffVisibleSubscriptions = filteredSubscriptions.slice((staffCurrentPage - 1) * 6, staffCurrentPage * 6);
+  useEffect(() => {
+    if (isAdmin || staffPage <= staffTotalPages) return;
+    const timer = setTimeout(() => setStaffPage(staffTotalPages), 0);
+    return () => clearTimeout(timer);
+  }, [isAdmin, staffPage, staffTotalPages]);
+  useEffect(() => {
+    if (!isAdmin && staffRowsRef.current) staffRowsRef.current.scrollTop = 0;
+  }, [isAdmin, staffCurrentPage, searchTerm, statusFilter, packageFilter]);
+
   const hasFilters = searchTerm || statusFilter !== 'all' || packageFilter !== 'all';
 
   return (
@@ -566,12 +584,12 @@ export default function SubscriptionManagement() {
               placeholder="Search by customer name, email, or vehicle..."
               className="h-12 w-full rounded-xl border border-white/10 bg-black/70 pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-[#ffd555]/60 focus:ring-2 focus:ring-[#ffd555]/10"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); if (!isAdmin) setStaffPage(1); }}
             />
             {searchTerm && (
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
+                onClick={() => { setSearchTerm(''); if (!isAdmin) setStaffPage(1); }}
                 aria-label="Clear membership search"
                 className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
               >
@@ -582,7 +600,7 @@ export default function SubscriptionManagement() {
 
           <AdminSelect
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={(value) => { setStatusFilter(value); if (!isAdmin) setStaffPage(1); }}
             options={[
               { value: 'all', label: 'All Statuses' },
               ...statusOptions.map((status) => ({ value: status, label: titleCase(status) })),
@@ -595,7 +613,7 @@ export default function SubscriptionManagement() {
           {packageOptions.length > 0 && (
             <AdminSelect
               value={packageFilter}
-              onChange={setPackageFilter}
+              onChange={(value) => { setPackageFilter(value); if (!isAdmin) setStaffPage(1); }}
               options={[
                 { value: 'all', label: 'All packages' },
                 ...packageOptions.map((type) => ({ value: type, label: titleCase(type) })),
@@ -653,6 +671,7 @@ export default function SubscriptionManagement() {
             <span>Status</span>
           </div>
 
+          <div className={isAdmin ? undefined : 'staff-membership-scroll'} ref={isAdmin ? undefined : staffRowsRef}>
           {loading ? (
             <LoadingRows />
           ) : subscriptionError ? (
@@ -677,6 +696,7 @@ export default function SubscriptionManagement() {
                     setSearchTerm('');
                     setStatusFilter('all');
                     setPackageFilter('all');
+                    if (!isAdmin) setStaffPage(1);
                   }}
                   className="g3-action mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
                 >
@@ -686,12 +706,23 @@ export default function SubscriptionManagement() {
             </div>
           ) : (
             <div className="g3-membership-rows space-y-2">
-              {visibleSubscriptions.map((sub, index) => (
+              {(isAdmin ? visibleSubscriptions : staffVisibleSubscriptions).map((sub, index) => (
                 <MembershipRow key={sub._id} sub={sub} index={index} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />
               ))}
             </div>
           )}
+          </div>
         </section>
+        {!isAdmin && <nav className="staff-membership-pagination g3-pagination" aria-label="Membership pages">
+          <span>{loading || subscriptionError ? 'Membership results unavailable' : `Page ${staffCurrentPage} of ${staffTotalPages} \u00b7 ${filteredSubscriptions.length} results`}</span>
+          <div className="staff-membership-page-controls">
+            <button type="button" data-nav="prev" disabled={loading || Boolean(subscriptionError) || staffCurrentPage === 1} onClick={() => setStaffPage(staffCurrentPage - 1)}><ChevronLeft size={15} aria-hidden="true" />Prev</button>
+            {!loading && !subscriptionError && getPaginationPages(staffCurrentPage, staffTotalPages).map(page => typeof page === 'number'
+              ? <button type="button" key={page} aria-current={page === staffCurrentPage ? 'page' : undefined} onClick={() => setStaffPage(page)}>{page}</button>
+              : <span key={page} aria-hidden="true">...</span>)}
+            <button type="button" data-nav="next" disabled={loading || Boolean(subscriptionError) || staffCurrentPage === staffTotalPages} onClick={() => setStaffPage(staffCurrentPage + 1)}>Next<ChevronRight size={15} aria-hidden="true" /></button>
+          </div>
+        </nav>}
       </div>
     </div>
   );
