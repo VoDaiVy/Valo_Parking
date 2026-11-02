@@ -5,6 +5,7 @@ import { filterAndSortSessions, getPaginationPages, paginateSessions } from './s
 import StaffDropdown from './components/StaffDropdown.jsx';
 import './components/staffManagement.css';
 import './components/staffSessionManagement.css';
+import '../Admin/sessionManagement.css';
 import { sessionMetrics } from './sessionMetrics.js';
 import './components/sessionDetails.css';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
@@ -141,14 +142,14 @@ export default function SessionManagement() {
 
   const [metricsNow, setMetricsNow] = useState(() => new Date());
   useEffect(() => {
-    if (isAdminPage) return;
     const timer = setInterval(() => setMetricsNow(new Date()), 60000);
     return () => clearInterval(timer);
   }, [isAdminPage]);
   const metrics = useMemo(() => sessionMetrics(sessions, metricsNow), [sessions, metricsNow]);
 
   return (
-    <div className={`g3-management-page g3-session-page ${isAdminPage ? '' : 'staff-session-management'} min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8`}>
+    <div className={`g3-management-page g3-session-page ${isAdminPage ? 'admin-session-management' : 'staff-session-management'} min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8`}>
+      {isAdminPage && <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />}
       {adminDeepLink && verificationStatus !== 'verified' && (
         <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
           {verificationStatus === 'loading' ? 'Đang xác minh phiên đỗ xe từ hệ thống...'
@@ -163,16 +164,29 @@ export default function SessionManagement() {
       )}
       <div className="g3-management-content g3-header mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          {isAdminPage && (
-            <div className="g3-eyebrow mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-              <MonitorCheck size={12} /> Session Manager
+          {isAdminPage ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Session Management</h1>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+                <MonitorCheck size={12} /> Session Manager
+              </div>
             </div>
-          )}
-          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>
+          ) : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>}
           <p className="g3-subtitle mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
         </div>
 
-        <div className={isAdminPage ? 'contents' : 'staff-session-header-actions'}>
+        <div className={isAdminPage ? 'admin-session-header-actions' : 'staff-session-header-actions'}>
+        {isAdminPage && <button type="button" onClick={() => {
+          if (loading) return;
+          if (adminDeepLink) {
+            setLoading(true);
+            setVerificationAttempt((attempt) => attempt + 1);
+          } else {
+            fetchSessions();
+          }
+        }} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" aria-busy={loading} className="admin-session-refresh">
+          <RefreshCw size={14} aria-hidden="true" className={loading ? 'animate-spin motion-reduce:animate-none' : ''} />
+        </button>}
         {!isAdminPage && <button type="button" onClick={fetchSessions} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" className="staff-session-refresh">
           <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
         </button>}
@@ -191,6 +205,30 @@ export default function SessionManagement() {
         </button>
         </div>
       </div>
+
+      {isAdminPage && (
+        <section aria-label="Admin session summary" aria-busy={loading} className="admin-session-metrics">
+          {[
+            { label: 'Total Sessions', value: metrics.total, Icon: MonitorCheck, note: 'All recorded sessions', tone: 'text-blue-300' },
+            { label: 'Currently Parked', value: metrics.parked, Icon: Car, note: 'Active sessions', tone: 'text-cyan-300' },
+            { label: 'Completed Today', value: metrics.completedToday, Icon: CheckCircle2, note: 'Checkouts in Vietnam time', tone: 'text-emerald-300' },
+            { label: 'Completed Sessions', value: sessions.filter((session) => session.status === 'completed').length, Icon: CheckCircle2, note: 'Finished parking sessions', tone: 'text-emerald-300' },
+          ].map(({ label, value, Icon, note, tone }) => (
+            <div key={label} className="admin-session-metric" title={loading ? 'Loading sessions' : error ? 'Session API unavailable' : note}>
+              <Icon size={18} className={`shrink-0 ${tone}`} aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-blue-200/55">{label}</p>
+                {loading ? <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" aria-label="Loading" /> : (
+                  <div className="mt-1.5 flex items-baseline gap-2">
+                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? 'N/A' : value.toLocaleString('vi-VN')}</p>
+                    <span className="truncate text-xs text-emerald-300">{error ? 'Unavailable' : note}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {!isAdminPage && <section aria-label="Session summary" className="g3-management-content staff-session-metrics">
         {[

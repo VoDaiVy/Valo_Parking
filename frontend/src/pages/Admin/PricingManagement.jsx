@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Loader2, RotateCcw, Save, Clock3, CalendarDays } from 'lucide-react';
-import { PricingHeader, PricingOverview, PricingSchedule, TimeBlockEditor, PricePolicyEditor, AdditionalPricingRules, PricingSummary } from './PricingPanels';
+import { PricingHeader, PricingOverview, PricingSchedule, TimeBlockEditor, PricePolicyEditor, AdditionalPricingRules } from './PricingPanels';
 import { DEFAULT_DAY_NIGHT, serializeConfig, getScheduleStatus } from './pricingDisplay';
 import './pricingManagement.css';
+import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 
 export default function PricingManagement() {
   const [selectedBlock, setSelectedBlock] = useState(null);
@@ -230,19 +232,37 @@ export default function PricingManagement() {
 
   if (loading) return <div className="pricing-page pricing-loading" role="status"><Loader2 className="animate-spin" size={24} />Loading pricing configuration...</div>;
 
-  return <div className="pricing-page">
+  return <div className={`pricing-page ${activeTab === 'policies' ? 'pricing-calendar-page' : ''}`}>
+    <AdminBackgroundOverlay />
     <div className="pricing-content">
       <PricingHeader status={scheduleStatus} />
-      <nav className="pricing-tabs" aria-label="Pricing sections">
-        {[['time-blocks', 'Time Blocks', Clock3], ['policies', 'Calendar Policies', CalendarDays]].map(([value, label, Icon]) => <button key={value} type="button" aria-current={activeTab === value ? 'page' : undefined} onClick={() => setActiveTab(value)}><Icon size={16} aria-hidden="true" />{label}</button>)}
+      <nav className="pricing-tabs" role="tablist" aria-label="Pricing sections">
+        {[['time-blocks', 'Time Blocks', Clock3], ['policies', 'Calendar Policies', CalendarDays]].map(([value, label, Icon], index) => (
+          <button key={value} type="button" role="tab" id={`pricing-tab-${value}`}
+            aria-selected={activeTab === value} aria-controls={`pricing-panel-${value}`} tabIndex={activeTab === value ? 0 : -1}
+            onClick={() => setActiveTab(value)}
+            onKeyDown={(event) => {
+              const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+              if (!keys.includes(event.key)) return;
+              event.preventDefault();
+              const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : (index + 1) % 2;
+              const nextTab = ['time-blocks', 'policies'][nextIndex];
+              setActiveTab(nextTab);
+              document.getElementById(`pricing-tab-${nextTab}`)?.focus();
+            }}>
+            <Icon size={19} aria-hidden="true" />{label}
+            {activeTab === value && <motion.span className="pricing-tab-underline" layoutId="pricing-tab-underline" transition={{ duration: 0.2, ease: 'easeOut' }} />}
+          </button>
+        ))}
       </nav>
+      <div role="tabpanel" id={`pricing-panel-${activeTab}`} aria-labelledby={`pricing-tab-${activeTab}`} tabIndex={0}>
       {activeTab === 'time-blocks' ? <>
         <PricingOverview timeBlocks={timeBlocks} />
         <PricingSchedule timeBlocks={timeBlocks} onSelect={selectBlock} />
         <TimeBlockEditor timeBlocks={timeBlocks} selectedBlock={selectedBlock} onAdd={handleAddTimeBlock} onChange={handleTimeBlockChange} onRemove={handleRemoveTimeBlock} />
       </> : <PricePolicyEditor policies={pricePolicies} onAdd={handleAddPolicy} onChange={handlePolicyChange} onRemove={handleRemovePolicy} />}
+      </div>
       {config && <AdditionalPricingRules config={config} />}
-      <PricingSummary timeBlocks={timeBlocks} status={scheduleStatus} />
     </div>
     {(hasUnsavedChanges || error || success || saving) && <footer className="pricing-save-bar">
       <p role={error ? 'alert' : 'status'} className={error ? 'pricing-error' : success ? 'pricing-success' : ''}>{error || success || 'You have unsaved changes'}</p>

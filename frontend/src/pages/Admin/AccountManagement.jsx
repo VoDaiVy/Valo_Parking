@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useSearchParams } from 'react-router-dom';
+import './accountManagement.css';
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -123,7 +124,7 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
   return (
     <div className={dividerClass}>
-      <div className="group min-w-0 px-0 py-3 transition hover:bg-white/[0.018] sm:px-4">
+      <div className="account-metric group min-w-0 px-0 py-3 transition hover:bg-white/[0.018] sm:px-4">
         <div className="flex items-center gap-3">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition group-hover:brightness-125 ${toneClass}`}>
             <Icon size={18} />
@@ -390,7 +391,7 @@ export default function AccountManagement() {
   const avatarGrad = (u) => (ROLES[u?.role] || ROLES.customer).gradient;
 
   return (
-    <div className="flex h-[calc(100vh-70px)] bg-[#080808] text-white relative overflow-hidden">
+    <div className="admin-account-management flex h-full min-h-0 bg-[#080808] text-white relative overflow-hidden">
       <style>{`
         @keyframes skeletonShimmer {
           0% { background-position: -400px 0; }
@@ -445,16 +446,18 @@ export default function AccountManagement() {
 
       {/* Main panel */}
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
-      <div className={`flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300`}>
+      <div className={`account-main flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden transition-all duration-300`}>
 
         {/* -- Header -- */}
-        <div className="bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
+        <div className="account-header bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-                <Users size={12} /> User Management
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Account Management</h1>
+                <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+                  <Users size={12} /> User Management
+                </div>
               </div>
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Account Management</h1>
               <p className="text-gray-400 text-sm mt-1">Manage user accounts, roles, and access permissions</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
@@ -463,8 +466,8 @@ export default function AccountManagement() {
           </div>
 
           {/* -- Stat Cards -- */}
-          <div className="mt-6 border-y border-white/10 bg-[#080808]">
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="account-metrics mt-6 border-y border-white/10 bg-[#080808]">
+            <div className="grid grid-cols-2 lg:grid-cols-4">
               <StatCard index={0} icon={Users} label="Total Accounts" value={totalAccounts} sub="Managed users" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
               <StatCard index={1} icon={UserPlus} label="New This Month" value={newThisMonth} sub="Recently joined" toneClass="bg-purple-500/10 text-purple-300" loading={loading} />
               <StatCard index={2} icon={UserX} label="Blocked Accounts" value={blockedCount} sub={blockedCount > 0 ? "Requires review" : "All users are active"} toneClass="bg-red-500/10 text-red-300" subTone={blockedCount > 0 ? "text-red-400" : "text-emerald-300"} loading={loading} />
@@ -474,8 +477,8 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Controls Bar -- */}
-        <div className="flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
-          <div className="relative flex-1 min-w-[240px] max-w-sm">
+        <div className="account-toolbar flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
+          <div className="account-search relative flex-1 min-w-0">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
               value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
@@ -484,7 +487,7 @@ export default function AccountManagement() {
             />
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="account-filters flex items-center gap-3">
             {/* Role Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
@@ -564,11 +567,10 @@ export default function AccountManagement() {
             </Menu>
           </div>
 
-          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">{filtered.length} of {users.length} accounts</div>
         </div>
 
         {/* -- Table -- */}
-        <div className="flex-1 overflow-auto min-h-0">
+        <div className="account-table-scroll flex-1 overflow-auto min-h-0" tabIndex={0} role="region" aria-label="Account list">
           <table className="w-full min-w-[800px] border-collapse">
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#171717] border-b border-white/10">
@@ -594,7 +596,7 @@ export default function AccountManagement() {
               {!loading && pageUsers.map(u => {
                 const isActive = panelUser?._id === u._id;
                 return (
-                  <tr key={u._id} className={`group border-b border-white/10 cursor-pointer hover:bg-[#171717] hover:-translate-y-[1px] hover:shadow-lg transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
+                  <tr key={u._id} className={`account-row group border-b border-white/10 cursor-pointer hover:bg-[#171717] hover:-translate-y-[1px] hover:shadow-lg transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
                     onClick={() => openPanel(u)}>
                     <td className="w-4"></td>
                     <td className="px-4 py-3">
@@ -620,7 +622,7 @@ export default function AccountManagement() {
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" className="w-8 h-8 rounded-xl border border-[#ffd555]/10 bg-[#ffd555]/[0.02] hover:bg-[#ffd555]/10 hover:border-[#ffd555]/30 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
+                          title="Edit account" className="w-8 h-8 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ffd555]/60">
                           <Edit3 size={14} />
                         </button>
                       </div>
@@ -633,7 +635,7 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Pagination -- */}
-        <div className="flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
+        <div className="account-pagination flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
           <span className="text-xs text-white/30">Page {page} of {totalPages} · {filtered.length} results</span>
           <div className="flex items-center gap-1">
             <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
@@ -856,7 +858,7 @@ export default function AccountManagement() {
                           </button>
                         )}
                         <button onClick={() => setDeleteConfirm(true)}
-                          className="w-10 h-[42px] flex items-center justify-center rounded-xl border border-red-600/50 bg-red-500/10 text-red-500 hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all active:scale-95 shrink-0">
+                          className="w-10 h-[42px] flex items-center justify-center text-red-500 hover:text-red-300 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400/60 shrink-0">
                           <Trash2 size={16} />
                         </button>
                       </>

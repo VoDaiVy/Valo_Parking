@@ -8,7 +8,7 @@ import { getTimelineSegments, getScheduleStatus, serializeConfig } from './prici
 let server;
 let panels;
 before(async () => {
-  server = await createServer({ optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false }, appType: 'custom' });
+  server = await createServer({ optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false }, appType: 'custom', plugins: [{ name: 'selected-calendar-policy-fixture', enforce: 'pre', transform(source, id) { if (id.replaceAll('\\', '/').endsWith('/PricingPanels.jsx')) return source.replace('const [selectedIndex, setSelectedIndex] = useState(null)', 'const [selectedIndex, setSelectedIndex] = useState(0)'); } }] });
   panels = await server.ssrLoadModule('/src/pages/Admin/PricingPanels.jsx');
 });
 after(async () => { await server?.close(); });
@@ -74,7 +74,8 @@ test('calendar scope controls and active states retain their persisted represent
   const props = { policies: [policy], onAdd: noop, onChange: noop, onRemove: noop };
   const html = render('PricePolicyEditor', props);
   assert.equal((html.match(/type="date"/g) || []).length, 2);
-  assert.ok(html.includes('value="decrease" selected=""'));
+  assert.ok(html.includes('aria-label="Price adjustment direction"'));
+  assert.ok(html.includes('Decrease'));
   assert.ok(html.includes('aria-label="Delete policy Holiday"'));
   assert.ok(html.includes('aria-pressed="false"'));
   const weekday = render('PricePolicyEditor', { ...props, policies: [{ ...policy, scope: 'weekday', daysOfWeek: [5] }] });
@@ -101,18 +102,20 @@ test('only schedule and editor lose their outer cards; actions and disclosure re
   assert.ok(schedule.startsWith('<section class="pricing-schedule">'));
   assert.ok(editor.startsWith('<section class="pricing-editor">'));
   assert.ok(schedule.includes('aria-expanded="false"'));
-  assert.ok(schedule.includes('Pricing schedule generated from the time blocks below.'));
+  assert.ok(!schedule.includes('Pricing schedule generated from the time blocks below.'));
   assert.ok(editor.includes('aria-label="Edit fee for time block 1"'));
   assert.ok(editor.includes('aria-label="Delete time block 1"'));
   assert.ok(editor.includes('Add time block'));
   assert.ok(render('AdditionalPricingRules', { config: {} }).startsWith('<details class="pricing-panel pricing-additional">'));
 });
 
-test('calendar policies have individual cards with name and actions grouped in the header', () => {
+test('calendar policies use list/detail workspace and one editor with existing actions', () => {
   const policy = { name: 'Weekend', scope: 'weekday', daysOfWeek: [0, 6], adjustmentPercent: -10, priority: 50, isActive: true };
   const html = render('PricePolicyEditor', { policies: [policy], onAdd: noop, onChange: noop, onRemove: noop });
   assert.ok(html.startsWith('<section class="pricing-policies"'));
-  assert.equal((html.match(/class="pricing-policy-card"/g) || []).length, 1);
+  assert.ok(html.includes('class="calendar-workspace"'));
+  assert.ok(html.includes('aria-label="Policy List"'));
+  assert.equal((html.match(/class="pricing-policy-editor"/g) || []).length, 1);
   const header = html.slice(html.indexOf('<header class="pricing-policy-header">'), html.indexOf('</header>'));
   assert.ok(header.includes('value="Weekend"'));
   assert.ok(header.includes('aria-label="Toggle policy Weekend"'));
@@ -132,6 +135,6 @@ test('calendar numeric blanks remain visible drafts, and inactive policies remai
   assert.match(html, /type="number" min="0" max="10000"[^>]*value=""/);
   assert.ok(html.includes('Enter a percentage adjustment.'));
   assert.ok(html.includes('aria-pressed="true">Month 12'));
-  assert.ok(!html.includes(' disabled'));
+  assert.ok(!/<(?:button|input|select)\b[^>]*\sdisabled(?:=|\s|>)/.test(html.slice(html.indexOf('class="pricing-policy-editor"'))));
   assert.deepEqual(policy.daysOfWeek, [2]);
 });

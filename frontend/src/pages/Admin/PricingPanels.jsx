@@ -18,15 +18,15 @@ function Coverage({ status }) {
 function SectionTitle({ icon: Icon, title, description }) {
   return <div className="pricing-section-title">
     <span className="pricing-section-icon"><Icon size={20} aria-hidden="true" /></span>
-    <div><h2>{title}</h2><p>{description}</p></div>
+    <div><h2>{title}</h2>{description && <p>{description}</p>}</div>
   </div>;
 }
 
 export function PricingHeader({ status }) {
   return <header className="pricing-header">
     <div>
-      <h1>Pricing Management</h1><p className="pricing-subtitle">Manage time blocks and calendar pricing policies.</p>
-    </div><Coverage status={status} />
+      <div className="pricing-title-line"><h1>Pricing Management</h1><span className="pricing-manager-badge"><ChartNoAxesColumnIncreasing size={13} aria-hidden="true" />Pricing Manager</span></div><p className="pricing-subtitle">Manage time blocks and calendar pricing policies.</p>
+    </div>{status.tone !== 'success' && <Coverage status={status} />}
   </header>;
 }
 
@@ -95,7 +95,7 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
 
   return <section ref={scheduleRef} className="pricing-schedule">
     <div className="pricing-panel-header">
-      <SectionTitle icon={ChartNoAxesColumnIncreasing} title="24-Hour Pricing Schedule" description="Pricing schedule generated from the time blocks below." />
+      <SectionTitle icon={ChartNoAxesColumnIncreasing} title="24-Hour Pricing Schedule" />
       <button type="button" className="pricing-details-button" aria-expanded={detailsOpen} aria-controls="pricing-schedule-details" onClick={() => setDetailsOpen(!detailsOpen)}><Eye size={14} aria-hidden="true" />{detailsOpen ? 'Hide details' : 'View details'}</button>
     </div>
     <div className="pricing-axis" aria-hidden="true">{[0, 6, 12, 18, 24].map((hour) => <span key={hour} style={{ left: `${hour / 24 * 100}%` }}>{formatHour(hour)}</span>)}</div>
@@ -104,7 +104,7 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
         aria-label={`Edit ${describe(segment)}`} aria-describedby={focusedSegment === segment.id ? 'pricing-timeline-tooltip' : undefined}
         onFocus={(event) => showTooltip(event, segment.id)} onBlur={() => setFocusedSegment(null)} onMouseEnter={(event) => showTooltip(event, segment.id)} onMouseLeave={leaveTooltip}
         onKeyDown={(event) => { if (event.key === 'Escape') setFocusedSegment(null); }} onClick={() => onSelect(segment.sourceIndex)}>
-        <span className={segment.width > 15 ? 'pricing-segment-value' : 'pricing-segment-number'}>{segment.width > 15 ? formatCurrency(segment.price) : String(segment.sourceIndex + 1).padStart(2, '0')}</span>
+        <span style={segment.width < 3 ? { visibility: 'hidden' } : undefined} aria-hidden="true" className={segment.width > 15 ? 'pricing-segment-value' : 'pricing-segment-number'}>{segment.width > 15 ? formatCurrency(segment.price) : `B${String(segment.sourceIndex + 1).padStart(2, '0')}`}</span>
       </button>)}
     </div>
     {focused && <div ref={tooltipRef} className="pricing-timeline-tooltip" role="tooltip" id="pricing-timeline-tooltip">
@@ -176,14 +176,14 @@ function PolicyAdjustmentInput({ value, onChange }) {
   return <div className="pricing-policy-adjustment">
     <label htmlFor={`${id}-percentage`}>Price adjustment</label>
     <div className="pricing-policy-adjustment-controls">
-      <select aria-label="Price adjustment direction" value={direction} onChange={(event) => {
-        const next = event.target.value;
-        setEmptyDirection(next);
-        onChange(value === '' ? '' : (next === 'decrease' ? -1 : 1) * magnitude);
-      }}>
-        <option value="increase">Increase</option>
-        <option value="decrease">Decrease</option>
-      </select>
+      <AdminSelect ariaLabel="Price adjustment direction" value={direction}
+        options={[{ value: 'increase', label: 'Increase' }, { value: 'decrease', label: 'Decrease' }]}
+        icon={null} className="w-full" buttonClassName="pricing-adjustment-button"
+        menuAnchor={{ to: 'bottom start', gap: 6, padding: 12 }} menuClassName="pricing-adjustment-menu"
+        onChange={(next) => {
+          setEmptyDirection(next);
+          onChange(value === '' ? '' : (next === 'decrease' ? -1 : 1) * magnitude);
+        }} />
       <div className="pricing-policy-percent">
         <input id={`${id}-percentage`} aria-label="Adjustment percentage" aria-invalid={invalid}
           aria-describedby={`${id}-help`} type="number" min="0" max={limit} step="any"
@@ -201,6 +201,22 @@ function PolicyAdjustmentInput({ value, onChange }) {
 }
 
 export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [listPage, setListPage] = useState(1);
+  const editorId = useId();
+  const index = selectedIndex === null ? -1 : Math.min(selectedIndex, policies.length - 1);
+  const policy = policies[index];
+  const pageSize = 5;
+  const totalPages = Math.max(1, Math.ceil(policies.length / pageSize));
+  const currentPage = Math.min(listPage, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const firstPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  const pageNumbers = Array.from({ length: Math.min(5, totalPages) }, (_, n) => firstPage + n);
+  const describeScope = (policy) => {
+    if (policy.scope === 'date_range') return `Date range: ${policy.startDate || 'Not set'} - ${policy.endDate || 'Not set'}`;
+    if (policy.scope === 'month') return `Months: ${policy.months?.length ? policy.months.join(', ') : 'None selected'}`;
+    return `Weekdays: ${policy.daysOfWeek?.length ? weekDays.filter(([, value]) => policy.daysOfWeek.includes(value)).map(([label]) => label).join(', ') : 'None selected'}`;
+  };
   const toggleValue = (index, field, value) => {
     const current = policies[index][field] || [];
     onChange(index, field, current.includes(value)
@@ -214,12 +230,36 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
         <h2>Calendar Policies</h2>
         <p className="pricing-policy-description">Highest priority wins; ties favor date range, then month, then weekday.</p>
       </div>
-      <button type="button" onClick={onAdd} className="pricing-button pricing-primary">
+      <button type="button" onClick={() => { onAdd(); setSelectedIndex(policies.length); setListPage(Math.floor(policies.length / pageSize) + 1); }} className="pricing-button pricing-primary">
         <Plus size={16} aria-hidden="true" />Add policy
       </button>
     </div>
-    <div className="pricing-policy-list">
-      {policies.map((policy, index) => <article key={policy._id || index} className="pricing-policy-card" aria-label={`Policy ${index + 1}`}>
+    <div className="calendar-workspace">
+      <aside className="calendar-policy-list" aria-label="Policy List">
+        <div className="calendar-list-heading"><h3>Policy List</h3><span>{policies.length} policies</span></div>
+        <div className="calendar-list-body" role="region" aria-label="Calendar policy records" tabIndex={0}>
+          {policies.slice(pageStart, pageStart + pageSize).map((item, offset) => {
+            const rowIndex = pageStart + offset;
+            return <button key={item._id || rowIndex} type="button" className={`calendar-policy-row ${index === rowIndex ? 'is-selected' : ''}`}
+              aria-label={`Edit policy ${item.name || rowIndex + 1}`} aria-pressed={index === rowIndex} aria-controls={editorId}
+              onClick={() => setSelectedIndex(rowIndex)}>
+              <span className="calendar-row-copy"><span className="calendar-row-name">{item.name || 'Untitled policy'}</span><span className="calendar-row-period">{describeScope(item)}</span></span>
+              <span className="calendar-row-meta"><span className="pricing-policy-summary-adjustment">{item.adjustmentPercent === '' || !Number.isFinite(Number(item.adjustmentPercent)) ? 'Not set' : `${Number(item.adjustmentPercent) > 0 ? '+' : ''}${Number(item.adjustmentPercent)}%`}</span><span className={`pricing-policy-summary-status ${item.isActive ? 'is-active' : ''}`}>{item.isActive ? 'Active' : 'Inactive'}</span></span>
+            </button>;
+          })}
+          {!policies.length && <p className="pricing-policy-empty">No calendar policies. Add a policy to get started.</p>}
+        </div>
+        <footer className="calendar-list-pagination">
+          <p aria-live="polite">{policies.length ? pageStart + 1 : 0}&ndash;{Math.min(pageStart + pageSize, policies.length)} of {policies.length}</p>
+          <nav aria-label="Calendar policy pagination">
+            <button type="button" aria-label="Previous calendar policy page" disabled={currentPage === 1} onClick={() => setListPage(currentPage - 1)}>&larr; Prev</button>
+            {pageNumbers.map((number) => <button type="button" key={number} aria-label={`Calendar policy page ${number}`} aria-current={number === currentPage ? 'page' : undefined} disabled={!policies.length} onClick={() => setListPage(number)}>{number}</button>)}
+            <button type="button" aria-label="Next calendar policy page" disabled={currentPage === totalPages} onClick={() => setListPage(currentPage + 1)}>Next &rarr;</button>
+          </nav>
+        </footer>
+      </aside>
+      <div className="calendar-detail" id={editorId}>
+      {policy ? <div className="pricing-policy-editor" role="region" aria-label={`Edit policy ${policy.name || 'New policy'}`}>
         <header className="pricing-policy-header">
           <label className="pricing-policy-name">
             <span>Policy name</span>
@@ -232,9 +272,10 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
               <span aria-hidden="true" />{policy.isActive ? 'Active' : 'Inactive'}
             </button>
             <button type="button" className="pricing-policy-delete" aria-label={`Delete policy ${policy.name || index + 1}`}
-              onClick={() => onRemove(index)}><Trash2 size={17} aria-hidden="true" /></button>
+              onClick={() => { onRemove(index); setSelectedIndex(null); }}><Trash2 size={17} aria-hidden="true" /></button>
           </div>
         </header>
+        <div className="calendar-editor-body" role="region" aria-label="Policy editable fields" tabIndex={0}>
         <div className="pricing-policy-fields">
           <label>Applies by
             <select value={policy.scope} onChange={(event) => onChange(index, 'scope', event.target.value)}>
@@ -243,7 +284,7 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
               <option value="date_range">Holiday / date range</option>
             </select>
           </label>
-          <PolicyAdjustmentInput value={policy.adjustmentPercent} onChange={(value) => onChange(index, 'adjustmentPercent', value)} />
+          <PolicyAdjustmentInput key={policy._id || index} value={policy.adjustmentPercent} onChange={(value) => onChange(index, 'adjustmentPercent', value)} />
           <label className="pricing-policy-priority">Priority
             <input type="number" min="0" max="10000" value={policy.priority} className={numberNoSpinnerClass}
               onChange={(event) => onChange(index, 'priority', event.target.value === '' ? '' : Number(event.target.value))} />
@@ -266,8 +307,9 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
         <footer className="pricing-policy-footer">
           {policy.adjustmentPercent === '' ? 'Enter a percentage adjustment.' : `${Number(policy.adjustmentPercent) < 0 ? 'Decrease' : 'Increase'} the applicable base fee by ${Math.abs(Number(policy.adjustmentPercent)) || 0}%.`}
         </footer>
-      </article>)}
-      {policies.length === 0 && <p className="pricing-policy-empty">No calendar policies. The base price applies every day.</p>}
+        </div>
+      </div> : <div className="calendar-empty"><List size={28} aria-hidden="true" /><h3>No Policy Selected</h3><p>Select a policy or use Add policy to create one.</p></div>}
+      </div>
     </div>
   </section>;
 }

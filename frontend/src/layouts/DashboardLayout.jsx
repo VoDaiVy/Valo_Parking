@@ -17,6 +17,7 @@ import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
 import { scopeAdminTypography } from './adminTypography';
 import '../styles/adminTypography.css';
+import '../styles/adminScrolling.css';
 import { scopeStaffTypography } from './staffTypography';
 import '../styles/staffTypography.css';
 import {

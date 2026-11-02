@@ -4,11 +4,13 @@ import { Menu, Transition } from '@headlessui/react';
 import { 
   Pencil, Trash2, Plus, X, CheckCircle, 
   Package, Clock, DollarSign, Sparkles, ImagePlus, 
-  Eye, Search, Calendar, LayoutGrid, List as ListIcon,
-  UploadCloud, AlertTriangle, ChevronDown, Check, Star, Wrench
+  Eye, Search, Calendar,
+  UploadCloud, AlertTriangle, ChevronDown, Check, Wrench
 } from 'lucide-react';
 import { getServices, createService, updateService, deleteService } from '../../services/extraServiceApi';
 import toast, { Toaster } from 'react-hot-toast';
+import './adminServices.css';
+import { getPaginationPages } from '../Staff/sessionPagination.js';
 
 // --- Animated Counter ---------------------------------------------------------
 function AnimatedCounter({ target, duration = 1200, isCurrency, isTime }) {
@@ -61,10 +63,10 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
   return (
     <div className={dividerClass}>
-      <div className="group min-w-0 px-0 py-2.5 transition hover:bg-white/[0.018] sm:px-3">
+      <div className="services-metric group min-w-0 px-0 py-2.5 transition hover:bg-white/[0.018] sm:px-3">
         <div className="flex items-center gap-2.5">
           <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition group-hover:brightness-125 ${toneClass}`}>
-            <Icon size={16} />
+            <Icon size={18} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[9px] font-bold uppercase tracking-wider text-blue-200/55 leading-none">{label}</p>
@@ -96,7 +98,7 @@ const AdminServiceManager = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  const [page, setPage] = useState(1);
 
   // Modals & Panels
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -153,7 +155,7 @@ const AdminServiceManager = () => {
   const totalServices = services.length;
   const activeServices = services.filter(s => s.isActive).length;
   const avgPrice = totalServices > 0 ? services.reduce((acc, s) => acc + s.price, 0) / totalServices : 0;
-  const avgTime = totalServices > 0 ? services.reduce((acc, s) => acc + (s.timeCost || 0), 0) / totalServices : 0;
+  const inactiveServices = totalServices - activeServices;
   // Filter & Sort Logic
   const filteredAndSortedServices = useMemo(() => {
     let result = [...services];
@@ -335,145 +337,16 @@ const AdminServiceManager = () => {
   const inputClass = "w-full px-4 py-2.5 bg-[#15191d] border border-white/[0.15] rounded-xl text-white text-sm placeholder-white/[0.36] focus:border-[#ffd555]/70 focus:ring-2 focus:ring-[#ffd555]/20 focus:bg-[#101316] focus:outline-none transition-all font-sans shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]";
   const labelClass = "block text-[10px] font-extrabold uppercase tracking-wider text-[#f4d675]/80 mb-1.5";
 
-  const renderServiceCard = (service) => {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.3 }}
-        key={service._id}
-        onClick={() => openViewModal(service)}
-        className="group relative flex flex-col p-4 rounded-2xl cursor-pointer transition-all duration-500 overflow-hidden border border-white/[0.12] hover:border-[#ffd555]/[0.45] hover:shadow-[0_22px_60px_rgba(255,213,85,0.12),0_10px_35px_rgba(24,198,168,0.08)] hover:-translate-y-1.5"
-        style={{
-          background: 'linear-gradient(145deg, rgba(28,31,34,0.92), rgba(16,20,23,0.9) 48%, rgba(73,50,18,0.28))',
-        }}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_8%,rgba(255,213,85,0.16),transparent_28%),radial-gradient(circle_at_88%_18%,rgba(56,189,248,0.12),transparent_24%),linear-gradient(120deg,transparent,rgba(255,255,255,0.08),transparent)] opacity-65 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-        <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#ffe083]/60 to-transparent opacity-70" />
-        
-        {/* Top: Info */}
-        <div className="flex gap-4 items-start mb-3 relative z-10">
-          <div className="relative shrink-0">
-            <div className="absolute inset-0 rounded-xl bg-[#ffd555] opacity-15 blur-md transition-all duration-500 group-hover:opacity-40 group-hover:blur-lg" />
-            <img 
-              src={service.imageUrl} 
-              alt={service.name} 
-              className="w-[84px] h-[84px] rounded-xl object-cover border border-white/20 bg-[#202832] relative z-10 transition-transform duration-500 group-hover:scale-105 shadow-[0_12px_28px_rgba(0,0,0,0.26)]"
-            />
-          </div>
-          
-          <div className="flex-1 min-w-0 pt-0.5">
-            <div className="flex items-start justify-between mb-1">
-              <h3 className="text-[15px] font-extrabold text-white mb-1 truncate pr-2 group-hover:text-[#ffe083] transition-colors leading-tight drop-shadow">
-                {service.name}
-              </h3>
-            </div>
-            
-            <div className="flex items-center gap-2 mb-2.5">
-              {service.isActive ? (
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-emerald-400/[0.14] border border-emerald-300/30 text-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.12)]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Active
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-white/50">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white/30" />Inactive
-                </span>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#ffd555]/[0.16] text-[#ffe083] text-xs font-bold border border-[#ffd555]/[0.35] shadow-[0_0_16px_rgba(255,213,85,0.10)]">
-                {service.price.toLocaleString('vi-VN')} ₫
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-sky-400/10 text-sky-100/80 text-xs font-semibold border border-sky-300/15">
-                <Clock size={12}/> {service.timeCost}m
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Middle: Description */}
-        <p className="text-[13px] text-white/[0.58] line-clamp-2 leading-relaxed flex-1 relative z-10 mb-4 px-1">
-          {service.description}
-        </p>
-
-        {/* Bottom: Actions */}
-        <div className="pt-3 border-t border-white/10 flex justify-between items-center relative z-10">
-          <button 
-            onClick={(e) => { e.stopPropagation(); openViewModal(service); }}
-            className="text-[11px] font-bold uppercase tracking-wider text-white/[0.55] hover:text-[#ffe083] transition-colors flex items-center gap-1.5 px-2 py-1 -ml-2"
-          >
-            <Eye size={14} /> View Panel
-          </button>
-          
-          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <button 
-              onClick={(e) => { e.stopPropagation(); openModal(service); }}
-              className="w-7 h-7 rounded-lg bg-white/[0.08] flex items-center justify-center hover:bg-[#ffd555]/20 hover:text-[#ffe083] border border-white/10 hover:border-[#ffd555]/40 transition-all text-white/[0.65]"
-              title="Edit"
-            >
-              <Pencil size={13} />
-            </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); confirmDelete(service); }}
-              className="w-7 h-7 rounded-lg bg-white/[0.08] flex items-center justify-center hover:bg-red-500/20 hover:text-red-300 border border-white/10 hover:border-red-400/40 transition-all text-white/[0.65]"
-              title="Delete"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
-  const renderServiceListItem = (service) => {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98 }}
-        key={service._id}
-        onClick={() => openViewModal(service)}
-        className="group flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all duration-300 border border-white/[0.12] hover:border-[#ffd555]/[0.35] hover:-translate-y-0.5 hover:shadow-[0_14px_38px_rgba(255,213,85,0.08)]"
-        style={{ background: 'linear-gradient(115deg, rgba(28,32,35,0.92), rgba(18,22,25,0.92), rgba(45,34,16,0.28))' }}
-      >
-        <img src={service.imageUrl} className="w-12 h-12 rounded-lg object-cover bg-[#202832] border border-white/[0.15] shadow-lg shrink-0" />
-        <div className="flex-1 min-w-0 grid grid-cols-12 gap-4 items-center">
-          <div className="col-span-4">
-            <h3 className="text-sm font-bold text-white truncate">{service.name}</h3>
-            <p className="text-[11px] text-white/[0.55] truncate mt-0.5">{service.description}</p>
-          </div>
-          <div className="col-span-2 flex items-center gap-1 text-[#ffd555] font-bold text-sm">
-            {service.price.toLocaleString('vi-VN')} ₫
-          </div>
-          <div className="col-span-2 flex items-center gap-1 text-sky-100/75 text-xs">
-            <Clock size={12}/> {service.timeCost}m
-          </div>
-          <div className="col-span-2">
-            {service.isActive ? (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Active
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-white/10 text-white/50">
-                <span className="w-1.5 h-1.5 rounded-full bg-white/30" />Inactive
-              </span>
-            )}
-          </div>
-          <div className="col-span-2 flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={(e) => { e.stopPropagation(); openViewModal(service); }} className="p-1.5 text-white/40 hover:text-[#ffd555]"><Eye size={14}/></button>
-            <button onClick={(e) => { e.stopPropagation(); openModal(service); }} className="p-1.5 text-white/40 hover:text-[#ffd555]"><Pencil size={14}/></button>
-            <button onClick={(e) => { e.stopPropagation(); confirmDelete(service); }} className="p-1.5 text-white/40 hover:text-red-400"><Trash2 size={14}/></button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedServices.length / 10));
+  const currentPage = Math.min(page, totalPages);
+  const pageServices = filteredAndSortedServices.slice((currentPage - 1) * 10, currentPage * 10);
+  const tableRef = useRef(null);
+  useEffect(() => {
+    if (tableRef.current) tableRef.current.scrollTop = 0;
+  }, [currentPage, searchTerm, statusFilter, sortBy]);
 
   return (
-    <div className="flex h-[calc(100vh-70px)] bg-[#080808] text-white relative overflow-hidden font-sans">
+    <div className="admin-services flex h-full min-h-0 bg-[#080808] text-white relative overflow-hidden font-sans">
       <style>{`
         @keyframes skeletonShimmer {
           0% { background-position: -400px 0; }
@@ -496,50 +369,47 @@ const AdminServiceManager = () => {
         style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } 
       }} />
 
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden relative z-10">
+      <div className="services-main flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden relative z-10">
         
         {/* ── Header ── */}
-        <div className="px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0 z-20 relative bg-[#080808]">
-          <div className="absolute inset-x-8 bottom-0 h-px bg-gradient-to-r from-transparent via-[#ffd555]/20 to-transparent" />
+        <div className="services-header px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0 z-20 relative bg-[#080808]">
           <div className="flex items-center justify-between">
             <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-                <Wrench size={12} /> Service Manager
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <h1 className="text-3xl font-black tracking-tight text-white">Services</h1>
+                <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Wrench size={12} /> Service Manager</div>
               </div>
-              <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Services</h1>
               <p className="text-sm text-gray-400 mt-1">Manage extra parking services, pricing, time cost, and availability.</p>
             </div>
             <button
               onClick={() => openModal()}
-              className="group relative overflow-hidden flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 hover:-translate-y-0.5 shadow-[0_4px_20px_rgba(255,213,85,0.3)] hover:shadow-[0_6px_28px_rgba(255,213,85,0.5)]"
-              style={{ background: goldGrad, color: '#0f0f0f' }}
+              className="services-add inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold"
             >
-              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none bg-gradient-to-r from-transparent via-white/30 to-transparent" />
               <Plus size={16} />
               Add New Service
             </button>
           </div>
 
           {/* ── KPI Cards ── */}
-          <div className="mt-6 border-y border-white/10 bg-[#080808]">
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="services-metrics mt-6 border-y border-white/10 bg-[#080808]">
+            <div className="grid grid-cols-2 lg:grid-cols-4">
               <StatCard index={0} icon={Package} label="Total Services" value={totalServices} sub="All created services" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
               <StatCard index={1} icon={CheckCircle} label="Active Services" value={activeServices} sub="Currently available" toneClass="bg-emerald-500/10 text-emerald-300" loading={loading} />
-              <StatCard index={2} icon={DollarSign} label="Average Price" value={avgPrice} sub="Per service" toneClass="bg-purple-500/10 text-purple-300" loading={loading} isCurrency />
-              <StatCard index={3} icon={Clock} label="Average Time" value={avgTime} sub="Per service" toneClass="bg-orange-500/10 text-orange-300" loading={loading} isTime />
+              <StatCard index={2} icon={Eye} label="Inactive Services" value={inactiveServices} sub="Hidden from customers" toneClass="bg-red-500/10 text-red-300" loading={loading} />
+              <StatCard index={3} icon={DollarSign} label="Average Price" value={avgPrice} sub="Per service" toneClass="bg-purple-500/10 text-purple-300" loading={loading} isCurrency />
             </div>
           </div>
         </div>
 
         {/* ── Control Bar ── */}
-        <div className="flex flex-wrap items-center justify-between gap-4 px-8 py-4 flex-shrink-0 bg-[#080808] border-b border-white/[0.04] z-40 relative">
-          <div className="relative flex-1 max-w-[480px]">
+        <div className="services-toolbar flex flex-wrap items-center justify-between gap-4 px-8 py-4 flex-shrink-0 bg-[#080808] border-b border-white/[0.04] z-40 relative">
+          <div className="services-search relative flex-1 min-w-0">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#ffe083]/75 pointer-events-none" />
             <input 
               type="text" 
               placeholder="Search extra services..." 
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
               className="w-full bg-white/[0.07] border border-white/[0.14] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/[0.38] focus:outline-none focus:border-[#ffd555]/[0.65] focus:ring-2 focus:ring-[#ffd555]/20 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_30px_rgba(0,0,0,0.12)]"
             />
           </div>
@@ -557,7 +427,7 @@ const AdminServiceManager = () => {
                     {[['all','All Status'],['active','Active Only'],['inactive','Inactive Only']].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
-                          <button onClick={() => setStatusFilter(v)}
+                          <button onClick={() => { setStatusFilter(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {statusFilter === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
                             {l}
@@ -584,7 +454,7 @@ const AdminServiceManager = () => {
                     {[['newest','Newest First'],['oldest','Oldest First'],['price_desc','Price: High to Low'],['price_asc','Price: Low to High'],['name_asc','Name: A-Z']].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
-                          <button onClick={() => setSortBy(v)}
+                          <button onClick={() => { setSortBy(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {sortBy === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
                             {l}
@@ -597,61 +467,43 @@ const AdminServiceManager = () => {
               </Transition>
             </Menu>
 
-            {/* View Mode Toggle */}
-            <div className="flex items-center bg-white/[0.07] border border-white/[0.14] rounded-xl p-1 shadow-sm">
-              <button 
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-[#ffd555]/[0.18] text-[#ffe083] shadow-[0_0_16px_rgba(255,213,85,0.18)]' : 'text-white/[0.45] hover:text-white'}`}
-              >
-                <LayoutGrid size={16} />
-              </button>
-              <button 
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-[#ffd555]/[0.18] text-[#ffe083] shadow-[0_0_16px_rgba(255,213,85,0.18)]' : 'text-white/[0.45] hover:text-white'}`}
-              >
-                <ListIcon size={16} />
-              </button>
-            </div>
+
           </div>
         </div>
 
         {/* ── Main Layout: Split ── */}
-        <div className="flex-1 flex overflow-hidden">
-          
-          {/* Left: Content Grid */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-8 py-6 relative">
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent pointer-events-none" />
-
-            {loading && services.length === 0 ? (
-              <div className="flex justify-center py-20">
-                <div className="h-8 w-8 rounded-full border-2 border-t-transparent animate-spin border-[#ffd555]" />
-              </div>
-            ) : filteredAndSortedServices.length === 0 ? (
-              <div className="py-20 text-center rounded-3xl bg-white/[0.06] border border-white/[0.12] backdrop-blur-sm max-w-lg mx-auto shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
-                <div className="w-16 h-16 rounded-full bg-[#ffd555]/[0.12] border border-[#ffd555]/25 flex items-center justify-center mx-auto mb-4 text-[#ffe083] shadow-[0_0_35px_rgba(255,213,85,0.16)]">
-                  <Star size={24} />
-                </div>
-                <h3 className="text-lg font-bold text-white mb-2">No extra services yet</h3>
-                <p className="text-sm text-white/[0.58] mb-6 px-8">Create your first premium parking add-on service to enhance the customer experience.</p>
-                <button 
-                  onClick={() => openModal()}
-                  className="px-6 py-2.5 rounded-xl text-sm font-bold bg-[#ffd555]/10 text-[#ffd555] hover:bg-[#ffd555]/20 transition-colors border border-[#ffd555]/20"
-                >
-                  Add New Service
-                </button>
-              </div>
-            ) : (
-              <div className={viewMode === 'grid' ? "grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5" : "flex flex-col gap-3"}>
-                <AnimatePresence>
-                  {filteredAndSortedServices.map(s => viewMode === 'grid' ? renderServiceCard(s) : renderServiceListItem(s))}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-
-
-
+        <div ref={tableRef} className="services-table-scroll" tabIndex={0} role="region" aria-label="Services list">
+          <table>
+            <thead><tr>{['Service', 'Price', 'Duration', 'Status', 'Actions'].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+            <tbody>
+              {loading && services.length === 0 ? <tr><td colSpan={5} className="services-empty" role="status">Loading services...</td></tr> : pageServices.length === 0 ? <tr><td colSpan={5} className="services-empty">
+                <p>{services.length ? 'No matching services' : 'No extra services yet'}</p>
+                <button type="button" onClick={() => openModal()} className="mt-3 text-[#e8d5ad]">Add New Service</button>
+              </td></tr> : pageServices.map((service) => <tr key={service._id} className="services-row" onClick={() => openViewModal(service)}>
+                <td><div className="flex min-w-0 items-center gap-3">
+                  {service.imageUrl ? <img src={service.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <Package size={20} className="shrink-0 text-white/40" aria-hidden="true" />}
+                  <span className="truncate text-white" title={service.name}>{service.name}</span>
+                </div></td>
+                <td className="text-[#e8d5ad]">{service.price.toLocaleString('vi-VN')} VND</td>
+                <td>{service.timeCost} min</td>
+                <td><span className={`services-status inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${service.isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-white/50'}`}><span className={`h-1.5 w-1.5 rounded-full ${service.isActive ? 'bg-emerald-400' : 'bg-white/30'}`} />{service.isActive ? 'Active' : 'Inactive'}</span></td>
+                <td onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-end gap-2">
+                  <button type="button" onClick={() => openViewModal(service)} className="services-view" aria-label={`View Panel for ${service.name}`}><Eye size={14} aria-hidden="true" /></button>
+                  <button type="button" onClick={() => openModal(service)} title="Edit" aria-label={`Edit ${service.name}`} className="services-icon text-[#e8d5ad]"><Pencil size={14} /></button>
+                  <button type="button" onClick={() => confirmDelete(service)} title="Delete" aria-label={`Delete ${service.name}`} className="services-icon text-red-400"><Trash2 size={14} /></button>
+                </div></td>
+              </tr>)}
+            </tbody>
+          </table>
         </div>
+        <nav className="services-pagination" aria-label="Service pages">
+          <span className="text-xs text-white/30">Page {currentPage} of {totalPages} {'\u00b7'} {filteredAndSortedServices.length} results</span>
+          <div className="flex items-center gap-1">
+            <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
+            {getPaginationPages(currentPage, totalPages).map((nextPage) => typeof nextPage === 'number' ? <button type="button" key={nextPage} onClick={() => setPage(nextPage)} aria-current={nextPage === currentPage ? 'page' : undefined} className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${nextPage === currentPage ? 'bg-[#ffd555] text-black' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>{nextPage}</button> : <span key={nextPage} aria-hidden="true">...</span>)}
+            <button type="button" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">Next &rarr;</button>
+          </div>
+        </nav>
       </div>
 
       {/* ── Side Panel Detail View (520px) ── */}
@@ -665,90 +517,45 @@ const AdminServiceManager = () => {
             />
             <motion.div 
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="absolute inset-y-0 right-0 w-full max-w-[520px] bg-[#11161a]/[0.96] border-l border-[#ffd555]/[0.18] z-[70] shadow-[0_0_80px_rgba(0,0,0,0.45)] flex flex-col overflow-hidden"
+              className="service-profile absolute inset-y-0 right-0 z-[70] flex w-full max-w-[520px] flex-col overflow-hidden"
+              role="dialog" aria-modal="true" aria-labelledby="service-profile-title"
             >
-              <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_10%_0%,rgba(255,213,85,0.16),transparent_25%),radial-gradient(circle_at_100%_18%,rgba(56,189,248,0.13),transparent_24%)]" />
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.08] bg-white/[0.035] shrink-0 relative">
-                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Service Profile</h3>
-                <button onClick={() => setIsViewModalOpen(false)} className="w-8 h-8 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-white/[0.60] hover:text-white flex items-center justify-center transition-all border border-white/10">
-                  <X size={15} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-                <div className="p-6">
-                  {/* Header Image section */}
-                  <div className="flex gap-5 items-center mb-8">
-                    <div className="relative shrink-0">
-                      <div className="absolute inset-0 rounded-2xl bg-[#ffd555]/25 blur-xl" />
-                      <img src={viewingService.imageUrl} className="relative w-[120px] h-[120px] rounded-2xl object-cover bg-[#202832] border border-white/20 shrink-0 shadow-xl" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-extrabold text-white mb-2 leading-tight">{viewingService.name}</h2>
-                      {viewingService.isActive ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Active Status
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-white/50">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white/30" />Inactive
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="bg-white/[0.07] p-4 rounded-xl border border-[#ffd555]/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                      <p className="text-[10px] text-[#f4d675]/80 uppercase font-bold tracking-widest mb-1">Pricing</p>
-                      <p className="text-2xl font-extrabold text-[#ffe083]">{viewingService.price.toLocaleString('vi-VN')} ₫</p>
-                    </div>
-                    <div className="bg-white/[0.07] p-4 rounded-xl border border-sky-300/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                      <p className="text-[10px] text-sky-100/[0.62] uppercase font-bold tracking-widest mb-1">Duration</p>
-                      <p className="text-2xl font-extrabold text-white">{viewingService.timeCost}<span className="text-base text-white/50 ml-1">min</span></p>
-                    </div>
-                  </div>
-
-                  <div className="mb-6">
-                    <h4 className="text-[10px] font-bold text-[#ffd555] uppercase tracking-widest mb-3">Service Description</h4>
-                    <div className="bg-white/[0.07] p-5 rounded-2xl border border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <p className="text-sm text-white/70 leading-relaxed">
-                        {viewingService.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="text-[10px] font-bold text-white/[0.55] uppercase tracking-widest mb-3">System Info</h4>
-                    <div className="bg-white/[0.06] rounded-2xl border border-white/[0.12] divide-y divide-white/[0.08] overflow-hidden">
-                      <div className="flex justify-between items-center p-4">
-                        <span className="text-xs text-white/[0.55] flex items-center gap-2"><Calendar size={14}/> Added Date</span>
-                        <span className="text-sm text-white font-medium">{new Date(viewingService.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      {viewingService.updatedAt && (
-                        <div className="flex justify-between items-center p-4">
-                          <span className="text-xs text-white/[0.55] flex items-center gap-2"><Pencil size={14}/> Last Updated</span>
-                          <span className="text-sm text-white font-medium">{new Date(viewingService.updatedAt).toLocaleDateString()}</span>
-                        </div>
-                      )}
-                    </div>
+              <header className="service-profile-header">
+                <h3 id="service-profile-title">Service Profile</h3>
+                <button type="button" onClick={() => setIsViewModalOpen(false)} className="service-profile-close" aria-label="Close Service Profile"><X size={18} aria-hidden="true" /></button>
+              </header>
+              <div className="service-profile-content">
+                <div className="service-profile-identity">
+                  <img src={viewingService.imageUrl} alt={viewingService.name} />
+                  <div className="min-w-0">
+                    <h2>{viewingService.name}</h2>
+                    {viewingService.isActive ? (
+                      <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Active Status</span>
+                    ) : (
+                      <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-white/50"><span className="h-1.5 w-1.5 rounded-full bg-white/30" />Inactive</span>
+                    )}
                   </div>
                 </div>
+                <div className="service-profile-facts">
+                  <div><p className="service-profile-label"><DollarSign size={15} className="text-[#e8d5ad]" aria-hidden="true" />Pricing</p><p className="service-profile-price">{viewingService.price.toLocaleString('vi-VN')} VND</p></div>
+                  <div><p className="service-profile-label"><Clock size={15} className="text-slate-400" aria-hidden="true" />Duration</p><p className="service-profile-duration">{viewingService.timeCost}<span>min</span></p></div>
+                </div>
+                <section className="service-profile-description">
+                  <h4>Service Description</h4>
+                  <div><p>{viewingService.description}</p></div>
+                </section>
+                <section className="service-profile-system">
+                  <h4>System Info</h4>
+                  <div className="service-profile-system-rows">
+                    <div><span><Calendar size={14} aria-hidden="true" />Added Date</span><time dateTime={viewingService.createdAt}>{new Date(viewingService.createdAt).toLocaleDateString()}</time></div>
+                    {viewingService.updatedAt && <div><span><Pencil size={14} aria-hidden="true" />Last Updated</span><time dateTime={viewingService.updatedAt}>{new Date(viewingService.updatedAt).toLocaleDateString()}</time></div>}
+                  </div>
+                </section>
               </div>
-
-              <div className="p-6 border-t border-white/[0.08] bg-white/[0.035] flex gap-3 shrink-0 relative">
-                <button 
-                  onClick={() => { setIsViewModalOpen(false); openModal(viewingService); }}
-                  className="flex-1 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-[#ffd555]/[0.16] text-[#ffe083] hover:bg-[#ffd555]/[0.24] transition-colors border border-[#ffd555]/[0.35] shadow-[0_0_24px_rgba(255,213,85,0.08)]"
-                >
-                  <Pencil size={16} /> Edit Settings
-                </button>
-                <button 
-                  onClick={() => confirmDelete(viewingService)}
-                  className="flex-1 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 bg-red-500/[0.12] text-red-300 hover:bg-red-500/20 transition-colors border border-red-400/30"
-                >
-                  <Trash2 size={16} /> Delete
-                </button>
-              </div>
+              <footer className="service-profile-footer">
+                <button type="button" onClick={() => { setIsViewModalOpen(false); openModal(viewingService); }} className="service-profile-edit"><Pencil size={16} aria-hidden="true" />Edit Settings</button>
+                <button type="button" onClick={() => confirmDelete(viewingService)} className="service-profile-delete"><Trash2 size={16} aria-hidden="true" />Delete</button>
+              </footer>
             </motion.div>
           </motion.div>
         )}

@@ -92,9 +92,20 @@ test('page navigation resets only the membership list scroll; CSS fixes surround
   for (const expected of ['height: calc(100dvh - 70px)', 'overflow-y: auto', 'scrollbar-width: none', 'display: none', 'min-height: 0']) assert.ok(css.includes(expected));
   assert.ok(!css.includes('.g3-membership-row')); assert.ok(!css.includes('.g3-header-action'));
 });
-test('Admin remains unpaginated and keeps its original Refresh control', () => {
-  seed(); role = 'admin'; const page = render();
-  assert.equal(rows(page).length, 19);
-  assert.ok(!nodes(page).some(node => node.props?.['aria-label'] === 'Membership pages'));
-  assert.ok(button(page, 'Refresh')); role = 'staff';
+test('Admin paginates ten table rows while keeping Refresh, filters and detail actions', () => {
+  seed(); role = 'admin'; let page = render();
+  assert.equal(rows(page).length, 10);
+  assert.ok(nodes(page).some(node => node.props?.['aria-label'] === 'VIP membership pages'));
+  assert.ok(button(page, 'Refresh'));
+  nodes(page).find(node => node.props?.['aria-label'] === 'Next membership page').props.onClick(); page = render();
+  assert.deepEqual(rows(page).map(row => row.props.sub._id), records.slice(10).map(row => row._id));
+  assert.equal(nodes(page).find(node => node.props?.['aria-label'] === 'Next membership page').props.disabled, true);
+  rows(page)[0].props.onOpen(records[10]); page = render();
+  assert.ok(text(page).includes('Membership details'));
+  assert.ok(text(page).includes('driver10@example.test'));
+  nodes(page).find(node => node.props?.['aria-label'] === 'Close membership details').props.onClick();
+  page = render(); assert.ok(!text(page).includes('Membership details'));
+  nodes(page).find(node => node.type === 'input').props.onChange({ target: { value: 'Driver 1' } });
+  page = render(); assert.ok(text(page).includes('Page 1 of 1')); assert.equal(rows(page).length, 10);
+  role = 'staff';
 });

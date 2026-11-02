@@ -244,3 +244,44 @@ test('Staff session summary and filtered pagination remain isolated from shared 
   assert.ok(empty.includes('0 results'));
   assert.ok(empty.includes('aria-label="Session pagination"'));
 });
+
+test('Admin completed KPI counts the full dataset independently of filters and pagination', () => {
+  const sessions = Array.from({ length: 22 }, (_, index) => ({ ...session, _id: `completed-${index}` }));
+  sessions.push({ ...session, _id: 'active', status: 'active' }, { ...session, _id: 'cancelled', status: 'cancelled' });
+  const html = render(Session, '/admin/sessions', sessionState({ 0: sessions, 6: 'active' }), 'admin');
+  const summary = html.slice(html.indexOf('aria-label="Admin session summary"'), html.indexOf('</section>'));
+  assert.ok(summary.includes('Completed Sessions'));
+  assert.ok(summary.includes('Finished parking sessions'));
+  assert.match(summary, />22<\/p>/);
+  assert.ok(!summary.includes('Needs Attention'));
+  assert.ok(summary.includes('lucide-circle-check') || summary.includes('lucide-check-circle'));
+  for (const [overrides, expected] of [[{ 0: [] }, '>0</p>'], [{ 1: true }, 'aria-label="Loading"'], [{ 2: 'API failed' }, 'N/A']]) {
+    const state = render(Session, '/admin/sessions', sessionState(overrides), 'admin');
+    const strip = state.slice(state.indexOf('aria-label="Admin session summary"'), state.indexOf('</section>'));
+    assert.ok(strip.includes(expected));
+    assert.ok(!strip.includes('API failed'));
+  }
+});
+
+test('Admin membership hover follows API package type independently of every status', () => {
+  for (const type of ['hourly', 'monthly', 'yearly', 'unknown']) {
+    for (const status of ['active', 'expired', 'cancelled']) {
+      const row = { ...subscription, status, ticketPackage: { ...subscription.ticketPackage, type, name: 'Unrelated display name' } };
+      const html = render(Memberships, '/admin/subscriptions', membershipState({ 0: [row] }), 'admin');
+      assert.ok(html.includes(`data-package-type="${type}"`));
+      assert.ok(html.includes(status.charAt(0).toUpperCase() + status.slice(1)));
+      assert.ok(html.includes('vip-open'));
+    }
+  }
+  const ticketCss = postcss.parse(readFileSync(new URL('../../Admin/ticketPackages.css', import.meta.url), 'utf8'));
+  const vipCss = postcss.parse(readFileSync(new URL('../../Admin/vipMemberships.css', import.meta.url), 'utf8'));
+  const colors = css => {
+    const result = {};
+    css.walkRules(rule => {
+      const type = rule.selector.match(/data-package-type="([^"]+)"/);
+      if (type) rule.walkDecls('--package-accent', decl => { result[type[1]] = decl.value; });
+    });
+    return result;
+  };
+  assert.deepEqual(colors(vipCss), colors(ticketCss));
+});

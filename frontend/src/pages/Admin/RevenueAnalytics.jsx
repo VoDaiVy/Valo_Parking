@@ -1,3 +1,4 @@
+import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 import { Fragment, useEffect, useState } from 'react';
 import { Menu, Listbox, Transition } from '@headlessui/react';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { inspectRevenueResponse } from './revenueAnalyticsData';
 import './revenueAnalytics.css';
+import './adminPageConsistency.css';
 import { getAdminPlatformRevenueByMode } from '../../services/statisticsService';
 
 /* ── Constants ────────────────────────────────────────────────────────── */
@@ -213,27 +215,25 @@ export default function RevenueAnalytics() {
   const trafficGranularity = data?.trafficGranularity || granularity;
 
   return (
-    <div className="admin-revenue-analytics relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-5 text-slate-200 lg:px-8">
-      <div className="pointer-events-none absolute right-10 top-0 h-[300px] w-[300px] rounded-full bg-yellow-400/5 blur-[120px]" />
-      <div className="pointer-events-none absolute left-20 top-60 h-64 w-64 rounded-full bg-blue-500/5 blur-[120px]" />
+    <div className="admin-consistency admin-revenue-analytics relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-5 text-slate-200 lg:px-8">
+      <AdminBackgroundOverlay />
       
       <div className="ra-workspace relative mx-auto max-w-[1400px]">
         {/* Header */}
-        <header className="ra-header mb-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
+        <header className="c4-header ra-header mb-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-yellow-300">
+            <div className="c4-title-line"><h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
+              Revenue Analytics
+            </h1><div className="c4-badge">
               <BarChart3 size={11} strokeWidth={2.5} />
               VALO / ADMIN ANALYTICS
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
-              Revenue Analytics
-            </h1>
+            </div></div>
             <p className="mt-1 text-[13px] text-slate-400">
               Track platform revenue, payment sources, and operational performance.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="c4-controls flex flex-wrap items-center gap-2.5">
             <ModeMenu mode={mode} onChange={(m) => m !== mode && setMode(m)} />
             {mode !== '7d' && mode !== 'years' && (
               <SecondarySelector
@@ -256,10 +256,10 @@ export default function RevenueAnalytics() {
               <RefreshCw size={14} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
               Refresh
             </button>
+<div className="ra-update"><span>{loading ? 'Updating...' : updatedAt ? `Last updated: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : 'Not updated'}</span><span>All amounts are in VND</span></div>
           </div>
         </header>
 
-        <div className="ra-update"><span>{loading ? 'Updating...' : updatedAt ? `Last updated: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : 'Not updated'}</span><span>All amounts are in VND</span></div>
         {error && (
           <div className="mb-5 flex flex-col gap-3 rounded-lg border-l-2 border-amber-400 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center">
             <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-300" />
@@ -272,7 +272,6 @@ export default function RevenueAnalytics() {
         ) : data ? (
           <div className="ra-content">
             <KPIStrip summary={summary} reduceMotion={reduceMotion} />
-            <details className="ra-basis"><summary>Reporting basis &amp; data coverage - Legacy renewal totals may be incomplete</summary><p>Booking and service revenue use completed bookings, net of recorded refunds. Refunds follow the booking completion period, not the refund transaction date. Packages include paid purchases and supported renewals; legacy renewal coverage is incomplete and purchases use record creation dates. Transfer fees include completed wallet fee records. Walk-in parking and violation income are outside this report. Prior-period data and transaction records are unavailable.</p></details>
             {report.issues.length > 0 && <div className="ra-integrity" role="status">{report.issues.map((issue) => <p key={issue}>{issue}</p>)}</div>}
             <div className="ra-row ra-primary">
               <RevenueTrendChart trend={trend} granularity={granularity} reduceMotion={reduceMotion} />
@@ -378,7 +377,7 @@ function KPIStrip({ summary, reduceMotion }) {
     <motion.section
       initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      className="ra-kpis grid grid-cols-2 gap-y-4 md:grid-cols-3 xl:grid-cols-6"
+      className="c4-kpis c4-revenue ra-kpis grid grid-cols-2 gap-y-4 md:grid-cols-3 xl:grid-cols-6"
     >
       {metrics.map((metric) => (
         <div key={metric.label} className="flex items-center gap-3 border-r border-white/[0.04] px-2 last:border-0">
@@ -389,7 +388,7 @@ function KPIStrip({ summary, reduceMotion }) {
             <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">
               {metric.label}
             </p>
-            <p className="admin-type-kpi admin-type-kpi-compact mt-0.5 text-[18px] font-black leading-tight tracking-tight text-white">
+            <p className="c4-kpi-value admin-type-kpi admin-type-kpi-compact mt-0.5 text-[18px] font-black leading-tight tracking-tight text-white">
               {metric.value}
             </p>
           </div>

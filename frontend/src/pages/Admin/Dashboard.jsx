@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, isValid } from 'date-fns';
 import {
-  ArrowDownRight,
-  ArrowUpRight,
+  Wallet,
+  RotateCw,
+  ChartNoAxesCombined,
+  Activity,
+  AlertTriangle,
+  Car,
   CheckCircle2,
   ChevronRight,
   DollarSign,
-  Minus,
   ParkingCircle,
   RefreshCw,
   Settings2,
@@ -15,10 +18,10 @@ import {
   Ticket,
   UserX,
   Users,
-  Wrench,
 } from 'lucide-react';
 import { API_BASE, apiFetch } from '../../services/api';
-import { getServices } from '../../services/extraServiceApi';
+import { getAllSessions } from '../../services/sessionService.js';
+import { sessionMetrics } from '../Staff/sessionMetrics.js';
 
 const EMPTY_STATS = {
   totalStaff: 0,
@@ -29,7 +32,6 @@ const EMPTY_STATS = {
   recentActions: [],
 };
 
-const EMPTY_SERVICE_COUNTS = { active: 0, inactive: 0, total: 0 };
 
 const EMPTY_FINANCE_SUMMARY = {
   currentRecordedSources: 0,
@@ -50,27 +52,6 @@ const currencyFormatter = new Intl.NumberFormat('vi-VN');
 const formatCurrency = (value = 0) => {
   const safeValue = Math.round(Number(value) || 0);
   return `${currencyFormatter.format(safeValue)} VND`;
-};
-
-const formatSignedCurrency = (value = 0) => {
-  const safeValue = Math.round(Number(value) || 0);
-  if (safeValue > 0) return `+${formatCurrency(safeValue)}`;
-  if (safeValue < 0) return `-${formatCurrency(Math.abs(safeValue))}`;
-  return formatCurrency(0);
-};
-
-const getServiceStatus = (service) => (service?.isActive ? 'active' : 'inactive');
-
-const getServiceStatusLabel = (service) => (service?.isActive ? 'Active' : 'Inactive');
-
-const statusStyle = {
-  active: 'bg-green-500/10 text-green-300 border-green-500/20',
-  inactive: 'bg-red-500/10 text-red-300 border-red-500/20',
-};
-
-const statusColor = {
-  active: '#22c55e',
-  inactive: '#ef4444',
 };
 
 function usePrefersReducedMotion() {
@@ -249,18 +230,15 @@ const buildFinanceSummary = (currentBundle, previousBundle) => {
     violationRevenue: Number(violationSummary.totalAmount || 0),
     membershipTransferFeeRevenue: Number(transferFeeSummary.revenue || 0),
     coverage: bookingMoney.financialCoverage || 'Unavailable',
+    sourceAvailability: {
+      current: Boolean(currentBundle.booking && currentBundle.subscriptions && currentBundle.violations && currentBundle.platformRevenue),
+      previous: Boolean(previousBundle.booking && previousBundle.subscriptions && previousBundle.violations && previousBundle.platformRevenue),
+      wallet: Boolean(currentBundle.booking?.money),
+      packages: Boolean(currentBundle.subscriptions?.summary),
+    },
     error: currentBundle.failed ? 'Revenue sources could not be loaded.' : '',
   };
 };
-
-function getServiceCounts(services = []) {
-  return services.reduce((acc, item) => {
-    const key = getServiceStatus(item);
-    acc[key] = (acc[key] || 0) + 1;
-    acc.total += 1;
-    return acc;
-  }, { ...EMPTY_SERVICE_COUNTS });
-}
 
 function DashboardShell({ children }) {
   return (
@@ -293,15 +271,17 @@ function DashboardShell({ children }) {
 
 function DashboardHeader({ loading, refreshing, onRefresh }) {
   return (
-    <div className="valo-enter flex flex-col gap-4 motion-safe:animate-[valo-dashboard-in_420ms_ease-out_both] sm:flex-row sm:items-end sm:justify-between">
+    <div style={{ '--admin-type-page': '28px' }} className="valo-enter flex flex-col gap-3 motion-safe:animate-[valo-dashboard-in_420ms_ease-out_both] sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-yellow-300">
-          <Settings2 size={12} />
-          Dashboard
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">
+            Admin Overview
+          </h1>
+          <div className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-yellow-300">
+            <Settings2 size={12} />
+            Dashboard
+          </div>
         </div>
-        <h1 className="mt-3 text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl">
-          Admin Overview
-        </h1>
         <p className="mt-1 text-sm font-medium text-blue-100/70">
           Manage the entire VALO Smart Parking system
         </p>
@@ -354,23 +334,23 @@ function DashboardKpiItem({ icon, label, value, sub, tone = 'yellow', loading, d
 
   return (
     <div
-      className="valo-enter group min-w-0 px-0 py-4 transition hover:bg-white/[0.018] motion-safe:animate-[valo-dashboard-in_480ms_ease-out_both] motion-reduce:transition-none sm:px-5"
+      className="valo-enter group min-w-0 px-0 py-3 transition hover:bg-white/[0.018] motion-safe:animate-[valo-dashboard-in_480ms_ease-out_both] motion-reduce:transition-none sm:px-4"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <div className="flex items-start gap-3">
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition group-hover:brightness-125 motion-reduce:transition-none ${toneClass}`}>
+      <div className="flex items-start gap-2.5">
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition group-hover:brightness-125 motion-reduce:transition-none ${toneClass}`}>
           {icon}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold uppercase tracking-wide text-blue-200/55">{label}</p>
           {loading ? (
-            <div className="mt-3 h-8 w-20 animate-pulse rounded bg-white/10" />
+            <div className="mt-1 h-6 w-20 animate-pulse rounded bg-white/10" />
           ) : (
-            <p className="mt-2 truncate font-mono text-3xl font-black leading-none text-white" title={String(displayValue)}>
+            <p className="admin-type-kpi-compact mt-1 truncate font-mono text-2xl font-black leading-none text-white" title={String(displayValue)}>
               {displayValue}
             </p>
           )}
-          <p className="mt-2 truncate text-sm font-semibold text-emerald-300" title={sub}>
+          <p className="mt-1 truncate text-xs font-semibold text-emerald-300" title={sub}>
             {sub}
           </p>
         </div>
@@ -403,291 +383,64 @@ function DashboardKpiStrip({ metrics, loading }) {
   );
 }
 
-function DashboardHighlightItem({ icon, title, detail, tone = 'neutral' }) {
-  const toneClass = {
-    success: 'text-green-300 bg-green-500/10',
-    warning: 'text-yellow-300 bg-yellow-500/10',
-    critical: 'text-red-300 bg-red-500/10',
-    neutral: 'text-blue-200 bg-blue-500/10',
-  }[tone];
-
-  return (
-    <div className="min-w-0 px-0 py-3 sm:px-4">
-      <div className="flex items-start gap-3">
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneClass}`}>
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-black text-white" title={title}>{title}</p>
-          {detail && <p className="mt-0.5 truncate text-xs font-medium text-blue-200/60" title={detail}>{detail}</p>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, servicesLoading, servicesError }) {
-  const revenueTrend = getRevenueTrend(finance);
-  const usersOk = (Number(stats.blockedUsers) || 0) === 0;
-  const lots = Number(stats.parkingLots) || 0;
-  const pendingLots = Number(stats.pendingLots) || 0;
-  const inactiveServices = Number(serviceCounts.inactive) || 0;
-  const serviceTitle = servicesLoading
-    ? 'Loading services'
-    : servicesError
-      ? 'Service health unavailable'
-      : inactiveServices > 0
-        ? `${inactiveServices} inactive service${inactiveServices === 1 ? '' : 's'}`
-        : 'Services active';
-  const serviceDetail = servicesLoading
-    ? 'Fetching configured booking services'
-    : servicesError
-      ? servicesError
-      : `${serviceCounts.active} active of ${serviceCounts.total} configured services`;
-  const revenueTitle = financeLoading
-    ? 'Loading revenue sources'
-    : finance.error
-      ? 'Revenue unavailable'
-      : revenueTrend.percentLabel;
-  const revenueDetail = financeLoading
-    ? 'Fetching analytics source data'
-    : finance.error
-      ? finance.error
-      : revenueTrend.label;
-
-  const highlights = [
-    {
-      icon: revenueTrend.tone === 'critical' ? <ArrowDownRight size={15} /> : revenueTrend.tone === 'success' ? <ArrowUpRight size={15} /> : <Minus size={15} />,
-      title: revenueTitle,
-      detail: revenueDetail,
-      tone: finance.error ? 'warning' : revenueTrend.tone,
-    },
-    {
-      icon: usersOk ? <CheckCircle2 size={15} /> : <UserX size={15} />,
-      title: usersOk ? 'All users active' : `${stats.blockedUsers} blocked users`,
-      detail: `${stats.activeUsers.toLocaleString('vi-VN')} active customer accounts`,
-      tone: usersOk ? 'success' : 'warning',
-    },
-    {
-      icon: <Wrench size={15} />,
-      title: serviceTitle,
-      detail: serviceDetail,
-      tone: servicesError || inactiveServices > 0 ? 'warning' : 'success',
-    },
-    {
-      icon: <ParkingCircle size={15} />,
-      title: pendingLots > 0 ? `${pendingLots} lots pending` : `${lots} lot${lots === 1 ? '' : 's'} operational`,
-      detail: `${serviceCounts.total} configured services tracked`,
-      tone: pendingLots > 0 ? 'warning' : 'success',
-    },
+function RevenueSummary({ finance, loading }) {
+  const navigate = useNavigate();
+  const currentDisplay = useCountUp(finance.currentRecordedSources, { formatter: formatCurrency });
+  const availability = finance.sourceAvailability || {};
+  const partial = String(finance.coverage).toLowerCase() === 'partial' || !availability.current;
+  const sources = [
+    { label: 'Wallet Booking', value: finance.walletBookingCharges, available: availability.wallet, Icon: Wallet },
+    { label: 'Package Payments', value: finance.packagePayments, available: availability.packages, Icon: Ticket },
+    { label: 'Renewals', value: finance.renewalValue, available: availability.packages, Icon: RotateCw },
   ];
 
   return (
-    <section className="valo-enter border-y border-white/10 motion-safe:animate-[valo-dashboard-in_520ms_ease-out_220ms_both]">
-      <div className="mb-2 pt-4">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-yellow-300">Dashboard Highlights</p>
+    <section aria-label="Revenue Summary" className="min-w-0 flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-white"><ChartNoAxesCombined size={19} className="shrink-0 text-[#e8d5ad]" aria-hidden="true" />Revenue Summary</h2>
+        </div>
+        <button type="button" onClick={() => navigate('/admin/revenue')} className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#e8d5ad] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e8d5ad]/60">
+          View Revenue Analytics <ChevronRight size={14} aria-hidden="true" />
+        </button>
       </div>
-      <div className="grid grid-cols-1 divide-y divide-white/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-        {highlights.map((highlight) => (
-          <DashboardHighlightItem key={highlight.title} {...highlight} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RevenueSummary({ finance, loading }) {
-  const current = Number(finance.currentRecordedSources) || 0;
-  const previous = Number(finance.previousRecordedSources) || 0;
-  const trend = getRevenueTrend(finance);
-  const toneClass = {
-    success: 'text-green-300',
-    critical: 'text-red-300',
-    neutral: 'text-blue-200/70',
-  }[trend.tone];
-  const currentDisplay = useCountUp(current, { formatter: formatCurrency });
-
-  return (
-    <DashboardSection delay={300}>
-      <SectionHeader title="Revenue Summary" subtitle="Recorded financial sources from analytics APIs" />
       {loading ? (
-        <div className="space-y-4">
-          <div className="h-10 w-48 animate-pulse rounded bg-white/10" />
-          <div className="h-24 animate-pulse rounded bg-white/5" />
+        <div className="space-y-4" aria-busy="true" aria-label="Loading revenue summary">
+          <div className="h-10 w-48 max-w-full animate-pulse rounded bg-white/10" />
+          <div className="h-20 animate-pulse rounded bg-white/5" />
         </div>
       ) : finance.error ? (
-        <div className="border-y border-dashed border-red-400/20 py-6 text-sm font-semibold text-red-200">
+        <div role="alert" className="py-4 text-sm font-semibold text-red-200">
           {finance.error}
         </div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-[minmax(0,1.35fr)_minmax(240px,0.65fr)]">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-blue-200/55">Recorded sales sources</p>
-            <p className="mt-2 font-mono text-4xl font-black leading-none text-white sm:text-5xl">{currentDisplay}</p>
-            <p className={`mt-4 flex items-center gap-2 text-sm font-bold ${toneClass}`}>
-              {trend.tone === 'success' ? <ArrowUpRight size={16} /> : trend.tone === 'critical' ? <ArrowDownRight size={16} /> : <Minus size={16} />}
-              {trend.label}
-            </p>
-            <p className="mt-3 max-w-lg text-xs font-medium leading-relaxed text-blue-200/45">
-              Sources are displayed together for dashboard scanning only, not as a verified accounting revenue total.
-            </p>
-          </div>
-          <dl className="space-y-3 border-t border-white/10 pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Previous recorded sources</dt>
-              <dd className="font-mono text-sm font-black text-white">{formatCurrency(previous)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Difference</dt>
-              <dd className={`font-mono text-sm font-black ${trend.difference < 0 ? 'text-red-300' : trend.difference > 0 ? 'text-green-300' : 'text-blue-100/80'}`}>
-                {formatSignedCurrency(trend.difference)}
-              </dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Coverage</dt>
-              <dd className="text-right text-sm font-black capitalize text-yellow-200">{finance.coverage}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Wallet booking</dt>
-              <dd className="font-mono text-sm font-black text-white">{formatCurrency(finance.walletBookingCharges)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Package payments</dt>
-              <dd className="font-mono text-sm font-black text-white">{formatCurrency(finance.packagePayments)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Renewal value</dt>
-              <dd className="font-mono text-sm font-black text-white">{formatCurrency(finance.renewalValue)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Violation revenue</dt>
-              <dd className="font-mono text-sm font-black text-white">{formatCurrency(finance.violationRevenue)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Membership transfer fees</dt>
-              <dd className="font-mono text-sm font-black text-white">{formatCurrency(finance.membershipTransferFeeRevenue)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-sm font-semibold text-blue-200/60">Trend</dt>
-              <dd className={`text-right text-sm font-black ${toneClass}`}>{trend.percentLabel}</dd>
-            </div>
-          </dl>
-        </div>
-      )}
-    </DashboardSection>
-  );
-}
-
-function ServiceHealthDonut({ counts }) {
-  const radius = 42;
-  const circumference = 2 * Math.PI * radius;
-  const segments = [
-    { key: 'active', value: counts.active, color: statusColor.active },
-    { key: 'inactive', value: counts.inactive, color: statusColor.inactive },
-  ].filter((segment) => segment.value > 0);
-  let offset = 0;
-
-  return (
-    <div className="flex items-center gap-5">
-      <div className="relative h-32 w-32 shrink-0">
-        <svg viewBox="0 0 120 120" className="-rotate-90">
-          <circle cx="60" cy="60" r={radius} fill="transparent" stroke="rgba(255,255,255,0.08)" strokeWidth="12" />
-          {segments.map((segment) => {
-            const dash = (segment.value / counts.total) * circumference;
-            const currentOffset = offset;
-            offset += dash;
-            return (
-              <circle
-                key={segment.key}
-                className="valo-donut-segment"
-                cx="60"
-                cy="60"
-                r={radius}
-                fill="transparent"
-                stroke={segment.color}
-                strokeWidth="12"
-                strokeLinecap="round"
-                strokeDasharray={`${dash} ${circumference - dash}`}
-                strokeDashoffset={-currentOffset}
-                style={{
-                  '--dash': dash,
-                  '--offset': -currentOffset,
-                  animation: 'valo-donut-draw 780ms ease-out both',
-                }}
-              />
-            );
-          })}
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="font-mono text-2xl font-black text-white">{counts.total}</p>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-blue-200/55">Services</p>
-        </div>
-      </div>
-      <div className="min-w-0 flex-1 space-y-2">
-        {[
-          ['Active', counts.active, 'active'],
-          ['Inactive', counts.inactive, 'inactive'],
-        ].map(([label, count, key]) => {
-          const percent = counts.total > 0 ? Math.round((count / counts.total) * 100) : 0;
-          return (
-            <div key={key} className="flex items-center justify-between gap-3 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusColor[key] }} />
-                <span className="font-semibold text-blue-100/75">{label}</span>
-              </div>
-              <span className="font-mono font-black text-white">{count} / {percent}%</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ServiceHealth({ counts, services = [], loading, error }) {
-  return (
-    <DashboardSection delay={360}>
-      <SectionHeader title="Service Health" subtitle="Configured booking services" />
-      {loading ? (
-        <div className="space-y-4">
-          <div className="h-32 w-32 animate-pulse rounded-full bg-white/10" />
-          <div className="space-y-2">
-            {[0, 1, 2].map((item) => (
-              <div key={item} className="h-10 animate-pulse rounded bg-white/5" />
-            ))}
-          </div>
-        </div>
-      ) : error ? (
-        <div className="border-y border-dashed border-red-400/20 py-6 text-sm font-semibold text-red-200">
-          {error}
-        </div>
-      ) : services.length > 0 ? (
         <>
-          <ServiceHealthDonut counts={counts} />
-          <div className="mt-5">
-            {services.map((service) => {
-              const key = getServiceStatus(service);
-              const label = getServiceStatusLabel(service);
-              return (
-                <div key={service._id || service.name} className="flex items-center justify-between gap-3 border-b border-white/5 py-3 transition hover:bg-white/[0.025] last:border-0 motion-reduce:transition-none">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Wrench size={14} className="shrink-0 text-slate-500" />
-                    <span className="truncate text-sm font-bold text-slate-200">{service.name}</span>
-                  </div>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black ${statusStyle[key]}`}>
-                    {label}
-                  </span>
-                </div>
-              );
-            })}
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-blue-200/55">Revenue</p>
+                {partial && <span title="Recorded sources, not a verified total revenue" className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">Partial data</span>}
+              </div>
+              <p className="mt-2 break-words text-3xl font-black leading-tight tracking-tight text-[#e8d5ad] [overflow-wrap:anywhere]">{currentDisplay}</p>
+            </div>
+            <dl className="min-w-0 sm:pl-4">
+              <div>
+                <dt className="text-xs font-semibold text-blue-200/55">Previous Period</dt>
+                <dd className="mt-1 break-words text-sm font-bold text-white [overflow-wrap:anywhere]">{availability.previous ? formatCurrency(finance.previousRecordedSources) : 'N/A'}</dd>
+              </div>
+            </dl>
           </div>
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {sources.map(({ label, value, available, Icon }) => (
+              <div key={label} className="min-w-0">
+                <dt className="flex items-center gap-2 text-xs font-medium text-blue-200/55"><Icon size={14} className="shrink-0 text-[#e8d5ad]/65" aria-hidden="true" />{label}</dt>
+                <dd className="mt-1 break-words text-sm font-bold text-white [overflow-wrap:anywhere]">{available ? formatCurrency(value) : 'N/A'}</dd>
+              </div>
+            ))}
+          </dl>
         </>
-      ) : (
-        <div className="border-y border-dashed border-white/10 py-6 text-center text-sm font-medium text-slate-500">
-          No services configured
-        </div>
       )}
-    </DashboardSection>
+    </section>
   );
 }
 
@@ -740,12 +493,45 @@ function RecentAdminActivity({ actions = [], loading }) {
   );
 }
 
+function ParkingOperation({ operation, loading }) {
+  const metrics = [
+    { label: 'Currently Parked', value: operation.metrics?.parked, Icon: Car, tone: 'text-cyan-300', note: 'Sessions with active status' },
+    { label: 'Completed Today', value: operation.metrics?.completedToday, Icon: CheckCircle2, tone: 'text-emerald-300', note: 'Completed checkouts today - Vietnam time' },
+    { label: 'Needs Attention', value: operation.metrics?.needsAttention, Icon: AlertTriangle, tone: 'text-amber-300', note: 'Active sessions past their expected duration' },
+  ];
+  return (
+    <section aria-label="Parking Operation" className="min-w-0 flex flex-col gap-5">
+      <div className="min-h-12">
+        <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-white"><Activity size={19} className="shrink-0 text-[#e8d5ad]" aria-hidden="true" />Parking Operation</h2>
+        <p className="mt-1 text-xs text-blue-200/55">Live parking sessions</p>
+      </div>
+      <dl className="grid grid-cols-3 divide-x divide-white/10 py-1" aria-busy={loading}>
+        {metrics.map(({ label, value, Icon, tone, note }, index) => (
+          <div key={label} className={`min-w-0 ${index === 0 ? 'pr-2' : 'px-2 sm:px-3'}`} title={note}>
+            <Icon size={21} className={tone} aria-hidden="true" />
+            <dt className="mt-4 min-h-10 text-xs font-semibold leading-5 text-blue-200/60">{label}</dt>
+            <dd className={`mt-2 break-words font-bold tracking-tight ${tone} ${value == null && !loading && !operation.error ? 'text-xs' : 'text-4xl'}`}>
+              {loading ? <span className="block h-9 w-12 animate-pulse rounded bg-white/10" aria-label="Loading" /> : operation.error ? '\u2014' : value == null ? 'Unavailable' : value.toLocaleString('vi-VN')}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <div className="text-xs leading-relaxed text-blue-200/50" aria-live="polite">
+        {loading ? 'Loading parking sessions...' : operation.error ? <p role="alert" className="text-red-300">{operation.error} Use Refresh to retry.</p>
+          : operation.metrics?.total === 0 ? 'No parking sessions recorded.'
+            : operation.metrics?.needsAttention == null ? 'Attention unavailable: missing session timing.'
+              : null}
+      </div>
+    </section>
+  );
+}
+
 function QuickAction({ icon, label, desc, tone, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-h-12 w-full items-center gap-3 border-b border-white/5 py-3 text-left transition hover:bg-white/[0.025] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-yellow-400/60 last:border-0 motion-reduce:transition-none"
+      className="group flex min-h-12 w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-white/[0.025] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-yellow-400/60 motion-reduce:transition-none"
     >
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition group-hover:scale-105 group-hover:brightness-125 motion-reduce:transition-none ${tone}`}>
         {icon}
@@ -763,34 +549,36 @@ function AdminQuickActions({ navigate }) {
   return (
     <DashboardSection delay={500}>
       <SectionHeader title="Quick Actions" subtitle="Common admin workflows" />
-      <QuickAction
-        icon={<Users size={16} className="text-yellow-300" />}
-        label="Staff Accounts"
-        desc="Manage parking staff"
-        tone="bg-yellow-500/10"
-        onClick={() => navigate('/admin/accounts')}
-      />
-      <QuickAction
-        icon={<ParkingCircle size={16} className="text-purple-300" />}
-        label="Parking Lots"
-        desc="Manage facilities"
-        tone="bg-purple-500/10"
-        onClick={() => navigate('/admin/parking-lots')}
-      />
-      <QuickAction
-        icon={<Ticket size={16} className="text-sky-300" />}
-        label="Ticket Packages"
-        desc="Manage ticket plans"
-        tone="bg-sky-500/10"
-        onClick={() => navigate('/admin/tickets')}
-      />
-      <QuickAction
-        icon={<UserX size={16} className="text-red-300" />}
-        label="User Access"
-        desc="Review blocked accounts"
-        tone="bg-red-500/10"
-        onClick={() => navigate('/admin/accounts')}
-      />
+      <div className="grid grid-cols-1 divide-y divide-white/10">
+        <QuickAction
+          icon={<Users size={16} className="text-yellow-300" />}
+          label="Staff Accounts"
+          desc="Manage parking staff"
+          tone="bg-yellow-500/10"
+          onClick={() => navigate('/admin/accounts')}
+        />
+        <QuickAction
+          icon={<ParkingCircle size={16} className="text-purple-300" />}
+          label="Parking Lots"
+          desc="Manage facilities"
+          tone="bg-purple-500/10"
+          onClick={() => navigate('/admin/parking-lots')}
+        />
+        <QuickAction
+          icon={<Ticket size={16} className="text-sky-300" />}
+          label="Ticket Packages"
+          desc="Manage ticket plans"
+          tone="bg-sky-500/10"
+          onClick={() => navigate('/admin/tickets')}
+        />
+        <QuickAction
+          icon={<UserX size={16} className="text-red-300" />}
+          label="User Access"
+          desc="Review blocked accounts"
+          tone="bg-red-500/10"
+          onClick={() => navigate('/admin/accounts')}
+        />
+      </div>
     </DashboardSection>
   );
 }
@@ -799,12 +587,25 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(EMPTY_STATS);
   const [finance, setFinance] = useState(EMPTY_FINANCE_SUMMARY);
-  const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [financeLoading, setFinanceLoading] = useState(true);
-  const [servicesLoading, setServicesLoading] = useState(true);
-  const [servicesError, setServicesError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [operation, setOperation] = useState({ metrics: null, error: '' });
+  const [operationLoading, setOperationLoading] = useState(true);
+  const fetchOperation = useCallback(async () => {
+    setOperationLoading(true);
+    try {
+      const response = await getAllSessions({ cache: 'no-store' });
+      if (!response.ok || !response.data?.success || !Array.isArray(response.data.data)) {
+        throw new Error('Parking sessions could not be loaded.');
+      }
+      setOperation({ metrics: sessionMetrics(response.data.data), error: '' });
+    } catch {
+      setOperation({ metrics: null, error: 'Parking sessions could not be loaded.' });
+    } finally {
+      setOperationLoading(false);
+    }
+  }, []);
 
   const fetchStats = useCallback(async ({ refresh = false } = {}) => {
     try {
@@ -859,46 +660,24 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  const fetchServices = useCallback(async ({ refresh = false } = {}) => {
-    try {
-      if (!refresh) setServicesLoading(true);
-      setServicesError('');
-
-      const res = await getServices(false);
-      if (res.ok && res.data?.success) {
-        setServices(Array.isArray(res.data.data) ? res.data.data : []);
-      } else {
-        setServices([]);
-        setServicesError(res.data?.message || 'Failed to fetch service health');
-      }
-    } catch (error) {
-      console.error('Failed to fetch services', error);
-      setServices([]);
-      setServicesError(error.message || 'Failed to fetch service health');
-    } finally {
-      setServicesLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     // These callbacks start the initial asynchronous dashboard synchronization.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStats();
     fetchFinanceSummary();
-    fetchServices();
-  }, [fetchFinanceSummary, fetchServices, fetchStats]);
+    fetchOperation();
+  }, [fetchFinanceSummary, fetchStats, fetchOperation]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([
       fetchStats({ refresh: true }),
       fetchFinanceSummary({ refresh: true }),
-      fetchServices({ refresh: true }),
+      fetchOperation(),
     ]);
     setRefreshing(false);
-  }, [fetchFinanceSummary, fetchServices, fetchStats]);
+  }, [fetchFinanceSummary, fetchStats, fetchOperation]);
 
-  const serviceCounts = useMemo(() => getServiceCounts(services), [services]);
 
   const metrics = useMemo(() => [
     {
@@ -938,33 +717,21 @@ export default function AdminDashboard() {
   return (
     <DashboardShell>
       <DashboardHeader
-        loading={loading || financeLoading || servicesLoading}
+        loading={loading || financeLoading || operationLoading}
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
       <DashboardKpiStrip metrics={metrics} loading={loading || financeLoading} />
-      <DashboardHighlights
-        stats={stats}
-        finance={finance}
-        financeLoading={financeLoading}
-        serviceCounts={serviceCounts}
-        servicesLoading={servicesLoading}
-        servicesError={servicesError}
-      />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)] lg:items-start">
-        <div className="flex flex-col gap-6">
-          <RevenueSummary finance={finance} loading={financeLoading} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-stretch">
+        <RevenueSummary finance={finance} loading={financeLoading} />
+        <ParkingOperation operation={operation} loading={operationLoading} />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
+        <div className="min-w-0">
           <RecentAdminActivity actions={stats.recentActions} loading={loading} />
         </div>
-
-        <div className="flex flex-col gap-6">
-          <ServiceHealth
-            counts={serviceCounts}
-            services={services}
-            loading={servicesLoading}
-            error={servicesError}
-          />
+        <div className="min-w-0">
           <AdminQuickActions navigate={navigate} />
         </div>
       </div>

@@ -1,0 +1,95 @@
+/* Admin-only VIP list; Staff cards and pagination keep their existing styles. */
+body[data-valo-typography="admin"] .admin-vip-memberships { height: 100%; min-height: 0; padding: 0; overflow: hidden; background: #080808; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-vip-ambient { display: none; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-vip-main { display: flex; flex-direction: column; height: 100%; min-height: 0; max-width: none; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-header { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; align-items: center; margin: 0; padding: 14px 24px 0; gap: 12px; border: 0; --admin-type-page: 28px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-header > div { min-width: 0; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-subtitle { margin-top: 4px; color: #9ca3af; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-header-action { min-height: 40px; height: 40px; padding: 7px 12px; color: rgb(255 255 255 / .6); background: rgb(255 255 255 / .05); box-shadow: none; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-vip-metrics { flex: 0 0 auto; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 12px 24px 0; border: 0; border-block: 1px solid rgb(255 255 255 / .1); border-radius: 0; background: transparent; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric { display: flex; align-items: center; gap: 10px; height: 80px; min-width: 0; padding: 10px 14px; --admin-type-kpi: 26px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric > svg { width: 36px; height: 36px; padding: 9px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric + .vip-metric { border-left: 1px solid rgb(255 255 255 / .1); }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-toolbar { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; gap: 10px; margin: 0; padding: 10px 24px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-search { flex: 1 1 240px; min-width: 0; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-toolbar input,
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-toolbar button[aria-haspopup="menu"] { height: 44px; min-height: 44px; background: #111; box-shadow: none; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-toolbar input { border-radius: 999px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .g3-membership-list { display: flex; flex-direction: column; flex: 1 1 0%; min-height: 0; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-scroll { flex: 1 1 0%; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-table { width: 100%; min-width: 1200px; table-layout: fixed; border-collapse: collapse; }
+body[data-valo-typography="admin"] .admin-vip-memberships thead { position: sticky; top: 0; z-index: 20; }
+body[data-valo-typography="admin"] .admin-vip-memberships th { height: 36px; padding: 8px 12px; text-align: left; white-space: nowrap; background: #171717; color: rgb(255 213 85 / .7); border-bottom: 1px solid rgb(255 255 255 / .1); }
+body[data-valo-typography="admin"] .admin-vip-memberships th:first-child { width: 18%; padding-left: 24px; }
+body[data-valo-typography="admin"] .admin-vip-memberships th:nth-child(2) { width: 13%; }
+body[data-valo-typography="admin"] .admin-vip-memberships th:nth-child(5) { width: 19%; }
+body[data-valo-typography="admin"] .admin-vip-memberships th:nth-child(6) { width: 10%; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row { --package-accent: #94a3b8; --package-hover: rgb(148 163 184 / .045); height: 60px; cursor: pointer; border-bottom: 1px solid rgb(255 255 255 / .1); transition: background-color 200ms ease; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row:nth-child(even) { background: rgb(255 255 255 / .01); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row:is(:hover, :focus-within) { background: var(--package-hover); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td { padding: 7px 12px; font-size: 13px !important; line-height: 20px !important; vertical-align: middle; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td:first-child { padding-left: 24px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td p { font-size: 13px !important; line-height: 20px !important; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row .vip-secondary { font-size: 12px !important; line-height: 18px !important; color: rgb(255 255 255 / .4); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td > span,
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row .vip-type { padding: 2px 8px; font-size: 12px !important; line-height: 18px !important; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row .g3-slot-badge { border: 0; border-radius: 0; background: transparent; padding: 0; gap: 4px; font-size: 12px !important; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-open:focus-visible { outline: 2px solid #e8d5ad; outline-offset: 3px; border-radius: 4px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; flex: 0 0 auto; gap: 8px; min-height: 48px; padding: 8px 24px; border-top: 1px solid rgb(255 255 255 / .05); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-pagination button:focus-visible { outline: 2px solid #e8d5ad; }
+@media (max-width: 1023px) {
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-vip-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric:nth-child(3) { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-header { padding: 12px 16px 0; --admin-type-page: 24px; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-vip-metrics { margin-inline: 16px; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric { padding-inline: 8px; gap: 6px; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .vip-metric span { display: none; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-toolbar { padding: 8px 16px; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-search { flex-basis: 100%; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-toolbar > div:not(:first-child) { flex: 1; min-width: 0; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-pagination { padding-inline: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row { transition: none; }
+}
+@media (max-height: 600px) {
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-vip-main { overflow-y: auto; }
+  body[data-valo-typography="admin"] .admin-vip-memberships .g3-membership-list { flex: 1 0 180px; }
+}
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-scroll > div { border: 0; border-radius: 0; background: transparent; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-scroll > div > .animate-pulse { height: 60px; border: 0; border-bottom: 1px solid rgb(255 255 255 / .1); border-radius: 0; }
+
+/* Reserve readable vehicle space; all plates remain available without ellipsis. */
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-scroll { min-width: 0; max-width: 100%; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-table th:nth-child(3) { width: 11%; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-table th:nth-child(4) { width: 13%; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-table th:last-child { width: 16%; padding-right: 24px; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td.vip-vehicles { padding-right: 24px; overflow: visible; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-vehicle-list { display: flex; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-vehicle-list > span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; font-size: 13px !important; line-height: 20px !important; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-scroll:focus-visible { outline: 2px solid #e8d5ad; outline-offset: -2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-pagination button { transition: none; }
+}
+
+/* Match Ticket Packages hover tint and slim accent without changing row geometry.
+   The existing timed deep-link border/glow stays on the row, independently. */
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td:first-child { position: relative; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td:first-child::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--package-accent); opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row:is(:hover, :focus-within) td:first-child::before { opacity: 1; }
+body[data-valo-typography="admin"] .admin-vip-memberships .vip-open > span > span:first-child { transition: color 200ms ease; }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row:is(:hover, :focus-within) .vip-open > span > span:first-child { color: var(--package-accent); }
+@media (prefers-reduced-motion: reduce) {
+  body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row td:first-child::before,
+  body[data-valo-typography="admin"] .admin-vip-memberships .vip-open > span > span:first-child { transition: none; }
+}
+
+/* Exact Ticket Packages accent values, keyed by the API package type, never name/status. */
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="hourly"] { --package-accent: #67e8f9; --package-hover: rgb(103 232 249 / .045); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="daily"] { --package-accent: #7dd3fc; --package-hover: rgb(125 211 252 / .045); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="monthly"] { --package-accent: #ffd555; --package-hover: rgb(255 213 85 / .045); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="yearly"] { --package-accent: #c4b5fd; --package-hover: rgb(196 181 253 / .045); }

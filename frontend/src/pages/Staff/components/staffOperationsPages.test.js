@@ -133,7 +133,7 @@ test('Admin still renders create/edit/delete, modal fields and destructive confi
   userRole = 'admin'; hooks.seed(ticketState());
   let page = tree(tickets.default); assert.ok(htmlOf(page).includes('Add Package'));
   button(page, 'Add Package').props.onClick(); page = tree(tickets.default);
-  for (const label of ['Create Package', 'Package Name', 'Price (VND)', 'Description', 'Active Package', 'Save Package', 'Cancel']) assert.ok(htmlOf(page).includes(label));
+  for (const label of ['Create Package', 'Package Name', 'Price (VND)', 'Description', 'Active Package', 'Create Package', 'Cancel']) assert.ok(htmlOf(page).includes(label));
   hooks.seed(ticketState()); page = tree(tickets.default);
   const row = nodes(page).find((node) => node.type === tickets.PackageRow);
   const rowTree = tickets.PackageRow(row.props);
@@ -560,5 +560,23 @@ test('compact Staff review keeps dynamic recipient summary outside the sole prev
   assert.ok(!nodes(admin).some(node => node.props?.className === 'snm-recipient-summary'));
   assert.ok(htmlOf(admin).includes('Choose audience'));
   assert.ok(textOf(admin).includes('Create notification'));
+  userRole = 'staff';
+});
+
+test('Admin package catalog uses semantic compact table and retains every real package field', () => {
+  userRole = 'admin'; hooks.seed(ticketState());
+  const html = htmlOf(tree(tickets.default));
+  assert.ok(html.includes('aria-label="Ticket packages list"'));
+  assert.ok(html.includes('<table>'));
+  for (const label of ['Package', 'Type', 'Price', 'Status', 'Last Updated', 'Actions']) assert.ok(html.includes(`scope="col">${label}</th>`));
+  for (const pkg of packages) {
+    const row = tickets.PackageRow({ pkg, isAdmin: true, index: 0 });
+    assert.equal(row.type, 'tr');
+    const content = htmlOf(row);
+    assert.ok(content.includes(pkg.name));
+    assert.ok(content.includes(pkg.isActive ? 'Active' : 'Inactive'));
+    assert.ok(content.includes(`aria-label="Edit ${pkg.name}"`));
+    assert.ok(content.includes(`aria-label="Delete ${pkg.name}"`));
+  }
   userRole = 'staff';
 });
