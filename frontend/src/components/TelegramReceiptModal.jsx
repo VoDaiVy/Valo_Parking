@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { QRCodeSVG } from 'qrcode.react';
+import { Link } from 'react-router-dom';
 import { bookingReceipt, linkBookingReceipt } from '../services/telegramReceiptService';
 
 const labels = {
   needs_link: 'Open the bot, press Start and share your phone using the Telegram contact button.',
+  needs_phone: 'Save a valid phone number in your profile before activating Telegram tickets.',
   awaiting_contact: 'Waiting for you to share your phone in Telegram.',
   queued: 'Sending your ticket...', processing: 'Sending your ticket...', pending: 'Sending your ticket...',
   sent: 'Ticket sent via Telegram.', failed: 'The ticket could not be sent. Your web ticket is still valid.',
@@ -13,7 +15,7 @@ const labels = {
   expired: 'This link has expired. Your web ticket is still valid.',
   cancelled: 'Telegram delivery was cancelled. You can reconnect to receive this ticket.',
 };
-const terminal = new Set(['sent', 'disabled', 'expired', 'uncertain', 'failed', 'cancelled']);
+const terminal = new Set(['sent', 'disabled', 'expired', 'uncertain', 'failed', 'cancelled', 'needs_phone']);
 
 export default function TelegramReceiptModal({ open, onClose, bookingId }) {
   const [current, setCurrent] = useState({ state: 'loading' });
@@ -23,6 +25,7 @@ export default function TelegramReceiptModal({ open, onClose, bookingId }) {
   const [pollCycle, setPollCycle] = useState(0);
   const [checkedAt, setCheckedAt] = useState(() => Date.now());
   const controllerRef = useRef(null);
+  const actionLock = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -51,13 +54,20 @@ export default function TelegramReceiptModal({ open, onClose, bookingId }) {
   }, [open, bookingId, pollCycle]);
 
   const action = async () => {
+    if (actionLock.current) return;
+    actionLock.current = true;
     setBusy(true); setError('');
     try {
       const signal = controllerRef.current?.signal;
       const result = await linkBookingReceipt(bookingId, signal);
       if (!signal?.aborted) { setCurrent(previous => ({ ...previous, ...result })); setPaused(false); setPollCycle(value => value + 1); }
-    } catch { if (!controllerRef.current?.signal.aborted) setError('Please try again later.'); }
-    finally { setBusy(false); }
+    } catch (failure) {
+      if (!controllerRef.current?.signal.aborted) {
+        if (failure.code === 'PROFILE_PHONE_REQUIRED') setCurrent(previous => ({ ...previous, state: 'needs_phone' }));
+        setError(failure.message === 'request_failed' ? 'Please try again later.' : failure.message);
+      }
+    }
+    finally { actionLock.current = false; setBusy(false); }
   };
   const state = current.state || 'needs_link';
   const rawLink = current.claimLink || current.deepLink;
@@ -73,6 +83,7 @@ export default function TelegramReceiptModal({ open, onClose, bookingId }) {
       <DialogPanel className="w-full max-w-md rounded-3xl bg-white p-6 text-slate-900 shadow-xl">
         <DialogTitle className="text-xl font-bold">Receive ticket on Telegram</DialogTitle>
         <p role="status" aria-live="polite" className="mt-3 text-sm leading-relaxed">{labels[state] || "Checking ticket status..."}</p>
+        {state === 'needs_phone' && <Link to="/profile" onClick={onClose} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-sky-700 px-4 font-semibold text-white">Update profile phone</Link>}
         {showLink && link && !expiredLink && <div className="mt-5 flex flex-col items-center gap-3">
           <div className="rounded-xl border p-3 bg-white"><QRCodeSVG value={link} size={200} level="M" title="Open Telegram ticket bot" /></div>
           <a href={link} target="_blank" rel="noopener noreferrer" onClick={() => setCurrent(previous => ({ ...previous, state: 'awaiting_contact' }))} className="flex min-h-11 items-center justify-center rounded-xl bg-sky-700 px-5 font-bold text-white">Open Telegram to receive ticket</a>

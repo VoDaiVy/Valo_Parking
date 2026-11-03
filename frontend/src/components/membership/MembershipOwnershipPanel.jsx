@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { membershipRenewalTarget } from "../../utils/membershipRenewalLink";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowRight,
@@ -55,6 +57,8 @@ export default function MembershipOwnershipPanel({
   onTransfer,
 }) {
   const [membershipQr, setMembershipQr] = useState("");
+  const [searchParams] = useSearchParams();
+  const openedRenewalLink = useRef("");
   const [membershipQrError, setMembershipQrError] = useState("");
   const [membershipQrOpen, setMembershipQrOpen] = useState(false);
   const [renewQuote, setRenewQuote] = useState(null);
@@ -170,7 +174,7 @@ export default function MembershipOwnershipPanel({
     };
   }, [onRefresh]);
 
-  const openRenewal = async (entitlementId = "") => {
+  const openRenewal = useCallback(async (entitlementId = "") => {
     if (!entitlementId && !membership?.subscriptionId) return;
     setRenewLoading(true);
     try {
@@ -192,7 +196,19 @@ export default function MembershipOwnershipPanel({
     } finally {
       setRenewLoading(false);
     }
-  };
+  }, [membership, walletBalance]);
+
+  useEffect(() => {
+    const target = membershipRenewalTarget(searchParams, membership);
+    if (!target) return;
+    const key = `${target.kind}:${target.id}`;
+    if (openedRenewalLink.current === key) return;
+    const timer = window.setTimeout(() => {
+      openedRenewalLink.current = key;
+      void openRenewal(target.kind === 'entitlement' ? target.id : '');
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [searchParams, membership, openRenewal]);
 
   const confirmRenewal = async () => {
     if ((!membership?.subscriptionId && !renewEntitlementId) || !renewQuote) return;

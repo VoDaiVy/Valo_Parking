@@ -5,6 +5,7 @@ const Link = require('../models/TelegramLink');
 const client = require('./telegramClient');
 const { bindStart, consumeContact } = require('./telegramClaimService');
 const { formatTicket } = require('./telegramDeliveryService');
+const profileService = require('./telegramProfileService');
 
 async function acquireLease(Model, statuses, extraFilter = {}) {
   const now = new Date();
@@ -39,6 +40,8 @@ async function processUpdate(record) {
   }
 }
 async function processDelivery(record) {
+  if (record.kind === 'booking_checkin_last_call') return require('./telegramBookingReminderService').processDelivery(record);
+  if (record.kind === 'membership_expiring') return require('./telegramMembershipReminderService').processDelivery(record);
   if (record.receiptId && !require('./telegramReceiptService').enabled()) return { status: 'cancelled', errorCode: 'PHONE_RECEIPTS_DISABLED' };
   const recipientFilter = record.phoneRecipientId ? {
     _id: record.phoneRecipientId, version: record.recipientVersion, revokedAt: null, blockedAt: null,
@@ -47,8 +50,8 @@ async function processDelivery(record) {
   if (recipientFilter && !await require('../models/TelegramPhoneRecipient').exists(recipientFilter)) return { status: 'cancelled', errorCode: 'RECIPIENT_CHANGED' };
   if (record.linkId) {
     const link = await Link.findOne({ _id: record.linkId, revokedAt: null, blockedAt: null, notificationsEnabled: true,
-      chatId: record.chatId, telegramUserId: record.telegramUserId });
-    if (!link || record.createdAt < link.linkedAt) return { status: 'cancelled', errorCode: 'LINK_CHANGED' };
+      chatId: record.chatId, telegramUserId: record.telegramUserId }).select('+phone');
+    if (!link || record.createdAt < link.linkedAt || !await profileService.matchesProfile(link)) return { status: 'cancelled', errorCode: 'LINK_CHANGED' };
   }
   const ticket = await require('./parkingPassService').getPassTicket(record.passId);
   const version = ticket.pass.qrVersion || ticket.pass.credentialVersion || ticket.pass.version;
@@ -62,8 +65,10 @@ async function processDelivery(record) {
   }
   const png = await require('qrcode').toBuffer(ticket.payload, { type: 'png', width: 700, margin: 4, errorCorrectionLevel: 'M' });
   // Recheck recipient immediately before the network side effect.
-  if (record.linkId && !await Link.exists({ _id: record.linkId, revokedAt: null, blockedAt: null, notificationsEnabled: true, chatId: record.chatId, telegramUserId: record.telegramUserId })) {
-    return { status: 'cancelled', errorCode: 'LINK_CHANGED' };
+  if (record.linkId) {
+    const link = await Link.findOne({ _id: record.linkId, revokedAt: null, blockedAt: null, notificationsEnabled: true,
+      chatId: record.chatId, telegramUserId: record.telegramUserId }).select('+phone');
+    if (!link || record.createdAt < link.linkedAt || !await profileService.matchesProfile(link)) return { status: 'cancelled', errorCode: 'LINK_CHANGED' };
   }
   if (recipientFilter && !await require('../models/TelegramPhoneRecipient').exists({ ...recipientFilter, expiresAt: { $gt: new Date() } })) return { status: 'cancelled', errorCode: 'RECIPIENT_CHANGED' };
   if (record.receiptId && !await Delivery.exists({ _id: record._id, status: { $nin: ['cancelled', 'failed'] } })) return { status: 'cancelled', errorCode: 'RECIPIENT_REVOKED' };
@@ -88,12 +93,13 @@ async function runTelegramWorkerOnce() {
   }
   // A crashed sender may have reached Telegram before it could persist the result.
   // Preserve that ambiguity instead of resending a phone receipt after lease expiry.
-  await Delivery.updateMany({ receiptId: { $exists: true }, status: 'processing', leaseUntil: { $lte: new Date() } }, {
+  await Delivery.updateMany({ $or: [{ receiptId: { $exists: true } }, { kind: { $in: ['membership_expiring', 'booking_checkin_last_call'] } }], status: 'processing', leaseUntil: { $lte: new Date() } }, {
     $set: { status: 'uncertain', errorCode: 'SEND_UNCERTAIN', nextAttemptAt: new Date('9999-12-31') },
     $unset: { leaseId: 1, leaseUntil: 1 },
   });
   const delivery = await acquireLease(Delivery, ['pending', 'uncertain'], {
-    $nor: [{ status: { $in: ['uncertain', 'processing'] }, receiptId: { $exists: true } }],
+    $nor: [{ status: { $in: ['uncertain', 'processing'] }, receiptId: { $exists: true } },
+      { status: { $in: ['uncertain', 'processing'] }, kind: { $in: ['membership_expiring', 'booking_checkin_last_call'] } }],
   });
   if (delivery) {
     if (delivery.attempts > 5) {
@@ -126,6 +132,12 @@ function startTelegramWorker() {
       await runTelegramWorkerOnce();
       if (Date.now() - lastReconcile > 60000) {
         lastReconcile = Date.now();
+        await require('./telegramBookingReminderService').reconcile().catch(() => {
+          console.warn('[Telegram] booking check-in reminder scan failed');
+        });
+        await require('./telegramMembershipReminderService').reconcile().catch(() => {
+          console.warn('[Telegram] membership reminder scan failed');
+        });
         await require('./telegramReconciler').reconcileTelegramBookings();
         await require('./telegramReceiptService').reconcile();
       }

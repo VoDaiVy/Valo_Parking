@@ -22,10 +22,15 @@ async function call(method, data, headers) {
   if (!response.data?.ok) throw Object.assign(new Error('Telegram API failure'), { response: { data: response.data } });
   return response.data.result;
 }
-function sendMessage(chatId, text, replyMarkup) { return call('sendMessage', { chat_id: chatId, text, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }); }
+function sendMessage(chatId, text, replyMarkup, { parseMode } = {}) {
+  return call('sendMessage', { chat_id: chatId, text,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}), ...(parseMode ? { parse_mode: parseMode } : {}) });
+}
 async function sendPhoto(chatId, png, caption) {
   const form = new FormData();
   form.append('chat_id', chatId); form.append('caption', caption);
+  form.append('parse_mode', 'HTML');
+  form.append('show_caption_above_media', 'true');
   form.append('photo', png, { filename: 'valo-ticket.png', contentType: 'image/png' });
   return call('sendPhoto', form, form.getHeaders());
 }
