@@ -1,13 +1,16 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 
@@ -49,30 +52,34 @@ export const BookingActionModal = ({
   onSecondary,
   onClose,
 }: BookingActionModalProps) => {
+  const { t: translateUi } = useLanguage();
   const config = VARIANT_CONFIG[variant];
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.overlay}>
         <View style={styles.card}>
           <View style={[styles.iconGlow, { backgroundColor: `${config.color}18` }]}>
             <Ionicons name={config.icon} size={76} color={config.color} />
           </View>
-          <Text style={[styles.title, { color: destructive ? COLORS.error : COLORS.gold }]}>{title}</Text>
-          {message ? <Text style={styles.message}>{message}</Text> : null}
+          <Text style={[styles.title, { color: destructive ? COLORS.error : config.color }]}>{translateUi(title)}</Text>
+          {message ? <Text style={styles.message}>{translateUi(message)}</Text> : null}
           {children}
 
           <View style={styles.actions}>
             <TouchableOpacity
               activeOpacity={0.85}
               disabled={loading}
-              style={[styles.button, destructive ? styles.dangerButton : styles.primaryButton]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: loading, busy: loading }}
+              style={[styles.button, destructive ? styles.dangerButton : variant === 'success' ? styles.successButton : styles.primaryButton]}
               onPress={onPrimary}
             >
               {loading ? (
                 <ActivityIndicator color={COLORS.textInverse} size="small" />
               ) : (
-                <Text style={styles.primaryText}>{primaryLabel}</Text>
+                <Text style={styles.primaryText}>{translateUi(primaryLabel)}</Text>
               )}
             </TouchableOpacity>
             {secondaryLabel ? (
@@ -82,25 +89,27 @@ export const BookingActionModal = ({
                 style={[styles.button, styles.secondaryButton]}
                 onPress={onSecondary ?? onClose}
               >
-                <Text style={styles.secondaryText}>{secondaryLabel}</Text>
+                <Text style={styles.secondaryText}>{translateUi(secondaryLabel)}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
         </View>
-      </View>
+      </ScrollView>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)' },
   overlay: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     padding: SPACING.xl,
   },
   card: {
+    maxWidth: 440,
     alignItems: 'center',
     backgroundColor: COLORS.surface,
     borderColor: 'rgba(212,175,55,0.3)',
@@ -136,11 +145,13 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     justifyContent: 'center',
     minHeight: 50,
+    paddingVertical: 12,
     paddingHorizontal: SPACING.md,
   },
   primaryButton: { backgroundColor: COLORS.gold },
+  successButton: { backgroundColor: COLORS.success },
   dangerButton: { backgroundColor: COLORS.error },
-  primaryText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, fontWeight: '700' },
+  primaryText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, lineHeight: 24, fontWeight: '600', textAlign: 'center' },
   secondaryButton: {
     backgroundColor: COLORS.surfaceElevated,
     borderColor: COLORS.border,

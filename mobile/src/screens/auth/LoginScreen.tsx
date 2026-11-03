@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
@@ -103,6 +104,7 @@ function Field({
 }
 
 export default function LoginScreen({ navigation }: LoginScreenProps) {
+  const { t: translateUi } = useLanguage();
   const { login } = useAuth();
   const { alert } = useAppAlert();
   const [email, setEmail] = useState('');
@@ -159,7 +161,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             <Text style={styles.brandSub}>PARKING</Text>
             <View style={styles.badge}>
               <Ionicons name="flash" size={11} color={COLORS.gold} />
-              <Text style={styles.badgeText}>Smart Parking Platform</Text>
+              <Text style={styles.badgeText}>{translateUi("Smart Parking Platform")}</Text>
             </View>
           </View>
 
@@ -170,14 +172,14 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               start={{ x: 0, y: 0 }}
               style={styles.cardTopLine}
             />
-            <Text style={styles.cardTitle}>Sign in</Text>
-            <Text style={styles.cardSub}>Welcome back to VALO Parking</Text>
+            <Text style={styles.cardTitle}>{translateUi("Sign in")}</Text>
+            <Text style={styles.cardSub}>{translateUi("Welcome back to VALO Parking")}</Text>
 
             <Field
               autoCapitalize="none"
               icon={<Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />}
               keyboardType="email-address"
-              placeholder="Your email"
+              placeholder={translateUi("Your email")}
               returnKeyType="next"
               value={email}
               onChangeText={setEmail}
@@ -185,7 +187,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
             <Field
               icon={<Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />}
-              placeholder="Password"
+              placeholder={translateUi("Password")}
               returnKeyType="done"
               rightIcon={
                 <Ionicons
@@ -205,7 +207,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               style={({ pressed }) => [styles.forgotRow, pressed && styles.pressed]}
               onPress={() => navigation?.navigate('ForgotPassword')}
             >
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              <Text style={styles.forgotText}>{translateUi("Forgot password?")}</Text>
             </Pressable>
 
             <TouchableOpacity
@@ -224,7 +226,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                   <ActivityIndicator color={COLORS.textInverse} size="small" />
                 ) : (
                   <>
-                    <Text style={styles.loginBtnText}>Sign in</Text>
+                    <Text style={styles.loginBtnText}>{translateUi("Sign in")}</Text>
                     <Ionicons name="arrow-forward" size={18} color={COLORS.textInverse} />
                   </>
                 )}
@@ -233,7 +235,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
+              <Text style={styles.dividerText}>{translateUi("or continue with")}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -248,7 +250,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               ) : (
                 <>
                   <GoogleIcon />
-                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                  <Text style={styles.googleBtnText}>{translateUi("Continue with Google")}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -257,12 +259,12 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               style={({ pressed }) => [styles.registerRow, pressed && styles.pressed]}
               onPress={() => navigation?.navigate('Register')}
             >
-              <Text style={styles.registerText}>New to VALO? </Text>
-              <Text style={[styles.registerText, styles.registerLink]}>Create account</Text>
+              <Text style={styles.registerText}>{translateUi("New to VALO?")}{" "}</Text>
+              <Text style={[styles.registerText, styles.registerLink]}>{translateUi("Create account")}</Text>
             </Pressable>
           </View>
 
-          <Text style={styles.footer}>2026 VALO Parking - All rights reserved</Text>
+          <Text style={styles.footer}>{translateUi("2026 VALO Parking - All rights reserved")}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

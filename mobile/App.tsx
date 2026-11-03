@@ -11,6 +11,7 @@ import { AppAlertProvider } from './src/contexts/AppAlertContext';
 import { BookingProvider } from './src/contexts/BookingContext';
 import { SocketProvider } from './src/contexts/SocketContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { LanguageProvider } from './src/contexts/LanguageContext';
 import { validateConfig } from './src/config/env';
 
 const configErrors = validateConfig();
@@ -18,6 +19,7 @@ const configErrors = validateConfig();
 export default function App() {
   return (
     <SafeAreaProvider>
+      <LanguageProvider>
       <ErrorBoundary>
         <AppAlertProvider>
           <AuthProvider>
@@ -34,6 +36,7 @@ export default function App() {
       </ErrorBoundary>
       <StatusBar style="auto" />
       <Toast />
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 }

@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, FONT_SIZES, RADIUS } from '../constants/theme';
 import { BookingStackNavigator, type BookingStackParamList } from './BookingStackNavigator';
@@ -34,11 +35,13 @@ function tabIcon(focused: boolean, activeIcon: IoniconName, inactiveIcon: Ionico
 
 export default function CustomerNavigator() {
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, 8);
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: tabStyles.bar,
+        tabBarStyle: [tabStyles.bar, { height: 64 + bottomPadding, paddingBottom: bottomPadding }],
         tabBarActiveTintColor: COLORS.gold,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: tabStyles.label,
@@ -99,25 +102,25 @@ export default function CustomerNavigator() {
 const tabStyles = StyleSheet.create({
   bar: {
     backgroundColor: COLORS.surface,
-    borderTopColor: 'rgba(226,186,75,0.16)',
-    borderTopWidth: 1,
-    height: Platform.OS === 'ios' ? 88 : 72,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
-    paddingTop: 10,
+    borderTopColor: COLORS.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+    elevation: 0,
   },
   label: {
     fontSize: FONT_SIZES.xs,
+    lineHeight: 16,
     fontWeight: '600',
     marginTop: 2,
   },
   iconWrap: {
     alignItems: 'center',
     borderRadius: RADIUS.md,
-    height: 40,
+    height: 36,
     justifyContent: 'center',
     width: 44,
   },
   iconWrapActive: {
-    backgroundColor: 'rgba(226,186,75,0.14)',
+    backgroundColor: COLORS.goldTint,
   },
 });

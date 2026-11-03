@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { translateMessage, type TranslationParams } from '@/i18n/translate';
 
 export type Language = 'en' | 'vi';
 type Dictionary = Record<string, string>;
@@ -66,14 +67,40 @@ const copy: Record<Language, Dictionary> = {
   },
 };
 
-type LanguageContextValue = { language: Language; setLanguage: (language: Language) => void; toggleLanguage: () => void; t: (key: string) => string };
+type LanguageContextValue = { language: Language; setLanguage: (language: Language) => void; toggleLanguage: () => void; t: (key: string, params?: TranslationParams) => string };
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>('en');
-  useEffect(() => { void AsyncStorage.getItem(STORAGE_KEY).then((value) => { if (value === 'en' || value === 'vi') setLanguageState(value); }); }, []);
-  const setLanguage = (next: Language) => { setLanguageState(next); void AsyncStorage.setItem(STORAGE_KEY, next); };
-  const value = useMemo(() => ({ language, setLanguage, toggleLanguage: () => setLanguage(language === 'en' ? 'vi' : 'en'), t: (key: string) => copy[language][key] || copy.en[key] || key }), [language]);
+  const languageRef = useRef<Language>('en');
+  const manuallySelected = useRef(false);
+  const pendingWrite = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(STORAGE_KEY).then((value) => {
+      if (active && !manuallySelected.current && (value === 'en' || value === 'vi')) {
+        languageRef.current = value;
+        setLanguageState(value);
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  const setLanguage = useCallback((next: Language) => {
+    manuallySelected.current = true;
+    languageRef.current = next;
+    setLanguageState(next);
+    pendingWrite.current = pendingWrite.current
+      .then(() => AsyncStorage.setItem(STORAGE_KEY, next))
+      .catch(() => undefined);
+  }, []);
+  const toggleLanguage = useCallback(() => setLanguage(languageRef.current === 'en' ? 'vi' : 'en'), [setLanguage]);
+  const t = useCallback((key: string, params?: TranslationParams) => {
+    const dictionary = copy[language];
+    const resolved = Object.prototype.hasOwnProperty.call(dictionary, key) ? dictionary[key]
+      : Object.prototype.hasOwnProperty.call(copy.en, key) ? copy.en[key] : key;
+    return translateMessage(language, resolved, params);
+  }, [language]);
+  const value = useMemo(() => ({ language, setLanguage, toggleLanguage, t }), [language, setLanguage, toggleLanguage, t]);
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 

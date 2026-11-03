@@ -1,6 +1,8 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Pressable, PressableProps, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 
 import { borderRadius, colors } from '@/theme';
+import { CONTROL, MOTION } from '@/constants/theme';
 
 import { AppText } from './AppText';
 
@@ -10,34 +12,35 @@ export interface IconButtonProps extends Omit<PressableProps, 'style'> {
   style?: StyleProp<ViewStyle>;
 }
 
-export const IconButton = ({ icon, label, style, ...props }: IconButtonProps) => (
+export const IconButton = ({ icon, label, style, disabled, ...props }: IconButtonProps) => { const { t: translateUi } = useLanguage(); return (
   <Pressable
-    accessibilityLabel={label}
+    accessibilityLabel={translateUi(label)}
     accessibilityRole="button"
-    style={({ pressed }) => [styles.base, pressed && styles.pressed, style]}
+    accessibilityState={{ disabled: Boolean(disabled) }}
+    disabled={disabled}
+    style={({ pressed }) => [styles.base, disabled && styles.disabled, pressed && !disabled && styles.pressed, style]}
     {...props}
   >
     <AppText style={styles.icon}>{icon}</AppText>
   </Pressable>
-);
+); };
 
 const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
-    backgroundColor: colors.light.surface,
-    borderColor: colors.light.border,
+    backgroundColor: colors.light.surfaceElevated,
     borderRadius: borderRadius.md,
-    borderWidth: 1,
-    height: 48,
+    minHeight: CONTROL.minHeight,
     justifyContent: 'center',
-    width: 48,
+    minWidth: CONTROL.minHeight,
   },
   icon: {
-    fontSize: 20,
+    fontSize: CONTROL.iconSize,
     lineHeight: 24,
   },
   pressed: {
     opacity: 0.9,
-    transform: [{ scale: 0.96 }],
+    transform: [{ scale: MOTION.pressedScale }],
   },
+  disabled: { opacity: 0.55 },
 });

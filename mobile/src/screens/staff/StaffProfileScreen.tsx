@@ -24,6 +24,7 @@ import type { StaffProfileStackParamList, StaffTabParamList } from '@/navigation
 type Props = NativeStackScreenProps<StaffProfileStackParamList, 'StaffProfileHome'>;
 
 export default function StaffProfileScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const tabBarHeight = useBottomTabBarHeight();
   const { user, logout } = useAuth();
   const { t } = useLanguage();
@@ -62,11 +63,11 @@ export default function StaffProfileScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow={t('staffProfile')}
         title={t('profile')}
-        right={<View style={styles.headerActions}><LanguageToggle inline /><StatusBadge label="Ops" /></View>}
+        right={<View style={styles.headerActions}><LanguageToggle inline /><StatusBadge label={translateUi("Ops")} /></View>}
       />
 
       <ScrollView
@@ -88,7 +89,7 @@ export default function StaffProfileScreen({ navigation }: Props) {
               ) : (
                 <>
                   <Text numberOfLines={1} style={styles.name}>{displayName}</Text>
-                  <Text numberOfLines={1} style={styles.email}>{email || 'No email available'}</Text>
+                  <Text numberOfLines={1} style={styles.email}>{email || translateUi("No email available")}</Text>
                 </>
               )}
               <View style={styles.roleLine}>
@@ -136,8 +137,8 @@ export default function StaffProfileScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
-  headerActions: { alignItems: 'center', flexDirection: 'row', gap: SPACING.xs },
-  scroll: { gap: SPACING.md, padding: SPACING.lg },
+  headerActions: { alignItems: 'center', flexDirection: 'row', gap: SPACING.sm },
+  scroll: { gap: SPACING.lg, padding: SPACING.lg },
   identity: {
     alignItems: 'center',
     borderBottomColor: COLORS.border,
@@ -154,9 +155,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 64,
   },
-  avatarText: { color: COLORS.textInverse, fontSize: 25, fontWeight: '900' },
+  avatarText: { color: COLORS.textInverse, fontSize: 25, fontWeight: '700' },
   identityCopy: { flex: 1, gap: 5, minWidth: 0 },
-  name: { color: COLORS.textPrimary, fontSize: 21, fontWeight: '900' },
+  name: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, lineHeight: 28, fontWeight: '700' },
   email: { color: COLORS.textMuted, fontSize: FONT_SIZES.sm },
   roleLine: { marginTop: 4 },
   block: { gap: SPACING.md },

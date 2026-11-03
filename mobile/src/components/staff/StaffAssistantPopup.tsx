@@ -1,5 +1,6 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ElementRef } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -44,6 +45,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
+  const { t: translateUi } = useLanguage();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -54,7 +56,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
   const [decisions, setDecisions] = useState<Record<string, 'approve' | 'reject'>>({});
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<ElementRef<typeof ScrollView>>(null);
   const counter = useRef(0);
   const inFlight = useRef(false);
   const mounted = useRef(true);
@@ -133,7 +135,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
       {!visible && !keyboardVisible ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Open VALO AI chat"
+          accessibilityLabel={translateUi("Open VALO AI chat")}
           onPress={onOpen}
           style={({ pressed }) => [
             styles.launcher,
@@ -159,7 +161,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Dismiss VALO AI chat"
+            accessibilityLabel={translateUi("Dismiss VALO AI chat")}
             style={StyleSheet.absoluteFill}
             onPress={close}
           />
@@ -182,11 +184,11 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
               </View>
               <View style={styles.heading}>
                 <Text style={styles.title}>VALO AI</Text>
-                <Text style={styles.subtitle}>Your staff assistant</Text>
+                <Text style={styles.subtitle}>{translateUi("Your staff assistant")}</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Minimize VALO AI chat"
+                accessibilityLabel={translateUi("Minimize VALO AI chat")}
                 onPress={close}
                 style={styles.iconButton}
               >
@@ -194,7 +196,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Close VALO AI chat"
+                accessibilityLabel={translateUi("Close VALO AI chat")}
                 onPress={close}
                 style={styles.iconButton}
               >
@@ -203,7 +205,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
             </View>
             <View style={styles.chatLabel}>
               <View style={styles.statusDot} />
-              <Text style={styles.chatLabelText}>Operations chat</Text>
+              <Text style={styles.chatLabelText}>{translateUi("Operations chat")}</Text>
             </View>
             <ScrollView
               ref={scroll}
@@ -214,11 +216,9 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
             >
               {!messages.length ? (
                 <View style={styles.welcome}>
-                  <Text style={styles.welcomeTitle}>How can I help with your shift?</Text>
+                  <Text style={styles.welcomeTitle}>{translateUi("How can I help with your shift?")}</Text>
                   <Text style={styles.body}>
-                    Look up vehicles, reservations and available spaces, or prepare an action for
-                    review.
-                  </Text>
+                    {" "}{translateUi("Look up vehicles, reservations and available spaces, or prepare an action for review.")}{" "}</Text>
                   {SUGGESTIONS.map((question) => (
                     <Pressable
                       key={question}
@@ -250,8 +250,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
                     </Text>
                     {message.reply?.evidence?.length ? (
                       <Text style={styles.subtitle}>
-                        Based on {message.reply.evidence.length} data sources
-                      </Text>
+                        {" "}{translateUi("Based on")}{" "}{message.reply.evidence.length} {" "}{translateUi("data sources")}{" "}</Text>
                     ) : null}
                     {draft && draftId ? (
                       <View style={styles.draft}>
@@ -265,7 +264,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
                         </Text>
                         {draft.current ? (
                           <Text style={styles.body}>
-                            Account:{' '}
+                            {" "}{translateUi("Account:")}{' '}
                             {draft.current.username || draft.current.email || 'Selected account'}
                           </Text>
                         ) : null}
@@ -274,11 +273,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
                           .map(([key, value]) => (
                             <Text key={key} style={styles.body}>
                               {FIELD_LABELS[key]}:{' '}
-                              {typeof value === 'boolean'
-                                ? value
-                                  ? 'Active'
-                                  : 'Locked'
-                                : String(value)}
+                              {typeof value === 'boolean' ? value ? translateUi("Active") : 'Locked' : String(value)}
                             </Text>
                           ))}
                         {decisions[draftId] ? (
@@ -289,26 +284,24 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
                           </Text>
                         ) : confirmationId === draftId ? (
                           <>
-                            <Text style={styles.body}>Apply these changes now?</Text>
+                            <Text style={styles.body}>{translateUi("Apply these changes now?")}</Text>
                             <WorkflowButton
-                              title="Confirm changes"
+                              title={translateUi("Confirm changes")}
                               disabled={busy}
                               onPress={() => void decide(draftId, 'approve')}
                             />
                             <WorkflowChip onPress={() => !busy && setConfirmationId(null)}>
-                              Cancel
-                            </WorkflowChip>
+                              {" "}{translateUi("Cancel")}{" "}</WorkflowChip>
                           </>
                         ) : (
                           <>
                             <WorkflowButton
-                              title="Review & apply"
+                              title={translateUi("Review & apply")}
                               disabled={busy}
                               onPress={() => setConfirmationId(draftId)}
                             />
                             <WorkflowChip onPress={() => !busy && void decide(draftId, 'reject')}>
-                              Reject draft
-                            </WorkflowChip>
+                              {" "}{translateUi("Reject draft")}{" "}</WorkflowChip>
                           </>
                         )}
                       </View>
@@ -319,31 +312,31 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
               {busy ? (
                 <View accessibilityLiveRegion="polite" style={styles.thinking}>
                   <ActivityIndicator size="small" color={COLORS.gold} />
-                  <Text style={styles.subtitle}>VALO AI is working…</Text>
+                  <Text style={styles.subtitle}>{translateUi("VALO AI is working…")}</Text>
                 </View>
               ) : null}
               {error ? (
                 <Text accessibilityRole="alert" style={workflowStyles.error}>
-                  {error}
+                  {translateUi(error)}
                 </Text>
               ) : null}
             </ScrollView>
             <View style={styles.composer}>
               <TextInput
-                accessibilityLabel="Message VALO AI"
+                accessibilityLabel={translateUi("Message VALO AI")}
                 multiline
                 maxLength={2000}
                 editable={!busy}
                 value={prompt}
                 onChangeText={setPrompt}
-                placeholder="Ask VALO AI…"
+                placeholder={translateUi("Ask VALO AI…")}
                 placeholderTextColor={COLORS.textMuted}
                 style={styles.input}
                 onFocus={() => scroll.current?.scrollToEnd({ animated: true })}
               />
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Send message"
+                accessibilityLabel={translateUi("Send message")}
                 accessibilityState={{ disabled: busy || !prompt.trim() }}
                 disabled={busy || !prompt.trim()}
                 onPress={() => void send()}
@@ -352,7 +345,7 @@ export function StaffAssistantPopup({ visible, onOpen, onClose }: Props) {
                 <Ionicons name="arrow-up" size={23} color={COLORS.textInverse} />
               </Pressable>
             </View>
-            <Text style={styles.footer}>Changes are only applied after your confirmation.</Text>
+            <Text style={styles.footer}>{translateUi("Changes are only applied after your confirmation.")}</Text>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -465,11 +458,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  suggestionText: { color: COLORS.textSecondary, fontSize: 13, flex: 1 },
-  bubble: { borderRadius: 15, padding: 13, gap: 6, maxWidth: '94%' },
-  userBubble: { alignSelf: 'flex-end', backgroundColor: '#34301F', borderBottomRightRadius: 4 },
+  suggestionText: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20, flex: 1 },
+  bubble: { borderRadius: RADIUS.lg, padding: 16, gap: 8, maxWidth: '94%' },
+  userBubble: { alignSelf: 'flex-end', backgroundColor: COLORS.goldTint, borderBottomRightRadius: 4 },
   aiBubble: { alignSelf: 'flex-start', backgroundColor: COLORS.surface, borderBottomLeftRadius: 4 },
-  sender: { fontSize: 11, fontWeight: '700', color: COLORS.gold },
+  sender: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: COLORS.gold },
   draft: { gap: 10, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderColor: COLORS.border },
   draftTitle: { color: COLORS.gold, fontSize: 14, fontWeight: '700' },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
@@ -505,8 +498,8 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   footer: {
     color: COLORS.textMuted,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     paddingHorizontal: 14,
     paddingBottom: 10,
     backgroundColor: COLORS.surface,

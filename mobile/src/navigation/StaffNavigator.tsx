@@ -3,7 +3,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, FONT_SIZES, RADIUS } from '../constants/theme';
 import { StaffAssistantProvider } from '@/contexts/StaffAssistantContext';
@@ -25,6 +26,7 @@ import { SessionListScreen } from '../screens/staff/SessionListScreen';
 import { EditProfileScreen } from '../screens/profile/EditProfileScreen';
 import { ChangePasswordScreen } from '../screens/profile/ChangePasswordScreen';
 import type { StaffSessionStackParamList } from '../screens/staff/SessionListScreen';
+import { openStaffManagementHome } from './staffManagementNavigation';
 
 const SessionStack = createNativeStackNavigator<StaffSessionStackParamList>();
 
@@ -60,7 +62,7 @@ function SessionStackNavigator() {
 
 function ManagementStackNavigator() {
   return (
-    <ManagementStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.background } }}>
+    <ManagementStack.Navigator initialRouteName="ManagementHome" screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.background } }}>
       <ManagementStack.Screen name="ManagementHome" component={ManagementHubScreen} />
       <ManagementStack.Screen name="Inbox" component={NotificationsScreen} />
       <ManagementStack.Screen name="Communication" component={StaffCommunicationScreen} />
@@ -105,13 +107,15 @@ function tabIcon(focused: boolean, activeIcon: IoniconName, inactiveIcon: Ionico
 
 export default function StaffNavigator() {
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, 8);
 
   return (
     <StaffAssistantProvider>
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: tabStyles.bar,
+        tabBarStyle: [tabStyles.bar, { height: 64 + bottomPadding, paddingBottom: bottomPadding }],
         tabBarActiveTintColor: COLORS.gold,
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarLabelStyle: tabStyles.label,
@@ -146,9 +150,7 @@ export default function StaffNavigator() {
         name="Manage"
         component={ManagementStackNavigator}
         listeners={({ navigation }) => ({
-          tabPress: () => {
-            navigation.navigate('Manage', { screen: 'ManagementHome' });
-          },
+          tabPress: (event) => openStaffManagementHome(event, navigation),
         })}
         options={{
           tabBarLabel: t('manage'),
@@ -170,28 +172,26 @@ export default function StaffNavigator() {
 
 const tabStyles = StyleSheet.create({
   bar: {
-    backgroundColor: '#0F1013',
-    borderTopColor: 'rgba(244,197,66,0.18)',
-    borderTopWidth: 1,
-    height: Platform.OS === 'ios' ? 90 : 76,
-    paddingBottom: Platform.OS === 'ios' ? 25 : 12,
-    paddingTop: 9,
+    backgroundColor: COLORS.surface,
+    borderTopColor: COLORS.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+    elevation: 0,
   },
   label: {
     fontSize: FONT_SIZES.xs,
+    lineHeight: 16,
     fontWeight: '600',
     marginTop: 2,
   },
   iconWrap: {
     alignItems: 'center',
-    borderRadius: RADIUS.round,
-    height: 42,
+    borderRadius: RADIUS.md,
+    height: 36,
     justifyContent: 'center',
-    width: 48,
+    width: 44,
   },
   iconWrapActive: {
-    backgroundColor: 'rgba(244,197,66,0.15)',
-    borderColor: 'rgba(244,197,66,0.26)',
-    borderWidth: 1,
+    backgroundColor: COLORS.goldTint,
   },
 });

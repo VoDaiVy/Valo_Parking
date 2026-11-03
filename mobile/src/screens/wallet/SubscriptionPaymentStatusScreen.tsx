@@ -1,6 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Linking, StyleSheet } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { AppText, Button, Card } from '@/components/common';
@@ -13,6 +14,7 @@ import { formatCurrency } from '@/utils/formatters';
 type Props = NativeStackScreenProps<WalletStackParamList, 'SubscriptionPaymentStatus'>;
 
 export const SubscriptionPaymentStatusScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [status, setStatus] = useState('PENDING');
   const [message, setMessage] = useState('Waiting for PayOS confirmation.');
 
@@ -65,20 +67,20 @@ export const SubscriptionPaymentStatusScreen = ({ navigation, route }: Props) =>
 
   return (
     <Screen scrollable>
-      <AppText variant="h1">Payment Status</AppText>
+      <AppText variant="h1">{translateUi("Payment Status")}</AppText>
       <Card style={styles.card}>
-        <AppText color={status === 'PAID' ? colors.success.main : colors.warning.dark} variant="h2">
+        <AppText color={status === 'PAID' ? colors.success.main : colors.warning.main} variant="h2">
           {status}
         </AppText>
-        <AppText>Order: {route.params.orderCode}</AppText>
-        {route.params.amount ? <AppText>Amount: {formatCurrency(route.params.amount)}</AppText> : null}
+        <AppText>{translateUi("Order:")}{" "}{route.params.orderCode}</AppText>
+        {route.params.amount ? <AppText>{translateUi("Amount:")}{" "}{formatCurrency(route.params.amount)}</AppText> : null}
         <AppText>{message}</AppText>
-        {route.params.qrCode ? <QRCode value={route.params.qrCode} size={220} /> : null}
+        {route.params.qrCode ? <View style={styles.qr}><QRCode value={route.params.qrCode} size={200} /></View> : null}
         {route.params.checkoutUrl ? (
-          <Button title="Open PayOS Checkout" onPress={() => { void Linking.openURL(route.params.checkoutUrl || '').catch(() => setMessage('Unable to open checkout. Please try again.')); }} />
+          <Button title={translateUi("Open PayOS Checkout")} onPress={() => { void Linking.openURL(route.params.checkoutUrl || '').catch(() => setMessage('Unable to open checkout. Please try again.')); }} />
         ) : null}
       </Card>
-      <Button title="Check Membership" onPress={() => navigation.navigate('Membership')} />
+      <Button title={translateUi("Check Membership")} onPress={() => navigation.navigate('Membership')} />
     </Screen>
   );
 };
@@ -89,7 +91,8 @@ const styles = StyleSheet.create({
   },
   qr: {
     alignSelf: 'center',
-    height: 220,
-    width: 220,
+    backgroundColor: '#FFFFFF',
+    padding: spacing.sm,
+    borderRadius: 12,
   },
 });

@@ -1,7 +1,9 @@
+import { RADIUS } from '@/constants/theme';
+
 export const borderRadius = {
-  sm: 4,
-  md: 8,
-  lg: 12,
-  xl: 16,
-  pill: 999,
+  sm: RADIUS.sm,
+  md: RADIUS.md,
+  lg: RADIUS.lg,
+  xl: RADIUS.xl,
+  pill: RADIUS.round,
 };

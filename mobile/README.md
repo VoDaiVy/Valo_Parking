@@ -33,20 +33,20 @@ See [Google Sign-In setup](./GOOGLE_SIGN_IN_SETUP.md) for Google Cloud OAuth cli
 
 ## API URL
 
-The API and Socket.IO URLs are read from `.env`:
+In development, the API and Socket.IO URLs default to the Expo host on port 5001. Set `.env` overrides only when the backend runs on a different host:
 
 ```env
-EXPO_PUBLIC_API_URL=http://localhost:5000/api
-EXPO_PUBLIC_SOCKET_URL=http://localhost:5000
+EXPO_PUBLIC_API_URL=http://localhost:5001/api
+EXPO_PUBLIC_SOCKET_URL=http://localhost:5001
 EXPO_PUBLIC_ENV=development
 EXPO_PUBLIC_GOOGLE_CLIENT_ID=
 ```
 
 Use the right host for your runtime:
 
-- Web or iOS simulator: `http://localhost:5000/api`
-- Android emulator: `http://10.0.2.2:5000/api`
-- Real phone: use your computer LAN IP, for example `http://192.168.x.x:5000/api`
+- Web or iOS simulator: `http://localhost:5001/api`
+- Android emulator: `http://10.0.2.2:5001/api`
+- Real phone: use your computer LAN IP, for example `http://192.168.x.x:5001/api`
 
 After changing `.env`, restart Expo. If the old value is still cached, run:
 

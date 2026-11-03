@@ -1,12 +1,16 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { COLORS, CONTROL, MOTION, RADIUS, SPACE } from '@/constants/theme';
+import { typography } from '@/theme';
 
 import { testBackendConnection } from '../api/auth.api';
 import type { NormalizedApiError } from '../api/axiosClient';
@@ -15,6 +19,7 @@ import { API_URL } from '../constants/env';
 type RequestState = 'idle' | 'loading' | 'success' | 'error';
 
 export default function ApiTestScreen() {
+  const { t: translateUi } = useLanguage();
   const [status, setStatus] = useState<RequestState>('idle');
   const [message, setMessage] = useState('Press the button to test backend connectivity.');
 
@@ -37,9 +42,9 @@ export default function ApiTestScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Mobile API Test</Text>
+          <Text style={styles.title}>{translateUi("Mobile API Test")}</Text>
           <Text style={styles.subtitle}>{API_URL}</Text>
         </View>
 
@@ -49,6 +54,7 @@ export default function ApiTestScreen() {
 
           <Pressable
             accessibilityRole="button"
+            accessibilityState={{ disabled: isLoading, busy: isLoading }}
             disabled={isLoading}
             onPress={handleTestApi}
             style={({ pressed }) => [
@@ -58,13 +64,13 @@ export default function ApiTestScreen() {
             ]}
           >
             {isLoading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={COLORS.textInverse} />
             ) : (
-              <Text style={styles.buttonText}>Test API</Text>
+              <Text style={styles.buttonText}>{translateUi("Test API")}</Text>
             )}
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -72,73 +78,74 @@ export default function ApiTestScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f7f8fa',
+    backgroundColor: COLORS.background,
   },
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
-    padding: 24,
+    padding: SPACE[24],
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   header: {
-    marginBottom: 24,
+    marginBottom: SPACE[24],
   },
   title: {
-    color: '#111827',
-    fontSize: 28,
-    fontWeight: '700',
+    ...typography.h2,
+    color: COLORS.textPrimary,
   },
   subtitle: {
-    color: '#4b5563',
-    fontSize: 14,
-    marginTop: 8,
+    ...typography.body2,
+    color: COLORS.textSecondary,
+    marginTop: SPACE[8],
   },
   panel: {
-    backgroundColor: '#ffffff',
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 20,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACE[24],
   },
   status: {
-    fontSize: 13,
+    ...typography.caption,
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: SPACE[12],
   },
   idle: {
-    color: '#4b5563',
+    color: COLORS.textSecondary,
   },
   loading: {
-    color: '#2563eb',
+    color: COLORS.gold,
   },
   success: {
-    color: '#047857',
+    color: COLORS.success,
   },
   error: {
-    color: '#dc2626',
+    color: COLORS.error,
   },
   message: {
-    color: '#1f2937',
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 20,
+    ...typography.body1,
+    color: COLORS.textPrimary,
+    marginBottom: SPACE[24],
   },
   button: {
     alignItems: 'center',
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    minHeight: 48,
+    backgroundColor: COLORS.gold,
+    borderRadius: RADIUS.md,
+    minHeight: CONTROL.minHeight,
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: SPACE[16],
+    paddingVertical: SPACE[12],
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.55,
   },
   buttonPressed: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: COLORS.goldPressed,
+    transform: [{ scale: MOTION.pressedScale }],
   },
   buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
+    ...typography.button,
+    color: COLORS.textInverse,
+    textAlign: 'center',
   },
 });

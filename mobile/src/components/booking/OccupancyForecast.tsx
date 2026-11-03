@@ -1,5 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { CONTROL, FONT_SIZES } from '@/constants/theme';
 import { format } from 'date-fns';
 import { apiClient } from '@/services/api/client';
 import type { APIResponse } from '@/types/api';
@@ -19,6 +21,7 @@ export function OccupancyForecast({
   floorId?: string;
   onSelectTime: (startTime: string, endTime: string) => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const [hours, setHours] = useState<HourForecast[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,15 +54,14 @@ export function OccupancyForecast({
   };
   return (
     <View style={[s.panel, { margin: 16 }]}>
-      <Text style={s.title}>Expected peak hours</Text>
+      <Text style={s.title}>{translateUi("Expected peak hours")}</Text>
       <Text style={s.body}>
-        Select an hour to view expected demand and start a booking. Availability is checked against your booking times.
-      </Text>
+        {" "}{translateUi("Select an hour to view expected demand and start a booking. Availability is checked against your booking times.")}{" "}</Text>
       {loading ? <ActivityIndicator color={COLORS.gold} /> : null}
       {error ? (
         <>
-          <Text style={s.error}>{error}</Text>
-          <WorkflowChip onPress={() => void load()}>Reload forecast</WorkflowChip>
+          <Text style={s.error}>{translateUi(error)}</Text>
+          <WorkflowChip onPress={() => void load()}>{translateUi("Reload forecast")}</WorkflowChip>
         </>
       ) : null}
       <ScrollView
@@ -71,9 +73,10 @@ export function OccupancyForecast({
           <Pressable
             key={hour.hour}
             accessibilityRole="button"
+            accessibilityState={{ selected: selected?.hour === hour.hour }}
             accessibilityLabel={`${hour.timeLabel}, expected occupancy ${hour.busynessScore}%`}
             onPress={() => setSelected(hour)}
-            style={{ width: 40, alignItems: 'center', gap: 8 }}
+            style={{ minWidth: CONTROL.minTouchSize, minHeight: CONTROL.minTouchSize, alignItems: 'center', gap: 8 }}
           >
             <View
               style={{
@@ -83,21 +86,21 @@ export function OccupancyForecast({
                 borderRadius: 4,
               }}
             />
-            <Text style={[s.body, { fontSize: 11 }]}>{hour.timeLabel || `${hour.hour}h`}</Text>
+            <Text style={[s.body, { fontSize: FONT_SIZES.xs }]}>{hour.timeLabel || `${hour.hour}h`}</Text>
           </Pressable>
         ))}
       </ScrollView>
       {selected ? (
         <>
           <Text style={s.body}>
-            {selected.timeLabel}: expected occupancy {selected.busynessScore}%
+            {selected.timeLabel}{translateUi(": expected occupancy")}{" "}{selected.busynessScore}%
           </Text>
           {selected.hour > new Date().getHours() ? (
             <WorkflowChip onPress={() => chooseHour(selected)}>
-              Book from {selected.timeLabel}
+              {" "}{translateUi("Book from")}{" "}{selected.timeLabel}
             </WorkflowChip>
           ) : (
-            <Text style={s.body}>This hour has passed. Choose a later hour to book.</Text>
+            <Text style={s.body}>{translateUi("This hour has passed. Choose a later hour to book.")}</Text>
           )}
         </>
       ) : null}

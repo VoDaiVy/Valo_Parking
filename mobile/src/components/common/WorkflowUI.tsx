@@ -1,41 +1,50 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { COLORS, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, CONTROL, MOTION, RADIUS, SPACE, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export const workflowStyles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 32 },
-  panel: { backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.lg, gap: 10 },
-  title: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '700' },
-  body: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 22 },
-  amount: { color: COLORS.gold, fontSize: 28, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACE[32] },
+  panel: { backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.lg, gap: SPACE[12] },
+  title: { ...typography.h3, color: COLORS.textPrimary },
+  body: { ...typography.body2, color: COLORS.textSecondary },
+  amount: { ...typography.h1, color: COLORS.gold, fontVariant: ['tabular-nums'] },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACE[8], alignItems: 'center' },
   input: {
+    ...typography.body1,
     color: COLORS.textPrimary,
     backgroundColor: COLORS.surfaceElevated,
     borderRadius: RADIUS.md,
-    padding: 14,
-    minHeight: 48,
+    paddingHorizontal: SPACE[16],
+    paddingVertical: SPACE[12],
+    minHeight: CONTROL.minHeight,
   },
-  error: { color: COLORS.error, fontSize: 14, lineHeight: 22 },
+  error: { ...typography.body2, color: COLORS.error },
   button: {
     backgroundColor: COLORS.gold,
     borderRadius: RADIUS.md,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    minHeight: 48,
+    paddingHorizontal: SPACE[16],
+    paddingVertical: SPACE[12],
+    minHeight: CONTROL.minHeight,
+    minWidth: CONTROL.minTouchSize,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonText: { color: COLORS.textInverse, fontWeight: '700', fontSize: 14 },
+  buttonText: { ...typography.button, color: COLORS.textInverse, textAlign: 'center', flexShrink: 1 },
   chip: {
     backgroundColor: COLORS.surfaceElevated,
     borderRadius: RADIUS.md,
-    minHeight: 44,
-    paddingHorizontal: 14,
+    minHeight: CONTROL.minTouchSize,
+    paddingHorizontal: SPACE[16],
+    paddingVertical: SPACE[8],
+    borderWidth: 1,
+    borderColor: 'transparent',
     justifyContent: 'center',
   },
   chipActive: {
-    backgroundColor: 'rgba(212,175,55,0.18)',
+    backgroundColor: COLORS.goldTint,
     borderColor: COLORS.gold,
     borderWidth: 1,
   },
@@ -50,6 +59,7 @@ export function WorkflowButton({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <Pressable
       accessibilityRole="button"
@@ -58,10 +68,11 @@ export function WorkflowButton({
       onPress={onPress}
       style={({ pressed }) => [
         workflowStyles.button,
-        { opacity: disabled ? 0.4 : pressed ? 0.75 : 1 },
+        { opacity: disabled ? 0.55 : pressed ? 0.88 : 1 },
+        pressed && !disabled && { transform: [{ scale: MOTION.pressedScale }] },
       ]}
     >
-      <Text style={workflowStyles.buttonText}>{title}</Text>
+      <Text style={workflowStyles.buttonText}>{t(title)}</Text>
     </Pressable>
   );
 }
@@ -75,14 +86,15 @@ export function WorkflowChip({
   selected?: boolean;
   onPress: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: Boolean(selected) }}
       onPress={onPress}
-      style={[workflowStyles.chip, selected && workflowStyles.chipActive]}
+      style={({ pressed }) => [workflowStyles.chip, selected && workflowStyles.chipActive, pressed && { opacity: 0.88, transform: [{ scale: MOTION.pressedScale }] }]}
     >
-      <Text style={[workflowStyles.body, selected && { color: COLORS.gold }]}>{children}</Text>
+      <Text style={[workflowStyles.body, selected && { color: COLORS.gold }]}>{typeof children === 'string' ? t(children) : children}</Text>
     </Pressable>
   );
 }

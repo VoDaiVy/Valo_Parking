@@ -32,8 +32,10 @@ const TOOLS: Array<{
   { screen: 'Bookings', icon: 'calendar-outline', titleKey: 'staffBookings', descriptionKey: 'staffBookingsDesc', metaKey: 'operations', tone: 'brand' },
   { screen: 'Customers', icon: 'people-outline', titleKey: 'staffCustomers', descriptionKey: 'staffCustomersDesc', metaKey: 'support', tone: 'info' },
   { screen: 'ParkingOperations', icon: 'construct-outline', titleKey: 'staffParkingOps', descriptionKey: 'staffParkingOpsDesc', metaKey: 'parking', tone: 'warning' },
+  { screen: 'StaffNotifications', icon: 'megaphone-outline', titleKey: 'Customer notices', descriptionKey: 'Compose notifications and review delivery history', metaKey: 'notifications', tone: 'brand' },
   { screen: 'Inbox', icon: 'mail-unread-outline', titleKey: 'staffInbox', descriptionKey: 'staffInboxDesc', metaKey: 'inbox', tone: 'info' },
   { screen: 'Communication', icon: 'chatbubbles-outline', titleKey: 'staffCommunication', descriptionKey: 'staffCommunicationDesc', metaKey: 'internal', tone: 'info' },
+  { screen: 'StaffAssistant', icon: 'sparkles-outline', titleKey: 'AI assistant', descriptionKey: 'Look up vehicles, reservations and available spaces, or prepare an action for review.', metaKey: 'support', tone: 'brand' },
 ];
 
 export function ManagementHubScreen({ navigation }: Props) {
@@ -42,7 +44,7 @@ export function ManagementHubScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow={t('manage')}
         title={t('operationsTools')}
@@ -82,7 +84,7 @@ export function ManagementHubScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
-  scroll: { gap: SPACING.md, padding: SPACING.lg },
+  scroll: { gap: SPACING.lg, padding: SPACING.lg },
   toolBlock: { gap: SPACING.md },
   list: { borderTopColor: COLORS.border, borderTopWidth: StyleSheet.hairlineWidth },
 });

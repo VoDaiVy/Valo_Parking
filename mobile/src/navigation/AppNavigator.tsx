@@ -9,7 +9,6 @@ import { useEffect, useState } from 'react';
 import { Linking } from 'react-native';
 
 import { LoadingSpinner } from '@/components/common';
-import { LanguageProvider } from '@/contexts/LanguageContext';
 import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 import { useAuth } from '@/hooks/useAuth';
 import { NAVIGATION_STATE_KEY } from '@/utils/constants';
@@ -77,7 +76,6 @@ export const AppNavigator = () => {
   }
 
   return (
-    <LanguageProvider>
     <NavigationContainer
       ref={navigationRef}
       key={navigationKey}
@@ -103,6 +101,5 @@ export const AppNavigator = () => {
         <CustomerNavigator />
       )}
     </NavigationContainer>
-    </LanguageProvider>
   );
 };

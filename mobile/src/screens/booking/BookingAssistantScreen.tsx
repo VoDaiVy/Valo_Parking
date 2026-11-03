@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useRef, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
@@ -5,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -13,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { ScreenHeader } from '@/components/common';
 import { WorkflowButton, WorkflowChip, workflowStyles as s } from '@/components/common/WorkflowUI';
-import { COLORS } from '@/constants/theme';
+import { COLORS, RADIUS, SPACE } from '@/constants/theme';
 import type { BookingStackParamList } from '@/navigation/BookingStackNavigator';
 import { assistantService, type AiBookingDraft } from '@/services/api/assistant';
 import { getAiBookingRange } from '@/utils/aiBookingDraft';
@@ -22,6 +24,7 @@ import { formatDate } from '@/utils/formatters';
 export function BookingAssistantScreen({
   navigation,
 }: NativeStackScreenProps<BookingStackParamList, 'BookingAssistant'>) {
+  const { t: translateUi } = useLanguage();
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
   const [draft, setDraft] = useState<AiBookingDraft>({});
   const [prompt, setPrompt] = useState('');
@@ -71,21 +74,20 @@ export function BookingAssistantScreen({
   return (
     <SafeAreaView edges={['top']} style={s.safe}>
       <ScreenHeader
-        title="AI parking assistant"
-        subtitle="Ask about vehicles, bookings or your wallet, or describe your parking schedule"
+        title={translateUi("AI parking assistant")}
+        subtitle={translateUi("Ask about vehicles, bookings or your wallet, or describe your parking schedule")}
         onBack={() => navigation.goBack()}
       />
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
           {!messages.length ? (
             <View style={s.panel}>
-              <Text style={s.title}>How can we help?</Text>
+              <Text style={s.title}>{translateUi("How can we help?")}</Text>
               <Text style={s.body}>
-                For example: “Book parking tomorrow for 30A12345 from 8 AM to 5 PM”, “Where is my vehicle?” or “What is my wallet balance?”
-              </Text>
+                {" "}{translateUi("For example: “Book parking tomorrow for 30A12345 from 8 AM to 5 PM”, “Where is my vehicle?” or “What is my wallet balance?”")}{" "}</Text>
             </View>
           ) : null}
           {messages.map((message, index) => (
@@ -93,10 +95,8 @@ export function BookingAssistantScreen({
               key={index}
               style={[
                 s.panel,
-                message.role === 'user' && {
-                  marginLeft: 32,
-                  backgroundColor: COLORS.surfaceElevated,
-                },
+                styles.message,
+                message.role === 'user' ? styles.userMessage : styles.assistantMessage,
               ]}
             >
               <Text
@@ -116,7 +116,7 @@ export function BookingAssistantScreen({
             const range = getAiBookingRange(item);
             return range ? (
               <View key={index} style={s.panel}>
-                <Text style={s.title}>Proposed schedule {drafts.length > 1 ? index + 1 : ''}</Text>
+                <Text style={s.title}>{translateUi("Proposed schedule")}{" "}{drafts.length > 1 ? index + 1 : ''}</Text>
                 <Text style={s.body}>
                   {item.licensePlate || 'Select a vehicle in the next step'} ·{' '}
                   {item.floorName || 'Select a floor'}
@@ -125,7 +125,7 @@ export function BookingAssistantScreen({
                   {formatDate(range.startTime)} → {formatDate(range.endTime)}
                 </Text>
                 <WorkflowButton
-                  title="Review & choose a space"
+                  title={translateUi("Review & choose a space")}
                   disabled={busy}
                   onPress={() =>
                     navigation.navigate('CreateBooking', {
@@ -140,31 +140,39 @@ export function BookingAssistantScreen({
           })}
           {error ? (
             <Text accessibilityRole="alert" style={s.error}>
-              {error}
+              {translateUi(error)}
             </Text>
           ) : null}
           {busy ? <ActivityIndicator color={COLORS.gold} /> : null}
           <TextInput
-            accessibilityLabel="Request for the AI assistant"
+            accessibilityLabel={translateUi("Request for the AI assistant")}
             multiline
             maxLength={2000}
             editable={!busy}
-            style={[s.input, { minHeight: 90 }]}
+            style={[s.input, styles.composer, busy && styles.disabled]}
             value={prompt}
             onChangeText={setPrompt}
-            placeholder="Enter your request…"
+            placeholder={translateUi("Enter your request…")}
             placeholderTextColor={COLORS.textMuted}
           />
           <WorkflowButton
-            title={busy ? 'Processing…' : 'Send request'}
+            title={busy ? 'Processing…' : translateUi("Send request")}
             disabled={busy || !prompt.trim()}
             onPress={() => void send()}
           />
           <WorkflowChip onPress={() => navigation.navigate('CreateBooking')}>
-            Choose times & a space manually
-          </WorkflowChip>
+            {" "}{translateUi("Choose times & a space manually")}{" "}</WorkflowChip>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  keyboard: { flex: 1 },
+  message: { maxWidth: '94%', padding: SPACE[16] },
+  userMessage: { alignSelf: 'flex-end', backgroundColor: COLORS.goldTint, borderBottomRightRadius: RADIUS.sm },
+  assistantMessage: { alignSelf: 'flex-start', borderBottomLeftRadius: RADIUS.sm },
+  composer: { minHeight: 96, textAlignVertical: 'top' },
+  disabled: { opacity: 0.55 },
+});

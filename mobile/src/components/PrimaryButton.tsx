@@ -8,7 +8,9 @@ import {
   TouchableOpacityProps,
 } from 'react-native';
 
-import { COLORS, FONT_SIZES, RADIUS } from '../constants/theme';
+import { COLORS, CONTROL, RADIUS, SPACE } from '../constants/theme';
+import { typography } from '@/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface PrimaryButtonProps extends TouchableOpacityProps {
   title: string;
@@ -24,17 +26,21 @@ export default function PrimaryButton({
   style,
   ...props
 }: PrimaryButtonProps) {
+  const { t } = useLanguage();
   const isDisabled = disabled || loading;
 
   if (variant === 'outline') {
     return (
       <TouchableOpacity
         activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityLabel={t(title)}
+        accessibilityState={{ disabled: isDisabled, busy: loading }}
         disabled={isDisabled}
         style={[styles.base, styles.outline, isDisabled && styles.disabled, style as object]}
         {...props}
       >
-        <Text style={styles.outlineText}>{title}</Text>
+        {loading ? <ActivityIndicator color={COLORS.gold} size="small" /> : <Text style={styles.outlineText}>{t(title)}</Text>}
       </TouchableOpacity>
     );
   }
@@ -42,12 +48,15 @@ export default function PrimaryButton({
   return (
     <TouchableOpacity
       activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={t(title)}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       disabled={isDisabled}
       style={[styles.base, isDisabled && styles.disabled, style as object]}
       {...props}
     >
       <LinearGradient
-        colors={isDisabled ? ['#5A5230', '#3D3820'] : COLORS.gradientGold}
+        colors={COLORS.gradientGold}
         end={{ x: 1, y: 0 }}
         start={{ x: 0, y: 0 }}
         style={styles.gradient}
@@ -55,7 +64,7 @@ export default function PrimaryButton({
         {loading ? (
           <ActivityIndicator color={COLORS.textInverse} size="small" />
         ) : (
-          <Text style={styles.goldText}>{title}</Text>
+          <Text style={styles.goldText}>{t(title)}</Text>
         )}
       </LinearGradient>
     </TouchableOpacity>
@@ -64,40 +73,44 @@ export default function PrimaryButton({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: RADIUS.xl,
-    height: 58,
+    borderRadius: RADIUS.md,
+    minHeight: CONTROL.minHeight,
+    minWidth: CONTROL.minTouchSize,
     overflow: 'hidden',
-    shadowColor: COLORS.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: COLORS.background,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 1,
   },
   gradient: {
-    flex: 1,
+    flexGrow: 1,
+    minHeight: CONTROL.minHeight,
+    paddingHorizontal: SPACE[16],
+    paddingVertical: SPACE[12],
     alignItems: 'center',
     justifyContent: 'center',
   },
   goldText: {
+    ...typography.button,
     color: COLORS.textInverse,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    textAlign: 'center',
   },
   outline: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: COLORS.gold,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
     shadowColor: 'transparent',
     elevation: 0,
+    paddingHorizontal: SPACE[16],
+    paddingVertical: SPACE[12],
   },
   outlineText: {
+    ...typography.button,
     color: COLORS.gold,
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   disabled: {
     opacity: 0.55,

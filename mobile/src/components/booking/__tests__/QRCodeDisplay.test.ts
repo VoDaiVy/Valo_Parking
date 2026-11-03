@@ -2,6 +2,10 @@ import * as fc from 'fast-check';
 
 import { isValidBookingQrValue } from '../QRCodeDisplay';
 
+jest.mock('@/contexts/LanguageContext', () => ({
+  useLanguage: () => ({ language: 'en', t: (message: string) => message }),
+}));
+
 describe('QRCodeDisplay properties', () => {
   // Feature: customer-core-features, Property 7: QR Code Format Validity
   it('accepts 24-character hexadecimal MongoDB ObjectId values', () => {

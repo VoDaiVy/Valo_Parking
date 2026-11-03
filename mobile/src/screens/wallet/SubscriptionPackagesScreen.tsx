@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
@@ -34,6 +35,7 @@ export const PriceBadge = ({ changePercent, priceLabel }: { changePercent: numbe
 };
 
 export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [packages, setPackages] = useState<SubscriptionPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -71,7 +73,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
         {yearly ? (
           <View style={styles.featuredBadge}>
             <Ionicons name="star" size={12} color={COLORS.textInverse} />
-            <Text style={styles.featuredText}>Best value</Text>
+            <Text style={styles.featuredText}>{translateUi("Best value")}</Text>
           </View>
         ) : null}
         <View style={styles.packageTop}>
@@ -95,11 +97,11 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
         ))}
         {yearly ? (
           <View style={styles.yearlyNote}>
-            <Text style={styles.yearlyNoteText}>Includes 12 complimentary services</Text>
+            <Text style={styles.yearlyNoteText}>{translateUi("Includes 12 complimentary services")}</Text>
           </View>
         ) : null}
         <View style={styles.selectRow}>
-          <Text style={styles.selectText}>Choose plan</Text>
+          <Text style={styles.selectText}>{translateUi("Choose plan")}</Text>
           <Ionicons name="chevron-forward" size={18} color={COLORS.gold} />
         </View>
       </Pressable>
@@ -108,15 +110,15 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Membership plans" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Membership plans")} onBack={() => navigation.goBack()} />
 
       {loading ? (
         <View style={styles.stateWrap}>
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={loadPackages} />
+        <ErrorState message={translateUi(error)} onRetry={loadPackages} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
@@ -125,8 +127,8 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
           ListEmptyComponent={
             <EmptyState
               icon="cube-outline"
-              title="No plans available"
-              message="New membership plans will appear here."
+              title={translateUi("No plans available")}
+              message={translateUi("New membership plans will appear here.")}
             />
           }
           renderItem={renderPackage}
@@ -194,6 +196,7 @@ const styles = StyleSheet.create({
     width: 52,
   },
   packageTitleWrap: {
+    minWidth: 0,
     flex: 1,
   },
   packageName: {
@@ -207,6 +210,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   price: {
+    fontVariant: ['tabular-nums'],
+    lineHeight: 36,
     color: COLORS.gold,
     fontSize: 28,
     fontWeight: '900',
@@ -247,12 +252,13 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   benefitText: {
+    lineHeight: 20,
     color: COLORS.textSecondary,
     flex: 1,
     fontSize: FONT_SIZES.sm,
   },
   yearlyNote: {
-    backgroundColor: 'rgba(126,232,162,0.1)',
+    backgroundColor: COLORS.successTint,
     borderColor: 'rgba(126,232,162,0.22)',
     borderRadius: RADIUS.md,
     borderWidth: 1,

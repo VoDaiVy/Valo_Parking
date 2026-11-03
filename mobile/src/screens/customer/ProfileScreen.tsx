@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchProfile, type Profile } from '../../api/profile.api';
 import { useAuth } from '@/hooks/useAuth';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../../constants/theme';
+import { typography } from '@/theme';
 import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { useAppAlert } from '@/contexts/AppAlertContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -159,11 +160,12 @@ function RoleBadge({
   label: string;
   theme: (typeof MEMBERSHIP_THEMES)[MembershipVisualTier];
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={[styles.rolePill, { backgroundColor: theme.pillBackground }]}>
       <Ionicons name="shield-checkmark-outline" size={12} color={theme.accent} />
       <Text numberOfLines={1} style={[styles.rolePillText, { color: theme.accent }]}>
-        {label}
+        {translateUi(label)}
       </Text>
     </View>
   );
@@ -236,6 +238,7 @@ function ProfileHero({
   theme: (typeof MEMBERSHIP_THEMES)[MembershipVisualTier];
   onEdit?: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredView delay={90} style={styles.profileHero}>
       {loading ? (
@@ -252,7 +255,7 @@ function ProfileHero({
           </View>
           <AnimatedPressable onPress={onEdit} style={styles.editProfileButton}>
             <View style={styles.editProfileContent}>
-            <Text style={styles.editProfileText}>View profile</Text>
+            <Text style={styles.editProfileText}>{translateUi("View profile")}</Text>
               <Ionicons name="chevron-forward" size={15} color={COLORS.gold} />
             </View>
           </AnimatedPressable>
@@ -290,6 +293,7 @@ function SettingsRow({
   sublabel?: string;
   onPress?: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const arrow = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(0)).current;
   const translateX = arrow.interpolate({ inputRange: [0, 1], outputRange: [0, 4] });
@@ -337,9 +341,9 @@ function SettingsRow({
           <Ionicons name={icon} size={19} color={iconColor} />
         </View>
         <View style={styles.rowCopy}>
-          <Text numberOfLines={1} style={[styles.rowLabel, danger && styles.dangerText]}>{label}</Text>
+          <Text numberOfLines={1} style={[styles.rowLabel, danger && styles.dangerText]}>{translateUi(label)}</Text>
           {sublabel ? (
-            <Text numberOfLines={1} style={styles.rowSublabel}>{sublabel}</Text>
+            <Text numberOfLines={1} style={styles.rowSublabel}>{translateUi(sublabel)}</Text>
           ) : null}
         </View>
         {showArrow ? (
@@ -379,8 +383,9 @@ function SettingsSection({
 }
 
 export default function ProfileScreen({ navigation }: { navigation?: any }) {
+  const { t: translateUi } = useLanguage();
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { alert } = useAppAlert();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
@@ -417,9 +422,9 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
   };
 
   const handleLogout = () => {
-    alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: logout },
+    alert(t('Sign out'), t('Are you sure you want to sign out?'), [
+      { text: t('Cancel'), style: 'cancel' },
+      { text: t('Sign out'), style: 'destructive', onPress: logout },
     ]);
   };
 
@@ -430,16 +435,16 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
   const membershipTier = getMembershipVisualTier(membership);
   const membershipTheme = MEMBERSHIP_THEMES[membershipTier];
   const accountBadge = user?.role === 'customer'
-    ? getMembershipTierLabel(membershipTier)
-    : roleBadge;
+    ? t(getMembershipTierLabel(membershipTier))
+    : t(roleBadge);
   const avatarUri = profile?.avatar || user?.avatar || undefined;
   const walletSublabel = profile?.wallet?.balance !== undefined
-    ? `Balance: ${profile.wallet.balance.toLocaleString('en-US')} VND`
-    : 'Manage your balance';
+    ? t('Balance: {amount} VND', { amount: profile.wallet.balance.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US') })
+    : t('Manage your balance');
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <CustomerAmbientBackground />
 
       <ScrollView
@@ -474,7 +479,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
 
         <SettingsSection
           delay={190}
-            title="My account"
+            title={translateUi("My account")}
           rows={[
             {
               icon: 'person-outline',
@@ -537,7 +542,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
 
         <SettingsSection
           delay={430}
-          title="Settings"
+          title={translateUi("Settings")}
           rows={[
             {
               icon: 'notifications-outline',
@@ -578,7 +583,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
             icon="log-out-outline"
             iconBg="rgba(255,77,77,0.12)"
             iconColor={COLORS.error}
-            label="Sign out"
+            label={translateUi("Sign out")}
             showArrow={false}
             onPress={handleLogout}
           />
@@ -586,7 +591,7 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
 
         <StaggeredView delay={680} style={styles.versionBlock}>
           <Text style={styles.versionBrand}>VALO Parking</Text>
-          <Text style={styles.versionText}>Version 1.0.0</Text>
+          <Text style={styles.versionText}>{translateUi("Version 1.0.0")}</Text>
         </StaggeredView>
       </ScrollView>
     </SafeAreaView>
@@ -605,10 +610,8 @@ const styles = StyleSheet.create({
   },
   pageHeaderRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   pageTitle: {
+    ...typography.h1,
     color: COLORS.textPrimary,
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: 0,
   },
 
   profileHero: {
@@ -663,9 +666,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   profileName: {
+    ...typography.h2,
     color: COLORS.textPrimary,
-    fontSize: 24,
-    fontWeight: '900',
     maxWidth: '100%',
   },
   profileEmail: {
@@ -755,14 +757,15 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   rowLabel: {
+    ...typography.body1,
     color: COLORS.textPrimary,
     fontSize: FONT_SIZES.md,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   rowSublabel: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZES.xs,
-    marginTop: 3,
+    ...typography.body2,
+    color: COLORS.textSecondary,
+    marginTop: 4,
   },
   rowDivider: {
     backgroundColor: COLORS.border,
@@ -798,12 +801,10 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
     fontWeight: '700',
-    opacity: 0.58,
   },
   versionText: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
     marginTop: 3,
-    opacity: 0.42,
   },
 });

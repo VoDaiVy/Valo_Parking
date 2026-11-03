@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -27,6 +28,7 @@ type Props = NativeStackScreenProps<BookingStackParamList, 'FindParking'>;
 const getFloorId = (floor: ParkingFloor) => floor._id ?? floor.id ?? String(floor.floorNumber);
 
 export const FindParkingScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { availableSlots, parkingFloors, isLoading, error, fetchParkingFloors, getAvailableSlots } = useBooking();
   const [selectedFloor, setSelectedFloor] = useState<ParkingFloor | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
@@ -105,25 +107,25 @@ export const FindParkingScreen = ({ navigation, route }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <ScreenHeader
         accentColor="#7EE8A2"
         headerIcon="map-outline"
         headerIconBackground="rgba(126,232,162,0.12)"
         headerIconColor="#7EE8A2"
-        subtitle="Select a parking space"
-        title="Parking map"
+        subtitle={translateUi("Select a parking space")}
+        title={translateUi("Parking map")}
         onBack={() => navigation.goBack()}
       />
 
       <View style={styles.statsBar}>
         <View style={styles.statItem}>
           <View style={[styles.statDot, { backgroundColor: '#7EE8A2' }]} />
-          <Text style={styles.statText}>Available</Text>
+          <Text style={styles.statText}>{translateUi("Available")}</Text>
         </View>
         <View style={styles.statItem}>
           <View style={[styles.statDot, { backgroundColor: '#FF6B6B' }]} />
-          <Text style={styles.statText}>Occupied</Text>
+          <Text style={styles.statText}>{translateUi("Occupied")}</Text>
         </View>
         <View style={styles.statItem}>
           <View style={[styles.statDot, { backgroundColor: '#FFD700' }]} />
@@ -131,11 +133,11 @@ export const FindParkingScreen = ({ navigation, route }: Props) => {
         </View>
         <View style={styles.statItem}>
           <View style={[styles.statDot, { backgroundColor: '#FFA500' }]} />
-          <Text style={styles.statText}>Reserved</Text>
+          <Text style={styles.statText}>{translateUi("Reserved")}</Text>
         </View>
         <View style={styles.statItem}>
           <View style={[styles.statDot, { backgroundColor: '#A0A0A0' }]} />
-          <Text style={styles.statText}>Maintenance</Text>
+          <Text style={styles.statText}>{translateUi("Maintenance")}</Text>
         </View>
       </View>
 
@@ -177,12 +179,12 @@ export const FindParkingScreen = ({ navigation, route }: Props) => {
             {isLoading ? (
               <View style={styles.mapState}>
                 <ActivityIndicator color={COLORS.gold} size="large" />
-                <Text style={styles.mapStateText}>Loading parking map...</Text>
+                <Text style={styles.mapStateText}>{translateUi("Loading parking map...")}</Text>
               </View>
             ) : error ? (
               <View style={styles.mapState}>
                 <ErrorState
-                  message={error}
+                  message={translateUi(error)}
                   onRetry={() => {
                     void fetchParkingFloors();
                     void getAvailableSlots(startTime, endTime);
@@ -193,8 +195,8 @@ export const FindParkingScreen = ({ navigation, route }: Props) => {
               <View style={styles.mapState}>
                 <EmptyState
                   icon="layers-outline"
-                  title="No floors available"
-                  message="No parking floors are available to display."
+                  title={translateUi("No floors available")}
+                  message={translateUi("No parking floors are available to display.")}
                 />
               </View>
             ) : (
@@ -221,7 +223,7 @@ export const FindParkingScreen = ({ navigation, route }: Props) => {
             </Text>
           </View>
           <TouchableOpacity activeOpacity={0.85} style={styles.selectBtn} onPress={handleConfirmSlot}>
-            <Text style={styles.selectBtnText}>Select this space</Text>
+            <Text style={styles.selectBtnText}>{translateUi("Select this space")}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -241,7 +243,7 @@ const styles = StyleSheet.create({
   statItem: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   statDot: { borderRadius: 5, height: 10, width: 10 },
   statText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs },
-  floorTabScroll: { maxHeight: 44 },
+  floorTabScroll: { flexGrow: 0 },
   floorTabs: {
     alignItems: 'center',
     gap: SPACING.sm,
@@ -249,6 +251,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
   },
   floorTab: {
+    minHeight: 44,
     alignItems: 'center',
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
@@ -270,7 +273,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   floorCountActive: { backgroundColor: COLORS.gold },
-  floorCountText: { color: COLORS.textMuted, fontSize: 10, fontWeight: '700' },
+  floorCountText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '600' },
   floorCountTextActive: { color: COLORS.textInverse },
   mapScroll: { flex: 1 },
   mapCanvas: {
@@ -306,6 +309,8 @@ const styles = StyleSheet.create({
   },
   slotBoxText: { fontSize: 10, fontWeight: '700' },
   selectedPanel: {
+    gap: SPACING.md,
+    flexWrap: 'wrap',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
     borderColor: 'rgba(96,180,255,0.35)',
@@ -316,7 +321,7 @@ const styles = StyleSheet.create({
     margin: SPACING.md,
     padding: SPACING.md,
   },
-  selectedInfo: { flex: 1 },
+  selectedInfo: { flex: 1, minWidth: 0, flexBasis: 120 },
   selectedSlotCode: { color: COLORS.staffBlue, fontSize: FONT_SIZES.lg, fontWeight: '800' },
   selectedFloor: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, marginTop: 2 },
   selectBtn: {
@@ -324,8 +329,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.gold,
     borderRadius: RADIUS.md,
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: SPACING.md,
+    paddingVertical: 12,
   },
   selectBtnText: { color: COLORS.textInverse, fontSize: FONT_SIZES.sm, fontWeight: '700' },
 });

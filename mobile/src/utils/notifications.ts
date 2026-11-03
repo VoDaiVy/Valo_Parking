@@ -1,5 +1,5 @@
 import { format, formatDistanceToNow } from 'date-fns';
-import { enGB } from 'date-fns/locale';
+import { enGB, vi } from 'date-fns/locale';
 
 import { colors } from '@/theme';
 import type { NotificationPriority, NotificationType, UserNotification } from '@/types/models';
@@ -40,11 +40,11 @@ export const getNotificationColor = (priority: NotificationPriority) =>
     SYSTEM: colors.secondary[500],
   })[priority];
 
-export const formatNotificationTimestamp = (createdAt: string, now = new Date()) => {
+export const formatNotificationTimestamp = (createdAt: string, now = new Date(), language: 'en' | 'vi' = 'en') => {
   const date = new Date(createdAt);
   const diff = now.getTime() - date.getTime();
   if (diff < 24 * 60 * 60 * 1000) {
-    return formatDistanceToNow(date, { addSuffix: true, locale: enGB });
+    return formatDistanceToNow(date, { addSuffix: true, locale: language === 'vi' ? vi : enGB });
   }
   return format(date, 'HH:mm dd/MM/yyyy', { locale: enGB });
 };

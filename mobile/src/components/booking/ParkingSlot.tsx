@@ -2,6 +2,7 @@ import { Pressable, StyleSheet } from 'react-native';
 
 import { AppText } from '@/components/common';
 import { colors } from '@/theme';
+import { RADIUS } from '@/constants/theme';
 import type { SlotStatus } from '@/types/booking.types';
 
 interface ParkingSlotProps {
@@ -29,6 +30,7 @@ export const ParkingSlot = ({ slot, onPress, isSelected }: ParkingSlotProps) => 
   <Pressable
     accessibilityLabel={`${slot.slotCode} ${slot.status}`}
     accessibilityRole="button"
+    accessibilityState={{ selected: Boolean(isSelected) }}
     onPress={() => onPress(slot.slotCode)}
     style={[
       styles.slot,
@@ -43,7 +45,7 @@ export const ParkingSlot = ({ slot, onPress, isSelected }: ParkingSlotProps) => 
     ]}
   >
     <AppText
-      color={slot.status === 'occupied' ? colors.neutral.white : colors.light.text.inverse}
+      color={colors.light.text.inverse}
       variant="caption"
     >
       {slot.slotCode}
@@ -56,9 +58,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'absolute',
+    borderRadius: RADIUS.sm,
   },
   selected: {
-    borderColor: colors.neutral.black,
+    borderColor: colors.neutral.white,
     borderWidth: 3,
   },
 });

@@ -37,6 +37,7 @@ const floorCapacity = (floor: ParkingFloor) =>
 const isToday = (value?: string) => Boolean(value && new Date(value).toDateString() === new Date().toDateString());
 
 export default function StaffDashboardScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const { user } = useAuth();
   const { t, language } = useLanguage();
   const insets = useSafeAreaInsets();
@@ -130,7 +131,7 @@ export default function StaffDashboardScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffCommandHeader
         dateLabel={dateLabel}
         displayName={displayName}
@@ -145,7 +146,7 @@ export default function StaffDashboardScreen({ navigation }: Props) {
         {loading ? (
           <StaffDashboardSkeleton />
         ) : error ? (
-          <ErrorState message={error} onRetry={load} />
+          <ErrorState message={translateUi(error)} onRetry={load} />
         ) : (
           <>
             <DashboardEntry delay={120}>
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
   blockLabel: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.9,
     marginBottom: SPACING.sm,
     textTransform: 'uppercase',
@@ -224,6 +225,8 @@ const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
   scroll: { gap: SPACING.lg, padding: SPACING.lg },
   sectionHeader: {
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -236,5 +239,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'right',
   },
-  sectionTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  sectionTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700' },
 });

@@ -1,5 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
+import { StyleSheet } from 'react-native';
 
 import { AppText, Button, Input } from '@/components/common';
 import { Screen } from '@/components/layout/Screen';
@@ -11,6 +13,7 @@ import { isValidEmail } from '@/utils/validation';
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
 export const ForgotPasswordScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -34,11 +37,15 @@ export const ForgotPasswordScreen = ({ navigation }: Props) => {
   };
 
   return (
-    <Screen>
-      <AppText variant="h1">Reset Password</AppText>
+    <Screen scrollable contentStyle={styles.content}>
+      <AppText variant="h1">{translateUi("Reset Password")}</AppText>
       <Input keyboardType="email-address" label="Email" onChangeText={setEmail} value={email} />
-      {error ? <AppText color={colors.error.main}>{error}</AppText> : null}
-      <Button loading={loading} title="Send OTP" onPress={handleSubmit} />
+      {error ? <AppText color={colors.error.main}>{translateUi(error)}</AppText> : null}
+      <Button loading={loading} title={translateUi("Send OTP")} onPress={handleSubmit} />
     </Screen>
   );
 };
+
+const styles = StyleSheet.create({
+  content: { width: '100%', maxWidth: 480, alignSelf: 'center', justifyContent: 'center' },
+});

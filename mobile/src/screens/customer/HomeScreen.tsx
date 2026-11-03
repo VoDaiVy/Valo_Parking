@@ -311,6 +311,7 @@ function HomeHeader({
   onNotificationsPress: () => void;
   onAvatarPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <Animated.View
       style={[
@@ -345,7 +346,7 @@ function HomeHeader({
 
       <View style={styles.headerRight}>
         <AnimatedPressable
-          accessibilityLabel="Open notifications"
+          accessibilityLabel={translateUi("Open notifications")}
           onPress={onNotificationsPress}
           pressedScale={0.94}
           style={styles.headerIconBtn}
@@ -354,7 +355,7 @@ function HomeHeader({
         </AnimatedPressable>
 
         <AnimatedPressable
-          accessibilityLabel="Open account"
+          accessibilityLabel={translateUi("Open account")}
           onPress={onAvatarPress}
           pressedScale={0.94}
           style={styles.avatarShell}
@@ -378,6 +379,7 @@ function HomeHeader({
 }
 
 function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) {
+  const { t: translateUi } = useLanguage();
   const press = useRef(new Animated.Value(0)).current;
   const shine = useRef(new Animated.Value(0)).current;
   const ripple = useRef(new Animated.Value(0)).current;
@@ -444,7 +446,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
       ]}
     >
       <Pressable
-        accessibilityLabel={label}
+        accessibilityLabel={translateUi(label)}
         accessibilityRole="button"
         onPress={onPress}
         onPressIn={() => animatePress(1)}
@@ -479,7 +481,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
             />
             <Ionicons name={icon} size={18} color={COLORS.textInverse} />
             <Text numberOfLines={1} style={styles.primaryActionText}>
-              {label}
+              {translateUi(label)}
             </Text>
             <Animated.View style={{ transform: [{ translateX: iconTranslate }] }}>
               <Ionicons name="arrow-forward" size={17} color={COLORS.textInverse} />
@@ -502,7 +504,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
             />
             <Ionicons name={icon} size={18} color={COLORS.gold} />
             <Text numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryActionText}>
-              {label}
+              {translateUi(label)}
             </Text>
           </View>
         )}
@@ -512,6 +514,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
 }
 
 function HeroMetricTile({ metric, index }: { metric: HeroMetric; index: number }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useEntranceValue(480 + index * 90, 460);
   const accentColor = metric.tone === 'neutral' ? COLORS.textSecondary : COLORS.gold;
 
@@ -542,7 +545,7 @@ function HeroMetricTile({ metric, index }: { metric: HeroMetric; index: number }
         <Ionicons name={metric.icon} size={16} color={accentColor} />
       </View>
       <Text numberOfLines={1} style={styles.metricLabel}>
-        {metric.label}
+        {translateUi(metric.label)}
       </Text>
       <Text numberOfLines={1} adjustsFontSizeToFit style={styles.metricValue}>
         {metric.value}
@@ -578,7 +581,7 @@ const HERO_CAROUSEL_ITEMS: HeroCarouselItem[] = [
 function HeroCarousel({ width }: { width: number }) {
   const { language } = useLanguage();
   const pageWidth = width;
-  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [activeIndex, setActiveIndex] = useState(0);
   const dragging = useRef(false);
@@ -723,6 +726,7 @@ function PremiumHeroDashboard({
   onFindPress: () => void;
   onBookPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const { language } = useLanguage();
   const metrics = useMemo<HeroMetric[]>(() => {
     return [
@@ -824,7 +828,7 @@ function PremiumHeroDashboard({
             <View style={styles.heroMembershipDot} />
             <Ionicons name="shield-checkmark-outline" size={14} color={COLORS.gold} />
             <Text numberOfLines={1} style={styles.heroMembershipText}>
-              {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : 'Annual member') : (language === 'vi' ? 'Thành viên tháng' : 'Monthly member')}
+              {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : translateUi("Annual member")) : (language === 'vi' ? 'Thành viên tháng' : translateUi("Monthly member"))}
               {activeMembership.expireAt ? ` · ${language === 'vi' ? 'Hết hạn' : 'Expires'} ${formatDate(activeMembership.expireAt)}` : ''}
             </Text>
           </View>
@@ -850,6 +854,7 @@ function QuickAccessCard({
   grid: boolean;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useEntranceValue(720 + index * 90, 440);
   const press = useRef(new Animated.Value(0)).current;
 
@@ -928,7 +933,7 @@ function QuickAccessCard({
         </Animated.View>
         <View style={styles.quickCopy}>
           <Text numberOfLines={1} style={styles.quickLabel}>
-            {action.label}
+            {translateUi(action.label)}
           </Text>
           <Text numberOfLines={grid ? 2 : 1} style={styles.quickDescription}>
             {action.description}
@@ -984,6 +989,7 @@ function MembershipCard({
   entrance: Animated.Value;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const { language } = useLanguage();
   return (
     <Animated.View
@@ -1000,12 +1006,12 @@ function MembershipCard({
       }}
     >
       <AnimatedPressable
-        accessibilityLabel="View membership details and assigned VIP spaces"
+        accessibilityLabel={translateUi("View membership details and assigned VIP spaces")}
         onPress={onPress}
         pressedScale={0.985}
         style={styles.membershipCard}
       >
-        <SectionLabel title={language === 'vi' ? 'Gói thành viên' : 'Membership'} />
+        <SectionLabel title={language === 'vi' ? 'Gói thành viên' : translateUi("Membership")} />
         <View style={styles.membershipTopRow}>
           <View style={styles.membershipIdentity}>
             <View style={styles.membershipIcon}>
@@ -1013,7 +1019,7 @@ function MembershipCard({
             </View>
             <View style={styles.membershipTitleWrap}>
               <Text style={styles.membershipEyebrow}>
-                {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : 'Annual member') : (language === 'vi' ? 'Thành viên tháng' : 'Monthly member')}
+                {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : translateUi("Annual member")) : (language === 'vi' ? 'Thành viên tháng' : translateUi("Monthly member"))}
               </Text>
               <Text numberOfLines={1} style={styles.membershipName}>
                 {activeMembership.package?.name ?? 'VALO Membership'}
@@ -1022,7 +1028,7 @@ function MembershipCard({
           </View>
           <View style={styles.membershipActivePill}>
             <View style={styles.membershipActiveDot} />
-            <Text style={styles.membershipActiveText}>{language === 'vi' ? 'Đang hoạt động' : 'Active'}</Text>
+            <Text style={styles.membershipActiveText}>{language === 'vi' ? 'Đang hoạt động' : translateUi("Active")}</Text>
           </View>
         </View>
 
@@ -1031,7 +1037,7 @@ function MembershipCard({
         <View style={styles.vipSlotHeader}>
           <Text style={styles.vipSlotLabel}>{language === 'vi' ? 'Chỗ VIP được gán' : 'Assigned VIP spaces'}</Text>
           {activeMembership.expireAt ? (
-            <Text style={styles.membershipExpiry}>{language === 'vi' ? 'Hết hạn' : 'Expires'} {formatDate(activeMembership.expireAt)}</Text>
+            <Text style={styles.membershipExpiry}>{language === 'vi' ? 'Hết hạn' : translateUi("Expires")} {formatDate(activeMembership.expireAt)}</Text>
           ) : null}
         </View>
         {activeMembership.reservedSlots.length > 0 ? (
@@ -1051,13 +1057,12 @@ function MembershipCard({
           <View style={styles.vipSlotPending}>
             <Ionicons name="time-outline" size={16} color={COLORS.warning} />
             <Text style={styles.vipSlotPendingText}>
-              Your plan is active. VIP space assignment is pending.
-            </Text>
+              {" "}{translateUi("Your plan is active. VIP space assignment is pending.")}{" "}</Text>
           </View>
         )}
 
         <View style={styles.membershipFooter}>
-          <Text style={styles.membershipFooterText}>View membership benefits</Text>
+          <Text style={styles.membershipFooterText}>{translateUi("View membership benefits")}</Text>
           <Ionicons name="chevron-forward" size={16} color={COLORS.gold} />
         </View>
       </AnimatedPressable>
@@ -1066,6 +1071,7 @@ function MembershipCard({
 }
 
 function InfoBanner({ entrance }: { entrance: Animated.Value }) {
+  const { t: translateUi } = useLanguage();
   return (
     <Animated.View
       style={[
@@ -1086,7 +1092,7 @@ function InfoBanner({ entrance }: { entrance: Animated.Value }) {
       <View style={styles.infoIcon}>
         <Ionicons name="information-circle-outline" size={20} color={COLORS.gold} />
       </View>
-      <Text style={styles.infoBannerText}>Open 24/7 · Reserve faster, arrive calmer.</Text>
+      <Text style={styles.infoBannerText}>{translateUi("Open 24/7 · Reserve faster, arrive calmer.")}</Text>
     </Animated.View>
   );
 }
@@ -1173,7 +1179,7 @@ export default function HomeScreen({ navigation }: { navigation?: any }) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={PREMIUM.background} />
+      <StatusBar barStyle="light-content" />
       <LinearGradient
         colors={[PREMIUM.background, '#101113', '#0B0C0E']}
         locations={[0, 0.54, 1]}
@@ -1910,7 +1916,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   carouselKicker: {
-    fontSize: 11,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '900',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
@@ -1923,10 +1929,10 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   carouselBody: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '400',
+    lineHeight: 20,
     marginTop: 5,
   },
   carouselDots: {

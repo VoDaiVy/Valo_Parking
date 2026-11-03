@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useEffect, useState } from 'react';
 import { Image, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -17,6 +18,7 @@ export function SessionActionsPanel({
   session: StaffSession;
   onUpdated: (session: StaffSession) => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const [mode, setMode] = useState<'none' | 'move' | 'checkout'>('none');
   const [floors, setFloors] = useState<ParkingFloor[]>([]);
   const [floorId, setFloorId] = useState('');
@@ -125,7 +127,7 @@ export function SessionActionsPanel({
   if (session.status !== 'active') return null;
   return (
     <View style={s.panel}>
-      <Text style={s.title}>Parking session actions</Text>
+      <Text style={s.title}>{translateUi("Parking session actions")}</Text>
       <View style={s.row}>
         <WorkflowChip
           selected={mode === 'move'}
@@ -136,8 +138,7 @@ export function SessionActionsPanel({
             }
           }}
         >
-          Reassign space
-        </WorkflowChip>
+          {" "}{translateUi("Reassign space")}{" "}</WorkflowChip>
         <WorkflowChip
           selected={mode === 'checkout'}
           onPress={() => {
@@ -147,12 +148,11 @@ export function SessionActionsPanel({
             }
           }}
         >
-          Vehicle checkout
-        </WorkflowChip>
+          {" "}{translateUi("Vehicle checkout")}{" "}</WorkflowChip>
       </View>
       {mode === 'move' ? (
         <>
-          <Text style={s.body}>Select a floor and available space, then enter a reason.</Text>
+          <Text style={s.body}>{translateUi("Select a floor and available space, then enter a reason.")}</Text>
           <View style={s.row}>
             {floors.map((floor) => (
               <WorkflowChip
@@ -178,19 +178,19 @@ export function SessionActionsPanel({
               ))}
           </View>
           {floorId && !slots.some((slot) => slot.status === 'available' && !slot.reservedFor) ? (
-            <Text style={s.body}>No suitable spaces are available on this floor.</Text>
+            <Text style={s.body}>{translateUi("No suitable spaces are available on this floor.")}</Text>
           ) : null}
           <TextInput
-            accessibilityLabel="Reason for reassignment"
+            accessibilityLabel={translateUi("Reason for reassignment")}
             editable={!busy}
-            placeholder="Reason for reassignment"
+            placeholder={translateUi("Reason for reassignment")}
             placeholderTextColor={COLORS.textMuted}
             style={s.input}
             value={reason}
             onChangeText={setReason}
           />
           <WorkflowButton
-            title={busy ? 'Updating…' : 'Confirm reassignment'}
+            title={busy ? 'Updating…' : translateUi("Confirm reassignment")}
             disabled={busy || !floorId || !slotCode || !reason.trim()}
             onPress={() => void move()}
           />
@@ -199,8 +199,7 @@ export function SessionActionsPanel({
       {mode === 'checkout' ? (
         <>
           <Text style={s.body}>
-            Capture the exiting vehicle, review the invoice and confirm payment. Completing checkout opens the barrier.
-          </Text>
+            {" "}{translateUi("Capture the exiting vehicle, review the invoice and confirm payment. Completing checkout opens the barrier.")}{" "}</Text>
           <WorkflowButton
             title={
               busy ? 'Processing…' : photo ? 'Retake photo & refresh invoice' : 'Capture exit photo'
@@ -216,25 +215,23 @@ export function SessionActionsPanel({
           ) : null}
           {quote ? (
             <>
-              <Text style={s.body}>Total fee: {formatCurrency(quote.totalPrice)}</Text>
-              <Text style={s.title}>Amount due: {formatCurrency(quote.amountToPay)}</Text>
-              <Text style={s.body}>Estimated refund: {formatCurrency(quote.refundAmount)}</Text>
+              <Text style={s.body}>{translateUi("Total fee:")}{" "}{formatCurrency(quote.totalPrice)}</Text>
+              <Text style={[s.title, { color: COLORS.gold, fontVariant: ['tabular-nums'] }]}>{translateUi("Amount due:")}{" "}{formatCurrency(quote.amountToPay)}</Text>
+              <Text style={s.body}>{translateUi("Estimated refund:")}{" "}{formatCurrency(quote.refundAmount)}</Text>
               <View style={s.row}>
                 <WorkflowChip
                   selected={method === 'CASH'}
                   onPress={() => !busy && setMethod('CASH')}
                 >
-                  Cash
-                </WorkflowChip>
+                  {" "}{translateUi("Cash")}{" "}</WorkflowChip>
                 <WorkflowChip
                   selected={method === 'WALLET'}
                   onPress={() => !busy && setMethod('WALLET')}
                 >
-                  Customer wallet
-                </WorkflowChip>
+                  {" "}{translateUi("Customer wallet")}{" "}</WorkflowChip>
               </View>
               <WorkflowButton
-                title="Confirm checkout & payment"
+                title={translateUi("Confirm checkout & payment")}
                 disabled={busy}
                 onPress={() => void checkout()}
               />
@@ -244,7 +241,7 @@ export function SessionActionsPanel({
       ) : null}
       {error ? (
         <Text accessibilityRole="alert" style={s.error}>
-          {error}
+          {translateUi(error)}
         </Text>
       ) : null}
     </View>

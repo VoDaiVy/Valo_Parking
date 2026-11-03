@@ -4,6 +4,10 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StaffAssistantProvider, useStaffAssistant } from '@/contexts/StaffAssistantContext';
 import { assistantService } from '@/services/api/assistant';
 
+jest.mock('@/contexts/LanguageContext', () => ({
+  useLanguage: () => ({ language: 'en', t: (message: string) => message }),
+}));
+
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 
 jest.mock('react-native-safe-area-context', () => ({

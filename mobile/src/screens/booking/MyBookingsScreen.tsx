@@ -1,9 +1,10 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { BookingCard } from '@/components/booking/BookingCard';
-import { AppText, Button, LoadingSpinner } from '@/components/common';
+import { AppText, Button, EmptyState, LoadingSpinner } from '@/components/common';
 import { Screen } from '@/components/layout/Screen';
 import { useBooking } from '@/hooks/useBooking';
 import type { BookingStackParamList } from '@/navigation/types';
@@ -14,6 +15,7 @@ type Props = NativeStackScreenProps<BookingStackParamList, 'MyBookings'>;
 type Filter = BookingStatus | 'all';
 
 export const MyBookingsScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { bookings, filterStatus, isLoading, fetchBookings, setFilterStatus } = useBooking();
 
   useEffect(() => {
@@ -35,17 +37,19 @@ export const MyBookingsScreen = ({ navigation }: Props) => {
   return (
     <Screen>
       <View style={styles.header}>
-        <AppText variant="h1">My Bookings</AppText>
-        <Button title="New" onPress={() => navigation.navigate('BookingBrowse')} />
+        <AppText variant="h1">{translateUi("My Bookings")}</AppText>
+        <Button title={translateUi("New")} onPress={() => navigation.navigate('BookingBrowse')} />
       </View>
       <View style={styles.filters}>
         {filters.map((filter) => (
           <Pressable
             key={filter}
+            accessibilityRole="button"
+            accessibilityState={{ selected: filterStatus === filter }}
             onPress={() => setFilterStatus(filter)}
-            style={[styles.filter, filterStatus === filter && styles.filterActive]}
+            style={({ pressed }) => [styles.filter, filterStatus === filter && styles.filterActive, filter === 'completed' && filterStatus === filter && styles.filterCompleted, pressed && styles.pressed]}
           >
-            <AppText color={filterStatus === filter ? colors.light.text.inverse : colors.light.text.primary} variant="caption">
+            <AppText color={filter === 'completed' ? colors.success.main : filterStatus === filter ? colors.light.text.inverse : colors.light.text.primary} variant="caption">
               {filter} ({countFor(filter)})
             </AppText>
           </Pressable>
@@ -53,14 +57,13 @@ export const MyBookingsScreen = ({ navigation }: Props) => {
       </View>
       {isLoading && bookings.length === 0 ? <LoadingSpinner /> : null}
       <FlatList
+        contentContainerStyle={styles.list}
         data={filteredBookings}
         keyExtractor={(item) => item._id}
         ListEmptyComponent={
           !isLoading ? (
-            <AppText color={colors.light.text.secondary}>
-              {bookings.length === 0 ? 'No bookings yet.' : 'No bookings with this status.'}
-            </AppText>
-          ) : null
+            <EmptyState icon="calendar-outline" title={bookings.length === 0 ? translateUi("No bookings yet.") : translateUi("No bookings with this status.")} />
+          ) : undefined
         }
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={fetchBookings} />}
         renderItem={({ item }) => (
@@ -79,6 +82,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.md,
   },
   filters: {
     flexDirection: 'row',
@@ -91,9 +96,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   filterActive: {
     backgroundColor: colors.primary[500],
     borderColor: colors.primary[500],
   },
+  filterCompleted: { backgroundColor: colors.success.light, borderColor: colors.success.main },
+  pressed: { opacity: 0.85 },
+  list: { flexGrow: 1, paddingBottom: spacing.xl },
 });
