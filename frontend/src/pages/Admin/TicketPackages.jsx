@@ -16,6 +16,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import '../Staff/components/staffTicketPackages.css';
+import './ticketPackages.css';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
 import {
@@ -91,7 +93,19 @@ const getTypeMeta = (type) => {
   };
 };
 
-function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300' }) {
+function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300', isAdmin }) {
+  if (isAdmin) return (
+    <div className="package-kpi">
+      <Icon size={18} className={`shrink-0 ${tone}`} aria-hidden="true" />
+      <div className="package-kpi-copy">
+        <p className="text-xs font-bold text-blue-200/55">{label}</p>
+        <div className="package-kpi-line">
+          <p className={`package-kpi-value font-mono text-2xl font-black leading-none text-white ${label === 'Last Updated' ? 'package-kpi-date' : ''}`}>{value}</p>
+          <span className="package-kpi-support truncate text-xs text-emerald-300" title={support}>{support}</span>
+        </div>
+      </div>
+    </div>
+  );
   return (
     <div className="flex min-w-0 items-center gap-4 px-5 py-4 md:border-l md:border-white/10 md:first:border-l-0">
       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white/[0.03] ${tone}`}>
@@ -108,7 +122,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
 
 function LoadingSkeleton({ isAdmin }) {
   return (
-    <div className="relative min-h-[calc(100vh-70px)] overflow-hidden bg-[#050505] px-4 py-6 sm:px-6 md:px-8">
+    <div className={`${isAdmin ? 'admin-ticket-packages' : ''} staff-ticket-packages stp-skeleton relative min-h-[calc(100vh-70px)] overflow-hidden bg-[#050505] px-4 py-6 sm:px-6 md:px-8`}>
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-yellow-400/5 blur-3xl" />
       <div className="mx-auto max-w-7xl animate-pulse motion-reduce:animate-none">
@@ -136,7 +150,7 @@ function LoadingSkeleton({ isAdmin }) {
           <div className="h-12 w-full rounded-xl bg-white/10 md:w-44" />
           <div className="h-12 w-full rounded-xl bg-white/10 md:w-44" />
         </div>
-        <div className="space-y-3">
+        <div className="stp-rows space-y-3">
           {[0, 1, 2].map((item) => (
             <div key={item} className="h-20 rounded-2xl border border-white/10 bg-white/[0.04]" />
           ))}
@@ -151,13 +165,37 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, index }) {
   const Icon = meta.Icon;
   const isActive = Boolean(pkg.isActive);
 
+  if (isAdmin) return (
+    <tr data-package-type={pkg.type} className="admin-package-row">
+      <td>
+        <div className="flex min-w-0 items-center gap-3">
+          <Icon size={19} className={`shrink-0 ${meta.icon.split(' ').find((token) => token.startsWith('text-'))}`} aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-white" title={pkg.name}>{pkg.name || 'Untitled package'}</p>
+            <p className="package-description truncate text-white/40" title={pkg.description}>{pkg.description || 'No description'}</p>
+          </div>
+        </div>
+      </td>
+      <td><span className={`inline-flex rounded-full border px-2.5 py-0.5 ${meta.badge}`}>{meta.label}</span></td>
+      <td><p className="font-semibold text-[#e8d5ad]">{formatCurrency(pkg.price)}</p><p className="package-description text-white/40">{meta.unit}</p></td>
+      <td><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{isActive ? 'Active' : 'Inactive'}</span></td>
+      <td className="text-white/55">{formatPackageDate(pkg.updatedAt || pkg.createdAt)}</td>
+      <td>
+        <div className="flex items-center justify-end gap-2">
+          <button type="button" onClick={() => onEdit(pkg)} aria-label={`Edit ${pkg.name || 'package'}`} title={`Edit ${pkg.name || 'package'}`} className="package-edit inline-flex h-8 w-8 items-center justify-center text-[#e8d5ad]/75 hover:text-[#e8d5ad] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e8d5ad]"><Edit2 size={16} /></button>
+          <button type="button" onClick={() => onDelete(pkg._id)} aria-label={`Delete ${pkg.name || 'package'}`} title={`Delete ${pkg.name || 'package'}`} className="inline-flex h-8 w-8 items-center justify-center text-red-400 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"><Trash2 size={16} /></button>
+        </div>
+      </td>
+    </tr>
+  );
+
   return (
     <article
-      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#111111]/90 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#151515] motion-reduce:transform-none motion-reduce:transition-none"
+      data-package-type={pkg.type} className="stp-row group relative overflow-hidden rounded-2xl border border-white/10 bg-[#111111]/90 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#151515] motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 45}ms` }}
     >
       <div className={`absolute left-0 top-0 h-full w-1 bg-gradient-to-b ${meta.rowAccent} opacity-70 transition group-hover:opacity-100`} />
-      <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(240px,1.5fr)_120px_minmax(135px,0.8fr)_120px_150px_auto] md:items-center md:px-5">
+      <div className="stp-row-grid grid gap-4 px-4 py-4 md:grid-cols-[minmax(240px,1.5fr)_120px_minmax(135px,0.8fr)_120px_150px_auto] md:items-center md:px-5">
         <div className="flex min-w-0 items-center gap-4">
           <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition group-hover:shadow-lg ${meta.icon}`}>
             <Icon size={19} />
@@ -425,26 +463,35 @@ export default function TicketPackages() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
+    <div className={`${isAdmin ? 'admin-ticket-packages' : ''} staff-ticket-packages relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8`}>
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
-      <div className="pointer-events-none absolute right-24 top-16 h-px w-96 max-w-[70vw] bg-gradient-to-r from-transparent via-yellow-300/20 to-transparent" />
+      {!isAdmin && <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />}
+      {!isAdmin && <div className="pointer-events-none absolute right-24 top-16 h-px w-96 max-w-[70vw] bg-gradient-to-r from-transparent via-yellow-300/20 to-transparent" />}
 
-      <div className="relative mx-auto max-w-7xl">
-        <header className="mb-8 flex animate-[fadeIn_420ms_ease-out_both] flex-col justify-between gap-4 motion-reduce:animate-none md:flex-row md:items-end">
+      <div className="stp-content relative mx-auto max-w-7xl">
+        <header className="stp-header mb-8 flex animate-[fadeIn_420ms_ease-out_both] flex-col justify-between gap-4 motion-reduce:animate-none md:flex-row md:items-end">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+            {isAdmin ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-3xl font-black tracking-tight text-white">Ticket Packages</h1>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Tag size={12} /> Packages</div>
+            </div> : <>
+            <div className="stp-legacy-label mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <Tag size={12} /> Packages
             </div>
             <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Ticket Packages</h1>
+            </>}
             <p className="mt-2 text-sm font-medium text-slate-400">Manage parking rates and ticket packages.</p>
           </div>
+
+          {!isAdmin && <button type="button" onClick={fetchPackages} disabled={loading} aria-busy={loading} aria-label="Refresh packages" title="Refresh packages" className="stp-refresh">
+            <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} /><span>Refresh</span>
+          </button>}
 
           {isAdmin && (
             <button
               type="button"
               onClick={() => openModal()}
-              className="group inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-500 px-6 text-sm font-black text-[#111111] shadow-lg shadow-yellow-500/20 transition hover:-translate-y-0.5 hover:shadow-yellow-500/30 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-yellow-200/80 motion-reduce:transform-none motion-reduce:transition-none"
+              className="admin-package-add group inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-500 px-6 text-sm font-black text-[#111111] shadow-lg shadow-yellow-500/20 transition hover:-translate-y-0.5 hover:shadow-yellow-500/30 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-yellow-200/80 motion-reduce:transform-none motion-reduce:transition-none"
             >
               <Plus size={18} className="transition group-hover:rotate-90 motion-reduce:transition-none" />
               Add Package
@@ -469,14 +516,16 @@ export default function TicketPackages() {
           </div>
         )}
 
-        <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-2xl shadow-black/20 sm:grid-cols-3">
+        <section className="stp-metrics mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-2xl shadow-black/20 sm:grid-cols-3">
           <SummaryItem
+            isAdmin={isAdmin}
             icon={Package}
             label="Total Packages"
             value={getOperationalValue(packageState, summary.total.toLocaleString('vi-VN'))}
             support={packageState.isAvailable ? 'Loaded packages' : 'Data unavailable'}
           />
           <SummaryItem
+            isAdmin={isAdmin}
             icon={CheckCircle2}
             label="Active Packages"
             value={getOperationalValue(packageState, summary.active.toLocaleString('vi-VN'))}
@@ -484,6 +533,7 @@ export default function TicketPackages() {
             tone="text-emerald-300"
           />
           <SummaryItem
+            isAdmin={isAdmin}
             icon={CalendarClock}
             label="Last Updated"
             value={getOperationalValue(packageState, summary.latestUpdated.split(' ')[0])}
@@ -492,7 +542,7 @@ export default function TicketPackages() {
           />
         </section>
 
-        <section className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
+        <section className="stp-toolbar mb-4 flex flex-col gap-3 md:flex-row md:items-center">
           <div className="relative flex-1">
             <Search size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
@@ -540,15 +590,15 @@ export default function TicketPackages() {
           />
         </section>
 
-        <section className="mb-6">
-          <div className={`hidden px-5 pb-3 pt-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 md:grid ${isAdmin ? 'md:grid-cols-[minmax(240px,1.5fr)_120px_minmax(135px,0.8fr)_120px_150px_auto]' : 'md:grid-cols-[minmax(240px,1.5fr)_120px_minmax(135px,0.8fr)_120px_150px]'}`}>
+        <section className="stp-catalog mb-6">
+          {!isAdmin && <div className={`stp-columns hidden px-5 pb-3 pt-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 md:grid ${isAdmin ? 'md:grid-cols-[minmax(240px,1.5fr)_120px_minmax(135px,0.8fr)_120px_150px_auto]' : 'md:grid-cols-[minmax(240px,1.5fr)_120px_minmax(135px,0.8fr)_120px_150px]'}`}>
             <span>Package</span>
             <span>Type</span>
             <span>Price</span>
             <span>Status</span>
             <span>Last Updated</span>
             {isAdmin && <span className="text-right">Actions</span>}
-          </div>
+          </div>}
 
           {loadError ? (
             <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-6 py-10 text-center" role="alert">
@@ -557,7 +607,12 @@ export default function TicketPackages() {
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{loadError}</p>
             </div>
           ) : filteredPackages.length > 0 ? (
-            <div className="space-y-3">
+            isAdmin ? <div className="admin-package-table-scroll" tabIndex={0} role="region" aria-label="Ticket packages list">
+              <table>
+                <thead><tr>{['Package', 'Type', 'Price', 'Status', 'Last Updated', 'Actions'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
+                <tbody>{filteredPackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} isAdmin={isAdmin} onEdit={openModal} onDelete={handleDelete} index={index} />)}</tbody>
+              </table>
+            </div> : <div className="stp-rows space-y-3">
               {filteredPackages.map((pkg, index) => (
                 <PackageRow
                   key={pkg._id}
@@ -591,7 +646,7 @@ export default function TicketPackages() {
           )}
         </section>
 
-        <aside className="mb-4 flex items-start gap-3 rounded-2xl border border-yellow-300/15 bg-gradient-to-r from-yellow-300/[0.08] via-white/[0.025] to-transparent px-4 py-4 text-sm">
+        {isAdmin && <aside className="stp-note mb-4 flex items-start gap-3 rounded-2xl border border-yellow-300/15 bg-gradient-to-r from-yellow-300/[0.08] via-white/[0.025] to-transparent px-4 py-4 text-sm">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-yellow-300/20 bg-yellow-300/10 text-yellow-300">
             <Info size={17} />
           </div>
@@ -599,12 +654,18 @@ export default function TicketPackages() {
             <p className="font-black text-yellow-200">Package management</p>
             <p className="mt-1 font-medium text-slate-400">Review package changes carefully before saving.</p>
           </div>
-        </aside>
+        </aside>}
 
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#171717] p-6 shadow-2xl md:p-8">
-              <h2 className="mb-6 text-2xl font-black text-white">{editingPackage ? 'Edit Package' : 'Create Package'}</h2>
+          <div className="package-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div role="dialog" aria-modal="true" aria-labelledby="package-modal-title" aria-describedby="package-modal-description" className="package-modal w-full max-w-md rounded-3xl border border-white/10 bg-[#171717] p-6 shadow-2xl md:p-8">
+              <div className="package-modal-header">
+                <div>
+                  <h2 id="package-modal-title" className="text-2xl font-black text-white">{editingPackage ? 'Edit Package' : 'Create Package'}</h2>
+                  <p id="package-modal-description">{editingPackage ? 'Update package details and availability.' : 'Set parking rates and package availability.'}</p>
+                </div>
+                <button type="button" onClick={() => setShowModal(false)} className="package-modal-close" aria-label="Close package dialog"><X size={18} aria-hidden="true" /></button>
+              </div>
 
               {error && (
                 <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-semibold text-red-400">
@@ -665,7 +726,7 @@ export default function TicketPackages() {
                   />
                 </div>
 
-                <div className="flex items-center gap-3 py-2">
+                <div className="package-active-row flex items-center gap-3 py-2">
                   <label className="relative inline-flex cursor-pointer items-center">
                     <input
                       type="checkbox"
@@ -720,7 +781,7 @@ export default function TicketPackages() {
                   </label>
                 </div>
 
-                <div className="flex gap-3 pt-4">
+                <div className="package-modal-footer flex gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
@@ -732,7 +793,7 @@ export default function TicketPackages() {
                     type="submit"
                     className="flex-1 rounded-xl bg-gold px-4 py-3 font-bold text-[#0B0E17] shadow-lg shadow-gold/20 transition hover:bg-gold/90 focus:outline-none focus:ring-2 focus:ring-yellow-200/80"
                   >
-                    Save Package
+                    {editingPackage ? 'Save Package' : 'Create Package'}
                   </button>
                 </div>
               </form>

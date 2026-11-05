@@ -1,7 +1,9 @@
+import './adminPageConsistency.css';
+import './voucherManagement.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle, Bell, Check, Coins, Edit2, Gift, Loader2, Percent,
-  Plus, Power, Sparkles, Trash2, Wrench, X,
+  Plus, Power, Search, Sparkles, Trash2, Wrench, X,
 } from 'lucide-react';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 import AdminSelect from '../../components/Admin/AdminSelect';
@@ -60,6 +62,31 @@ export default function VoucherManagement() {
   const [actionId, setActionId] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortMode, setSortMode] = useState('newest');
+  const [page, setPage] = useState(1);
+
+  const filteredTemplates = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    const timestamp = (template) => Date.parse(template.createdAt) || 0;
+    return templates.filter((template) =>
+      (!query || `${template.name || ''} ${template.description || ''}`.toLocaleLowerCase().includes(query))
+      && (statusFilter === 'all' || Boolean(template.isActive) === (statusFilter === 'active'))
+    ).sort((a, b) => {
+      if (sortMode === 'points-low') return Number(a.pointCost) - Number(b.pointCost);
+      if (sortMode === 'points-high') return Number(b.pointCost) - Number(a.pointCost);
+      return sortMode === 'oldest' ? timestamp(a) - timestamp(b) : timestamp(b) - timestamp(a);
+    });
+  }, [templates, searchQuery, statusFilter, sortMode]);
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(filteredTemplates.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleTemplates = filteredTemplates.slice(pageStart, pageStart + pageSize);
+  const firstPage = Math.max(1, Math.min(currentPage - 3, totalPages - 6));
+  const pageNumbers = Array.from({ length: Math.min(7, totalPages) }, (_, index) => firstPage + index);
+
 
   const activeCount = useMemo(
     () => templates.filter((template) => template.isActive).length,
@@ -72,7 +99,11 @@ export default function VoucherManagement() {
     const [templateResponse, serviceResponse] = await Promise.all([
       getVoucherTemplatesAdmin(), getServices(),
     ]);
-    if (templateResponse.ok) setTemplates(templateResponse.data?.data || []);
+    if (templateResponse.ok) {
+      const nextTemplates = templateResponse.data?.data || [];
+      setTemplates(nextTemplates);
+      setPage(1);
+    }
     else setError(templateResponse.data?.message || 'Không thể tải danh sách voucher.');
     if (serviceResponse.ok) setServices(serviceResponse.data?.data || []);
     setLoading(false);
@@ -194,18 +225,15 @@ export default function VoucherManagement() {
   };
 
   return (
-    <main className="relative min-h-full overflow-hidden bg-[#080909] px-5 pb-16 pt-8 text-white sm:px-8 lg:px-10 lg:pt-10">
-      <AdminBackgroundOverlay opacity="0.04" size="46px" />
-      <div className="pointer-events-none absolute -right-32 -top-48 h-[34rem] w-[34rem] rounded-full bg-[#f3c43d]/[0.045] blur-[110px]" />
-      <div className="pointer-events-none absolute -bottom-56 left-1/3 h-96 w-96 rounded-full bg-[#f3c43d]/[0.025] blur-[120px]" />
+    <main className="admin-consistency admin-voucher-consistency relative min-h-full overflow-hidden bg-[#080909] px-5 pb-16 pt-8 text-white sm:px-8 lg:px-10 lg:pt-10">
+      <AdminBackgroundOverlay />
 
-      <div className="relative mx-auto max-w-[1280px]">
-        <header className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <div className="voucher-page-content relative mx-auto max-w-[1280px]">
+        <header className="c4-header mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#f3c43d]/25 bg-[#f3c43d]/[0.07] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-[#f3c43d]">
+            <div className="c4-title-line"><h1 className="text-balance text-4xl font-black tracking-[-0.045em] text-white sm:text-5xl">Voucher management</h1><div className="c4-badge">
               <Gift size={13} strokeWidth={2.2} /> Loyalty rewards
-            </div>
-            <h1 className="text-balance text-4xl font-black tracking-[-0.045em] text-white sm:text-5xl">Voucher management</h1>
+            </div></div>
             <p className="mt-3 max-w-xl text-sm font-medium leading-6 text-[#8992a3]">Build reward templates customers can redeem with loyalty points.</p>
           </div>
           <button type="button" onClick={() => open(null)} className="group inline-flex min-h-12 items-center justify-center gap-2.5 self-start rounded-xl bg-[#f3c43d] px-5 text-sm font-black text-[#17140a] shadow-[0_12px_35px_rgba(243,196,61,0.14)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#ffd75c] hover:shadow-[0_16px_40px_rgba(243,196,61,0.22)] focus:outline-none focus:ring-4 focus:ring-[#f3c43d]/20 active:translate-y-0 active:scale-[0.98] lg:self-auto">
@@ -213,15 +241,15 @@ export default function VoucherManagement() {
           </button>
         </header>
 
-        <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/[0.07] bg-[#101111]/85 backdrop-blur-sm sm:grid-cols-3">
+        <section className="c4-kpis c4-three mb-5 grid overflow-hidden rounded-2xl border border-white/[0.07] bg-[#101111]/85 backdrop-blur-sm sm:grid-cols-3">
           {[
-            { label: 'Total templates', value: templates.length, icon: Gift },
-            { label: 'Active rewards', value: activeCount, icon: Sparkles },
-            { label: 'Inactive', value: Math.max(0, templates.length - activeCount), icon: Power },
-          ].map(({ label, value, icon: Icon }, index) => (
+            { label: 'Total Templates', value: templates.length, icon: Gift, support: 'Reward templates' },
+            { label: 'Active Rewards', value: activeCount, icon: Sparkles, support: 'Available rewards' },
+            { label: 'Inactive', value: Math.max(0, templates.length - activeCount), icon: Power, support: 'Disabled templates' },
+          ].map(({ label, value, icon: Icon, support }, index) => (
             <div key={label} className={`flex items-center gap-4 px-5 py-4 ${index ? 'border-t border-white/[0.06] sm:border-l sm:border-t-0' : ''}`}>
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.045] text-[#f3c43d]"><Icon size={17} strokeWidth={1.8} /></div>
-              <div><p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/35">{label}</p><p className="mt-0.5 font-mono text-xl font-bold tabular-nums text-white">{loading ? '—' : value}</p></div>
+              <div><p className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/35">{label}</p><div className="mt-1 flex items-baseline gap-2"><p className="c4-kpi-value font-mono text-xl font-bold tabular-nums text-white">{loading ? '—' : value}</p><span className="truncate text-xs text-emerald-300">{support}</span></div></div>
             </div>
           ))}
         </section>
@@ -240,8 +268,22 @@ export default function VoucherManagement() {
           </div>
         )}
 
-        <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0e0e]/90 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-sm">
-          <div className="hidden grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] gap-5 border-b border-white/[0.08] bg-white/[0.025] px-5 py-3.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#778092] lg:grid">
+        <div className="voucher-toolbar">
+          <label className="voucher-search">
+            <Search size={17} aria-hidden="true" />
+            <input aria-label="Search vouchers" placeholder="Search vouchers..." value={searchQuery}
+              onChange={(event) => { setSearchQuery(event.target.value); setPage(1); }} />
+          </label>
+          <AdminSelect value={statusFilter} onChange={(value) => { setStatusFilter(value); setPage(1); }}
+            options={[{ value: 'all', label: 'All Status' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]}
+            ariaLabel="Filter vouchers by status" className="voucher-filter" />
+          <AdminSelect value={sortMode} onChange={(value) => { setSortMode(value); setPage(1); }}
+            options={[{ value: 'newest', label: 'Newest' }, { value: 'oldest', label: 'Oldest' }, { value: 'points-low', label: 'Point cost: Low to high' }, { value: 'points-high', label: 'Point cost: High to low' }]}
+            ariaLabel="Sort vouchers" className="voucher-sort" align="right" />
+        </div>
+        <section className="voucher-table" aria-label="Voucher templates">
+          <div className="voucher-table-scroll" tabIndex={0} role="region" aria-label="Voucher template rows">
+          <div className="voucher-table-header hidden grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] gap-5 border-b border-white/[0.08] bg-white/[0.025] px-5 py-3.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#778092] lg:grid">
             <span>Template</span><span>Customer benefit</span><span>Point cost</span><span>Status</span><span className="text-right">Actions</span>
           </div>
 
@@ -254,11 +296,28 @@ export default function VoucherManagement() {
               <p className="mt-2 max-w-sm text-sm leading-6 text-white/40">Create a percentage discount or a free-service voucher for customers to redeem.</p>
               <button type="button" onClick={() => open(null)} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-[#f3c43d]/25 px-4 py-2.5 text-sm font-bold text-[#f3c43d] transition hover:bg-[#f3c43d]/10 focus:outline-none focus:ring-2 focus:ring-[#f3c43d]/30"><Plus size={16} /> Create first template</button>
             </div>
+          ) : filteredTemplates.length === 0 ? (
+            <div className="voucher-no-results" role="status">
+              <Search size={26} aria-hidden="true" />
+              <h2>No vouchers match your filters</h2>
+              <p>Try another name, description or status.</p>
+              <button type="button" onClick={() => { setSearchQuery(''); setStatusFilter('all'); setPage(1); }}>Clear filters</button>
+            </div>
           ) : (
             <div>
-              {templates.map((template) => (
-                <article key={template._id} className={`group grid gap-4 border-t border-white/[0.06] px-5 py-4 transition duration-200 first:border-t-0 hover:bg-white/[0.022] lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] lg:items-center lg:gap-5 ${template.isActive ? '' : 'opacity-60 hover:opacity-80'}`}>
-                  <div className="flex min-w-0 items-center gap-3.5"><BenefitMark template={template} /><div className="min-w-0"><h2 className="truncate text-sm font-black tracking-[-0.01em] text-white">{template.name}</h2><p className="mt-1 truncate text-xs font-medium text-white/35">{template.description || 'No description provided'}</p></div></div>
+              {visibleTemplates.map((template) => (
+                <article key={template._id}
+                  tabIndex={0}
+                  aria-label={`View voucher details: ${template.name}`}
+                  onClick={(event) => { if (!event.target.closest('button')) open(template); }}
+                  onKeyDown={(event) => {
+                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault();
+                      open(template);
+                    }
+                  }}
+                  className={`voucher-row group grid gap-4 border-t border-white/[0.06] px-5 py-4 transition duration-200 first:border-t-0 hover:bg-white/[0.022] lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.7fr)_140px_130px_150px] lg:items-center lg:gap-5 ${template.isActive ? '' : 'opacity-60 hover:opacity-80'}`}>
+                  <div className="flex min-w-0 items-center gap-3.5"><BenefitMark template={template} /><div className="min-w-0"><h2 title={template.name} className="truncate text-sm font-black tracking-[-0.01em] text-white">{template.name}</h2><p title={template.description} className="mt-1 truncate text-xs font-medium text-white/35">{template.description || 'No description provided'}</p></div></div>
                   <div className="flex items-center justify-between gap-4 lg:block"><span className="text-[10px] font-black uppercase tracking-widest text-white/30 lg:hidden">Benefit</span><p className="text-sm font-semibold text-[#d8dbe1]">{describeBenefit(template)}</p></div>
                   <div className="flex items-center justify-between gap-4 lg:block"><span className="text-[10px] font-black uppercase tracking-widest text-white/30 lg:hidden">Point cost</span><div><p className="flex items-center gap-2 font-mono text-sm font-bold tabular-nums text-[#f3c43d]"><Coins size={15} />{template.pointCost.toLocaleString('vi-VN')}</p><p className="mt-1 text-[10px] font-bold text-white/35">{template.redemptionLimit ? `${Number(template.redeemedCount || 0).toLocaleString('vi-VN')} / ${template.redemptionLimit.toLocaleString('vi-VN')} redeemed` : 'Unlimited quantity'}</p></div></div>
                   <div className="flex items-center justify-between gap-4 lg:block"><span className="text-[10px] font-black uppercase tracking-widest text-white/30 lg:hidden">Status</span><span className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${template.isActive ? 'border-emerald-400/15 bg-emerald-400/[0.07] text-emerald-300' : 'border-white/10 bg-white/[0.035] text-white/40'}`}><span className={`h-1.5 w-1.5 rounded-full ${template.isActive ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]' : 'bg-white/30'}`} />{template.isActive ? 'Active' : 'Inactive'}</span></div>
@@ -272,21 +331,34 @@ export default function VoucherManagement() {
             </div>
           )}
           {loading && <div className="space-y-3 p-4 lg:hidden">{Array.from({ length: 3 }, (_, index) => <div key={index} className="h-36 animate-pulse rounded-xl bg-white/[0.04]" />)}</div>}
+          </div>
+          <footer className="voucher-pagination">
+            <p aria-live="polite">{filteredTemplates.length ? pageStart + 1 : 0}&ndash;{Math.min(pageStart + pageSize, filteredTemplates.length)} of {filteredTemplates.length} results</p>
+            <nav aria-label="Voucher pagination">
+              <button type="button" aria-label="Previous voucher page" disabled={loading || currentPage === 1} onClick={() => setPage(currentPage - 1)}>&larr; Prev</button>
+              {pageNumbers.map((number) => <button key={number} type="button" aria-label={`Voucher page ${number}`} aria-current={number === currentPage ? 'page' : undefined} disabled={loading || !filteredTemplates.length} onClick={() => setPage(number)}>{number}</button>)}
+              <button type="button" aria-label="Next voucher page" disabled={loading || currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next &rarr;</button>
+            </nav>
+          </footer>
         </section>
       </div>
 
       {editing !== undefined && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditing(undefined); }}>
-          <form onSubmit={save} className="relative w-full max-w-2xl overflow-hidden rounded-[1.5rem] border border-white/[0.1] bg-[#101111] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#f3c43d]/70 to-transparent" />
-            <div className="flex items-start justify-between border-b border-white/[0.07] px-6 py-5">
-              <div className="flex items-center gap-3.5"><BenefitMark template={form} large /><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#f3c43d]">Reward template</p><h2 className="mt-1 text-xl font-black tracking-tight text-white">{editing?._id ? 'Edit voucher' : 'Create voucher'}</h2></div></div>
+        <div className="voucher-modal-backdrop fixed inset-0 z-50" onClick={(event) => { if (event.target === event.currentTarget && !saving) setEditing(undefined); }}>
+          <form onSubmit={save} role="dialog" aria-modal="true" aria-labelledby="voucher-modal-title" className="voucher-modal">
+            <div className="voucher-modal-header">
+              <div className="flex items-center gap-3.5"><BenefitMark template={form} large /><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#f3c43d]">Reward template</p><h2 id="voucher-modal-title" className="mt-1 text-xl font-black tracking-tight text-white">{editing?._id ? 'Edit voucher' : 'Create voucher'}</h2></div></div>
               <button type="button" onClick={() => setEditing(undefined)} disabled={saving} className="flex h-9 w-9 items-center justify-center rounded-lg text-white/35 transition hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/20" aria-label="Close dialog"><X size={19} /></button>
             </div>
-            <div className="grid gap-5 p-6 sm:grid-cols-2">
+            <div className="voucher-modal-body">
+              {error && <div role="alert" className="voucher-modal-error">{error}</div>}
+              <div className="voucher-modal-columns">
+              <div className="voucher-modal-column">
               <label className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Template name</span><input required maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} placeholder="e.g. Weekend 15% off" /></label>
               <label className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Description <span className="font-medium text-white/25">(optional)</span></span><textarea rows={3} maxLength={500} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className={`${fieldClass} resize-none`} placeholder="Explain when and how customers can use this reward." /></label>
-              <div><span className="text-xs font-bold text-white/55">Reward type</span><AdminSelect value={form.type} onChange={(value) => setForm({ ...form, type: value })} options={rewardTypeOptions} ariaLabel="Select reward type" icon={Gift} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuClassName="w-full border-white/[0.1] bg-[#151616] shadow-[0_20px_55px_rgba(0,0,0,0.55)]" /></div>
+              <div><span className="text-xs font-bold text-white/55">Reward type</span><AdminSelect value={form.type} onChange={(value) => setForm({ ...form, type: value })} options={rewardTypeOptions} ariaLabel="Select reward type" icon={Gift} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuAnchor={{ to: 'bottom start', gap: 8, padding: 12 }} menuClassName="voucher-modal-menu" /></div>
+              </div>
+              <div className="voucher-modal-column voucher-modal-values">
               <label><span className="text-xs font-bold text-white/55">Point cost</span><div className="relative"><input type="number" min="1" required value={form.pointCost} onChange={(event) => setForm({ ...form, pointCost: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-16 font-mono tabular-nums`} /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">points</span></div><p className="mt-1.5 text-[10px] font-medium leading-4 text-white/30">Customers earn 1 point per 1,000 VND; each earned point lot expires after 30 days.</p></label>
               <label><span className="text-xs font-bold text-white/55">Redemption limit <span className="font-medium text-white/25">(optional)</span></span><div className="relative"><input type="number" min={Math.max(1, Number(editing?.redeemedCount || 0))} step="1" value={form.redemptionLimit} onChange={(event) => setForm({ ...form, redemptionLimit: event.target.value })} className={`${fieldClass} ${numberFieldClass} pr-20 font-mono tabular-nums`} placeholder="Unlimited" /><span className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-black uppercase tracking-widest text-white/25">vouchers</span></div><p className="mt-1.5 text-[10px] font-medium text-white/30">Leave empty for unlimited availability.{editing?.redeemedCount ? ` Already redeemed: ${editing.redeemedCount}.` : ''}</p></label>
               {form.type === 'PERCENT_DISCOUNT' && (
@@ -299,27 +371,31 @@ export default function VoucherManagement() {
                 </>
               )}
               {form.type === 'FREE_SERVICE' && (
-                <div className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Included service</span><AdminSelect value={form.serviceId} onChange={(value) => setForm({ ...form, serviceId: value })} options={[{ value: '', label: 'Select an active service', disabled: true }, ...services.map((service) => ({ value: service._id, label: `${service.name} · ${Number(service.price || 0).toLocaleString('vi-VN')} VND` }))]} ariaLabel="Select included service" icon={Wrench} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuClassName="w-full border-white/[0.1] bg-[#151616] shadow-[0_20px_55px_rgba(0,0,0,0.55)]" visibleItems={5} /></div>
+                <div className="sm:col-span-2"><span className="text-xs font-bold text-white/55">Included service</span><AdminSelect value={form.serviceId} onChange={(value) => setForm({ ...form, serviceId: value })} options={[{ value: '', label: 'Select an active service', disabled: true }, ...services.map((service) => ({ value: service._id, label: `${service.name} · ${Number(service.price || 0).toLocaleString('vi-VN')} VND` }))]} ariaLabel="Select included service" icon={Wrench} className="mt-2 w-full" buttonClassName="h-[46px] border-white/[0.09] bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] hover:border-[#f3c43d]/35 hover:bg-white/[0.05]" menuAnchor={{ to: 'bottom start', gap: 8, padding: 12 }} menuClassName="voucher-modal-menu" visibleItems={5} /></div>
               )}
+              </div>
+              </div>
+              <div className="voucher-modal-extras">
               {!editing?._id && (
                 <button
                   type="button"
                   role="switch"
                   aria-checked={form.notifyCustomers}
                   onClick={() => setForm({ ...form, notifyCustomers: !form.notifyCustomers })}
-                  className="sm:col-span-2 flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-left transition hover:border-white/[0.14] hover:bg-white/[0.04]"
+                  className="voucher-modal-notification sm:col-span-2 flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-left transition hover:border-white/[0.14] hover:bg-white/[0.04]"
                 >
                   <span className="flex items-start gap-3"><Bell size={17} className="mt-0.5 shrink-0 text-[#f3c43d]" /><span><span className="block text-xs font-black text-white">Notify customers on release</span><span className="mt-1 block text-[11px] leading-4 text-white/35">Send a promotion notification linking directly to Rewards.</span></span></span>
                   <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${form.notifyCustomers ? 'bg-[#f3c43d]' : 'bg-white/10'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.notifyCustomers ? 'translate-x-6' : 'translate-x-1'}`} /></span>
                 </button>
               )}
-              <div className="sm:col-span-2 rounded-xl border border-[#f3c43d]/15 bg-[#f3c43d]/[0.045] px-4 py-3.5">
+              <div className="voucher-modal-preview sm:col-span-2 rounded-xl border border-[#f3c43d]/15 bg-[#f3c43d]/[0.045] px-4 py-3.5">
                 <div className="flex items-start gap-3"><Sparkles size={16} className="mt-0.5 shrink-0 text-[#f3c43d]" /><div><p className="text-xs font-black text-white">Customer preview</p><p className="mt-1 text-xs leading-5 text-white/45">{form.name || 'Untitled reward'} · {form.type === 'PERCENT_DISCOUNT' ? `${form.discountPercent || 0}% off the booking total` : 'one selected service at no charge'} · {Number(form.pointCost || 0).toLocaleString('vi-VN')} points</p></div></div>
               </div>
+              </div>
             </div>
-            <div className="flex flex-col-reverse gap-3 border-t border-white/[0.07] bg-black/10 px-6 py-4 sm:flex-row sm:justify-end">
+            <div className="voucher-modal-footer">
               <button type="button" onClick={() => setEditing(undefined)} disabled={saving} className="min-h-11 rounded-xl border border-white/[0.09] px-5 text-sm font-bold text-white/60 transition hover:border-white/15 hover:bg-white/[0.04] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/20 active:scale-[0.98]">Cancel</button>
-              <button disabled={saving} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f3c43d] px-6 text-sm font-black text-[#17140a] transition hover:bg-[#ffd75c] focus:outline-none focus:ring-4 focus:ring-[#f3c43d]/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">{saving ? <><Loader2 size={16} className="animate-spin" />Saving</> : <><Check size={16} strokeWidth={2.6} />Save template</>}</button>
+              <button type="submit" disabled={saving} className="voucher-modal-save inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#f3c43d] px-6 text-sm font-black text-[#17140a] transition hover:bg-[#ffd75c] focus:outline-none focus:ring-4 focus:ring-[#f3c43d]/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">{saving ? <><Loader2 size={16} className="animate-spin" />Saving</> : <><Check size={16} strokeWidth={2.6} />Save template</>}</button>
             </div>
           </form>
         </div>

@@ -39,6 +39,7 @@ export type BookingStackParamList = {
 };
 
 export type ProfileStackParamList = {
+  TelegramSettings: undefined;
   Profile: undefined;
   PersonalProfile: undefined;
   EditProfile: undefined;

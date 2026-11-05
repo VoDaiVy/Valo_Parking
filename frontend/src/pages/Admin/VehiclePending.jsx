@@ -8,6 +8,17 @@ const authHeader = () => ({
 });
 
 const VEHICLE_TYPE_LABELS = { car: 'Car', electric_car: 'Electric car' };
+const verificationLabel = (verification) => {
+  const reason = verification?.reason || '';
+  if (reason.startsWith('mismatch:')) return `Image mismatch: ${reason.slice(9).split(',').join(', ')}`;
+  return {
+    image_missing: 'Registration image missing or upload failed',
+    ai_unavailable: 'AI could not verify the image',
+    approval_disabled: 'AI approval was switched off during verification',
+    settings_unavailable: 'AI approval setting was unavailable',
+    vehicle_changed: 'Vehicle details changed after approval',
+  }[reason] || 'Awaiting manual review';
+};
 
 export default function VehiclePending() {
   const [vehicles, setVehicles] = useState([]);
@@ -231,6 +242,7 @@ function VehicleApprovalCard({ vehicle, processing, onApprove, onReject, onPrevi
         <p className="text-lg font-black font-mono text-gray-200 tracking-widest mb-2">
           {vehicle.licensePlate}
         </p>
+        <p className="mb-2 text-xs text-amber-300">{verificationLabel(vehicle.registrationVerification)}</p>
 
         <div className="flex items-center gap-2 flex-wrap text-sm text-gray-400 mb-3">
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold

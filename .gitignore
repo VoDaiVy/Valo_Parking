@@ -31,3 +31,14 @@ htmlcov/
 .venv/
 venv/
 env/
+
+# Local caches and generated reports
+.npm-cache/
+.mongodb-binaries/
+reports/
+
+
+.tunnel
+.tunnel.*
+*.tunnel
+/.tools/cloudflared/

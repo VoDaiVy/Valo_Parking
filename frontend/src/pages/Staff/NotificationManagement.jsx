@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import {
+  ArrowLeft,
+  ArrowRight,
   AlertTriangle,
   BellRing,
   Check,
@@ -10,6 +12,7 @@ import {
   History,
   Info,
   Loader2,
+  RefreshCw,
   Search,
   Send,
   ShieldCheck,
@@ -24,6 +27,8 @@ import {
   getOperationalViewState,
   getResponseAvailability,
 } from "../../utils/staffOperationalAvailability";
+import "./components/staffNotificationManagement.css";
+import { getPaginationPages } from "./sessionPagination.js";
 import { STAFF_THEME } from "./components/staffTheme.js";
 
 const TABS = [
@@ -42,6 +47,8 @@ const PRIORITY_META = {
 };
 
 export default function NotificationManagement() {
+  let isStaffView = false;
+  try { isStaffView = JSON.parse(sessionStorage.getItem('valo_user') || '{}').role === 'staff'; } catch { /* Preserve other role views. */ }
   const [tab, setTab] = useState("feed");
   const [historyList, setHistoryList] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -65,7 +72,7 @@ export default function NotificationManagement() {
     setHistoryError("");
 
     try {
-      const res = await getAdminHistory({ page, limit: 50 });
+      const res = await getAdminHistory({ page, limit: isStaffView ? 10 : 50 });
       const responseState = getResponseAvailability(
         res,
         "Notification history is unavailable."
@@ -108,7 +115,7 @@ export default function NotificationManagement() {
       setHistoryLoadingMore(false);
       historyRequestRef.current = false;
     }
-  }, []);
+  }, [isStaffView]);
 
   const refreshHistory = useCallback(() => {
     fetchHistory(1, false);
@@ -128,28 +135,30 @@ export default function NotificationManagement() {
   }, [refreshHistory]);
 
   return (
-    <div className={STAFF_THEME.page}>
-      <div className="px-6 py-6 max-w-[1400px] mx-auto">
-        <header className="flex items-start justify-between gap-4 mb-6">
+    <div className={`staff-notification-management ${STAFF_THEME.page}`}>
+      <div className="snm-content px-6 py-6 max-w-[1400px] mx-auto">
+        <header className="snm-header flex items-start justify-between gap-4 mb-6">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="snm-title-line flex items-center gap-3">
               <div>
                 <h1 className={STAFF_THEME.title}>Notification Management</h1>
               </div>
-              <LiveBadge state={historyState} />
+              {!isStaffView && <LiveBadge state={historyState} />}
             </div>
             <p className={STAFF_THEME.subtitle}>
               Send notifications to the whole system or selected users.
             </p>
           </div>
+          {isStaffView && <HistoryRefreshButton loading={historyLoading} loadingMore={historyLoadingMore} onRefresh={refreshHistory} />}
         </header>
 
         <StatsRow stats={apiStats} state={historyState} />
 
-        <nav className="mt-6 flex flex-wrap gap-2 border-b border-white/10">
+        <nav aria-label="Notification views" className="snm-tabs mt-6 flex flex-wrap gap-2 border-b border-white/10">
           {TABS.map((t) => (
             <button
               key={t.id}
+              aria-pressed={tab === t.id}
               onClick={() => setTab(t.id)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.id
@@ -174,6 +183,8 @@ export default function NotificationManagement() {
               total={historyTotal}
               onLoadMore={loadMoreHistory}
               onRefresh={refreshHistory}
+              showRefresh={!isStaffView}
+              paginated={isStaffView}
             />
           )}
           {tab === "compose" && <ComposeTab onSent={() => { setTab("feed"); refreshHistory(); }} />}
@@ -187,7 +198,7 @@ function LiveBadge({ state }) {
   const ok = state.status === "live";
   const loading = state.status === "loading";
   return (
-    <span className={`inline-flex items-center gap-2 text-xs px-2.5 py-1 rounded-full border ${
+    <span className={`snm-api-state inline-flex items-center gap-2 text-xs px-2.5 py-1 rounded-full border ${
       ok
         ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10"
         : loading
@@ -195,7 +206,8 @@ function LiveBadge({ state }) {
           : "border-red-500/40 text-red-400 bg-red-500/10"
     }`}>
       <span className={`w-2 h-2 rounded-full ${ok ? "bg-emerald-500 animate-pulse" : loading ? "bg-amber-500 animate-pulse" : "bg-red-500"}`} />
-      {ok ? "LIVE - API" : loading ? "Loading API" : "API unavailable"}
+      <span className="snm-api-original">{ok ? "LIVE - API" : loading ? "Loading API" : "API unavailable"}</span>
+      <span className="snm-api-label hidden">{ok ? "API available" : loading ? "Loading API" : "API unavailable"}</span>
     </span>
   );
 }
@@ -220,11 +232,11 @@ function StatsRow({ stats, state }) {
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="snm-metrics grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {cards.map((c) => {
         const IconComponent = iconMap[c.icon];
         return (
-          <div key={c.label} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)] transition-colors hover:border-white/15">
+          <div key={c.label} data-tone={c.tone} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)] transition-colors hover:border-white/15">
             <div className={`w-11 h-11 rounded-lg border ${toneMap[c.tone]} grid place-items-center`}>
               <IconComponent size={24} />
             </div>
@@ -234,6 +246,21 @@ function StatsRow({ stats, state }) {
         );
       })}
     </div>
+  );
+}
+
+function HistoryRefreshButton({ loading, loadingMore, onRefresh }) {
+  return (
+        <button
+          onClick={onRefresh}
+          disabled={loading || loadingMore}
+          aria-label="Refresh notification history"
+          title="Refresh notification history"
+          className="snm-refresh rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-white/60 transition hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a]"
+        >
+          <RefreshCw size={17} aria-hidden="true" className={`snm-refresh-icon hidden ${loading ? 'animate-spin' : ''}`} />
+          <span className="snm-refresh-label">{loading ? "Loading..." : "Refresh"}</span>
+        </button>
   );
 }
 
@@ -247,6 +274,8 @@ function FeedTab({
   total,
   onLoadMore,
   onRefresh,
+  showRefresh = true,
+  paginated = false,
 }) {
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
@@ -254,7 +283,7 @@ function FeedTab({
 
   useEffect(() => {
     const target = loadMoreRef.current;
-    if (!target || !hasMore || loading || loadingMore) return undefined;
+    if (paginated || !target || !hasMore || loading || loadingMore) return undefined;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -264,9 +293,46 @@ function FeedTab({
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [hasMore, loading, loadingMore, onLoadMore]);
+  }, [paginated, hasMore, loading, loadingMore, onLoadMore]);
 
-  const filtered = notifications
+  const [page, setPage] = useState(1);
+  const [serverResult, setServerResult] = useState(null);
+  const [retry, setRetry] = useState(0);
+  const scrollRef = useRef(null);
+  const key = JSON.stringify([page, filter, query.trim(), retry]);
+  const usesInitialPage = page === 1 && filter === 'ALL' && !query.trim() && retry === 0;
+  const currentResult = serverResult?.key === key && serverResult?.source === notifications ? serverResult : null;
+
+  useEffect(() => {
+    // Reuse the existing unfiltered first-page request (and its global KPI stats).
+    if (!paginated || loading || error || usesInitialPage) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await getAdminHistory({ page, limit: 10, priority: filter === 'ALL' ? undefined : filter, search: query.trim() || undefined });
+        const availability = getResponseAvailability(response, 'Notification history is unavailable.');
+        if (!availability.isAvailable) throw new Error(availability.error);
+        const pagination = response.data.pagination;
+        if (!Array.isArray(availability.data) || !pagination || !Number.isInteger(pagination.total) || pagination.total < 0 || !Number.isInteger(pagination.totalPages) || pagination.totalPages < 0) throw new Error('Notification pagination is unavailable.');
+        if (cancelled) return;
+        const totalPages = Math.max(1, pagination.totalPages);
+        if (page > totalPages) {
+          if (totalPages === 1) setRetry(value => value + 1);
+          setPage(totalPages); return;
+        }
+        setServerResult({ key, source: notifications, items: availability.data, total: pagination.total, totalPages, error: '' });
+      } catch (failure) {
+        if (!cancelled) setServerResult({ key, source: notifications, items: [], error: failure.message || 'Notification history is unavailable.' });
+      }
+    }, query.trim() ? 250 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [paginated, loading, error, usesInitialPage, page, filter, query, retry, key, notifications]);
+
+  useEffect(() => {
+    if (paginated && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [paginated, key, notifications]);
+
+  const locallyFiltered = notifications
     .filter((m) => filter === "ALL" || m.priority === filter)
     .filter((m) => {
       if (!query.trim()) return true;
@@ -278,54 +344,63 @@ function FeedTab({
       );
     });
 
+  const filtered = paginated ? (usesInitialPage ? notifications : currentResult?.items || []) : locallyFiltered;
+  const feedLoading = loading || (paginated && !usesInitialPage && !error && !currentResult);
+  const feedError = error || (paginated ? currentResult?.error || '' : '');
+  const resultTotal = paginated ? (usesInitialPage ? total : currentResult?.total) : total;
+  const totalPages = paginated ? (usesInitialPage ? Math.max(1, Math.ceil(total / 10)) : currentResult?.totalPages || 1) : 1;
+  const resultAvailable = !feedLoading && !feedError && Number.isInteger(resultTotal);
+  const changeFilter = (value) => { setFilter(value); if (paginated) setPage(1); };
+  const changeQuery = (value) => { setQuery(value); if (paginated) setPage(1); };
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <FilterChip label="All" active={filter === "ALL"} onClick={() => setFilter("ALL")} />
+    <div data-paginated={paginated} className="snm-feed space-y-4">
+      <div className="snm-toolbar flex flex-wrap items-center gap-2">
+        <div className="snm-priority-filters contents">
+        <FilterChip label="All" active={filter === "ALL"} onClick={() => changeFilter("ALL")} />
         {PRIORITIES.map((p) => (
-          <FilterChip key={p} label={p} active={filter === p} onClick={() => setFilter(p)} tone={p} />
+          <FilterChip key={p} label={p} active={filter === p} onClick={() => changeFilter(p)} tone={p} />
         ))}
-        <div className="flex-1" />
+        </div>
+        <div className="snm-toolbar-spacer flex-1" />
+        <div className="snm-search-actions contents">
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => changeQuery(e.target.value)}
+          aria-label="Search notification history"
           placeholder="Search title or content..."
           className="w-72 max-w-full rounded-full border border-white/[0.08] bg-[#111] px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30"
         />
-        <button
-          onClick={onRefresh}
-          disabled={loading || loadingMore}
-          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-white/60 transition hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a]"
-        >
-          {loading ? "Loading..." : "Refresh"}
-        </button>
+        {showRefresh && <HistoryRefreshButton loading={loading} loadingMore={loadingMore} onRefresh={onRefresh} />}
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#111111] shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
+      <div className="snm-stream overflow-hidden rounded-xl border border-white/[0.07] bg-[#111111] shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
           <div className="font-semibold text-white">Live Events (API Send History)</div>
           <div className="text-xs text-gray-400">
-            {state.isAvailable
+            {paginated ? (resultAvailable ? `${filtered.length} shown` : feedLoading ? 'Loading notifications...' : 'History count unavailable') : state.isAvailable
               ? `${filtered.length} shown · ${notifications.length}/${total} loaded`
               : "History count unavailable"}
           </div>
         </div>
-        <ul className="divide-y divide-white/5">
-          {error && !loading && (
+        <ul ref={paginated ? scrollRef : undefined} aria-busy={feedLoading} className="snm-event-list divide-y divide-white/5">
+          {feedError && !feedLoading && (
             <li className="px-5 py-10 text-center text-red-300 text-sm" role="alert">
-              Notification history unavailable. {error}
+              Notification history unavailable. {feedError}
+              {paginated && <button type="button" className="snm-feed-retry" onClick={() => usesInitialPage || error ? onRefresh() : setRetry(value => value + 1)}>Retry</button>}
             </li>
           )}
-          {filtered.length === 0 && !loading && !error && (
+          {filtered.length === 0 && !feedLoading && !feedError && (
             <li className="px-5 py-10 text-center text-gray-500 text-sm">No matching notifications.</li>
           )}
-          {loading && filtered.length === 0 && (
+          {feedLoading && (paginated || filtered.length === 0) && (
             <li className="px-5 py-10 text-center text-gray-500 text-sm">Loading history from API...</li>
           )}
-          {filtered.map((m) => (
+          {(!paginated || (!feedLoading && !feedError)) && filtered.map((m) => (
             <MessageRow key={m._id || m.id} m={m} />
           ))}
-          <li ref={loadMoreRef} className="px-5 py-5 text-center">
+          {!paginated && <li ref={loadMoreRef} className="px-5 py-5 text-center">
             {loadingMore ? (
               <span className="inline-flex items-center gap-2 text-xs text-emerald-400">
                 <Loader2 className="animate-spin" size={15} />
@@ -336,8 +411,18 @@ function FeedTab({
             ) : notifications.length > 0 ? (
               <span className="text-xs text-gray-600">All notifications have been loaded</span>
             ) : null}
-          </li>
+          </li>}
         </ul>
+        {paginated && <nav className="snm-feed-pagination" aria-label="Notification history pages">
+          <span>{resultAvailable ? `Page ${page} of ${totalPages} \u00b7 ${new Intl.NumberFormat('en-US').format(resultTotal)} results` : feedLoading ? 'Loading notifications...' : 'Results unavailable'}</span>
+          <div className="snm-feed-page-controls">
+            <button type="button" data-nav disabled={!resultAvailable || page <= 1} onClick={() => setPage(page - 1)}><ArrowLeft size={14} aria-hidden="true" />Prev</button>
+            {resultAvailable && getPaginationPages(Math.max(2, Math.min(page, totalPages - 1)), totalPages).map(number => typeof number === 'number'
+              ? <button type="button" key={number} aria-current={number === page ? 'page' : undefined} onClick={() => setPage(number)}>{number}</button>
+              : <span key={number} aria-hidden="true">...</span>)}
+            <button type="button" data-nav disabled={!resultAvailable || page >= totalPages} onClick={() => setPage(page + 1)}>Next<ArrowRight size={14} aria-hidden="true" /></button>
+          </div>
+        </nav>}
       </div>
     </div>
   );
@@ -348,7 +433,9 @@ function FilterChip({ label, active, onClick, tone }) {
   return (
     <button
       onClick={onClick}
-      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+      aria-pressed={active}
+      data-priority={tone || "ALL"}
+      className={`snm-filter-chip text-xs px-3 py-1.5 rounded-full border transition-colors ${
         active
           ? toneCls
             ? `${toneCls.bg} ${toneCls.color} ${toneCls.border}`
@@ -369,7 +456,7 @@ function MessageRow({ m }) {
                       m.targetType === "SINGLE_USER" ? "One user" : "System";
 
   return (
-    <li className="px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
+    <li data-priority={m.priority || "INFO"} className="snm-event px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
       <div className={`w-10 h-10 rounded-lg border ${meta.bg} ${meta.color} ${meta.border} grid place-items-center text-xs font-bold shrink-0`}>
         {m.priority ? m.priority[0] : "I"}
       </div>
@@ -397,6 +484,8 @@ function MessageRow({ m }) {
 }
 
 function ComposeTab({ onSent }) {
+  let isStaffCompose = false;
+  try { isStaffCompose = JSON.parse(sessionStorage.getItem('valo_user') || '{}').role === 'staff'; } catch { /* Keep other role presentation unchanged. */ }
   const [audienceKind, setAudienceKind] = useState("single");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectedRoles, setSelectedRoles] = useState(["customer"]);
@@ -496,7 +585,7 @@ function ComposeTab({ onSent }) {
   }
 
   return (
-    <div className="max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+    <div className="snm-compose max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
       <div className="flex flex-col gap-3 border-b border-[#ffd555]/15 bg-gradient-to-r from-[#ffd555]/[0.06] to-transparent px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-[#ffd555]/20 bg-[#ffd555]/10 text-[#ffd555]">
@@ -516,11 +605,11 @@ function ComposeTab({ onSent }) {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
-        <div className="space-y-7 p-5 sm:p-7 lg:border-r lg:border-white/5">
+      <div className="snm-compose-grid grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
+        <div className="snm-compose-fields space-y-7 p-5 sm:p-7 lg:border-r lg:border-white/5">
           <section>
-            <StepHeading number="1" title="Choose audience" description="Select exactly who should receive this message." />
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <StepHeading number="1" title={isStaffCompose ? "Audience" : "Choose audience"} description="Select exactly who should receive this message." />
+            <div className="snm-audience-segments mt-4 grid gap-3 sm:grid-cols-2">
               {audienceOptions.map((option) => {
                 const Icon = option.icon;
                 const active = audienceKind === option.id;
@@ -528,23 +617,24 @@ function ComposeTab({ onSent }) {
                   <button
                     type="button"
                     key={option.id}
+                    aria-pressed={active}
                     onClick={() => changeAudience(option.id)}
-                    className={`group flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all ${
+                    className={`snm-audience-option group flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all ${
                       active
                         ? "border-[#ffd555]/50 bg-[#ffd555]/10"
                         : "border-white/10 bg-[#101010] hover:border-white/20 hover:bg-white/[0.03]"
                     }`}
                   >
-                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
+                    <span className={`snm-audience-icon grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
                       active ? "bg-[#ffd555]/15 text-[#ffd555]" : "bg-white/5 text-gray-500"
                     }`}>
                       <Icon size={18} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className={`block text-sm font-medium ${active ? "text-[#ffe58a]" : "text-gray-200"}`}>{option.label}</span>
-                      <span className="mt-0.5 block text-xs text-gray-500">{option.description}</span>
+                      <span className={`snm-audience-title block text-sm font-medium ${active ? "text-[#ffe58a]" : "text-gray-200"}`}>{option.label}</span>
+                      <span className="snm-audience-description mt-0.5 block text-xs text-gray-500">{option.description}</span>
                     </span>
-                    <span className={`grid h-5 w-5 place-items-center rounded-full border ${
+                    <span className={`snm-audience-check grid h-5 w-5 place-items-center rounded-full border ${
                       active ? "border-[#ffd555] bg-[#ffd555] text-black" : "border-white/15 text-transparent"
                     }`}>
                       <Check size={12} strokeWidth={3} />
@@ -556,7 +646,7 @@ function ComposeTab({ onSent }) {
 
             <div className="mt-4">
               {audienceKind === "role" && (
-                <div className="rounded-xl border border-white/10 bg-[#101010] p-4">
+                <div className="snm-role-selection rounded-xl border border-white/10 bg-[#101010] p-4">
                   <p className="text-xs font-medium text-gray-300">Select one or more roles</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {["staff", "customer"].map((role) => {
@@ -565,6 +655,7 @@ function ComposeTab({ onSent }) {
                         <button
                           type="button"
                           key={role}
+                          aria-pressed={active}
                           onClick={() => setSelectedRoles((current) =>
                             active ? current.filter((item) => item !== role) : [...current, role]
                           )}
@@ -574,7 +665,7 @@ function ComposeTab({ onSent }) {
                               : "border-white/10 text-gray-400 hover:border-white/20"
                           }`}
                         >
-                          <span className={`grid h-4 w-4 place-items-center rounded border ${active ? "border-amber-400 bg-amber-400 text-black" : "border-white/20"}`}>
+                          <span className={`snm-role-check grid h-4 w-4 place-items-center rounded border ${active ? "border-amber-400 bg-amber-400 text-black" : "border-white/20"}`}>
                             {active && <Check size={10} strokeWidth={3} />}
                           </span>
                           {role}
@@ -592,7 +683,7 @@ function ComposeTab({ onSent }) {
                 <UserPicker multi={audienceKind === "multi"} value={selectedUsers} onChange={setSelectedUsers} />
               )}
               {audienceKind === "all" && (
-                <div className="flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-4">
+                <div className="snm-system-warning flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-4">
                   <AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={18} />
                   <div>
                     <p className="text-sm font-medium text-amber-300">System-wide delivery</p>
@@ -606,8 +697,8 @@ function ComposeTab({ onSent }) {
           </section>
 
           <section>
-            <StepHeading number="2" title="Write message" description="Keep it concise and tell recipients what to do next." />
-            <div className="mt-4 space-y-4">
+            <StepHeading number="2" title={isStaffCompose ? "Message" : "Write message"} description="Keep it concise and tell recipients what to do next." />
+            <div className="snm-message-fields mt-4 space-y-4">
               <Field label="Title" hint={`${title.length}/200`}>
                 <input
                   value={title}
@@ -631,16 +722,18 @@ function ComposeTab({ onSent }) {
           </section>
         </div>
 
-        <aside className="space-y-6 bg-[#0d0d0d] p-5 sm:p-7">
+        <aside className="snm-preview-column space-y-6 bg-[#0d0d0d] p-5 sm:p-7">
           <section>
             <StepHeading number="3" title="Priority" description="Choose how prominently it appears." compact />
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="snm-priority-options mt-4 grid grid-cols-2 gap-2">
               {PRIORITIES.map((item) => {
                 const meta = PRIORITY_META[item];
                 return (
                   <button
                     type="button"
                     key={item}
+                    data-priority={item}
+                    aria-pressed={priority === item}
                     onClick={() => setPriority(item)}
                     className={`rounded-lg border px-3 py-2.5 text-xs font-semibold transition-colors ${
                       priority === item
@@ -655,9 +748,9 @@ function ComposeTab({ onSent }) {
             </div>
           </section>
 
-          <section>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Preview</p>
-            <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D]">
+          <section className="snm-review-preview">
+            <p className="snm-preview-heading text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{isStaffCompose ? 'Live Preview' : 'Preview'}</p>
+            <div className="snm-preview mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D]">
               <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
                 <span className="text-xs text-gray-500">Recipient inbox</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PRIORITY_META[priority].bg} ${PRIORITY_META[priority].color} ${PRIORITY_META[priority].border}`}>
@@ -675,17 +768,22 @@ function ComposeTab({ onSent }) {
                   <p className={`mt-1 whitespace-pre-wrap break-words text-xs leading-5 ${message.trim() ? "text-gray-400" : "text-gray-700"}`}>
                     {message.trim() || "Your notification content will appear here."}
                   </p>
-                  <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-600">
+                  {!isStaffCompose && <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-600">
                     <Users size={12} />
                     {audienceSummary}
-                  </p>
+                  </p>}
                 </div>
               </div>
             </div>
+            {isStaffCompose && <p className="snm-recipient-summary"><Users size={14} aria-hidden="true" />
+              {audienceKind === 'single' || audienceKind === 'multi'
+                ? `${selectedUsers.length} ${selectedUsers.length === 1 ? 'recipient' : 'recipients'} selected`
+                : audienceKind === 'role' ? `Recipient roles: ${audienceSummary}` : audienceSummary}
+            </p>}
           </section>
 
           {toast && (
-            <div className={`flex gap-2.5 rounded-xl border p-3 text-xs leading-5 ${
+            <div role="status" className={`snm-feedback flex gap-2.5 rounded-xl border p-3 text-xs leading-5 ${
               /error|required|select|at least|connection/i.test(toast)
                 ? "border-red-500/25 bg-red-500/[0.07] text-red-300"
                 : "border-emerald-500/25 bg-emerald-500/[0.07] text-emerald-300"
@@ -697,7 +795,7 @@ function ComposeTab({ onSent }) {
             </div>
           )}
 
-          <div className="border-t border-white/5 pt-5">
+          <div className="snm-compose-action border-t border-white/5 pt-5">
             {!canSubmit && !isSubmitting && (
               <p className="mb-3 text-center text-[11px] text-gray-600">
                 Complete the audience, title, and content to continue.
@@ -707,7 +805,7 @@ function ComposeTab({ onSent }) {
               type="button"
               onClick={submit}
               disabled={!canSubmit}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] px-5 text-sm font-black text-[#080808] shadow-[0_10px_30px_rgba(255,213,85,0.14)] transition hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-600 disabled:shadow-none"
+              className="snm-send flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] px-5 text-sm font-black text-[#080808] shadow-[0_10px_30px_rgba(255,213,85,0.14)] transition hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-gray-600 disabled:shadow-none"
             >
               {isSubmitting ? (
                 <><Loader2 className="animate-spin" size={17} />Sending...</>
@@ -724,7 +822,7 @@ function ComposeTab({ onSent }) {
 
 function StepHeading({ number, title, description, compact = false }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="snm-step-heading flex items-start gap-3">
       <span className={`grid shrink-0 place-items-center rounded-lg bg-[#ffd555]/10 text-xs font-bold text-[#ffd555] ${compact ? "h-7 w-7" : "h-8 w-8"}`}>
         {number}
       </span>
@@ -797,7 +895,7 @@ function UserPicker({ multi, value, onChange }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#101010]">
+    <div className="snm-user-picker overflow-hidden rounded-xl border border-white/10 bg-[#101010]">
       <div className="border-b border-white/5 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" size={16} />
@@ -819,10 +917,10 @@ function UserPicker({ multi, value, onChange }) {
           )}
         </div>
         {value.length > 0 && (
-          <div className="mt-3 flex items-start gap-2">
+          <div className="snm-selected-recipients mt-3 flex items-start gap-2">
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
               {value.map((user) => (
-                <span key={user._id} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-[#ffd555]/10 px-2 py-1 text-xs text-[#ffe58a]">
+                <span key={user._id} className="snm-recipient-chip inline-flex max-w-full items-center gap-1.5 rounded-md bg-[#ffd555]/10 px-2 py-1 text-xs text-[#ffe58a]">
                   <span className="max-w-40 truncate">{user.username}</span>
                   <button
                     type="button"
@@ -871,26 +969,27 @@ function UserPicker({ multi, value, onChange }) {
             <li key={user._id}>
               <button
                 type="button"
+                aria-pressed={selected}
                 onClick={() => toggle(user)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                className={`snm-recipient-option flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                   selected ? "bg-[#ffd555]/10" : "hover:bg-white/[0.04]"
                 }`}
               >
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold ${
+                <span className={`snm-recipient-avatar grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold ${
                   selected ? "bg-[#ffd555]/20 text-[#ffd555]" : "bg-white/5 text-gray-500"
                 }`}>
                   {initials}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={`block truncate text-sm font-medium ${selected ? "text-[#ffe58a]" : "text-gray-200"}`}>
+                  <span className={`snm-recipient-name block truncate text-sm font-medium ${selected ? "text-[#ffe58a]" : "text-gray-200"}`}>
                     {user.username}
                   </span>
-                  <span className="block truncate text-xs text-gray-600">{user.email}</span>
+                  <span className="snm-recipient-email block truncate text-xs text-gray-600">{user.email}</span>
                 </span>
-                <span className="rounded-md border border-white/10 px-2 py-0.5 text-[10px] uppercase text-gray-500">
+                <span data-role={user.role} className="snm-recipient-role rounded-md border border-white/10 px-2 py-0.5 text-[10px] uppercase text-gray-500">
                   {user.role}
                 </span>
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
+                <span className={`snm-recipient-check grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
                   selected ? "border-[#ffd555] bg-[#ffd555] text-black" : "border-white/15 text-transparent"
                 }`}>
                   <Check size={11} strokeWidth={3} />

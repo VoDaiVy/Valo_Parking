@@ -14,6 +14,7 @@ import { ParkingHistoryScreen }    from '../screens/customer/ParkingHistoryScree
 import { BookingListScreen }       from '../screens/booking/BookingListScreen';
 import { BookingDetailScreen }     from '../screens/booking/BookingDetailScreen';
 import type { ProfileStackParamList } from './types';
+import { TelegramSettingsScreen } from '../screens/profile/TelegramSettingsScreen';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
@@ -26,6 +27,7 @@ export const ProfileStackNavigator = () => (
     }}
   >
     <Stack.Screen name="Profile"         component={ProfileScreen} />
+    <Stack.Screen name="TelegramSettings" component={TelegramSettingsScreen} />
     <Stack.Screen name="PersonalProfile" component={PersonalProfileScreen} />
     <Stack.Screen name="EditProfile"     component={EditProfileScreen} />
     <Stack.Screen name="ChangePassword"  component={ChangePasswordScreen} />

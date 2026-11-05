@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowDownLeft,
@@ -81,6 +81,8 @@ export default function MembershipTransfers({ embedded = false }) {
   const currentUserEmail = String(currentUser?.email || "").toLowerCase();
   const [transfers, setTransfers] = useState([]);
   const [membership, setMembership] = useState(null);
+  const [membershipError, setMembershipError] = useState('');
+  const loadSequence = useRef(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,7 +94,9 @@ export default function MembershipTransfers({ embedded = false }) {
   const [recipientLoading, setRecipientLoading] = useState(false);
   const [recipientOpen, setRecipientOpen] = useState(false);
 
+  const invalidateLoads = useCallback(() => { loadSequence.current++; }, []);
   const loadData = useCallback(async ({ silent = false } = {}) => {
+    const sequence = ++loadSequence.current;
     if (silent) setRefreshing(true);
     else setLoading(true);
 
@@ -103,8 +107,13 @@ export default function MembershipTransfers({ embedded = false }) {
         getWalletInfo(),
       ]);
 
+      if (sequence !== loadSequence.current) return;
       if (membershipRes.ok && membershipRes.data?.success) {
         setMembership(membershipRes.data.data);
+        setMembershipError('');
+      } else {
+        setMembership(null);
+        setMembershipError(membershipRes.data?.message || "Unable to load membership.");
       }
       if (walletRes.ok && walletRes.data?.success) {
         setWalletBalance(Number(walletRes.data.data?.balance || 0));
@@ -114,17 +123,18 @@ export default function MembershipTransfers({ embedded = false }) {
       }
       setTransfers(transferRes.data.data || []);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
+      setMembershipError("Unable to load membership. Please retry.");
       toast.error(error.message || "Unable to load membership transfers.");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (sequence === loadSequence.current) { setLoading(false); setRefreshing(false); }
     }
   }, []);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => loadData(), 0);
-    return () => window.clearTimeout(timerId);
-  }, [loadData]);
+    return () => { window.clearTimeout(timerId); invalidateLoads(); };
+  }, [loadData, invalidateLoads]);
 
   useEffect(() => {
     if (!selectedSlot || form.mode !== "DIRECT") {
@@ -313,8 +323,10 @@ export default function MembershipTransfers({ embedded = false }) {
           </div>
         )}
 
+        {membershipError && <div role="alert" className="mt-4 text-sm text-amber-200">{membershipError} <button type="button" onClick={() => loadData()} className="min-h-11 underline">Retry</button></div>}
         <MembershipOwnershipPanel
           membership={membership}
+          membershipLoading={loading}
           walletBalance={walletBalance}
           onRefresh={refreshData}
           onTransfer={(slot) => {

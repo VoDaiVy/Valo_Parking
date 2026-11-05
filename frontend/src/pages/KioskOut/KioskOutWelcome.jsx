@@ -1,5 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { Camera, ScanLine, Car, AlertCircle } from 'lucide-react';
+import KioskQrScannerModal from '../Kiosk/KioskQrScannerModal';
+import KioskDeviceSetup from '../Kiosk/KioskDeviceSetup';
 import { API_BASE } from '../../services/api';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
@@ -12,6 +14,8 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   const [recognizedText, setRecognizedText] = useState('');
   const [manualInput, setManualInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [showQrModal, setShowQrModal] = useState(false);
+  const qrScanningRef = useRef(false);
   const [alarmState, setAlarmState] = useState(false);
 
   // Start webcam
@@ -46,7 +50,8 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       setAlarmState(false);
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'EXIT_1' },
         body: JSON.stringify({ licensePlate: plate })
       });
       const data = await res.json();
@@ -66,30 +71,6 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       setErrorMessage('System error while verifying license plate.');
     }
   };
-
-  const handleHardwareQrScan = async (qrPayload) => {
-    if (!qrPayload) return;
-    try {
-      setErrorMessage('');
-      setAlarmState(false);
-      const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrPayload })
-      });
-      const data = await res.json();
-      if (data.success) {
-        onScanSuccess(data.data, null);
-      } else {
-        setErrorMessage(data.message || 'Mã QR không hợp lệ hoặc phiên đỗ xe đã kết thúc.');
-      }
-    } catch (err) {
-      console.error('API error', err);
-      setErrorMessage('Lỗi hệ thống khi xác thực mã QR.');
-    }
-  };
-
-  useQrScannerListener(handleHardwareQrScan, true);
 
   const formatVietnamesePlate = (clean) => {
     let province, series, numbers;
@@ -142,6 +123,29 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     return null;
   };
 
+  const handleTicketScanned = async (qrPayload) => {
+    if (qrScanningRef.current) return;
+    qrScanningRef.current = true;
+    setShowQrModal(false); setErrorMessage(''); setAlarmState(false);
+    try {
+      const captured = await captureAndAnalyze();
+      if (!captured?.plate) throw new Error('Unable to read the vehicle plate. Please retry or ask staff to scan your ticket.');
+      const response = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'EXIT_1' },
+        body: JSON.stringify({ qrPayload, licensePlate: captured.plate }),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        setAlarmState(Boolean(result.alarm));
+        throw new Error(result.message || 'This parking ticket cannot be used for checkout.');
+      }
+      onScanSuccess({ ...result.data, qrPayload, observedLicensePlate: captured.plate }, captured.imageBase64);
+    } catch (err) { setErrorMessage(err.message || 'Unable to verify ticket.'); }
+    finally { qrScanningRef.current = false; }
+  };
+
+  useQrScannerListener(handleTicketScanned, !showQrModal);
+
   const lastScannedPlateRef = useRef(null);
 
   // Camera Scanning Loop
@@ -149,7 +153,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     let interval;
     if (!streamError && videoRef.current) {
       interval = setInterval(async () => {
-        if (isScanningRef.current) return; // Skip if already processing
+        if (isScanningRef.current || qrScanningRef.current || showQrModal) return; // Skip if already processing
 
         const video = videoRef.current;
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
@@ -188,7 +192,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     };
     // Scanner loop intentionally captures the current handlers for this mounted camera session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamError]);
+  }, [streamError, showQrModal]);
 
   // Manual fallback for Tester
   const handleManualInputChange = (e) => {
@@ -309,6 +313,11 @@ export default function KioskOutWelcome({ onScanSuccess }) {
         )}
       </div>
 
+      <div className="absolute top-4 right-4 z-30 max-w-sm flex flex-col gap-3">
+        <KioskDeviceSetup gate="EXIT_1" />
+        <button disabled={isScanning} onClick={() => setShowQrModal(true)} className="min-h-12 rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black">Scan parking ticket QR</button>
+      </div>
+      <KioskQrScannerModal isOpen={showQrModal} onClose={() => setShowQrModal(false)} onScan={handleTicketScanned} />
       {/* Tester Fallback Input (Subtle) */}
       <form
         onSubmit={handleManualSubmit}

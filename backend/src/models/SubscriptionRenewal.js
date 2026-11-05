@@ -78,6 +78,8 @@ const subscriptionRenewalSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    notificationPending: { type: Boolean, default: false },
+    notificationProcessedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

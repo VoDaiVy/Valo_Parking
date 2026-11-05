@@ -1,3 +1,5 @@
+import TelegramReceiptModal from '../../components/TelegramReceiptModal';
+import TelegramReceiptButton from '../../components/TelegramReceiptButton';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -777,6 +779,7 @@ export default function CreateBookingPage() {
   const [topUpSuccess, setTopUpSuccess] = useState(false);
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [telegramBookingId, setTelegramBookingId] = useState(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showVipModal, setShowVipModal] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
@@ -1183,7 +1186,7 @@ export default function CreateBookingPage() {
   }, [showTopUpModal, topUpData?.orderCode]);
 
   useEffect(() => {
-    if (!showSuccessModal || !bookingInfo) return undefined;
+    if (!showSuccessModal || !bookingInfo || telegramBookingId) return undefined;
 
     const resetTimer = setTimeout(() => {
       setSuccessRedirectCountdown(4);
@@ -1210,7 +1213,7 @@ export default function CreateBookingPage() {
       clearInterval(countdownTimer);
       clearTimeout(redirectTimer);
     };
-  }, [showSuccessModal, bookingInfo]);
+  }, [showSuccessModal, bookingInfo, telegramBookingId]);
 
   const handleFindSlots = async () => {
     const requestId = ++slotsRequestIdRef.current;
@@ -2366,6 +2369,7 @@ export default function CreateBookingPage() {
                       <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.endTime)}</span>
                     </div>
                   </div>
+                  <TelegramReceiptButton bookingId={booking.bookingId || booking._id} refreshKey={telegramBookingId} onClick={() => setTelegramBookingId(booking.bookingId || booking._id)} className="mt-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800" />
                 </div>
               ))}
             </div>
@@ -2383,6 +2387,8 @@ export default function CreateBookingPage() {
           </div>
         </div>
       )}
+
+      {telegramBookingId && <TelegramReceiptModal key={telegramBookingId} open onClose={() => setTelegramBookingId(null)} bookingId={telegramBookingId} />}
 
       {/* TOP UP MODAL */}
       {showTopUpModal && topUpData && (
