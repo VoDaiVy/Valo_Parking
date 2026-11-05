@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { useExpoPushToken } from '@/hooks/useExpoPushToken';
 import { useNotificationPermissions } from '@/hooks/useNotificationPermissions';
@@ -18,13 +19,13 @@ export const NotificationHandler = () => {
   const [banner, setBanner] = useState<UserNotification | null>(null);
 
   useEffect(() => {
-    if (permissions.status === 'undetermined' && !permissions.loading) {
+    if (isAuthenticated && permissions.status === 'undetermined' && !permissions.loading) {
       void permissions.requestPermission();
     }
   }, [permissions]);
 
   useEffect(() => {
-    if (isExpoGo) return undefined;
+    if (isExpoGo || Platform.OS === 'web') return undefined;
 
     let active = true;
     let subscription: { remove: () => void } | undefined;
@@ -56,6 +57,8 @@ export const NotificationHandler = () => {
         const content = event.notification.request.content;
         openNotification({ id: String(content.data?.id || ''), title: content.title || '', content: content.body || '', type: (content.data?.type as UserNotification['type']) || 'SYSTEM', priority: 'INFO', isRead: false, metadata: content.data || {}, createdAt: new Date().toISOString() }, user?.role);
       });
+    }).catch((error) => {
+      console.warn('[Notifications] Listener setup failed:', error);
     });
 
     return () => {

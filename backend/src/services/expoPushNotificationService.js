@@ -22,7 +22,7 @@ function buildMessages(tokens, notification) {
     title: notification.title,
     body: notification.content,
     sound: 'default',
-    priority: notification.priority === 'ERROR' || notification.priority === 'WARNING' ? 'high' : 'default',
+    priority: 'high',
     channelId: 'valo-notifications',
     data: normalizeData({
       id: notification._id,

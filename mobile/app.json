@@ -28,7 +28,7 @@
     "plugins": [
       "expo-secure-store",
       "expo-web-browser",
-      "expo-notifications",
+      ["expo-notifications", { "defaultChannel": "valo-notifications", "color": "#2563EB" }],
       [
         "expo-camera",
         {
