@@ -6,6 +6,7 @@ const Session = require('../models/Session');
 const Delivery = require('../models/TelegramDelivery');
 const { normalizePhone } = require('../utils/phoneUtils');
 const client = require('./telegramClient');
+const profileService = require('./telegramProfileService');
 
 const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
 function validateOwnContact(message) {
@@ -51,7 +52,7 @@ async function consumeContact(message) {
   const dbSession = await mongoose.startSession();
   try {
     await dbSession.withTransaction(async () => {
-      const claim = await Claim.findOne({ ...identity, consumedAt: null, revokedAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 }).session(dbSession);
+      const claim = await Claim.findOne({ ...identity, consumedAt: null, revokedAt: null, expiresAt: { $gt: new Date() } }).select('+recipientPhone').sort({ createdAt: -1 }).session(dbSession);
       if (!claim) { outcome = { ok: false, text: 'Link đã hết hạn hoặc đã sử dụng. Vui lòng tạo link mới.' }; return; }
       const phone = normalizePhone(message.contact.phone_number);
       if (claim.purpose === 'guest') {
@@ -88,6 +89,14 @@ async function consumeContact(message) {
         } }, { upsert: true, session: dbSession });
         }
       } else {
+        const profile = await profileService.lockProfile(claim.userId, dbSession);
+        const currentPhone = normalizePhone(profile?.phone);
+        if (!profileService.validPhone(currentPhone) || claim.recipientPhone !== currentPhone) {
+          outcome = { ok: false, text: 'Số điện thoại hồ sơ đã thay đổi hoặc link đã cũ. Hãy lưu số điện thoại và tạo link Telegram mới từ VALO.' }; return;
+        }
+        if (phone !== currentPhone) {
+          outcome = { ok: false, text: 'Số điện thoại Telegram không khớp số đã lưu trong Hồ sơ VALO. Hãy chia sẻ đúng contact hoặc cập nhật Hồ sơ rồi tạo link mới.' }; return;
+        }
         const other = await Link.findOne({ telegramUserId: identity.boundTelegramUserId, userId: { $ne: claim.userId }, revokedAt: null }).session(dbSession);
         if (other) { outcome = { ok: false, text: 'Telegram này đã liên kết tài khoản VALO khác. Hãy hủy liên kết trước.' }; return; }
         await Link.findOneAndUpdate({ userId: claim.userId }, { $set: {
