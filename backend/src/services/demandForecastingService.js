@@ -106,8 +106,9 @@ async function getOccupancyForecast({
   const dayOfWeek = targetDate.getDay(); // 0: Sun, 1: Mon, ... 6: Sat
   const isToday = new Date().toISOString().split('T')[0] === targetDate.toISOString().split('T')[0];
 
-  // 1. Capacity
+  // 1. Capacity & Maintenance
   let totalSlotsCount = 54;
+  let maintenanceSlotsCount = 0;
   if (isDbConnected) {
     const baseFilter = {};
     if (floorId) {
@@ -118,25 +119,41 @@ async function getOccupancyForecast({
     }
     const count = await Slot.countDocuments(baseFilter).catch(() => 0);
     if (count > 0) totalSlotsCount = count;
+    maintenanceSlotsCount = await Slot.countDocuments({
+      ...baseFilter,
+      status: 'maintenance',
+    }).catch(() => 0);
   }
+
+  const effectiveCapacity = Math.max(1, totalSlotsCount - maintenanceSlotsCount);
 
   // 2. Active Subscriptions
   let activeSubsCount = 0;
   if (isDbConnected) {
-    activeSubsCount = await Subscription.countDocuments({
+    const subFilter = {
       status: 'active',
       paymentStatus: 'paid',
       validFrom: { $lte: targetDate },
       expireAt: { $gte: targetDate },
-    }).catch(() => 0);
+    };
+    if (floorId) {
+      subFilter['slots.floorId'] = mongoose.Types.ObjectId.isValid(floorId)
+        ? new mongoose.Types.ObjectId(floorId)
+        : floorId;
+    }
+    activeSubsCount = await Subscription.countDocuments(subFilter).catch(() => 0);
   }
 
   // 3. Active Sessions right now
   let currentActiveSessionsCount = 0;
   if (isDbConnected && isToday) {
-    currentActiveSessionsCount = await Session.countDocuments({
-      status: 'active',
-    }).catch(() => 0);
+    const sessionFilter = { status: 'active' };
+    if (floorId) {
+      sessionFilter.floorId = mongoose.Types.ObjectId.isValid(floorId)
+        ? new mongoose.Types.ObjectId(floorId)
+        : floorId;
+    }
+    currentActiveSessionsCount = await Session.countDocuments(sessionFilter).catch(() => 0);
   }
 
   // =========================================================================
@@ -295,7 +312,7 @@ async function getOccupancyForecast({
       isToday,
       totalCapacity: totalSlotsCount,
       totalPhysicalCapacity: totalSlotsCount,
-      maintenanceSlotsCount: 0,
+      maintenanceSlotsCount,
       activeSubscriptions: activeSubsCount,
       selectedHour: currentSelectedHour,
       selectedIndex: currentSelectedHour,
@@ -417,7 +434,7 @@ async function getOccupancyForecast({
       date: targetDate.toISOString().split('T')[0],
       totalCapacity: totalSlotsCount,
       totalPhysicalCapacity: totalSlotsCount,
-      maintenanceSlotsCount: 0,
+      maintenanceSlotsCount,
       activeSubscriptions: activeSubsCount,
       selectedIndex: currentSelectedIndex,
       selectedItem,
@@ -551,7 +568,7 @@ async function getOccupancyForecast({
       year: currentYear,
       totalCapacity: totalSlotsCount,
       totalPhysicalCapacity: totalSlotsCount,
-      maintenanceSlotsCount: 0,
+      maintenanceSlotsCount,
       activeSubscriptions: activeSubsCount,
       selectedIndex: currentSelectedIndex,
       selectedItem,
@@ -666,7 +683,7 @@ async function getOccupancyForecast({
       year: currentYear,
       totalCapacity: totalSlotsCount,
       totalPhysicalCapacity: totalSlotsCount,
-      maintenanceSlotsCount: 0,
+      maintenanceSlotsCount,
       activeSubscriptions: activeSubsCount,
       selectedIndex: currentSelectedIndex,
       selectedItem,

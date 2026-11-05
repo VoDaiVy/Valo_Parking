@@ -62,6 +62,26 @@ const vietnameseToEnglish = (value) => {
       'Only $1 spaces remain for the full period $2, so $3 vehicles cannot be booked. Would you like fewer vehicles or a different time?'],
     [/Xe ([A-Z0-9]+) đã có booking trùng thời gian trong khoảng ([^.]+)\.[^.!?]*/gi,
       'Vehicle $1 already has an overlapping booking during $2. Please choose another time.'],
+    [/Xe ([A-Z0-9]+) đã có booking đang hiệu lực trùng khung giờ này\. Hãy đổi thời gian hoặc sửa\/hủy booking hiện tại\.?/gi,
+      'Vehicle $1 already has an active booking that overlaps this time. Change the time, or update or cancel the existing booking.'],
+    [/Biển số ([A-Z0-9]+) đang được dùng bởi một booking còn hiệu lực trên hệ thống\. Booking đó không thuộc tài khoản của bạn nên không thể hiển thị chi tiết\. Hãy chọn xe đã đăng ký trong tài khoản hoặc đăng ký\/xác minh biển số này\.?/gi,
+      'License plate $1 is being used by an active booking outside your account, so its details cannot be shown. Select a registered vehicle in your account, or register and verify this plate.'],
+    [/Booking đang gây trùng của xe ([A-Z0-9]+): ([^.]+)\. Trạng thái: ([^.]+)\.?/gi,
+      'The overlapping booking for vehicle $1 is $2. Status: $3.'],
+    [/Xe không có booking đang hiệu lực\. Lịch sử gần nhất:/gi,
+      'There is no active booking for this vehicle. Most recent history:'],
+    [/Xe không có booking đang hiệu lực\. Lịch sử gần nhất của xe ([A-Z0-9]+)/gi,
+      'Vehicle $1 has no active booking. Its most recent booking history'],
+    [/Booking đang hiệu lực của xe ([A-Z0-9]+)/gi, 'Active booking for vehicle $1'],
+    [/đang chờ thanh toán/gi, 'is awaiting payment'],
+    [/đã đặt và đang chờ vào bãi/gi, 'is paid and waiting for check-in'],
+    [/đang đỗ/gi, 'is currently parked'],
+    [/đang tạm dừng/gi, 'is paused'],
+    [/đã hết hạn/gi, 'has expired'],
+    [/đã hoàn tất/gi, 'has been completed'],
+    [/đã hủy/gi, 'was canceled'],
+    [/, bắt đầu ([^,.;]+)/gi, ', starting $1'],
+    [/, ô ([A-Z0-9-]+)/gi, ', slot $1'],
     [/Không có ô đỗ phù hợp[^.!?]*\.?/gi, 'No suitable parking slot is available for the selected time.'],
     [/Khoảng thời gian chưa hợp lệ\.?/gi, 'The parking time range is invalid.'],
     [/Giờ bắt đầu[^.!?]*đã qua\.?/gi, 'The selected start time has already passed.'],
@@ -149,6 +169,7 @@ export function localizeAiBookingMessage(value, language = 'vi') {
     .replace(/\bbooking\b/gi, 'lượt đặt chỗ')
     .replace(/\bslots\b/gi, 'các ô đỗ')
     .replace(/\bslot\b/gi, 'ô đỗ')
+    .replace(/\bgói\s+VIP\b/gi, 'gói ưu tiên')
     .replace(/\bVIP\b/gi, 'gói ưu tiên')
     .replace(/\bQR\b/gi, 'mã xác nhận')
     .replace(/\bPAID\b/g, 'đã thanh toán')

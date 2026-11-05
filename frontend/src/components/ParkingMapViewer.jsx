@@ -204,9 +204,10 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       const containerHeight = containerRef.current.clientHeight;
       if (containerWidth < 50 || containerHeight < 50) return; // Wait for layout
 
-      const padding = 20;
-      const safeWidth = Math.max(10, containerWidth - padding * 2);
-      const safeHeight = Math.max(10, containerHeight - padding * 2);
+      const paddingX = 24;
+      const paddingY = 48; // Clear margins for top floor tabs and bottom status legend
+      const safeWidth = Math.max(10, containerWidth - paddingX * 2);
+      const safeHeight = Math.max(10, containerHeight - paddingY * 2);
       const scaleX = safeWidth / Math.max(1, mapWidth);
       const scaleY = safeHeight / Math.max(1, mapHeight);
       const targetZoom = Math.max(0.1, Math.min(scaleX, scaleY, 2));
@@ -321,9 +322,11 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
         const isDedicatedToCurrentUser = Boolean(availableSlot?.isDedicatedToCurrentUser);
         const isReserved = !!dbSlot?.subscriptionType && !isDedicatedToCurrentUser;
         const slotType = String(el.type || '').toLowerCase();
+        const isCarVehicle = !vehicleType || vehicleType === 'car' || vehicleType === 'electric_car';
+        const isCarSlot = slotType === 'slot' || slotType === 'slot-ev';
         const isIncompatible = !isDedicatedToCurrentUser && Boolean(vehicleType)
-          && slotType !== 'slot'
-          && !(vehicleType === 'electric_car' && slotType === 'slot-ev');
+          && !isOccupied
+          && !(isCarVehicle && isCarSlot);
 
         let isHeld = false;
         if (activeHolds) {

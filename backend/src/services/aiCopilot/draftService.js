@@ -116,9 +116,38 @@ function cleanPayload(type, input) {
     return allowed;
   }
   if (!['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'].includes(type)) fail('Thao tác này chưa được hỗ trợ.');
-  const { name, type: packageType, price, description = '', maxSlots = 3, isActive = true } = input;
-  if (typeof name !== 'string' || !name.trim() || name.length > 120 || !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) || !Number.isFinite(price) || price < 0 || typeof description !== 'string' || description.length > 1000 || !Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 10 || typeof isActive !== 'boolean') fail('Thông tin gói vé không hợp lệ.');
-  return { name: name.trim(), type: packageType, price, description: description.trim(), maxSlots, isActive };
+  const {
+    name,
+    type: packageType,
+    price,
+    description = '',
+    maxSlots = 3,
+    isActive = true,
+    renewalWindowDays = 7,
+    isRenewable = true,
+  } = input;
+  if (
+    typeof name !== 'string' || !name.trim() || name.length > 120 ||
+    !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) ||
+    !Number.isFinite(price) || price < 0 ||
+    typeof description !== 'string' || description.length > 1000 ||
+    !Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 10 ||
+    typeof isActive !== 'boolean'
+  ) fail('Thông tin gói vé không hợp lệ.');
+  if (!Number.isInteger(renewalWindowDays) || renewalWindowDays < 1 || renewalWindowDays > 60)
+    fail('renewalWindowDays phải là số nguyên từ 1 đến 60.');
+  if (typeof isRenewable !== 'boolean')
+    fail('isRenewable phải là boolean.');
+  return {
+    name: name.trim(),
+    type: packageType,
+    price,
+    description: description.trim(),
+    maxSlots,
+    isActive,
+    renewalWindowDays,
+    isRenewable,
+  };
 }
 async function createDraft({ adminUserId, type, payload, targetId, notificationId, reason, evidence = [], actorRole = 'admin' }) {
   if (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'SEND_NOTIFICATION'].includes(type)) {

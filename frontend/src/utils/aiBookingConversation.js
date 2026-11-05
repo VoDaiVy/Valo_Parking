@@ -40,9 +40,76 @@ const topUpPhrases = new Set([
   'add money', 'add funds', 'top up wallet', 'pay by qr', 'pay with qr',
   'show qr', 'show qr code', 'bank transfer', 'make payment',
 ]);
+const isTopUpRequest = (value) => topUpPhrases.has(value)
+  || /^(?:toi|minh)?\s*(?:muon|can|hay|lam|cho)?\s*(?:nap|them)\s+(?:them\s+)?(?:tien|vao\s+vi|tien\s+vao\s+vi)$/i.test(value)
+  || /^(?:wallet\s+)?(?:top\s*up|add\s+(?:more\s+)?(?:money|funds))(?:\s+(?:my\s+)?wallet)?$/i.test(value);
+
+export const isVipInquiry = (value) => {
+  const text = normalize(value);
+  return /\b(goi\s+vip|goi\s+thang|goi\s+nam|ve\s+thang|ve\s+nam|dang\s+ky\s+vip|mua\s+vip|quyen\s+loi\s+vip|bang\s+gia\s+goi|vip\s+packages?|membership|monthly\s+(?:pass|package)|annual\s+(?:pass|package)|yearly\s+(?:pass|package)|subscription\s+plans?|parking\s+packages?)\b/i.test(text)
+    || /\b(?:xem|mo|hien|liet\s+ke|cho\s+xem|tham\s+khao)\s+(?:cac\s+|nhung\s+)?goi(?:\s+(?:vip|thang|nam|ve|uu\s+dai))?\b/i.test(text)
+    || /\b(?:cac|nhung)\s+goi(?:\s+(?:vip|thang|nam|ve|uu\s+dai))?\b/i.test(text)
+    || /\b(?:show|view|list|see)\s+(?:the\s+|all\s+|available\s+)?(?:vip\s+|parking\s+|monthly\s+)?packages?\b/i.test(text);
+};
+export const isPricingInquiry = (value) => {
+  const text = normalize(value);
+  const asksAboutActiveVehicle = /\b\d{2}\s*[a-z]{1,2}\s*\d{4,5}\b/i.test(text)
+    || /\b(hien tai|toi gio|dang do|xe cua toi|xe nay|current|so far|my car)\b/i.test(text);
+  if (asksAboutActiveVehicle) return false;
+  return /\b(bang\s+gia|gia\s+do\s+xe|gia\s+gui\s+xe|phi\s+giu\s+xe|phi\s+do\s+xe|bao\s+nhieu\s+mot\s+tieng|pricing|parking\s+fee)\b/i.test(text);
+};
+export const isPolicyInquiry = (value) => /\b(chinh\s+sach|quy\s+dinh|hoan\s+tien|huy\s+(?:booking|dat\s+cho).*(?:mat\s+phi|duoc\s+hoan|hoan\s+bao\s+nhieu)|huy\s+co\s+mat\s+phi|cancellation\s+policy|refund\s+policy)\b/i.test(value);
+export const isServiceInquiry = (value) => {
+  if (/\b(dat|them|chon|dung|lay|book|add|select)\b/i.test(value)) return false;
+  if (/\b(car\s*wash|vacuuming|water\s*spot|coating|polishing|scratch|deep\s*cleaning|ozone|rua\s*xe|hut\s*bui|tay\s*o|danh\s*bong)\b/i.test(value)) return false;
+  return /\b(dich\s*vu|service|services)\b/i.test(value)
+    && /\b(gi|nao|co\b|danh\s*sach|cac\s*loai|tat\s*ca|bang\s*gia|gia|phi|bao\s*nhieu|xem|he\s*thong|list|info|what|available)\b/i.test(value);
+};
+export const isPeakTimesInquiry = (value) => {
+  const text = normalize(value);
+  return /\b(gio\s+cao\s+diem|khi\s+nao\s+(?:bai\s+)?dong|co\s+dong\s+xe|mat\s+do|peak\s+times?|when\s+is\s+it\s+busy|occupancy)\b/i.test(text);
+};
+
+export const isHelpInquiry = (value) => {
+  const text = normalize(value);
+  return /\b(ban\s+(?:co\s+the\s+)?lam\s+duoc\s+gi|ban\s+ho\s+tro\s+gi|tro\s+ly\s+(?:co\s+)?chuc\s+nang\s+gi|huong\s+dan\s+(?:su\s+dung|toi)|toi\s+co\s+the\s+hoi\s+gi|help|what\s+can\s+you\s+do|how\s+can\s+you\s+help|show\s+me\s+what\s+you\s+can\s+do)\b/i.test(text);
+};
+
+export const isGreeting = (value) => /^(xin\s+chao|chao|hello|hi|hey|good\s+(?:morning|afternoon|evening))[!. ]*$/i.test(normalize(value));
+export const isThanks = (value) => /^(cam\s+on|cam\s+on\s+ban|thanks|thank\s+you|thank\s+you\s+very\s+much)[!. ]*$/i.test(normalize(value));
+
+export const isOutOfScopeInquiry = (value) => {
+  const text = normalize(value);
+  return /\b(thoi\s+tiet|du\s+bao\s+thoi\s+tiet|hom\s+nay\s+co\s+mua|weather\s+forecast|temperature)\b/i.test(text)
+    || /\b(ty\s+so|bong\s+da|world\s+cup|premier\s+league|football\s+score|sports?\s+score)\b/i.test(text)
+    || /\b(cong\s+thuc\s+nau|nau\s+mon|mon\s+an|recipe|how\s+to\s+cook)\b/i.test(text)
+    || /\b(tin\s+tuc|chinh\s+tri|bau\s+cu|news\s+today|politics|election)\b/i.test(text)
+    || /\b(ke\s+chuyen\s+cuoi|hat\s+mot\s+bai|lam\s+tho|phim\s+gi|tell\s+(?:me\s+)?a\s+joke|sing\s+(?:me\s+)?a\s+song|write\s+(?:me\s+)?a\s+poem|movie\s+recommendation)\b/i.test(text)
+    || /\b(giai\s+bai\s+tap|giai\s+phuong\s+trinh|lam\s+bai\s+van|solve\s+(?:this\s+)?equation|homework)\b/i.test(text)
+    || /\b(gia\s+vang|chung\s+khoan|bitcoin|crypto|stock\s+price|exchange\s+rate)\b/i.test(text)
+    || /\b(chan\s+doan\s+benh|ke\s+don\s+thuoc|tu\s+van\s+phap\s+luat|medical\s+diagnosis|legal\s+advice)\b/i.test(text);
+};
 
 export function routeBookingReply(phase, message, { hasSlotSuggestion = false } = {}) {
   const value = normalize(message).replace(/^(?:da|vang)\s+/, '').replace(/\s+(?:nhe|nha)$/, '');
+  const containsBookingDetails = /\b(dat|giu\s+cho|book|reserve)\b/i.test(value)
+    && (/\b(ngay|hom\s+nay|ngay\s+mai|gio|xe|bien|plate|vehicle|car|today|tomorrow|date|time|\d{1,2}h|\d{1,2}:\d{2})\b/i.test(value));
+  // A mixed sentence such as "đặt xe ... và thêm dịch vụ" must reach the
+  // booking interpreter as one unit. Informational shortcuts would otherwise
+  // discard its dates, times and vehicle.
+  if (containsBookingDetails) return 'interpret';
+  if (isVipInquiry(value)) return 'view_vip_packages';
+  if (isServiceInquiry(value)) return 'service_info';
+  if (isPricingInquiry(value)) return 'pricing_info';
+  // Published policy content and refund rules live on the server and can
+  // change. Let the assistant endpoint answer from the current policy data.
+  if (isPolicyInquiry(value)) return 'interpret';
+  if (isPeakTimesInquiry(value)) return 'peak_times_info';
+  if (isHelpInquiry(value)) return 'help';
+  if (isGreeting(value)) return 'greeting';
+  if (isThanks(value)) return 'thanks';
+  if (isOutOfScopeInquiry(value)) return 'out_of_scope';
+
   if (phase !== 'WAITING_CONFIRMATION') {
     if (hasSlotSuggestion && (confirmationPhrases.has(value)
       || /^(?:lay|chon|dung)\s+(?:o\s+)?(?:goi y|de xuat)$/i.test(value)
@@ -53,16 +120,28 @@ export function routeBookingReply(phase, message, { hasSlotSuggestion = false } 
     if (cancellationPhrases.has(value)) return 'cancel_draft';
     return 'interpret';
   }
-  // A negative word always wins over a positive one. Never book a mixed reply.
-  if (/\b(khong|huy|thoi|dung|no|cancel|stop|nevermind|dont)\b|\b(?:never mind|do not)\b/.test(value)) {
-    return cancellationPhrases.has(value) ? 'cancel' : 'clarify';
-  }
-  if (topUpPhrases.has(value)) return 'top_up';
-  if (confirmationPhrases.has(value)) return 'confirm';
-  if (/\b(doi|sua|chuyen|thay|ngay|mai|hom|thu|cuoi tuan|gio|bien|xe|tang|floor|slot|o do|buoi|sang|chieu|toi|trua|change|correct|instead|actually|date|time|tomorrow|today|plate|vehicle|car|arrive|leave|am|pm|\d{1,2}h|\d{1,2}:\d{2})\b/.test(value)) {
+  if (cancellationPhrases.has(value)) return 'cancel';
+  // Wallet actions must be checked before booking edits. Otherwise phrases
+  // such as "nạp thêm" and "làm thêm tiền" are mistaken for an edit merely
+  // because they contain the word "thêm".
+  if (isTopUpRequest(value)) return 'top_up';
+  // A correction may contain a negative word ("không, đổi giờ ra 12h"). It is
+  // an edit, not a cancellation, as long as the whole phrase is not an exact
+  // cancellation command.
+  if (/\b(?:dung|use|apply)\s+(?:a\s+|my\s+|the\s+)?(?:voucher|ma\s+giam\s+gia|discount)\b/i.test(value)) {
     return 'interpret';
   }
-  return 'clarify';
+  if (/\b(doi|sua|chuyen|thay|them|chon|lay|bo|xoa|ngay|mai|hom|thu|cuoi tuan|gio|bien|xe|tang|floor|slot|o do|buoi|sang|chieu|toi|trua|dich\s*vu|service|voucher|ma\s+giam\s+gia|discount|rua\s*xe|wash|sac|charging|coating|water\s*spot|polishing|scratch|cleaning|ozone|hut\s*bui|tay\s*o|danh\s*bong|change|correct|instead|actually|date|time|tomorrow|today|plate|vehicle|car|arrive|leave|am|pm|\d{1,2}h|\d{1,2}:\d{2})\b/i.test(value)) {
+    return 'interpret';
+  }
+  if (/\b(khong|huy|thoi|dung|no|cancel|stop|nevermind|dont)\b|\b(?:never mind|do not)\b/.test(value)) {
+    return 'clarify';
+  }
+  if (confirmationPhrases.has(value)) return 'confirm';
+  // A preview should not turn the assistant into a yes/no-only state. Forward
+  // every other request (wallet, vehicle, booking status, policies, etc.) to
+  // the normal interpreter while keeping the current preview available.
+  return 'interpret';
 }
 
 export function routeAssistantActionReply(message) {
@@ -88,26 +167,38 @@ export function bookingPreviewSummary(preview, draft = {}, language = 'vi') {
     const part = (name) => formatted.find((entry) => entry.type === name)?.value || '';
     return { date: `${part('day')}/${part('month')}/${part('year')}`, time: `${part('hour')}:${part('minute')}` };
   };
+  const vipTip = preview?.suggestVipPackage
+    ? (language === 'en'
+      ? '\n💡 Tip: For bookings longer than 7 days, consider subscribing to a VIP monthly package for lower rates and a dedicated spot.'
+      : '\nvalo Gợi ý: Với thời gian đỗ dài ngày (> 7 ngày), bạn có thể tham khảo đăng ký gói ưu tiên (gói tháng) để có mức giá ưu đãi hơn và được giữ chỗ cố định.')
+    : '';
+
   if (language === 'en') {
+    const serviceList = Array.isArray(draft.serviceNames) && draft.serviceNames.length
+      ? ` (${items.length > 1 ? 'Services for each vehicle' : 'With services'}: ${draft.serviceNames.join(', ')})`
+      : '';
     const details = items.map((item) => {
       const start = parts(item.startTime, item.date, draft.startTime);
       const end = parts(item.endTime, item.endDate || item.date, draft.endTime);
-      return `Vehicle ${item.licensePlate}: ${start.date} ${start.time} to ${end.date} ${end.time}, ${floorLabel(item.floorName, 'en')}, slot ${item.slotCode}`;
+      return `Vehicle ${item.licensePlate}: ${start.date} ${start.time} to ${end.date} ${end.time}, ${floorLabel(item.floorName, 'en')}, slot ${item.slotCode}${serviceList}`;
     });
     const payment = Number(preview.walletBalance) < Number(preview.total)
       ? 'Your wallet balance is insufficient. Say “top up” to display a payment QR code.'
       : 'Would you like to confirm this booking?';
-    return `${details.join('\n')}\nTotal ${Number(preview.total).toLocaleString('en-US')} VND. ${payment}`;
+    return `${details.join('\n')}\nTotal ${Number(preview.total).toLocaleString('en-US')} VND. ${payment}${vipTip}`;
   }
   const payment = Number(preview.walletBalance) < Number(preview.total)
     ? 'Ví chưa đủ tiền. Vui lòng nạp thêm.'
     : 'Bạn có xác nhận đặt chỗ không?';
+  const serviceList = Array.isArray(draft.serviceNames) && draft.serviceNames.length
+    ? ` (${items.length > 1 ? 'Dịch vụ áp dụng cho từng xe' : 'Kèm dịch vụ'}: ${draft.serviceNames.join(', ')})`
+    : '';
   if (items.length === 1) {
     const start = parts(items[0].startTime, items[0].date, draft.startTime);
     const end = parts(items[0].endTime, items[0].endDate || items[0].date, draft.endTime);
     return `Xe ${items[0].licensePlate}: ${start.date} ${start.time} đến ${end.date} ${end.time}. `
-      + `Giữ chỗ liên tục, ${items[0].floorName}, ô ${items[0].slotCode}. `
-      + `${Number(preview.total).toLocaleString('vi-VN')}đ. ${payment}`;
+      + `Giữ chỗ liên tục, ${items[0].floorName}, ô ${items[0].slotCode}${serviceList}. `
+      + `${Number(preview.total).toLocaleString('vi-VN')}đ. ${payment}${vipTip}`;
   }
   const details = items.map((item) => {
     const start = parts(item.startTime, item.date, draft.startTime);
@@ -128,16 +219,17 @@ export function bookingPreviewSummary(preview, draft = {}, language = 'vi') {
   const heading = sameSchedule
     ? `${items.length} xe, ${details[0].start.date} ${details[0].start.time} đến ${details[0].end.date} ${details[0].end.time}:`
     : `${items.length} chỗ:`;
-  return `${heading}\n${lines.join('\n')}\nTổng ${Number(preview.total).toLocaleString('vi-VN')}đ. `
+  return `${heading}\n${lines.join('\n')}${serviceList ? `\n${serviceList.trim()}` : ''}\nTổng ${Number(preview.total).toLocaleString('vi-VN')}đ. `
     + (Number(preview.walletBalance) < Number(preview.total)
       ? 'Ví chưa đủ tiền. Vui lòng nạp thêm.'
-      : `Xác nhận đặt ${items.length} chỗ?`);
+      : `Xác nhận đặt ${items.length} chỗ?`)
+    + vipTip;
 }
 
 export function vipPlatePrompt(plate, language = 'vi') {
   return language === 'en'
-    ? `Vehicle ${plate} has a VIP subscription. Please say or enter another license plate; I will keep the date and time.`
-    : `Xe ${plate} có VIP. Hãy đọc hoặc nhập biển số khác; mình giữ nguyên ngày giờ.`;
+    ? `Vehicle ${plate} already has a dedicated VIP space and does not need an hourly booking. Use the VIP space directly, or say or enter another license plate; I will keep the date and time.`
+    : `Xe ${plate} đã có ô đỗ VIP riêng nên không cần booking theo giờ. Hãy dùng trực tiếp ô VIP, hoặc đọc hay nhập biển số khác; mình sẽ giữ nguyên ngày giờ.`;
 }
 
 export function resolveContextualVehicleReply(message, vehicles = [], draft = {}, language = 'vi') {

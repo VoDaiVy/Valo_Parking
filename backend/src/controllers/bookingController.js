@@ -60,6 +60,34 @@ const sameObjectId = (a, b) => String(a || '') === String(b || '');
 
 const withSession = (query, session) => (session ? query.session(session) : query);
 
+const vehicleBookingOverlapError = ({ booking, licensePlate, userId, vehicleId }) => {
+  const plate = normalizeLicensePlate(licensePlate || booking?.licensePlate || '');
+  const belongsToCurrentUser = sameObjectId(booking?.userId, userId)
+    || (vehicleId && sameObjectId(booking?.vehicleId, vehicleId));
+  const error = new Error(belongsToCurrentUser
+    ? `Xe ${plate} đã có booking đang hiệu lực trùng khung giờ này. Hãy đổi thời gian hoặc sửa/hủy booking hiện tại.`
+    : `Biển số ${plate} đang được dùng bởi một booking còn hiệu lực trên hệ thống. Booking đó không thuộc tài khoản của bạn nên không thể hiển thị chi tiết. Hãy chọn xe đã đăng ký trong tài khoản hoặc đăng ký/xác minh biển số này.`);
+
+  error.code = belongsToCurrentUser
+    ? 'VEHICLE_BOOKING_OVERLAP'
+    : 'LICENSE_PLATE_BOOKING_CONFLICT';
+  error.statusCode = 409;
+  error.data = {
+    licensePlate: plate,
+    ownership: belongsToCurrentUser ? 'current_user' : 'other_user',
+    ...(belongsToCurrentUser ? {
+      conflictBooking: {
+        bookingId: String(booking._id),
+        scheduledStart: booking.scheduledStart,
+        scheduledEnd: booking.scheduledEnd,
+        parkingSlot: booking.parkingSlot,
+        status: booking.status,
+      },
+    } : {}),
+  };
+  return error;
+};
+
 const resolveCheckoutVehicle = async ({ userId, vehicleId, licensePlate, session = null }) => {
   if (vehicleId) {
     const vehicle = await withSession(Vehicle.findOne({ _id: vehicleId, owner: userId }), session);
@@ -550,11 +578,16 @@ const findOwnedBooking = (bookingId, user) => {
 
 exports.getAvailableSlots = async (req, res, next) => {
   try {
-    const { startTime, endTime, bookingSource } = req.query;
+    const { startTime, endTime } = req.query;
     const { start, end } = validateBookingTimeRange(startTime, endTime);
     const slots = await getAvailableSlotsForRange(start, end, req.user?._id, {
-      allowExpectedSessionCheckout: bookingSource === 'AI_QUICK',
-      includeOwnedDedicatedSlots: bookingSource === 'AI_QUICK',
+      // Regular and AI booking must see identical inventory. A currently
+      // occupied slot may be offered only after a reliable expected checkout.
+      allowExpectedSessionCheckout: true,
+      // VIP spaces are package entitlements, not hourly-booking inventory.
+      // Including them here made AI quotes waive the parking component and
+      // display only the selected service price.
+      includeOwnedDedicatedSlots: false,
     });
 
     res.status(200).json({
@@ -2042,11 +2075,8 @@ exports.createBookingHold = async (req, res, next) => {
       status: 'active'
     });
 
-    const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
-    const slotExpectedCheckout = isAiQuickRequest && slotOccupied
-      ? expectedSessionCheckout(slotOccupied, now)
-      : null;
-    if (slotOccupied && (!isAiQuickRequest || !slotExpectedCheckout || slotExpectedCheckout > start)) {
+    const slotExpectedCheckout = slotOccupied ? expectedSessionCheckout(slotOccupied, now) : null;
+    if (slotOccupied && (!slotExpectedCheckout || slotExpectedCheckout > start)) {
       return res.status(400).json({ success: false, message: 'This slot is currently occupied by another vehicle' });
     }
 
@@ -2285,7 +2315,14 @@ exports.quoteBulkBooking = async (req, res, next) => {
         start,
         end,
       }));
-      if (overlappingBooking) throw new Error(`Xe ${vehicle.licensePlate} đã có lượt đặt chỗ trùng khung giờ này`);
+      if (overlappingBooking) {
+        throw vehicleBookingOverlapError({
+          booking: overlappingBooking,
+          licensePlate: vehicle.licensePlate,
+          userId,
+          vehicleId: vehicle._id,
+        });
+      }
 
       // Check slot occupation
       const slotOverlapBooking = await Booking.findOne({
@@ -2306,10 +2343,16 @@ exports.quoteBulkBooking = async (req, res, next) => {
       if (subscriptionInfo && subscriptionInfo.ownerId.toString() !== userId.toString()) {
         throw new Error(`Ô đỗ ${parkingSlot} thuộc gói thuê cố định.`);
       }
+      if (isAiQuickRequest && subscriptionInfo) {
+        throw Object.assign(
+          new Error(`Ô ${parkingSlot} là ô VIP riêng của bạn. Hãy dùng trực tiếp ô VIP, hoặc chọn ô thường khác để đặt theo giờ.`),
+          { code: 'VIP_SLOT_HOURLY_BOOKING_NOT_REQUIRED' }
+        );
+      }
 
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
-      if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+      if (!isAiQuickRequest && subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
       const adjustedParkingTotal = pricing.finalTotal;
@@ -2364,6 +2407,7 @@ exports.quoteBulkBooking = async (req, res, next) => {
           clientItemId,
           message: err.message,
           ...(typeof err.code === 'string' ? { code: err.code } : {}),
+          ...(err.data ? { data: err.data } : {}),
         });
       }
     }
@@ -2504,7 +2548,14 @@ exports.createBulkBooking = async (req, res, next) => {
         start,
         end,
       })).session(session);
-      if (overlappingBooking) throw new Error(`Xe ${vehicle.licensePlate} đã có lượt đặt chỗ trùng khung giờ này`);
+      if (overlappingBooking) {
+        throw vehicleBookingOverlapError({
+          booking: overlappingBooking,
+          licensePlate: vehicle.licensePlate,
+          userId,
+          vehicleId: vehicle._id,
+        });
+      }
 
       // Check slot occupation
       const slotOverlapBooking = await Booking.findOne({
@@ -2549,6 +2600,12 @@ exports.createBulkBooking = async (req, res, next) => {
       if (subscriptionInfo && subscriptionInfo.ownerId.toString() !== userId.toString()) {
         throw new Error(`Ô đỗ ${parkingSlot} thuộc gói thuê cố định.`);
       }
+      if (isAiQuickRequest && subscriptionInfo) {
+        throw Object.assign(
+          new Error(`Ô ${parkingSlot} là ô VIP riêng của bạn. Hãy dùng trực tiếp ô VIP, hoặc chọn ô thường khác để đặt theo giờ.`),
+          { code: 'VIP_SLOT_HOURLY_BOOKING_NOT_REQUIRED', statusCode: 400 }
+        );
+      }
 
       // Verify BookingHold to prevent stealing slots
       if (!holdId) {
@@ -2572,7 +2629,7 @@ exports.createBulkBooking = async (req, res, next) => {
 
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
-      if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+      if (!isAiQuickRequest && subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
       const adjustedParkingTotal = pricing.finalTotal;

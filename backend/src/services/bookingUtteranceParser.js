@@ -1,7 +1,8 @@
 const simplify = (value) => String(value || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 const { detectBookingLanguage } = require('./aiBookingLanguage');
-const manualOnlyPattern = /\b(sac|vip|dich vu|gan|khu|zone|cong|loi ra|uu tien|co mai|ngoai troi)\b/;
+const { BOOKING_TIME_STEP_MINUTES } = require('../utils/bookingTimePolicy');
+const manualOnlyPattern = /\b(sac|vip|gan|khu|zone|cong|loi ra|uu tien|co mai|ngoai troi)\b/;
 const supportedLocationCodePattern = /\b(?:zone|khu(?:\s+vuc)?)\s*([a-z]+\d+)\b/;
 const withoutSupportedLocationCode = (message) => message.replace(supportedLocationCodePattern, ' ');
 
@@ -116,6 +117,16 @@ const plateLetters = {
 const fullPlatePattern = /^[1-9]\d[A-Z]{1,2}\d{4,5}$/;
 const directPlatePattern = /\b[1-9]\d[\s,.;-]*[a-z]{1,2}(?:[\s,.;-]*\d){4,5}\b/g;
 
+function previousLicensePlates(previous = {}) {
+  return [...new Set([
+    previous.licensePlate,
+    ...(Array.isArray(previous.licensePlates) ? previous.licensePlates : []),
+    ...(Array.isArray(previous.reservationItems)
+      ? previous.reservationItems.map((item) => item?.licensePlate) : []),
+  ].map((plate) => String(plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase())
+    .filter((plate) => fullPlatePattern.test(plate)))];
+}
+
 // Browser speech recognition commonly returns English homophones for isolated
 // plate characters (for/four, want/one, to/two, fire/five). Scan only sequences
 // that have the exact Vietnamese car-plate shape so normal English sentences
@@ -200,7 +211,7 @@ function extractLicensePlates(message) {
 
 function extractVehicleCount(message) {
   const words = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5 };
-  const match = message.match(/\b(\d+|mot|hai|ba|bon|nam)\s*(?:chiec\s+)?xe\b/);
+  const match = message.match(/\b(\d+|mot|hai|ba|bon|nam)\s*(?:chiec\s+)?(?:xe|o do|cho(?!\s*(?:xe|toi|minh|o\s*to|oto|nguoi_dung|khach)))\b/);
   if (match) return Number(words[match[1]] || match[1]);
   if (/\b(?:ca|cho)\s+hai\s+xe\b|\bca\s+doi\s+xe\b/.test(message)) return 2;
   return 0;
@@ -226,7 +237,7 @@ function parsePlateFollowUp(message, previous = {}, language = 'vi') {
   if (missingLetter && /^[A-Z]{1,2}$/.test(spoken)) {
     const complete = `${missingLetter[1]}${spoken}${missingLetter[2]}`;
     if (fullPlatePattern.test(complete)) {
-      const priorPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+      const priorPlates = previousLicensePlates(previous);
       const licensePlates = [...new Set([...priorPlates, complete])];
       const requestedVehicleCount = Number(previous.requestedVehicleCount || 0);
       return {
@@ -262,7 +273,7 @@ function parsePlateFollowUp(message, previous = {}, language = 'vi') {
   const complete = [spoken, `${pending}${spoken}`, `${spoken}${pending}`, `${pendingPrefix}${spoken}`]
     .find((plate) => fullPlatePattern.test(plate));
   if (complete) {
-    const priorPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+    const priorPlates = previousLicensePlates(previous);
     const licensePlates = [...new Set([...priorPlates, complete])];
     const requestedVehicleCount = Number(previous.requestedVehicleCount || 0);
     return {
@@ -302,7 +313,7 @@ function parsePlateFollowUp(message, previous = {}, language = 'vi') {
 
 function reservationItemsFromPrevious(previous, count) {
   const previousItems = Array.isArray(previous.reservationItems) ? previous.reservationItems : [];
-  const previousPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+  const previousPlates = previousLicensePlates(previous);
   return Array.from({ length: count }, (_, index) => ({
     licensePlate: previousItems[index]?.licensePlate || previousPlates[index] || '',
     startDate: previousItems[index]?.startDate || previous.startDate || '',
@@ -525,7 +536,9 @@ function parseHour(hourText, minuteText, period) {
 }
 
 function extractTimes(message) {
-  const compact = message.match(/\b(\d{1,2})\s*(?:-|den)\s*(\d{1,2})\s*(?:h|gio)(?:\s*(sang|chieu|toi|trua))?\b/);
+  // Do not treat the minute portion in "19 giờ 22 đến 20 giờ 22" as the
+  // beginning of a compact "22 đến 20 giờ" range.
+  const compact = message.match(/(?<!gio )\b(\d{1,2})\s*(?:-|den)\s*(\d{1,2})\s*(?:h|gio)(?:\s*(sang|chieu|toi|trua))?\b/);
   if (compact) return [
     { hour: compact[1], minute: '', period: compact[3] || '' },
     { hour: compact[2], minute: '', period: compact[3] || '' },
@@ -547,7 +560,7 @@ function parseIndexedReservationItems(message, today, previous = {}) {
   const requestedVehicleCount = Math.max(Number(previous.requestedVehicleCount || 0), ...indices);
   if (!Number.isInteger(requestedVehicleCount) || requestedVehicleCount < 2 || requestedVehicleCount > 5) return null;
   const previousItems = Array.isArray(previous.reservationItems) ? previous.reservationItems : [];
-  const previousPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+  const previousPlates = previousLicensePlates(previous);
   const prefixDateToken = message.slice(0, markers[0].index).match(indexedDatePattern)?.[0] || '';
   const prefixDate = prefixDateToken ? parseDateToken(prefixDateToken, today) : '';
   const items = Array.from({ length: requestedVehicleCount }, (_, index) => ({
@@ -882,7 +895,7 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
     && /^[a-z0-9\s,.-]{1,50}$/.test(message)
     && !/\b(?:am|pm|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|hour|hours|from|until|to|at)\b/.test(message);
   const spokenPlateFollowUp = /\b(?:zero|oh|owe|one|won|want|two|to|too|three|tree|free|chi|four|for|fore|five|fire|six|sex|seven|heaven|eight|ate|nine|mine|alpha|bravo|charlie|delta|echo|foxtrot|golf|hotel|india|juliett|juliet|kilo|lima|mike|november|oscar|papa|quebec|romeo|sierra|tango|uniform|victor|whiskey|xray|yankee|zulu)\b/.test(message);
-  const priorPlates = Array.isArray(previous.licensePlates) ? previous.licensePlates : [];
+  const priorPlates = previousLicensePlates(previous);
   const expectsPlateFollowUp = continuing && (!previous.licensePlate
     || Number(previous.requestedVehicleCount || 0) > priorPlates.length
     || previous.pendingLicensePlate);
@@ -969,15 +982,21 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
 
   const countMatch = message.match(/\b(one|two|three|four|five|\d+)\s+(?:cars?|vehicles?|parking spaces?|spots?)\b/)
     || message.match(/\b(?:for|bringing|have)\s+(one|two|three|four|five|\d+)\s+(?:cars?|vehicles?)\b/);
-  const priorVehicleCount = Number(previous.requestedVehicleCount || (previous.licensePlate ? 1 : 0));
-  const requestedVehicleCount = countMatch ? englishNumber(countMatch[1])
+  const priorVehicleCount = Math.max(
+    Number(previous.requestedVehicleCount || 0),
+    priorPlates.length,
+    previous.licensePlate ? 1 : 0,
+  );
+  const explicitlyReplacesVehicle = /\b(?:change|switch|replace)\b[^.?!]{0,40}\b(?:vehicle|car|plate|registration)\b/.test(message);
+  const requestedVehicleCount = explicitlyReplacesVehicle ? 1 : countMatch ? englishNumber(countMatch[1])
     : /\b(?:both|the\s+two)\s+(?:cars?|vehicles?)\b/.test(message) ? 2
       : /\b(?:add|bring|include)\s+another\s+(?:car|vehicle)\b/.test(message)
         ? Math.max(2, priorVehicleCount + 1)
         : priorVehicleCount;
   if (requestedVehicleCount > 5) return null;
   const incomingPlates = extractLicensePlates(message);
-  let licensePlates = [...new Set([...(continuing && Array.isArray(previous.licensePlates) ? previous.licensePlates : []), ...incomingPlates])];
+  const inheritedPlates = continuing && !explicitlyReplacesVehicle ? priorPlates : [];
+  let licensePlates = [...new Set([...inheritedPlates, ...incomingPlates])];
   let pendingLicensePlate = '';
   if (!incomingPlates.length && /\b(?:license plate|plate number|registration|plate is)\b/.test(message)) {
     const spoken = decodeSpokenPlate(message);
@@ -988,7 +1007,7 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
     const spoken = decodeSpokenPlate(message);
     if (fullPlatePattern.test(spoken)) licensePlates = [...new Set([...licensePlates, spoken])];
   }
-  const licensePlate = licensePlates.find((plate) => !Array.isArray(previous.licensePlates) || !previous.licensePlates.includes(plate))
+  const licensePlate = licensePlates.find((plate) => !priorPlates.includes(plate))
     || licensePlates[0] || '';
 
   if (!startDate && !startTime && !endTime && !durationMinutes && !licensePlate && !requestedVehicleCount
@@ -1011,6 +1030,7 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
     );
   }
   const result = { changes, clarification };
+  if (explicitlyReplacesVehicle && incomingPlates.length) result.replaceVehicle = true;
   if (/\b(?:change|switch).*(?:vehicle|car)\b/.test(message) && !licensePlate) result.clearVehicle = true;
   if (pendingLicensePlate) result.pendingLicensePlate = pendingLicensePlate;
   return result;
@@ -1027,6 +1047,9 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   let message = simplify(markedPrompt.replace(/\btôi\b/giu, 'nguoi_dung').replace(/\btới\b/giu, 'đến').replace(/\b(?:ngày\s+)?mốt\b/giu, 'ngaykia'))
     .replace(/\bngaykia\b/g, 'ngay kia')
     .replace(/\bngay(?=\d)/g, 'ngay ')
+    // Protect this idiom before converting Vietnamese number words. Once the
+    // accents are folded, "bây giờ" and "bảy giờ" are both "bay gio".
+    .replace(/\b(?:ngay\s+)?bay\s+gio\b/g, 'luc_hien_tai')
     .replace(/\btoi\s+(?=muon|xin|can|se|dat|co)\b/g, 'nguoi_dung ')
     .replace(/(\d{1,2}\s*(?:h|gio|:\d{2})?)\s+toi\s+(?=\d{1,2})/g, '$1 den ')
     .replace(/\b(muoi mot|muoi hai|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\s+(gio|tieng)\b/g,
@@ -1065,6 +1088,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     .replace(/\bcuoi\s+tuan\s+sau\b/g, addDays(upcomingWeekday(today, 6, true), 7))
     .replace(/\bthangtieptheo\b/g, nextMonth);
   const continuing = previous.__intent === 'CREATE_BOOKING';
+  const awaitingField = String(previous.__awaitingField || '');
   const contextualSlotCode = extractContextualSlotCode(message, continuing);
   if (/\b(?:vai\s+ngay\s+nua|luc\s+nao\s+do|khi\s+nao\s+do)\b/.test(message)) {
     return { changes: {}, clearDates: true, clarification: 'Bạn muốn chính xác ngày nào?' };
@@ -1076,7 +1100,10 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const periodAnswer = message.replace(/[.!?]+$/, '').trim()
     .match(/^(?:(?:nguoi_dung\s+)?(?:muon|can)?\s*(?:dat(?: cho)?\s+)?(?:vao\s+)?|(?:doi|chuyen)\s+sang\s+)?(?:buoi\s+)?(sang|chieu|toi|trua)(?:\s+(?:nhe|nha))?$/);
   if (continuing && periodAnswer) {
-    if (!previous.pendingStartTime && !previous.startTime) {
+    if (awaitingField === 'endTime' && !previous.pendingEndTime) {
+      return { changes: {}, clarification: `Bạn muốn kết thúc lúc mấy giờ buổi ${periodAnswer[1]}?` };
+    }
+    if (!previous.pendingStartTime) {
       return { changes: {}, clarification: `Bạn muốn đỗ từ mấy giờ đến mấy giờ vào buổi ${periodAnswer[1]}?` };
     }
     const convert = (value) => {
@@ -1112,11 +1139,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   if (indexedReservations) return indexedReservations;
   const pendingReservationSchedule = parsePendingReservationScheduleAnswer(message, today, previous);
   if (pendingReservationSchedule) return pendingReservationSchedule;
-  const previousPlates = [...new Set([
-    ...(Array.isArray(previous.licensePlates) ? previous.licensePlates : []),
-    ...(Array.isArray(previous.reservationItems)
-      ? previous.reservationItems.map((item) => item?.licensePlate) : []),
-  ].filter(Boolean))];
+  const previousPlates = previousLicensePlates(previous);
   const waitingForPlate = continuing && (previous.blockedVipPlate || previous.pendingLicensePlate
     || (!previous.licensePlate && !previousPlates.length)
     || Number(previous.requestedVehicleCount || 0) > previousPlates.length);
@@ -1130,7 +1153,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
       startDate: previous.startDate || '', endDate: previous.endDate || '',
       startTime: previous.startTime || '', endTime: previous.endTime || '',
       licensePlate: replacements[0], licensePlates: replacements, requestedVehicleCount: 1,
-    } };
+    }, replaceVehicle: true };
     return { changes: {
       startDate: previous.startDate || '', endDate: previous.endDate || '',
       startTime: previous.startTime || '', endTime: previous.endTime || '',
@@ -1148,9 +1171,21 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   }
   if (/\b(thang|xe may|toi da|toi thieu)\b/.test(message)
     || manualOnlyPattern.test(withoutSupportedLocationCode(message))) return null;
-  const requestedVehicleCount = extractVehicleCount(message) || Number(previous.requestedVehicleCount || 0);
+  const priorVehicleCount = Math.max(
+    Number(previous.requestedVehicleCount || 0),
+    previousPlates.length,
+    previous.licensePlate ? 1 : 0,
+  );
+  const explicitlyReplacesVehicle = /\b(?:doi|chuyen|thay)\b[^.?!]{0,40}\b(?:xe|bien(?: so)?)\b/.test(message);
+  const addsAnotherVehicle = /\b(?:them|bo sung)\s+(?:mot\s+)?xe(?:\s+nua)?\b/.test(message);
+  const statedVehicleCount = extractVehicleCount(message);
+  const requestedVehicleCount = explicitlyReplacesVehicle
+    ? 1
+    : addsAnotherVehicle
+      ? Math.max(2, priorVehicleCount + 1)
+      : statedVehicleCount || priorVehicleCount;
   const unspecifiedMultipleVehicles = /\b(?:nhieu|vai)\s+xe\b/.test(message) && !requestedVehicleCount;
-  if (requestedVehicleCount > 5 || /\b\d+\s*(?:cho|o do)\b/.test(message)) return null;
+  if (requestedVehicleCount > 5 || /(?<![\/\dh])\b(?:[6-9]|\d{2,})\s*(?:cho(?!\s*(?:xe|toi|minh|o\s*to|oto|nguoi_dung|khach))|o do)\b/.test(message)) return null;
 
   const datePattern = /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay mot|cuoi tuan|thu\s*(?:2|3|4|5|6|7|hai|ba|tu|nam|sau|bay)(?:\s+tuan\s+(?:sau|nay))?|chu nhat(?:\s+tuan\s+(?:sau|nay))?|mai|nay|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|ngay\s+\d{1,2}(?!\s*\/))\b/g;
   const sharedMonthRange = message.match(/\btu\s+(?:ngay\s+)?(\d{1,2})\s+(?:den|toi)\s+(?:ngay\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
@@ -1177,6 +1212,12 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   }
   let startDate = dates[0] || '';
   let endDate = dates[1] || (dateTokens[0] === 'cuoi tuan' ? addDays(startDate, 1) : startDate);
+  // A date supplied while answering the departure question belongs to the end
+  // endpoint. Do not silently move the already selected arrival date.
+  if (continuing && awaitingField === 'endTime' && dates.length === 1 && previous.startDate) {
+    endDate = dates[0];
+    startDate = '';
+  }
   if (weekendRangeRequested && startDate && !dates[1]) endDate = addDays(startDate, 1);
   if (startDate && endDate < startDate) return null;
   const withoutDates = message
@@ -1187,24 +1228,33 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     || withoutDates.match(/\bsau\s+(\d{1,3})\s*(phut|gio|tieng)\b/)
     || withoutDates.match(/\b(?:sau\s+|trong\s+)?(nua)\s*(gio|tieng)\s+nua\b/);
   let relativeStartTime = '';
-  if (relativeDelayMatch) {
+  const immediateStartRequested = /\bluc_hien_tai\b/.test(withoutDates);
+  if (relativeDelayMatch || immediateStartRequested) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(currentTime)) {
       return { changes: {}, clarification: 'Mình chưa xác định được giờ hiện tại. Bạn vui lòng nói giờ vào cụ thể.' };
     }
-    const delayMinutes = relativeDelayMatch[1] === 'nua'
+    const delayMinutes = immediateStartRequested ? 0 : relativeDelayMatch[1] === 'nua'
       ? 30 : Number(relativeDelayMatch[1]) * (relativeDelayMatch[2] === 'phut' ? 1 : 60);
-    if (!Number.isInteger(delayMinutes) || delayMinutes < 1 || delayMinutes > 24 * 60) {
+    if (!Number.isInteger(delayMinutes) || (!immediateStartRequested && delayMinutes < 1)
+      || delayMinutes > 24 * 60) {
       return { changes: {}, clarification: 'Thời điểm bắt đầu chưa hợp lệ. Bạn vui lòng nói giờ vào cụ thể.' };
     }
     const [currentHour, currentMinute] = currentTime.split(':').map(Number);
-    const targetMinutes = currentHour * 60 + currentMinute + delayMinutes;
+    const currentMinutes = currentHour * 60 + currentMinute;
+    // Booking validation requires a future instant. Use the same quarter-hour
+    // grid as the regular booking form so request latency cannot make it stale.
+    const targetMinutes = immediateStartRequested
+      ? Math.ceil((currentMinutes + 1) / BOOKING_TIME_STEP_MINUTES) * BOOKING_TIME_STEP_MINUTES
+      : Math.ceil((currentMinutes + delayMinutes) / BOOKING_TIME_STEP_MINUTES)
+        * BOOKING_TIME_STEP_MINUTES;
     const dayOffset = Math.floor(targetMinutes / (24 * 60));
     startDate = addDays(today, dayOffset);
     endDate = startDate;
     const minuteOfDay = targetMinutes % (24 * 60);
     relativeStartTime = `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`;
   }
-  const timeSource = relativeDelayMatch ? withoutDates.replace(relativeDelayMatch[0], '') : withoutDates;
+  const timeSource = (relativeDelayMatch ? withoutDates.replace(relativeDelayMatch[0], '') : withoutDates)
+    .replace(/\bluc_hien_tai\b/g, '');
   const durationMatch = timeSource.match(/\b(?:trong|suot|keo dai)\s*(\d+)\s*(ngay|tuan|gio|tieng|phut)(?:\s*(ruoi))?\b/)
     || timeSource.match(/\b(\d+)\s*(ngay|tuan|gio|tieng|phut)(?:\s*(ruoi))?\s+(?:tu(?:\s+luc)?|bat dau(?:\s+tu|\s+luc)?)\b/)
     || timeSource.match(/\b(?:dat|giu(?:\s+cho)?|do(?:\s+xe)?|de\s+xe)\s+(?:lien\s+tuc\s+)?(\d+)\s*(ngay|tuan|tieng)(?:\s*(ruoi))?\b/)
@@ -1230,7 +1280,8 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   }
 
   const incomingPlates = extractLicensePlates(message);
-  const licensePlates = [...new Set([...(continuing ? previousPlates : []), ...incomingPlates]
+  const inheritedPlates = continuing && !explicitlyReplacesVehicle ? previousPlates : [];
+  const licensePlates = [...new Set([...inheritedPlates, ...incomingPlates]
     .map((plate) => String(plate).replace(/[^A-Z0-9]/gi, '').toUpperCase()).filter(Boolean))];
   const licensePlate = incomingPlates[0] || '';
   const vehicleType = /\b(xe dien|oto dien|o to dien)\b/.test(message) ? 'electric_car'
@@ -1243,7 +1294,9 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const slotCode = contextualSlotCode || slotMatch?.[1].toUpperCase() || '';
   const mentionedPlate = /\b(bien so|bien|xe\s+[0-9]{2}[a-z0-9.-]+)\b/.test(message);
   const mentionedFloor = /\b(tang|floor)\b/.test(message);
-  const mentionedSlot = /\b(o do|bai(?: do)?|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message);
+  // A generic mention of the parking lot ("tới bãi") is not a request for
+  // a particular optional space. Only explicit space/slot language may clarify.
+  const mentionedSlot = /\b(o do|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message);
 
   if (!startDate && !times.length && !durationMatch && !licensePlate && !requestedVehicleCount
     && !vehicleType && !floorName && !zoneName && !slotCode && !createCue && !mentionedPlate) return null;
@@ -1267,6 +1320,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     }
   } else if (times.length === 1) {
     const isEnd = /\b(gio ra|ket thuc|den luc|den\s+\d)/.test(message)
+      || awaitingField === 'endTime'
       || (continuing && previous.startTime && !previous.endTime);
     changes[isEnd ? 'endTime' : 'startTime'] = parsedTimes[0];
     if (durationMatch && !isEnd) {
@@ -1326,7 +1380,13 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   if (!clarification && previous.pendingStartTime && !times.length) {
     clarification = 'Bạn muốn đỗ vào giờ sáng hay tối? Chỉ cần trả lời “sáng” hoặc “tối”.';
   }
-  return { changes, clarification, clearTimes, clearPending: times.length > 0 };
+  return {
+    changes,
+    clarification,
+    clearTimes,
+    clearPending: times.length > 0,
+    replaceVehicle: explicitlyReplacesVehicle && incomingPlates.length > 0,
+  };
 }
 
 function mergeParsedBookings(primary, secondary) {
@@ -1371,6 +1431,7 @@ function parseBookingUtterance(prompt, today, previous = {}, currentTime = '', l
 }
 
 module.exports = {
+  extractLicensePlates,
   parseBookingUtterance,
   parseEnglishBookingUtterance,
   parseVietnameseBookingUtterance,

@@ -1,6 +1,7 @@
 import { validDate, validTime } from './aiBookingValidation.js';
 import { isValidLicensePlate, normalizeLicensePlate } from './licensePlate.js';
 import { localizeAiBookingMessage } from './aiBookingMessages.js';
+import { MIN_BOOKING_DURATION_MINUTES } from './bookingTimePolicy.js';
 
 export const MAX_AI_BOOKING_ITEMS = 5;
 const activeStatus = new Set(['PAID', 'ACTIVE', 'PAUSED']);
@@ -18,7 +19,10 @@ const draftReservationItems = (draft) => (Array.isArray(draft?.reservationItems)
 const keyOf = (slot) => `${slot.floorId}:${normalize(slot.slotCode)}`;
 const isCompatibleSlot = (slot, vehicleType) => {
   const type = normalize(slot.slotType);
-  if (slot.isDedicatedToCurrentUser) return type !== 'SLOT-MOTO' && type !== 'SLOT-HANDICAP';
+  // A dedicated VIP space is used directly through the active package. It must
+  // not be turned into an hourly booking, otherwise the backend correctly
+  // waives its parking fee and the quote can appear to contain services only.
+  if (slot.isDedicatedToCurrentUser) return false;
   return type === 'SLOT' || (vehicleType === 'electric_car' && type === 'SLOT-EV');
 };
 const stableHash = (value) => {
@@ -31,11 +35,6 @@ const stableHash = (value) => {
   return (hash ^ (hash >>> 16)) >>> 0;
 };
 const chooseAutoSlot = (slots, seed, vehicleType) => {
-  const dedicated = slots.filter((slot) => slot.isDedicatedToCurrentUser);
-  if (dedicated.length) {
-    const sorted = [...dedicated].sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
-    return sorted[stableHash(seed) % sorted.length];
-  }
   const preferredType = vehicleType === 'electric_car' ? 'SLOT-EV' : 'SLOT';
   const preferred = slots.filter((slot) => normalize(slot.slotType) === preferredType);
   const eligible = preferred.length ? preferred : slots.filter((slot) => normalize(slot.slotType) === 'SLOT');
@@ -140,6 +139,41 @@ export function getMissingBookingFields(draft, vehicles = [], now = Date.now()) 
       : 'Bạn muốn dùng xe nào? Hãy chọn xe hoặc cho biết biển số.');
   }
   return missing;
+}
+
+export function getAwaitingBookingField(draft = {}, vehicles = [], now = Date.now()) {
+  const reservationItems = draftReservationItems(draft);
+  const today = vietnamDate(now);
+  const schedules = reservationItems.length ? reservationItems.map((item) => ({
+    date: item.startDate || draft.startDate,
+    time: item.startTime || draft.startTime,
+  })) : [{ date: draft.startDate, time: draft.startTime }];
+  const elapsed = schedules.find(({ date, time }) => validDate(date)
+    && (date < today || (date === today && validTime(time)
+      && new Date(`${date}T${time}:00+07:00`).getTime() <= now)));
+  if (elapsed) return elapsed.date < today ? 'startDate' : 'startTime';
+  if (reservationItems.length) {
+    const count = Number(draft.requestedVehicleCount || 0) || reservationItems.length;
+    for (let index = 0; index < count; index += 1) {
+      const item = reservationItems[index] || {};
+      if (!(item.startDate || draft.startDate)) return 'startDate';
+      if (!(item.startTime || draft.startTime)) return 'startTime';
+      if (!(item.endTime || draft.endTime)) return 'endTime';
+      if (!item.licensePlate) return 'licensePlate';
+    }
+    return '';
+  }
+  if (!draft.startDate) return 'startDate';
+  if (!draft.endDate) return 'endDate';
+  if (!draft.startTime) return 'startTime';
+  if (!draft.endTime) return 'endTime';
+  const plates = draftPlates(draft);
+  const requestedCount = Number(draft.requestedVehicleCount || 0);
+  const approved = vehicles.filter((vehicle) => vehicle.status === 'approved'
+    && (!draft.vehicleType || vehicle.vehicleType === draft.vehicleType));
+  if (requestedCount > plates.length
+    || (!plates.length && !draft.vehicleId && approved.length !== 1)) return 'licensePlate';
+  return '';
 }
 
 export function resolveBookingVehicle(draft, vehicles = []) {
@@ -263,8 +297,8 @@ function rangesOverlap(startA, endA, startB, endB) {
 }
 
 export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now()) {
-  const missing = getMissingBookingFields(draft, vehicles);
-  if (missing.length) return { missing };
+  const missing = getMissingBookingFields(draft, vehicles, now);
+  if (missing.length) return { missing, awaitingField: getAwaitingBookingField(draft, vehicles, now) };
   const explicitItems = draftReservationItems(draft);
   const requestedCount = Number(draft.requestedVehicleCount || 0);
   const bookingVehicles = explicitItems.length ? [] : resolveBookingVehicles(draft, vehicles);
@@ -287,6 +321,8 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         floorName: source.floorName || draft.floorName || '',
         zoneName: source.zoneName || draft.zoneName || '',
         slotCode: source.slotCode || draft.slotCode || '',
+        serviceIds: Array.isArray(source.serviceIds) ? source.serviceIds : null,
+        voucherId: source.voucherId || '',
       });
     }
   } else {
@@ -297,6 +333,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         bookingMode: 'CONTINUOUS',
         startTime: draft.startTime, endTime: draft.endTime,
         floorName: draft.floorName || '', zoneName: draft.zoneName || '', slotCode: draft.slotCode || '',
+        serviceIds: null, voucherId: '',
       });
     }
   }
@@ -313,7 +350,9 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const end = new Date(`${request.endDate}T${request.endTime}:00+07:00`);
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
     if (end <= start) throw new Error(`Giờ kết thúc của xe ${request.vehicle.licensePlate} phải sau giờ bắt đầu.`);
-    if (durationMinutes < 30) throw new Error(`Xe ${request.vehicle.licensePlate} cần đặt tối thiểu 30 phút.`);
+    if (durationMinutes < MIN_BOOKING_DURATION_MINUTES) {
+      throw new Error(`Xe ${request.vehicle.licensePlate} cần đặt tối thiểu ${MIN_BOOKING_DURATION_MINUTES} phút.`);
+    }
   }
   if (!explicitItems.length && bookingVehicles.length > 1 && draft.slotCode) {
     return { conflicts: ['Không thể dùng cùng một ô cho nhiều xe. Vui lòng để trống ô đỗ để hệ thống xếp một ô riêng cho mỗi xe.'], days };
@@ -429,7 +468,11 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     slotCode: candidate.slot.slotCode,
     startTime: candidate.startTime,
     endTime: candidate.endTime,
-    serviceIds: Array.isArray(draft.serviceIds) ? draft.serviceIds : [],
+    serviceIds: Array.isArray(candidate.serviceIds)
+      ? candidate.serviceIds
+      : (Array.isArray(draft.serviceIds) ? draft.serviceIds : []),
+    ...((candidate.voucherId || (index === 0 && draft.voucherId))
+      ? { voucherId: candidate.voucherId || draft.voucherId } : {}),
     date: candidate.date,
     endDate: candidate.endDate,
     bookingMode: candidate.bookingMode,
@@ -450,7 +493,22 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     }
     throw resultError(quote, 'Không thể tính giá booking.');
   }
-  if (itemErrors.length) return { conflicts: itemErrors.map((error) => localizeAiBookingMessage(error.message)), days };
+  if (itemErrors.length) {
+    const bookingConflicts = itemErrors
+      .filter((error) => ['VEHICLE_BOOKING_OVERLAP', 'LICENSE_PLATE_BOOKING_CONFLICT'].includes(error.code))
+      .map((error) => ({
+        code: error.code,
+        licensePlate: normalizePlate(error.data?.licensePlate
+          || items.find((item) => item.clientItemId === error.clientItemId)?.licensePlate),
+        ownership: error.data?.ownership || '',
+        conflictBooking: error.data?.conflictBooking || null,
+      }));
+    return {
+      conflicts: itemErrors.map((error) => localizeAiBookingMessage(error.message)),
+      bookingConflicts,
+      days,
+    };
+  }
   if ((quote.data?.data?.items || []).length !== items.length) throw new Error('Báo giá chưa đầy đủ cho tất cả chỗ.');
   const wallet = await gateway.getWalletInfo();
   if (!wallet.ok) throw resultError(wallet, 'Không thể kiểm tra số dư ví.');
@@ -461,7 +519,8 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       - new Date(`${request.date}T${request.startTime}:00+07:00`).getTime()
   ) / 60000);
   const durationMinutes = durations.every((duration) => duration === durations[0]) ? durations[0] : null;
-  return { items, days, bookingMode: 'CONTINUOUS',
+  const suggestVipPackage = durations.some((duration) => duration > 7 * 24 * 60);
+  return { items, days, bookingMode: 'CONTINUOUS', suggestVipPackage,
     durationMinutes, total, walletBalance: Number(wallet.data?.data?.balance || 0), quotes: quote.data.data.items };
 }
 

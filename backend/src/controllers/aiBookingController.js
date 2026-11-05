@@ -43,16 +43,36 @@ const sendMutationResult = (res, result) => {
   return res.json({ success: true, data: sessionData(result?.session || result) });
 };
 
+const vietnamBookingClock = (now = new Date()) => {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const part = (type) => parts.find((item) => item.type === type)?.value || '';
+  return {
+    today: `${part('year')}-${part('month')}-${part('day')}`,
+    currentTime: `${part('hour')}:${part('minute')}`,
+  };
+};
+
 exports.interpret = async (req, res) => {
-  const languageInfo = detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const lockedLanguage = req.body?.draft?.__languageLocked === true
+    && ['en', 'vi'].includes(req.body?.draft?.__language)
+    ? req.body.draft.__language
+    : '';
+  const languageInfo = lockedLanguage
+    ? { language: lockedLanguage, confidence: 1 }
+    : detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
   const responseMessage = (value) => languageInfo.language === 'en'
     ? toEnglishBookingMessage(value) : value;
   try {
+    const referenceClock = vietnamBookingClock();
     const assistantRequest = parseAssistantRequest({
       prompt: req.body?.prompt,
       draft: req.body?.draft,
-      today: req.body?.today,
-      currentTime: req.body?.currentTime,
+      today: referenceClock.today,
+      currentTime: referenceClock.currentTime,
     });
     const requestsScheduledAvailability = assistantRequest
       && (assistantRequest.intents.includes('CHECK_PARKING_AVAILABILITY')
@@ -106,6 +126,7 @@ exports.interpret = async (req, res) => {
           assistantResult: {
             message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
@@ -113,8 +134,8 @@ exports.interpret = async (req, res) => {
     const result = await interpretBookingMessage({
       prompt: req.body?.prompt,
       draft: req.body?.draft,
-      today: req.body?.today,
-      currentTime: req.body?.currentTime,
+      today: referenceClock.today,
+      currentTime: referenceClock.currentTime,
     });
     if (QUERY_INTENTS.has(result.intent)) {
       const fallbackRequest = {
@@ -144,6 +165,7 @@ exports.interpret = async (req, res) => {
           assistantResult: {
             message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
