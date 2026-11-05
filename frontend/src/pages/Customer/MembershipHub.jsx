@@ -1,4 +1,6 @@
-import { ArrowLeftRight, ShoppingBag } from "lucide-react";
+import { useState } from 'react';
+import MembershipHistoryDrawer from '../../components/membership/MembershipHistoryDrawer';
+import { ArrowLeftRight, ShoppingBag, History } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
@@ -19,16 +21,17 @@ const TABS = [
 ];
 
 export default function MembershipHub() {
+  const [historyOpen, setHistoryOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") === "marketplace" ? "marketplace" : "transfers";
+  const activeTab = !searchParams.has("entitlementId") && !searchParams.has("subscriptionId") && searchParams.get("tab") === "marketplace" ? "marketplace" : "transfers";
 
   const changeTab = (tab) => {
-    navigate(
-      tab === "marketplace"
-        ? "/customer/membership-transfers?tab=marketplace"
-        : "/customer/membership-transfers",
-    );
+    const params = new URLSearchParams(searchParams);
+    params.delete('entitlementId'); params.delete('subscriptionId');
+    if (tab === 'marketplace') params.set('tab', 'marketplace');
+    else params.delete('tab');
+    navigate({ pathname: '/customer/membership-transfers', search: params.toString() });
   };
 
   const handleTabKeyDown = (event, currentTab) => {
@@ -58,9 +61,11 @@ export default function MembershipHub() {
           icon={ArrowLeftRight}
           title="Membership"
           description="Manage your membership spaces and transfers, or find an available space in the marketplace."
+          action={<button type="button" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10"><History size={17} aria-hidden="true" />History</button>}
           className="border-b border-white/10 pb-6"
         />
 
+        {historyOpen && <MembershipHistoryDrawer onClose={() => setHistoryOpen(false)} />}
         <nav
           role="tablist"
           aria-label="Membership sections"

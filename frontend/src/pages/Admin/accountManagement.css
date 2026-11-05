@@ -1,0 +1,53 @@
+/* Density adjustments apply only to the Admin account list, not its edit panel. */
+body[data-valo-typography="admin"] .admin-account-management .account-header { padding: 14px 24px 0; border-bottom: 0; --admin-type-page: 28px; }
+body[data-valo-typography="admin"] .admin-account-management .account-header > div:first-child { gap: 12px; }
+body[data-valo-typography="admin"] .admin-account-management .account-header > div:first-child > div { min-width: 0; }
+body[data-valo-typography="admin"] .admin-account-management .account-header > div:first-child > button { flex-shrink: 0; min-height: 40px; padding: 7px 12px; }
+body[data-valo-typography="admin"] .admin-account-management .account-metrics { margin-top: 12px; }
+body[data-valo-typography="admin"] .admin-account-management .account-metric { display: flex; align-items: center; height: 80px; padding: 10px 14px; --admin-type-kpi: 26px; }
+body[data-valo-typography="admin"] .admin-account-management .account-metric > div { width: 100%; gap: 10px; }
+body[data-valo-typography="admin"] .admin-account-management .account-metric .h-10 { height: 36px; width: 36px; }
+body[data-valo-typography="admin"] .admin-account-management .account-metrics > div > div { border-top: 0; }
+body[data-valo-typography="admin"] .admin-account-management .account-metrics > div > div + div { border-left: 1px solid rgb(255 255 255 / .1); }
+body[data-valo-typography="admin"] .admin-account-management .account-toolbar { padding: 10px 24px; gap: 10px; }
+body[data-valo-typography="admin"] .admin-account-management .account-search { flex: 1 1 220px; }
+body[data-valo-typography="admin"] .admin-account-management .account-toolbar input,
+body[data-valo-typography="admin"] .admin-account-management .account-toolbar button[aria-haspopup="menu"] { height: 44px; min-height: 44px; padding-block: 8px; box-shadow: none; }
+body[data-valo-typography="admin"] .admin-account-management .account-filters { gap: 8px; flex-shrink: 0; }
+body[data-valo-typography="admin"] .admin-account-management .account-filters button[aria-haspopup="menu"] { padding-inline: 12px; white-space: nowrap; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll { flex: 1 1 0%; overscroll-behavior: contain; scrollbar-gutter: stable; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll table { table-layout: fixed; min-width: 960px; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll th { height: 36px; padding: 8px 12px; white-space: nowrap; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll th:first-child { width: 24px; padding: 0; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll th:nth-child(2) { width: 25%; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll th:nth-child(3) { width: 23%; }
+body[data-valo-typography="admin"] .admin-account-management .account-table-scroll th:last-child { width: 76px; }
+body[data-valo-typography="admin"] .admin-account-management .account-row { height: 60px; }
+body[data-valo-typography="admin"] .admin-account-management .account-row:hover { transform: none; box-shadow: none; }
+body[data-valo-typography="admin"] .admin-account-management .account-row td { padding: 7px 12px; vertical-align: middle; white-space: nowrap; font-size: 13px !important; line-height: 20px !important; }
+body[data-valo-typography="admin"] .admin-account-management .account-row td:first-child { padding: 0; }
+body[data-valo-typography="admin"] .admin-account-management .account-row td:nth-child(2) p { font-size: 13px !important; line-height: 20px !important; }
+body[data-valo-typography="admin"] .admin-account-management .account-row td:nth-child(2) p + p { font-size: 12px !important; line-height: 18px !important; }
+body[data-valo-typography="admin"] .admin-account-management .account-row td:nth-child(2) .w-9 { width: 36px; height: 36px; }
+body[data-valo-typography="admin"] .admin-account-management .account-row td > span { font-size: 12px !important; line-height: 18px !important; }
+body[data-valo-typography="admin"] .admin-account-management .account-pagination { min-height: 48px; padding: 8px 24px; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 1023px) {
+  body[data-valo-typography="admin"] .admin-account-management .account-metrics > div > div:nth-child(3) { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-account-management .account-metrics > div > div:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="admin"] .admin-account-management .account-header { padding: 12px 16px 0; --admin-type-page: 24px; }
+  body[data-valo-typography="admin"] .admin-account-management .account-header > div:first-child { flex-wrap: wrap; }
+  body[data-valo-typography="admin"] .admin-account-management .account-toolbar { padding: 8px 16px; }
+  body[data-valo-typography="admin"] .admin-account-management .account-search { flex-basis: 100%; }
+  body[data-valo-typography="admin"] .admin-account-management .account-filters { width: 100%; gap: 4px; }
+  body[data-valo-typography="admin"] .admin-account-management .account-filters > div { flex: 1; min-width: 0; }
+  body[data-valo-typography="admin"] .admin-account-management .account-filters button[aria-haspopup="menu"] { width: 100%; justify-content: center; padding-inline: 5px; gap: 4px; font-size: 12px !important; }
+  body[data-valo-typography="admin"] .admin-account-management .account-filters button[aria-haspopup="menu"] > svg:first-child { display: none; }
+  body[data-valo-typography="admin"] .admin-account-management .account-pagination { padding-inline: 16px; }
+}
+@media (max-height: 650px) {
+  body[data-valo-typography="admin"] .admin-account-management .account-main { overflow-y: auto; }
+  body[data-valo-typography="admin"] .admin-account-management .account-table-scroll { flex: 1 0 180px; }
+  body[data-valo-typography="admin"] .admin-account-management .account-pagination { position: sticky; bottom: 0; z-index: 20; }
+}

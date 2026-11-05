@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import SocketContext from '../../../contexts/SocketProvider';
 import ValoAICopilotView from './ValoAICopilotView';
 import { sendAIMessage, getAINotifications, getAINotification, markAINotificationRead, dismissAINotification, approveAIDraft, rejectAIDraft } from '../services/aiCopilotService';
-import { notificationTarget } from '../utils/notificationTarget';
+import { notificationClickTarget } from '../utils/notificationTarget';
+import AdminValoAICopilotView from './AdminValoAICopilotView';
+import { adminSuggestions as englishSuggestions, adminFilters } from '../utils/adminPresentation';
 
 const STORAGE_KEY = 'valo-ai-position-v1';
 const WIDGET_WIDTH = 92;
@@ -17,7 +19,7 @@ const filters = [['all', 'Tất cả'], ['unread', 'Chưa đọc'], ['warning', 
 
 export default function ValoAICopilot() {
   const userRole = getRole();
-  const suggestions = userRole === 'staff' ? staffSuggestions : adminSuggestions;
+  const suggestions = userRole === 'admin' ? englishSuggestions : userRole === 'staff' ? staffSuggestions : adminSuggestions;
   const navigate = useNavigate();
   const socket = useContext(SocketContext);
   const [position, setPosition] = useState(() => {
@@ -34,6 +36,11 @@ export default function ValoAICopilot() {
   const [noticeBusy, setNoticeBusy] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notificationError, setNotificationError] = useState('');
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const notificationPage = useRef(1);
+  const notificationRequest = useRef(0);
+  const detailRequest = useRef(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -44,17 +51,38 @@ export default function ValoAICopilot() {
   const seenNotificationIds = useRef(null);
   const bottomRef = useRef(null);
 
-  const refresh = useCallback(async (nextFilter = filter) => {
-    const response = await getAINotifications(nextFilter);
+  const refresh = useCallback(async (nextFilter = filter, page = 1, append = false) => {
+    const generation = ++notificationRequest.current;
+    if (userRole === 'admin') setNotificationLoading(true);
+    const response = await getAINotifications(nextFilter, page);
+    if (userRole === 'admin') {
+      if (generation !== notificationRequest.current) return;
+      setNotificationLoading(false);
+      if (response.ok) {
+        const data = response.data.data;
+        const rows = data.notifications || [];
+        setNotifications((previous) => append ? [...previous, ...rows.filter((row) => !previous.some((old) => old._id === row._id))] : rows);
+        notificationPage.current = page;
+        setHasMore(page * 20 < data.total);
+        setUnreadCount(data.unreadCount || 0);
+        setNotificationError('');
+        if (!seenNotificationIds.current) seenNotificationIds.current = new Set(rows.map((row) => String(row._id)));
+      } else setNotificationError('Unable to load notifications. Please try again.');
+      return;
+    }
     if (response.ok) { setNotifications(response.data.data.notifications || []); setUnreadCount(response.data.data.unreadCount || 0); setNotificationError(''); }
     else setNotificationError(response.data?.message || 'Không thể tải thông báo VALO AI.');
-  }, [filter]);
+  }, [filter, userRole]);
   useEffect(() => { const onResize = () => setPosition((p) => clamp(p.x, p.y)); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, []);
   useEffect(() => {
+    if (userRole === 'admin') {
+      const timer = setTimeout(() => refresh(), 0);
+      return () => { clearTimeout(timer); notificationRequest.current += 1; };
+    }
     let active = true;
     getAINotifications(filter).then((response) => { if (active && response.ok) { setNotifications(response.data.data.notifications || []); setUnreadCount(response.data.data.unreadCount || 0); setNotificationError(''); if (filter === 'all' && !seenNotificationIds.current) seenNotificationIds.current = new Set((response.data.data.notifications || []).map((item) => String(item._id))); } else if (active) setNotificationError(response.data?.message || 'Không thể tải thông báo VALO AI.'); });
     return () => { active = false; };
-  }, [filter]);
+  }, [filter, refresh, userRole]);
   useEffect(() => {
     const timer = setInterval(async () => {
       const response = await getAINotifications('all');
@@ -104,22 +132,24 @@ export default function ValoAICopilot() {
   };
   const openNotice = async (id) => {
     setOpen(true); setTab('notifications'); setPreview(null);
+    const generation = ++detailRequest.current;
+    if (userRole === 'admin') { setSelected(null); setNotificationLoading(true); setNotificationError(''); }
     const response = await getAINotification(id);
-    if (response.ok) { setSelected(response.data.data); await markAINotificationRead(id); refresh(); }
+    if (userRole === 'admin') {
+      if (generation !== detailRequest.current) return;
+      setNotificationLoading(false);
+      if (!response.ok) { setNotificationError('Unable to open this notification. It may be unavailable. Please try again.'); return; }
+    }
+    if (response.ok) { setSelected(response.data.data); await markAINotificationRead(id); if (userRole !== 'admin' || generation === detailRequest.current) refresh(); }
   };
   const onNotificationClick = async (item) => {
-    let rawRoute = item.targetRoute;
-    if (rawRoute === '/admin/bookings' && item.entityType === 'booking' && item.entityId) {
-      rawRoute = `/admin/parking-lots?bookingId=${item.entityId}`;
-    }
-    let target = notificationTarget(rawRoute);
-    if (target && userRole === 'staff') {
-      target = target.replace(/^\/admin\//, '/staff/');
-    }
+    const target = notificationClickTarget(item, userRole);
     if (!target) return openNotice(item._id);
+    const generation = ++detailRequest.current;
     setPreview(null);
     try { await markAINotificationRead(item._id); }
     catch (error) { console.error('[VALO AI Notification] mark read:', error); }
+    if (userRole === 'admin' && generation !== detailRequest.current) return;
     refresh();
     setOpen(false);
     navigate(target);
@@ -129,14 +159,17 @@ export default function ValoAICopilot() {
     setInput(''); setMessages((rows) => [...rows, { role: 'user', message, at: Date.now() }]); setBusy(true); setOpen(true); setTab('chat');
     const response = await sendAIMessage(message, conversationId);
     if (response.ok) { setConversationId(response.data.data.conversationId); setMessages((rows) => [...rows, { role: 'ai', ...response.data.data, at: Date.now() }]); }
-    else setMessages((rows) => [...rows, { role: 'ai', type: 'error', message: response.data?.message || 'Không thể kết nối VALO AI.', at: Date.now() }]);
+    else setMessages((rows) => [...rows, { role: 'ai', type: 'error', message: userRole === 'admin' ? (response.status === 400 ? 'Enter a question between 1 and 2,000 characters.' : 'Unable to connect to VALO AI. Please try again.') : response.data?.message || 'Không thể kết nối VALO AI.', at: Date.now() }]);
     setBusy(false);
   };
   const decide = async (draft, approve) => {
     if (noticeBusy) return false; setNoticeBusy(true);
     const response = approve ? await approveAIDraft(draft.id) : await rejectAIDraft(draft.id);
     if (response.ok) setMessages((rows) => rows.map((row) => row.draft?.id === draft.id ? { ...row, draft: null } : row));
-    setMessages((rows) => [...rows, { role: 'ai', type: response.ok ? 'analysis' : 'error', message: response.ok ? (approve ? (draft.type === 'SEND_NOTIFICATION' ? 'Đã gửi thông báo.' : 'Đã áp dụng bản nháp.') : 'Đã từ chối bản nháp.') : response.data?.message || 'Không xử lý được bản nháp.', at: Date.now() }]);
+    const resultMessage = userRole === 'admin'
+      ? (response.ok ? (approve ? 'The proposed change was applied.' : 'The proposal was rejected.') : response.status === 409 ? 'This proposal is no longer pending or has expired. Request a new proposal.' : 'Unable to process the proposal. Check the proposed values and try again.')
+      : response.ok ? (approve ? (draft.type === 'SEND_NOTIFICATION' ? 'Đã gửi thông báo.' : 'Đã áp dụng bản nháp.') : 'Đã từ chối bản nháp.') : response.data?.message || 'Không xử lý được bản nháp.';
+    setMessages((rows) => [...rows, { role: 'ai', type: response.ok ? 'analysis' : 'error', message: resultMessage, at: Date.now() }]);
     if (response.ok) refresh(); setNoticeBusy(false);
     return response.ok;
   };
@@ -151,16 +184,19 @@ export default function ValoAICopilot() {
       if (selected?._id === id) setSelected(null);
       refresh();
     }
+    else if (userRole === 'admin') setNotificationError('Unable to dismiss this notification. Please try again.');
   };
 
-  return <ValoAICopilotView
+  const CopilotView = userRole === 'admin' ? AdminValoAICopilotView : ValoAICopilotView;
+  return <CopilotView
     position={position} open={open} setOpen={setOpen} tab={tab} setTab={setTab}
     messages={messages} busy={busy} noticeBusy={noticeBusy} input={input} setInput={setInput}
     submit={submit} decide={decide} notifications={notifications} unreadCount={unreadCount} notificationError={notificationError}
-    filter={filter} setFilter={setFilter} selected={selected} setSelected={setSelected}
+    filter={filter} setFilter={(value) => { if (userRole === 'admin') detailRequest.current += 1; setFilter(value); }} selected={selected} setSelected={setSelected}
     preview={preview} openNotice={openNotice} onNotificationClick={onNotificationClick} refresh={refresh} dismissNotice={dismissNotice}
     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
-    onTriggerClick={onTriggerClick} bottomRef={bottomRef} suggestions={suggestions} filters={filters}
+    onTriggerClick={onTriggerClick} bottomRef={bottomRef} suggestions={suggestions} filters={userRole === 'admin' ? adminFilters : filters}
+    notificationLoading={notificationLoading} hasMore={hasMore} loadMore={() => refresh(filter, notificationPage.current + 1, true)}
     dragging={dragging} userRole={userRole}
   />;
 }

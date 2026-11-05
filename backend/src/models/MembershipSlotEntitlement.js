@@ -83,6 +83,7 @@ const membershipSlotEntitlementSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    expiryNotificationPending: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

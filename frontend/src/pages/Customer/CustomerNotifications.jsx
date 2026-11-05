@@ -1,10 +1,12 @@
+import NotificationDropdownItem from '../../components/notifications/NotificationDropdownItem';
+import NotificationDetailModal from '../../components/notifications/NotificationDetailModal';
+import { useNotificationDetails } from '../../hooks/useNotificationDetails';
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Search, ChevronDown } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import NotificationItem from '../../components/notifications/NotificationItem';
 import { getSafeStaffDeepLink } from '../../utils/staffDeepLink';
-import { getSafeCustomerNotificationLink } from '../../utils/notificationLinks';
 
 const TYPE_FILTERS = [
   { value: '', label: 'All' },
@@ -30,8 +32,10 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
     markAllAsRead,
     deleteNotification,
     updateFilters,
+    refresh,
   } = useNotifications({ autoFetch: true, limit: 20, contextRole });
 
+  const { selectedNotification, openNotification, closeNotification } = useNotificationDetails(markAsRead);
   const [searchInput, setSearchInput] = useState('');
 
   const handleSearch = useCallback((e) => {
@@ -39,8 +43,34 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
     updateFilters({ search: searchInput });
   }, [searchInput, updateFilters]);
 
+  if (contextRole === 'customer') return (
+    <div className="customer-notifications-page">
+      <NotificationDetailModal notification={selectedNotification} onClose={closeNotification} />
+      <div className="customer-notifications-page__container">
+        <header className="customer-notifications-page__header">
+          <div><h1>Notifications</h1><p>{error ? 'Notifications unavailable' : unreadCount > 0 ? `${unreadCount} unread notifications` : 'You?re all caught up'}</p></div>
+          {unreadCount > 0 && <button type="button" onClick={markAllAsRead} className="customer-notifications-page__read-all"><CheckCheck size={16} aria-hidden="true" />Mark all as read</button>}
+        </header>
+        <section className="customer-notifications-page__list" aria-label="Your notifications">
+          <div className="customer-notifications-page__toolbar">
+            <div className="customer-notifications-page__filters" aria-label="Notification categories">{TYPE_FILTERS.map((f) => <button type="button" key={f.value} aria-pressed={(filters.type || '') === f.value} onClick={() => updateFilters({ type: f.value || null })}>{f.label}</button>)}</div>
+            <form onSubmit={handleSearch} className="customer-notifications-page__search" role="search">
+              <Search size={16} aria-hidden="true" /><input aria-label="Search notifications" placeholder="Search notifications?" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+            </form>
+          </div>
+          {error ? <div className="customer-notification-state" role="alert"><p>Unable to load notifications</p><p>{error}</p><button type="button" onClick={refresh}>Try again</button></div>
+            : loading && notifications.length === 0 ? <div className="customer-notification-state" role="status">Loading notifications?</div>
+              : notifications.length === 0 ? <div className="customer-notification-state" role="status"><Bell size={28} className="mx-auto mb-3" aria-hidden="true" /><p>No notifications</p><p>New notifications will appear here.</p></div>
+                : <>{notifications.map((n) => <NotificationDropdownItem key={n.notificationId || n._id} notification={n} onRead={markAsRead} onOpen={() => openNotification(n)} onDelete={deleteNotification} />)}
+                  {hasMore && <button type="button" onClick={fetchMore} disabled={loading} className="customer-notifications-page__more">{loading ? 'Loading earlier notifications?' : 'Load more'}</button>}</>}
+        </section>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#0D0D0D] text-gray-100 px-4 py-6 lg:px-8">
+      {contextRole === "customer" && <NotificationDetailModal notification={selectedNotification} onClose={closeNotification} />}
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -122,8 +152,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
                   onDelete={deleteNotification}
                   onClick={() => {
                     if (contextRole === 'customer') {
-                      const destination = getSafeCustomerNotificationLink(n);
-                      if (destination) navigate(destination);
+                      openNotification(n);
                     } else if (contextRole === 'staff') {
                       const destination = getSafeStaffDeepLink(n);
                       if (destination) navigate(destination);

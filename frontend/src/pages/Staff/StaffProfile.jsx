@@ -473,7 +473,7 @@ export default function StaffProfile() {
   return (
     <div
       className="relative h-full flex flex-col overflow-hidden"
-      style={{ backgroundColor: "#080808", fontFamily: "'Plus Jakarta Sans', 'Montserrat', sans-serif" }}
+      style={{ backgroundColor: "var(--staff-bg, #080808)", fontFamily: "'Plus Jakarta Sans', 'Montserrat', sans-serif" }}
     >
       {/* ── Cursor spotlight ── */}
       <div

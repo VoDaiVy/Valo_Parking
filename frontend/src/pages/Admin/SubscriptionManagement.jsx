@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
-  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Crown,
   Filter,
@@ -17,7 +18,16 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import './vipMemberships.css';
+import { vipDate, vipDaysUntil } from './vipMembershipDates.js';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import '../Staff/components/staffManagement.css';
+import '../Staff/components/staffSubscriptionsPagination.css';
+import { getPaginationPages } from '../Staff/sessionPagination.js';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import SubscriptionDeepLink from './SubscriptionDeepLink.jsx';
+import { createSubscriptionLookup, includeLinkedSubscription } from './subscriptionDeepLink.js';
 import {
   getOperationalValue,
   getOperationalViewState,
@@ -105,15 +115,21 @@ const getStoredRole = () => {
   }
 };
 
-function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300' }) {
+function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300', isAdmin }) {
+  if (isAdmin) return <div className="vip-metric">
+    <Icon size={18} className={`shrink-0 ${tone}`} aria-hidden="true" />
+    <div className="min-w-0 flex-1"><p className="text-xs font-bold text-blue-200/55">{label}</p>
+      <div className="mt-1.5 flex items-baseline gap-2"><p className="font-mono text-2xl font-black leading-none text-white">{value}</p><span className="truncate text-xs text-emerald-300" title={support}>{support}</span></div>
+    </div>
+  </div>;
   return (
-    <div className="flex min-w-0 items-center gap-4 px-5 py-4 md:border-l md:border-white/10 md:first:border-l-0">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white/[0.03] ${tone}`}>
+    <div className="g3-summary-item flex min-w-0 items-center gap-4 px-5 py-4 md:border-l md:border-white/10 md:first:border-l-0">
+      <div className={`g3-summary-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white/[0.03] ${tone}`}>
         <Icon size={18} />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-        <p className="mt-1 font-mono text-xl font-black text-white">{value}</p>
+        <p className="g3-metric-label text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
+        <p className="g3-metric-value admin-type-kpi mt-1 font-mono text-xl font-black text-white">{value}</p>
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{support}</p>
       </div>
     </div>
@@ -145,7 +161,7 @@ function SlotBadge({ slot }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-2 rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2 text-xs font-black text-yellow-300 transition group-hover:border-yellow-300/35">
+    <span className="g3-slot-badge inline-flex items-center gap-2 rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2 text-xs font-black text-yellow-300 transition group-hover:border-yellow-300/35">
       <ParkingCircle size={14} />
       <span className="text-slate-300">{slot.floorId?.name || 'Floor'}</span>
       <span className="text-yellow-300">{slot.slotCode}</span>
@@ -153,20 +169,33 @@ function SlotBadge({ slot }) {
   );
 }
 
-function MembershipRow({ sub, index }) {
-  const remaining = daysUntil(sub.expireAt);
+function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
+  const remaining = isAdmin ? vipDaysUntil(sub.expireAt) : daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
   const displayUser = getDisplayUser(sub);
   const vehicles = displayUser?.vehicles || [];
   const vehicleText = vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''} on file` : 'No vehicle on file';
 
+  if (isAdmin) return <tr ref={cardRef} data-package-type={packageType} className="admin-vip-row" onClick={() => onOpen(sub)}>
+    <td><button type="button" className="vip-open flex w-full items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onOpen(sub); }} aria-label={`View membership for ${displayUser?.username || 'Unknown User'}`}>
+      <span className="min-w-0"><span className="block truncate text-white" title={displayUser?.username}>{displayUser?.username || 'Unknown User'}</span><span className="vip-secondary block truncate" title={displayUser?.email}>{displayUser?.email || 'No email'}</span></span>
+    </button></td>
+    <td><p className="truncate text-white" title={sub.ticketPackage?.name}>{sub.ticketPackage?.name || 'Unknown Package'}</p>{packageType && <span className={`vip-type inline-flex rounded-full border px-2 py-0.5 ${getPackageClass(packageType)}`}>{titleCase(packageType)}</span>}</td>
+    <td><div className="flex flex-wrap gap-1">{sub.slots?.length ? sub.slots.map((slot) => <SlotBadge key={`${slot.floorId?._id || slot.floorId}-${slot.slotCode}`} slot={slot} />) : <SlotBadge />}</div></td>
+    <td><p className="text-[#e8d5ad]">{formatCurrency(sub.amount)}</p>{sub.paymentStatus && <p className="vip-secondary">{titleCase(sub.paymentStatus)}</p>}</td>
+    <td><p>{vipDate(sub.validFrom)} - {vipDate(sub.expireAt)}</p>{remaining !== null && remaining >= 0 && <p className="vip-secondary">{remaining === 0 ? 'Expires today' : `${remaining} days left`}</p>}</td>
+    <td><StatusBadge status={sub.status} /></td>
+    <td className="vip-vehicles"><div className="vip-vehicle-list">{vehicles.length ? vehicles.map((plate, index) => <span key={`${plate}-${index}`}>{plate}</span>) : <span>{vehicleText}</span>}</div></td>
+  </tr>;
+
   return (
     <article
-      className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#141a25] motion-reduce:transform-none motion-reduce:transition-none"
+      ref={cardRef}
+      className="g3-membership-row group relative overflow-hidden rounded-2xl border border-white/10 bg-[#10141d]/80 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#141a25] motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 35}ms` }}
     >
-      <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-yellow-300 to-amber-500 opacity-0 transition group-hover:opacity-80" />
-      <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px] md:items-center md:px-5">
+      <div className="g3-membership-edge absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-yellow-300 to-amber-500 opacity-0 transition group-hover:opacity-80" />
+      <div className="g3-membership-grid grid gap-4 px-4 py-4 md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px] md:items-center md:px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300">
@@ -188,7 +217,7 @@ function MembershipRow({ sub, index }) {
           <div className="text-right md:text-left">
             <p className="font-black text-slate-100">{sub.ticketPackage?.name || 'Unknown Package'}</p>
             {packageType && (
-              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getPackageClass(packageType)}`}>
+              <span className={`g3-package-badge mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getPackageClass(packageType)}`}>
                 {packageType}
               </span>
             )}
@@ -209,7 +238,7 @@ function MembershipRow({ sub, index }) {
         <div className="flex items-start justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Amount</span>
           <div className="text-right md:text-left">
-            <p className="font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
+            <p className="g3-membership-amount font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
             {sub.paymentStatus && <p className="mt-1 text-xs font-semibold text-slate-500">{titleCase(sub.paymentStatus)}</p>}
           </div>
         </div>
@@ -239,19 +268,7 @@ function MembershipRow({ sub, index }) {
 function TransferReviewSection({ transfers, onReview }) {
   const pendingTransfers = transfers.filter((item) => item.status === 'PENDING_ADMIN');
 
-  if (!pendingTransfers.length) {
-    return (
-      <section className="mb-6 flex flex-col gap-3 border-y border-white/10 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="font-black text-white">Transfer reviews</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">No membership transfers require review.</p>
-        </div>
-        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-300">
-          <CheckCircle2 size={14} /> 0 pending
-        </span>
-      </section>
-    );
-  }
+  if (!pendingTransfers.length) return null;
 
   return (
     <section className="mb-6 border-y border-amber-400/20 py-4">
@@ -305,6 +322,9 @@ function TransferReviewSection({ transfers, onReview }) {
 
 export default function SubscriptionManagement() {
   const isAdmin = useMemo(() => getStoredRole() === 'admin', []);
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const linkedId = isAdmin && location.pathname === '/admin/subscriptions' ? searchParams.get('subscriptionId') : null;
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState('');
@@ -314,6 +334,22 @@ export default function SubscriptionManagement() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [packageFilter, setPackageFilter] = useState('all');
   const [transfers, setTransfers] = useState([]);
+  const cardRef = useRef(null);
+  const requestGeneration = useRef(0);
+  const [linkedState, setLinkedState] = useState({ status: 'loading' });
+  const linkedKey = linkedId ? `${location.key}:${linkedId}` : null;
+  const lookup = useMemo(() => createSubscriptionLookup(() => apiFetch('/subscriptions/all', {
+    cache: 'no-store', headers: { Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}` },
+  }), (result) => {
+    setLinkedState({ ...result, key: linkedKey });
+    if (result.status !== 'loading') {
+      setSubscriptions(result.subscriptions || []);
+      setSubscriptionError(result.status === 'error' ? 'Unable to load subscriptions. Please try again.' : result.status === 'unavailable' ? 'Subscription data is unavailable for this account.' : '');
+    }
+  }), [linkedKey, setLinkedState, setSubscriptions, setSubscriptionError]);
+  const currentLinkedState = linkedState.key === linkedKey ? linkedState : { status: 'loading' };
+  const verifiedLinkedId = linkedId && currentLinkedState.status === 'ready' && !loading
+    ? currentLinkedState.subscription._id : null;
   const subscriptionState = getOperationalViewState({
     loading,
     error: subscriptionError,
@@ -323,7 +359,8 @@ export default function SubscriptionManagement() {
     error: isAdmin ? transferError : '',
   });
 
-  const fetchSubscriptions = async () => {
+  const fetchSubscriptions = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     try {
       setLoading(true);
       setSubscriptionError('');
@@ -331,7 +368,7 @@ export default function SubscriptionManagement() {
       setTransferLoading(isAdmin);
       const token = localStorage.getItem('accessToken');
 
-      const subscriptionRequest = apiFetch('/subscriptions/all', {
+      const subscriptionRequest = linkedId ? lookup.load(linkedId) : apiFetch('/subscriptions/all', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const transferRequest = isAdmin
@@ -343,12 +380,15 @@ export default function SubscriptionManagement() {
         subscriptionRequest,
         transferRequest,
       ]);
+      if (isAdmin && generation !== requestGeneration.current) return;
 
-      const subscriptionResponse = getResponseAvailability(
+      const subscriptionResponse = linkedId ? null : getResponseAvailability(
         res,
         'Failed to fetch subscriptions'
       );
-      if (subscriptionResponse.isAvailable) {
+      if (linkedId) {
+        // The shared list request was already verified and published by lookup.
+      } else if (subscriptionResponse.isAvailable) {
         setSubscriptions(subscriptionResponse.data || []);
       } else {
         setSubscriptions([]);
@@ -370,6 +410,7 @@ export default function SubscriptionManagement() {
         setTransfers([]);
       }
     } catch (err) {
+      if (isAdmin && generation !== requestGeneration.current) return;
       console.error(err);
       setSubscriptions([]);
       setSubscriptionError('An error occurred while fetching subscriptions');
@@ -378,10 +419,12 @@ export default function SubscriptionManagement() {
         setTransferError('Membership transfer reviews are unavailable.');
       }
     } finally {
-      setLoading(false);
-      setTransferLoading(false);
+      if (!isAdmin || generation === requestGeneration.current) {
+        setLoading(false);
+        setTransferLoading(false);
+      }
     }
-  };
+  }, [isAdmin, linkedId, lookup]);
 
   const reviewTransfer = async (transferId, approved) => {
     const token = localStorage.getItem('accessToken');
@@ -406,8 +449,11 @@ export default function SubscriptionManagement() {
 
   useEffect(() => {
     const timerId = window.setTimeout(fetchSubscriptions, 0);
-    return () => window.clearTimeout(timerId);
-  }, []);
+    return () => {
+      window.clearTimeout(timerId);
+      if (isAdmin) { requestGeneration.current += 1; lookup.cancel(); }
+    };
+  }, [fetchSubscriptions, isAdmin, lookup]);
 
   const statusOptions = useMemo(() => {
     const actualStatuses = subscriptions.map((sub) => sub.status).filter(Boolean);
@@ -443,13 +489,14 @@ export default function SubscriptionManagement() {
       return matchesStatus && matchesPackage && matchesSearch;
     });
   }, [subscriptions, searchTerm, statusFilter, packageFilter]);
+  const visibleSubscriptions = useMemo(() => includeLinkedSubscription(filteredSubscriptions, subscriptions, verifiedLinkedId), [filteredSubscriptions, subscriptions, verifiedLinkedId]);
 
   const pendingTransfers = transfers.filter((item) => item.status === 'PENDING_ADMIN');
 
   const summary = useMemo(() => {
     const active = subscriptions.filter((sub) => sub.status === 'active').length;
     const expiringSoon = subscriptions.filter((sub) => {
-      const remaining = daysUntil(sub.expireAt);
+      const remaining = isAdmin ? vipDaysUntil(sub.expireAt) : daysUntil(sub.expireAt);
       return sub.status === 'active' && remaining !== null && remaining >= 0 && remaining <= 30;
     }).length;
 
@@ -459,43 +506,76 @@ export default function SubscriptionManagement() {
       expiringSoon,
       pendingTransfers: pendingTransfers.length,
     };
-  }, [subscriptions, pendingTransfers.length]);
+  }, [subscriptions, pendingTransfers.length, isAdmin]);
+
+  const [staffPage, setStaffPage] = useState(1);
+  const staffRowsRef = useRef(null);
+  const staffTotalPages = Math.max(1, Math.ceil(filteredSubscriptions.length / 6));
+  const staffCurrentPage = Math.min(staffPage, staffTotalPages);
+  const staffVisibleSubscriptions = filteredSubscriptions.slice((staffCurrentPage - 1) * 6, staffCurrentPage * 6);
+  useEffect(() => {
+    if (isAdmin || staffPage <= staffTotalPages) return;
+    const timer = setTimeout(() => setStaffPage(staffTotalPages), 0);
+    return () => clearTimeout(timer);
+  }, [isAdmin, staffPage, staffTotalPages]);
+  useEffect(() => {
+    if (!isAdmin && staffRowsRef.current) staffRowsRef.current.scrollTop = 0;
+  }, [isAdmin, staffCurrentPage, searchTerm, statusFilter, packageFilter]);
+
+  const [adminPage, setAdminPage] = useState(null);
+  const [detailMembership, setDetailMembership] = useState(null);
+  const adminTotalPages = Math.max(1, Math.ceil(visibleSubscriptions.length / 10));
+  const linkedIndex = verifiedLinkedId ? visibleSubscriptions.findIndex((sub) => sub._id === verifiedLinkedId) : -1;
+  const adminCurrentPage = Math.min(adminPage ?? (linkedIndex >= 0 ? Math.floor(linkedIndex / 10) + 1 : 1), adminTotalPages);
+  const adminVisibleSubscriptions = visibleSubscriptions.slice((adminCurrentPage - 1) * 10, adminCurrentPage * 10);
+  const adminRowsRef = useRef(null);
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    const timer = setTimeout(() => setAdminPage(null), 0);
+    return () => clearTimeout(timer);
+  }, [isAdmin, linkedKey]);
+  useEffect(() => {
+    if (isAdmin && adminRowsRef.current) adminRowsRef.current.scrollTop = 0;
+  }, [isAdmin, adminCurrentPage, searchTerm, statusFilter, packageFilter]);
 
   const hasFilters = searchTerm || statusFilter !== 'all' || packageFilter !== 'all';
 
   return (
-    <div className="relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8">
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
-      <div className="relative mx-auto max-w-[1400px]">
-        <header className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
+    <div className={`g3-management-page g3-vip-page ${isAdmin ? 'admin-vip-memberships' : ''} relative min-h-[calc(100vh-70px)] overflow-auto bg-[#050505] px-4 py-6 text-white sm:px-6 md:px-8`}>
+      <div className="g3-vip-ambient pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-yellow-400/[0.06] blur-3xl" />
+      {isAdmin ? <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" /> : <div className="g3-vip-grid pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />}
+      <div className="g3-management-content g3-vip-main relative mx-auto max-w-[1400px]">
+        {linkedId && <SubscriptionDeepLink key={linkedKey} state={currentLinkedState} loading={loading} cardRef={cardRef}/>}
+        <header className="g3-header mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-              <Crown size={12} /> VIP Subscriptions
-            </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">VIP Memberships</h1>
-            <p className="mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
+            {isAdmin ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-3xl font-black tracking-tight text-white">VIP Memberships</h1>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Crown size={12} /> VIP Subscriptions</div>
+            </div> : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">VIP Memberships</h1>}
+            <p className="g3-subtitle mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
           </div>
 
           <button
             type="button"
             onClick={fetchSubscriptions}
             disabled={loading || transferLoading}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
+            className="g3-action g3-header-action inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
           >
             <RefreshCw className={`h-4 w-4 ${loading || transferLoading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </header>
 
-        <section className={`mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+        <section className={`g3-metrics-strip g3-vip-metrics mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
           <SummaryItem
+            isAdmin={isAdmin}
             icon={Crown}
             label="Total VIP"
             value={getOperationalValue(subscriptionState, summary.total.toLocaleString('vi-VN'))}
             support={subscriptionState.isAvailable ? 'Loaded memberships' : 'Data unavailable'}
           />
           <SummaryItem
+            isAdmin={isAdmin}
             icon={ShieldCheck}
             label="Active"
             value={getOperationalValue(subscriptionState, summary.active.toLocaleString('vi-VN'))}
@@ -503,6 +583,7 @@ export default function SubscriptionManagement() {
             tone="text-emerald-300"
           />
           <SummaryItem
+            isAdmin={isAdmin}
             icon={Clock3}
             label="Expiring Soon"
             value={getOperationalValue(subscriptionState, summary.expiringSoon.toLocaleString('vi-VN'))}
@@ -511,6 +592,7 @@ export default function SubscriptionManagement() {
           />
           {isAdmin && (
             <SummaryItem
+            isAdmin={isAdmin}
               icon={TimerReset}
               label="Transfers"
               value={getOperationalValue(transferState, summary.pendingTransfers.toLocaleString('vi-VN'))}
@@ -520,20 +602,20 @@ export default function SubscriptionManagement() {
           )}
         </section>
 
-        <section className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
+        <section className="g3-toolbar mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="g3-search relative flex-1">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
               placeholder="Search by customer name, email, or vehicle..."
               className="h-12 w-full rounded-xl border border-white/10 bg-black/70 pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-[#ffd555]/60 focus:ring-2 focus:ring-[#ffd555]/10"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
             />
             {searchTerm && (
               <button
                 type="button"
-                onClick={() => setSearchTerm('')}
+                onClick={() => { setSearchTerm(''); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
                 aria-label="Clear membership search"
                 className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
               >
@@ -544,7 +626,7 @@ export default function SubscriptionManagement() {
 
           <AdminSelect
             value={statusFilter}
-            onChange={setStatusFilter}
+            onChange={(value) => { setStatusFilter(value); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
             options={[
               { value: 'all', label: 'All Statuses' },
               ...statusOptions.map((status) => ({ value: status, label: titleCase(status) })),
@@ -557,7 +639,7 @@ export default function SubscriptionManagement() {
           {packageOptions.length > 0 && (
             <AdminSelect
               value={packageFilter}
-              onChange={setPackageFilter}
+              onChange={(value) => { setPackageFilter(value); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
               options={[
                 { value: 'all', label: 'All packages' },
                 ...packageOptions.map((type) => ({ value: type, label: titleCase(type) })),
@@ -605,16 +687,17 @@ export default function SubscriptionManagement() {
           <TransferReviewSection transfers={transfers} onReview={reviewTransfer} />
         )}
 
-        <section>
-          <div className="hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
+        <section className="g3-membership-list">
+          {!isAdmin && <div className="g3-membership-columns hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
             <span>Customer</span>
             <span>Package</span>
             <span>VIP Slot</span>
             <span>Amount</span>
             <span>Period</span>
             <span>Status</span>
-          </div>
+          </div>}
 
+          <div className={isAdmin ? 'admin-vip-scroll' : 'staff-membership-scroll'} ref={isAdmin ? adminRowsRef : staffRowsRef} tabIndex={isAdmin ? 0 : undefined} role={isAdmin ? 'region' : undefined} aria-label={isAdmin ? 'VIP membership list' : undefined}>
           {loading ? (
             <LoadingRows />
           ) : subscriptionError ? (
@@ -623,7 +706,7 @@ export default function SubscriptionManagement() {
               <h2 className="mt-3 text-lg font-black text-red-200">Subscription data unavailable</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{subscriptionError}</p>
             </div>
-          ) : filteredSubscriptions.length === 0 ? (
+          ) : visibleSubscriptions.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-10 text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">
                 <Crown size={22} />
@@ -639,21 +722,66 @@ export default function SubscriptionManagement() {
                     setSearchTerm('');
                     setStatusFilter('all');
                     setPackageFilter('all');
+                    if (!isAdmin) setStaffPage(1); else setAdminPage(1);
                   }}
-                  className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
+                  className="g3-action mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
                 >
                   Clear filters
                 </button>
               )}
             </div>
           ) : (
-            <div className="space-y-2">
-              {filteredSubscriptions.map((sub, index) => (
-                <MembershipRow key={sub._id} sub={sub} index={index} />
+            isAdmin ? <table className="admin-vip-table">
+              <thead><tr>{['Customer', 'Package', 'VIP Slot', 'Amount', 'Period', 'Status', 'Vehicles'].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+              <tbody>{adminVisibleSubscriptions.map((sub, index) => <MembershipRow key={sub._id} sub={sub} index={index} isAdmin onOpen={setDetailMembership} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />)}</tbody>
+            </table> : <div className="g3-membership-rows space-y-2">
+              {(isAdmin ? visibleSubscriptions : staffVisibleSubscriptions).map((sub, index) => (
+                <MembershipRow key={sub._id} sub={sub} index={index} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />
               ))}
             </div>
           )}
+          </div>
         </section>
+        {isAdmin && <nav className="admin-vip-pagination flex items-center justify-between border-t border-white/[0.05] bg-[#080808] flex-shrink-0" aria-label="VIP membership pages">
+          <span className="text-xs text-white/30">{loading || subscriptionError ? 'Membership results unavailable' : `Page ${adminCurrentPage} of ${adminTotalPages} \u00b7 ${visibleSubscriptions.length} results`}</span>
+          <div className="flex items-center gap-1">
+            <button type="button" aria-label="Previous membership page" className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === 1} onClick={() => setAdminPage(adminCurrentPage - 1)}>&larr; Prev</button>
+            {getPaginationPages(adminCurrentPage, adminTotalPages).map((page) => typeof page === 'number' ? <button key={page} type="button" className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${page === adminCurrentPage ? 'bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`} aria-current={page === adminCurrentPage ? 'page' : undefined} disabled={loading || Boolean(subscriptionError)} onClick={() => setAdminPage(page)}>{page}</button> : <span key={page} aria-hidden="true">...</span>)}
+            <button type="button" aria-label="Next membership page" className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === adminTotalPages} onClick={() => setAdminPage(adminCurrentPage + 1)}>Next &rarr;</button>
+          </div>
+        </nav>}
+        {isAdmin && detailMembership && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[60]">
+          <div className="fixed inset-0 bg-black/60" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <DialogPanel className="max-h-[85dvh] w-full max-w-xl overflow-auto rounded-2xl border border-white/10 bg-[#171717] p-7 text-white">
+              <div className="mb-5 flex items-center justify-between gap-3"><DialogTitle className="text-xl font-bold">Membership details</DialogTitle><button type="button" onClick={() => setDetailMembership(null)} aria-label="Close membership details"><X size={18} /></button></div>
+              <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                {[
+                  ['Customer', getDisplayUser(detailMembership)?.username || 'Unknown User'],
+                  ['Email', getDisplayUser(detailMembership)?.email || 'No email'],
+                  ['Package', detailMembership.ticketPackage?.name || 'Unknown Package'],
+                  ['VIP Slots', detailMembership.slots?.map((slot) => `${slot.floorId?.name || 'Floor'} ${slot.slotCode}`).join(', ') || 'Not assigned'],
+                  ['Amount', formatCurrency(detailMembership.amount)],
+                  ['Payment', titleCase(detailMembership.paymentStatus)],
+                  ['Valid from', vipDate(detailMembership.validFrom)],
+                  ['Expires (Vietnam)', vipDate(detailMembership.expireAt)],
+                  ['Status', titleCase(detailMembership.status)],
+                  ['Vehicles', getDisplayUser(detailMembership)?.vehicles?.join(', ') || 'No vehicle on file'],
+                ].map(([label, value]) => <div key={label}><dt className="text-slate-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
+              </dl>
+            </DialogPanel>
+          </div>
+        </Dialog>}
+        {!isAdmin && <nav className="staff-membership-pagination g3-pagination" aria-label="Membership pages">
+          <span>{loading || subscriptionError ? 'Membership results unavailable' : `Page ${staffCurrentPage} of ${staffTotalPages} \u00b7 ${filteredSubscriptions.length} results`}</span>
+          <div className="staff-membership-page-controls">
+            <button type="button" data-nav="prev" disabled={loading || Boolean(subscriptionError) || staffCurrentPage === 1} onClick={() => setStaffPage(staffCurrentPage - 1)}><ChevronLeft size={15} aria-hidden="true" />Prev</button>
+            {!loading && !subscriptionError && getPaginationPages(staffCurrentPage, staffTotalPages).map(page => typeof page === 'number'
+              ? <button type="button" key={page} aria-current={page === staffCurrentPage ? 'page' : undefined} onClick={() => setStaffPage(page)}>{page}</button>
+              : <span key={page} aria-hidden="true">...</span>)}
+            <button type="button" data-nav="next" disabled={loading || Boolean(subscriptionError) || staffCurrentPage === staffTotalPages} onClick={() => setStaffPage(staffCurrentPage + 1)}>Next<ChevronRight size={15} aria-hidden="true" /></button>
+          </div>
+        </nav>}
       </div>
     </div>
   );
