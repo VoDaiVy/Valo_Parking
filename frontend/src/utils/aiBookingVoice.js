@@ -80,7 +80,7 @@ const vietnameseVoiceScore = (value, contextPhrases = []) => {
   const folded = foldVoiceText(normalized);
   const terms = folded.match(vietnameseParkingTerms)?.length || 0;
   const intentPhrase = /\b(?:toi|minh|cho toi|giup toi)\b.*\b(?:dat|do|kiem tra|xem|huy|sua|doi)\b/.test(folded);
-  const structured = /\b(?:\d{1,2}(?::\d{2}|h\d{0,2})?|hom nay|ngay mai|thu (?:hai|ba|tu|nam|sau|bay)|chu nhat)\b/.test(folded);
+  const structured = /\b(?:\d{1,2}(?::\d{2}|h\d{0,2}|\s+gio(?:\s+(?:ruoi|\d{1,2}\s+phut))?)?|(?:mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)(?:\s+(?:mot|hai))?\s+gio|hom nay|ngay mai|thu (?:hai|ba|tu|nam|sau|bay)|chu nhat)\b/.test(folded);
   const plate = /\b[1-9]\d\s*[a-z]{1,2}\s*\d{4,5}\b/i.test(folded) || /\bbien so\b/.test(folded);
   return terms * 12 + (intentPhrase ? 30 : 0) + (structured ? 14 : 0) + (plate ? 24 : 0)
     + contextualVoiceScore(normalized, contextPhrases);

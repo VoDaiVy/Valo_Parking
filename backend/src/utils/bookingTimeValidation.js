@@ -1,4 +1,5 @@
 const MIN_BOOKING_MINUTES = 30;
+const { BOOKING_TIME_STEP_MINUTES, isBookingStepAligned } = require('./bookingTimePolicy');
 const VIP_SUGGESTION_DAYS = 7;
 const MAX_BOOKING_DAYS = 90;
 const MAX_BOOKING_MINUTES = MAX_BOOKING_DAYS * 24 * 60;
@@ -26,6 +27,12 @@ function validateBookingTimeRange(startTime, endTime, {
   }
   if (requireFuture && start <= reference) {
     throw bookingTimeError('Ngày hoặc giờ bắt đầu đã qua. Vui lòng chọn thời gian trong tương lai.', 'PAST_BOOKING_TIME');
+  }
+  if (!isBookingStepAligned(start) || !isBookingStepAligned(end)) {
+    throw bookingTimeError(
+      `Giờ booking phải theo mốc ${BOOKING_TIME_STEP_MINUTES} phút (00, 15, 30 hoặc 45).`,
+      'BOOKING_TIME_NOT_ALIGNED',
+    );
   }
 
   const durationMinutes = (end.getTime() - start.getTime()) / 60000;

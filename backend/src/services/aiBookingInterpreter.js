@@ -3,6 +3,7 @@ const { parseBookingUtterance, specialBookingRequest } = require('./bookingUtter
 const { detectBookingLanguage } = require('./aiBookingLanguage');
 const { toEnglishBookingMessage } = require('./aiBookingReplyLanguage');
 const { isValidCarLicensePlate } = require('../utils/licensePlateUtils');
+const { BOOKING_TIME_STEP_MINUTES } = require('../utils/bookingTimePolicy');
 
 const INTENTS = new Set([
   'CREATE_BOOKING', 'CHECK_AVAILABILITY', 'CANCEL_BOOKING',
@@ -27,6 +28,51 @@ const validDate = (value) => {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 };
 const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+const addCalendarDays = (dateValue, count) => {
+  if (!validDate(dateValue) || !Number.isInteger(count) || count === 0) return dateValue;
+  const date = new Date(`${dateValue}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + count);
+  return date.toISOString().slice(0, 10);
+};
+
+const alignClockToBookingStep = (value) => {
+  if (!validTime(value)) return { time: value, dayOffset: 0 };
+  const [hour, minute] = value.split(':').map(Number);
+  const total = hour * 60 + minute;
+  const rounded = Math.ceil(total / BOOKING_TIME_STEP_MINUTES) * BOOKING_TIME_STEP_MINUTES;
+  const minuteOfDay = rounded % (24 * 60);
+  return {
+    time: `${String(Math.floor(minuteOfDay / 60)).padStart(2, '0')}:${String(minuteOfDay % 60).padStart(2, '0')}`,
+    dayOffset: Math.floor(rounded / (24 * 60)),
+  };
+};
+
+function alignBookingTimeFields(source = {}, previous = {}) {
+  const changes = { ...source };
+  for (const [timeField, dateField] of [['startTime', 'startDate'], ['endTime', 'endDate']]) {
+    if (!validTime(changes[timeField])) continue;
+    const aligned = alignClockToBookingStep(changes[timeField]);
+    changes[timeField] = aligned.time;
+    if (aligned.dayOffset) {
+      const baseDate = changes[dateField] || previous[dateField]
+        || changes.startDate || previous.startDate;
+      if (validDate(baseDate)) changes[dateField] = addCalendarDays(baseDate, aligned.dayOffset);
+    }
+  }
+  return changes;
+}
+
+function alignParsedBookingTimes(parsed, previous = {}) {
+  if (!parsed?.changes) return parsed;
+  const changes = alignBookingTimeFields(parsed.changes, previous);
+  if (Array.isArray(changes.reservationItems)) {
+    const previousItems = Array.isArray(previous.reservationItems) ? previous.reservationItems : [];
+    changes.reservationItems = changes.reservationItems.map((item, index) => (
+      alignBookingTimeFields(item, previousItems[index] || previous)
+    ));
+  }
+  return { ...parsed, changes };
+}
 
 function normalizeReservationItems(incoming, previous = []) {
   if (!Array.isArray(incoming) && !Array.isArray(previous)) return [];
@@ -212,6 +258,10 @@ function normalizeInterpretation(raw, previous = {}) {
   if (canInherit && previous.assistantContext && typeof previous.assistantContext === 'object') {
     draft.assistantContext = previous.assistantContext;
   }
+  if (canInherit && ['startDate', 'endDate', 'startTime', 'endTime', 'licensePlate']
+    .includes(previous.__awaitingField)) {
+    draft.__awaitingField = previous.__awaitingField;
+  }
   return { intent, draft };
 }
 
@@ -228,7 +278,10 @@ function parseModelJson(text) {
 }
 
 function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime = '', language) {
-  const parsed = parseBookingUtterance(prompt, today, previous, currentTime, language);
+  const parsed = alignParsedBookingTimes(
+    parseBookingUtterance(prompt, today, previous, currentTime, language),
+    previous,
+  );
   if (!parsed) return null;
   const result = normalizeInterpretation({ intent: 'CREATE_BOOKING', ...parsed.changes }, previous);
   if (parsed.clarification) result.clarification = parsed.clarification;
@@ -281,7 +334,18 @@ function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime =
   if (!result.clarification && result.draft.startTime && result.draft.endTime
     && result.draft.endTime <= result.draft.startTime
     && !(result.draft.endDate > result.draft.startDate)) {
-    result.clarification = 'Giờ ra cần sau giờ vào trong cùng ngày. Bạn muốn đổi lại khoảng giờ nào?';
+    result.clarification = `Giờ kết thúc ${result.draft.endTime} cùng ngày sớm hơn giờ bắt đầu ${result.draft.startTime}. Bạn hãy nói rõ ngày và giờ kết thúc.`;
+    // Do not show an impossible endpoint in the preview. Revert to a prior
+    // valid departure when one exists; otherwise keep the field empty.
+    const priorEndDate = validDate(previous.endDate) ? previous.endDate : result.draft.startDate;
+    const priorEnd = validTime(previous.endTime)
+      ? new Date(`${priorEndDate}T${previous.endTime}:00+07:00`) : null;
+    const currentStart = new Date(`${result.draft.startDate}T${result.draft.startTime}:00+07:00`);
+    const canRestorePriorEnd = priorEnd && !Number.isNaN(priorEnd.getTime())
+      && !Number.isNaN(currentStart.getTime()) && priorEnd > currentStart;
+    result.draft.endTime = canRestorePriorEnd ? previous.endTime : '';
+    result.draft.endDate = canRestorePriorEnd ? priorEndDate : result.draft.startDate;
+    result.draft.__awaitingField = 'endTime';
   }
   return result;
 }
@@ -388,7 +452,9 @@ New customer message: ${JSON.stringify(userText)}`;
     throw Object.assign(new Error('Dịch vụ AI tạm thời không khả dụng. Vui lòng thử lại sau.'), { statusCode: 502 });
   }
   try {
-    return withLanguage(normalizeInterpretation(parseModelJson(responseText), draft));
+    const modelResult = parseModelJson(responseText);
+    const alignedModelResult = alignParsedBookingTimes({ changes: modelResult }, draft).changes;
+    return withLanguage(normalizeInterpretation(alignedModelResult, draft));
   } catch {
     throw Object.assign(new Error('AI chưa xử lý được yêu cầu. Vui lòng thử lại.'), { statusCode: 502 });
   }

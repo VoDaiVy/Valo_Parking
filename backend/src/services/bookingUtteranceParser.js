@@ -1,6 +1,7 @@
 const simplify = (value) => String(value || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 const { detectBookingLanguage } = require('./aiBookingLanguage');
+const { BOOKING_TIME_STEP_MINUTES } = require('../utils/bookingTimePolicy');
 const manualOnlyPattern = /\b(sac|vip|gan|khu|zone|cong|loi ra|uu tien|co mai|ngoai troi)\b/;
 const supportedLocationCodePattern = /\b(?:zone|khu(?:\s+vuc)?)\s*([a-z]+\d+)\b/;
 const withoutSupportedLocationCode = (message) => message.replace(supportedLocationCodePattern, ' ');
@@ -535,7 +536,9 @@ function parseHour(hourText, minuteText, period) {
 }
 
 function extractTimes(message) {
-  const compact = message.match(/\b(\d{1,2})\s*(?:-|den)\s*(\d{1,2})\s*(?:h|gio)(?:\s*(sang|chieu|toi|trua))?\b/);
+  // Do not treat the minute portion in "19 giờ 22 đến 20 giờ 22" as the
+  // beginning of a compact "22 đến 20 giờ" range.
+  const compact = message.match(/(?<!gio )\b(\d{1,2})\s*(?:-|den)\s*(\d{1,2})\s*(?:h|gio)(?:\s*(sang|chieu|toi|trua))?\b/);
   if (compact) return [
     { hour: compact[1], minute: '', period: compact[3] || '' },
     { hour: compact[2], minute: '', period: compact[3] || '' },
@@ -1044,6 +1047,9 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   let message = simplify(markedPrompt.replace(/\btôi\b/giu, 'nguoi_dung').replace(/\btới\b/giu, 'đến').replace(/\b(?:ngày\s+)?mốt\b/giu, 'ngaykia'))
     .replace(/\bngaykia\b/g, 'ngay kia')
     .replace(/\bngay(?=\d)/g, 'ngay ')
+    // Protect this idiom before converting Vietnamese number words. Once the
+    // accents are folded, "bây giờ" and "bảy giờ" are both "bay gio".
+    .replace(/\b(?:ngay\s+)?bay\s+gio\b/g, 'luc_hien_tai')
     .replace(/\btoi\s+(?=muon|xin|can|se|dat|co)\b/g, 'nguoi_dung ')
     .replace(/(\d{1,2}\s*(?:h|gio|:\d{2})?)\s+toi\s+(?=\d{1,2})/g, '$1 den ')
     .replace(/\b(muoi mot|muoi hai|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\s+(gio|tieng)\b/g,
@@ -1082,6 +1088,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     .replace(/\bcuoi\s+tuan\s+sau\b/g, addDays(upcomingWeekday(today, 6, true), 7))
     .replace(/\bthangtieptheo\b/g, nextMonth);
   const continuing = previous.__intent === 'CREATE_BOOKING';
+  const awaitingField = String(previous.__awaitingField || '');
   const contextualSlotCode = extractContextualSlotCode(message, continuing);
   if (/\b(?:vai\s+ngay\s+nua|luc\s+nao\s+do|khi\s+nao\s+do)\b/.test(message)) {
     return { changes: {}, clearDates: true, clarification: 'Bạn muốn chính xác ngày nào?' };
@@ -1093,7 +1100,10 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const periodAnswer = message.replace(/[.!?]+$/, '').trim()
     .match(/^(?:(?:nguoi_dung\s+)?(?:muon|can)?\s*(?:dat(?: cho)?\s+)?(?:vao\s+)?|(?:doi|chuyen)\s+sang\s+)?(?:buoi\s+)?(sang|chieu|toi|trua)(?:\s+(?:nhe|nha))?$/);
   if (continuing && periodAnswer) {
-    if (!previous.pendingStartTime && !previous.startTime) {
+    if (awaitingField === 'endTime' && !previous.pendingEndTime) {
+      return { changes: {}, clarification: `Bạn muốn kết thúc lúc mấy giờ buổi ${periodAnswer[1]}?` };
+    }
+    if (!previous.pendingStartTime) {
       return { changes: {}, clarification: `Bạn muốn đỗ từ mấy giờ đến mấy giờ vào buổi ${periodAnswer[1]}?` };
     }
     const convert = (value) => {
@@ -1202,6 +1212,12 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   }
   let startDate = dates[0] || '';
   let endDate = dates[1] || (dateTokens[0] === 'cuoi tuan' ? addDays(startDate, 1) : startDate);
+  // A date supplied while answering the departure question belongs to the end
+  // endpoint. Do not silently move the already selected arrival date.
+  if (continuing && awaitingField === 'endTime' && dates.length === 1 && previous.startDate) {
+    endDate = dates[0];
+    startDate = '';
+  }
   if (weekendRangeRequested && startDate && !dates[1]) endDate = addDays(startDate, 1);
   if (startDate && endDate < startDate) return null;
   const withoutDates = message
@@ -1212,24 +1228,33 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     || withoutDates.match(/\bsau\s+(\d{1,3})\s*(phut|gio|tieng)\b/)
     || withoutDates.match(/\b(?:sau\s+|trong\s+)?(nua)\s*(gio|tieng)\s+nua\b/);
   let relativeStartTime = '';
-  if (relativeDelayMatch) {
+  const immediateStartRequested = /\bluc_hien_tai\b/.test(withoutDates);
+  if (relativeDelayMatch || immediateStartRequested) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(currentTime)) {
       return { changes: {}, clarification: 'Mình chưa xác định được giờ hiện tại. Bạn vui lòng nói giờ vào cụ thể.' };
     }
-    const delayMinutes = relativeDelayMatch[1] === 'nua'
+    const delayMinutes = immediateStartRequested ? 0 : relativeDelayMatch[1] === 'nua'
       ? 30 : Number(relativeDelayMatch[1]) * (relativeDelayMatch[2] === 'phut' ? 1 : 60);
-    if (!Number.isInteger(delayMinutes) || delayMinutes < 1 || delayMinutes > 24 * 60) {
+    if (!Number.isInteger(delayMinutes) || (!immediateStartRequested && delayMinutes < 1)
+      || delayMinutes > 24 * 60) {
       return { changes: {}, clarification: 'Thời điểm bắt đầu chưa hợp lệ. Bạn vui lòng nói giờ vào cụ thể.' };
     }
     const [currentHour, currentMinute] = currentTime.split(':').map(Number);
-    const targetMinutes = currentHour * 60 + currentMinute + delayMinutes;
+    const currentMinutes = currentHour * 60 + currentMinute;
+    // Booking validation requires a future instant. Use the same quarter-hour
+    // grid as the regular booking form so request latency cannot make it stale.
+    const targetMinutes = immediateStartRequested
+      ? Math.ceil((currentMinutes + 1) / BOOKING_TIME_STEP_MINUTES) * BOOKING_TIME_STEP_MINUTES
+      : Math.ceil((currentMinutes + delayMinutes) / BOOKING_TIME_STEP_MINUTES)
+        * BOOKING_TIME_STEP_MINUTES;
     const dayOffset = Math.floor(targetMinutes / (24 * 60));
     startDate = addDays(today, dayOffset);
     endDate = startDate;
     const minuteOfDay = targetMinutes % (24 * 60);
     relativeStartTime = `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`;
   }
-  const timeSource = relativeDelayMatch ? withoutDates.replace(relativeDelayMatch[0], '') : withoutDates;
+  const timeSource = (relativeDelayMatch ? withoutDates.replace(relativeDelayMatch[0], '') : withoutDates)
+    .replace(/\bluc_hien_tai\b/g, '');
   const durationMatch = timeSource.match(/\b(?:trong|suot|keo dai)\s*(\d+)\s*(ngay|tuan|gio|tieng|phut)(?:\s*(ruoi))?\b/)
     || timeSource.match(/\b(\d+)\s*(ngay|tuan|gio|tieng|phut)(?:\s*(ruoi))?\s+(?:tu(?:\s+luc)?|bat dau(?:\s+tu|\s+luc)?)\b/)
     || timeSource.match(/\b(?:dat|giu(?:\s+cho)?|do(?:\s+xe)?|de\s+xe)\s+(?:lien\s+tuc\s+)?(\d+)\s*(ngay|tuan|tieng)(?:\s*(ruoi))?\b/)
@@ -1269,7 +1294,9 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const slotCode = contextualSlotCode || slotMatch?.[1].toUpperCase() || '';
   const mentionedPlate = /\b(bien so|bien|xe\s+[0-9]{2}[a-z0-9.-]+)\b/.test(message);
   const mentionedFloor = /\b(tang|floor)\b/.test(message);
-  const mentionedSlot = /\b(o do|bai(?: do)?|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message);
+  // A generic mention of the parking lot ("tới bãi") is not a request for
+  // a particular optional space. Only explicit space/slot language may clarify.
+  const mentionedSlot = /\b(o do|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message);
 
   if (!startDate && !times.length && !durationMatch && !licensePlate && !requestedVehicleCount
     && !vehicleType && !floorName && !zoneName && !slotCode && !createCue && !mentionedPlate) return null;
@@ -1293,6 +1320,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     }
   } else if (times.length === 1) {
     const isEnd = /\b(gio ra|ket thuc|den luc|den\s+\d)/.test(message)
+      || awaitingField === 'endTime'
       || (continuing && previous.startTime && !previous.endTime);
     changes[isEnd ? 'endTime' : 'startTime'] = parsedTimes[0];
     if (durationMatch && !isEnd) {

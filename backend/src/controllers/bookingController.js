@@ -577,11 +577,16 @@ const findOwnedBooking = (bookingId, user) => {
 
 exports.getAvailableSlots = async (req, res, next) => {
   try {
-    const { startTime, endTime, bookingSource } = req.query;
+    const { startTime, endTime } = req.query;
     const { start, end } = validateBookingTimeRange(startTime, endTime);
     const slots = await getAvailableSlotsForRange(start, end, req.user?._id, {
-      allowExpectedSessionCheckout: bookingSource === 'AI_QUICK',
-      includeOwnedDedicatedSlots: bookingSource === 'AI_QUICK',
+      // Regular and AI booking must see identical inventory. A currently
+      // occupied slot may be offered only after a reliable expected checkout.
+      allowExpectedSessionCheckout: true,
+      // VIP spaces are package entitlements, not hourly-booking inventory.
+      // Including them here made AI quotes waive the parking component and
+      // display only the selected service price.
+      includeOwnedDedicatedSlots: false,
     });
 
     res.status(200).json({
@@ -2063,11 +2068,8 @@ exports.createBookingHold = async (req, res, next) => {
       status: 'active'
     });
 
-    const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
-    const slotExpectedCheckout = isAiQuickRequest && slotOccupied
-      ? expectedSessionCheckout(slotOccupied, now)
-      : null;
-    if (slotOccupied && (!isAiQuickRequest || !slotExpectedCheckout || slotExpectedCheckout > start)) {
+    const slotExpectedCheckout = slotOccupied ? expectedSessionCheckout(slotOccupied, now) : null;
+    if (slotOccupied && (!slotExpectedCheckout || slotExpectedCheckout > start)) {
       return res.status(400).json({ success: false, message: 'This slot is currently occupied by another vehicle' });
     }
 
@@ -2334,10 +2336,16 @@ exports.quoteBulkBooking = async (req, res, next) => {
       if (subscriptionInfo && subscriptionInfo.ownerId.toString() !== userId.toString()) {
         throw new Error(`Ô đỗ ${parkingSlot} thuộc gói thuê cố định.`);
       }
+      if (isAiQuickRequest && subscriptionInfo) {
+        throw Object.assign(
+          new Error(`Ô ${parkingSlot} là ô VIP riêng của bạn. Hãy dùng trực tiếp ô VIP, hoặc chọn ô thường khác để đặt theo giờ.`),
+          { code: 'VIP_SLOT_HOURLY_BOOKING_NOT_REQUIRED' }
+        );
+      }
 
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
-      if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+      if (!isAiQuickRequest && subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
       const adjustedParkingTotal = pricing.finalTotal;
@@ -2585,6 +2593,12 @@ exports.createBulkBooking = async (req, res, next) => {
       if (subscriptionInfo && subscriptionInfo.ownerId.toString() !== userId.toString()) {
         throw new Error(`Ô đỗ ${parkingSlot} thuộc gói thuê cố định.`);
       }
+      if (isAiQuickRequest && subscriptionInfo) {
+        throw Object.assign(
+          new Error(`Ô ${parkingSlot} là ô VIP riêng của bạn. Hãy dùng trực tiếp ô VIP, hoặc chọn ô thường khác để đặt theo giờ.`),
+          { code: 'VIP_SLOT_HOURLY_BOOKING_NOT_REQUIRED', statusCode: 400 }
+        );
+      }
 
       // Verify BookingHold to prevent stealing slots
       if (!holdId) {
@@ -2608,7 +2622,7 @@ exports.createBulkBooking = async (req, res, next) => {
 
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
-      if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+      if (!isAiQuickRequest && subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
       const adjustedParkingTotal = pricing.finalTotal;

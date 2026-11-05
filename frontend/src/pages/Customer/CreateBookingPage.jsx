@@ -54,6 +54,11 @@ import {
 import { findRequestedService } from '../../utils/bookingNavigation';
 import { getVipBookingSelection } from '../../utils/vipBookingPolicy';
 import { getMyVouchers } from '../../services/loyaltyService';
+import {
+  BOOKING_TIME_STEP_MINUTES,
+  MIN_BOOKING_DURATION_MINUTES,
+  roundUpToBookingStep,
+} from '../../utils/bookingTimePolicy';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('en-US')} VND`;
 
@@ -77,7 +82,7 @@ const getLocalTimeString = () => {
 
 const getMinEndTimeStr = (startStr) => {
   let [h, m] = startStr.split(':').map(Number);
-  m += 30;
+  m += MIN_BOOKING_DURATION_MINUTES;
   if (m >= 60) {
     h += 1;
     m -= 60;
@@ -87,20 +92,11 @@ const getMinEndTimeStr = (startStr) => {
 };
 
 const getInitialTimeRange = () => {
-  const start = new Date();
-  
-  // Round up to the next 15-minute block (example: 9:07 -> 9:15)
-  const minutes = start.getMinutes();
-  const remainder = minutes % 15;
-  const hasPartialMinute = start.getSeconds() > 0 || start.getMilliseconds() > 0;
-  const addMinutes = remainder === 0 ? (hasPartialMinute ? 15 : 0) : 15 - remainder;
-  
-  start.setMinutes(minutes + addMinutes);
-  start.setSeconds(0, 0);
+  const start = roundUpToBookingStep(new Date(), { strictlyFuture: true });
 
   // Default checkout is 30 minutes after check-in
   const end = new Date(start);
-  end.setMinutes(end.getMinutes() + 30);
+  end.setMinutes(end.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
 
   return {
     startTime: toDateTimeLocal(start),
@@ -128,7 +124,7 @@ const toItemErrorMap = (itemErrors = []) =>
 
 const TIME_OPTIONS = [];
 for (let h = 0; h < 24; h++) {
-  for (let m = 0; m < 60; m += 15) {
+  for (let m = 0; m < 60; m += BOOKING_TIME_STEP_MINUTES) {
     TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   }
 }
@@ -735,7 +731,7 @@ export default function CreateBookingPage() {
     if (!forecastHourSelection.allowed) return false;
     const candidateStart = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
     const currentEnd = new Date(endTime);
-    const minimumEnd = new Date(candidateStart.getTime() + 30 * 60 * 1000);
+    const minimumEnd = new Date(candidateStart.getTime() + MIN_BOOKING_DURATION_MINUTES * 60 * 1000);
     const candidateEnd = currentEnd >= minimumEnd ? currentEnd : minimumEnd;
     const now = new Date();
     const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -922,7 +918,7 @@ export default function CreateBookingPage() {
       const currentEndObj = new Date(`${endDate}T${endTimeStr}`);
       
       const minEndObj = new Date(newStartObj);
-      minEndObj.setMinutes(minEndObj.getMinutes() + 30);
+      minEndObj.setMinutes(minEndObj.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
       
       // If the current end time is earlier than the minimum end time (30 minutes later), adjust automatically
       if (currentEndObj < minEndObj) {
@@ -939,7 +935,7 @@ export default function CreateBookingPage() {
       const newEndObj = new Date(`${newDate}T${newTime}`);
       
       const minEndObj = new Date(startObj);
-      minEndObj.setMinutes(minEndObj.getMinutes() + 30);
+      minEndObj.setMinutes(minEndObj.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
       
       if (newEndObj < minEndObj) {
         const minEndStr = toDateTimeLocal(minEndObj);
@@ -962,9 +958,12 @@ export default function CreateBookingPage() {
 
   const todayDateStr = getLocalDateString();
   const currentTimeStr = getLocalTimeString();
+  const earliestStart = roundUpToBookingStep(new Date(), { strictlyFuture: true });
+  const earliestStartDate = toDateTimeLocal(earliestStart).split('T')[0];
+  const earliestStartTime = toDateTimeLocal(earliestStart).split('T')[1];
 
   const startMinTime = startDate === todayDateStr 
-    ? currentTimeStr 
+    ? (earliestStartDate === todayDateStr ? earliestStartTime : '24:00')
     : (startDate < todayDateStr ? '24:00' : null);
 
   const endMinTime = endDate === startDate 
@@ -1276,8 +1275,8 @@ export default function CreateBookingPage() {
       return;
     }
 
-    if ((endObj.getTime() - startObj.getTime()) / 60000 < 30) {
-      setError('Minimum booking duration is 30 minutes.');
+    if ((endObj.getTime() - startObj.getTime()) / 60000 < MIN_BOOKING_DURATION_MINUTES) {
+      setError(`Minimum booking duration is ${MIN_BOOKING_DURATION_MINUTES} minutes.`);
       return;
     }
 
@@ -1511,7 +1510,7 @@ export default function CreateBookingPage() {
     const now = new Date();
     
     if (startObj < now) return;
-    if ((endObj - startObj) / 60000 < 30) return;
+    if ((endObj - startObj) / 60000 < MIN_BOOKING_DURATION_MINUTES) return;
     
     const timer = setTimeout(() => {
       handleFindSlots();

@@ -34,6 +34,11 @@ import { applyBookingDraftField, applyMapSlotSelectionToDraft, applySingleVehicl
 import VipPackageModal from './VipPackageModal';
 import { localizeAiBookingMessage } from '../../utils/aiBookingMessages';
 import { clearPendingBookingPayment, readPendingBookingPayment, writePendingBookingPayment } from '../../utils/pendingBookingPayment';
+import {
+  BOOKING_TIME_STEP_MINUTES,
+  addBookingCalendarDays,
+  alignBookingClockValue,
+} from '../../utils/bookingTimePolicy';
 import { bookingStatusReply, detectDirectParkingLookup, parkingAvailabilityReply, parkingStatusReply, slotStatusReply } from '../../utils/aiParkingLookup';
 import {
   aiBookingStepLabel,
@@ -372,6 +377,12 @@ export default function AiBookingPanel({
     setDraft(next);
     voiceSessionRef.current?.setExpectLicensePlate(expectsLicensePlateInput(next));
   };
+  const setAwaitingField = (field = '') => updateDraft((current) => {
+    if (field) return { ...current, __awaitingField: field };
+    const rest = { ...current };
+    delete rest.__awaitingField;
+    return rest;
+  });
   const updatePreview = (value) => { previewRef.current = value; setPreview(value); };
   const rememberSlotSuggestion = (result) => {
     const suggestion = result?.suggestions?.[0] || null;
@@ -544,12 +555,14 @@ export default function AiBookingPanel({
   useEffect(() => { vehiclesRef.current = vehicles; }, [vehicles]);
 
   useEffect(() => {
+    const expectsTime = ['startTime', 'endTime'].includes(draft.__awaitingField);
     voiceSessionRef.current?.setContextPhrases([
       ...vehicles.map((vehicle) => vehicle.licensePlate),
       ...services.map((service) => service.name),
       ...mapFloors.map((floor) => floor.name),
+      ...(expectsTime ? ['gio sang', 'gio chieu', 'gio toi', 'gio ket thuc'] : []),
     ]);
-  }, [mapFloors, services, vehicles]);
+  }, [draft.__awaitingField, mapFloors, services, vehicles]);
 
   useEffect(() => {
     let mounted = true;
@@ -770,7 +783,10 @@ export default function AiBookingPanel({
         setConflicts(checked.conflicts || []);
         setConversationPhase('IDLE');
         if (checked.vipPlateRequired) askForAnotherPlate(checked.vipPlateRequired);
-        else if (checked.missing || checked.conflicts) say((checked.missing || checked.conflicts).join('\n'));
+        else if (checked.missing || checked.conflicts) {
+          if (checked.missing) setAwaitingField(checked.awaitingField);
+          say((checked.missing || checked.conflicts).join('\n'));
+        }
       }
     } catch (caught) {
       reportError(caught.message || 'Không thể kiểm tra lại chỗ. Dữ liệu hội thoại vẫn được giữ.');
@@ -1195,6 +1211,7 @@ export default function AiBookingPanel({
         if (request !== requestRef.current) return;
         if (nextPreview.vipPlateRequired) askForAnotherPlate(nextPreview.vipPlateRequired);
         else if (nextPreview.missing) {
+          setAwaitingField(nextPreview.awaitingField);
           setConversationPhase('IDLE');
           if (assistantResult) {
             appendMessage({ role: 'assistant', text: localizedAssistantMessage, services: attachedServices });
@@ -1211,6 +1228,7 @@ export default function AiBookingPanel({
           say(nextPreview.conflicts.join('\n'));
         }
         else {
+          setAwaitingField('');
           updateDraft((current) => {
             const rest = withoutPendingSlotSuggestion(current);
             const assistantContext = { ...(rest.assistantContext || {}) };
@@ -1268,9 +1286,10 @@ export default function AiBookingPanel({
       const checked = await prepareAiBooking(draftRef.current, gateway, vehiclesRef.current);
       if (request !== requestRef.current) return;
       if (checked.vipPlateRequired) askForAnotherPlate(checked.vipPlateRequired);
-      else if (checked.missing) { setConversationPhase('IDLE'); say(checked.missing.join(' ')); }
+      else if (checked.missing) { setAwaitingField(checked.awaitingField); setConversationPhase('IDLE'); say(checked.missing.join(' ')); }
       else if (checked.conflicts) { rememberSlotSuggestion(checked); rememberBookingConflict(checked); setConflicts(checked.conflicts); setConversationPhase('IDLE'); say(checked.conflicts.join('\n')); }
       else {
+        setAwaitingField('');
         updateDraft((current) => {
           const rest = withoutPendingSlotSuggestion(current);
           const assistantContext = { ...(rest.assistantContext || {}) };
@@ -1569,7 +1588,25 @@ export default function AiBookingPanel({
     const sourceIndex = mapSelectionTargetCount > 1
       && ['startDate', 'endDate', 'startTime', 'endTime', 'floorName', 'slotCode'].includes(field)
       ? activeMapTargetIndex : undefined;
-    updateDraft((current) => applyBookingDraftField(current, field, value, { sourceIndex }));
+    updateDraft((current) => {
+      if (!['startTime', 'endTime'].includes(field)) {
+        return applyBookingDraftField(current, field, value, { sourceIndex });
+      }
+      const aligned = alignBookingClockValue(value);
+      let next = applyBookingDraftField(current, field, aligned.time, { sourceIndex });
+      if (aligned.dayOffset) {
+        const dateField = field === 'startTime' ? 'startDate' : 'endDate';
+        const source = Number.isInteger(sourceIndex) ? next.reservationItems?.[sourceIndex] : next;
+        const baseDate = source?.[dateField] || source?.startDate || next[dateField] || next.startDate;
+        next = applyBookingDraftField(
+          next,
+          dateField,
+          addBookingCalendarDays(baseDate, aligned.dayOffset),
+          { sourceIndex },
+        );
+      }
+      return next;
+    });
     updatePreview(null); setConflicts([]);
   };
   const changePlateInput = (value) => {
@@ -1769,8 +1806,8 @@ export default function AiBookingPanel({
             {mapSelectionTargetCount > 1 && <div className="sm:col-span-2 flex flex-wrap gap-2 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><span className="w-full text-xs font-black text-cyan-900">Editing each vehicle separately:</span>{mapSelectionTargets.map((item) => <button key={item.index} type="button" onClick={() => setMapTargetIndex(item.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${activeMapTargetIndex === item.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>{item.licensePlate || `Vehicle ${item.index + 1}`}</button>)}</div>}
             <label className="text-xs font-bold text-gray-500">Start date<input type="date" min={currentVietnam.today} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
             <label className="text-xs font-bold text-gray-500">End date<input type="date" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || currentVietnam.today} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endDate : (draft.endDate || draft.startDate)) || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Arrival time<input type="time" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Departure time<input type="time" disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Arrival time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Departure time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
             <label className="text-xs font-bold text-gray-500">Vehicle<select disabled={busy || mapSelectionTargetCount > 1} value={mapSelectionTargetCount > 1 ? '' : (draft.vehicleId || '')} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); requestRef.current += 1; confirmationPendingRef.current = false; confirmationKeyRef.current = null; setConversationPhase('IDLE'); updateDraft((current) => applySingleVehicleSelectionToDraft(current, vehicle)); updatePreview(null); setConflicts([]); setMapTargetIndex(0); }} className={fieldClass}><option value="">{mapSelectionTargetCount > 1 ? 'Edit the list in the license plate field' : 'Select a vehicle or enter a license plate'}</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
             <label className="text-xs font-bold text-gray-500">License plates (comma-separated for multiple vehicles)<input disabled={busy} value={(draft.licensePlates?.length > 1 ? draft.licensePlates.join(', ') : draft.licensePlate) || ''} onChange={(event) => changePlateInput(event.target.value)} className={fieldClass} placeholder="43A12345, 43B20404" /></label>
             <label className="text-xs font-bold text-gray-500">Floor (optional)<input disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.floorName : draft.floorName) || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder="Floor 2" /></label>
