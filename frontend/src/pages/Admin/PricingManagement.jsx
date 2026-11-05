@@ -429,25 +429,25 @@ function PolicyAdjustmentInput({ value, onChange }) {
 
   return (
     <div>
-      <span className="text-xs font-bold text-white/50">Điều chỉnh giá</span>
+      <span className="text-xs font-bold text-white/50">Price adjustment</span>
       <div className="mt-2 flex gap-2">
-        <select aria-label="Loại điều chỉnh giá" value={direction} onChange={(event) => {
+        <select aria-label="Price adjustment type" value={direction} onChange={(event) => {
           const next = event.target.value;
           setEmptyDirection(next);
           onChange(value === '' ? '' : (next === 'decrease' ? -1 : 1) * magnitude);
         }} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-gold">
-          <option value="increase">Tăng giá</option>
-          <option value="decrease">Giảm giá</option>
+          <option value="increase">Increase price</option>
+          <option value="decrease">Decrease price</option>
         </select>
         <div className="flex w-24 shrink-0 items-center rounded-xl border border-white/10 bg-black focus-within:border-gold">
-          <input aria-label="Phần trăm điều chỉnh" aria-invalid={invalid} type="number" min="0" max={limit} step="any" value={magnitude} onChange={(event) => {
+          <input aria-label="Adjustment percentage" aria-invalid={invalid} type="number" min="0" max={limit} step="any" value={magnitude} onChange={(event) => {
             setEmptyDirection(direction);
             onChange(event.target.value === '' ? '' : (direction === 'decrease' ? -1 : 1) * Math.abs(Number(event.target.value)));
           }} className={`w-full min-w-0 bg-transparent px-3 py-3 text-sm tabular-nums text-white outline-none ${numberNoSpinnerClass}`} />
           <span className="pr-3 text-xs font-black text-white/40">%</span>
         </div>
       </div>
-      <p className={`mt-1.5 text-xs ${invalid ? 'text-red-300' : 'text-white/40'}`}>{direction === 'decrease' ? 'Giảm tối đa 100%' : 'Tăng tối đa 500%'}</p>
+      <p className={`mt-1.5 text-xs ${invalid ? 'text-red-300' : 'text-white/40'}`}>{direction === 'decrease' ? 'Decrease up to 100%' : 'Increase up to 500%'}</p>
     </div>
   );
 }
@@ -653,7 +653,7 @@ export default function PricingManagement() {
     }
     for (const policy of pricePolicies) {
       if (!policy.name?.trim() || policy.adjustmentPercent === '' || !Number.isFinite(Number(policy.adjustmentPercent)) || Number(policy.adjustmentPercent) < -100 || Number(policy.adjustmentPercent) > 500) {
-        setError('Mỗi chính sách cần có tên và phần trăm hợp lệ: giảm tối đa 100%, tăng tối đa 500%.');
+        setError('Each policy needs a name and a valid percentage: decrease up to 100%, increase up to 500%.');
         return;
       }
       if (policy.scope === 'weekday' && !policy.daysOfWeek?.length) {

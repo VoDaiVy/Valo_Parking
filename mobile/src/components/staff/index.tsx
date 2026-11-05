@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type React from 'react';
 import { useEffect, useRef } from 'react';
@@ -144,17 +145,18 @@ export function StaffHeader({
   right?: React.ReactNode;
   onBack?: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.header}>
       {onBack ? (
-        <AnimatedPressable accessibilityLabel="Go back" onPress={onBack} style={styles.backButton}>
+        <AnimatedPressable accessibilityLabel={translateUi("Go back")} onPress={onBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={22} color={COLORS.textSecondary} />
         </AnimatedPressable>
       ) : null}
       <View style={styles.headerCopy}>
         {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        <Text ellipsizeMode="tail" numberOfLines={1} style={styles.title}>{title}</Text>
-        {subtitle ? <Text ellipsizeMode="tail" numberOfLines={1} style={styles.subtitle}>{subtitle}</Text> : null}
+        <Text ellipsizeMode="tail" numberOfLines={1} style={styles.title}>{translateUi(title)}</Text>
+        {subtitle ? <Text ellipsizeMode="tail" numberOfLines={1} style={styles.subtitle}>{translateUi(subtitle)}</Text> : null}
       </View>
       {right ? <View style={styles.headerRight}>{right}</View> : null}
     </View>
@@ -170,11 +172,12 @@ export function SectionTitle({
   detail?: string;
   right?: React.ReactNode;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.sectionTitle}>
       <View style={styles.headerCopy}>
-        <Text style={styles.sectionText}>{title}</Text>
-        {detail ? <Text style={styles.sectionDetail}>{detail}</Text> : null}
+        <Text style={styles.sectionText}>{translateUi(title)}</Text>
+        {detail ? <Text style={styles.sectionDetail}>{translateUi(detail)}</Text> : null}
       </View>
       {right}
     </View>
@@ -188,11 +191,12 @@ export function StatusBadge({
   label: string;
   tone?: Tone;
 }) {
+  const { t: translateUi } = useLanguage();
   const color = toneColor[tone];
   return (
     <View style={[styles.badge, { borderColor: `${color}44`, backgroundColor: `${color}14` }]}>
       <View style={[styles.badgeDot, { backgroundColor: color }]} />
-      <Text style={[styles.badgeText, { color }]}>{label}</Text>
+      <Text style={[styles.badgeText, { color }]}>{translateUi(label)}</Text>
     </View>
   );
 }
@@ -208,12 +212,13 @@ export function StatusStrip({
   tone?: Tone;
   icon?: IconName;
 }) {
+  const { t: translateUi } = useLanguage();
   const color = toneColor[tone];
   return (
     <View style={[styles.statusStrip, { borderLeftColor: color }]}>
       {icon ? <Ionicons name={icon} size={18} color={color} /> : null}
       <View style={styles.headerCopy}>
-        <Text style={styles.statusLabel}>{label}</Text>
+        <Text style={styles.statusLabel}>{translateUi(label)}</Text>
         <Text numberOfLines={1} style={styles.statusValue}>{value}</Text>
       </View>
     </View>
@@ -231,12 +236,13 @@ export function OperationalMetric({
   tone?: Tone;
   icon?: IconName;
 }) {
+  const { t: translateUi } = useLanguage();
   const color = toneColor[tone];
   return (
     <View style={styles.metric}>
       <View style={styles.metricTop}>
         {icon ? <Ionicons name={icon} size={16} color={color} /> : <View style={[styles.metricDot, { backgroundColor: color }]} />}
-        <Text numberOfLines={1} style={styles.metricLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.metricLabel}>{translateUi(label)}</Text>
       </View>
       <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.metricValue, { color }]}>{value}</Text>
     </View>
@@ -264,6 +270,7 @@ export function ActionButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { t: translateUi } = useLanguage();
   const color = toneColor[tone];
   return (
     <AnimatedPressable disabled={disabled || loading} onPress={onPress} style={styles.buttonWrap}>
@@ -280,7 +287,7 @@ export function ActionButton({
         ) : icon ? (
           <Ionicons name={icon} size={19} color={secondary ? color : COLORS.textInverse} />
         ) : null}
-        <Text style={[styles.buttonText, secondary && { color }]}>{label}</Text>
+        <Text style={[styles.buttonText, secondary && { color }]}>{translateUi(label)}</Text>
       </View>
     </AnimatedPressable>
   );
@@ -345,6 +352,7 @@ export function Timeline({
 }: {
   items: Array<{ label: string; value: string; tone?: Tone; icon?: IconName }>;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.timeline}>
       {items.map((item, index) => {
@@ -356,7 +364,7 @@ export function Timeline({
               {index < items.length - 1 ? <View style={styles.timelineLine} /> : null}
             </View>
             <View style={styles.timelineCopy}>
-              <Text style={styles.timelineLabel}>{item.label}</Text>
+              <Text style={styles.timelineLabel}>{translateUi(item.label)}</Text>
               <Text style={styles.timelineValue}>{item.value}</Text>
             </View>
             {item.icon ? <Ionicons name={item.icon} size={18} color={color} /> : null}
@@ -442,18 +450,19 @@ export function ConfirmationPanel({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <Modal animationType="slide" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.modalOverlay}>
-        <Pressable accessibilityLabel="Close confirmation" onPress={onCancel} style={StyleSheet.absoluteFill} />
+        <Pressable accessibilityLabel={translateUi("Close confirmation")} onPress={onCancel} style={StyleSheet.absoluteFill} />
         <SafeAreaView edges={['bottom']} style={styles.panelSafe}>
           <View style={styles.panel}>
             <View style={styles.panelHandle} />
             <Text style={styles.panelTitle}>{title}</Text>
             {message ? <Text style={styles.panelMessage}>{message}</Text> : null}
             <View style={styles.panelActions}>
-              <ActionButton label={cancelLabel} onPress={onCancel} secondary tone="muted" />
-              <ActionButton label={confirmLabel} loading={loading} onPress={onConfirm} tone={tone} />
+              <ActionButton label={translateUi(cancelLabel)} onPress={onCancel} secondary tone="muted" />
+              <ActionButton label={translateUi(confirmLabel)} loading={loading} onPress={onConfirm} tone={tone} />
             </View>
           </View>
         </SafeAreaView>
@@ -481,12 +490,12 @@ const styles = StyleSheet.create({
   headerRight: { alignItems: 'flex-end', flexShrink: 0 },
   eyebrow: {
     color: COLORS.gold,
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  title: { color: COLORS.textPrimary, fontSize: 26, fontWeight: '900', letterSpacing: 0, lineHeight: 32 },
+  title: { color: COLORS.textPrimary, fontSize: 26, fontWeight: '700', letterSpacing: 0, lineHeight: 32 },
   subtitle: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, lineHeight: 16, marginTop: 1 },
   sectionTitle: {
     alignItems: 'flex-end',
@@ -495,7 +504,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 36,
   },
-  sectionText: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  sectionText: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   sectionDetail: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 2 },
   badge: {
     alignItems: 'center',
@@ -508,7 +517,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
   },
   badgeDot: { borderRadius: 3, height: 6, width: 6 },
-  badgeText: { fontSize: FONT_SIZES.xs, fontWeight: '900', textTransform: 'uppercase' },
+  badgeText: { fontSize: FONT_SIZES.xs, fontWeight: '700', textTransform: 'uppercase' },
   statusStrip: {
     alignItems: 'center',
     backgroundColor: COLORS.surface,
@@ -522,7 +531,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
   },
   statusLabel: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '800', textTransform: 'uppercase' },
-  statusValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900', marginTop: 2 },
+  statusValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700', marginTop: 2 },
   metricStrip: {
     borderBottomColor: COLORS.border,
     borderTopColor: COLORS.border,
@@ -539,7 +548,7 @@ const styles = StyleSheet.create({
   metricTop: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   metricDot: { borderRadius: 4, height: 8, width: 8 },
   metricLabel: { color: COLORS.textMuted, flex: 1, fontSize: FONT_SIZES.xs, fontWeight: '800', textTransform: 'uppercase' },
-  metricValue: { fontSize: 25, fontWeight: '900', letterSpacing: 0, marginTop: 7 },
+  metricValue: { fontSize: 25, fontWeight: '700', letterSpacing: 0, marginTop: 7 },
   buttonWrap: { borderRadius: RADIUS.md, flex: 1, minWidth: 0 },
   button: {
     alignItems: 'center',
@@ -550,7 +559,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: SPACING.md,
   },
-  buttonText: { color: COLORS.textInverse, flexShrink: 1, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  buttonText: { color: COLORS.textInverse, flexShrink: 1, fontSize: FONT_SIZES.md, fontWeight: '700' },
   row: {
     alignItems: 'center',
     borderBottomColor: COLORS.border,
@@ -593,7 +602,7 @@ const styles = StyleSheet.create({
     minHeight: 64,
     padding: SPACING.md,
   },
-  infoTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  infoTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
   infoMessage: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, lineHeight: 18, marginTop: 2 },
   skeleton: {
     backgroundColor: COLORS.surfaceElevated,
@@ -622,7 +631,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
     width: 42,
   },
-  panelTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, fontWeight: '900' },
+  panelTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, fontWeight: '700' },
   panelMessage: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, lineHeight: 20 },
   panelActions: { flexDirection: 'row', gap: SPACING.sm },
 });

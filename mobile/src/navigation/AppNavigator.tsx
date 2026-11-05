@@ -16,6 +16,7 @@ import { NAVIGATION_STATE_KEY } from '@/utils/constants';
 import { AuthNavigator } from './AuthNavigator';
 import CustomerNavigator from './CustomerNavigator';
 import StaffNavigator from './StaffNavigator';
+import { UnsupportedRoleScreen } from '@/screens/shared/UnsupportedRoleScreen';
 import type { StaffTabParamList } from './StaffNavigator';
 import type { CustomerTabParamList } from './CustomerNavigator';
 import type { AuthStackParamList } from './types';
@@ -31,7 +32,7 @@ const customerLinking: LinkingOptions<AppRoutes> = {
       ForgotPassword: 'forgot-password',
       Home: 'home',
       Bookings: { path: 'bookings', screens: { BookingList: '', BookingDetail: ':bookingId', FindParking: 'map', CreateBooking: 'new', BookingCart: 'cart', BookingAssistant: 'assistant' } },
-      WalletTab: { path: 'wallet', screens: { Wallet: '', TopUp: 'top-up', Rewards: 'rewards', Membership: 'membership', MembershipMarketplace: 'marketplace', MembershipMarketplaceDetail: 'marketplace/:transferId' } },
+      WalletTab: { path: 'wallet', screens: { Wallet: '', TopUp: 'top-up', Rewards: 'rewards', Membership: 'membership', MembershipHub: 'membership-hub', MembershipMarketplace: 'marketplace', MembershipMarketplaceDetail: 'marketplace/:transferId' } },
       NotificationsTab: { path: 'notifications', screens: { Notifications: '' } },
       ProfileTab: { path: 'profile', screens: { Profile: '', VehicleList: 'vehicles', Policies: 'policies', PolicyDetail: 'policies/:slug' } },
     },
@@ -45,7 +46,7 @@ const AppLifecycleBridge = () => {
 
 export const AppNavigator = () => {
   const { isAuthenticated, isLoading, user } = useAuth();
-  const isStaff = user?.role === 'staff' || user?.role === 'admin';
+  const isStaff = user?.role === 'staff';
   const navigationKey = `${NAVIGATION_STATE_KEY}.v2.${user?.id || user?._id || 'guest'}.${user?.role || 'guest'}`;
   const [initialState, setInitialState] = useState<PartialState<NavigationState<AppRoutes>>>();
   const [isReady, setIsReady] = useState(false);
@@ -92,7 +93,9 @@ export const AppNavigator = () => {
       <AppLifecycleBridge />
       {!isAuthenticated ? (
         <AuthNavigator />
-      ) : user?.role === 'staff' || user?.role === 'admin' ? (
+      ) : user?.role === 'admin' ? (
+        <UnsupportedRoleScreen />
+      ) : user?.role === 'staff' ? (
         <StaffNavigator />
       ) : (
         <CustomerNavigator />

@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnimatedPressable, ProfileScreenHeader, StatusChip } from '@/components/profile/ProfileUI';
 import { ErrorState } from '@/components/common';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 import type { ProfileStackParamList } from '@/navigation/types';
 import { MAX_VEHICLES_PER_USER, vehiclesService } from '@/services/api/vehicles';
 import type { Vehicle } from '@/types/models';
@@ -39,8 +41,9 @@ const STATUS_COLORS: Record<string, string> = {
 const getVehicleId = (vehicle: Vehicle) => vehicle.id || vehicle._id || '';
 
 function AddFab({ onPress }: { onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   return (
-    <AnimatedPressable accessibilityLabel="Add vehicle" onPress={onPress} style={styles.addButtonOuter} tint="rgba(226,186,75,0.08)">
+    <AnimatedPressable accessibilityLabel={translateUi("Add vehicle")} onPress={onPress} style={styles.addButtonOuter} tint="rgba(226,186,75,0.08)">
       <View style={styles.addButton}>
         <Ionicons name="add" size={22} color={COLORS.textInverse} />
       </View>
@@ -49,6 +52,7 @@ function AddFab({ onPress }: { onPress: () => void }) {
 }
 
 function EmptyVehicles({ onAdd }: { onAdd: () => void }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -80,11 +84,11 @@ function EmptyVehicles({ onAdd }: { onAdd: () => void }) {
       <View style={styles.emptyIcon}>
         <Ionicons name="car-outline" size={34} color={COLORS.gold} />
       </View>
-      <Text style={styles.emptyTitle}>No vehicles yet</Text>
-      <Text style={styles.emptyText}>Add a vehicle for faster booking and automatic check-in.</Text>
-      <AnimatedPressable accessibilityLabel="Add vehicle" onPress={onAdd} style={styles.emptyCta} tint="rgba(226,186,75,0.08)">
+      <Text style={styles.emptyTitle}>{translateUi("No vehicles yet")}</Text>
+      <Text style={styles.emptyText}>{translateUi("Add a vehicle for faster booking and automatic check-in.")}</Text>
+      <AnimatedPressable accessibilityLabel={translateUi("Add vehicle")} onPress={onAdd} style={styles.emptyCta} tint="rgba(226,186,75,0.08)">
         <View style={styles.emptyCtaInner}>
-          <Text style={styles.emptyCtaText}>Add vehicle</Text>
+          <Text style={styles.emptyCtaText}>{translateUi("Add vehicle")}</Text>
           <Ionicons name="arrow-forward" size={16} color={COLORS.gold} />
         </View>
       </AnimatedPressable>
@@ -101,6 +105,7 @@ function VehicleRow({
   item: Vehicle;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
   const arrow = useRef(new Animated.Value(0)).current;
   const status = item.status || 'pending';
@@ -156,7 +161,7 @@ function VehicleRow({
           <View style={styles.vehicleBody}>
             <View style={styles.vehicleTop}>
               <Text style={styles.plate} numberOfLines={1}>{item.licensePlate}</Text>
-              {item.isDefault ? <Text style={styles.defaultBadge}>Default</Text> : null}
+              {item.isDefault ? <Text style={styles.defaultBadge}>{translateUi("Default")}</Text> : null}
             </View>
             <Text style={styles.vehicleMeta} numberOfLines={2}>
               {description}{item.color ? ` · ${item.color}` : ''}
@@ -188,6 +193,7 @@ function VehicleRow({
 }
 
 export const VehicleListScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -222,16 +228,16 @@ export const VehicleListScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <ProfileScreenHeader
-        title="My vehicles"
+        title={translateUi("My vehicles")}
         subtitle={`${vehicles.length}/${MAX_VEHICLES_PER_USER} vehicles`}
         onBack={() => navigation.goBack()}
         right={
           vehicleLimitReached ? (
             <View style={styles.limitBadge}>
               <Ionicons name="checkmark" size={15} color={COLORS.gold} />
-              <Text style={styles.limitBadgeText}>Limit reached</Text>
+              <Text style={styles.limitBadgeText}>{translateUi("Limit reached")}</Text>
             </View>
           ) : (
             <AddFab onPress={() => navigation.navigate('AddVehicle')} />
@@ -244,7 +250,7 @@ export const VehicleListScreen = ({ navigation }: Props) => {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={loadVehicles} />
+        <ErrorState message={translateUi(error)} onRetry={loadVehicles} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
@@ -284,7 +290,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: COLORS.gold,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.08,
     shadowRadius: 16,
     width: 48,
   },
@@ -310,6 +316,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   list: {
+    flexGrow: 1,
     paddingBottom: 118,
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
@@ -342,27 +349,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: SPACING.sm,
+    flexWrap: 'wrap',
   },
   plate: {
+    ...typography.h3,
     color: COLORS.textPrimary,
     flex: 1,
-    fontSize: 19,
-    fontWeight: '900',
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
     letterSpacing: 0.7,
   },
   defaultBadge: {
     backgroundColor: 'rgba(226,186,75,0.12)',
     borderRadius: RADIUS.round,
     color: COLORS.gold,
-    fontSize: 11,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '800',
     paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
   },
   vehicleMeta: {
+    ...typography.body2,
     color: COLORS.textSecondary,
     fontSize: 14,
-    lineHeight: 19,
+    lineHeight: 20,
   },
   vehicleFooter: {
     alignItems: 'center',
@@ -400,12 +410,12 @@ const styles = StyleSheet.create({
     width: 80,
   },
   emptyTitle: {
+    ...typography.h3,
     color: COLORS.textPrimary,
-    fontSize: 17,
-    fontWeight: '900',
+    textAlign: 'center',
   },
   emptyText: {
-    color: COLORS.textMuted,
+    color: COLORS.textSecondary,
     fontSize: 14,
     lineHeight: 21,
     marginTop: SPACING.sm,

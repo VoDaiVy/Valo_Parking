@@ -1,7 +1,8 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePreventRemove } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
 import { WorkflowButton, WorkflowChip, workflowStyles as s } from '@/components/common/WorkflowUI';
@@ -19,6 +20,7 @@ import { isPolicyAcceptanceRequired } from '@/utils/policyErrors';
 export function BookingCartScreen({
   navigation,
 }: NativeStackScreenProps<BookingStackParamList, 'BookingCart'>) {
+  const { t: translateUi } = useLanguage();
   const cart = useBookingCart();
   const { fetchBookings, fetchWalletBalance } = useBooking();
   const [quote, setQuote] = useState<BulkBookingQuoteResponse['data'] | null>(null);
@@ -121,23 +123,23 @@ export function BookingCartScreen({
   return (
     <SafeAreaView edges={['top']} style={s.safe}>
       <ScreenHeader
-        title="Booking cart"
-        subtitle="Review times, rewards and total before payment"
+        title={translateUi("Booking cart")}
+        subtitle={translateUi("Review times, rewards and total before payment")}
         onBack={busy ? undefined : () => navigation.goBack()}
       />
       <ScrollView contentContainerStyle={s.content}>
         {completedIds.length ? (
-          <View style={s.panel}>
-            <Text style={s.title}>Reserved {completedIds.length} spaces</Text>
-            <Text style={s.body}>Your bookings and QR codes are ready.</Text>
-            <WorkflowButton title="View bookings" onPress={() => navigation.replace('BookingList')} />
+          <View style={[s.panel, styles.successPanel]}>
+            <Text style={[s.title, styles.successTitle]}>{translateUi("Reserved")}{" "}{completedIds.length} {" "}{translateUi("spaces")}</Text>
+            <Text style={s.body}>{translateUi("Your bookings and QR codes are ready.")}</Text>
+            <WorkflowButton title={translateUi("View bookings")} onPress={() => navigation.replace('BookingList')} />
           </View>
         ) : null}
         {!cart.items.length && !completedIds.length ? (
           <EmptyState
             icon="cart-outline"
-            title="Your cart is empty"
-            message="Choose a space and add the vehicles you want to book."
+            title={translateUi("Your cart is empty")}
+            message={translateUi("Choose a space and add the vehicles you want to book.")}
           />
         ) : null}
         {cart.items.map((item, index) => (
@@ -149,38 +151,37 @@ export function BookingCartScreen({
             <Text style={s.body}>
               {formatDate(item.startTime)} → {formatDate(item.endTime)}
             </Text>
-            {item.voucherLabel ? <Text style={s.body}>Voucher: {item.voucherLabel}</Text> : null}
+            {item.voucherLabel ? <Text style={s.body}>{translateUi("Voucher:")}{" "}{item.voucherLabel}</Text> : null}
             {quote?.items[index] ? (
-              <Text style={s.title}>{formatCurrency(quote.items[index].totalAmount)}</Text>
+              <Text style={[s.title, styles.amount]}>{formatCurrency(quote.items[index].totalAmount)}</Text>
             ) : null}
             {!busy ? (
               <WorkflowChip onPress={() => cart.remove(item.clientItemId)}>
-                Remove from cart
-              </WorkflowChip>
+                {" "}{translateUi("Remove from cart")}{" "}</WorkflowChip>
             ) : null}
           </View>
         ))}
-        {error ? <ErrorState message={error} onRetry={busy ? undefined : load} /> : null}
+        {error ? <ErrorState message={translateUi(error)} onRetry={busy ? undefined : load} /> : null}
         {policyRequired ? (
           <WorkflowButton
-            title="Review and accept policies"
+            title={translateUi("Review and accept policies")}
             onPress={() => navigation.getParent()?.navigate('ProfileTab', { screen: 'Policies' })}
           />
         ) : null}
         {loading ? <ActivityIndicator color={COLORS.gold} /> : null}
         {quote && cart.items.length ? (
           <View style={s.panel}>
-            <Text style={s.body}>Payment total · {cart.items.length} spaces</Text>
+            <Text style={s.body}>{translateUi("Payment total ·")}{" "}{cart.items.length} {" "}{translateUi("spaces")}</Text>
             <Text style={s.amount}>{formatCurrency(quote.grandTotal)}</Text>
-            <Text style={s.body}>Wallet balance: {formatCurrency(balance)}</Text>
+            <Text style={s.body}>{translateUi("Wallet balance:")}{" "}{formatCurrency(balance)}</Text>
             <WorkflowButton
               disabled={busy || loading || balance < quote.grandTotal}
-              title={busy ? 'Confirming…' : 'Confirm & pay with wallet'}
+              title={busy ? 'Confirming…' : translateUi("Confirm & pay with wallet")}
               onPress={() => void checkout()}
             />
             {balance < quote.grandTotal ? (
               <WorkflowButton
-                title="Top up wallet"
+                title={translateUi("Top up wallet")}
                 onPress={() => navigation.getParent()?.navigate('WalletTab', { screen: 'TopUp' })}
               />
             ) : null}
@@ -188,10 +189,15 @@ export function BookingCartScreen({
         ) : null}
         {!busy ? (
           <WorkflowChip onPress={() => navigation.navigate('CreateBooking')}>
-            Add another space
-          </WorkflowChip>
+            {" "}{translateUi("Add another space")}{" "}</WorkflowChip>
         ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  successPanel: { backgroundColor: COLORS.successTint },
+  successTitle: { color: COLORS.success },
+  amount: { color: COLORS.gold, fontVariant: ['tabular-nums'] },
+});

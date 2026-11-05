@@ -1,9 +1,10 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { addMinutes, format } from 'date-fns';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -85,6 +86,7 @@ type TimePickerModalProps = {
 };
 
 function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onClose }: TimePickerModalProps) {
+  const { t: translateUi } = useLanguage();
   const [selectedDate, setSelectedDate] = useState<Date>(() => initialDate);
   const [selectedTime, setSelectedTime] = useState<string>(() => format(initialDate, 'HH:mm'));
   const [dateText, setDateText] = useState(() => format(initialDate, 'yyyy-MM-dd'));
@@ -126,7 +128,7 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
           </View>
 
           {/* Date selection */}
-          <Text style={mpStyles.label}>Date</Text>
+          <Text style={mpStyles.label}>{translateUi("Date")}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={mpStyles.dateRow}>
             {dateOptions.map((date) => {
               const dateStr = format(date, 'yyyy-MM-dd');
@@ -150,8 +152,8 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
             })}
           </ScrollView>
 
-          <Text style={mpStyles.label}>Or enter a date (YYYY-MM-DD)</Text>
-          <TextInput accessibilityLabel="Booking date" placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.textMuted} style={workflow.input} value={dateText} onChangeText={(value) => {
+          <Text style={mpStyles.label}>{translateUi("Or enter a date (YYYY-MM-DD)")}</Text>
+          <TextInput accessibilityLabel={translateUi("Booking date")} placeholder="YYYY-MM-DD" placeholderTextColor={COLORS.textMuted} style={workflow.input} value={dateText} onChangeText={(value) => {
             setDateText(value);
             if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
               const day = new Date(`${value}T00:00:00`);
@@ -160,7 +162,7 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
           }} />
 
           {/* Time selection */}
-          <Text style={mpStyles.label}>Time</Text>
+          <Text style={mpStyles.label}>{translateUi("Time")}</Text>
           <ScrollView style={mpStyles.timeList} showsVerticalScrollIndicator={false}>
             <View style={mpStyles.timeGrid}>
               {TIME_OPTIONS.map((time) => {
@@ -189,7 +191,7 @@ function TimePickerModal({ visible, title, initialDate, minDate, onConfirm, onCl
               end={{ x: 1, y: 0 }}
               style={mpStyles.confirmGrad}
             >
-              <Text style={mpStyles.confirmText}>Confirm</Text>
+              <Text style={mpStyles.confirmText}>{translateUi("Confirm")}</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -356,14 +358,15 @@ function TimeTimeline({
   onStartPress: () => void;
   onEndPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredSection delay={110} style={styles.section}>
-      <Text style={styles.sectionKicker}>Time</Text>
+      <Text style={styles.sectionKicker}>{translateUi("Time")}</Text>
       <View style={styles.timeline}>
         <AnimatedPressable onPress={onStartPress} style={styles.timeBlock}>
           <View style={styles.timeLabelRow}>
             <Ionicons name="log-in-outline" size={16} color={COLORS.gold} />
-            <Text style={styles.timeLabel}>Arrival</Text>
+            <Text style={styles.timeLabel}>{translateUi("Arrival")}</Text>
           </View>
           <Text style={styles.timeValue}>{format(startTime, 'HH:mm')}</Text>
           <Text style={styles.timeDate}>{format(startTime, 'dd MMM yyyy')}</Text>
@@ -380,7 +383,7 @@ function TimeTimeline({
         <AnimatedPressable onPress={onEndPress} style={styles.timeBlock}>
           <View style={styles.timeLabelRow}>
             <Ionicons name="log-out-outline" size={16} color={COLORS.staffBlue} />
-            <Text style={styles.timeLabel}>Departure</Text>
+            <Text style={styles.timeLabel}>{translateUi("Departure")}</Text>
           </View>
           <Text style={styles.timeValue}>{format(endTime, 'HH:mm')}</Text>
           <Text style={styles.timeDate}>{format(endTime, 'dd MMM yyyy')}</Text>
@@ -411,9 +414,10 @@ function VehicleSelector({
   onManualPlateChange: (value: string) => void;
   onManageVehicles: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredSection delay={180} style={styles.section}>
-      <Text style={styles.sectionKicker}>Your vehicle</Text>
+      <Text style={styles.sectionKicker}>{translateUi("Your vehicle")}</Text>
       {vehicleError ? (
         <ErrorState message={vehicleError} onRetry={onRetry} />
       ) : vehicles.length === 0 ? (
@@ -422,11 +426,11 @@ function VehicleSelector({
             <Ionicons name="car-outline" size={22} color={COLORS.gold} />
           </View>
           <View style={styles.vehicleEmptyCopy}>
-            <Text style={styles.vehicleEmptyTitle}>No approved vehicle</Text>
-            <Text style={styles.vehicleEmptyText}>Add a vehicle or wait for approval in your profile before booking.</Text>
+            <Text style={styles.vehicleEmptyTitle}>{translateUi("No approved vehicle")}</Text>
+            <Text style={styles.vehicleEmptyText}>{translateUi("Add a vehicle or wait for approval in your profile before booking.")}</Text>
           </View>
           <Pressable style={styles.manageVehicleBtn} onPress={onManageVehicles}>
-            <Text style={styles.manageVehicleText}>Manage vehicles</Text>
+            <Text style={styles.manageVehicleText}>{translateUi("Manage vehicles")}</Text>
           </Pressable>
         </View>
       ) : (
@@ -450,25 +454,25 @@ function VehicleSelector({
             );
           })}
           <Pressable
-            accessibilityLabel="Use another license plate"
+            accessibilityLabel={translateUi("Use another license plate")}
             accessibilityRole="radio"
             accessibilityState={{ checked: selectedVehicleId === 'manual' }}
             style={[styles.vehiclePill, selectedVehicleId === 'manual' && styles.vehiclePillActive]}
             onPress={() => onSelectVehicle('manual')}
           >
             <Ionicons name="create-outline" size={17} color={selectedVehicleId === 'manual' ? COLORS.gold : COLORS.textMuted} />
-            <Text style={[styles.vehicleText, selectedVehicleId === 'manual' && styles.vehicleTextActive]}>Other plate</Text>
+            <Text style={[styles.vehicleText, selectedVehicleId === 'manual' && styles.vehicleTextActive]}>{translateUi("Other plate")}</Text>
           </Pressable>
         </ScrollView>
       )}
 
-      {vehicles.length === 0 && !vehicleError ? <WorkflowChip selected={selectedVehicleId === 'manual'} onPress={() => onSelectVehicle('manual')}>Enter another license plate</WorkflowChip> : null}
+      {vehicles.length === 0 && !vehicleError ? <WorkflowChip selected={selectedVehicleId === 'manual'} onPress={() => onSelectVehicle('manual')}>{translateUi("Enter another license plate")}</WorkflowChip> : null}
 
       {selectedVehicleId === 'manual' ? (
         <View style={styles.manualInputWrap}>
           <TextInput
             autoCapitalize="characters"
-            placeholder="Enter license plate (e.g. 30A-12345)"
+            placeholder={translateUi("Enter license plate (e.g. 30A-12345)")}
             placeholderTextColor={COLORS.textMuted}
             style={styles.manualInput}
             value={manualPlate}
@@ -481,8 +485,7 @@ function VehicleSelector({
         <View style={styles.warningBox}>
           <Ionicons name="alert-circle-outline" size={18} color={COLORS.warning} />
           <Text style={styles.warningText}>
-            Your membership has an available VIP space. Assign a vehicle to it before booking a regular space.
-          </Text>
+            {" "}{translateUi("Your membership has an available VIP space. Assign a vehicle to it before booking a regular space.")}{" "}</Text>
         </View>
       ) : null}
     </StaggeredSection>
@@ -490,6 +493,7 @@ function VehicleSelector({
 }
 
 function ParkingLegend() {
+  const { t: translateUi } = useLanguage();
   const items = [
     { label: 'Available', color: '#7EE8A2' },
     { label: 'Occupied', color: '#FF6B6B' },
@@ -503,7 +507,7 @@ function ParkingLegend() {
       {items.map((item) => (
         <View key={item.label} style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-          <Text style={styles.legendText}>{item.label}</Text>
+          <Text style={styles.legendText}>{translateUi(item.label)}</Text>
         </View>
       ))}
     </View>
@@ -553,6 +557,7 @@ function ParkingMapSection({
   onRetryFloors: () => void;
   onRetrySlots: (start: Date, end: Date) => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const selectedFloorId = selectedFloor?._id ?? selectedFloor?.id ?? String(selectedFloor?.floorNumber ?? '');
   const floorAvailableCount = selectedFloor
     ? availableSlots.filter((slot) => slot.floorId === selectedFloorId).length
@@ -562,12 +567,12 @@ function ParkingMapSection({
     <StaggeredSection delay={260} style={styles.mapSection}>
       <View style={styles.mapHeader}>
         <View>
-          <Text style={styles.sectionKicker}>Parking space</Text>
+          <Text style={styles.sectionKicker}>{translateUi("Parking space")}</Text>
           <Text style={styles.mapTitle}>{selectedFloor?.name ?? 'Choose a floor'}</Text>
         </View>
         <View style={styles.availableBadge}>
           <Text style={styles.availableCount}>{floorAvailableCount}</Text>
-          <Text style={styles.availableLabel}>available</Text>
+          <Text style={styles.availableLabel}>{translateUi("available")}</Text>
         </View>
       </View>
 
@@ -584,7 +589,7 @@ function ParkingMapSection({
             </Text>
           </View>
           <Pressable
-            accessibilityLabel="Clear selected space"
+            accessibilityLabel={translateUi("Clear selected space")}
             accessibilityRole="button"
             style={styles.clearSlotBtn}
             onPress={onClearSlot}
@@ -596,8 +601,7 @@ function ParkingMapSection({
         <View style={styles.warningBox}>
           <Ionicons name="alert-circle-outline" size={18} color={COLORS.warning} />
           <Text style={styles.warningText}>
-            Space {selectedSlotCode} is no longer available. Please choose another space.
-          </Text>
+            {" "}{translateUi("Space")}{" "}{selectedSlotCode} {" "}{translateUi("is no longer available. Please choose another space.")}{" "}</Text>
         </View>
       ) : null}
 
@@ -629,12 +633,12 @@ function ParkingMapSection({
         {isLoading || dbSlots === null ? (
           <View style={styles.mapState}>
             <ActivityIndicator color={COLORS.gold} size="large" />
-            <Text style={styles.mapStateText}>Loading parking map...</Text>
+            <Text style={styles.mapStateText}>{translateUi("Loading parking map...")}</Text>
           </View>
         ) : error ? (
           <View style={styles.mapState}>
             <ErrorState
-              message={error}
+              message={translateUi(error)}
               onRetry={() => {
                 onRetryFloors();
                 onRetrySlots(startTime, endTime);
@@ -643,7 +647,7 @@ function ParkingMapSection({
           </View>
         ) : !selectedFloor ? (
           <View style={styles.mapState}>
-            <EmptyState icon="layers-outline" title="No floors available" message="No parking floors were found." />
+            <EmptyState icon="layers-outline" title={translateUi("No floors available")} message={translateUi("No parking floors were found.")} />
           </View>
         ) : (
           <ParkingMap2D
@@ -674,16 +678,17 @@ function ServiceList({
   serviceTotal: number;
   onToggleService: (serviceId: string) => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredSection delay={340} style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionKicker}>Additional services</Text>
+        <Text style={styles.sectionKicker}>{translateUi("Additional services")}</Text>
         {serviceTotal > 0 ? <Text style={styles.serviceTotalBadge}>+{formatCurrency(serviceTotal)}</Text> : null}
       </View>
 
       {services.length === 0 ? (
         <View style={styles.emptyServices}>
-          <Text style={styles.emptyServicesText}>No services are currently available.</Text>
+          <Text style={styles.emptyServicesText}>{translateUi("No services are currently available.")}</Text>
         </View>
       ) : (
         <View style={styles.serviceList}>
@@ -708,8 +713,7 @@ function ServiceList({
                     <Text numberOfLines={1} style={styles.serviceDescription}>{service.description}</Text>
                   ) : (service.estimatedTime || service.estimatedTimeMinutes) ? (
                     <Text style={styles.serviceDescription}>
-                      {service.estimatedTime ?? service.estimatedTimeMinutes} min
-                    </Text>
+                      {service.estimatedTime ?? service.estimatedTimeMinutes} {" "}{translateUi("min")}{" "}</Text>
                   ) : null}
                 </View>
                 <Text numberOfLines={1} style={styles.servicePrice}>{formatCurrency(service.price)}</Text>
@@ -734,23 +738,24 @@ function PriceBreakdown({
   parkingCost: number;
   serviceTotal: number;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredSection delay={420} style={styles.priceDetails}>
-      <Text style={styles.sectionKicker}>Price details</Text>
+      <Text style={styles.sectionKicker}>{translateUi("Price details")}</Text>
       <View style={styles.priceLine}>
-        <Text style={styles.priceLabel}>Hourly rate</Text>
+        <Text style={styles.priceLabel}>{translateUi("Hourly rate")}</Text>
         <Text style={styles.priceValue}>{formatCurrency(hourlyRate)}</Text>
       </View>
       <View style={styles.priceLine}>
-        <Text style={styles.priceLabel}>Billable time</Text>
-        <Text style={styles.priceValue}>{paidHours} hours</Text>
+        <Text style={styles.priceLabel}>{translateUi("Billable time")}</Text>
+        <Text style={styles.priceValue}>{paidHours} {" "}{translateUi("hours")}</Text>
       </View>
       <View style={styles.priceLine}>
-        <Text style={styles.priceLabel}>Parking fee</Text>
+        <Text style={styles.priceLabel}>{translateUi("Parking fee")}</Text>
         <Text style={styles.priceValue}>{formatCurrency(parkingCost)}</Text>
       </View>
       <View style={styles.priceLine}>
-        <Text style={styles.priceLabel}>Services</Text>
+        <Text style={styles.priceLabel}>{translateUi("Services")}</Text>
         <Text style={styles.priceValue}>{formatCurrency(serviceTotal)}</Text>
       </View>
     </StaggeredSection>
@@ -776,6 +781,7 @@ function StickyBookingFooter({
   onSubmit: () => void;
   submitLabel: string;
 }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useEntrance(500);
   const press = useRef(new Animated.Value(0)).current;
 
@@ -819,8 +825,7 @@ function StickyBookingFooter({
         <View style={styles.footerWarning}>
           <Ionicons name="warning-outline" size={14} color={COLORS.warning} />
           <Text style={styles.footerWarningText}>
-            Wallet balance {formatCurrency(walletBalance)} - insufficient
-          </Text>
+            {" "}{translateUi("Wallet balance")}{" "}{formatCurrency(walletBalance)} {" "}{translateUi("- insufficient")}{" "}</Text>
         </View>
       ) : !canBook && disabledReason ? (
         <View style={styles.footerWarning}>
@@ -831,7 +836,7 @@ function StickyBookingFooter({
 
       <View style={styles.footerMain}>
         <View style={styles.footerTotal}>
-          <Text style={styles.footerTotalLabel}>Total</Text>
+          <Text style={styles.footerTotalLabel}>{translateUi("Total")}</Text>
           <Text style={styles.footerTotalValue}>{formatCurrency(grandTotal)}</Text>
         </View>
         <Animated.View style={[styles.footerSubmitWrap, { transform: [{ scale }] }]}>
@@ -870,6 +875,7 @@ function StickyBookingFooter({
 
 // ── Main Screen ──────────────────────────────────────────────────────────────
 export const CreateBookingScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const {
     availableSlots,
     parkingFloors,
@@ -906,7 +912,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const [serverQuoteTotal, setServerQuoteTotal] = useState<number | null>(null);
   const cart = useBookingCart();
   const [step, setStep] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [step]);
   const [vouchers, setVouchers] = useState<UserVoucher[]>([]);
   const [voucherError, setVoucherError] = useState('');
@@ -1231,23 +1237,23 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <ScreenHeader
         accentColor={COLORS.gold}
         headerIcon="calendar-outline"
         headerIconBackground="rgba(226,186,75,0.12)"
         headerIconColor={COLORS.gold}
         progressVariant="accent"
-        subtitle="Time & vehicle → Parking space → Cart & payment"
-        title="New booking"
+        subtitle={translateUi("Time & vehicle → Parking space → Cart & payment")}
+        title={translateUi("New booking")}
         onBack={() => step > 0 ? setStep(step - 1) : navigation.goBack()}
       />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
           <View style={workflow.row}>
             {['1. Time & vehicle', '2. Parking space', '3. Services & rewards'].map((label, index) => (
-              <WorkflowChip key={label} selected={step === index} onPress={() => { if (index < step) setStep(index); }}>{label}</WorkflowChip>
+              <WorkflowChip key={label} selected={step === index} onPress={() => { if (index < step) setStep(index); }}>{translateUi(label)}</WorkflowChip>
             ))}
           </View>
 
@@ -1316,16 +1322,16 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
           />
 
           <View style={workflow.panel}>
-            <Text style={workflow.title}>Vouchers & rewards</Text>
+            <Text style={workflow.title}>{translateUi("Vouchers & rewards")}</Text>
             {voucherError ? <Text style={workflow.error}>{voucherError}</Text> : null}
-            <WorkflowChip selected={!selectedVoucherId} onPress={() => setSelectedVoucherId('')}>No voucher</WorkflowChip>
+            <WorkflowChip selected={!selectedVoucherId} onPress={() => setSelectedVoucherId('')}>{translateUi("No voucher")}</WorkflowChip>
             {vouchers.filter((v) => !v.bookingId && !cart.items.some((item) => item.voucherId === v._id)).map((v) => (
               <WorkflowChip key={v._id} selected={selectedVoucherId === v._id} onPress={() => setSelectedVoucherId(v._id)}>
-                {v.benefitSnapshot.name} · minimum spend {formatCurrency(v.benefitSnapshot.minimumAmount)}
+                {v.benefitSnapshot.name} {" "}{translateUi("· minimum spend")}{" "}{formatCurrency(v.benefitSnapshot.minimumAmount)}
               </WorkflowChip>
             ))}
-            <Text style={workflow.body}>The final price and rewards are verified before payment.</Text>
-            <WorkflowChip onPress={() => navigation.navigate('BookingCart')}>View cart ({cart.items.length})</WorkflowChip>
+            <Text style={workflow.body}>{translateUi("The final price and rewards are verified before payment.")}</Text>
+            <WorkflowChip onPress={() => navigation.navigate('BookingCart')}>{translateUi("View cart (")}{cart.items.length})</WorkflowChip>
           </View>
 
           <PriceBreakdown
@@ -1367,7 +1373,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       {/* ── Time Picker Modals ─────────────────────────────────── */}
       <TimePickerModal
         visible={showStartPicker}
-        title="Select arrival time"
+        title={translateUi("Select arrival time")}
         initialDate={startTime}
         minDate={new Date()}
         onConfirm={handleStartConfirm}
@@ -1375,7 +1381,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       />
       <TimePickerModal
         visible={showEndPicker}
-        title="Select departure time"
+        title={translateUi("Select departure time")}
         initialDate={endTime}
         minDate={addMinutes(startTime, 30)}
         onConfirm={handleEndConfirm}
@@ -1421,7 +1427,7 @@ const styles = StyleSheet.create({
     width: 44,
   },
   headerTitleWrap: { flex: 1, minWidth: 0 },
-  headerTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '800' },
+  headerTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, lineHeight: 28, fontWeight: '700' },
   headerSubtitle: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 2 },
   progressTrack: {
     backgroundColor: COLORS.surfaceElevated,
@@ -1616,7 +1622,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   availableCount: { color: COLORS.success, fontSize: FONT_SIZES.lg, fontWeight: '900' },
-  availableLabel: { color: COLORS.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  availableLabel: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, lineHeight: 16, fontWeight: '600' },
   floorTabs: { alignItems: 'center', gap: SPACING.sm, paddingBottom: SPACING.sm },
   floorTab: {
     alignItems: 'center',
@@ -1628,6 +1634,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingHorizontal: SPACING.md,
     paddingVertical: 7,
+    minHeight: 44,
   },
   floorTabActive: { backgroundColor: 'rgba(226,186,75,0.12)', borderColor: COLORS.gold },
   floorTabText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '600' },
@@ -1640,7 +1647,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   floorCountActive: { backgroundColor: COLORS.gold },
-  floorCountText: { color: COLORS.textMuted, fontSize: 10, fontWeight: '700' },
+  floorCountText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '600' },
   floorCountTextActive: { color: COLORS.textInverse },
   legend: {
     flexDirection: 'row',
@@ -1651,7 +1658,7 @@ const styles = StyleSheet.create({
   },
   legendItem: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   legendDot: { borderRadius: 5, height: 10, width: 10 },
-  legendText: { color: COLORS.textSecondary, fontSize: 11 },
+  legendText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, lineHeight: 16 },
 
   // Map
   mapCanvas: {
@@ -1735,7 +1742,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingTop: SPACING.md,
   },
-  priceLine: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 28 },
+  priceLine: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, justifyContent: 'space-between', minHeight: 28 },
 
   // Price summary
   priceSummary: {
@@ -1766,9 +1773,9 @@ const styles = StyleSheet.create({
   summaryCopy: { flex: 1 },
   summaryTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
   summarySubtitle: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 2 },
-  priceRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
+  priceRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, justifyContent: 'space-between', paddingVertical: 4 },
   priceLabel: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm },
-  priceValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '500' },
+  priceValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, lineHeight: 20, fontWeight: '500', fontVariant: ['tabular-nums'], flexShrink: 1, textAlign: 'right' },
   priceTotal: {
     borderTopColor: COLORS.borderLight,
     borderTopWidth: 1,
@@ -1776,7 +1783,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.sm,
   },
   totalLabel: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '700' },
-  totalValue: { color: COLORS.gold, fontSize: FONT_SIZES.xl, fontWeight: '800' },
+  totalValue: { color: COLORS.gold, fontSize: FONT_SIZES.xl, lineHeight: 28, fontWeight: '700', fontVariant: ['tabular-nums'] },
   walletRow: {
     alignItems: 'center',
     borderTopColor: COLORS.border,
@@ -1795,7 +1802,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: RADIUS.xl,
     borderWidth: 1,
     bottom: 0,
-    elevation: 18,
+    elevation: 3,
     left: 0,
     overflow: 'hidden',
     paddingBottom: Platform.OS === 'ios' ? 28 : 18,
@@ -1803,9 +1810,9 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.md,
     position: 'absolute',
     right: 0,
-    shadowColor: COLORS.gold,
+    shadowColor: COLORS.background,
     shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.12,
     shadowRadius: 20,
   },
   footerWarning: {
@@ -1826,16 +1833,17 @@ const styles = StyleSheet.create({
   footerTotal: { flex: 1, minWidth: 0 },
   footerTotalLabel: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '800', textTransform: 'uppercase' },
   footerTotalValue: { color: COLORS.gold, fontSize: FONT_SIZES.xl, fontWeight: '900', marginTop: 2 },
-  footerSubmitWrap: { borderRadius: RADIUS.lg, minWidth: 168, overflow: 'hidden' },
+  footerSubmitWrap: { borderRadius: RADIUS.md, minWidth: 144, flexShrink: 1, overflow: 'hidden' },
   footerSubmitGrad: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: SPACING.xs,
-    height: 54,
+    minHeight: 54,
+    paddingVertical: 12,
     justifyContent: 'center',
     paddingHorizontal: SPACING.md,
   },
-  footerSubmitText: { color: COLORS.textInverse, fontSize: FONT_SIZES.sm, fontWeight: '900' },
+  footerSubmitText: { color: COLORS.textInverse, fontSize: FONT_SIZES.sm, lineHeight: 20, fontWeight: '600', textAlign: 'center', flexShrink: 1 },
   footerSubmitTextDisabled: { color: COLORS.textMuted },
 
   // Submit

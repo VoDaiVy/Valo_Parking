@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RegistrationOtpModal } from '@/components/auth/RegistrationOtpModal';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 import { useAuth } from '@/hooks/useAuth';
 import type { AuthStackParamList } from '@/navigation/types';
 import { authService } from '@/services/api/auth';
@@ -71,6 +73,7 @@ function Field({
 }
 
 export const RegisterScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -169,9 +172,9 @@ export const RegisterScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <LinearGradient
-        colors={['#080808', '#111111', '#161208']}
+        colors={[COLORS.background, COLORS.surface, COLORS.goldTint]}
         locations={[0, 0.6, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -182,6 +185,7 @@ export const RegisterScreen = ({ navigation }: Props) => {
           bounces={false}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
@@ -199,12 +203,12 @@ export const RegisterScreen = ({ navigation }: Props) => {
               start={{ x: 0, y: 0 }}
               style={styles.cardTopLine}
             />
-            <Text style={styles.cardTitle}>Create account</Text>
-            <Text style={styles.cardSub}>Book parking and manage your VALO wallet</Text>
+            <Text style={styles.cardTitle}>{translateUi("Create account")}</Text>
+            <Text style={styles.cardSub}>{translateUi("Book parking and manage your VALO wallet")}</Text>
 
             <Field
               icon={<Ionicons color={COLORS.textMuted} name="person-outline" size={18} />}
-              placeholder="Full name"
+              placeholder={translateUi("Full name")}
               value={username}
               onChangeText={setUsername}
             />
@@ -219,14 +223,14 @@ export const RegisterScreen = ({ navigation }: Props) => {
             <Field
               icon={<Ionicons color={COLORS.textMuted} name="call-outline" size={18} />}
               keyboardType="phone-pad"
-              placeholder="Phone number"
+              placeholder={translateUi("Phone number")}
               value={phone}
               onChangeText={setPhone}
             />
             <Field
               autoCapitalize="none"
               icon={<Ionicons color={COLORS.textMuted} name="lock-closed-outline" size={18} />}
-              placeholder="Password"
+              placeholder={translateUi("Password")}
               secureTextEntry
               value={password}
               onChangeText={setPassword}
@@ -235,7 +239,7 @@ export const RegisterScreen = ({ navigation }: Props) => {
             {error ? (
               <View style={styles.errorBox}>
                 <Ionicons color={COLORS.error} name="warning-outline" size={16} />
-                <Text style={styles.errorText}>{error}</Text>
+                <Text style={styles.errorText}>{translateUi(error)}</Text>
               </View>
             ) : null}
 
@@ -255,7 +259,7 @@ export const RegisterScreen = ({ navigation }: Props) => {
                   <ActivityIndicator color={COLORS.textInverse} size="small" />
                 ) : (
                   <>
-                    <Text style={styles.submitText}>Create account</Text>
+                    <Text style={styles.submitText}>{translateUi("Create account")}</Text>
                     <Ionicons color={COLORS.textInverse} name="arrow-forward" size={18} />
                   </>
                 )}
@@ -266,8 +270,8 @@ export const RegisterScreen = ({ navigation }: Props) => {
               style={({ pressed }) => [styles.loginRow, pressed && styles.pressed]}
               onPress={() => navigation.goBack()}
             >
-              <Text style={styles.loginText}>Already have an account? </Text>
-              <Text style={[styles.loginText, styles.loginLink]}>Sign in</Text>
+              <Text style={styles.loginText}>{translateUi("Already have an account?")}{" "}</Text>
+              <Text style={[styles.loginText, styles.loginLink]}>{translateUi("Sign in")}</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -290,13 +294,16 @@ export const RegisterScreen = ({ navigation }: Props) => {
 export default RegisterScreen;
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#080808' },
+  safe: { flex: 1, backgroundColor: COLORS.background },
   kav: { flex: 1 },
   scroll: {
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xl,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   cornerGlow: {
     backgroundColor: COLORS.gold,
@@ -311,10 +318,10 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', marginBottom: SPACING.xl },
   logoGlow: {
     alignItems: 'center',
-    backgroundColor: 'rgba(212,175,55,0.08)',
-    borderColor: 'rgba(212,175,55,0.3)',
+    backgroundColor: COLORS.goldTint,
+    borderColor: COLORS.border,
     borderRadius: 48,
-    borderWidth: 1.5,
+    borderWidth: 1,
     height: 96,
     justifyContent: 'center',
     marginBottom: SPACING.sm,
@@ -322,10 +329,8 @@ const styles = StyleSheet.create({
   },
   logoImg: { height: 68, width: 68 },
   brandName: {
+    ...typography.h1,
     color: COLORS.gold,
-    fontSize: 34,
-    fontWeight: '900',
-    letterSpacing: 8,
   },
   brandSub: {
     color: COLORS.textSecondary,
@@ -350,48 +355,50 @@ const styles = StyleSheet.create({
     top: 0,
   },
   cardTitle: {
+    ...typography.h2,
     color: COLORS.textPrimary,
-    fontSize: FONT_SIZES.xxl,
-    fontWeight: '800',
     marginBottom: 4,
     marginTop: SPACING.xs,
   },
   cardSub: {
+    ...typography.body2,
     color: COLORS.textSecondary,
     fontSize: FONT_SIZES.sm,
     marginBottom: SPACING.lg,
   },
   fieldWrap: {
     alignItems: 'center',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1.5,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
     flexDirection: 'row',
-    height: 52,
-    marginBottom: SPACING.sm,
+    minHeight: 52,
+    marginBottom: SPACING.md,
     paddingHorizontal: SPACING.sm,
   },
   fieldDefault: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: COLORS.surfaceElevated,
     borderColor: COLORS.border,
   },
   fieldFocused: {
-    backgroundColor: 'rgba(212,175,55,0.06)',
-    borderColor: 'rgba(212,175,55,0.5)',
+    backgroundColor: COLORS.surfaceElevated,
+    borderColor: COLORS.gold,
   },
   fieldIcon: {
     alignItems: 'center',
     width: 32,
   },
   fieldInput: {
+    ...typography.body1,
     color: COLORS.textPrimary,
     flex: 1,
     fontSize: FONT_SIZES.md,
-    paddingVertical: 0,
+    paddingVertical: 12,
+    minWidth: 0,
   },
   errorBox: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.1)',
-    borderColor: 'rgba(255,77,77,0.2)',
+    backgroundColor: COLORS.errorTint,
+    borderColor: COLORS.error,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -415,19 +422,26 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     justifyContent: 'center',
     minHeight: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   submitText: {
+    ...typography.button,
     color: COLORS.textInverse,
     fontSize: FONT_SIZES.md,
-    fontWeight: '800',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   disabled: { opacity: 0.6 },
-  pressed: { opacity: 0.65 },
+  pressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   loginRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    minHeight: 44,
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
   loginText: {
     color: COLORS.textSecondary,

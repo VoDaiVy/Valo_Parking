@@ -3,6 +3,10 @@ import { Button } from 'react-native';
 
 import { AppAlertProvider, useAppAlert } from '../AppAlertContext';
 
+jest.mock('@/contexts/LanguageContext', () => ({
+  useLanguage: () => ({ language: 'en', t: (message: string) => message }),
+}));
+
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 
 const ErrorTrigger = () => {

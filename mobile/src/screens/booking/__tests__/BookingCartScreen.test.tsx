@@ -4,6 +4,10 @@ import { BookingCartScreen } from '../BookingCartScreen';
 import { bookingService } from '@/services/BookingService';
 import { walletService } from '@/services/api/wallet';
 
+jest.mock('@/contexts/LanguageContext', () => ({
+  useLanguage: () => ({ language: 'en', t: (message: string) => message }),
+}));
+
 jest.mock('@react-navigation/native', () => ({ usePreventRemove: jest.fn() }));
 jest.mock('@/components/common', () => {
   const { Text } = require('react-native');

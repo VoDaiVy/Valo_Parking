@@ -1,9 +1,10 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Share, StyleSheet, View } from 'react-native';
 import { useState } from 'react';
 import QRCode from 'react-native-qrcode-svg';
 
 import { AppText, Button, Card } from '@/components/common';
-import { colors, spacing } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 
 interface QRCodeDisplayProps {
   bookingId?: string;
@@ -28,6 +29,7 @@ export const QRCodeDisplay = ({
   size = 200,
   showBrightnessControl = true,
 }: QRCodeDisplayProps) => {
+  const { t: translateUi } = useLanguage();
   const [bright, setBright] = useState(false);
   const qrValue = value || bookingId || '';
   const displayReference = reference || bookingId;
@@ -38,19 +40,20 @@ export const QRCodeDisplay = ({
         <QRCode backgroundColor="white" color="black" ecl="M" size={size} value={qrValue} />
       </View>
       {displayReference ? (
-        <AppText color={colors.light.text.secondary} style={styles.center} variant="caption">
-          Ref: {displayReference}
+        <AppText color={bright ? colors.light.text.inverse : colors.light.text.secondary} style={styles.center} variant="caption">
+          {" "}{translateUi("Ref:")}{" "}{displayReference}
         </AppText>
       ) : null}
       {showBrightnessControl ? (
         <Button
-          title={bright ? 'Normal Brightness' : 'Boost Brightness'}
+          title={bright ? translateUi("Normal Brightness") : translateUi("Boost Brightness")}
           variant="outline"
           onPress={() => setBright((current) => !current)}
         />
       ) : null}
       <Button
-        title={shareTitle}
+        title={translateUi(shareTitle)}
+        textStyle={bright ? styles.brightText : undefined}
         variant="ghost"
         onPress={() => Share.share({ message: `${shareLabel}: ${qrValue}` })}
       />
@@ -68,9 +71,12 @@ const styles = StyleSheet.create({
   },
   center: {
     textAlign: 'center',
+    maxWidth: '100%',
   },
+  brightText: { color: colors.light.text.inverse },
   qrWrap: {
-    backgroundColor: colors.neutral.white,
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.md,
     padding: spacing.md,
   },
 });

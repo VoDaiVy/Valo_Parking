@@ -7,6 +7,11 @@ export interface SubscriptionPackage {
   name: string;
   type: SubscriptionPackageType;
   price: number;
+  adjustedPrice: number;
+  changePercent: number;
+  priceLabel?: string;
+  level?: 'low' | 'medium' | 'high' | null;
+  busynessScore?: number | null;
   description?: string;
   isActive: boolean;
   durationMonths?: number;

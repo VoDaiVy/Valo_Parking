@@ -1,6 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useCallback, useEffect, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ErrorState, ScreenHeader } from '@/components/common';
 import { WorkflowButton, WorkflowChip, workflowStyles as s } from '@/components/common/WorkflowUI';
@@ -15,6 +16,7 @@ import { formatDate } from '@/utils/formatters';
 export function StaffParkingOperationsScreen({
   navigation,
 }: NativeStackScreenProps<StaffManagementStackParamList, 'ParkingOperations'>) {
+  const { t: translateUi } = useLanguage();
   const [tab, setTab] = useState<'violations' | 'maintenance'>('violations');
   const [logs, setLogs] = useState<SlotAuditLog[]>([]);
   const [page, setPage] = useState(1);
@@ -112,31 +114,30 @@ export function StaffParkingOperationsScreen({
   return (
     <SafeAreaView edges={['top']} style={s.safe}>
       <ScreenHeader
-        title="Monitoring & maintenance"
-        subtitle="Violations, history and parking space status"
+        title={translateUi("Monitoring & maintenance")}
+        subtitle={translateUi("Violations, history and parking space status")}
         onBack={() => navigation.goBack()}
       />
-      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
         <View style={s.row}>
           <WorkflowChip
             selected={tab === 'violations'}
             onPress={() => !busy && setTab('violations')}
           >
-            Violations
-          </WorkflowChip>
+            {" "}{translateUi("Violations")}{" "}</WorkflowChip>
           <WorkflowChip
             selected={tab === 'maintenance'}
             onPress={() => !busy && setTab('maintenance')}
           >
-            Maintenance & space history
-          </WorkflowChip>
+            {" "}{translateUi("Maintenance & space history")}{" "}</WorkflowChip>
         </View>
-        {error ? <ErrorState message={error} onRetry={load} /> : null}
+        {error ? <ErrorState message={translateUi(error)} onRetry={load} /> : null}
         {tab === 'violations' ? (
           <>
             <TextInput
-              accessibilityLabel="Search by license plate or space"
-              placeholder="Search plates or spaces…"
+              accessibilityLabel={translateUi("Search by license plate or space")}
+              placeholder={translateUi("Search plates or spaces…")}
               placeholderTextColor={COLORS.textMuted}
               style={s.input}
               value={search}
@@ -153,8 +154,7 @@ export function StaffParkingOperationsScreen({
                   setQuery(search.trim());
                 }}
               >
-                Search
-              </WorkflowChip>
+                {" "}{translateUi("Search")}{" "}</WorkflowChip>
               <WorkflowChip
                 selected={pendingOnly}
                 onPress={() => {
@@ -162,7 +162,7 @@ export function StaffParkingOperationsScreen({
                   setPendingOnly(!pendingOnly);
                 }}
               >
-                {pendingOnly ? 'Pending' : 'All statuses'}
+                {pendingOnly ? translateUi("Pending") : 'All statuses'}
               </WorkflowChip>
             </View>
             {logs.map((log) => (
@@ -178,7 +178,7 @@ export function StaffParkingOperationsScreen({
                 </Text>
                 {log.status === 'PENDING' ? (
                   <WorkflowButton
-                    title="Record driver warning"
+                    title={translateUi("Record driver warning")}
                     disabled={busy}
                     onPress={() =>
                       alert(
@@ -208,17 +208,17 @@ export function StaffParkingOperationsScreen({
               </View>
             ))}
             {!loading && !logs.length ? (
-              <Text style={s.body}>No matching violations.</Text>
+              <Text style={s.body}>{translateUi("No matching violations.")}</Text>
             ) : null}
             <View style={s.row}>
               {page > 1 ? (
-                <WorkflowChip onPress={() => setPage(page - 1)}>Previous page</WorkflowChip>
+                <WorkflowChip onPress={() => setPage(page - 1)}>{translateUi("Previous page")}</WorkflowChip>
               ) : null}
               <Text style={s.body}>
                 {page}/{pages}
               </Text>
               {page < pages ? (
-                <WorkflowChip onPress={() => setPage(page + 1)}>Next page</WorkflowChip>
+                <WorkflowChip onPress={() => setPage(page + 1)}>{translateUi("Next page")}</WorkflowChip>
               ) : null}
             </View>
           </>
@@ -254,18 +254,18 @@ export function StaffParkingOperationsScreen({
             </View>
             {selected ? (
               <View style={s.panel}>
-                <Text style={s.title}>Space {selected.slotNumber || selected.slotCode}</Text>
+                <Text style={s.title}>{translateUi("Space")}{" "}{selected.slotNumber || selected.slotCode}</Text>
                 <Text style={s.body}>{selected.status}</Text>
                 <TextInput
-                  accessibilityLabel="Reason for maintenance"
-                  placeholder="Reason for maintenance"
+                  accessibilityLabel={translateUi("Reason for maintenance")}
+                  placeholder={translateUi("Reason for maintenance")}
                   placeholderTextColor={COLORS.textMuted}
                   style={s.input}
                   value={reason}
                   onChangeText={setReason}
                 />
                 <WorkflowButton
-                  title={selected.status === 'maintenance' ? 'End maintenance' : 'Start maintenance'}
+                  title={selected.status === 'maintenance' ? translateUi("End maintenance") : translateUi("Start maintenance")}
                   disabled={
                     busy ||
                     (selected.status !== 'maintenance' &&
@@ -273,21 +273,22 @@ export function StaffParkingOperationsScreen({
                   }
                   onPress={maintain}
                 />
-                <Text style={s.title}>Space history</Text>
+                <Text style={s.title}>{translateUi("Space history")}</Text>
                 {slotLogs.map((log) => (
                   <Text key={log._id} style={s.body}>
                     {formatDate(log.createdAt)} · {log.resolutionNote || log.changeType}
                   </Text>
                 ))}
-                {!slotLogs.length ? <Text style={s.body}>No history yet.</Text> : null}
+                {!slotLogs.length ? <Text style={s.body}>{translateUi("No history yet.")}</Text> : null}
               </View>
             ) : (
-              <Text style={s.body}>Select a floor and space to view history or manage maintenance.</Text>
+              <Text style={s.body}>{translateUi("Select a floor and space to view history or manage maintenance.")}</Text>
             )}
           </>
         )}
         {loading || busy ? <ActivityIndicator color={COLORS.gold} /> : null}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

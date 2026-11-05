@@ -1,7 +1,9 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, CONTROL, RADIUS, SPACE, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 
 export interface ErrorStateProps {
   title?: string;
@@ -16,13 +18,14 @@ export function ErrorState({
   retryLabel = 'Try again',
   onRetry,
 }: ErrorStateProps) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.wrap}>
       <View style={styles.iconWrap}>
         <Ionicons name="warning-outline" size={30} color={COLORS.error} />
       </View>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.message}>{message}</Text>
+      <Text accessibilityRole="header" style={styles.title}>{translateUi(title)}</Text>
+      <Text style={styles.message}>{translateUi(message)}</Text>
       {onRetry ? (
         <TouchableOpacity
           accessibilityRole="button"
@@ -31,7 +34,7 @@ export function ErrorState({
           onPress={onRetry}
         >
           <Ionicons name="refresh" size={16} color={COLORS.textInverse} />
-          <Text style={styles.retryText}>{retryLabel}</Text>
+          <Text style={styles.retryText}>{translateUi(retryLabel)}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -41,46 +44,48 @@ export function ErrorState({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACE[12],
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xl,
   },
   iconWrap: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.1)',
-    borderColor: 'rgba(255,77,77,0.24)',
-    borderRadius: RADIUS.round,
-    borderWidth: 1,
-    height: 68,
+    backgroundColor: COLORS.errorTint,
+    borderRadius: RADIUS.xl,
+    height: SPACE[64],
     justifyContent: 'center',
-    width: 68,
+    width: SPACE[64],
+    marginBottom: SPACE[4],
   },
   title: {
+    ...typography.h3,
     color: COLORS.textPrimary,
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
+    maxWidth: 360,
     textAlign: 'center',
   },
   message: {
+    ...typography.body2,
     color: COLORS.textSecondary,
-    fontSize: FONT_SIZES.sm,
-    lineHeight: 20,
+    maxWidth: 360,
     textAlign: 'center',
   },
   retry: {
     alignItems: 'center',
     backgroundColor: COLORS.gold,
-    borderRadius: RADIUS.round,
+    borderRadius: RADIUS.md,
     flexDirection: 'row',
-    gap: SPACING.xs,
+    gap: SPACE[8],
     justifyContent: 'center',
     marginTop: SPACING.xs,
-    minHeight: 44,
+    minHeight: CONTROL.minHeight,
     paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACE[12],
+    maxWidth: '100%',
   },
   retryText: {
+    ...typography.button,
     color: COLORS.textInverse,
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'center',
   },
 });

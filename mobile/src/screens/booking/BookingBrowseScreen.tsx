@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -12,7 +13,7 @@ import { useBooking } from '@/hooks/useBooking';
 import { useToast } from '@/hooks/useToast';
 import type { BookingStackParamList } from '@/navigation/types';
 import { vehiclesService } from '@/services/api/vehicles';
-import { colors, spacing } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 import type { AvailableSlot, Service } from '@/types/booking.types';
 import type { Vehicle } from '@/types/models';
 import { getDefaultBookingRange, validateTimeRange, validateWalletBalance } from '@/utils/bookingValidation';
@@ -27,6 +28,7 @@ type Props = NativeStackScreenProps<BookingStackParamList, 'BookingBrowse'>;
 const HOURLY_RATE = 10000;
 
 export const BookingBrowseScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const toast = useToast();
   const { user } = useAuth();
   const {
@@ -124,8 +126,8 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
   return (
     <Screen scrollable>
       <View style={styles.header}>
-        <AppText variant="h1">Create Booking</AppText>
-        <Button title="My Bookings" variant="outline" onPress={() => navigation.navigate('MyBookings')} />
+        <AppText variant="h1">{translateUi("Create Booking")}</AppText>
+        <Button title={translateUi("My Bookings")} variant="outline" onPress={() => navigation.navigate('MyBookings')} />
       </View>
       <TimeRangePicker
         endTime={endTime}
@@ -138,12 +140,12 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
           }
         }}
       />
-      <Card>
-        <AppText variant="h3">Available slots: {availableSlots.length}</AppText>
+      <Card style={styles.section}>
+        <AppText variant="h3">{translateUi("Available slots:")}{" "}{availableSlots.length}</AppText>
         {isLoading ? <LoadingSpinner /> : null}
-        {error ? <AppText color={colors.error.main}>{error}</AppText> : null}
+        {error ? <AppText color={colors.error.main}>{translateUi(error)}</AppText> : null}
         {!isLoading && availableSlots.length === 0 ? (
-          <AppText color={colors.light.text.secondary}>No available slots for this time.</AppText>
+          <AppText color={colors.light.text.secondary}>{translateUi("No available slots for this time.")}</AppText>
         ) : null}
       </Card>
       {Object.entries(groupedSlots).map(([floor, slots]) => (
@@ -151,7 +153,7 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
           <View style={styles.header}>
             <AppText variant="h3">{floor}</AppText>
             <Button
-              title="Map"
+              title={translateUi("Map")}
               variant="ghost"
               onPress={() =>
                 navigation.navigate('ParkingMap', {
@@ -168,8 +170,9 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
             <Pressable
               key={`${slot.floorId}-${slot.slotCode}`}
               accessibilityRole="button"
+              accessibilityState={{ selected: selectedSlot?.slotCode === slot.slotCode }}
               onPress={() => setSelectedSlot(slot)}
-              style={[styles.option, selectedSlot?.slotCode === slot.slotCode && styles.optionSelected]}
+              style={({ pressed }) => [styles.option, selectedSlot?.slotCode === slot.slotCode && styles.optionSelected, pressed && styles.pressed]}
             >
               <AppText variant="body2">{slot.slotCode}</AppText>
               <AppText color={colors.light.text.secondary} variant="caption">
@@ -180,17 +183,19 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
         </Card>
       ))}
       <Card style={styles.section}>
-        <AppText variant="h3">Vehicle</AppText>
+        <AppText variant="h3">{translateUi("Vehicle")}</AppText>
         {vehicles.length === 0 ? (
-          <AppText color={colors.warning.dark}>Add a vehicle to start booking.</AppText>
+          <AppText color={colors.warning.main}>{translateUi("Add a vehicle to start booking.")}</AppText>
         ) : (
           vehicles.map((vehicle) => {
             const vehicleId = vehicle.id || vehicle._id || '';
             return (
               <Pressable
                 key={vehicleId}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedVehicleId === vehicleId }}
                 onPress={() => setSelectedVehicleId(vehicleId)}
-                style={[styles.option, selectedVehicleId === vehicleId && styles.optionSelected]}
+                style={({ pressed }) => [styles.option, selectedVehicleId === vehicleId && styles.optionSelected, pressed && styles.pressed]}
               >
                 <AppText>{vehicle.licensePlate}</AppText>
                 <AppText color={colors.light.text.secondary} variant="caption">
@@ -203,7 +208,7 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
       </Card>
       {services.length > 0 ? (
         <View>
-          <AppText variant="h3">Optional services</AppText>
+          <AppText variant="h3">{translateUi("Optional services")}</AppText>
           {services.map((service, index) => (
             <ServiceCard
               key={service._id}
@@ -216,12 +221,12 @@ export const BookingBrowseScreen = ({ navigation }: Props) => {
         </View>
       ) : null}
       <PriceBreakdown parkingCost={parkingCost} serviceCost={serviceCost} finalTotal={totalCost} />
-      <Card>
-        <AppText>Wallet balance: {walletBalance.toLocaleString('en-US')} VND</AppText>
+      <Card style={styles.section}>
+        <AppText>{translateUi("Wallet balance:")}{" "}{walletBalance.toLocaleString('en-US')} VND</AppText>
         {!balanceValidation.valid ? (
           <>
             <AppText color={colors.error.main}>{balanceValidation.error}</AppText>
-            <Button title="Top Up Wallet" variant="outline" onPress={() => navigation.getParent()?.navigate('WalletTab')} />
+            <Button title={translateUi("Top Up Wallet")} variant="outline" onPress={() => navigation.getParent()?.navigate('WalletTab')} />
           </>
         ) : null}
       </Card>
@@ -240,19 +245,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   section: {
     gap: spacing.md,
   },
   option: {
     borderColor: colors.light.border,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.light.surfaceElevated,
+    minHeight: 48,
     borderWidth: 1,
     gap: spacing.xs,
     padding: spacing.md,
   },
   optionSelected: {
     borderColor: colors.primary[500],
-    borderWidth: 2,
+    backgroundColor: colors.primary[50],
   },
+  pressed: { opacity: 0.85 },
 });

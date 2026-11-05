@@ -1,17 +1,23 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ElementRef } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, CONTROL, MOTION, RADIUS, SPACE, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 
 type RegistrationOtpModalProps = {
   email: string;
@@ -34,9 +40,10 @@ export const RegistrationOtpModal = ({
   onVerify,
   onResend,
 }: RegistrationOtpModalProps) => {
+  const { t: translateUi } = useLanguage();
   const [otp, setOtp] = useState('');
   const [cooldown, setCooldown] = useState(0);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const inputRefs = useRef<Array<ElementRef<typeof TextInput> | null>>([]);
 
   useEffect(() => {
     if (!visible) {
@@ -99,20 +106,22 @@ export const RegistrationOtpModal = ({
 
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={handleCancel}>
-      <View style={styles.overlay}>
+      <SafeAreaView style={styles.overlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <View style={styles.iconCircle}>
             <Ionicons color={COLORS.textInverse} name="mail-outline" size={28} />
           </View>
-          <Text style={styles.title}>Verify your email</Text>
+          <Text style={styles.title}>{translateUi("Verify your email")}</Text>
           <Text style={styles.description}>
-            We sent a 6-digit verification code to <Text style={styles.email}>{email}</Text>. Enter it below to activate your VALO account.
-          </Text>
+            {" "}{translateUi("We sent a 6-digit verification code to")}{" "}<Text style={styles.email}>{email}</Text>{translateUi(". Enter it below to activate your VALO account.")}{" "}</Text>
 
           <View style={styles.otpRow}>
             {Array.from({ length: 6 }, (_, index) => (
               <TextInput
                 key={index}
+                accessibilityLabel={`Verification digit ${index + 1}`}
                 ref={(ref) => { inputRefs.current[index] = ref; }}
                 autoComplete="one-time-code"
                 blurOnSubmit={false}
@@ -127,48 +136,56 @@ export const RegistrationOtpModal = ({
             ))}
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={styles.error}>{translateUi(error)}</Text> : null}
 
-          <Text style={styles.resendText}>Didn't get the code?</Text>
-          <Pressable disabled={cooldown > 0 || resending} onPress={handleResend}>
+          <Text style={styles.resendText}>{translateUi("Didn't get the code?")}</Text>
+          <Pressable accessibilityRole="button" disabled={cooldown > 0 || resending} style={({ pressed }) => [styles.resendButton, pressed && styles.pressed]} onPress={handleResend}>
             <Text style={[styles.resendLink, (cooldown > 0 || resending) && styles.disabledText]}>
-              {resending ? 'Sending...' : cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+              {resending ? translateUi("Sending...") : cooldown > 0 ? `Resend code in ${cooldown}s` : translateUi("Resend code")}
             </Text>
           </Pressable>
 
           <Pressable
             disabled={otp.length !== 6 || verifying}
-            style={[styles.verifyButton, (otp.length !== 6 || verifying) && styles.buttonDisabled]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: otp.length !== 6 || verifying, busy: verifying }}
+            style={({ pressed }) => [styles.verifyButton, (otp.length !== 6 || verifying) && styles.buttonDisabled, pressed && styles.pressed]}
             onPress={() => onVerify(otp)}
           >
-            {verifying ? <ActivityIndicator color={COLORS.textInverse} /> : <Text style={styles.verifyText}>Verify & continue</Text>}
+            {verifying ? <ActivityIndicator color={COLORS.textInverse} /> : <Text style={styles.verifyText}>{translateUi("Verify & continue")}</Text>}
           </Pressable>
-          <Pressable disabled={verifying} style={styles.cancelButton} onPress={handleCancel}>
-            <Text style={styles.cancelText}>Cancel</Text>
+          <Pressable accessibilityRole="button" disabled={verifying} style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]} onPress={handleCancel}>
+            <Text style={styles.cancelText}>{translateUi("Cancel")}</Text>
           </Pressable>
         </View>
-      </View>
+        </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  overlay: { alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.78)', flex: 1, justifyContent: 'center', padding: SPACING.lg },
-  card: { alignItems: 'center', backgroundColor: COLORS.surface, borderColor: COLORS.goldDark, borderRadius: RADIUS.xl, borderWidth: 1, maxWidth: 420, padding: SPACING.lg, width: '100%' },
+  overlay: { backgroundColor: 'rgba(0,0,0,0.78)', flex: 1 },
+  keyboard: { flex: 1 },
+  scroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: SPACE[16] },
+  card: { alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, maxWidth: 420, padding: SPACE[16], width: '100%' },
   iconCircle: { alignItems: 'center', backgroundColor: COLORS.gold, borderRadius: RADIUS.md, height: 56, justifyContent: 'center', marginBottom: SPACING.md, width: 56 },
-  title: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, fontWeight: '800', marginBottom: SPACING.sm },
-  description: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, lineHeight: 20, textAlign: 'center' },
+  title: { ...typography.h2, color: COLORS.textPrimary, textAlign: 'center', marginBottom: SPACING.sm },
+  description: { ...typography.body2, color: COLORS.textSecondary, textAlign: 'center' },
   email: { color: COLORS.textPrimary, fontWeight: '700' },
-  otpRow: { flexDirection: 'row', gap: SPACING.sm, justifyContent: 'center', marginVertical: SPACING.lg },
-  otpInput: { backgroundColor: 'rgba(255,255,255,0.04)', borderColor: COLORS.borderLight, borderRadius: RADIUS.sm, borderWidth: 1, color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, height: 50, textAlign: 'center', width: 40 },
-  otpGap: { marginRight: SPACING.sm },
-  error: { color: COLORS.error, fontSize: FONT_SIZES.sm, marginBottom: SPACING.sm, textAlign: 'center' },
-  resendText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, marginTop: SPACING.sm },
-  resendLink: { color: COLORS.gold, fontSize: FONT_SIZES.sm, fontWeight: '700', marginTop: 2 },
+  otpRow: { flexDirection: 'row', gap: SPACE[4], width: '100%', justifyContent: 'center', marginVertical: SPACING.lg },
+  otpInput: { ...typography.h3, flex: 1, minWidth: 0, maxWidth: 48, backgroundColor: COLORS.surfaceElevated, borderColor: COLORS.borderLight, borderRadius: RADIUS.sm, borderWidth: 1, color: COLORS.textPrimary, minHeight: CONTROL.minHeight, textAlign: 'center', paddingVertical: SPACE[8], fontVariant: ['tabular-nums'] },
+  otpGap: { marginRight: SPACE[4] },
+  error: { ...typography.body2, color: COLORS.error, marginBottom: SPACING.sm, textAlign: 'center' },
+  resendText: { ...typography.caption, color: COLORS.textSecondary, marginTop: SPACING.sm },
+  resendLink: { ...typography.button, color: COLORS.gold, textAlign: 'center' },
+  resendButton: { minHeight: CONTROL.minTouchSize, justifyContent: 'center', paddingHorizontal: SPACE[12] },
+  pressed: { opacity: 0.88, transform: [{ scale: MOTION.pressedScale }] },
   disabledText: { color: COLORS.textMuted },
   verifyButton: { alignItems: 'center', backgroundColor: COLORS.gold, borderRadius: RADIUS.lg, justifyContent: 'center', marginTop: SPACING.lg, minHeight: 50, width: '100%' },
   buttonDisabled: { opacity: 0.55 },
-  verifyText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, fontWeight: '800' },
-  cancelButton: { alignItems: 'center', minHeight: 42, justifyContent: 'center', marginTop: SPACING.xs, width: '100%' },
-  cancelText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm },
+  verifyText: { ...typography.button, color: COLORS.textInverse, textAlign: 'center' },
+  cancelButton: { alignItems: 'center', minHeight: CONTROL.minTouchSize, justifyContent: 'center', marginTop: SPACING.xs, width: '100%' },
+  cancelText: { ...typography.body2, color: COLORS.textSecondary },
 });

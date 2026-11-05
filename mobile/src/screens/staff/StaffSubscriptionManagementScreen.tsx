@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -69,6 +70,7 @@ function MembershipRow({
 }
 
 export function StaffSubscriptionManagementScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const tabBarHeight = useBottomTabBarHeight();
   const [items, setItems] = useState<StaffSubscription[]>([]);
   const [query, setQuery] = useState('');
@@ -118,10 +120,10 @@ export function StaffSubscriptionManagementScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Memberships"
-        title="VIP memberships"
+        title={translateUi("VIP memberships")}
         onBack={() => navigation.navigate('ManagementHome')}
         right={<StatusBadge label={`${items.length} total`} />}
       />
@@ -129,9 +131,9 @@ export function StaffSubscriptionManagementScreen({ navigation }: Props) {
       {statistics ? (
         <FadeInView style={styles.summary}>
           <MetricStrip>
-            <OperationalMetric icon="diamond-outline" label="Active" tone="success" value={statistics.summary.active} />
-            <OperationalMetric icon="timer-outline" label="Expiring" tone="warning" value={statistics.summary.expiringWithin7Days} />
-            <OperationalMetric icon="repeat-outline" label="Renewal" value={`${statistics.summary.renewalRate}%`} />
+            <OperationalMetric icon="diamond-outline" label={translateUi("Active")} tone="success" value={statistics.summary.active} />
+            <OperationalMetric icon="timer-outline" label={translateUi("Expiring")} tone="warning" value={statistics.summary.expiringWithin7Days} />
+            <OperationalMetric icon="repeat-outline" label={translateUi("Renewal")} value={`${statistics.summary.renewalRate}%`} />
           </MetricStrip>
         </FadeInView>
       ) : null}
@@ -139,9 +141,9 @@ export function StaffSubscriptionManagementScreen({ navigation }: Props) {
       <FadeInView delay={45} style={styles.search}>
         <Ionicons name="search-outline" size={17} color={COLORS.textMuted} />
         <TextInput
-          accessibilityLabel="Search memberships"
+          accessibilityLabel={translateUi("Search memberships")}
           onChangeText={setQuery}
-          placeholder="Customer, email, or license plate"
+          placeholder={translateUi("Customer, email, or license plate")}
           placeholderTextColor={COLORS.textMuted}
           style={styles.searchInput}
           value={query}
@@ -164,7 +166,7 @@ export function StaffSubscriptionManagementScreen({ navigation }: Props) {
       {loading ? (
         <SubscriptionSkeleton />
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : (
         <FlatList
           data={filtered}
@@ -182,7 +184,7 @@ export function StaffSubscriptionManagementScreen({ navigation }: Props) {
               />
             </FadeInView>
           )}
-          ListEmptyComponent={<EmptyState icon="diamond-outline" title="No memberships found" message="Try a different search or status." />}
+          ListEmptyComponent={<EmptyState icon="diamond-outline" title={translateUi("No memberships found")} message={translateUi("Try a different search or status.")} />}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -236,7 +238,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(226,186,75,0.12)',
     borderColor: COLORS.gold,
     shadowColor: COLORS.gold,
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
   },
   filterText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '800' },
@@ -259,10 +261,10 @@ const styles = StyleSheet.create({
     width: 44,
   },
   membershipCopy: { flex: 1, minWidth: 0 },
-  membershipTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  membershipTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
   membershipMeta: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 2 },
   membershipRight: { alignItems: 'flex-end', gap: 5, maxWidth: 116 },
-  amountText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '900' },
+  amountText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '700' },
   skeleton: { gap: SPACING.md, padding: SPACING.lg },
   skeletonRow: {
     borderBottomColor: COLORS.border,

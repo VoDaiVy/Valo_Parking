@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,6 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 import { useAppAlert } from '@/contexts/AppAlertContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useGoogleSignIn } from '@/hooks/useGoogleSignIn';
@@ -159,6 +161,7 @@ function AnimatedBackground() {
 }
 
 function BrandHeader() {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
   const pulse = useLoopingAnimation(5600, 250);
 
@@ -223,7 +226,7 @@ function BrandHeader() {
       <Text style={styles.brandSub}>PARKING</Text>
       <View style={styles.badge}>
         <Ionicons name="flash" size={11} color={BRAND.gold} />
-        <Text style={styles.badgeText}>Smart Parking Platform</Text>
+        <Text style={styles.badgeText}>{translateUi("Smart Parking Platform")}</Text>
       </View>
     </Animated.View>
   );
@@ -236,6 +239,7 @@ function SegmentedControl({
   mode: AuthMode;
   onChange: (mode: AuthMode) => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const progress = useRef(new Animated.Value(mode === 'signin' ? 0 : 1)).current;
   const [width, setWidth] = useState(0);
   const segmentWidth = width / 2;
@@ -272,8 +276,8 @@ function SegmentedControl({
           ]}
         />
       ) : null}
-      <SegmentButton active={mode === 'signin'} label="Sign In" onPress={() => onChange('signin')} />
-      <SegmentButton active={mode === 'signup'} label="Sign Up" onPress={() => onChange('signup')} />
+      <SegmentButton active={mode === 'signin'} label={translateUi("Sign In")} onPress={() => onChange('signin')} />
+      <SegmentButton active={mode === 'signup'} label={translateUi("Sign Up")} onPress={() => onChange('signup')} />
     </View>
   );
 }
@@ -287,6 +291,7 @@ function SegmentButton({
   label: string;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const scale = useRef(new Animated.Value(1)).current;
   const animatePress = (toValue: number) => {
     Animated.spring(scale, {
@@ -315,7 +320,7 @@ function SegmentButton({
         onPressIn={() => animatePress(0.97)}
         onPressOut={() => animatePress(1)}
       >
-        <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>{label}</Text>
+        <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>{translateUi(label)}</Text>
       </Pressable>
     </Animated.View>
   );
@@ -421,6 +426,7 @@ function AuthTextInput({
   secureTextEntry?: boolean;
   onTogglePassword?: () => void;
 } & React.ComponentProps<typeof TextInput>) {
+  const { t: translateUi } = useLanguage();
   const [focused, setFocused] = useState(false);
   const focusProgress = useRef(new Animated.Value(0)).current;
   const isDisabled = disabled || loading;
@@ -453,7 +459,7 @@ function AuthTextInput({
 
   return (
     <View style={styles.inputBlock}>
-      <Animated.Text style={[styles.inputLabel, { color: labelColor }]}>{label}</Animated.Text>
+      <Animated.Text style={[styles.inputLabel, { color: labelColor }]}>{translateUi(label)}</Animated.Text>
       <Animated.View pointerEvents="none" style={[styles.fieldGlow, { opacity: glowOpacity }]} />
       <Animated.View
         style={[
@@ -495,12 +501,13 @@ function AuthTextInput({
           />
         ) : null}
       </Animated.View>
-      {error ? <Text style={styles.inputErrorText}>{error}</Text> : null}
+      {error ? <Text style={styles.inputErrorText}>{translateUi(error)}</Text> : null}
     </View>
   );
 }
 
 function ForgotPasswordLink({ onPress }: { onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   const scale = useRef(new Animated.Value(1)).current;
 
   const animatePress = (toValue: number) => {
@@ -522,7 +529,7 @@ function ForgotPasswordLink({ onPress }: { onPress: () => void }) {
         onPressIn={() => animatePress(0.96)}
         onPressOut={() => animatePress(1)}
       >
-        <Text style={styles.forgotText}>Forgot password?</Text>
+        <Text style={styles.forgotText}>{translateUi("Forgot password?")}</Text>
       </Pressable>
     </Animated.View>
   );
@@ -637,6 +644,7 @@ function GoogleAuthButton({
   loading: boolean;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const scale = useRef(new Animated.Value(1)).current;
   const isDisabled = !enabled || loading;
 
@@ -674,7 +682,7 @@ function GoogleAuthButton({
         ) : (
           <>
             <GoogleIcon />
-            <Text style={styles.googleBtnText}>Continue with Google</Text>
+            <Text style={styles.googleBtnText}>{translateUi("Continue with Google")}</Text>
           </>
         )}
       </Pressable>
@@ -823,10 +831,11 @@ function SignInForm({
   onSubmit: () => void;
   onGooglePress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <>
-      <Text style={styles.cardTitle}>Welcome back</Text>
-      <Text style={styles.cardSub}>Access bookings, wallet, and your VALO parking flow.</Text>
+      <Text style={styles.cardTitle}>{translateUi("Welcome back")}</Text>
+      <Text style={styles.cardSub}>{translateUi("Access bookings, wallet, and your VALO parking flow.")}</Text>
 
       <AuthTextInput
         autoCapitalize="none"
@@ -842,10 +851,10 @@ function SignInForm({
       <AuthTextInput
         autoCapitalize="none"
         icon="lock-closed-outline"
-        label="Password"
+        label={translateUi("Password")}
         loading={loading}
         password
-        placeholder="Enter password"
+        placeholder={translateUi("Enter password")}
         returnKeyType="done"
         secureTextEntry={passwordHidden}
         value={password}
@@ -856,11 +865,11 @@ function SignInForm({
 
       <ForgotPasswordLink onPress={onForgotPassword} />
 
-      <PrimaryButton loading={loading} title="Sign In" onPress={onSubmit} />
+      <PrimaryButton loading={loading} title={translateUi("Sign In")} onPress={onSubmit} />
 
       <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or continue with</Text>
+        <Text style={styles.dividerText}>{translateUi("or continue with")}</Text>
         <View style={styles.dividerLine} />
       </View>
 
@@ -906,17 +915,18 @@ function SignUpForm({
   onToggleConfirmPassword: () => void;
   onSubmit: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <>
-      <Text style={styles.cardTitle}>Create account</Text>
-      <Text style={styles.cardSub}>Start booking faster with a polished VALO profile.</Text>
+      <Text style={styles.cardTitle}>{translateUi("Create account")}</Text>
+      <Text style={styles.cardSub}>{translateUi("Start booking faster with a polished VALO profile.")}</Text>
 
       <AuthTextInput
         autoCapitalize="words"
         icon="person-outline"
-        label="Full Name"
+        label={translateUi("Full Name")}
         loading={loading}
-        placeholder="Your full name"
+        placeholder={translateUi("Your full name")}
         returnKeyType="next"
         value={name}
         onChangeText={onNameChange}
@@ -935,9 +945,9 @@ function SignUpForm({
       <AuthTextInput
         icon="call-outline"
         keyboardType="phone-pad"
-        label="Phone"
+        label={translateUi("Phone")}
         loading={loading}
-        placeholder="Phone number"
+        placeholder={translateUi("Phone number")}
         returnKeyType="next"
         value={phone}
         onChangeText={onPhoneChange}
@@ -945,10 +955,10 @@ function SignUpForm({
       <AuthTextInput
         autoCapitalize="none"
         icon="lock-closed-outline"
-        label="Password"
+        label={translateUi("Password")}
         loading={loading}
         password
-        placeholder="At least 8 characters"
+        placeholder={translateUi("At least 8 characters")}
         returnKeyType="next"
         secureTextEntry={passwordHidden}
         value={password}
@@ -958,10 +968,10 @@ function SignUpForm({
       <AuthTextInput
         autoCapitalize="none"
         icon="shield-checkmark-outline"
-        label="Confirm Password"
+        label={translateUi("Confirm Password")}
         loading={loading}
         password
-        placeholder="Re-enter password"
+        placeholder={translateUi("Re-enter password")}
         returnKeyType="done"
         secureTextEntry={confirmPasswordHidden}
         value={confirmPassword}
@@ -970,9 +980,9 @@ function SignUpForm({
         onTogglePassword={onToggleConfirmPassword}
       />
 
-      <ErrorBanner message={error} />
+      <ErrorBanner message={translateUi(error)} />
 
-      <PrimaryButton loading={loading} title="Create Account" onPress={onSubmit} />
+      <PrimaryButton loading={loading} title={translateUi("Create Account")} onPress={onSubmit} />
     </>
   );
 }
@@ -1037,6 +1047,7 @@ const createUsername = (name: string, email: string) => {
 };
 
 export default function AuthScreen({ navigation, route }: Props) {
+  const { t: translateUi } = useLanguage();
   const { login } = useAuth();
   const { alert } = useAppAlert();
   const [mode, setMode] = useState<AuthMode>(route.name === 'Register' ? 'signup' : 'signin');
@@ -1129,9 +1140,9 @@ export default function AuthScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={BRAND.background} />
+      <StatusBar barStyle="light-content" />
       <LinearGradient
-        colors={[BRAND.background, '#11110F', '#151209']}
+        colors={[BRAND.background, COLORS.surface, COLORS.goldTint]}
         locations={[0, 0.62, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -1145,6 +1156,7 @@ export default function AuthScreen({ navigation, route }: Props) {
           bounces={false}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
           <BrandHeader />
@@ -1197,7 +1209,7 @@ export default function AuthScreen({ navigation, route }: Props) {
             </StaggeredReveal>
           </AuthCard>
 
-          <Text style={styles.footer}>2026 VALO Parking - All rights reserved</Text>
+          <Text style={styles.footer}>{translateUi("2026 VALO Parking - All rights reserved")}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -1205,12 +1217,12 @@ export default function AuthScreen({ navigation, route }: Props) {
 }
 
 const BRAND = {
-  background: '#0F0F0D',
-  card: '#17181D',
-  gold: '#F4C542',
-  goldLight: '#FFE089',
-  goldDark: '#D4A017',
-  border: 'rgba(255,255,255,0.08)',
+  background: COLORS.background,
+  card: COLORS.surface,
+  gold: COLORS.gold,
+  goldLight: COLORS.goldLight,
+  goldDark: COLORS.goldDark,
+  border: COLORS.border,
 };
 
 const googleIconStyles = StyleSheet.create({
@@ -1241,6 +1253,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.lg,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
   },
   logoHaloBack: {
     backgroundColor: BRAND.gold,
@@ -1285,7 +1300,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     shadowColor: BRAND.gold,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.12,
     shadowRadius: 24,
     width: 96,
   },
@@ -1312,9 +1327,8 @@ const styles = StyleSheet.create({
     width: 62,
   },
   brandName: {
+    ...typography.h1,
     color: BRAND.gold,
-    fontSize: 34,
-    fontWeight: '900',
     letterSpacing: 0,
   },
   brandSub: {
@@ -1344,14 +1358,14 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: BRAND.card,
     borderColor: BRAND.border,
-    borderRadius: 24,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     overflow: 'hidden',
     padding: SPACING.md,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.32,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
   },
   cardTopLine: {
     height: 2,
@@ -1375,7 +1389,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     flexDirection: 'row',
-    height: 48,
+    minHeight: 56,
     marginBottom: SPACING.lg,
     padding: 4,
   },
@@ -1387,7 +1401,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     shadowColor: BRAND.gold,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.32,
+    shadowOpacity: 0.12,
     shadowRadius: 12,
     top: 4,
   },
@@ -1410,9 +1424,8 @@ const styles = StyleSheet.create({
     color: COLORS.textInverse,
   },
   cardTitle: {
+    ...typography.h2,
     color: COLORS.textPrimary,
-    fontSize: FONT_SIZES.xxl,
-    fontWeight: '900',
     marginBottom: 5,
   },
   cardSub: {
@@ -1439,14 +1452,14 @@ const styles = StyleSheet.create({
     right: -2,
     shadowColor: BRAND.gold,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.12,
     shadowRadius: 10,
     top: 23,
   },
   fieldWrap: {
     alignItems: 'center',
-    borderRadius: RADIUS.lg,
-    borderWidth: 1.5,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
     flexDirection: 'row',
     minHeight: 54,
     paddingHorizontal: SPACING.sm,
@@ -1467,14 +1480,18 @@ const styles = StyleSheet.create({
   },
   fieldIconRight: {
     alignItems: 'center',
-    width: 34,
+    justifyContent: 'center',
+    width: 44,
+    minHeight: 44,
   },
   fieldInput: {
+    ...typography.body1,
     color: COLORS.textPrimary,
     flex: 1,
     fontSize: FONT_SIZES.md,
     minHeight: 52,
-    paddingVertical: 0,
+    paddingVertical: 12,
+    minWidth: 0,
   },
   inputErrorText: {
     color: COLORS.error,
@@ -1488,8 +1505,10 @@ const styles = StyleSheet.create({
   },
   forgotPress: {
     borderRadius: RADIUS.round,
-    paddingHorizontal: 2,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   forgotText: {
     color: BRAND.gold,
@@ -1501,9 +1520,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
     overflow: 'hidden',
     shadowColor: BRAND.gold,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
   },
   primaryPressed: {
     transform: [{ scale: 0.985 }],
@@ -1514,6 +1533,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     justifyContent: 'center',
     minHeight: 54,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     overflow: 'hidden',
   },
   buttonShine: {
@@ -1524,9 +1545,11 @@ const styles = StyleSheet.create({
     width: BUTTON_SHINE_WIDTH,
   },
   primaryBtnText: {
+    ...typography.button,
     color: COLORS.textInverse,
     fontSize: FONT_SIZES.md,
-    fontWeight: '900',
+    textAlign: 'center',
+    flexShrink: 1,
   },
   dividerRow: {
     alignItems: 'center',
@@ -1571,8 +1594,8 @@ const styles = StyleSheet.create({
   },
   formError: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.1)',
-    borderColor: 'rgba(255,77,77,0.22)',
+    backgroundColor: COLORS.errorTint,
+    borderColor: COLORS.error,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -1591,7 +1614,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
     marginTop: SPACING.lg,
-    opacity: 0.5,
     textAlign: 'center',
   },
   disabled: {

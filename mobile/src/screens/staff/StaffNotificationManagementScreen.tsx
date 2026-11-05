@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -36,6 +37,7 @@ const priorityTone = (priority?: string) => {
 };
 
 export function StaffNotificationManagementScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const [tab, setTab] = useState<'history' | 'compose'>('history');
   const [history, setHistory] = useState<UserNotification[]>([]);
   const [customers, setCustomers] = useState<StaffCustomer[]>([]);
@@ -133,11 +135,11 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Broadcast"
-        title="Notifications"
-        subtitle="Customer notices"
+        title={translateUi("Notifications")}
+        subtitle={translateUi("Customer notices")}
         onBack={() => navigation.navigate('ManagementHome')}
         right={<StatusBadge label={`${history.length} sent`} />}
       />
@@ -146,7 +148,7 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
         {(['history', 'compose'] as const).map((value) => (
           <AnimatedPressable key={value} onPress={() => setTab(value)} style={[styles.tab, tab === value && styles.tabActive]}>
             <Text style={[styles.tabText, tab === value && styles.tabTextActive]}>
-              {value === 'history' ? 'History' : 'Compose'}
+              {value === 'history' ? translateUi("History") : 'Compose'}
             </Text>
           </AnimatedPressable>
         ))}
@@ -155,16 +157,16 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
       {loading ? (
         <NotificationSkeleton />
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : tab === 'history' ? (
         <ScrollView
           contentContainerStyle={styles.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} tintColor={COLORS.gold} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
           showsVerticalScrollIndicator={false}
         >
-          <SectionTitle title="Delivery history" detail="Latest staff messages" />
+          <SectionTitle title={translateUi("Delivery history")} detail="Latest staff messages" />
           {history.length === 0 ? (
-            <EmptyState icon="notifications-outline" title="No notifications sent" message="Messages sent by staff will appear here." accentColor={COLORS.gold} />
+            <EmptyState icon="notifications-outline" title={translateUi("No notifications sent")} message={translateUi("Messages sent by staff will appear here.")} accentColor={COLORS.gold} />
           ) : (
             <View style={styles.list}>
               {history.map((item, index) => (
@@ -181,19 +183,19 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
             </View>
           )}
           <View style={workflow.row}>
-            {page > 1 ? <WorkflowChip onPress={() => setPage(page - 1)}>Previous page</WorkflowChip> : null}
-            <Text style={workflow.body}>Page {page}</Text>
-            {hasNext ? <WorkflowChip onPress={() => setPage(page + 1)}>Next page</WorkflowChip> : null}
+            {page > 1 ? <WorkflowChip onPress={() => setPage(page - 1)}>{translateUi("Previous page")}</WorkflowChip> : null}
+            <Text style={workflow.body}>{translateUi("Page")}{" "}{page}</Text>
+            {hasNext ? <WorkflowChip onPress={() => setPage(page + 1)}>{translateUi("Next page")}</WorkflowChip> : null}
           </View>
         </ScrollView>
       ) : (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <SectionTitle title="Audience" detail={audience === 'ALL_USERS' ? 'Whole system' : audience === 'ROLE_BASED' ? roles.join(', ') : `${selected.length} selected`} />
+          <SectionTitle title={translateUi("Audience")} detail={audience === 'ALL_USERS' ? 'Whole system' : audience === 'ROLE_BASED' ? roles.join(', ') : `${selected.length} selected`} />
           <View style={styles.pills}>
-            <AudiencePill label="Whole system" active={audience === 'ALL_USERS'} onPress={() => chooseAudience('ALL_USERS')} />
-            <AudiencePill label="By role" active={audience === 'ROLE_BASED'} onPress={() => chooseAudience('ROLE_BASED')} />
-            <AudiencePill label="One customer" active={audience === 'SINGLE_USER'} onPress={() => chooseAudience('SINGLE_USER')} />
-            <AudiencePill label="Selected" active={audience === 'MULTI_USER'} onPress={() => chooseAudience('MULTI_USER')} />
+            <AudiencePill label={translateUi("Whole system")} active={audience === 'ALL_USERS'} onPress={() => chooseAudience('ALL_USERS')} />
+            <AudiencePill label={translateUi("By role")} active={audience === 'ROLE_BASED'} onPress={() => chooseAudience('ROLE_BASED')} />
+            <AudiencePill label={translateUi("One customer")} active={audience === 'SINGLE_USER'} onPress={() => chooseAudience('SINGLE_USER')} />
+            <AudiencePill label={translateUi("Selected")} active={audience === 'MULTI_USER'} onPress={() => chooseAudience('MULTI_USER')} />
           </View>
 
           {audience === 'ROLE_BASED' ? <View style={workflow.row}>
@@ -201,7 +203,7 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
           </View> : null}
           {audience === 'SINGLE_USER' || audience === 'MULTI_USER' ? (
             <View style={styles.fieldGroup}>
-              <TextInput value={search} onChangeText={setSearch} placeholder="Search customers" placeholderTextColor={COLORS.textMuted} style={styles.input} />
+              <TextInput value={search} onChangeText={setSearch} placeholder={translateUi("Search customers")} placeholderTextColor={COLORS.textMuted} style={styles.input} />
               <View style={styles.customerList}>
                 {filtered.slice(0, 20).map((customer) => {
                   const active = selected.includes(customer._id);
@@ -210,7 +212,7 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
                       <View style={[styles.customer, active && styles.customerActive]}>
                         <Ionicons name={active ? 'checkbox' : 'square-outline'} size={21} color={active ? COLORS.gold : COLORS.textMuted} />
                         <View style={styles.customerCopy}>
-                          <Text style={styles.customerName}>{customer.profile?.fullName || customer.username || 'Customer'}</Text>
+                          <Text style={styles.customerName}>{customer.profile?.fullName || customer.username || translateUi("Customer")}</Text>
                           <Text style={styles.customerEmail}>{customer.email}</Text>
                         </View>
                       </View>
@@ -221,7 +223,7 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
             </View>
           ) : null}
 
-          <SectionTitle title="Priority" detail="Use operational colors consistently" />
+          <SectionTitle title={translateUi("Priority")} detail="Use operational colors consistently" />
           <View style={workflow.row}>{NOTIFICATION_TYPES.map((value) => <WorkflowChip key={value} selected={type === value} onPress={() => setType(value)}>{value}</WorkflowChip>)}</View>
           <View style={styles.pills}>
             {priorities.map((value) => (
@@ -230,13 +232,13 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Title</Text>
-            <TextInput value={title} onChangeText={setTitle} maxLength={200} placeholder="Short, clear subject" placeholderTextColor={COLORS.textMuted} style={styles.input} />
-            <Text style={styles.label}>Message</Text>
-            <TextInput value={content} onChangeText={setContent} maxLength={2000} multiline placeholder="Write the message" placeholderTextColor={COLORS.textMuted} style={[styles.input, styles.textarea]} />
+            <Text style={styles.label}>{translateUi("Title")}</Text>
+            <TextInput value={title} onChangeText={setTitle} maxLength={200} placeholder={translateUi("Short, clear subject")} placeholderTextColor={COLORS.textMuted} style={styles.input} />
+            <Text style={styles.label}>{translateUi("Message")}</Text>
+            <TextInput value={content} onChangeText={setContent} maxLength={2000} multiline placeholder={translateUi("Write the message")} placeholderTextColor={COLORS.textMuted} style={[styles.input, styles.textarea]} />
           </View>
 
-          <ActionButton disabled={sending} icon="send" label={sending ? 'Sending...' : 'Send notification'} loading={sending} onPress={send} />
+          <ActionButton disabled={sending} icon="send" label={sending ? translateUi("Sending...") : 'Send notification'} loading={sending} onPress={send} />
         </ScrollView>
       )}
     </SafeAreaView>
@@ -244,9 +246,10 @@ export function StaffNotificationManagementScreen({ navigation }: Props) {
 }
 
 function AudiencePill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   return (
     <AnimatedPressable onPress={onPress} style={[styles.pill, active && styles.pillActive]}>
-      <Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text>
+      <Text style={[styles.pillText, active && styles.pillTextActive]}>{translateUi(label)}</Text>
     </AnimatedPressable>
   );
 }
@@ -277,7 +280,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   tabActive: { backgroundColor: 'rgba(226,186,75,0.12)', borderColor: COLORS.gold },
-  tabText: { color: COLORS.textMuted, fontSize: FONT_SIZES.sm, fontWeight: '900', textTransform: 'uppercase' },
+  tabText: { color: COLORS.textMuted, fontSize: FONT_SIZES.sm, fontWeight: '700', textTransform: 'uppercase' },
   tabTextActive: { color: COLORS.gold },
   scroll: { gap: SPACING.md, padding: SPACING.lg, paddingBottom: 112 },
   list: { borderTopColor: COLORS.border, borderTopWidth: StyleSheet.hairlineWidth },
@@ -305,7 +308,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: SPACING.md,
   },
-  textarea: { height: 132, paddingTop: SPACING.md, textAlignVertical: 'top' },
+  textarea: { minHeight: 132, paddingTop: SPACING.md, textAlignVertical: 'top' },
   customerList: { borderTopColor: COLORS.border, borderTopWidth: StyleSheet.hairlineWidth, marginTop: SPACING.sm },
   customer: {
     alignItems: 'center',

@@ -1,6 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useEffect, useState } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ActivityIndicator, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/common';
 import { WorkflowButton, WorkflowChip, workflowStyles as s } from '@/components/common/WorkflowUI';
@@ -12,6 +13,7 @@ import { operationsService, type NotificationRule } from '@/services/api/operati
 export function StaffCommunicationScreen({
   navigation,
 }: NativeStackScreenProps<StaffManagementStackParamList, 'Communication'>) {
+  const { t: translateUi } = useLanguage();
   const [tab, setTab] = useState<'report' | 'rules'>('report');
   const [rules, setRules] = useState<NotificationRule[]>([]);
   const [content, setContent] = useState('');
@@ -81,37 +83,36 @@ export function StaffCommunicationScreen({
   return (
     <SafeAreaView edges={['top']} style={s.safe}>
       <ScreenHeader
-        title="Internal communications"
-        subtitle="Reports & automated notifications"
+        title={translateUi("Internal communications")}
+        subtitle={translateUi("Reports & automated notifications")}
         onBack={() => navigation.goBack()}
       />
-      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
         <View style={s.row}>
           <WorkflowChip selected={tab === 'report'} onPress={() => !busy && setTab('report')}>
-            Internal reports
-          </WorkflowChip>
+            {" "}{translateUi("Internal reports")}{" "}</WorkflowChip>
           <WorkflowChip selected={tab === 'rules'} onPress={() => !busy && setTab('rules')}>
-            Automation rules
-          </WorkflowChip>
+            {" "}{translateUi("Automation rules")}{" "}</WorkflowChip>
         </View>
         {error ? (
           <Text accessibilityRole="alert" style={s.error}>
-            {error}
+            {translateUi(error)}
           </Text>
         ) : null}
         {success ? <Text style={s.body}>{success}</Text> : null}
         {tab === 'report' ? (
           <View style={s.panel}>
-            <Text style={s.title}>Send a report to management</Text>
-            <Text style={s.body}>Describe the issue, location and assistance needed.</Text>
+            <Text style={s.title}>{translateUi("Send a report to management")}</Text>
+            <Text style={s.body}>{translateUi("Describe the issue, location and assistance needed.")}</Text>
             <TextInput
-              accessibilityLabel="Report content"
+              accessibilityLabel={translateUi("Report content")}
               multiline
               editable={!busy}
               value={content}
               onChangeText={setContent}
               style={[s.input, { minHeight: 140, textAlignVertical: 'top' }]}
-              placeholder="Report content…"
+              placeholder={translateUi("Report content…")}
               placeholderTextColor={COLORS.textMuted}
             />
             <View style={s.row}>
@@ -126,14 +127,14 @@ export function StaffCommunicationScreen({
               ))}
             </View>
             <WorkflowButton
-              title="Send report"
+              title={translateUi("Send report")}
               disabled={busy || !content.trim()}
               onPress={() => void send()}
             />
           </View>
         ) : (
           <>
-            <WorkflowChip onPress={() => !busy && void loadRules()}>Reload rules</WorkflowChip>
+            <WorkflowChip onPress={() => !busy && void loadRules()}>{translateUi("Reload rules")}</WorkflowChip>
             {rules.map((rule) => (
               <View style={s.panel} key={rule.eventKey}>
                 <Text style={s.body}>{rule.group}</Text>
@@ -162,7 +163,7 @@ export function StaffCommunicationScreen({
                     </WorkflowChip>
                   ))}
                 </View>
-                <Text style={s.body}>Minimum delivery interval (minutes)</Text>
+                <Text style={s.body}>{translateUi("Minimum delivery interval (minutes)")}</Text>
                 <TextInput
                   accessibilityLabel={`Delivery interval ${rule.name}`}
                   editable={!busy}
@@ -172,7 +173,7 @@ export function StaffCommunicationScreen({
                   style={s.input}
                 />
                 <WorkflowButton
-                  title="Save rule"
+                  title={translateUi("Save rule")}
                   disabled={busy}
                   onPress={() => void save(rule)}
                 />
@@ -182,6 +183,7 @@ export function StaffCommunicationScreen({
         )}
         {busy ? <ActivityIndicator color={COLORS.gold} /> : null}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

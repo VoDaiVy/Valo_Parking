@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { Button } from '@/components/common/Button';
 import { AppText } from '@/components/common/AppText';
 import { colors, spacing } from '@/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Props {
   children: ReactNode;
@@ -13,6 +14,21 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+}
+
+function LocalizedErrorFallback({ error, onReset }: { error: Error | null; onReset: () => void }) {
+  const { t } = useLanguage();
+  return (
+    <View style={styles.container}>
+      <AppText color={colors.error.main} style={styles.center} variant="h3">
+        {t('Oops! Something went wrong')}
+      </AppText>
+      <AppText color={colors.light.text.secondary} style={styles.center}>
+        {t(error?.message || 'An unexpected error occurred')}
+      </AppText>
+      <Button title={t('Try Again')} onPress={onReset} />
+    </View>
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -41,17 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
-      return (
-        <View style={styles.container}>
-          <AppText color={colors.error.main} style={styles.center} variant="h3">
-            Oops! Something went wrong
-          </AppText>
-          <AppText color={colors.light.text.secondary} style={styles.center}>
-            {this.state.error?.message || 'An unexpected error occurred'}
-          </AppText>
-          <Button title="Try Again" onPress={this.handleReset} />
-        </View>
-      );
+      return <LocalizedErrorFallback error={this.state.error} onReset={this.handleReset} />;
     }
 
     return this.props.children;

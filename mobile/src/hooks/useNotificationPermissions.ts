@@ -36,8 +36,15 @@ export const useNotificationPermissions = () => {
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
           name: 'Default',
-          importance: Notifications.AndroidImportance.DEFAULT,
+          importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
+          sound: 'default',
+        });
+        await Notifications.setNotificationChannelAsync('valo-notifications', {
+          name: 'VALO Notifications',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          sound: 'default',
         });
       }
       const permission = await Notifications.requestPermissionsAsync();

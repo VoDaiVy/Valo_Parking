@@ -170,7 +170,7 @@ class APIClient {
         );
 
         if (!error.response) {
-          return Promise.reject(new NetworkError(message));
+          return Promise.reject(new NetworkError(`${message} · API: ${API_BASE_URL}`));
         }
 
         const normalizedError = (status === 400 ? new ValidationError(message) : new Error(message)) as NormalizedApiError;
