@@ -1,5 +1,6 @@
 import { membershipTarget, createMembershipHighlightController } from '../../utils/membershipDeepLink';
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { membershipRenewalTarget } from "../../utils/membershipRenewalLink";
 import { useLocation, useSearchParams } from "react-router-dom";
 import MembershipDetailModal from "./MembershipDetailModal";
 import { useMembershipClock } from '../../hooks/useMembershipClock';
@@ -106,6 +107,7 @@ export default function MembershipOwnershipPanel({
     setSearchParams(params, { replace: true });
   };
   const [membershipQr, setMembershipQr] = useState("");
+  const openedRenewalLink = useRef("");
   const [membershipQrError, setMembershipQrError] = useState("");
   const [membershipQrOpen, setMembershipQrOpen] = useState(false);
   const [renewQuote, setRenewQuote] = useState(null);
@@ -224,7 +226,7 @@ export default function MembershipOwnershipPanel({
     };
   }, [onRefresh, setSearchParams]);
 
-  const openRenewal = async (entitlementId = "", subscriptionId = membership?.subscriptionId) => {
+  const openRenewal = useCallback(async (entitlementId = "", subscriptionId = membership?.subscriptionId) => {
     if (!entitlementId && !subscriptionId) return;
     setRenewLoading(true);
     try {
@@ -247,7 +249,22 @@ export default function MembershipOwnershipPanel({
     } finally {
       setRenewLoading(false);
     }
-  };
+  }, [membership, walletBalance]);
+
+  useEffect(() => {
+    const target = membershipRenewalTarget(searchParams, membership);
+    if (!target) return;
+    const key = `${target.kind}:${target.id}`;
+    if (openedRenewalLink.current === key) return;
+    const timer = window.setTimeout(() => {
+      openedRenewalLink.current = key;
+      void openRenewal(
+        target.kind === 'entitlement' ? target.id : '',
+        target.kind === 'subscription' ? target.id : undefined,
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [searchParams, membership, openRenewal]);
 
   const confirmRenewal = async () => {
     if ((!renewSubscriptionId && !renewEntitlementId) || !renewQuote) return;

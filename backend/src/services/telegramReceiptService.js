@@ -155,10 +155,15 @@ async function bookingStatus(bookingId, userId) {
   if (!mongoose.isValidObjectId(bookingId)) throw fail('Booking không hợp lệ');
   const booking = await require('../models/Booking').findOne({ _id: bookingId, userId });
   if (!booking) throw fail('Không tìm thấy booking', 404);
+  const existing = await Delivery.findOne({ bookingId, kind: 'booking_paid', status: { $in: ['pending', 'processing', 'sent', 'uncertain'] } })
+    .sort({ createdAt: -1 }).lean();
+  if (existing) return { state: existing.status, ...(existing.sentAt ? { sentAt: existing.sentAt } : {}) };
   if (!client.enabled()) return { state: 'disabled' };
-  const link = await require('../models/TelegramLink').findOne({ userId, revokedAt: null });
-  if (!link || link.blockedAt || !link.notificationsEnabled) return { state: 'needs_link' };
-  const delivery = await Delivery.findOne({ bookingId, linkId: link._id }).sort({ createdAt: -1 }).lean();
+  const profileService = require('./telegramProfileService');
+  if (!profileService.validPhone(await profileService.profilePhone(userId))) return { state: 'needs_phone' };
+  const link = await require('../models/TelegramLink').findOne({ userId, revokedAt: null }).select('+phone');
+  if (!link || link.blockedAt || !link.notificationsEnabled || !await profileService.matchesProfile(link)) return { state: 'needs_link' };
+  const delivery = await Delivery.findOne({ bookingId, kind: 'booking_paid', linkId: link._id, createdAt: { $gte: link.linkedAt } }).sort({ createdAt: -1 }).lean();
   return { state: delivery?.status || 'needs_link', ...(delivery?.errorCode ? { errorCode: delivery.errorCode } : {}), ...(delivery?.sentAt ? { sentAt: delivery.sentAt } : {}) };
 }
 module.exports = { enabled, parseRequest, prepare, enqueue, authorize, status, createClaim, initial, retry, reconcile, stop, bookingStatus };

@@ -1,4 +1,5 @@
 import TelegramReceiptModal from '../../components/TelegramReceiptModal';
+import TelegramReceiptButton from '../../components/TelegramReceiptButton';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -2317,7 +2318,7 @@ export default function CreateBookingPage() {
                       <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.endTime)}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setTelegramBookingId(booking.bookingId || booking._id)} className="mt-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800">Receive this ticket on Telegram</button>
+                  <TelegramReceiptButton bookingId={booking.bookingId || booking._id} refreshKey={telegramBookingId} onClick={() => setTelegramBookingId(booking.bookingId || booking._id)} className="mt-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800" />
                 </div>
               ))}
             </div>

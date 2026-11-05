@@ -18,7 +18,7 @@ function message(phone = '+84901234567') {
 function patches(t, target, values) {
   for (const [key, value] of Object.entries(values)) { const original = target[key]; target[key] = value; t.after(() => { target[key] = original; }); }
 }
-const query = value => ({ session: async () => value, sort() { return this; } });
+const query = value => ({ session: async () => value, sort() { return this; }, select() { return this; } });
 
 test('contact must belong to sender and come from a private chat', () => {
   assert.equal(claimService.validateOwnContact(message()), true);
@@ -86,7 +86,7 @@ test('lease acquisition atomically reclaims expired worker and completion checks
   assert.equal(completion.u.$unset.payload, 1);
 });
 test('revoked link cancels pending delivery before looking up or sending ticket', async t => {
-  patches(t, Link, { findOne: async () => null });
+  patches(t, Link, { findOne: () => ({ select: async () => null }) });
   let sent = false; patches(t, client, { sendPhoto: async () => { sent = true; } });
   const result = await worker.processDelivery({ linkId: 'link', chatId: '101', telegramUserId: '101' });
   assert.equal(result.status, 'cancelled'); assert.equal(sent, false);
@@ -106,6 +106,64 @@ test('webhook acknowledges only after durable upsert and duplicate update is har
 test('caption uses Vietnam timezone and advertises same QR for both channels', () => {
   const caption = formatTicket({ pass: { _id: 'pass' }, booking: { licensePlate: '51A12345', parkingSlot: 'A1', scheduledStart: '2026-10-08T07:00:00Z', scheduledEnd: '2026-10-08T08:00:00Z' } });
   assert.ok(caption.includes('14:00')); assert.ok(caption.includes('check-in/checkout'));
+});
+
+test('membership reminder presents a compact Vietnam expiry and escapes HTML data', () => {
+  const { formatReminder } = require('../services/telegramMembershipReminderService');
+  const text = formatReminder({ name: 'VIP <Yearly> & Premium', slots: ['E9', '<E10>'], buttons: [] },
+    '2026-11-09T18:18:00Z', { now: new Date('2026-11-03T08:00:00Z') });
+  assert.ok(text.startsWith('⏳ <b>VALO PARKING</b>\nNhắc gia hạn gói thành viên\n\n'));
+  assert.ok(text.includes('<b>VIP &lt;Yearly&gt; &amp; Premium</b>'));
+  assert.ok(text.includes('Ô đỗ: <b>E9, &lt;E10&gt;</b>'));
+  assert.ok(text.includes('Thời hạn còn lại: <b>7 ngày</b>'));
+  assert.ok(text.includes('Hết hạn (GMT+7): <b>10/11/2026 · 01:18</b>'));
+  assert.ok(!text.includes('Bấm nút'));
+});
+
+test('text message supports HTML without changing existing plain bot replies', async t => {
+  const axios = require('axios');
+  const priorToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'isolated-format-test';
+  t.after(() => { if (priorToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = priorToken; });
+  const bodies = [];
+  patches(t, axios, { post: async (_url, body) => { bodies.push(body); return { data: { ok: true, result: { message_id: 1 } } }; } });
+  await client.sendMessage('101', '<b>VALO</b>', undefined, { parseMode: 'HTML' });
+  await client.sendMessage('101', 'Plain reply', { remove_keyboard: true });
+  assert.equal(bodies[0].parse_mode, 'HTML');
+  assert.equal(bodies[0].reply_markup, undefined);
+  assert.equal(bodies[1].parse_mode, undefined);
+  assert.deepEqual(bodies[1].reply_markup, { remove_keyboard: true });
+});
+
+test('ticket photo places its HTML caption above the QR in one Telegram message', async t => {
+  const axios = require('axios');
+  const priorToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_BOT_TOKEN = 'isolated-layout-test';
+  t.after(() => { if (priorToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN = priorToken; });
+  let requests = 0;
+  patches(t, axios, { post: async (_url, form) => {
+    requests++;
+    const body = form.getBuffer().toString();
+    assert.match(body, /name="show_caption_above_media"\r\n\r\ntrue/);
+    assert.match(body, /name="parse_mode"\r\n\r\nHTML/);
+    assert.ok(body.includes('<b>VALO</b>'));
+    return { data: { ok: true, result: { message_id: 42 } } };
+  } });
+  assert.equal((await client.sendPhoto('101', Buffer.from('fake-png'), '<b>VALO</b>')).message_id, 42);
+  assert.equal(requests, 1);
+});
+
+test('HTML ticket caption escapes record values and separates timing from the QR instructions', () => {
+  const caption = formatTicket({ pass: { _id: 'pass<&>' }, booking: {
+    licensePlate: '<b>plate</b>', floorId: { name: 'A & B' }, parkingSlot: '<E6>',
+    scheduledStart: '2026-11-03T07:00:00Z', scheduledEnd: '2026-11-03T07:30:00Z',
+  } });
+  assert.ok(caption.startsWith('<b>🅿️ VALO PARKING</b>\n'));
+  assert.ok(caption.includes('&lt;b&gt;plate&lt;/b&gt;'));
+  assert.ok(caption.includes('A &amp; B · Ô &lt;E6&gt;'));
+  assert.ok(caption.includes('<code>pass&lt;&amp;&gt;</code>'));
+  assert.match(caption, /Bắt đầu:.*14:00.*\nKết thúc:.*14:30/);
+  assert.ok(caption.endsWith('👇 Xuất trình QR bên dưới tại kiosk hoặc cho nhân viên để check-in/checkout.'));
 });
 test('booking-specific link request rejects someone else booking before revoking tokens', async t => {
   const Booking = require('../models/Booking');
@@ -137,6 +195,7 @@ test('unlink revokes account, open tokens and queued deliveries within one trans
   const session = { withTransaction: async fn => fn(), endSession: async () => {} };
   const observed = [];
   patches(t, mongoose, { startSession: async () => session });
+  patches(t, require('../models/UserDetail'), { findOneAndUpdate: async (f, u, options) => { assert.equal(options.session, session); return {}; } });
   patches(t, Link, { findOneAndUpdate: async (f, u, options) => { observed.push(options.session); return { _id: 'link' }; } });
   patches(t, Claim, { updateMany: async (f, u, options) => { observed.push(options.session); assert.equal(f.consumedAt, null); } });
   patches(t, Delivery, { updateMany: async (f, u, options) => { observed.push(options.session); assert.equal(u.$set.status, 'cancelled'); } });
