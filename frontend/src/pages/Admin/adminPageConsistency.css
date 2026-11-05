@@ -100,6 +100,20 @@ body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consisten
   body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div + div { border-top: 1px solid rgb(255 255 255 / .1); }
 }
 
+/* Keep revenue filters and their update caption together at the top right. */
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .ra-header {
+  align-items: flex-start;
+}
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .ra-header .c4-controls {
+  flex: 0 1 440px;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .ra-header .ra-update {
+  justify-content: flex-end;
+  text-align: right;
+}
+
 /* Vehicles tab typography overrides the shared Admin control weight. */
 body[data-valo-typography="admin"] .admin-vehicle-consistency .vehicle-tabs > button {
   font-family: var(--admin-font-family, Montserrat, sans-serif);
