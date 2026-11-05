@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "mobile",
-    "slug": "mobile",
+    "slug": "valor-parking",
+    "owner": "veemon136",
     "scheme": "valo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -38,7 +39,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "d94bef71-b49a-407b-b084-3412ebdaac71"
+        "projectId": "206a8337-a506-4bbd-bdd4-81e95109628c"
       }
     }
   }

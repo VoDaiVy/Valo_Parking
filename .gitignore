@@ -31,3 +31,10 @@ htmlcov/
 .venv/
 venv/
 env/
+
+# Local mobile environment
+/mobile/.env
+
+# Temporary EAS archives and downloaded network tools
+/outputs/eas-*/
+/outputs/network-tools/

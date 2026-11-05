@@ -1,4 +1,4 @@
-# Thiết lập Google Login cho APK
+x`# Thiết lập Google Login cho APK
 
 Android/iOS dùng `@react-native-google-signin/google-signin` để lấy Google ID token, sau đó gửi token đến `POST /api/auth/google`. Backend xác minh token và trả token đăng nhập của VALO. Web giữ luồng trình duyệt hiện có.
 
@@ -6,7 +6,7 @@ Google Login cần APK hoặc development build có module native; Expo Go khôn
 
 ## 1. Tạo OAuth client trong Google Cloud
 
-Mở [Google Cloud Console](https://console.cloud.google.com/), chọn cùng một project cho các client:
+Mở [Google Cloud Console](  ), chọn cùng một project cho các client:
 
 1. Trong Google Auth Platform → Branding, điền tên ứng dụng và email hỗ trợ.
 2. Trong Audience, chọn External nếu cho phép tài khoản Gmail thông thường. Khi đang Testing, thêm tài khoản thử nghiệm vào Test users nếu màn hình consent yêu cầu.
