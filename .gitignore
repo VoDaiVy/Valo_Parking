@@ -41,3 +41,8 @@ env/
 
 # Firebase client config is supplied locally or through an EAS File variable
 /mobile/google-services.json
+
+# Mobile unit tests (keep local only)
+/mobile/**/__tests__/
+/mobile/**/*.test.*
+/mobile/**/*.spec.*

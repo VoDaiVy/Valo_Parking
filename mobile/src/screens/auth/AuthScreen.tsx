@@ -1,3 +1,4 @@
+import { GoogleIcon } from '@/components/auth/GoogleIcon';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -40,16 +41,6 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login' | 'Register'>;
 
 const BUTTON_SHINE_WIDTH = 86;
 
-function GoogleIcon() {
-  return (
-    <View style={googleIconStyles.wrap}>
-      <View style={[googleIconStyles.quad, { backgroundColor: '#4285F4' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#34A853' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#FBBC05' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#EA4335' }]} />
-    </View>
-  );
-}
 
 function useLoopingAnimation(duration: number, delay = 0) {
   const progress = useRef(new Animated.Value(0)).current;
@@ -1225,20 +1216,7 @@ const BRAND = {
   border: COLORS.border,
 };
 
-const googleIconStyles = StyleSheet.create({
-  wrap: {
-    borderRadius: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    height: 20,
-    overflow: 'hidden',
-    width: 20,
-  },
-  quad: {
-    height: 10,
-    width: 10,
-  },
-});
+
 
 const styles = StyleSheet.create({
   safe: {

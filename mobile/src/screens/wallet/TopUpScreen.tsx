@@ -173,12 +173,13 @@ export const TopUpScreen = ({ navigation }: Props) => {
           <View style={styles.inputWrap}>
             <TextInput
               keyboardType="numeric"
+              accessibilityLabel={translateUi("Amount")}
               placeholder={translateUi("Enter amount")}
               placeholderTextColor={COLORS.textMuted}
               style={styles.input}
-              value={amount}
+              value={amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               onChangeText={(value) => {
-                setAmount(value.replace(/[^\d]/g, ''));
+                setAmount(value.replace(/[^\d]/g, '').replace(/^0+(?=\d)/, ''));
                 setError('');
               }}
             />
@@ -190,7 +191,7 @@ export const TopUpScreen = ({ navigation }: Props) => {
                 key={value}
                 activeOpacity={0.75}
                 style={[styles.quickChip, Number(amount) === value && styles.quickChipActive]}
-                onPress={() => setAmount(String(value))}
+                onPress={() => { setAmount(String(value)); setError(''); }}
               >
                 <Text style={[styles.quickText, Number(amount) === value && styles.quickTextActive]}>
                   {formatCurrency(value)}

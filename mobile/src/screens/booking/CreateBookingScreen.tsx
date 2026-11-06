@@ -47,6 +47,8 @@ import { WorkflowChip, workflowStyles as workflow } from '@/components/common/Wo
 import type { UserVoucher } from '@/types/loyalty.types';
 import * as Crypto from 'expo-crypto';
 import { normalizeLicensePlate } from '@/utils/profileValidation';
+import { formatLicensePlateInput } from '@/utils/licensePlateInput';
+import { validateBookingTime, validateBookingVehicle, firstInvalidBookingStep } from '@/utils/bookingStepValidation';
 
 
 type Props = NativeStackScreenProps<BookingStackParamList, 'CreateBooking'>;
@@ -472,6 +474,9 @@ function VehicleSelector({
         <View style={styles.manualInputWrap}>
           <TextInput
             autoCapitalize="characters"
+            autoCorrect={false}
+            spellCheck={false}
+            accessibilityLabel={translateUi("License plate")}
             placeholder={translateUi("Enter license plate (e.g. 30A-12345)")}
             placeholderTextColor={COLORS.textMuted}
             style={styles.manualInput}
@@ -912,6 +917,11 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const [serverQuoteTotal, setServerQuoteTotal] = useState<number | null>(null);
   const cart = useBookingCart();
   const [step, setStep] = useState(0);
+  const [clockNow, setClockNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [step]);
   const [vouchers, setVouchers] = useState<UserVoucher[]>([]);
@@ -1099,7 +1109,6 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const localGrandTotal = estimatedParkingCost + serviceTotal;
   const grandTotal = serverQuoteTotal ?? localGrandTotal;
   const parkingCost = Math.max(grandTotal - serviceTotal, 0);
-  const hasEnoughBalance = walletBalance >= grandTotal;
   const selectedVehicle = vehicles.find((v) => selectedVehicleId === 'manual'
     ? normalizeLicensePlate(v.licensePlate) === normalizeLicensePlate(manualPlate)
     : (v.id ?? v._id ?? '') === selectedVehicleId);
@@ -1120,24 +1129,27 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   const membershipBlocksRegisteredVehicle = Boolean(
     activeVipMembership && selectedVehicle && selectedSlot && !selectedSlotIsOwnVipSlot,
   );
-  const canBook = Boolean(
-    selectedSlot &&
-    selectedVehicleId &&
-    !membershipBlocksRegisteredVehicle &&
-    !submitting &&
-    durationMs >= 30 * 60 * 1000,
-  );
+  const timeError = validateBookingTime(startTime, endTime, clockNow);
+  const plateError = validateBookingVehicle(selectedVehicleId, manualPlate, Boolean(selectedVehicle));
+  const spaceError = isLoading ? 'Loading available spaces...'
+    : error ? 'Unable to verify spaces. Please retry.'
+    : !selectedSlot ? 'Choose an available space to continue.'
+    : membershipBlocksRegisteredVehicle ? 'Please use your membership space first.' : '';
+  const voucher = vouchers.find((item) => item._id === selectedVoucherId);
+  const rewardError = selectedVoucherId && (!voucher || voucher.status !== 'available' || voucher.bookingId || cart.items.some((item) => item.voucherId === selectedVoucherId) || new Date(voucher.expiresAt).getTime() <= clockNow)
+    ? 'This voucher is unavailable. Choose another voucher or no voucher.'
+    : voucher && localGrandTotal < voucher.benefitSnapshot.minimumAmount
+      ? 'The booking does not meet the voucher minimum spend.' : '';
+  const stepErrors = [timeError || plateError, spaceError, rewardError];
+  const disabledReason = stepErrors.slice(0, step + 1).find(Boolean) || '';
   const selectedRouteSlotUnavailable =
     Boolean(selectedFloorId && selectedSlotCode) && !selectedSlot && !isLoading && availableSlots.length > 0;
-  const disabledReason = !selectedVehicleId
-    ? 'Select a vehicle to continue'
-    : !selectedSlot
-      ? 'Choose an available space'
-      : membershipBlocksRegisteredVehicle
-        ? 'Use your VIP space first'
-        : durationMs < 30 * 60 * 1000
-          ? 'Adjust booking duration'
-          : '';
+  const goToStep = (target: number) => {
+    const next = firstInvalidBookingStep([
+      validateBookingTime(startTime, endTime) || plateError, spaceError, rewardError,
+    ], target);
+    setStep(next);
+  };
 
   useEffect(() => {
     if (!selectedSlot || !selectedVehicleId || startTime <= new Date() || endTime <= startTime) {
@@ -1206,7 +1218,9 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   };
 
   const handleSubmit = () => {
-    if (!selectedSlot || !selectedVehicleId) return;
+    const invalidStep = firstInvalidBookingStep([validateBookingTime(startTime, endTime) || plateError, spaceError, rewardError], 3);
+    if (invalidStep < 3) { setStep(invalidStep); return; }
+    if (!selectedSlot || !selectedVehicleId || submitting) return;
     if (startTime <= new Date() || durationMs < 30 * 60_000) {
       showFeedback('warning', 'Invalid time', 'Choose a future time with a minimum duration of 30 minutes.'); return;
     }
@@ -1243,7 +1257,6 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
         headerIcon="calendar-outline"
         headerIconBackground="rgba(226,186,75,0.12)"
         headerIconColor={COLORS.gold}
-        progressVariant="accent"
         subtitle={translateUi("Time & vehicle → Parking space → Cart & payment")}
         title={translateUi("New booking")}
         onBack={() => step > 0 ? setStep(step - 1) : navigation.goBack()}
@@ -1251,10 +1264,26 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
-          <View style={workflow.row}>
-            {['1. Time & vehicle', '2. Parking space', '3. Services & rewards'].map((label, index) => (
-              <WorkflowChip key={label} selected={step === index} onPress={() => { if (index < step) setStep(index); }}>{translateUi(label)}</WorkflowChip>
-            ))}
+          <View style={styles.stepper}>
+            <View style={styles.stepperHeading}>
+              <Text style={styles.stepperCaption}>{translateUi('Booking progress')}</Text>
+              <Text style={styles.stepperCount}>{step + 1} / 3</Text>
+            </View>
+            <View style={styles.stepperRow}>
+              {['Time & vehicle', 'Parking space', 'Services & rewards'].map((label, index) => {
+                const complete = index < step && !stepErrors.slice(0, index + 1).some(Boolean);
+                const locked = index > step;
+                return <View key={label} style={styles.stepItem}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={translateUi(label)} accessibilityState={{ selected: step === index, disabled: locked }} disabled={locked} onPress={() => goToStep(index)} style={styles.stepTouch}>
+                    <View style={[styles.stepCircle, step === index && styles.stepCircleActive, complete && styles.stepCircleDone]}>
+                      {complete ? <Ionicons name="checkmark" size={20} color={COLORS.gold} /> : <Text style={[styles.stepNumber, step === index && styles.stepNumberActive]}>{index + 1}</Text>}
+                    </View>
+                    <Text style={[styles.stepLabel, step === index && styles.stepLabelActive]}>{translateUi(label)}</Text>
+                  </Pressable>
+                  {index < 2 ? <View style={[styles.stepConnector, complete && { backgroundColor: COLORS.gold }]} /> : null}
+                </View>;
+              })}
+            </View>
           </View>
 
           {/* ── Time Pickers ──────────────────────────────────── */}
@@ -1268,6 +1297,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
           />
 
           {/* ── Vehicle ───────────────────────────────────────── */}
+          {timeError ? <Text accessibilityLiveRegion="polite" style={styles.inlineError}>{translateUi(timeError)}</Text> : null}
           <VehicleSelector
             manualPlate={manualPlate}
             membershipBlocksRegisteredVehicle={membershipBlocksRegisteredVehicle}
@@ -1279,13 +1309,14 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
                 .getParent<BottomTabNavigationProp<CustomerTabParamList>>()
                 ?.navigate('ProfileTab', { screen: 'VehicleList' })
             }
-            onManualPlateChange={setManualPlate}
+            onManualPlateChange={(value) => setManualPlate(formatLicensePlateInput(value))}
             onRetry={loadVehicles}
             onSelectVehicle={setSelectedVehicleId}
           />
+          {plateError ? <Text accessibilityLiveRegion="polite" style={styles.inlineError}>{translateUi(plateError)}</Text> : null}
           </> : null}
 
-          {step === 1 ?
+          {step === 1 ? <>
           <ParkingMapSection
             activeHolds={activeHolds}
             activeSessions={activeSessions}
@@ -1311,7 +1342,8 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
             }}
             onSelectSlot={setSelectedSlot}
           />
-          : null}
+          {spaceError ? <Text accessibilityLiveRegion="polite" style={styles.inlineError}>{translateUi(spaceError)}</Text> : null}
+          </> : null}
 
           {step === 2 ? <>
           <ServiceList
@@ -1323,6 +1355,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
 
           <View style={workflow.panel}>
             <Text style={workflow.title}>{translateUi("Vouchers & rewards")}</Text>
+            {rewardError ? <Text accessibilityLiveRegion="polite" style={styles.inlineError}>{translateUi(rewardError)}</Text> : null}
             {voucherError ? <Text style={workflow.error}>{voucherError}</Text> : null}
             <WorkflowChip selected={!selectedVoucherId} onPress={() => setSelectedVoucherId('')}>{translateUi("No voucher")}</WorkflowChip>
             {vouchers.filter((v) => !v.bookingId && !cart.items.some((item) => item.voucherId === v._id)).map((v) => (
@@ -1346,14 +1379,14 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       </KeyboardAvoidingView>
 
       <StickyBookingFooter
-        canBook={step === 0 ? Boolean(selectedVehicleId && (selectedVehicleId !== 'manual' || manualPlate.trim()) && startTime > new Date() && durationMs >= 30 * 60_000) : step === 1 ? Boolean(selectedSlot && !membershipBlocksRegisteredVehicle) : canBook}
-        disabledReason={disabledReason}
+        canBook={!submitting && !stepErrors.slice(0, step + 1).some(Boolean)}
+        disabledReason={translateUi(disabledReason)}
         grandTotal={grandTotal}
-        hasEnoughBalance={hasEnoughBalance}
+        hasEnoughBalance={true}
         submitting={submitting}
         walletBalance={walletBalance}
         submitLabel={step < 2 ? 'Continue' : 'Add to cart'}
-        onSubmit={() => step < 2 ? setStep(step + 1) : handleSubmit()}
+        onSubmit={() => step < 2 ? goToStep(step + 1) : handleSubmit()}
       />
 
       <BookingActionModal
@@ -1393,6 +1426,22 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  inlineError: { color: COLORS.error, fontSize: 13, lineHeight: 20, paddingHorizontal: 4 },
+  stepper: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 6 },
+  stepperHeading: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  stepperCaption: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  stepperCount: { color: COLORS.gold, fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  stepperRow: { flexDirection: 'row' },
+  stepItem: { flex: 1, position: 'relative' },
+  stepTouch: { alignItems: 'center', minHeight: 76, paddingHorizontal: 4, gap: 8 },
+  stepCircle: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: COLORS.borderLight, backgroundColor: COLORS.surface, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  stepCircleActive: { backgroundColor: COLORS.gold, borderColor: COLORS.gold },
+  stepCircleDone: { backgroundColor: COLORS.goldTint, borderColor: COLORS.goldDark },
+  stepNumber: { color: COLORS.textMuted, fontSize: 14, fontWeight: '700' },
+  stepNumberActive: { color: COLORS.textInverse },
+  stepLabel: { color: COLORS.textMuted, fontSize: 12, lineHeight: 17, textAlign: 'center', fontWeight: '500' },
+  stepLabelActive: { color: COLORS.gold, fontWeight: '700' },
+  stepConnector: { position: 'absolute', top: 16, left: '65%', width: '70%', height: 2, backgroundColor: COLORS.border },
   safe: { flex: 1, backgroundColor: COLORS.background },
   flex: { flex: 1 },
   scroll: { gap: SPACING.lg, padding: SPACING.lg, paddingBottom: STICKY_FOOTER_SPACE },

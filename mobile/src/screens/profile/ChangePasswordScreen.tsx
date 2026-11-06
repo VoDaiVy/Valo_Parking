@@ -54,7 +54,7 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
     setLoading(true);
     setError('');
     try {
-      await profileService.changePassword({ currentPassword, newPassword, confirmPassword });
+      await profileService.changePassword({ currentPassword, newPassword, confirmNewPassword: confirmPassword });
       toast.showSuccess('Password changed successfully');
       setCurrentPassword('');
       setNewPassword('');

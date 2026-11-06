@@ -228,14 +228,14 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>{translateUi("Vehicle type")}</Text>
-            <View style={styles.inputWrap}>
-              <TextInput
-                style={styles.input}
-                placeholder={translateUi("car or electric_car")}
-                placeholderTextColor={COLORS.textMuted}
-                value={vehicleType}
-                onChangeText={(val) => setVehicleType(val as VehicleType)}
-              />
+            <View style={styles.typeOptions}>
+              {(['car', 'electric_car'] as const).map((type) => (
+                <TouchableOpacity key={type} accessibilityRole="radio" accessibilityState={{ checked: vehicleType === type }} onPress={() => setVehicleType(type)} style={[styles.typeOption, vehicleType === type && styles.typeSelected]}>
+                  <Ionicons name={type === 'electric_car' ? 'flash-outline' : 'car-outline'} size={22} color={vehicleType === type ? COLORS.gold : COLORS.textSecondary} />
+                  <Text style={[styles.typeText, vehicleType === type && { color: COLORS.gold }]}>{translateUi(type === 'car' ? 'Car' : 'Electric car')}</Text>
+                  <Ionicons name={vehicleType === type ? 'radio-button-on' : 'radio-button-off'} size={18} color={vehicleType === type ? COLORS.gold : COLORS.textMuted} />
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
@@ -327,6 +327,10 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
 };
 
 const styles = StyleSheet.create({
+  typeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  typeOption: { flexGrow: 1, flexBasis: 140, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 56, paddingHorizontal: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceElevated },
+  typeSelected: { borderColor: COLORS.gold, backgroundColor: COLORS.goldTint },
+  typeText: { flex: 1, color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
   keyboard: { flex: 1 },
   cameraScreen: {
     backgroundColor: '#050505',

@@ -104,6 +104,18 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 
+// Scope authentication and its shared controls to English without changing
+// the user's saved language for the signed-in app.
+export function EnglishLanguageBoundary({ children }: { children: React.ReactNode }) {
+  const value = useMemo<LanguageContextValue>(() => ({
+    language: 'en',
+    setLanguage: () => undefined,
+    toggleLanguage: () => undefined,
+    t: (key, params) => translateMessage('en', copy.en[key] ?? key, params),
+  }), []);
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+}
+
 export function useLanguage() {
   const context = useContext(LanguageContext);
   if (!context) throw new Error('useLanguage must be used inside LanguageProvider');
