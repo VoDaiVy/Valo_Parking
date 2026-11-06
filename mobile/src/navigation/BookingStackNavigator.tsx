@@ -1,3 +1,4 @@
+import type { BookingCartItem } from '@/utils/bookingCart';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { CreateBookingScreen } from '../screens/booking/CreateBookingScreen';
@@ -9,7 +10,7 @@ import { BookingAssistantScreen } from '@/screens/booking/BookingAssistantScreen
 
 export type BookingStackParamList = {
   BookingList: undefined;
-  BookingCart: undefined;
+  BookingCart: { directItem: BookingCartItem } | undefined;
   BookingAssistant: undefined;
   BookingDetail: { bookingId: string };
   CreateBooking:

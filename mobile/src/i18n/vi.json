@@ -1,4 +1,13 @@
 {
+  "Book now": "Đặt chỗ ngay",
+  "Confirm booking": "Xác nhận đặt chỗ",
+  "Your reservation": "Thông tin đặt chỗ",
+  "Your selected spaces": "Chỗ đỗ đã chọn",
+  "Reservation total": "Tổng tiền đặt chỗ",
+  "Payment summary": "Thông tin thanh toán",
+  "Checking membership...": "Đang kiểm tra gói thành viên...",
+  "Unable to verify membership. Please retry.": "Chưa thể kiểm tra gói thành viên. Vui lòng thử lại.",
+  "Retry membership check": "Kiểm tra lại gói thành viên",
   "Choose your time and vehicle": "Chọn thời gian và phương tiện",
   "Choose your parking space": "Chọn vị trí đỗ xe",
   "Review services and rewards": "Kiểm tra dịch vụ và ưu đãi",

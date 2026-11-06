@@ -1,3 +1,4 @@
+import type { BookingCartItem } from '@/utils/bookingCart';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -776,6 +777,7 @@ function StickyBookingFooter({
   disabledReason,
   onSubmit,
   submitLabel,
+  onAddToCart,
 }: {
   grandTotal: number;
   walletBalance: number;
@@ -785,6 +787,7 @@ function StickyBookingFooter({
   disabledReason: string;
   onSubmit: () => void;
   submitLabel: string;
+  onAddToCart?: () => void;
 }) {
   const { t: translateUi } = useLanguage();
   const entrance = useEntrance(500);
@@ -874,6 +877,7 @@ function StickyBookingFooter({
           </Pressable>
         </Animated.View>
       </View>
+      {onAddToCart ? <Pressable accessibilityRole="button" disabled={!canBook || submitting} onPress={onAddToCart} style={styles.secondaryCartButton}><Ionicons name="cart-outline" size={17} color={COLORS.textSecondary} /><Text style={styles.secondaryCartText}>{translateUi('Add to cart')}</Text></Pressable> : null}
     </Animated.View>
   );
 }
@@ -932,6 +936,8 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
       .catch((e) => setVoucherError(e instanceof Error ? e.message : 'Unable to load vouchers.'));
   }, []);
   useEffect(() => { if (route.params?.selectedVoucherId) setSelectedVoucherId(route.params.selectedVoucherId); }, [route.params?.selectedVoucherId]);
+  const [membershipLoading, setMembershipLoading] = useState(true);
+  const [membershipError, setMembershipError] = useState('');
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
 
   const selectedFloorId = route.params?.selectedFloorId;
@@ -1010,11 +1016,15 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
   }, []);
 
   const loadMembership = useCallback(async () => {
+    setMembershipLoading(true);
+    setMembershipError('');
     try {
       const response = await subscriptionsService.getMembership();
       setMembership(response.data || null);
     } catch {
-      setMembership(null);
+      setMembershipError('Unable to verify membership. Please retry.');
+    } finally {
+      setMembershipLoading(false);
     }
   }, []);
 
@@ -1120,14 +1130,14 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     (membership.package?.type === 'monthly' || membership.package?.type === 'yearly'),
   );
   const selectedSlotIsOwnVipSlot = Boolean(
-    activeVipMembership && selectedSlot && membership?.expireAt && new Date(membership.expireAt) >= endTime && membership?.reservedSlots.some((slot) => (
-      String(slot.floorId) === String(selectedSlot.floorId) &&
-      slot.slotCode.toUpperCase() === selectedSlot.slotCode.toUpperCase() &&
+    activeVipMembership && (selectedSlot || selectedSlotCode) && membership?.expireAt && new Date(membership.expireAt) >= endTime && membership?.reservedSlots.some((slot) => (
+      String(slot.floorId) === String(selectedSlot?.floorId ?? selectedFloorId) &&
+      slot.slotCode.toUpperCase() === (selectedSlot?.slotCode ?? selectedSlotCode ?? '').toUpperCase() &&
       (!slot.expireAt || new Date(slot.expireAt) >= endTime)
     )),
   );
   const membershipBlocksRegisteredVehicle = Boolean(
-    activeVipMembership && selectedVehicle && selectedSlot && !selectedSlotIsOwnVipSlot,
+    activeVipMembership && selectedVehicle && (selectedSlot || selectedSlotCode) && !selectedSlotIsOwnVipSlot,
   );
   const timeError = validateBookingTime(startTime, endTime, clockNow);
   const plateError = validateBookingVehicle(selectedVehicleId, manualPlate, Boolean(selectedVehicle));
@@ -1140,13 +1150,14 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     ? 'This voucher is unavailable. Choose another voucher or no voucher.'
     : voucher && localGrandTotal < voucher.benefitSnapshot.minimumAmount
       ? 'The booking does not meet the voucher minimum spend.' : '';
-  const stepErrors = [timeError || plateError, spaceError, rewardError];
+  const vipVehicleError = membershipLoading ? 'Checking membership...' : membershipError || (membershipBlocksRegisteredVehicle ? 'Please use your membership space first.' : '');
+  const stepErrors = [timeError || plateError || vipVehicleError, spaceError, rewardError];
   const disabledReason = stepErrors.slice(0, step + 1).find(Boolean) || '';
   const selectedRouteSlotUnavailable =
     Boolean(selectedFloorId && selectedSlotCode) && !selectedSlot && !isLoading && availableSlots.length > 0;
   const goToStep = (target: number) => {
     const next = firstInvalidBookingStep([
-      validateBookingTime(startTime, endTime) || plateError, spaceError, rewardError,
+      validateBookingTime(startTime, endTime) || plateError || vipVehicleError, spaceError, rewardError,
     ], target);
     setStep(next);
   };
@@ -1217,8 +1228,8 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     setFeedback({ variant, title, message });
   };
 
-  const handleSubmit = () => {
-    const invalidStep = firstInvalidBookingStep([validateBookingTime(startTime, endTime) || plateError, spaceError, rewardError], 3);
+  const handleSubmit = (mode: 'cart' | 'direct' = 'cart') => {
+    const invalidStep = firstInvalidBookingStep([validateBookingTime(startTime, endTime) || plateError || vipVehicleError, spaceError, rewardError], 3);
     if (invalidStep < 3) { setStep(invalidStep); return; }
     if (!selectedSlot || !selectedVehicleId || submitting) return;
     if (startTime <= new Date() || durationMs < 30 * 60_000) {
@@ -1231,7 +1242,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     if (!plate) { showFeedback('warning', 'Select a vehicle', 'Please enter a license plate or select a vehicle.'); return; }
     setSubmitting(true);
     try {
-      cart.add({
+      const item: BookingCartItem = {
         clientItemId: Crypto.randomUUID(),
         vehicleId: selectedVehicleId === 'manual' ? undefined : selectedVehicleId,
         licensePlate: selectedVehicleId === 'manual' ? plate : undefined,
@@ -1240,10 +1251,15 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
         serviceIds: selectedServiceIds, voucherId: selectedVoucherId || undefined,
         plateLabel: plate, floorLabel: selectedFloor?.name || selectedSlot.floorName || '',
         voucherLabel: vouchers.find((v) => v._id === selectedVoucherId)?.benefitSnapshot.name,
-      });
-      setSelectedSlot(null); setSelectedVoucherId('');
-      setStep(0);
-      navigation.navigate('BookingCart');
+      };
+      if (mode === 'direct') {
+        navigation.push('BookingCart', { directItem: item });
+      } else {
+        cart.add(item);
+        setSelectedSlot(null); setSelectedVoucherId('');
+        setStep(0);
+        navigation.navigate('BookingCart');
+      }
     } catch (e) { showFeedback('warning', 'Unable to add to cart', e instanceof Error ? e.message : 'Please try again.'); }
     finally { setSubmitting(false); }
   };
@@ -1314,6 +1330,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
             onSelectVehicle={setSelectedVehicleId}
           />
           {plateError ? <Text accessibilityLiveRegion="polite" style={styles.inlineError}>{translateUi(plateError)}</Text> : null}
+          {membershipError ? <WorkflowChip onPress={() => void loadMembership()}>{translateUi("Retry membership check")}</WorkflowChip> : null}
           </> : null}
 
           {step === 1 ? <>
@@ -1385,8 +1402,9 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
         hasEnoughBalance={true}
         submitting={submitting}
         walletBalance={walletBalance}
-        submitLabel={step < 2 ? 'Continue' : 'Add to cart'}
-        onSubmit={() => step < 2 ? goToStep(step + 1) : handleSubmit()}
+        submitLabel={translateUi(step < 2 ? 'Continue' : 'Book now')}
+        onAddToCart={step === 2 ? () => handleSubmit('cart') : undefined}
+        onSubmit={() => step < 2 ? goToStep(step + 1) : handleSubmit('direct')}
       />
 
       <BookingActionModal
@@ -1426,6 +1444,8 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  secondaryCartButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12 },
+  secondaryCartText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
   inlineError: { color: COLORS.error, fontSize: 13, lineHeight: 20, paddingHorizontal: 4 },
   stepper: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 6 },
   stepperHeading: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
