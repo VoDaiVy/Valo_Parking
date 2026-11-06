@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "VALO Parking",
     "slug": "valor-parking",
     "owner": "veemon136",
     "scheme": "valo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/valo-app-icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
@@ -14,10 +14,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#15171A",
+        "foregroundImage": "./assets/valo-launcher-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.valoparking.mobile"
@@ -28,7 +26,7 @@
     "plugins": [
       "expo-secure-store",
       "expo-web-browser",
-      ["expo-notifications", { "defaultChannel": "valo-notifications", "color": "#2563EB" }],
+      ["expo-notifications", { "defaultChannel": "valo-notifications", "icon": "./assets/notification-icon.png", "color": "#E2BA4B" }],
       [
         "expo-camera",
         {

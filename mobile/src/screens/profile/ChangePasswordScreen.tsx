@@ -1,6 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ErrorState } from '@/components/common';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -34,14 +35,32 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isFirstPassword, setIsFirstPassword] = useState<boolean | null>(null);
+  const [statusError, setStatusError] = useState('');
+  const loadPasswordStatus = useCallback(async () => {
+    setStatusError('');
+    try {
+      const response = await profileService.getPasswordStatus();
+      if (typeof response.data?.isGoogleUser !== 'boolean') throw new Error('Unable to verify password status.');
+      setIsFirstPassword(response.data.isGoogleUser);
+    } catch (statusFailure) {
+      setStatusError(statusFailure instanceof Error ? statusFailure.message : 'Unable to verify password status.');
+    }
+  }, []);
+  useEffect(() => { void loadPasswordStatus(); }, [loadPasswordStatus]);
 
   const handleSubmit = async () => {
+    if (loading || isFirstPassword === null) return;
+    if (!isFirstPassword && !currentPassword) {
+      setError('Current password is required.');
+      return;
+    }
     if (newPassword.length < 6) {
       setError('The new password must be at least 6 characters.');
       return;
     }
 
-    if (newPassword === currentPassword) {
+    if (!isFirstPassword && newPassword === currentPassword) {
       setError('The new password must differ from your current password.');
       return;
     }
@@ -54,8 +73,8 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
     setLoading(true);
     setError('');
     try {
-      await profileService.changePassword({ currentPassword, newPassword, confirmNewPassword: confirmPassword });
-      toast.showSuccess('Password changed successfully');
+      await profileService.changePassword({ ...(isFirstPassword ? {} : { currentPassword }), newPassword, confirmNewPassword: confirmPassword });
+      toast.showSuccess(isFirstPassword ? 'Password set successfully' : 'Password changed successfully');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -84,9 +103,14 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
 
   const fieldErrors = {
     confirm: error === 'The password confirmation does not match.' ? error : undefined,
-    current: error === 'The new password must differ from your current password.' ? error : undefined,
+    current: error === 'The new password must differ from your current password.' || error === 'Current password is required.' ? error : undefined,
     next: error === 'The new password must be at least 6 characters.' ? error : undefined,
   };
+
+  if (isFirstPassword === null) return <SafeAreaView edges={['top']} style={styles.safe}>
+    <ProfileScreenHeader title={translateUi('Password settings')} onBack={() => navigation.goBack()} />
+    {statusError ? <ErrorState message={translateUi(statusError)} onRetry={loadPasswordStatus} /> : <ActivityIndicator color={COLORS.gold} style={{ marginTop: 40 }} />}
+  </SafeAreaView>;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
@@ -96,7 +120,7 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
         style={styles.keyboard}
       >
-        <ProfileScreenHeader title={translateUi("Change password")} subtitle={translateUi("Secure your VALO account")} onBack={() => navigation.goBack()} />
+        <ProfileScreenHeader title={translateUi(isFirstPassword ? "Set password" : "Change password")} subtitle={translateUi("Secure your VALO account")} onBack={() => navigation.goBack()} />
 
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -106,7 +130,7 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
         >
           <StaggeredView delay={90} style={styles.formSection}>
             <SectionHeader title={translateUi("Credentials")} />
-            <PasswordField
+            {isFirstPassword ? <View style={styles.firstPasswordNotice}><Ionicons name="shield-checkmark-outline" size={22} color={COLORS.gold} /><Text style={styles.firstPasswordText}>{translateUi("You signed up with Google. Set a password to also sign in with your email. Your Google password will not change.")}</Text></View> : <PasswordField
               error={fieldErrors.current}
               label={translateUi("Current password")}
               placeholder={translateUi("Enter current password")}
@@ -115,7 +139,7 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
                 setCurrentPassword(value);
                 if (error) setError('');
               }}
-            />
+            />}
             <PasswordField
               error={fieldErrors.next}
               label={translateUi("New password")}
@@ -166,7 +190,7 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
           <StaggeredView delay={320} style={styles.cta}>
             <PrimaryCTA
               disabled={loading}
-              label={translateUi("Change password")}
+              label={translateUi(isFirstPassword ? "Set password" : "Change password")}
               loading={loading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : undefined}
               onPress={handleSubmit}
             />
@@ -178,6 +202,8 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
 };
 
 const styles = StyleSheet.create({
+  firstPasswordNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, borderRadius: RADIUS.md, backgroundColor: COLORS.goldTint },
+  firstPasswordText: { flex: 1, color: COLORS.textSecondary, fontSize: 14, lineHeight: 22 },
   safe: {
     backgroundColor: COLORS.background,
     flex: 1,

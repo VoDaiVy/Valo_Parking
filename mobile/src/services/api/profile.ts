@@ -9,6 +9,10 @@ import type { UserProfile } from '@/types/models';
 import { apiClient } from './client';
 
 class ProfileService {
+  getPasswordStatus() {
+    return apiClient.get<APIResponse<{ isGoogleUser: boolean }>>('/profile');
+  }
+
   getProfile() {
     return apiClient.get<APIResponse<UserProfile>>('/profile');
   }

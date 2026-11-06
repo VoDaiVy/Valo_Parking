@@ -1,4 +1,9 @@
 {
+  "Set password": "Đặt mật khẩu",
+  "Password settings": "Cài đặt mật khẩu",
+  "Password set successfully": "Đặt mật khẩu thành công",
+  "Unable to verify password status.": "Chưa thể kiểm tra trạng thái mật khẩu.",
+  "You signed up with Google. Set a password to also sign in with your email. Your Google password will not change.": "Bạn đã đăng ký bằng Google. Đặt mật khẩu để có thể đăng nhập bằng email. Mật khẩu Google của bạn không thay đổi.",
   "Book now": "Đặt chỗ ngay",
   "Confirm booking": "Xác nhận đặt chỗ",
   "Your reservation": "Thông tin đặt chỗ",
