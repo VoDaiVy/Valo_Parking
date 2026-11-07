@@ -150,10 +150,10 @@ export default function SlotCameraMonitorModal({
   }, [activeFloor]);
 
   const DEFAULT_BOARD_CORNERS = useMemo(() => [
-    [0.100, 0.415], // 0: Top-Left (TL)
-    [0.635, 0.415], // 1: Top-Right (TR)
-    [0.635, 0.885], // 2: Bottom-Right (BR)
-    [0.100, 0.885], // 3: Bottom-Left (BL)
+    [0.099, 0.097], // 0: Top-Left (TL)
+    [0.952, 0.274], // 1: Top-Right (TR)
+    [0.995, 0.972], // 2: Bottom-Right (BR)
+    [0.005, 0.876], // 3: Bottom-Left (BL)
   ], []);
 
   const [boardCorners, setBoardCorners] = useState(DEFAULT_BOARD_CORNERS);
@@ -199,27 +199,60 @@ export default function SlotCameraMonitorModal({
     const sx = scale.x || 1.0;
     const sy = scale.y || 1.0;
 
+    const maxSlotsInZone = Math.max(...Object.values(zonesMap).map((arr) => arr.length), 5);
+    const isTwoRowLayout = maxSlotsInZone <= 5 && slotEls.length <= 20;
+
     const getSlotPoly = (colIdx, rowIdx, isRightZone) => {
-      const baseUStart = isRightZone ? 0.540 : 0.00;
-      const colWidth = 0.090;
-      const slotWidth = 0.080 * sx;
-      const uCenter = baseUStart + colIdx * colWidth + (slotWidth / 2);
-      const u1 = uCenter - slotWidth / 2;
-      const u2 = uCenter + slotWidth / 2;
+      let u1, u2;
+      if (isTwoRowLayout) {
+        let baseU, colWidth, slotWidth;
+        if (isRightZone) {
+          // Khu vực bên phải: Zone B (Hàng 0) và Zone D (Hàng 1)
+          baseU = 0.588;
+          colWidth = 0.076;
+          slotWidth = 0.074 * sx;
+        } else {
+          // Khu vực bên trái: Zone A (Hàng 0) và Zone C (Hàng 1)
+          baseU = rowIdx === 0 ? 0.028 : 0.008;
+          colWidth = rowIdx === 0 ? 0.076 : 0.078;
+          slotWidth = (rowIdx === 0 ? 0.074 : 0.080) * sx;
+        }
+        u1 = baseU + colIdx * colWidth;
+        u2 = u1 + slotWidth;
+      } else {
+        const baseUStart = isRightZone ? 0.540 : 0.00;
+        const cWidth = 0.090;
+        const sWidth = 0.080 * sx;
+        const uCenter = baseUStart + colIdx * cWidth + (sWidth / 2);
+        u1 = uCenter - sWidth / 2;
+        u2 = uCenter + sWidth / 2;
+      }
 
       let v1, v2;
-      if (rowIdx === 0) {
-        // Hàng 1 (Trên): E1..E5 / F1..F5
-        v1 = 0.00;
-        v2 = 0.26 * sy;
-      } else if (rowIdx === 1) {
-        // Hàng 2 (Giữa): E6..E10 / F6..F7
-        v1 = 0.29;
-        v2 = (0.29 + 0.25) * sy;
+      if (isTwoRowLayout) {
+        if (rowIdx === 0) {
+          // Hàng 1 (Trên): A1..A5 / B1..B5 (Bao phủ từ vạch sọc vàng đến vạch đáy ô)
+          v1 = 0.02;
+          v2 = 0.44 * sy;
+        } else {
+          // Hàng 2 (Dưới): C1..C5 / D1..D5 (Bao phủ từ vạch hazard giữa đường đến đáy sa bàn)
+          v1 = 0.48;
+          v2 = 1.00 * sy;
+        }
       } else {
-        // Hàng 3 (Dưới): G1..G5 / H1..H5
-        v1 = 0.73;
-        v2 = (0.73 + 0.25) * sy;
+        if (rowIdx === 0) {
+          // Hàng 1 (Trên): E1..E5 / F1..F5
+          v1 = 0.00;
+          v2 = 0.26 * sy;
+        } else if (rowIdx === 1) {
+          // Hàng 2 (Giữa): E6..E10 / F6..F7
+          v1 = 0.29;
+          v2 = (0.29 + 0.25) * sy;
+        } else {
+          // Hàng 3 (Dưới): G1..G5 / H1..H5
+          v1 = 0.73;
+          v2 = (0.73 + 0.25) * sy;
+        }
       }
 
       // Mỗi ô đỗ tự động tạo thành một hình tứ giác phối cảnh (perspective quadrilateral)
@@ -259,23 +292,23 @@ export default function SlotCameraMonitorModal({
       });
     });
 
-    // Zone 3 (Bottom-Left: Row 2 = 1..5)
+    // Zone 3 (Bottom-Left: Row 1 cho sa bàn 20 ô, hoặc Row 2 cho sa bàn 27 ô)
     const zoneC = zonesMap[zC] || [];
     zoneC.forEach((el, idx) => {
       const c = idx % 5;
       result.push({
         slotCode: el.name,
-        polygon: getSlotPoly(c, 2, false),
+        polygon: getSlotPoly(c, isTwoRowLayout ? 1 : 2, false),
       });
     });
 
-    // Zone 4 (Bottom-Right: Row 2 = 1..5)
+    // Zone 4 (Bottom-Right: Row 1 cho sa bàn 20 ô, hoặc Row 2 cho sa bàn 27 ô)
     const zoneD = zonesMap[zD] || [];
     zoneD.forEach((el, idx) => {
       const c = idx % 5;
       result.push({
         slotCode: el.name,
-        polygon: getSlotPoly(c, 2, true),
+        polygon: getSlotPoly(c, isTwoRowLayout ? 1 : 2, true),
       });
     });
 
@@ -367,7 +400,7 @@ export default function SlotCameraMonitorModal({
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   const [autoScanEnabled, setAutoScanEnabled] = useState(false); // Mặc định tắt để không tự quét khi chưa sẵn sàng
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [showGridOverlay, setShowGridOverlay] = useState(false); // Mặc định ẩn 27 khung xanh, chỉ hiện khi phát hiện có xe/vi phạm
+  const [showGridOverlay, setShowGridOverlay] = useState(true); // Mặc định hiển thị lưới ô đỗ để người dùng luôn thấy khung viền ô đỗ
   const [cameraMisalignedWarning, setCameraMisalignedWarning] = useState(null);
   const [floorMismatch, setFloorMismatch] = useState(null);
   const [isAiDropdownOpen, setIsAiDropdownOpen] = useState(false);
@@ -418,7 +451,7 @@ export default function SlotCameraMonitorModal({
     }
     lastLoadedFloorIdRef.current = floorId;
 
-    const storageKey = `valo_slot_roi_floor_${floorId}`;
+    const storageKey = `valo_slot_roi_floor_v5_${floorId}`;
     let loaded = false;
     try {
       const saved = localStorage.getItem(storageKey);
@@ -429,7 +462,13 @@ export default function SlotCameraMonitorModal({
           Array.isArray(parsed) &&
           parsed.length === floorData.allSlots.length &&
           parsed.length > 0 &&
-          parsed.every((s) => s.slotCode && expectedSlotNames.has(s.slotCode.toUpperCase()));
+          parsed.every((s) => {
+            if (!s.slotCode || !expectedSlotNames.has(s.slotCode.toUpperCase())) return false;
+            if (!Array.isArray(s.polygon) || s.polygon.length < 4) return false;
+            const xs = s.polygon.map((p) => p[0]);
+            const w = Math.max(...xs) - Math.min(...xs);
+            return w >= 0.04;
+          });
 
         if (isValidForThisFloor) {
           setSlotRois(parsed);
@@ -587,7 +626,7 @@ export default function SlotCameraMonitorModal({
   // Save Calibration to LocalStorage
   const handleSaveCalibration = () => {
     if (!activeFloor) return;
-    const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
+    const storageKey = `valo_slot_roi_floor_v5_${activeFloor._id || activeFloor.name || 'default'}`;
     localStorage.setItem(storageKey, JSON.stringify(slotRois));
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
@@ -595,7 +634,7 @@ export default function SlotCameraMonitorModal({
 
   const handleResetToDiorama = () => {
     if (!activeFloor) return;
-    const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
+    const storageKey = `valo_slot_roi_floor_v5_${activeFloor._id || activeFloor.name || 'default'}`;
     localStorage.removeItem(storageKey);
     setBoardCorners(DEFAULT_BOARD_CORNERS);
     setSlotScale({ x: 1.0, y: 1.0 });
@@ -644,7 +683,7 @@ export default function SlotCameraMonitorModal({
             setBoardCorners(data.corners);
           }
           if (activeFloor) {
-            const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
+            const storageKey = `valo_slot_roi_floor_v5_${activeFloor._id || activeFloor.name || 'default'}`;
             localStorage.setItem(storageKey, JSON.stringify(data.slots));
           }
           setTimeout(() => {
@@ -657,7 +696,7 @@ export default function SlotCameraMonitorModal({
             setSlotRois(alignedSlots);
             setSelectedSlotIndex(0);
             if (activeFloor) {
-              const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
+              const storageKey = `valo_slot_roi_floor_v5_${activeFloor._id || activeFloor.name || 'default'}`;
               localStorage.setItem(storageKey, JSON.stringify(alignedSlots));
             }
             setTimeout(() => {
@@ -704,8 +743,8 @@ export default function SlotCameraMonitorModal({
             let minY = Math.min(...ys);
             let maxY = Math.max(...ys);
 
-            const padX = (maxX - minX) * 0.15;
-            const padY = (maxY - minY) * 0.15;
+            const padX = (maxX - minX) * 0.20;
+            const padY = (maxY - minY) * 0.20;
             minX = Math.max(0, minX - padX);
             maxX = Math.min(1, maxX + padX);
             minY = Math.max(0, minY - padY);
@@ -791,12 +830,6 @@ export default function SlotCameraMonitorModal({
         const currentFloorKey = activeFloor?._id || activeFloor?.name || 'default';
         const freshSlots = data.slots;
 
-        // Tự động định hình và bắt dính khung theo các ô đỗ vật lý AI vừa phát hiện từ camera
-        if (Array.isArray(data.calibratedSlots) && data.calibratedSlots.length > 0) {
-          setSlotRois(data.calibratedSlots);
-          const storageKey = `valo_slot_roi_floor_${currentFloorKey}`;
-          localStorage.setItem(storageKey, JSON.stringify(data.calibratedSlots));
-        }
         if (Array.isArray(data.corners) && data.corners.length === 4) {
           setBoardCorners(data.corners);
         }
@@ -1140,7 +1173,8 @@ export default function SlotCameraMonitorModal({
     // 2. Draw Slot Polygons
     slotRois.forEach((slot, sIdx) => {
       const result = resolveSlotStatus(slot.slotCode);
-      const activePoly = (result?.polygon && Array.isArray(result.polygon) && result.polygon.length >= 3) ? result.polygon : slot.polygon;
+      const activePoly = slot.polygon;
+      if (!activePoly || activePoly.length < 3) return;
       const pts = activePoly.map(([nx, ny]) => toScreenCoords(nx, ny));
       if (pts.length < 3) return;
 
@@ -1151,10 +1185,21 @@ export default function SlotCameraMonitorModal({
       const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
       const isSelected = sIdx === selectedSlotIndex;
 
+      // Khi ô có xe đỗ/vi phạm: Tự động mở rộng viền thông minh để ôm trọn vẹn toàn bộ thân xe, nắp capo, gương và biển số
+      let drawPts = pts;
+      if (isOccupied && mode !== 'calibrate') {
+        const cx = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+        const cy = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+        drawPts = pts.map(([px, py]) => [
+          cx + (px - cx) * 1.08,
+          cy + (py - cy) * 1.08,
+        ]);
+      }
+
       ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.moveTo(drawPts[0][0], drawPts[0][1]);
+      for (let i = 1; i < drawPts.length; i++) {
+        ctx.lineTo(drawPts[i][0], drawPts[i][1]);
       }
       ctx.closePath();
 

@@ -138,12 +138,12 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         setStatus('checking-in');
         const resData = await onAutoCheckIn();
         if (ignore) return;
-        
+
         if (resData.vipRedirected) {
           setVipRedirectInfo({ message: resData.message });
           setCurrentSlot(resData.newSlot);
         }
-        
+
         setStatus('ready');
       } catch (error) {
         if (ignore) return;
@@ -182,7 +182,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         ]);
 
         const [floorsData, slotsData, sessionsData] = await Promise.all([floorsRes.json(), slotsRes.json(), sessionsRes.json()]);
-        
+
         let availableData = { success: false };
         let holdsData = { success: false };
         if (availableRes.ok) availableData = await availableRes.json();
@@ -263,41 +263,41 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
           </div>
         </div>
 
-      {status === 'error' ? (
-        <div className="w-full max-w-[980px] bg-red-50 border border-red-200 rounded-[28px] px-8 py-7 text-center text-red-600 font-semibold">
-          {errorMessage}
-        </div>
-      ) : (
-        <div className="w-full bg-white rounded-[28px] border border-gray-100 shadow-[0_20px_40px_rgba(15,23,42,0.08)] p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-4 mb-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-600">
-              Parking Layout
-            </div>
-            <div className="rounded-full bg-gray-50 border border-gray-200 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-gray-600 shrink-0">
-              {zoneLabel} · {currentSlot || formData.selectedSlot || '--'}
-            </div>
+        {status === 'error' ? (
+          <div className="w-full max-w-[980px] bg-red-50 border border-red-200 rounded-[28px] px-8 py-7 text-center text-red-600 font-semibold">
+            {errorMessage}
           </div>
+        ) : (
+          <div className="w-full bg-white rounded-[28px] border border-gray-100 shadow-[0_20px_40px_rgba(15,23,42,0.08)] p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-600">
+                Parking Layout
+              </div>
+              <div className="rounded-full bg-gray-50 border border-gray-200 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-gray-600 shrink-0">
+                {zoneLabel} · {currentSlot || formData.selectedSlot || '--'}
+              </div>
+            </div>
 
-          <div className="rounded-[24px] overflow-hidden border border-[#0b0e16] shadow-sm bg-[#0b0e16] flex-1 min-h-0 relative">
-            <ParkingMapViewer
-              floors={floors.filter((floor) => floor._id === formData.floorId)}
-              currentFloorId={formData.floorId}
-              onFloorSelect={() => {}}
-              activeSessions={activeSessions}
-              dbSlots={dbSlots}
-              availableSlots={availableSlots}
-              activeHolds={activeHolds}
-              selectedSlotId={currentSlot}
-              onSelectSlot={null}
-              is2DMode={true}
-              hideUI={true}
-              theme="dark"
-              initialZoom={0.58}
-              staticFit={true}
-            />
+            <div className="rounded-[24px] overflow-hidden border border-[#0b0e16] shadow-sm bg-[#0b0e16] flex-1 min-h-0 relative">
+              <ParkingMapViewer
+                floors={floors.filter((floor) => floor._id === formData.floorId)}
+                currentFloorId={formData.floorId}
+                onFloorSelect={() => { }}
+                activeSessions={activeSessions}
+                dbSlots={dbSlots}
+                availableSlots={availableSlots}
+                activeHolds={activeHolds}
+                selectedSlotId={currentSlot}
+                onSelectSlot={null}
+                is2DMode={true}
+                hideUI={true}
+                theme="dark"
+                initialZoom={0.58}
+                staticFit={true}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
     </div>
   );

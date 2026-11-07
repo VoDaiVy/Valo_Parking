@@ -5,7 +5,7 @@ const sessionController = require('../controllers/sessionController');
 const { protect, authorize, softProtect } = require('../middlewares/authMiddleware');
 
 // GET /api/sessions/active-status
-router.get('/active-status', sessionController.getActiveParkingStatus);
+router.get('/active-status', softProtect, sessionController.getActiveParkingStatus);
 
 // POST /api/sessions/verify-plate
 router.post('/verify-plate', sessionController.verifyPlate);

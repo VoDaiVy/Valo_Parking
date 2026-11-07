@@ -76,7 +76,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           streamRef.current = stream;
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(() => {});
+            await videoRef.current.play().catch(() => { });
             await configureCameraTrack(stream);
           }
         }
@@ -417,7 +417,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
+          await videoRef.current.play().catch(() => { });
           await configureCameraTrack(stream);
         }
       }
@@ -502,7 +502,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           streamRef.current = stream;
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(() => {});
+            await videoRef.current.play().catch(() => { });
           }
           await wait(300);
         }

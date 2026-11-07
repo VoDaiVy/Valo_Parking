@@ -8,6 +8,7 @@ const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
 const Vehicle = require('../models/Vehicle');
 const ParkingFloor = require('../models/ParkingFloor');
+const { assertPublishedSlot } = require('../services/publishedParkingSlotService');
 const Session = require('../models/Session');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Slot = require('../models/Slot');
@@ -178,7 +179,7 @@ const isHourlySlot = (slotElement, zoneElement) => {
 };
 
 const getAllBookableSlots = async () => {
-  const floors = await ParkingFloor.find().sort({ floorNumber: 1 }).lean();
+  const floors = await ParkingFloor.find({ status: { $nin: ['draft', 'archived'] }, acceptsBookings: { $ne: false } }).sort({ floorNumber: 1 }).lean();
 
   return floors.flatMap((floor) => {
     const elements = floor.layoutData?.elements || [];
@@ -655,6 +656,8 @@ exports.createBooking = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Thiếu thông tin bắt buộc' });
     }
 
+    await assertPublishedSlot(floorId, parkingSlot);
+
     // 1. Kiểm tra xe đăng ký
     const vehicle = await Vehicle.findOne({ _id: vehicleId, owner: userId, status: 'approved' });
     if (!vehicle) {
@@ -759,6 +762,7 @@ exports.createBooking = async (req, res, next) => {
       const paymentSession = await mongoose.startSession();
       try {
         paymentSession.startTransaction();
+        await assertPublishedSlot(floorId, parkingSlot, paymentSession);
         if (voucherId) {
           await voucherService.validateAndApplyVoucher({
             voucherId,
@@ -810,10 +814,17 @@ exports.createBooking = async (req, res, next) => {
       }).catch(err => console.error('Error sending notifyBookingSuccess:', err));
 
     } else if (paymentMethod === 'vietqr') {
+      if (!voucherId) {
+        await mongoose.connection.transaction(async (reservationSession) => {
+          await assertPublishedSlot(floorId, parkingSlot, reservationSession);
+          await newBooking.save({ session: reservationSession });
+        });
+      }
       if (voucherId) {
         const voucherSession = await mongoose.startSession();
         try {
           voucherSession.startTransaction();
+          await assertPublishedSlot(floorId, parkingSlot, voucherSession);
           await voucherService.validateAndApplyVoucher({
             voucherId,
             booking: newBooking,
@@ -1981,7 +1992,7 @@ exports.suggestSmartSlot = async (req, res, next) => {
     
     const unavailableSlots = new Set([...activeSlots, ...bookedSlots]);
     
-    const floors = await ParkingFloor.find();
+    const floors = await ParkingFloor.find({ status: { $nin: ['draft', 'archived'] }, acceptsBookings: { $ne: false } });
     let suggestedSlot = null;
     let fallbackSlot = null;
     
@@ -2085,6 +2096,7 @@ exports.createBookingHold = async (req, res, next) => {
       });
     }
 
+    await assertPublishedSlot(floorId, slotCode);
     const BookingHold = require('../models/BookingHold');
     const Session = require('../models/Session');
     const now = new Date();
@@ -2203,27 +2215,30 @@ exports.createBookingHold = async (req, res, next) => {
 
     // Tạo hold mới
     const holdDurationMs = 5 * 60 * 1000; // 5 phút
-    const newHold = await BookingHold.create({
-      userId: req.user ? req.user._id : undefined,
-      floorId,
-      slotCode,
-      licensePlate: normalizedPlate,
-      startTime: start,
-      endTime: end,
-      expiresAt: new Date(now.getTime() + holdDurationMs),
-      status: 'active'
-    });
-
-    if (replacementHold) {
-      const replacementResult = await BookingHold.updateOne(
-        { _id: replacementHold._id, status: 'active' },
-        { $set: { status: 'released' } },
-      );
-      if (replacementResult.modifiedCount !== 1) {
-        await BookingHold.updateOne({ _id: newHold._id }, { $set: { status: 'released' } });
-        return res.status(409).json({ success: false, message: 'The previous hold changed while this item was being updated. Please try again.' });
+    const newHold = await mongoose.connection.transaction(async (holdSession) => {
+      await assertPublishedSlot(floorId, slotCode, holdSession);
+      const [created] = await BookingHold.create([{
+        userId: req.user ? req.user._id : undefined,
+        floorId,
+        slotCode,
+        licensePlate: normalizedPlate,
+        startTime: start,
+        endTime: end,
+        expiresAt: new Date(now.getTime() + holdDurationMs),
+        status: 'active'
+      }], { session: holdSession });
+      if (replacementHold) {
+        const replacementResult = await BookingHold.updateOne(
+          { _id: replacementHold._id, status: 'active' },
+          { $set: { status: 'released' } },
+          { session: holdSession },
+        );
+        if (replacementResult.modifiedCount !== 1) {
+          throw Object.assign(new Error('The previous hold changed while this item was being updated. Please try again.'), { statusCode: 409 });
+        }
       }
-    }
+      return created;
+    });
 
     res.status(201).json({
       success: true,
@@ -2334,6 +2349,7 @@ exports.quoteBulkBooking = async (req, res, next) => {
       const licensePlate = item.licensePlate;
 
       try {
+      await assertPublishedSlot(floorId, parkingSlot);
       const { start, end } = validateBookingTimeRange(scheduledStart, scheduledEnd);
       let vehicle;
       if (isAiQuickRequest) {
@@ -2524,6 +2540,7 @@ exports.createBulkBooking = async (req, res, next) => {
       const holdId = item.holdId;
       const licensePlate = item.licensePlate;
 
+      await assertPublishedSlot(floorId, parkingSlot, session);
       const { start, end } = validateBookingTimeRange(scheduledStart, scheduledEnd);
       
       let vehicle;

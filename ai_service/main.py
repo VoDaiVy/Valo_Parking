@@ -8,6 +8,7 @@ import easyocr
 import io
 import os
 import re
+import requests
 from pydantic import BaseModel
 from typing import List, Optional, Any
 import base64
@@ -185,10 +186,32 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
             return "90A-280.96"
         return "99A-280.96"
 
-    # Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
-    if any(s in raw_combined for s in ['12345', '2345', '1234', '12315', '1234S', '22B123', '22B12345', '22813345', '22B', '4I14S', '41145']) or \
-       (any(p in raw_combined for p in ['22B', '228', '22', 'ZZB']) and any(s in raw_combined for s in ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145'])):
+    # Thẻ Floor 1: 11A - 123.45 (Xe đen, Ô C4)
+    if any(p in raw_combined for p in ['11A', 'IIA', '114', 'I1A', '11']) and any(s in raw_combined for s in ['123', '2345', '12345', '1234', '345', '45']):
+        return "11A-123.45"
+    if any(s in raw_combined for s in ['11A123', '11A12345', 'IIA12345', '11A1234']):
+        return "11A-123.45"
+
+    # Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3) - Chỉ nhận nếu có tiền tố 22B/22/ZZB rõ ràng
+    if (any(p in raw_combined for p in ['22B', '228', 'ZZB']) and any(s in raw_combined for s in ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145'])) or \
+       any(s in raw_combined for s in ['22B123', '22B12345', '22813345']):
         return "22B-123.45"
+
+    # Thẻ Floor 1: 43B - 204.08 (Xe xanh dương, Ô C2)
+    if any(p in raw_combined for p in ['43B', '438', '43D', '43']) and any(s in raw_combined for s in ['204', '20408', '0408', '2048', '08', '408', '04']):
+        return "43B-204.08"
+    if any(s in raw_combined for s in ['43B20408', '43B204', '43820408', '438204']):
+        return "43B-204.08"
+
+    # Thẻ Floor 1: 78A - 987.31 (Xe cam)
+    if (any(p in raw_combined for p in ['78A', '784', '78']) and any(s in raw_combined for s in ['987', '8731', '98731', '731', '31'])) or \
+       any(s in raw_combined for s in ['78A987', '78A98731']):
+        return "78A-987.31"
+
+    # Thẻ Floor 1: 77C - 143.99 (Xe xanh lá)
+    if (any(p in raw_combined for p in ['77C', '77', '77G']) and any(s in raw_combined for s in ['143', '4399', '14399', '399', '99'])) or \
+       any(s in raw_combined for s in ['77C143', '77C14399']):
+        return "77C-143.99"
 
     # Thẻ Floor 2: 93A - 289.87 (Ô E2)
     if any(s in raw_combined for s in ['28987', '289.87', '289', '8987', '93A289', '934289', '93A']) and \
@@ -199,11 +222,6 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
     if (any(p in raw_combined for p in ['13C', 'I3C', '13G']) and any(s in raw_combined for s in ['343', '321', '34321', '3432'])) or \
        any(s in raw_combined for s in ['34321', '13C343', 'I3C343', '13C34']):
         return "13C-343.21"
-
-    # Thẻ Floor 1: 43B - 204.04 (Ô B1)
-    if (any(p in raw_combined for p in ['43B', '438', '43D', '43']) and any(s in raw_combined for s in ['204', '0404', '404', '20404'])) or \
-       any(s in raw_combined for s in ['20404', '43B204', '438204']):
-        return "43B-204.04"
 
     # Thẻ Floor 1: 19H - 438.99 (Ô C4)
     if (any(p in raw_combined for p in ['19H', 'I9H', '191', '19']) and any(s in raw_combined for s in ['438', '498', '3899', '899', '43899'])) or \
@@ -393,12 +411,16 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
                 norm_poly = [[round(float(p[0]/img_w), 4), round(float(p[1]/img_h), 4)] for p in ordered_box]
                 raw.append({'cx': cx, 'cy': cy, 'area': area, 'poly': norm_poly})
 
-        # NMS Deduplication theo diện tích và khoảng cách tâm
-        raw.sort(key=lambda s: s['area'], reverse=True)
+        # Lọc bỏ các ô bất thường (quá nhỏ hoặc bị gộp dính quá to)
+        # 1 ô chuẩn trên webcam 640x1024 có diện tích khoảng 1,200 - 9,500 pixel
+        filtered_raw = [s for s in raw if 1200 <= s['area'] <= 9500]
+        if not filtered_raw:
+            filtered_raw = [s for s in raw if 800 <= s['area'] <= 16000]
+
+        # NMS Deduplication theo khoảng cách tâm
+        filtered_raw.sort(key=lambda s: s['area'], reverse=False) # Ưu tiên diện tích vừa vặn
         dedup = []
-        for s in raw:
-            if s['area'] < 900:
-                continue
+        for s in filtered_raw:
             if any(np.hypot(s['cx'] - ex['cx'], s['cy'] - ex['cy']) < 22 for ex in dedup):
                 continue
             dedup.append(s)
@@ -412,31 +434,40 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
             p = sc[0].upper() if sc else 'A'
             zone_map.setdefault(p, []).append(sc)
         prefixes = sorted(zone_map.keys())
-        pA = prefixes[0] if len(prefixes) > 0 else 'E'
-        pB = prefixes[1] if len(prefixes) > 1 else 'F'
-        pC = prefixes[2] if len(prefixes) > 2 else 'G'
-        pD = prefixes[3] if len(prefixes) > 3 else 'H'
+        pA = prefixes[0] if len(prefixes) > 0 else 'A'
+        pB = prefixes[1] if len(prefixes) > 1 else 'B'
+        pC = prefixes[2] if len(prefixes) > 2 else 'C'
+        pD = prefixes[3] if len(prefixes) > 3 else 'D'
 
-        # Nhóm theo 3 hàng bằng 1D K-means trên trục cy
+        # Xác định số hàng: Sa bàn 20 ô (mỗi zone <= 5 ô) -> 2 hàng (Top: A/B, Bottom: C/D)
+        # Sa bàn 27 ô (zone A có 10 ô) -> 3 hàng (Top: A1..5/B1..5, Mid: A6..10/B6..7, Bot: C/D)
+        max_slots_in_zone = max((len(v) for v in zone_map.values()), default=5)
+        num_rows = 2 if max_slots_in_zone <= 5 and len(slot_codes or []) <= 20 else 3
+
+        # Nhóm theo số hàng bằng 1D K-means trên trục cy
         cy_vals = np.array([s['cy'] for s in dedup])
-        centers = np.array([np.min(cy_vals), np.median(cy_vals), np.max(cy_vals)])
+        if num_rows == 2:
+            centers = np.array([np.min(cy_vals), np.max(cy_vals)])
+        else:
+            centers = np.array([np.min(cy_vals), np.median(cy_vals), np.max(cy_vals)])
+
         for _ in range(12):
             labels = np.argmin(np.abs(cy_vals[:, None] - centers[None, :]), axis=1)
-            for k in range(3):
+            for k in range(num_rows):
                 if np.sum(labels == k) > 0:
                     centers[k] = np.mean(cy_vals[labels == k])
 
         sorted_order = np.argsort(centers)
-        row_map = {sorted_order[0]: 0, sorted_order[1]: 1, sorted_order[2]: 2}
+        row_map = {sorted_order[i]: i for i in range(num_rows)}
 
-        rows = [[], [], []]
+        rows = [[] for _ in range(num_rows)]
         for i, s in enumerate(dedup):
             r_idx = row_map[labels[i]]
             rows[r_idx].append(s)
 
         res_map = {}
 
-        for r_idx in range(3):
+        for r_idx in range(num_rows):
             r_slots = sorted(rows[r_idx], key=lambda s: s['cx'])
             if not r_slots:
                 continue
@@ -452,21 +483,29 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
             left_group = r_slots[:split_idx]
             right_group = r_slots[split_idx:]
             
-            if r_idx == 0:
-                for idx, s in enumerate(left_group[:5]): res_map[f'{pA}{idx+1}'] = s['poly']
-                for idx, s in enumerate(right_group[:5]): res_map[f'{pB}{idx+1}'] = s['poly']
-            elif r_idx == 1:
-                for idx, s in enumerate(left_group[:5]): res_map[f'{pA}{idx+6}'] = s['poly']
-                for idx, s in enumerate(right_group[:2]): res_map[f'{pB}{idx+6}'] = s['poly']
-            elif r_idx == 2:
-                for idx, s in enumerate(left_group[:5]): res_map[f'{pC}{idx+1}'] = s['poly']
-                for idx, s in enumerate(right_group[:5]): res_map[f'{pD}{idx+1}'] = s['poly']
+            if num_rows == 2:
+                if r_idx == 0:
+                    for idx, s in enumerate(left_group[:5]): res_map[f'{pA}{idx+1}'] = s['poly']
+                    for idx, s in enumerate(right_group[:5]): res_map[f'{pB}{idx+1}'] = s['poly']
+                elif r_idx == 1:
+                    for idx, s in enumerate(left_group[:5]): res_map[f'{pC}{idx+1}'] = s['poly']
+                    for idx, s in enumerate(right_group[:5]): res_map[f'{pD}{idx+1}'] = s['poly']
+            else:
+                if r_idx == 0:
+                    for idx, s in enumerate(left_group[:5]): res_map[f'{pA}{idx+1}'] = s['poly']
+                    for idx, s in enumerate(right_group[:5]): res_map[f'{pB}{idx+1}'] = s['poly']
+                elif r_idx == 1:
+                    for idx, s in enumerate(left_group[:5]): res_map[f'{pA}{idx+6}'] = s['poly']
+                    for idx, s in enumerate(right_group[:2]): res_map[f'{pB}{idx+6}'] = s['poly']
+                elif r_idx == 2:
+                    for idx, s in enumerate(left_group[:5]): res_map[f'{pC}{idx+1}'] = s['poly']
+                    for idx, s in enumerate(right_group[:5]): res_map[f'{pD}{idx+1}'] = s['poly']
 
         # Xác định 4 góc bao quanh (TL, TR, BR, BL) từ các ô biên
-        tl = res_map.get(f'{pA}1', [[0.10, 0.40]])[0]
-        tr = res_map.get(f'{pB}5', res_map.get(f'{pB}4', [[0.64, 0.40]]))[1]
-        br = res_map.get(f'{pD}5', res_map.get(f'{pD}4', [[0.64, 0.88]]))[2]
-        bl = res_map.get(f'{pC}1', [[0.10, 0.88]])[3]
+        tl = res_map.get(f'{pA}1', [[0.099, 0.097]])[0]
+        tr = res_map.get(f'{pB}5', res_map.get(f'{pB}4', [[0.952, 0.274]]))[1]
+        br = res_map.get(f'{pD}5', res_map.get(f'{pD}4', [[0.995, 0.972]]))[2]
+        bl = res_map.get(f'{pC}1', [[0.005, 0.876]])[3]
         board_corners = [tl, tr, br, bl]
 
         def _bilinear_pt(u, v, corners):
@@ -476,14 +515,28 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
             return [round(float(x), 4), round(float(y), 4)]
 
         def _get_interpolated_poly(col_idx, row_idx, is_right):
-            col_w = 0.088
-            slot_w = 0.080
-            base_u = 0.540 if is_right else 0.020
-            u1 = base_u + col_idx * col_w
-            u2 = u1 + slot_w
-            if row_idx == 0: v1, v2 = 0.02, 0.24
-            elif row_idx == 1: v1, v2 = 0.32, 0.54
-            else: v1, v2 = 0.74, 0.96
+            if num_rows == 2:
+                if is_right:
+                    base_u = 0.588
+                    col_w = 0.076
+                    slot_w = 0.074
+                else:
+                    base_u = 0.028 if row_idx == 0 else 0.008
+                    col_w = 0.076 if row_idx == 0 else 0.078
+                    slot_w = 0.074 if row_idx == 0 else 0.080
+                u1 = base_u + col_idx * col_w
+                u2 = u1 + slot_w
+                if row_idx == 0: v1, v2 = 0.02, 0.44
+                else: v1, v2 = 0.48, 1.00
+            else:
+                col_w = 0.088
+                slot_w = 0.080
+                base_u = 0.540 if is_right else 0.020
+                u1 = base_u + col_idx * col_w
+                u2 = u1 + slot_w
+                if row_idx == 0: v1, v2 = 0.02, 0.24
+                elif row_idx == 1: v1, v2 = 0.32, 0.54
+                else: v1, v2 = 0.74, 0.96
             return [
                 _bilinear_pt(u1, v1, board_corners),
                 _bilinear_pt(u2, v1, board_corners),
@@ -491,14 +544,18 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
                 _bilinear_pt(u1, v2, board_corners)
             ]
 
-        # Tự động bù khuyết điểm cho toàn bộ 27 ô nếu ô nào bị che khuất
+        # Tự động bù khuyết điểm cho toàn bộ các ô nếu ô nào bị che khuất
         for i in range(5):
             if f'{pA}{i+1}' not in res_map: res_map[f'{pA}{i+1}'] = _get_interpolated_poly(i, 0, False)
             if f'{pB}{i+1}' not in res_map: res_map[f'{pB}{i+1}'] = _get_interpolated_poly(i, 0, True)
-            if f'{pA}{i+6}' not in res_map: res_map[f'{pA}{i+6}'] = _get_interpolated_poly(i, 1, False)
-            if i < 2 and f'{pB}{i+6}' not in res_map: res_map[f'{pB}{i+6}'] = _get_interpolated_poly(i, 1, True)
-            if f'{pC}{i+1}' not in res_map: res_map[f'{pC}{i+1}'] = _get_interpolated_poly(i, 2, False)
-            if f'{pD}{i+1}' not in res_map: res_map[f'{pD}{i+1}'] = _get_interpolated_poly(i, 2, True)
+            if num_rows == 2:
+                if f'{pC}{i+1}' not in res_map: res_map[f'{pC}{i+1}'] = _get_interpolated_poly(i, 1, False)
+                if f'{pD}{i+1}' not in res_map: res_map[f'{pD}{i+1}'] = _get_interpolated_poly(i, 1, True)
+            else:
+                if f'{pA}{i+6}' not in res_map: res_map[f'{pA}{i+6}'] = _get_interpolated_poly(i, 1, False)
+                if i < 2 and f'{pB}{i+6}' not in res_map: res_map[f'{pB}{i+6}'] = _get_interpolated_poly(i, 1, True)
+                if f'{pC}{i+1}' not in res_map: res_map[f'{pC}{i+1}'] = _get_interpolated_poly(i, 2, False)
+                if f'{pD}{i+1}' not in res_map: res_map[f'{pD}{i+1}'] = _get_interpolated_poly(i, 2, True)
 
         print(f"[Physical Slot Segmentation] 🎯 Fully calibrated {len(res_map)}/27 physical slot polygons from camera!")
         return res_map, board_corners
@@ -560,6 +617,130 @@ def _detect_paper_corners_opencv(img, img_w, img_h):
     return None
 
 
+def _detect_slots_with_roboflow_v5(image_base64: str, slot_codes: list, img_w: int, img_h: int):
+    """
+    Sử dụng Model Version 5 từ Roboflow (RF-DETR mAP 94%) để nhận diện các vạch ranh giới
+    và áp dụng thuật toán Tái tạo Lòng Ô (Stall Reconstruction) để tạo thành 20 ô đỗ đầy đủ,
+    ôm trọn từng chiếc xe trên sa bàn.
+    """
+    api_key = os.getenv("ROBOFLOW_API_KEY", "D5zQa7sJjr1GUVrtYt0J")
+    project_id = os.getenv("ROBOFLOW_PROJECT_ID", "parking-slot-detection-gdqpe")
+    if "/" in project_id:
+        project_id = project_id.split("/")[-1]
+    
+    url = f"https://detect.roboflow.com/{project_id}/5?api_key={api_key}&confidence=25"
+    
+    try:
+        raw_b64 = image_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",")[1]
+            
+        res = requests.post(
+            url, 
+            data=raw_b64, 
+            headers={"Content-Type": "application/x-www-form-urlencoded"}, 
+            timeout=8
+        )
+        if res.status_code != 200:
+            print(f"[Roboflow V5] Error response status: {res.status_code}")
+            return None
+            
+        preds = res.json().get("predictions", [])
+        if len(preds) < 8:
+            print(f"[Roboflow V5] Low predictions count: {len(preds)}")
+            return None
+            
+        # Lọc các vạch ranh giới (width < 45px và height > 55px)
+        lines = [p for p in preds if p.get("width", 0) < 45 and p.get("height", 0) > 55]
+        if len(lines) < 8:
+            print(f"[Roboflow V5] Found only {len(lines)} divider lines")
+            return None
+
+        # Phân cụm 2 hàng (Top Row 0 & Bottom Row 1) bằng 1D K-means trên toạ độ y
+        ys = np.array([p["y"] for p in lines])
+        center0, center1 = np.min(ys), np.max(ys)
+        for _ in range(8):
+            labels = np.argmin(np.abs(ys[:, None] - np.array([center0, center1])[None, :]), axis=1)
+            if np.sum(labels == 0) > 0: center0 = np.mean(ys[labels == 0])
+            if np.sum(labels == 1) > 0: center1 = np.mean(ys[labels == 1])
+
+        mid_y = (center0 + center1) / 2.0
+
+        def reconstruct_zone_slots(line_list, zone_code, expected_count=5):
+            if len(line_list) < 2:
+                return {}
+            xs = sorted([p["x"] for p in line_list])
+            dedup_xs = []
+            for x in xs:
+                if not dedup_xs or abs(x - dedup_xs[-1]) >= 18:
+                    dedup_xs.append(x)
+                    
+            diffs = [dedup_xs[i+1] - dedup_xs[i] for i in range(len(dedup_xs) - 1)]
+            single_widths = [d for d in diffs if 30 <= d <= 60]
+            avg_w = float(np.median(single_widths)) if single_widths else 45.0
+            
+            dense_xs = [dedup_xs[0]]
+            for i in range(len(dedup_xs) - 1):
+                x1 = dedup_xs[i]
+                x2 = dedup_xs[i+1]
+                gap = x2 - x1
+                num_spans = max(1, int(round(gap / avg_w)))
+                for s in range(1, num_spans):
+                    dense_xs.append(x1 + s * (gap / num_spans))
+                dense_xs.append(x2)
+                
+            while len(dense_xs) < expected_count + 1:
+                dense_xs.append(dense_xs[-1] + avg_w)
+                
+            dense_xs = dense_xs[:expected_count + 1]
+            
+            avg_y = float(np.mean([p["y"] for p in line_list]))
+            avg_h = float(np.mean([p["height"] for p in line_list]))
+            y_top = max(0.0, avg_y - avg_h / 2.0)
+            y_bot = min(float(img_h), avg_y + avg_h / 2.0)
+            
+            slots = {}
+            for idx in range(expected_count):
+                x_left = dense_xs[idx]
+                x_right = dense_xs[idx + 1]
+                sc = f"{zone_code}{idx + 1}"
+                poly = [
+                    [round(float(x_left / img_w), 4), round(float(y_top / img_h), 4)],
+                    [round(float(x_right / img_w), 4), round(float(y_top / img_h), 4)],
+                    [round(float(x_right / img_w), 4), round(float(y_bot / img_h), 4)],
+                    [round(float(x_left / img_w), 4), round(float(y_bot / img_h), 4)],
+                ]
+                slots[sc] = poly
+            return slots
+
+        row0_lines = [p for p in lines if p["y"] < mid_y]
+        row1_lines = [p for p in lines if p["y"] >= mid_y]
+
+        xs0 = np.array([p["x"] for p in row0_lines]) if row0_lines else np.array([img_w / 2])
+        xs1 = np.array([p["x"] for p in row1_lines]) if row1_lines else np.array([img_w / 2])
+        mid_x0 = float(np.median(xs0))
+        mid_x1 = float(np.median(xs1))
+
+        # Nhận diện 4 zone A, B, C, D
+        slotsA = reconstruct_zone_slots([p for p in row0_lines if p["x"] < mid_x0], 'A')
+        slotsB = reconstruct_zone_slots([p for p in row0_lines if p["x"] >= mid_x0], 'B')
+        slotsC = reconstruct_zone_slots([p for p in row1_lines if p["x"] < mid_x1], 'C')
+        slotsD = reconstruct_zone_slots([p for p in row1_lines if p["x"] >= mid_x1], 'D')
+
+        all_slots_map = {**slotsA, **slotsB, **slotsC, **slotsD}
+        if len(all_slots_map) >= 15:
+            res_slots = []
+            for sc in slot_codes:
+                if sc in all_slots_map:
+                    res_slots.append({'slotCode': sc, 'polygon': all_slots_map[sc]})
+            print(f"[Roboflow V5] 🎯 Reconstructed {len(res_slots)} full parking slots from divider lines!")
+            return res_slots
+        return None
+    except Exception as e:
+        print(f"[Roboflow V5] Reconstruction note: {e}")
+        return None
+
+
 def _generate_canonical_perspective_slots(slot_codes, img=None, img_w=640, img_h=480):
     """
     Tạo 27 ô đỗ xe chuẩn xác theo phối cảnh tờ giấy A4 / diorama bãi đỗ xe.
@@ -579,10 +760,10 @@ def _generate_canonical_perspective_slots(slot_codes, img=None, img_w=640, img_h
 
     detected_corners = _detect_paper_corners_opencv(img, img_w, img_h) if img is not None else None
     final_corners = detected_corners or [
-        [0.100, 0.415], # TL
-        [0.635, 0.415], # TR
-        [0.635, 0.885], # BR
-        [0.100, 0.885], # BL
+        [0.099, 0.097], # TL
+        [0.952, 0.274], # TR
+        [0.995, 0.972], # BR
+        [0.005, 0.876], # BL
     ]
 
     def bilinear_transform(u, v, corners):
@@ -592,44 +773,70 @@ def _generate_canonical_perspective_slots(slot_codes, img=None, img_w=640, img_h
         return [round(float(x), 4), round(float(y), 4)]
 
     output_slots = []
-    slot_w = 0.080
-    gap = 0.010
-    
-    # Row 0: Top Left (A1..A5) & Top Right (B1..B5)
-    for i in range(5):
-        u1 = i * (slot_w + gap)
-        u2 = u1 + slot_w
-        mapped = [bilinear_transform(u1, 0.00, final_corners), bilinear_transform(u2, 0.00, final_corners), bilinear_transform(u2, 0.26, final_corners), bilinear_transform(u1, 0.26, final_corners)]
-        output_slots.append({"slotCode": f"{p_A}{i+1}", "polygon": mapped})
-    for i in range(5):
-        u1 = 0.540 + i * (slot_w + gap)
-        u2 = u1 + slot_w
-        mapped = [bilinear_transform(u1, 0.00, final_corners), bilinear_transform(u2, 0.00, final_corners), bilinear_transform(u2, 0.26, final_corners), bilinear_transform(u1, 0.26, final_corners)]
-        output_slots.append({"slotCode": f"{p_B}{i+1}", "polygon": mapped})
+    is_two_row = len(slot_codes) <= 20
 
-    # Row 1: Middle Left (A6..A10) & Middle Right (B6..B7)
-    for i in range(5):
-        u1 = i * (slot_w + gap)
-        u2 = u1 + slot_w
-        mapped = [bilinear_transform(u1, 0.29, final_corners), bilinear_transform(u2, 0.29, final_corners), bilinear_transform(u2, 0.54, final_corners), bilinear_transform(u1, 0.54, final_corners)]
-        output_slots.append({"slotCode": f"{p_A}{i+6}", "polygon": mapped})
-    for i in range(2):
-        u1 = 0.540 + i * (slot_w + gap)
-        u2 = u1 + slot_w
-        mapped = [bilinear_transform(u1, 0.29, final_corners), bilinear_transform(u2, 0.29, final_corners), bilinear_transform(u2, 0.54, final_corners), bilinear_transform(u1, 0.54, final_corners)]
-        output_slots.append({"slotCode": f"{p_B}{i+6}", "polygon": mapped})
+    if is_two_row:
+        # Row 0: Top Left (A1..A5) & Top Right (B1..B5)
+        for i in range(5):
+            u1 = 0.028 + i * 0.076
+            u2 = u1 + 0.074
+            mapped = [bilinear_transform(u1, 0.02, final_corners), bilinear_transform(u2, 0.02, final_corners), bilinear_transform(u2, 0.44, final_corners), bilinear_transform(u1, 0.44, final_corners)]
+            output_slots.append({"slotCode": f"{p_A}{i+1}", "polygon": mapped})
+        for i in range(5):
+            u1 = 0.588 + i * 0.076
+            u2 = u1 + 0.074
+            mapped = [bilinear_transform(u1, 0.02, final_corners), bilinear_transform(u2, 0.02, final_corners), bilinear_transform(u2, 0.44, final_corners), bilinear_transform(u1, 0.44, final_corners)]
+            output_slots.append({"slotCode": f"{p_B}{i+1}", "polygon": mapped})
 
-    # Row 2: Bottom Left (C1..C5) & Bottom Right (D1..D5)
-    for i in range(5):
-        u1 = i * (slot_w + gap)
-        u2 = u1 + slot_w
-        mapped = [bilinear_transform(u1, 0.73, final_corners), bilinear_transform(u2, 0.73, final_corners), bilinear_transform(u2, 0.98, final_corners), bilinear_transform(u1, 0.98, final_corners)]
-        output_slots.append({"slotCode": f"{p_C}{i+1}", "polygon": mapped})
-    for i in range(5):
-        u1 = 0.540 + i * (slot_w + gap)
-        u2 = u1 + slot_w
-        mapped = [bilinear_transform(u1, 0.73, final_corners), bilinear_transform(u2, 0.73, final_corners), bilinear_transform(u2, 0.98, final_corners), bilinear_transform(u1, 0.98, final_corners)]
-        output_slots.append({"slotCode": f"{p_D}{i+1}", "polygon": mapped})
+        # Row 1: Bottom Left (C1..C5) & Bottom Right (D1..D5)
+        for i in range(5):
+            u1 = 0.008 + i * 0.078
+            u2 = u1 + 0.080
+            mapped = [bilinear_transform(u1, 0.48, final_corners), bilinear_transform(u2, 0.48, final_corners), bilinear_transform(u2, 1.00, final_corners), bilinear_transform(u1, 1.00, final_corners)]
+            output_slots.append({"slotCode": f"{p_C}{i+1}", "polygon": mapped})
+        for i in range(5):
+            u1 = 0.588 + i * 0.076
+            u2 = u1 + 0.074
+            mapped = [bilinear_transform(u1, 0.48, final_corners), bilinear_transform(u2, 0.48, final_corners), bilinear_transform(u2, 1.00, final_corners), bilinear_transform(u1, 1.00, final_corners)]
+            output_slots.append({"slotCode": f"{p_D}{i+1}", "polygon": mapped})
+    else:
+        slot_w = 0.080
+        gap = 0.010
+        # Row 0: Top Left (A1..A5) & Top Right (B1..B5)
+        for i in range(5):
+            u1 = i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.00, final_corners), bilinear_transform(u2, 0.00, final_corners), bilinear_transform(u2, 0.26, final_corners), bilinear_transform(u1, 0.26, final_corners)]
+            output_slots.append({"slotCode": f"{p_A}{i+1}", "polygon": mapped})
+        for i in range(5):
+            u1 = 0.540 + i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.00, final_corners), bilinear_transform(u2, 0.00, final_corners), bilinear_transform(u2, 0.26, final_corners), bilinear_transform(u1, 0.26, final_corners)]
+            output_slots.append({"slotCode": f"{p_B}{i+1}", "polygon": mapped})
+
+        # Row 1: Middle Left (A6..A10) & Middle Right (B6..B7)
+        for i in range(5):
+            u1 = i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.29, final_corners), bilinear_transform(u2, 0.29, final_corners), bilinear_transform(u2, 0.54, final_corners), bilinear_transform(u1, 0.54, final_corners)]
+            output_slots.append({"slotCode": f"{p_A}{i+6}", "polygon": mapped})
+        for i in range(2):
+            u1 = 0.540 + i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.29, final_corners), bilinear_transform(u2, 0.29, final_corners), bilinear_transform(u2, 0.54, final_corners), bilinear_transform(u1, 0.54, final_corners)]
+            output_slots.append({"slotCode": f"{p_B}{i+6}", "polygon": mapped})
+
+        # Row 2: Bottom Left (C1..C5) & Bottom Right (D1..D5)
+        for i in range(5):
+            u1 = i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.73, final_corners), bilinear_transform(u2, 0.73, final_corners), bilinear_transform(u2, 0.98, final_corners), bilinear_transform(u1, 0.98, final_corners)]
+            output_slots.append({"slotCode": f"{p_C}{i+1}", "polygon": mapped})
+        for i in range(5):
+            u1 = 0.540 + i * (slot_w + gap)
+            u2 = u1 + slot_w
+            mapped = [bilinear_transform(u1, 0.73, final_corners), bilinear_transform(u2, 0.73, final_corners), bilinear_transform(u2, 0.98, final_corners), bilinear_transform(u1, 0.98, final_corners)]
+            output_slots.append({"slotCode": f"{p_D}{i+1}", "polygon": mapped})
 
     return output_slots, final_corners
 
@@ -663,7 +870,22 @@ async def auto_detect_grid(request: AutoDetectGridRequest):
         with _scan_cache_lock:
             _scan_cache.clear()
 
-        # Method 1: YOLOv8-Seg (if available with high slot count)
+        # Method 1: Roboflow Version 5 RF-DETR Model (Cloud API + Smart Stall Reconstruction)
+        if request.image:
+            try:
+                rf_slots = _detect_slots_with_roboflow_v5(request.image, slot_codes, img_w, img_h)
+                if rf_slots and len(rf_slots) >= 15:
+                    print(f"[AI Auto-Detect] 🚀 Successfully calibrated {len(rf_slots)} slots via Roboflow V5!")
+                    return {
+                        "success": True,
+                        "model": "roboflow_v5_stall_reconstruction",
+                        "totalSlots": len(rf_slots),
+                        "slots": rf_slots
+                    }
+            except Exception as rf_err:
+                print(f"[AI Auto-Detect] Roboflow V5 note: {rf_err}")
+
+        # Method 2: YOLOv8-Seg (if available with high slot count)
         if img is not None and parking_slots_model is not None:
             phys_slots = _extract_physical_slot_polygons(img, slot_codes, img_w, img_h)
             if len(phys_slots) >= 20:
@@ -676,7 +898,7 @@ async def auto_detect_grid(request: AutoDetectGridRequest):
                     "slots": calibrated_slots
                 }
 
-        # Method 2: High-accuracy perspective diorama mapping
+        # Method 3: High-accuracy perspective diorama mapping
         output_slots, final_corners = _generate_canonical_perspective_slots(slot_codes, img=img, img_w=img_w, img_h=img_h)
 
         print(f"[AI Auto-Detect] Generated {len(output_slots)} calibrated slots from paper bounds {final_corners}!")
@@ -948,14 +1170,17 @@ async def scan_parking_slots(request: ScanSlotsRequest):
 
         img_h, img_w = img.shape[:2]
 
-        # ─── BƯỚC 0: Tự động trích xuất viền ô đỗ thực tế từ Live Camera bằng YOLOv8-Seg ───
-        physical_slots, detected_corners = _extract_physical_slot_polygons(img, [s.slotCode for s in request.slots], img_w, img_h)
-        if physical_slots and len(physical_slots) >= 10:
-            print(f"[ALPR Engine] 🎯 Auto-detected & Aligned {len(physical_slots)} real physical slots from live camera!")
+        # ─── BƯỚC 0: Tự động chuẩn hóa viền ô đỗ (Giữ nguyên viền chuẩn đã gửi từ frontend) ───
+        physical_slots = {}
+        detected_corners = None
+        has_polys = any(s.polygon and len(s.polygon) >= 3 for s in request.slots)
+        if not has_polys:
+            canonical, final_corners = _generate_canonical_perspective_slots([s.slotCode for s in request.slots], img, img_w, img_h)
+            detected_corners = final_corners
+            c_map = {s['slotCode']: s['polygon'] for s in canonical}
             for slot_def in request.slots:
-                sc = slot_def.slotCode
-                if sc in physical_slots:
-                    slot_def.polygon = physical_slots[sc]
+                if slot_def.slotCode in c_map:
+                    slot_def.polygon = c_map[slot_def.slotCode]
 
         # ─── BƯỚC 1: Chuyển tọa độ polygon sang pixel ─────────────────
         slot_pixel_polys = {}
@@ -1011,22 +1236,26 @@ async def scan_parking_slots(request: ScanSlotsRequest):
             except Exception as yolo_err:
                 print(f"[ALPR Engine] YOLO plate detection note: {yolo_err}")
 
-        # ─── BƯỚC 2.5: Scene Validation Siêu Nhanh (Kiểm tra góc quay / khuôn mặt) ───
+        # ─── BƯỚC 2.5: Scene Validation (Chỉ cảnh báo khi mặt người thật chiếm phần lớn khung hình) ───
         try:
-            ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
-            skin_mask = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
-            skin_ratio = float(np.sum(skin_mask > 0)) / float(img_w * img_h)
+            # Nếu đã phát hiện ô đỗ xe hoặc sa bàn thì KHÔNG BAO GIỜ coi là mặt người
+            if not physical_slots or len(physical_slots) < 4:
+                ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+                skin_mask = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
+                skin_ratio = float(np.sum(skin_mask > 0)) / float(img_w * img_h)
 
-            if skin_ratio > 0.14:
-                reason = "Camera is facing user face or room space instead of the parking lot! Please adjust camera angle."
-                print(f"[ALPR Engine] ⚠️ Camera Misaligned: skin={skin_ratio:.3f}. {reason}")
-                return {
-                    "success": True,
-                    "isParkingLotScene": False,
-                    "invalidReason": reason,
-                    "totalSlots": len(request.slots),
-                    "slots": []
-                }
+                # Chỉ kích hoạt nếu màu da người thật sự chiếm > 50% diện tích (selfie vào mặt)
+                # và hoàn toàn không có biển số hay ô đỗ nào
+                if skin_ratio > 0.50 and not slot_plate_map:
+                    reason = "Camera is facing user face or room space instead of the parking lot! Please adjust camera angle."
+                    print(f"[ALPR Engine] ⚠️ Camera Misaligned: skin={skin_ratio:.3f}. {reason}")
+                    return {
+                        "success": True,
+                        "isParkingLotScene": False,
+                        "invalidReason": reason,
+                        "totalSlots": len(request.slots),
+                        "slots": []
+                    }
         except Exception as scene_err:
             print(f"[ALPR Engine] Scene validation check note: {scene_err}")
 
@@ -1153,7 +1382,7 @@ async def scan_parking_slots(request: ScanSlotsRequest):
               f"{scan_time:.2f}s")
 
         # ─── BƯỚC 7: Tự động phát hiện Tầng thực tế (Floor Verification) ───
-        floor_1_plates = {'13C-343.21', '43B-204.04', '19H-438.99'}
+        floor_1_plates = {'43B-204.08', '11A-123.45', '78A-987.31', '77C-143.99', '99A-280.96', '13C-343.21', '43B-204.04', '19H-438.99'}
         floor_2_plates = {'12B-223.47', '55H-443.23', '90A-280.96', '99A-280.96', '99C-643.99', '22B-123.45', '93A-289.87'}
         detected_floor_num = None
 

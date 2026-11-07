@@ -196,7 +196,10 @@ export default function ParkingMapGrid({
   // O(1) Lookup Maps for Performance Optimization
   const sessionMap = useMemo(() => {
     return activeSessions.reduce((acc, curr) => {
-      acc[`${curr.floorId}-${curr.parkingSlot}`] = curr;
+      const fId = String(curr.floorId?._id || curr.floorId || '');
+      const slotCode = String(curr.parkingSlot || '').trim().toUpperCase();
+      acc[`${fId}-${slotCode}`] = curr;
+      if (slotCode) acc[slotCode] = curr;
       return acc;
     }, {});
   }, [activeSessions]);
@@ -344,8 +347,9 @@ export default function ParkingMapGrid({
 
       if (el.type.startsWith('slot')) {
         const isHovered = hoveredSlotId === el.id;
-        const session = sessionMap[`${floorId}-${el.name || el.id}`];
-        const dbSlot = dbSlotMap[`${floorId}-${el.name || el.id}`];
+        const normalizedSlotName = String(el.name || el.id || '').trim().toUpperCase();
+        const session = sessionMap[`${floorId}-${normalizedSlotName}`] || sessionMap[normalizedSlotName];
+        const dbSlot = dbSlotMap[`${floorId}-${el.name || el.id}`] || dbSlotMap[`${floorId}-${normalizedSlotName}`];
         const isMaintenance = dbSlot?.status === 'maintenance';
         
         const hasName = !!el.name && el.name.trim() !== '';

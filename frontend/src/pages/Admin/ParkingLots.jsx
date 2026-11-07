@@ -78,9 +78,6 @@ export default function ParkingLots() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [dbSlots, setDbSlots] = useState([]);
 
-  // Map & Floor Setup Modal State
-  const [showSetupModal, setShowSetupModal] = useState(false);
-
   // Custom Modal State for Maintenance
   const [maintenanceModal, setMaintenanceModal] = useState({ isOpen: false, item: null, isZone: false });
   const [maintenanceReason, setMaintenanceReason] = useState("");
@@ -116,7 +113,14 @@ export default function ParkingLots() {
   const getSlotFloorId = (slot) => String(slot.floorID?._id || slot.floorID || "");
   const sameId = (a, b) => String(a || "") === String(b || "");
   const sameSlotCode = (a, b) => String(a || "").trim().toUpperCase() === String(b || "").trim().toUpperCase();
-  const getNextFloorNumber = () => Math.max(0, ...floors.map(f => Number(f.floorNumber) || 0)) + 1;
+  const getNextFloorNumber = () => {
+    const existingNumbers = new Set(floors.map(f => Number(f.floorNumber) || 0));
+    let n = 1;
+    while (existingNumbers.has(n)) {
+      n++;
+    }
+    return n;
+  };
 
   const getSlotPrefix = (slotName = "") => {
     const match = String(slotName).trim().match(/^([a-zA-Z]+)(?=\d|[-_\s]|$)/);
@@ -279,7 +283,10 @@ export default function ParkingLots() {
 
   const fetchLiveData = useCallback(async () => {
     try {
-      const sessionRes = await fetch(`${API_BASE}/sessions/active-status`);
+      const token = localStorage.getItem('token') || localStorage.getItem('accessToken');
+      const sessionRes = await fetch(`${API_BASE}/sessions/active-status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       const sessionData = await sessionRes.json();
       if (sessionData.success) {
         setActiveSessions(sessionData.data);
@@ -420,11 +427,14 @@ export default function ParkingLots() {
   const handleCreateFloor = async () => {
     const floorNumber = getNextFloorNumber();
     const name = `Floor ${floorNumber}`;
-    const res = await createFloor({ floorNumber, name });
-    if (res.ok && res.data.data) {
+    const code = `F${floorNumber}`;
+    const res = await createFloor({ floorNumber, name, code });
+    if (res.ok && res.data?.data) {
       setFloors([...floors, res.data.data]);
       setCurrentFloorId(res.data.data._id);
       toast.success(`Created ${name}`);
+    } else {
+      toast.error(res.data?.message || "Không thể tạo tầng mới");
     }
   };
 
@@ -463,6 +473,10 @@ export default function ParkingLots() {
       nextPrefixIndex++;
     });
 
+    const floorNumber = getNextFloorNumber();
+    const name = `Floor ${floorNumber}`;
+    const code = `F${floorNumber}`;
+
     const idMapping = {};
     const renamedElements = (currentFloor.layoutData?.elements || []).map(el => {
       const newId = `${el.type}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -476,7 +490,11 @@ export default function ParkingLots() {
           newName = renameZoneName(newName, prefixMapping);
         }
       }
-      return { ...el, id: newId, name: newName };
+      let newText = el.text;
+      if (el.type === 'text' && typeof el.text === 'string') {
+        newText = el.text.replace(/FLOOR \d+/gi, `FLOOR ${floorNumber}`);
+      }
+      return { ...el, id: newId, name: newName, ...(newText ? { text: newText } : {}) };
     });
 
     const finalElements = renamedElements.map(el => {
@@ -491,22 +509,20 @@ export default function ParkingLots() {
       elements: finalElements
     };
 
-    const floorNumber = getNextFloorNumber();
-    const name = `Floor ${floorNumber}`;
-    const res = await createFloor({ floorNumber, name, layoutData: newLayoutData });
-    if (res.ok && res.data.data) {
+    const res = await createFloor({ floorNumber, name, code, layoutData: newLayoutData });
+    if (res.ok && res.data?.data) {
       const newFloor = res.data.data;
       const syncRes = await updateFloorLayout(newFloor._id, newLayoutData);
       if (!syncRes.ok) {
-        alert("Duplicated the floor layout, but failed to create its slots/zones: " + (syncRes.data?.message || "Unknown error"));
+        toast.error("Duplicated layout, but failed to sync slots: " + (syncRes.data?.message || "Unknown error"));
       }
       const syncedFloor = syncRes.ok && syncRes.data?.data ? syncRes.data.data : newFloor;
       setFloors([...floors, syncedFloor]);
       setCurrentFloorId(syncedFloor._id);
       await fetchDbSlots(syncedFloor._id);
-      toast.success(`Duplicated to ${name}`);
+      toast.success(`Đã nhân bản thành công sang ${name}`);
     } else {
-      alert("Failed to duplicate floor: " + (res.data?.message || "Unknown error"));
+      toast.error("Không thể nhân bản tầng: " + (res.data?.message || "Lỗi hệ thống"));
     }
   };
 
@@ -531,9 +547,9 @@ export default function ParkingLots() {
       } else {
         setCurrentFloorId(null);
       }
-      toast.success("Floor deleted successfully");
+      toast.success("Đã xoá tầng thành công");
     } else {
-      alert("Failed to delete floor: " + (res.data?.message || "Forbidden or Network error"));
+      toast.error(res.data?.message || "Không thể xoá tầng: Có ràng buộc dữ liệu hoặc lỗi mạng");
     }
     setDeleteModal({ isOpen: false, floorId: null, floorName: "" });
   };
@@ -571,92 +587,114 @@ export default function ParkingLots() {
     <div className="flex flex-col h-[calc(100vh-70px)] bg-[#080808] text-gray-200 font-sans relative overflow-hidden"
          style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
       
-      {/* Top Toolbar: Clean, Uncluttered, Single-line */}
-      <div className="absolute top-4 left-8 z-50 flex items-center gap-2.5 bg-[#111111]/95 backdrop-blur-md border border-white/10 p-2 rounded-xl shadow-[0_18px_45px_rgba(0,0,0,0.4)]">
+      {/* Top Floating Control Bar: Responsive, Two-Cluster Layout */}
+      <div className="absolute top-4 left-6 right-6 z-40 flex items-center justify-between gap-3 pointer-events-none flex-wrap">
         
-        {/* Title Badge */}
-        <div className="flex items-center gap-2 px-2.5 border-r border-white/10 shrink-0">
-          <MonitorCheck size={18} className="text-cyan-400" />
-          <span className="text-xs font-black uppercase tracking-wider text-cyan-400">LIVE MONITOR</span>
-        </div>
+        {/* Left Cluster: Floor Selection & Layout Management */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-[#111111]/95 backdrop-blur-md border border-white/10 p-2 rounded-xl shadow-[0_18px_45px_rgba(0,0,0,0.4)] shrink-0">
+          {/* Title Badge */}
+          <div className="flex items-center gap-1.5 px-2 border-r border-white/10 shrink-0">
+            <MonitorCheck size={16} className="text-cyan-400" />
+            <span className="text-xs font-black uppercase tracking-wider text-cyan-400 hidden sm:inline">LIVE MONITOR</span>
+          </div>
 
-        {/* Floor Selector Dropdown */}
-        <AdminSelect
-          value={currentFloorId || ""}
-          onChange={(nextFloorId) => setCurrentFloorId(nextFloorId === "" ? null : nextFloorId)}
-          options={
-            floors.length > 0
-              ? [
-                  { value: "", label: "Overview (All Floors)" },
-                  ...floors.map((floor) => ({ value: floor._id, label: floor.name })),
-                ]
-              : [{ value: "", label: "No floors available" }]
-          }
-          className="min-w-[170px]"
-          ariaLabel="Select parking floor"
-        />
+          {/* Floor Selector Dropdown */}
+          <AdminSelect
+            value={currentFloorId || ""}
+            onChange={(nextFloorId) => setCurrentFloorId(nextFloorId === "" ? null : nextFloorId)}
+            options={
+              floors.length > 0
+                ? [
+                    { value: "", label: "Overview (All Floors)" },
+                    ...floors.map((floor) => ({ value: floor._id, label: floor.name })),
+                  ]
+                : [{ value: "", label: "No floors available" }]
+            }
+            className="min-w-[150px] max-w-[190px]"
+            ariaLabel="Select parking floor"
+          />
 
-        {currentFloor && isAdmin && (
-          <button
-            type="button"
-            onClick={() => setIsEditMode(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-400/40 text-xs font-bold transition shadow-sm active:scale-95 shrink-0"
-            title={`Edit visual layout for ${currentFloor.name}`}
-          >
-            <Edit size={13} className="text-cyan-400" />
-            <span>Edit Layout</span>
-          </button>
-        )}
-
-        {/* Live Update Pulse */}
-        <div className="flex items-center gap-1.5 px-2.5 border-l border-white/10 shrink-0">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
-            LIVE UPDATE
-          </span>
-        </div>
-
-        {/* Action 1: Camera AI */}
-        <button
-          type="button"
-          onClick={() => setShowSurveillanceModal(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95 shrink-0"
-          title="Open Camera AI Slot Surveillance"
-        >
-          <Camera size={14} className="text-cyan-400" />
-          <span>Camera AI</span>
-          {violations.length > 0 && (
-            <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
-              {violations.length} {violations.length === 1 ? 'Violation' : 'Violations'}
-            </span>
-          )}
-        </button>
-
-        {/* Action 2: Violation History */}
-        <button
-          type="button"
-          onClick={() => setShowHistoryModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-sm active:scale-95 shrink-0"
-          title="View violation history and audit logs"
-        >
-          <History size={14} className="text-amber-400" />
-          <span>Violation History</span>
-        </button>
-
-        {/* Action 3: Map Setup Modal Trigger */}
-        {isAdmin && (
-          <div className="border-l border-white/10 pl-2 shrink-0">
+          {/* Admin Quick Action: [+] Add New Floor */}
+          {isAdmin && (
             <button
               type="button"
-              onClick={() => setShowSetupModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-bold text-xs hover:text-white transition active:scale-95 shadow-sm"
-              title="Open Map & Floor Setup"
+              onClick={handleCreateFloor}
+              className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/10 text-cyan-400 active:scale-95 shrink-0"
+              title="Thêm tầng mới"
             >
-              <Settings size={14} className="text-cyan-400" />
-              <span>Map Setup</span>
+              <Plus size={16} />
             </button>
+          )}
+
+          {/* Admin Quick Action: [Edit Layout], [Duplicate], [Delete] */}
+          {(currentFloor && isAdmin) && (
+            <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsEditMode(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-400/40 text-xs font-bold transition shadow-sm active:scale-95 shrink-0"
+                title={`Edit visual layout for ${currentFloor.name}`}
+              >
+                <Edit size={13} className="text-cyan-400" />
+                <span>Edit Layout</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDuplicateFloor(currentFloor)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition active:scale-95 shrink-0"
+                title="Duplicate this floor"
+              >
+                <Copy size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteFloor}
+                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition active:scale-95 shrink-0"
+                title="Delete this floor"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right Cluster: Live Surveillance & Action Tools */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-[#111111]/95 backdrop-blur-md border border-white/10 p-2 rounded-xl shadow-[0_18px_45px_rgba(0,0,0,0.4)] shrink-0">
+          {/* Live Update Pulse */}
+          <div className="flex items-center gap-1.5 px-2 shrink-0">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider hidden md:inline">
+              LIVE UPDATE
+            </span>
           </div>
-        )}
+
+          {/* Action 1: Camera AI */}
+          <button
+            type="button"
+            onClick={() => setShowSurveillanceModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95 shrink-0"
+            title="Open Camera AI Slot Surveillance"
+          >
+            <Camera size={14} className="text-cyan-400" />
+            <span>Camera AI</span>
+            {violations.length > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
+                {violations.length}
+              </span>
+            )}
+          </button>
+
+          {/* Action 2: Violation History */}
+          <button
+            type="button"
+            onClick={() => setShowHistoryModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-sm active:scale-95 shrink-0"
+            title="View violation history and audit logs"
+          >
+            <History size={14} className="text-amber-400" />
+            <span>Violation History</span>
+          </button>
+        </div>
       </div>
 
       {/* Real-Time Violation Alert Banner */}
@@ -727,6 +765,9 @@ export default function ParkingLots() {
       <div className={`absolute top-0 right-0 bottom-0 w-[420px] bg-[#111111]/95 backdrop-blur-2xl border-l border-white/10 p-6 flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.5)] text-slate-200 z-50 transform transition-transform duration-300 ease-in-out ${selectedItem ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedItem && (() => {
           const isZone = selectedItem.type === 'zone';
+          const currentSession = selectedItem.session || activeSessions.find(s => 
+            sameSlotCode(s.parkingSlot, selectedItem.id) && (!selectedItem.floorId || sameId(s.floorId, selectedItem.floorId))
+          );
           const dbSlotInfo = !isZone
             ? dbSlots.find(s => sameSlotCode(s.slotNumber, selectedItem.id) && sameId(getSlotFloorId(s), selectedItem.floorId))
             : null;
@@ -916,7 +957,7 @@ export default function ParkingLots() {
                         </>
                       )}
                     </div>
-                  ) : !isZone && selectedItem.session ? (
+                  ) : !isZone && currentSession ? (
                     <div className="flex flex-col gap-3">
                       <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
                         <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
@@ -924,31 +965,42 @@ export default function ParkingLots() {
                       </div>
                       <div className="flex justify-between items-center pb-2 border-b border-white/5">
                         <span className="text-slate-400 text-xs">License Plate</span>
-                        <span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">
-                          {selectedItem.session.licensePlate}
+                        <span className="font-mono text-sm font-bold text-white bg-slate-800/90 px-2.5 py-1 rounded border border-slate-700/60 tracking-wider">
+                          {currentSession.licensePlate || 'Chưa nhận diện biển số'}
                         </span>
                       </div>
                       <div className="flex justify-between items-center pb-2 border-b border-white/5">
                         <span className="text-slate-400 text-xs">Phone Number</span>
-                        <span className="font-medium text-white">{selectedItem.session.phone || <span className="text-slate-500 italic">Guest</span>}</span>
+                        {currentSession.phone || currentSession.userId?.phone ? (
+                          <a
+                            href={`tel:${currentSession.phone || currentSession.userId?.phone}`}
+                            className="font-bold text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1.5 text-xs bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 active:scale-95 transition"
+                            title="Bấm để gọi trực tiếp"
+                          >
+                            <Phone size={12} className="text-emerald-400" />
+                            <span>{currentSession.phone || currentSession.userId?.phone}</span>
+                          </a>
+                        ) : (
+                          <span className="text-slate-500 italic text-xs">Khách vãng lai (Chưa có SĐT)</span>
+                        )}
                       </div>
-                      {selectedItem.session.userId?.email && (
+                      {currentSession.userId?.email && (
                         <div className="flex justify-between items-center pb-2 border-b border-white/5">
                           <span className="text-slate-400 text-xs">Email</span>
-                          <span className="font-medium text-cyan-400">{selectedItem.session.userId.email}</span>
+                          <span className="font-medium text-cyan-400">{currentSession.userId.email}</span>
                         </div>
                       )}
                       <div className="flex justify-between items-center pb-2 border-b border-white/5">
                         <span className="text-slate-400 text-xs">Vehicle Type</span>
-                        <span className="font-medium text-white uppercase">{selectedItem.session.vehicleType || 'Car'}</span>
+                        <span className="font-medium text-white uppercase">{currentSession.vehicleType || 'Car'}</span>
                       </div>
                       <div className="flex justify-between items-center pb-2 border-b border-white/5">
                         <span className="text-slate-400 text-xs">Check-in Time</span>
-                        <span className="font-medium text-white">{new Date(selectedItem.session.checkInTime).toLocaleString('en-US')}</span>
+                        <span className="font-medium text-white">{new Date(currentSession.checkInTime).toLocaleString('en-US')}</span>
                       </div>
                       <div className="flex justify-between items-center mt-2 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
                         <span className="text-cyan-400 text-xs font-bold tracking-wide uppercase">Parked Duration</span>
-                        <LiveDuration checkInTime={selectedItem.session.checkInTime} expectedDurationHours={selectedItem.session.expectedDurationHours} />
+                        <LiveDuration checkInTime={currentSession.checkInTime} expectedDurationHours={currentSession.expectedDurationHours} />
                       </div>
                     </div>
                   ) : !isZone && (aiObs?.occupied || dbSlotInfo?.status === 'occupied' || selectedItem.isOccupied) ? (
@@ -999,7 +1051,17 @@ export default function ParkingLots() {
                           {dbSlotInfo.subscriptionDetail.user && (
                             <>
                               <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.username || 'N/A'}</span></div>
-                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Phone</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.phone || 'N/A'}</span></div>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                                <span className="text-slate-400 text-xs">Phone</span>
+                                {dbSlotInfo.subscriptionDetail.user.phone ? (
+                                  <a href={`tel:${dbSlotInfo.subscriptionDetail.user.phone}`} className="font-bold text-emerald-400 hover:underline flex items-center gap-1 text-xs">
+                                    <Phone size={11} />
+                                    <span>{dbSlotInfo.subscriptionDetail.user.phone}</span>
+                                  </a>
+                                ) : (
+                                  <span className="font-medium text-slate-500">Chưa có SĐT</span>
+                                )}
+                              </div>
                             </>
                           )}
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Valid Until</span><span className="font-bold text-purple-400">{new Date(dbSlotInfo.subscriptionDetail.expireAt).toLocaleString('en-US')}</span></div>
@@ -1017,7 +1079,17 @@ export default function ParkingLots() {
                       {selectedItem.booking && (
                         <>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{selectedItem.booking.userId?.username || 'N/A'}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Phone</span><span className="font-medium text-white">{selectedItem.booking.userId?.phone || 'N/A'}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                            <span className="text-slate-400 text-xs">Phone</span>
+                            {selectedItem.booking.userId?.phone ? (
+                              <a href={`tel:${selectedItem.booking.userId.phone}`} className="font-bold text-emerald-400 hover:underline flex items-center gap-1 text-xs">
+                                <Phone size={11} />
+                                <span>{selectedItem.booking.userId.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="font-medium text-slate-500">Chưa có SĐT</span>
+                            )}
+                          </div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white">{selectedItem.booking.licensePlate || 'N/A'}</span></div>
                         </>
                       )}
@@ -1089,8 +1161,23 @@ export default function ParkingLots() {
                           </div>
 
                           {log.detectedPlate && (
-                            <div className="text-slate-200 font-mono font-bold">
-                              License Plate: {formatLicensePlateDisplay(log.detectedPlate)}
+                            <div className="flex items-center justify-between text-slate-200 font-mono font-bold">
+                              <span>Biển số: {formatLicensePlateDisplay(log.detectedPlate)}</span>
+                              {log.phone && (
+                                <a
+                                  href={`tel:${log.phone}`}
+                                  className="text-emerald-400 font-sans text-[11px] font-normal hover:underline flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20"
+                                  title="Gọi cho khách"
+                                >
+                                  <Phone size={10} />
+                                  <span>{log.phone}</span>
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          {log.customerName && (
+                            <div className="text-[11px] text-slate-400">
+                              Khách hàng: <span className="text-slate-200 font-medium">{log.customerName}</span>
                             </div>
                           )}
 
@@ -1113,10 +1200,10 @@ export default function ParkingLots() {
               )}
 
               {/* Action: Checkout vehicle button */}
-              {!isZone && selectedItem.session && (
+              {!isZone && currentSession && (
                 <div className="mt-auto flex-shrink-0 pt-4 pb-2">
                   <button 
-                    onClick={() => handleTriggerCheckout(selectedItem)}
+                    onClick={() => handleTriggerCheckout(currentSession)}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-3.5 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] text-xs"
                   >
                     <X size={16} />
@@ -1307,156 +1394,7 @@ export default function ParkingLots() {
         }}
       />
 
-      {/* Map & Floor Setup Modal */}
-      {showSetupModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="bg-[#161619] border border-white/15 w-full max-w-xl rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.85)] overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
-            
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-black/40 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-                  <Settings size={20} />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-white tracking-wide">
-                    Floor & Map Management
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Select any floor to edit its layout, or add new levels
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSetupModal(false)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition border border-white/5"
-              >
-                <X size={16} />
-              </button>
-            </div>
 
-            {/* Modal Body - Scrollable list of floors */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              
-              {/* Header bar with Add Floor button */}
-              <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Configured Floors ({floors.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCreateFloor}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-400 font-bold text-xs transition shadow-sm active:scale-95"
-                >
-                  <Plus size={14} />
-                  <span>Add New Floor</span>
-                </button>
-              </div>
-
-              {/* Floors List */}
-              <div className="space-y-3">
-                {floors.map((floor) => {
-                  const slotsCount = floor.layoutData?.elements?.filter(el => el.type === 'slot' || el.type?.startsWith('slot'))?.length || 0;
-                  const zonesCount = floor.layoutData?.elements?.filter(el => el.type === 'zone')?.length || 0;
-                  const isCurrentlySelected = currentFloorId === floor._id;
-
-                  return (
-                    <div 
-                      key={floor._id}
-                      className={`p-4 rounded-xl border transition-all ${
-                        isCurrentlySelected 
-                          ? 'bg-cyan-950/30 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]' 
-                          : 'bg-white/[0.03] border-white/10 hover:border-white/20'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        
-                        {/* Floor Info */}
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm border ${
-                            isCurrentlySelected 
-                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' 
-                              : 'bg-white/5 text-slate-300 border-white/10'
-                          }`}>
-                            #{floor.floorNumber || 1}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-white">
-                                {floor.name}
-                              </span>
-                              {isCurrentlySelected && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                                  Viewing
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
-                              <span>{slotsCount} {slotsCount === 1 ? 'Slot' : 'Slots'}</span>
-                              <span>•</span>
-                              <span>{zonesCount} {zonesCount === 1 ? 'Zone' : 'Zones'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Actions for this floor */}
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCurrentFloorId(floor._id);
-                              setIsEditMode(true);
-                              setShowSetupModal(false);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs uppercase tracking-wider transition shadow-sm active:scale-95"
-                            title={`Open layout builder for ${floor.name}`}
-                          >
-                            <Edit size={13} />
-                            <span>Edit Layout</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDuplicateFloor(floor)}
-                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition"
-                            title="Duplicate this floor"
-                          >
-                            <Copy size={14} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setDeleteModal({ isOpen: true, floorId: floor._id, floorName: floor.name })}
-                            className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition"
-                            title="Delete this floor"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-3.5 bg-black/40 border-t border-white/10 flex justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowSetupModal(false)}
-                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold transition"
-              >
-                Close
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );

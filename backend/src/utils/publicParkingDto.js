@@ -5,13 +5,16 @@ const maskLicensePlate = (licensePlate) => {
 };
 
 const toPublicActiveSession = (session) => ({
+  _id: session._id,
   parkingSlot: session.parkingSlot || null,
   floorId: session.floorId || null,
   vehicleType: session.vehicleType || null,
   checkInTime: session.checkInTime || null,
   expectedDurationHours: session.expectedDurationHours || null,
   status: session.status,
-  maskedPlate: maskLicensePlate(session.licensePlate),
+  licensePlate: session.licensePlate || null,
+  phone: session.phone || session.userId?.phone || null,
+  userId: session.userId || null,
 });
 
 const toKioskSession = (session) => ({
