@@ -1234,12 +1234,8 @@ const getAdminBookingStatistics = async (filters = {}) => {
   const period = resolveDateRange(filters);
   const createdAtMatch = buildCreatedAtMatch(period);
   const bookingScheduleMatch = buildBookingScheduleMatch(period, filters.range || '30d');
-  const bookingScopeMatch = {
-    ...bookingScheduleMatch,
-    ...(filters.range !== 'all' && filters.floorId
-      ? { floorId: new mongoose.Types.ObjectId(filters.floorId) }
-      : {}),
-  };
+  const { bookingManagementFilter, combineBookingFilters } = require('../utils/bookingManagementFilter');
+  const bookingScopeMatch = combineBookingFilters(bookingScheduleMatch, await bookingManagementFilter(filters));
   const timelineBucket = getTimelineBucket(filters, period);
   const [
     bookingRows,

@@ -2872,7 +2872,8 @@ exports.createBulkBooking = async (req, res, next) => {
 
 exports.getAllBookings = async (req, res, next) => {
   try {
-    const { date, floorId, bookingId } = req.query;
+    const { date, floorId, bookingId, search } = req.query;
+    const { bookingManagementFilter, combineBookingFilters } = require('../utils/bookingManagementFilter');
     const Booking = require('../models/Booking');
     const {
       resolveVietnamCalendarDay,
@@ -2885,20 +2886,22 @@ exports.getAllBookings = async (req, res, next) => {
       filter = buildBookingDayOverlapMatch(resolveVietnamCalendarDay(date));
     }
 
-    if (floorId) {
-      filter.floorId = floorId;
-    }
+    filter = combineBookingFilters(filter, await bookingManagementFilter({ floorId, search }));
 
     if (bookingId) {
       filter._id = bookingId;
     }
 
-    const bookings = await Booking.find(filter)
+    const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+    const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit) || 20)));
+    let query = Booking.find(filter)
       .populate('userId', 'username email')
       .populate('vehicleId', 'licensePlate brand color')
       .populate('floorId', 'name floorNumber')
-      .sort({ scheduledStart: 1 })
-      .lean();
+      .sort({ scheduledStart: 1, _id: 1 });
+    if (paginated) query = query.skip((page - 1) * limit).limit(limit);
+    const [bookings, total] = await Promise.all([query.lean(), paginated ? Booking.countDocuments(filter) : Promise.resolve(null)]);
 
     const userIds = bookings
       .map((booking) => booking.userId?._id)
@@ -2917,7 +2920,8 @@ exports.getAllBookings = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: bookingRows
+      data: bookingRows,
+      ...(paginated ? { pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } } : {}),
     });
   } catch (error) {
     console.error('Error getAllBookings:', error);
