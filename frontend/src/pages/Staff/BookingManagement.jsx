@@ -19,6 +19,7 @@ import { Toaster } from 'react-hot-toast';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import BookingDatePicker from './components/BookingDatePicker.jsx';
 import './components/staffBookingManagement.css';
+import { bookingManagementScope } from './bookingManagementScope.js';
 import { STAFF_THEME } from './components/staffTheme.js';
 
 const STATISTICS_RANGES = [
@@ -58,27 +59,6 @@ const formatCurrency = (value) =>
 
 const formatDetailNumber = (value) =>
   new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value || 0));
-
-const formatStatisticsPeriod = (period, range) => {
-  if (!period?.endDate) return '';
-  if (range === 'daily' && period.startDate) {
-    return `Booking History for ${format(
-      new Date(period.startDate),
-      'dd/MM/yyyy'
-    )}`;
-  }
-  const end = format(new Date(period.endDate), 'dd/MM/yyyy HH:mm');
-  if (!period.startDate) return `All records through ${end}`;
-  return `${format(new Date(period.startDate), 'dd/MM/yyyy HH:mm')} – ${end}`;
-};
-
-const formatStatisticsAvailability = (availability) => {
-  if (!availability?.earliestBookingAt || !availability?.latestBookingAt) return '';
-  return `${format(new Date(availability.earliestBookingAt), 'dd/MM/yyyy')} – ${format(
-    new Date(availability.latestBookingAt),
-    'dd/MM/yyyy'
-  )}`;
-};
 
 const BookingStatCard = ({ icon, label, value, note, tone = 'emerald' }) => {
   const colors = STAT_CARD_TONES[tone];
@@ -235,16 +215,14 @@ export default function BookingManagement() {
   const [statisticsLoading, setStatisticsLoading] = useState(true);
   const [statisticsError, setStatisticsError] = useState('');
   const [statisticsRefreshKey, setStatisticsRefreshKey] = useState(0);
-  const [statisticsUpdatedAt, setStatisticsUpdatedAt] = useState(null);
+  const [listPage, setListPage] = useState({ scope: '', page: 1 });
+  const [pagination, setPagination] = useState({ total: 0, pages: 1 });
   const [clockNow, setClockNow] = useState(() => new Date());
   const bookingState = getOperationalViewState({ loading, error: dataError });
   const selectedDateKey = format(currentDate, 'yyyy-MM-dd');
-  const statisticsDateFilter =
-    statisticsRange === 'daily' ? selectedDateKey : '';
-  const statisticsFloorFilter =
-    statisticsRange === 'daily' && selectedFloor !== 'all'
-      ? selectedFloor
-      : '';
+  const scope = useMemo(() => bookingManagementScope(statisticsRange, selectedDateKey, selectedFloor, searchQuery), [statisticsRange, selectedDateKey, selectedFloor, searchQuery]);
+  const scopeKey = JSON.stringify(scope);
+  const page = listPage.scope === scopeKey ? listPage.page : 1;
 
   useEffect(() => {
     document.body.classList.add("bg-[#080808]");
@@ -273,15 +251,12 @@ export default function BookingManagement() {
       const fetchDeepLinkBooking = async () => {
         try {
           const res = await getAllBookings({ bookingId: queryBookingId });
-          if (res.ok && res.data && res.data.length > 0) {
-            const b = res.data[0];
-            const bookingDate = startOfDay(new Date(b.scheduledStart));
-            if (bookingDate.getTime() !== currentDate.getTime()) {
-              setCurrentDate(bookingDate);
-            } else {
-              setHasResolvedDeepLink(true);
-              setSearchParams({});
-            }
+          if (res.ok && res.data?.success && res.data.data?.length > 0) {
+            const b = res.data.data[0];
+            // An exact-record link can target a different date or list page.
+            setSelectedBooking(b);
+            setHasResolvedDeepLink(true);
+            setSearchParams({});
           } else {
             setHasResolvedDeepLink(true);
             setSearchParams({});
@@ -296,6 +271,7 @@ export default function BookingManagement() {
   }, [queryBookingId, hasResolvedDeepLink, bookings, currentDate, loading, setSearchParams]);
 
   useEffect(() => {
+    let activeRequest = true;
     const fetchData = async () => {
       setLoading(true);
       setDataError('');
@@ -303,8 +279,9 @@ export default function BookingManagement() {
       try {
         const [floorsRes, bookingsRes] = await Promise.all([
           getAllFloors(),
-          getAllBookings({ date: format(currentDate, 'yyyy-MM-dd') })
+          getAllBookings({ ...JSON.parse(scopeKey), page, limit: 20 })
         ]);
+        if (!activeRequest) return;
         const floorsState = getResponseAvailability(floorsRes, 'Unable to load parking floors.');
         const bookingsState = getResponseAvailability(bookingsRes, 'Unable to load bookings.');
         if (!floorsState.isAvailable || !bookingsState.isAvailable) {
@@ -320,17 +297,20 @@ export default function BookingManagement() {
         }
         setFloors(floorsState.data || floorsRes.data.floors || []);
         setBookings(bookingsState.data || []);
+        setPagination(bookingsRes.data.pagination);
         setSelectedBooking(null);
       } catch (error) {
+        if (!activeRequest) return;
         setFloors([]);
         setBookings([]);
         setDataError(error?.message || 'Failed to load booking data.');
       } finally {
-        setLoading(false);
+        if (activeRequest) setLoading(false);
       }
     };
     fetchData();
-  }, [currentDate]);
+    return () => { activeRequest = false; };
+  }, [scopeKey, page, statisticsRefreshKey]);
 
   useEffect(() => {
     let activeRequest = true;
@@ -341,13 +321,7 @@ export default function BookingManagement() {
       setStatisticsLoading(true);
       setStatisticsError('');
 
-      const response = await getAdminBookingStatistics(
-        statisticsRange,
-        {
-          ...(statisticsDateFilter ? { date: statisticsDateFilter } : {}),
-          ...(statisticsFloorFilter ? { floorId: statisticsFloorFilter } : {}),
-        }
-      );
+      const response = await getAdminBookingStatistics(statisticsRange, JSON.parse(scopeKey));
       if (!activeRequest || requestId !== latestRequestId) return;
 
       if (
@@ -357,7 +331,6 @@ export default function BookingManagement() {
         response.data.data?.cancelled
       ) {
         setStatistics(response.data.data);
-        setStatisticsUpdatedAt(new Date());
       } else {
         setStatistics(null);
         setStatisticsError(
@@ -376,24 +349,12 @@ export default function BookingManagement() {
     };
   }, [
     statisticsRange,
-    statisticsDateFilter,
-    statisticsFloorFilter,
+    scopeKey,
     statisticsRefreshKey,
   ]);
 
-  // Filter bookings
-  const filteredBookings = useMemo(() => {
-    return bookings.filter(b => {
-      if (selectedFloor !== 'all' && (b.floorId?._id || b.floorId) !== selectedFloor) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        return b.licensePlate?.toLowerCase().includes(q) ||
-          b.userId?.fullName?.toLowerCase().includes(q) ||
-          String(b.parkingSlot).toLowerCase().includes(q);
-      }
-      return true;
-    });
-  }, [bookings, selectedFloor, searchQuery]);
+  // Search and floor filters apply on the server, before pagination and KPI aggregation.
+  const filteredBookings = bookings;
 
   // Group bookings
   const { upcoming, active, history } = useMemo(() => {
@@ -421,14 +382,6 @@ export default function BookingManagement() {
     : null;
   const completedStatistics = statistics?.completed || {};
   const cancelledStatistics = statistics?.cancelled || {};
-  const statisticsPeriodLabel = formatStatisticsPeriod(
-    statistics?.period,
-    statisticsRange
-  );
-  const statisticsAvailabilityLabel = formatStatisticsAvailability(
-    statistics?.availability
-  );
-
   const renderBookingCard = (booking, groupType) => {
     const isSelected = currentBooking?._id === booking._id;
     const displayStatus = getBookingDisplayStatus(booking, clockNow);
@@ -476,7 +429,7 @@ export default function BookingManagement() {
           </div>
           <div className="flex items-center gap-1.5">
             <Clock size={12} className="text-sky-400" />
-            <span className="font-medium">{safeFormat(booking.scheduledStart, 'HH:mm')} - {safeFormat(booking.scheduledEnd, 'HH:mm')}</span>
+            <span className="font-medium">{safeFormat(booking.scheduledStart, statisticsRange === 'all' ? 'dd/MM HH:mm' : 'HH:mm')} - {safeFormat(booking.scheduledEnd, 'HH:mm')}</span>
           </div>
         </div>
 
@@ -522,7 +475,7 @@ export default function BookingManagement() {
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Total</span>
-              <span className="text-white font-black text-xl leading-none">{getOperationalValue(bookingState, filteredBookings.length)}</span>
+              <span className="text-white font-black text-xl leading-none">{getOperationalValue(bookingState, pagination?.total || 0)}</span>
             </div>
           </div>
 
@@ -587,22 +540,7 @@ export default function BookingManagement() {
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-medium text-white/35">
-              <span>
-                {statisticsLoading
-                  ? 'Updating selected period…'
-                  : statisticsPeriodLabel || 'No period available'}
-              </span>
-              {statisticsUpdatedAt && (
-                <span className="inline-flex items-center gap-1.5 text-emerald-400/65">
-                  <Activity size={11} />
-                  Synced {format(statisticsUpdatedAt, 'HH:mm:ss')}
-                </span>
-              )}
-              {statisticsAvailabilityLabel && (
-                <span>Data available {statisticsAvailabilityLabel}</span>
-              )}
-            </div>
+
           </div>
 
           <div className="sbm-scope-controls flex flex-wrap items-center gap-2">
@@ -663,7 +601,7 @@ export default function BookingManagement() {
             icon={<BadgeCheck size={17} />}
             label="Completed Bookings"
             value={statistics ? completedStatistics.count || 0 : '—'}
-            note="Completed bookings shown in the selected day's History"
+            note="Completed bookings in the selected scope; other statuses excluded"
             tone="sky"
           />
           <BookingStatCard
@@ -728,7 +666,7 @@ export default function BookingManagement() {
           ) : filteredBookings.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[32px] bg-white/[0.02] text-white/40">
               <Car size={48} className="mb-4 opacity-30 text-white/50" />
-              <p className="font-medium">No bookings found for this day.</p>
+              <p className="font-medium">No bookings match the selected scope.</p>
             </div>
           ) : (
             <>
@@ -778,6 +716,12 @@ export default function BookingManagement() {
               )}
             </>
           )}
+          {!loading && !dataError && pagination && <nav aria-label="Booking pagination" className="flex items-center justify-between gap-3 text-xs text-white/60">
+            <button type="button" disabled={page <= 1} onClick={() => setListPage({ scope: scopeKey, page: page - 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">Previous</button>
+            <span>Page {page} of {pagination.pages} / {pagination.total} bookings</span>
+            <button type="button" disabled={page >= pagination.pages} onClick={() => setListPage({ scope: scopeKey, page: page + 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">Next</button>
+          </nav>}
+
         </div>
 
         {/* RIGHT PANEL: Details View */}

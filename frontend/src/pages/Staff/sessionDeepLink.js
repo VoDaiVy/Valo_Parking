@@ -1,3 +1,19 @@
+import { filterAndSortSessions, SESSION_PAGE_SIZE } from './sessionPagination.js';
+
+export const sessionRowTarget = (sessionId, sessions) => {
+  const rows = filterAndSortSessions(sessions);
+  const index = rows.findIndex(row => String(row._id).toLowerCase() === String(sessionId).toLowerCase());
+  return index < 0 ? null : { id: String(rows[index]._id), page: Math.floor(index / SESSION_PAGE_SIZE) + 1 };
+};
+
+export const highlightSessionRow = row => {
+  if (!row) return () => {};
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('session-ai-highlight');
+  const timer = setTimeout(() => row.classList.remove('session-ai-highlight'), 4000);
+  return () => { clearTimeout(timer); row.classList.remove('session-ai-highlight'); };
+};
+
 export const resolveSessionDeepLink = ({ sessionId, sessions, loading, error }) => {
   if (!sessionId || loading || error) return { session: null, missing: false };
   const session = sessions.find((item) => String(item._id).toLowerCase() === sessionId.toLowerCase()) || null;

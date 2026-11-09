@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { Menu, Transition } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -178,40 +178,48 @@ export default function AccountManagement() {
   const userIdQuery = searchParams.get('userId');
 
   // ── Data ──
+  const userRequest = useRef(0);
   const fetchUsers = async () => {
+    const generation = ++userRequest.current;
     try {
       setLoading(true);
-      const res = await apiFetch('/admin/users', { headers: authHeader });
-      if (res.ok && res.data?.success) setUsers(res.data.data);
+      const res = await apiFetch('/admin/users', { cache: 'no-store', headers: authHeader });
+      if (generation !== userRequest.current) return;
+      if (res.ok && res.data?.success) {
+        setUsers(res.data.data);
+        setPanelUser(previous => previous ? res.data.data.find(user => user._id === previous._id) || null : null);
+      }
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { if (generation === userRequest.current) setLoading(false); }
   };
 
+  const aiUserLoader = useRef(null);
+  useEffect(() => { aiUserLoader.current = fetchUsers; });
   useEffect(() => {
     const timerId = window.setTimeout(() => {
-      fetchUsers();
+      aiUserLoader.current?.();
     }, 0);
 
-    return () => window.clearTimeout(timerId);
+    const onChange = ({ detail }) => { if (['CHANGE_USER_ROLE', 'UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(detail?.type)) aiUserLoader.current?.(); };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { window.clearTimeout(timerId); userRequest.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
   }, []);
 
   useEffect(() => {
-    if (users.length > 0 && userIdQuery) {
-      const targetUser = users.find(u => u._id === userIdQuery);
-      if (targetUser) {
-        setTimeout(() => {
-          setPanelUser(targetUser);
-          setIsEditing(false);
-          setBlockConfirm(false);
-          setDeleteConfirm(false);
-          setSaveState('idle');
-          const newParams = new URLSearchParams(searchParams);
-          newParams.delete('userId');
-          setSearchParams(newParams, { replace: true });
-        }, 0);
+    if (loading || !userIdQuery) return;
+    const timer = setTimeout(() => {
+      const target = /^[a-f\d]{24}$/i.test(userIdQuery) && users.find(user => user._id.toLowerCase() === userIdQuery.toLowerCase());
+      if (target) {
+        setPanelUser(target); setIsEditing(false); setBlockConfirm(false); setDeleteConfirm(false); setSaveState('idle');
+      } else {
+        setPanelUser(null);
+        setToast({ msg: 'Account not found or unavailable.', type: 'error' });
       }
-    }
-  }, [users, userIdQuery, searchParams, setSearchParams]);
+      const params = new URLSearchParams(searchParams); params.delete('userId');
+      setSearchParams(params, { replace: true });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [users, loading, userIdQuery, searchParams, setSearchParams]);
 
   const handleBlockToggle = async (userId, currentStatus) => {
     try {
@@ -783,7 +791,10 @@ export default function AccountManagement() {
                               <ChevronDown size={14} className="text-white/40" />
                             </Menu.Button>
                             <Transition as={Fragment} enter="transition ease-out duration-100" enterFrom="transform opacity-0 scale-95" enterTo="transform opacity-100 scale-100" leave="transition ease-in duration-75" leaveFrom="transform opacity-100 scale-100" leaveTo="transform opacity-0 scale-95">
-                              <Menu.Items className="absolute z-50 mt-2 w-full rounded-xl bg-black/90 backdrop-blur-md shadow-2xl shadow-black/60 border border-white/10 p-1 focus:outline-none">
+                              <Menu.Items
+                                portal
+                                anchor={{ to: 'bottom start', gap: 8, padding: 8 }}
+                                className="z-[100] w-[var(--button-width)] max-h-60 overflow-y-auto rounded-xl bg-black/90 backdrop-blur-md shadow-2xl shadow-black/60 border border-white/10 p-1 focus:outline-none">
                                 {['customer', 'staff', 'admin'].map((r) => (
                                   <Menu.Item key={r}>
                                     {({ active }) => {
