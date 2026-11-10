@@ -59,3 +59,5 @@ body[data-valo-typography="staff"] .g3-management-content.g3-customer-main .g3-e
 
 body[data-valo-typography="staff"] .g3-management-content.g3-customer-main .g3-header-line > div:first-child { flex: 1 1 auto; min-width: 0; }
 body[data-valo-typography="staff"] .g3-management-content.g3-customer-main .g3-header .g3-subtitle::after { content: ""; display: block; height: 1px; margin-top: 14px; background: linear-gradient(to right, #29B98C, rgb(41 185 140 / 35%) 60%, transparent); box-shadow: 0 2px 5px -2px rgb(41 185 140 / 28%); pointer-events: none; }
+
+.g3-customer-page .customer-ai-highlight > td { background: rgba(255, 213, 85, .18); box-shadow: inset 0 1px rgba(255, 213, 85, .45), inset 0 -1px rgba(255, 213, 85, .45); }

@@ -40,9 +40,9 @@ const profileStages = [
   { $unwind: { path: '$profile', preserveNullAndEmptyArrays: true } },
 ];
 const select = { vipActive: { $and: [{ $eq: ['$membership.isVip', true] }, { $or: [{ $eq: [{ $ifNull: ['$membership.expireAt', null] }, null] }, { $gt: ['$membership.expireAt', '$$NOW'] }] }] }, _id: 1, username: 1, email: 1, role: 1, status: 1, membership: 1, createdAt: 1, updatedAt: 1, profile: 1 };
-async function getAccount(id) {
+async function getAccount(id, requiredRole) {
   if (!mongoose.isValidObjectId(id)) throw accountError('INVALID_ACCOUNT', 'Invalid account identifier.');
-  const rows = await User.aggregate([{ $match: { _id: new mongoose.Types.ObjectId(String(id)) } }, ...profileStages, { $project: select }]);
+  const rows = await User.aggregate([{ $match: { _id: new mongoose.Types.ObjectId(String(id)), ...(requiredRole ? { role: requiredRole } : {}) } }, ...profileStages, { $project: select }]);
   if (!rows[0]) throw accountError('ACCOUNT_NOT_FOUND', 'Account not found. No changes were made.', 404);
   return rows[0];
 }
@@ -75,7 +75,8 @@ async function searchAccounts(args = {}) {
   else if (vipStatus === 'expired') Object.assign(filter, { 'membership.isVip': true, 'membership.expireAt': { $lte: new Date() } });
   else if (vipStatus === 'standard' || vip === false) filter.$nor = [activeVip];
   const limit = Math.min(Math.max(Math.trunc(Number(args.limit) || 10), 1), 50);
-  const [result] = await User.aggregate([...profileStages, { $match: filter }, { $facet: { items: [{ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1, _id: 1 } }, { $limit: limit }, { $project: select }], count: [{ $count: 'total' }] } }]);
-  return { items: result.items, total: result.count[0]?.total || 0, returned: result.items.length, limit, filters: { query: query || '', role, status, vip, vipStatus, matchMode }, sortBy, sortOrder };
+  const page = Math.min(Math.max(Math.trunc(Number(args.page) || 1), 1), 100000);
+  const [result] = await User.aggregate([...profileStages, { $match: filter }, { $facet: { items: [{ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1, _id: 1 } }, ...(page > 1 ? [{ $skip: (page - 1) * limit }] : []), { $limit: limit }, { $project: select }], count: [{ $count: 'total' }] } }]);
+  return { items: result.items, total: result.count[0]?.total || 0, returned: result.items.length, limit, page, pages: Math.max(1, Math.ceil((result.count[0]?.total || 0) / limit)), filters: { query: query || '', role, status, vip, vipStatus, matchMode }, sortBy, sortOrder };
 }
 module.exports = { accountError, profilePayload, assertPhoneAvailable, getAccount, searchAccounts };

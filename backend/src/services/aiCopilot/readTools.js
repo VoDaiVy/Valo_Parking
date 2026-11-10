@@ -170,6 +170,7 @@ async function getSessionDetail({ sessionId }) {
 
 async function searchUsers(args = {}, actorRole = 'admin') {
   if (actorRole === 'admin') return adminAccounts.searchAccounts(args);
+  if (actorRole === 'staff') return adminAccounts.searchAccounts({ ...args, role: 'customer' });
   const { query, role, status, limit } = args;
   const filter = {};
   if (actorRole === 'staff') {
@@ -206,6 +207,7 @@ async function searchUsers(args = {}, actorRole = 'admin') {
 
 async function getUserDetail({ userId } = {}, actorRole = 'admin') {
   if (actorRole === 'admin') return adminAccounts.getAccount(userId);
+  if (actorRole === 'staff') return adminAccounts.getAccount(userId, 'customer');
   if (!userId || !isObjectId(userId)) throw new Error('userId không hợp lệ.');
   const filter = { _id: userId };
   if (actorRole === 'staff') {

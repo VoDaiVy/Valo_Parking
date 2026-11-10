@@ -258,6 +258,13 @@ test('service edit demo uses verified search evidence and returns a pending delt
   assert.equal(readOnly.draft, null); assert.equal(drafts, 0);
 });
 
+test('Staff active customer listing forces both backend filters and ignores stale model role/status arguments', async () => {
+  queue = [call('search_users', { role: 'admin', status: false, limit: 10 }), text('Customers found.')]; requests = []; drafts = 0; toolError = null; auditError = false; executions = [];
+  await chat({ message: 'Show all active customer accounts', actorId: 'isolated-staff', actorRole: 'staff' });
+  assert.equal(executions[0].args.role, 'customer'); assert.equal(executions[0].args.status, true);
+  assert.ok(requests.every(({ request }) => request.tools[0].functionDeclarations.every(tool => tool.name === 'search_users')));
+});
+
 test('provider and tool errors never produce fabricated successful data', async () => {
   let result = await run('Find account', [new Error('provider unavailable')]);
   assert.equal(result.type, 'error'); assert.equal(result.draft, null); assert.equal(result.evidence.length, 0);

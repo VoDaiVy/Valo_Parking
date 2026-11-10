@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Dialog, DialogPanel, DialogTitle, Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import {
@@ -8,6 +9,7 @@ import {
   BellRing,
   Check,
   CheckCircle2,
+  ChevronDown,
   Globe2,
   History,
   Info,
@@ -280,6 +282,7 @@ function FeedTab({
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const loadMoreRef = useRef(null);
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -356,12 +359,25 @@ function FeedTab({
   return (
     <div data-paginated={paginated} className="snm-feed space-y-4">
       <div className="snm-toolbar flex flex-wrap items-center gap-2">
-        <div className="snm-priority-filters contents">
+        {paginated ? (
+          <Listbox value={filter} onChange={changeFilter}>
+            <ListboxButton className="snm-severity-select" aria-label={`Filter by severity: ${filter === "ALL" ? "All severities" : filter}`}>
+              <span>{filter === "ALL" ? "All severities" : filter}</span><ChevronDown size={14} aria-hidden="true" />
+            </ListboxButton>
+            <ListboxOptions anchor="bottom start" className="snm-severity-options">
+              {["ALL", ...PRIORITIES].map(priority => (
+                <ListboxOption key={priority} value={priority} className="snm-severity-option">
+                  {({ selected }) => <><span>{priority === "ALL" ? "All severities" : priority}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
+                </ListboxOption>
+              ))}
+            </ListboxOptions>
+          </Listbox>
+        ) : <div className="snm-priority-filters contents">
         <FilterChip label="All" active={filter === "ALL"} onClick={() => changeFilter("ALL")} />
         {PRIORITIES.map((p) => (
           <FilterChip key={p} label={p} active={filter === p} onClick={() => changeFilter(p)} tone={p} />
         ))}
-        </div>
+        </div>}
         <div className="snm-toolbar-spacer flex-1" />
         <div className="snm-search-actions contents">
         <input
@@ -398,7 +414,7 @@ function FeedTab({
             <li className="px-5 py-10 text-center text-gray-500 text-sm">Loading history from API...</li>
           )}
           {(!paginated || (!feedLoading && !feedError)) && filtered.map((m) => (
-            <MessageRow key={m._id || m.id} m={m} />
+            <MessageRow key={m._id || m.id} m={m} onOpen={paginated ? () => setSelectedNotification(m) : undefined} />
           ))}
           {!paginated && <li ref={loadMoreRef} className="px-5 py-5 text-center">
             {loadingMore ? (
@@ -424,6 +440,7 @@ function FeedTab({
           </div>
         </nav>}
       </div>
+      <NotificationDrawer notification={selectedNotification} onClose={() => setSelectedNotification(null)} />
     </div>
   );
 }
@@ -448,12 +465,27 @@ function FilterChip({ label, active, onClick, tone }) {
   );
 }
 
-function MessageRow({ m }) {
+function MessageRow({ m, onOpen }) {
   const meta = PRIORITY_META[m.priority] || PRIORITY_META.INFO;
   const targetLabel = m.targetType === "ALL_USERS" ? "Whole system" :
                       m.targetType === "ROLE_BASED" ? `Role: ${(m.targetRoles || []).join(", ")}` :
                       m.targetType === "MULTI_USER" ? `${m.targetUsers?.length || 0} users` :
                       m.targetType === "SINGLE_USER" ? "One user" : "System";
+
+  if (onOpen) return (
+    <li className="snm-compact-event" data-priority={m.priority || "INFO"}>
+      <button type="button" className="snm-event-open" onClick={onOpen} aria-label={`View notification: ${m.title || "Untitled notification"}`} aria-haspopup="dialog">
+        <span className="snm-event-message">
+          <span className="snm-event-title">{m.title || "Untitled notification"}</span>
+          <span className="snm-event-preview">{m.content || "No message content"}</span>
+        </span>
+        <span className="snm-event-severity">{meta.label}</span>
+        <span className="snm-event-recipient" title={targetLabel}><span className="sr-only">Recipient: </span>{targetLabel}</span>
+        <span className="snm-event-status"><span className="sr-only">Status: </span>{m.isRevoked ? "REVOKED" : m.status || "SENT"}</span>
+        <time className="snm-event-time" dateTime={validNotificationDate(m.createdAt)?.toISOString()} title={notificationDate(m.createdAt)}>{validNotificationDate(m.createdAt) ? formatDistanceToNow(new Date(m.createdAt), { addSuffix: true, locale: enUS }) : "Time unavailable"}</time>
+      </button>
+    </li>
+  );
 
   return (
     <li data-priority={m.priority || "INFO"} className="snm-event px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
@@ -480,6 +512,58 @@ function MessageRow({ m }) {
         </div>
       </div>
     </li>
+  );
+}
+
+function validNotificationDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function notificationDate(value) {
+  return validNotificationDate(value)?.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "long" }) || "Unavailable";
+}
+
+function NotificationDrawer({ notification: m, onClose }) {
+  // Unpopulated database references belong in Technical Details, not the summary.
+  const userLabel = (user) => typeof user === "object" && user
+    ? [user.username || user.fullName || user.name, user.email].filter(Boolean).join(", ") || "User details unavailable"
+    : "User details unavailable";
+  const recipient = m?.targetType === "ALL_USERS" ? "All users"
+    : m?.targetType === "ROLE_BASED" ? (m.targetRoles?.join(", ") || "Selected roles")
+      : m?.targetUsers?.length ? m.targetUsers.map(userLabel).join("; ") : "Recipient details unavailable";
+  return (
+    <Dialog open={Boolean(m)} onClose={onClose} className="snm-detail-dialog">
+      <div className="snm-detail-backdrop" aria-hidden="true" />
+      <div className="snm-detail-position">
+        <DialogPanel className="snm-detail-panel">
+          {m && <>
+            <header>
+              <div className="snm-detail-heading">
+                <DialogTitle>{m.title || "Untitled notification"}</DialogTitle>
+                <span className="snm-detail-severity" data-priority={m.priority || "INFO"}>{m.priority || "INFO"}</span>
+              </div>
+              <button type="button" onClick={onClose} aria-label="Close notification details"><X size={18} /></button>
+            </header>
+            <div className="snm-detail-body">
+              <section className="snm-detail-content" aria-label="Notification message">
+                <p className="snm-detail-section-label">Message</p>
+                <p className="snm-detail-message">{m.content || "No message content"}</p>
+              </section>
+              <dl className="snm-detail-info">
+                {[
+                  ["Recipient", recipient, User],
+                  ["Status", m.isRevoked ? "REVOKED" : m.status || "SENT", CheckCircle2],
+                  ["Type", m.type || "SYSTEM", Info],
+                  ["Sent At", notificationDate(m.createdAt), History],
+                ].map(([label, value, Icon]) => <div key={label}><dt><Icon size={14} aria-hidden="true" />{label}</dt><dd>{value}</dd></div>)}
+              </dl>
+            </div>
+          </>}
+        </DialogPanel>
+      </div>
+    </Dialog>
   );
 }
 

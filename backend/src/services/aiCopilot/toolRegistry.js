@@ -211,6 +211,7 @@ const tools = [
   define('search_users',
     'Search Admin accounts by username, email, full name or exact/partial phone. Filters include role, active status and effective VIP/expiry; honor requested sort. The result includes items, total, returned and limit: always use total for counts, never count the limited items array.',
     { type: 'object', properties: {
+      page: { type: 'number', description: 'One-based result page.' },
       vip: { type: 'boolean', description: 'Effective VIP membership, respecting expiry.' },
       vipStatus: { type: 'string', enum: ['active', 'expired', 'standard'] },
       sortBy: { type: 'string', enum: ['createdAt', 'username', 'email', 'role', 'status', 'membership.expireAt'] },

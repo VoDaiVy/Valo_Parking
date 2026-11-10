@@ -8,6 +8,7 @@ import AdminValoAICopilotView from './AdminValoAICopilotView';
 import { adminSuggestions as englishSuggestions } from '../utils/adminPresentation';
 import useMascotPosition from '../hooks/useMascotPosition';
 import { applyNotificationRead, markAllUnreadNotifications } from '../utils/notificationReadState';
+import { approvalConfirmed } from '../utils/approvalConfirmation';
 
 const getRole = () => { try { return JSON.parse(sessionStorage.getItem('valo_user') || '{}').role || 'admin'; } catch { return 'admin'; } };
 
@@ -211,23 +212,24 @@ export default function ValoAICopilot({ contentRef }) {
     try {
       const response = approve ? await approveAIDraft(draft.id) : await rejectAIDraft(draft.id);
       const state = response.data?.data?.status || response.data?.draftStatus;
-      if (response.ok || (userRole === 'admin' && ['EXECUTED', 'REJECTED'].includes(state))) setMessages(rows => rows.map(row => {
+      const confirmed = approvalConfirmed(response, draft, approve);
+      if (confirmed || (userRole === 'admin' && ['EXECUTED', 'REJECTED'].includes(state))) setMessages(rows => rows.map(row => {
         if (row.draft?.id === draft.id) return { ...row, draft: userRole === 'admin' ? { ...row.draft, status: state || (approve ? 'EXECUTED' : 'REJECTED') } : null };
         // Keep proposal snapshots intact; earlier account reads are no longer current.
-        const applied = state === 'EXECUTED' || (response.ok && approve);
+        const applied = confirmed && approve;
         const accountChange = ['CHANGE_USER_ROLE', 'UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(draft.type);
         if (userRole === 'admin' && applied && accountChange && !row.draft && (row.accountResult || row.links?.some(link => link.url?.startsWith('/admin/accounts?')))) return { ...row, accountStale: true };
         return row;
       }));
-      const resultMessage = response.ok
+      const resultMessage = confirmed
         ? (approve ? (response.data?.data?.alreadyApplied ? 'This proposal was already applied.' : draft.type === 'SEND_NOTIFICATION' ? 'The notification was sent.' : 'The proposed change was applied.') : 'The proposal was rejected.')
         : 'Unable to process the proposal. Please try again.';
-      setMessages(rows => [...rows, { role: 'ai', type: response.ok ? 'analysis' : 'error', message: resultMessage, at: Date.now() }]);
-      if (response.ok || state === 'EXECUTED') {
-        if ((approve || state === 'EXECUTED') && userRole === 'admin') window.dispatchEvent(new CustomEvent('valo:admin-data-changed', { detail: { type: draft.type } }));
+      setMessages(rows => [...rows, { role: 'ai', type: confirmed ? 'analysis' : 'error', message: resultMessage, at: Date.now() }]);
+      if (confirmed) {
+        if (approve) window.dispatchEvent(new CustomEvent(userRole === 'staff' ? 'valo:staff-data-changed' : 'valo:admin-data-changed', { detail: { type: draft.type } }));
         refresh();
       }
-      return response.ok;
+      return confirmed;
     } finally { decisionInFlight.current = false; setNoticeBusy(false); }
   };
 

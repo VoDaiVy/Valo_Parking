@@ -153,15 +153,19 @@ function cleanPayload(type, input) {
 const ACCOUNT_TYPES = new Set(['CHANGE_USER_ROLE', 'UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE']);
 async function authorizeAccountActor(adminUserId, actorRole, type, targetId) {
   const actor = await User.findById(adminUserId).select('role status').lean();
-  if (!actor || !actor.status || actor.role !== actorRole || !['admin', 'staff'].includes(actorRole) || (actorRole === 'staff' && type !== 'UPDATE_USER_STATUS')) throw accountError('ACCOUNT_FORBIDDEN', 'You do not have permission to perform this action.', 403);
+  if (!actor || !actor.status || actor.role !== actorRole || !['admin', 'staff'].includes(actorRole) || (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(type))) throw accountError('ACCOUNT_FORBIDDEN', 'You do not have permission to perform this action.', 403);
   if (String(adminUserId) === String(targetId) && type !== 'UPDATE_USER_PROFILE') throw accountError('SELF_PRIVILEGE_CHANGE', 'You cannot change your own role or account status because this could remove your administrative access. No changes were made.', 403);
+  if (actorRole === 'staff') {
+    const target = await User.findById(targetId).select('role').lean();
+    if (!target || target.role !== 'customer') throw accountError('ACCOUNT_FORBIDDEN', 'Staff can only edit customer names/phones or change customer status.', 403);
+  }
 }
 function draftFailure(code, message, draft, statusCode = 409) {
   const error = accountError(code, message, statusCode); error.draftStatus = draft?.status; throw error;
 }
 async function approveAccountDraft(draft, adminUserId, actorRole) {
   await authorizeAccountActor(adminUserId, actorRole, draft.type, draft.targetId);
-  if (draft.status === 'EXECUTED') return { ...draft.executionResult, status: 'EXECUTED', alreadyApplied: true };
+  if (draft.status === 'EXECUTED') return { id: draft.targetId, type: draft.type, ...draft.executionResult, status: 'EXECUTED', alreadyApplied: true };
   if (draft.status === 'REJECTED') draftFailure('DRAFT_REJECTED', 'This proposal was rejected. Request a new proposal.', draft);
   if (draft.status === 'EXECUTING') draftFailure('DRAFT_PROCESSING', 'This proposal is already being processed.', draft);
   if (draft.expiresAt <= new Date()) draftFailure('DRAFT_EXPIRED', 'This proposal has expired. Request a new proposal.', draft);
@@ -186,19 +190,20 @@ async function approveAccountDraft(draft, adminUserId, actorRole) {
       const claimed = await AIDraft.findOneAndUpdate({ _id: draft._id, adminUserId, status: 'PENDING', expiresAt: { $gt: new Date() } }, { $set: { status: 'EXECUTING' } }, { new: true, session });
       if (!claimed) {
         const latest = await AIDraft.findOne({ _id: draft._id, adminUserId }).session(session);
-        if (latest?.status === 'EXECUTED') { result = { ...latest.executionResult, status: 'EXECUTED', alreadyApplied: true }; return; }
+        if (latest?.status === 'EXECUTED') { result = { id: latest.targetId, type: latest.type, ...latest.executionResult, status: 'EXECUTED', alreadyApplied: true }; return; }
         draftFailure('DRAFT_NOT_PENDING', 'This proposal is no longer awaiting approval.', latest);
       }
       const live = await User.findById(draft.targetId).select('role status').session(session).lean();
       if (!live) throw accountError('ACCOUNT_NOT_FOUND', 'Account not found. No changes were made.', 404);
-      if (actorRole === 'staff' && live.role !== 'customer') throw accountError('ACCOUNT_FORBIDDEN', 'Staff can only update customer status.', 403);
+      if (actorRole === 'staff' && live.role !== 'customer') throw accountError('ACCOUNT_FORBIDDEN', 'Staff can only edit customer names/phones or change customer status.', 403);
       stage = draft.type === 'UPDATE_USER_PROFILE' ? 'UPDATE_PROFILE' : 'UPDATE_ACCOUNT';
       let updated;
       if (draft.type === 'CHANGE_USER_ROLE') updated = await catalogWrites.changeUserRoleSafely(draft.targetId, payload.role, { session, expectedRole: draft.current?.role, adminId: adminUserId });
       else if (draft.type === 'UPDATE_USER_STATUS') updated = await catalogWrites.updateUserStatusSafely(draft.targetId, payload.status, { session, expectedStatus: draft.current?.status, adminId: adminUserId });
       else updated = await catalogWrites.updateUserProfileSafely(draft.targetId, payload, { session, expectedUpdatedAt: draft.current?.updatedAt, expectedProfileUpdatedAt: draft.current?.profileUpdatedAt, adminId: adminUserId });
       stage = 'FINALIZE_DRAFT';
-      result = { id: updated.userId || updated._id, type: draft.type, status: 'EXECUTED' };
+      if (draft.type === 'UPDATE_USER_STATUS' && updated.status !== payload.status) throw accountError('UPDATE_UNCONFIRMED', 'The account status change could not be confirmed. No changes were applied.', 409);
+      result = { id: updated.userId || updated._id, type: draft.type, status: 'EXECUTED', ...(draft.type === 'UPDATE_USER_STATUS' ? { accountStatus: updated.status } : {}) };
       await AIDraft.updateOne({ _id: draft._id, status: 'EXECUTING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: result } }, { session });
       await AIAuditLog.create([{ actorId: adminUserId, action: 'DRAFT_EXECUTED', subjectId: draft._id, metadata: result }], { session });
     });
@@ -212,10 +217,10 @@ async function approveAccountDraft(draft, adminUserId, actorRole) {
 }
 async function createDraft({ adminUserId, type, payload, targetId, notificationId, reason, evidence = [], actorRole = 'admin' }) {
   if (!['admin', 'staff'].includes(actorRole)) throw accountError('ACCOUNT_FORBIDDEN', 'You do not have permission to prepare a proposal.', 403);
-  if (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'SEND_NOTIFICATION'].includes(type)) {
+  if (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE', 'SEND_NOTIFICATION'].includes(type)) {
     fail('Hành động không được phép đối với Staff.', 403);
   }
-  if (actorRole === 'admin' && ACCOUNT_TYPES.has(type)) await authorizeAccountActor(adminUserId, actorRole, type, targetId);
+  if (ACCOUNT_TYPES.has(type)) await authorizeAccountActor(adminUserId, actorRole, type, targetId);
   let clean = cleanPayload(type, payload);
   if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
   if (notificationId && !mongoose.isValidObjectId(notificationId)) fail('Cảnh báo không hợp lệ.');
@@ -289,7 +294,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
   }
   const hasTargetId = ['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type);
   let accountDraftId;
-  if (actorRole === 'admin' && ACCOUNT_TYPES.has(type)) {
+  if (ACCOUNT_TYPES.has(type)) {
     const seen = evidence.filter(entry => ['search_users', 'get_user_detail', 'get_current_user'].includes(entry.tool)).flatMap(entry => entry.data?.items || (entry.data ? [entry.data] : []));
     if (!seen.some(row => String(row._id) === String(targetId))) throw accountError('UNVERIFIED_TARGET', 'Look up the exact account before preparing a proposal.');
     const previous = await AIDraft.findOne({ adminUserId, type, targetId, payload: clean }).sort({ createdAt: -1 });
@@ -385,7 +390,7 @@ async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
   if (!mongoose.isValidObjectId(id)) fail('Bản nháp không hợp lệ.');
   const draft = await AIDraft.findOne({ _id: id, adminUserId });
   if (!draft) fail('Không tìm thấy bản nháp của bạn.', 404);
-  if (actorRole === 'admin' && ACCOUNT_TYPES.has(draft.type)) return approveAccountDraft(draft, adminUserId, actorRole);
+  if (ACCOUNT_TYPES.has(draft.type)) return approveAccountDraft(draft, adminUserId, actorRole);
   if (draft.type === 'SEND_NOTIFICATION') {
     if (actorRole !== 'staff') fail('Hành động không được phép.', 403);
     if (draft.status === 'PENDING' && draft.expiresAt <= new Date()) fail('Bản nháp đã hết hạn.', 409);

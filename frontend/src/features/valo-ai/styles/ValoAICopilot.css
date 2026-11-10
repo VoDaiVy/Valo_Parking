@@ -152,55 +152,55 @@
 @media (prefers-reduced-motion: reduce) { .admin-ai-panel .admin-ai-spin { animation: none; } }
 
 /* Admin-only result actions and verified data; the shell uses shared Staff styles. */
-.admin-ai-panel .admin-ai-entity-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-.admin-ai-panel .admin-ai-entity-action { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; max-width: 100%; }
-.admin-ai-panel .admin-ai-entity-action small { color: #777568; font-size: 10px; overflow-wrap: anywhere; }
-.admin-ai-panel .admin-ai-entity-link { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #e6c875; border-radius: 7px; background: #fff8df; color: #89620e; font-size: 10px; font-weight: 600; line-height: 1.4; text-decoration: none; }
-.admin-ai-panel .admin-ai-entity-link:hover { border-color: #cda441; background: #fff0bf; }
-.admin-ai-panel .admin-ai-entity-link:focus-visible { outline: 1px solid #ad801e; outline-offset: 2px; }
+.valo-ai-panel .admin-ai-entity-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.valo-ai-panel .admin-ai-entity-action { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; max-width: 100%; }
+.valo-ai-panel .admin-ai-entity-action small { color: #777568; font-size: 10px; overflow-wrap: anywhere; }
+.valo-ai-panel .admin-ai-entity-link { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid #e6c875; border-radius: 7px; background: #fff8df; color: #89620e; font-size: 10px; font-weight: 600; line-height: 1.4; text-decoration: none; }
+.valo-ai-panel .admin-ai-entity-link:hover { border-color: #cda441; background: #fff0bf; }
+.valo-ai-panel .admin-ai-entity-link:focus-visible { outline: 1px solid #ad801e; outline-offset: 2px; }
 
 /* Structured Admin results remain inside their original assistant bubble. */
 .admin-ai-panel .valo-ai-message-row:has(.admin-ai-results, .admin-ai-compact-draft) .valo-ai-message-stack { width: calc(100% - 37px); max-width: calc(100% - 37px); min-width: 0; }
 .admin-ai-panel .valo-ai-message-row:has(.admin-ai-results, .admin-ai-compact-draft) .valo-ai-message-bubble { min-width: 0; }
-.admin-ai-panel .admin-ai-results { width: 100%; }
-.admin-ai-panel .admin-ai-result-row { padding: 8px 0; border-bottom: 1px solid #dfddd4; }
-.admin-ai-panel .admin-ai-result-row:first-child { padding-top: 0; }
-.admin-ai-panel .admin-ai-result-row:last-of-type { border-bottom: 0; }
-.admin-ai-panel .admin-ai-result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.admin-ai-panel .admin-ai-result-heading > strong { min-width: 0; font-size: 11px; font-weight: 650; overflow-wrap: anywhere; }
-.admin-ai-panel .admin-ai-result-heading .admin-ai-entity-link { flex: none; padding: 3px 5px; font-size: 9px; white-space: nowrap; }
-.admin-ai-panel .admin-ai-result-subtitle { margin: 2px 0 4px; font-size: 10px; line-height: 1.4; color: #77746c; overflow-wrap: anywhere; }
-.admin-ai-panel .admin-ai-result-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.valo-ai-panel .admin-ai-results { width: 100%; }
+.valo-ai-panel .admin-ai-result-row { padding: 8px 0; border-bottom: 1px solid #dfddd4; }
+.valo-ai-panel .admin-ai-result-row:first-child { padding-top: 0; }
+.valo-ai-panel .admin-ai-result-row:last-of-type { border-bottom: 0; }
+.valo-ai-panel .admin-ai-result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.valo-ai-panel .admin-ai-result-heading > strong { min-width: 0; font-size: 11px; font-weight: 650; overflow-wrap: anywhere; }
+.valo-ai-panel .admin-ai-result-heading .admin-ai-entity-link { flex: none; padding: 3px 5px; font-size: 9px; white-space: nowrap; }
+.valo-ai-panel .admin-ai-result-subtitle { margin: 2px 0 4px; font-size: 10px; line-height: 1.4; color: #77746c; overflow-wrap: anywhere; }
+.valo-ai-panel .admin-ai-result-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .admin-ai-panel .admin-ai-package-badges { column-gap: 10px; row-gap: 6px; margin: 6px 0; }
-.admin-ai-panel .admin-ai-result-badges > span { padding: 1px 5px; border-radius: 5px; background: #e8e7e1; color: #66645b; font-size: 9px; }
-.admin-ai-panel .admin-ai-result-badges .is-active { background: #e4eee5; color: #43714c; }
-.admin-ai-panel .admin-ai-result-badges .is-vip { background: #ffedb3; color: #8b650f; }
-.admin-ai-panel .admin-ai-result-details, .admin-ai-panel .admin-ai-answer-notes { margin-top: 5px; font-size: 10px; }
-.admin-ai-panel .admin-ai-result-details summary, .admin-ai-panel .admin-ai-answer-notes summary { cursor: pointer; color: #98701b; }
-.admin-ai-panel .admin-ai-result-details dl { margin: 4px 0; }
-.admin-ai-panel .admin-ai-result-details dl > div { display: grid; grid-template-columns: 1fr 1.3fr; gap: 6px; padding: 2px 0; }
-.admin-ai-panel .admin-ai-result-details dt { color: #858177; }
-.admin-ai-panel .admin-ai-result-details dd { margin: 0; overflow-wrap: anywhere; }
+.valo-ai-panel .admin-ai-result-badges > span { padding: 1px 5px; border-radius: 5px; background: #e8e7e1; color: #66645b; font-size: 9px; }
+.valo-ai-panel .admin-ai-result-badges .is-active { background: #e4eee5; color: #43714c; }
+.valo-ai-panel .admin-ai-result-badges .is-vip { background: #ffedb3; color: #8b650f; }
+.valo-ai-panel .admin-ai-result-details, .admin-ai-panel .admin-ai-answer-notes { margin-top: 5px; font-size: 10px; }
+.valo-ai-panel .admin-ai-result-details summary, .admin-ai-panel .admin-ai-answer-notes summary { cursor: pointer; color: #98701b; }
+.valo-ai-panel .admin-ai-result-details dl { margin: 4px 0; }
+.valo-ai-panel .admin-ai-result-details dl > div { display: grid; grid-template-columns: 1fr 1.3fr; gap: 6px; padding: 2px 0; }
+.valo-ai-panel .admin-ai-result-details dt { color: #858177; }
+.valo-ai-panel .admin-ai-result-details dd { margin: 0; overflow-wrap: anywhere; }
 /* Proposal content is a single compact summary; handlers and payloads are unchanged. */
-.admin-ai-panel .admin-ai-compact-draft { margin-top: 0; padding: 9px; border: 1px solid #e4cf8e; border-radius: 10px; background: #fffdf6; font-family: Montserrat, sans-serif; }
-.admin-ai-panel .admin-ai-draft-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 5px; }
-.admin-ai-panel .admin-ai-draft-heading > strong { color: #765617; font-size: 11px; line-height: 1.4; }
-.admin-ai-panel .admin-ai-pending { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: 5px; background: #fff1c9; color: #93701c; font-size: 8px; white-space: nowrap; }
-.admin-ai-panel .admin-ai-compact-draft .admin-ai-draft-target { margin: 5px 0 7px; font-size: 10px; font-weight: 600; color: #56534a; overflow-wrap: anywhere; }
-.admin-ai-panel .admin-ai-change-columns { display: flex; justify-content: space-between; padding: 2px 0; font-size: 8px; color: #8d8776; }
-.admin-ai-panel .admin-ai-change { padding: 5px 0; border-top: 1px solid #efe9d7; }
-.admin-ai-panel .admin-ai-change-label { display: block; margin-bottom: 3px; color: #8a8069; font-size: 9px; }
-.admin-ai-panel .admin-ai-change-values { display: grid; grid-template-columns: minmax(0, 1fr) 13px minmax(0, 1fr); gap: 5px; align-items: start; font-size: 10px; }
-.admin-ai-panel .admin-ai-change-values > span, .admin-ai-panel .admin-ai-change-values > strong { white-space: pre-wrap; overflow-wrap: anywhere; }
-.admin-ai-panel .admin-ai-change-values > span { color: #8b877b; }
-.admin-ai-panel .admin-ai-change-values > svg { color: #c1a04c; margin-top: 1px; }
-.admin-ai-panel .admin-ai-change-values > strong { color: #685013; font-weight: 600; }
-.admin-ai-panel .admin-ai-compact-draft summary { font-size: 9px; }
-.admin-ai-panel .admin-ai-proposal-details { margin-top: 5px; font-size: 10px; }
-.admin-ai-panel .admin-ai-compact-draft .valo-ai-draft-actions { display: grid; grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr); gap: 6px; margin-top: 8px; }
-.admin-ai-panel .admin-ai-compact-draft .valo-ai-draft-actions button { padding: 7px 5px; min-width: 0; border-radius: 7px; font-family: inherit; font-size: 10px; line-height: 1.4; white-space: nowrap; }
-@media (max-width: 350px) { .admin-ai-panel .admin-ai-compact-draft .valo-ai-draft-actions { grid-template-columns: 1fr; } }
+.valo-ai-panel .admin-ai-compact-draft { margin-top: 0; padding: 9px; border: 1px solid #e4cf8e; border-radius: 10px; background: #fffdf6; font-family: Montserrat, sans-serif; }
+.valo-ai-panel .admin-ai-draft-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 5px; }
+.valo-ai-panel .admin-ai-draft-heading > strong { color: #765617; font-size: 11px; line-height: 1.4; }
+.valo-ai-panel .admin-ai-pending { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: 5px; background: #fff1c9; color: #93701c; font-size: 8px; white-space: nowrap; }
+.valo-ai-panel .admin-ai-compact-draft .admin-ai-draft-target { margin: 5px 0 7px; font-size: 10px; font-weight: 600; color: #56534a; overflow-wrap: anywhere; }
+.valo-ai-panel .admin-ai-change-columns { display: flex; justify-content: space-between; padding: 2px 0; font-size: 8px; color: #8d8776; }
+.valo-ai-panel .admin-ai-change { padding: 5px 0; border-top: 1px solid #efe9d7; }
+.valo-ai-panel .admin-ai-change-label { display: block; margin-bottom: 3px; color: #8a8069; font-size: 9px; }
+.valo-ai-panel .admin-ai-change-values { display: grid; grid-template-columns: minmax(0, 1fr) 13px minmax(0, 1fr); gap: 5px; align-items: start; font-size: 10px; }
+.valo-ai-panel .admin-ai-change-values > span, .valo-ai-panel .admin-ai-change-values > strong { white-space: pre-wrap; overflow-wrap: anywhere; }
+.valo-ai-panel .admin-ai-change-values > span { color: #8b877b; }
+.valo-ai-panel .admin-ai-change-values > svg { color: #c1a04c; margin-top: 1px; }
+.valo-ai-panel .admin-ai-change-values > strong { color: #685013; font-weight: 600; }
+.valo-ai-panel .admin-ai-compact-draft summary { font-size: 9px; }
+.valo-ai-panel .admin-ai-proposal-details { margin-top: 5px; font-size: 10px; }
+.valo-ai-panel .admin-ai-compact-draft .valo-ai-draft-actions { display: grid; grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr); gap: 6px; margin-top: 8px; }
+.valo-ai-panel .admin-ai-compact-draft .valo-ai-draft-actions button { padding: 7px 5px; min-width: 0; border-radius: 7px; font-family: inherit; font-size: 10px; line-height: 1.4; white-space: nowrap; }
+@media (max-width: 350px) { .valo-ai-panel .admin-ai-compact-draft .valo-ai-draft-actions { grid-template-columns: 1fr; } }
 
-.admin-ai-panel .admin-ai-account-count { margin: 0 0 4px; color: #7c641f; font-size: 10px; font-weight: 600; }
+.valo-ai-panel .admin-ai-account-count { margin: 0 0 4px; color: #7c641f; font-size: 10px; font-weight: 600; }
 
 .admin-ai-panel, .admin-ai-panel button, .admin-ai-panel input, .admin-ai-panel textarea { font-family: Montserrat, sans-serif; }

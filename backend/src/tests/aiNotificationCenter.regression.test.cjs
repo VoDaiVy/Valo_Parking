@@ -56,6 +56,8 @@ test('Admin and Staff render compact shared English controls, read states, sever
   Object.assign(deps, await compile('NotificationCenterControls', '{ NotificationFilterBar, NotificationSummary }'));
   deps.ValoAIMascot = await compile('ValoAIMascot', 'ValoAIMascot');
   deps.ValoAILauncher = await compile('ValoAILauncher', 'ValoAILauncher');
+  deps.searchAICustomers = async () => ({ ok: true, data: { success: true, data: { items: [], page: 2, pages: 3, total: 24 } } });
+  deps.StaffCustomerCards = await compile('StaffCustomerCards', 'StaffCustomerCards');
   const admin = await compile('AdminValoAICopilotView', 'AdminValoAICopilotView');
   const staff = await compile('ValoAICopilotView', 'ValoAICopilotView');
   const oldWindow = global.window;
@@ -103,6 +105,11 @@ test('Admin and Staff render compact shared English controls, read states, sever
   const language = require('../services/aiCopilot/adminLanguage');
   assert.ok(language.adminLanguageInstruction('staff').includes('Respond exclusively in English'));
   assert.equal(language.roleMessage('staff', 'Unknown internal error'), 'Unable to complete this request. Please try again.');
+  const customer = { _id: '6a17bf45f57436ad72e17852', role: 'customer', status: false, email: 'customer@example.test', profile: { firstName: 'Linh', lastName: 'Nguyen', phone: '0901234567' } };
+  const customerResult = { items: [customer], total: 24, page: 1, pages: 3, limit: 10, filters: { query: 'Linh', role: 'customer' } };
+  const customerHtml = render(staff, { tab: 'chat', userRole: 'staff', input: '', messages: [{ role: 'ai', message: 'Source: internal\nTimestamp: internal', accountResult: customerResult, evidence: [{ tool: 'search_users', data: customerResult, timestamp: 'internal' }] }] });
+  for (const value of ['Linh Nguyen', '0901234567', 'View Customer', 'Page 1 of 3', 'Status: Blocked', '/staff/accounts?userId=6a17bf45f57436ad72e17852']) assert.ok(customerHtml.includes(value), value);
+  for (const value of ['View source data', 'Source:', 'Timestamp:', 'internal']) assert.ok(!customerHtml.includes(value), value);
 
   // Same viewport, artwork, launcher geometry and live-count badge for both role views.
   const launchers = [admin, staff].map(Component => render(Component, { unreadCount: 7 }));

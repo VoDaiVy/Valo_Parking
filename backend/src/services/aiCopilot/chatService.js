@@ -8,6 +8,7 @@ const AIAuditLog = require('../../models/AIAuditLog');
 
 const { entityLinks } = require('./entityLinks');
 const { membershipResponseOptions, isMembershipDashboardSummary } = require('./membershipResponses');
+const { staffCustomerStatus } = require('./staffCustomerScope');
 // Conservative intent gate: quoted prohibitions also keep a turn read-only.
 function prohibitsDraft(message) {
   return /\b(?:do not|don't|never|no)\s+(?:(?:create|prepare|make|save)\s+(?:a(?:ny)?\s+)?(?:draft|proposal)|drafts?\b|proposals?\b|modify\b|change anything\b)|\b(?:do not|don't|never)\s+(?:make\s+(?:any\s+)?changes|(?:create|prepare|make|save)\s+(?:any\s+)?(?:drafts|proposals))|\b(?:read[ -]only|explain only|information only|only explain|no[ -]draft)\b/i.test(message);
@@ -154,6 +155,7 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
     actorRole === 'admin' ? 'Membership statistics must answer only the requested KPIs. Expiring Soon is 30 Vietnam calendar days as on the Admin dashboard, never the 7-day metric. Pending Transfers is PENDING_ADMIN transfer reviews, never pending subscriptions. When expiry dates are requested, keep them visible on search cards. When vehicle plates are requested, use includeVehicles=true on membership reads even for cancelled records; report only stored purchaser/current-owner vehicle relationships, not inferred historical use.' : '',
     actorRole === 'admin' ? 'Ticket Packages support is read-only. Use search_ticket_packages for name/description search and type/status filters, get_ticket_package_detail for exact verified package IDs, and get_ticket_package_stats for catalog inventory statistics. Include daily and inactive records when applicable; never use the public active-membership subset. Preserve literal stored names/descriptions, prices, status and updatedAt; never substitute createdAt for an unknown update time. Use only returned View Package links to /admin/tickets. Do not create, update, archive or delete packages in this read-only support.' : '',
     adminLanguageInstruction(actorRole),
+    actorRole === 'staff' ? 'Customer Management: search_users is always scoped to customers. Use get_user_detail for the exact customer before a proposal. Prepare UPDATE_USER_PROFILE only for explicitly requested firstName, lastName, phone; ask which name parts to change if ambiguous. Never change email, username, role, membership or non-customer accounts. Block/unblock uses UPDATE_USER_STATUS. Never apply without approval. Customer results are compact cards; do not repeat fields, source metadata or links in prose. Use returned View Customer links only.' : '',
     actorRole === 'admin' ? 'For Services statistics/average price use get_service_stats: all services including inactive by default, matching the Services dashboard. Never calculate an average from a limited search page or booking usage. For prices highest-to-lowest use search_services sortBy=price sortOrder=desc. Service results render as compact English cards; do not repeat fields or links in prose. To prepare a demo price change, first read the exact service, then prepare_draft UPDATE_SERVICE with only explicitly requested fields and that verified ID. A demo request is only a pending proposal, never permission to apply. Ask for the service and proposed price if missing; never invent a demo price. Apply only through the existing approval action.' : '',
   ].join('\n');
   const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite', systemInstruction: baseInstruction });
@@ -167,7 +169,8 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
   const packageRequest = actorRole === 'admin' && isTicketPackageRequest(message);
   const serviceStatisticsRequest = actorRole === 'admin' && /\bservices?\b/i.test(message) && /\b(?:statistics|stats|average)\b/i.test(message) && !/\b(?:accounts?|users?|sessions?|bookings?|memberships?|subscriptions?|packages?|usage|revenue|sales)\b/i.test(message);
   const serviceDraftRequest = actorRole === 'admin' && /\bservices?\b/i.test(message) && /\b(?:prepare|propose|draft)\b/i.test(message) && !prohibitsDraft(message);
-  const readOnly = actorRole === 'admin' && (packageRequest || membershipRequest || prohibitsDraft(message) || (!serviceDraftRequest && /^(?:explain|describe|what|why|how|show|find|list|get|check|verify|compare|summarize|tell me)\b/i.test(message.trim())));
+  const staffListingStatus = actorRole === 'staff' ? staffCustomerStatus(message) : undefined;
+  const readOnly = staffListingStatus !== undefined || actorRole === 'admin' && (packageRequest || membershipRequest || prohibitsDraft(message) || (!serviceDraftRequest && /^(?:explain|describe|what|why|how|show|find|list|get|check|verify|compare|summarize|tell me)\b/i.test(message.trim())));
   const explanationOnly = actorRole === 'admin' && (/^(?:explain|describe|how|why)\b/i.test(message.trim()) || (prohibitsDraft(message) && /approval|bypass|skip|directly|immediately/i.test(message)));
   let draft = null;
   let stage = 'CHAT_REQUEST_RECEIVED';
@@ -176,14 +179,14 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
     for (let step = 0; step < 5; step++) {
       stage = step === 0 ? 'GEMINI_TOOL_SELECTION_START' : 'GEMINI_FINAL_SYNTHESIS_START';
       trace(stage, { step });
-      const allowedTools = getToolsForRole(actorRole).filter(tool => (!packageRequest || packageTools.includes(tool.name)) && (!serviceStatisticsRequest || step !== 0 || tool.name === 'get_service_stats') && (actorRole !== 'admin' || tool.name !== 'get_current_user' || referencesOwnAccount(message)));
+      const allowedTools = getToolsForRole(actorRole).filter(tool => (!packageRequest || packageTools.includes(tool.name)) && (staffListingStatus === undefined || tool.name === 'search_users') && (!serviceStatisticsRequest || step !== 0 || tool.name === 'get_service_stats') && (actorRole !== 'admin' || tool.name !== 'get_current_user' || referencesOwnAccount(message)));
       const roleDraftDecl = actorRole === 'staff' ? {
         name: 'prepare_draft',
         description: 'Prepare a pending proposal only, never execute it. Use after read tools supplied evidence.',
         parameters: { type: 'object', properties: {
-          type: { type: 'string', enum: ['UPDATE_USER_STATUS', 'SEND_NOTIFICATION'] },
-          payloadJson: { type: 'string', description: 'JSON with complete proposed payload. For UPDATE_USER_STATUS send {"status":boolean}. For SEND_NOTIFICATION send {"title":string,"content":string,"expectedRecipientRole":string}; propose both title and content.' },
-          targetId: { type: 'string', description: 'Required for UPDATE_USER_STATUS and SEND_NOTIFICATION. For SEND_NOTIFICATION it must come from search_notification_recipients.' },
+          type: { type: 'string', enum: ['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE', 'SEND_NOTIFICATION'] },
+          payloadJson: { type: 'string', description: 'JSON with complete proposed payload. For UPDATE_USER_STATUS send {"status":boolean}. For UPDATE_USER_PROFILE send only explicitly requested firstName, lastName and phone. For SEND_NOTIFICATION send {"title":string,"content":string,"expectedRecipientRole":string}; propose both title and content.' },
+          targetId: { type: 'string', description: 'Required for UPDATE_USER_STATUS, UPDATE_USER_PROFILE and SEND_NOTIFICATION. For SEND_NOTIFICATION it must come from search_notification_recipients.' },
           notificationId: { type: 'string', description: 'Optional open AI notification ID.' },
           reason: { type: 'string' },
         }, required: ['type', 'payloadJson', 'targetId', 'reason'] }
@@ -253,23 +256,30 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
             draft = { id: output._id, type: output.type, payload: output.payload, current: output.current, reason: output.reason, evidence: output.evidence, expiresAt: output.expiresAt, status: output.status };
             output = { draftId: String(output._id), status: output.status || 'PENDING' };
           } else {
+            if (staffListingStatus !== undefined && call.name !== 'search_users') throw new Error('Use the customer search tool for this listing.');
             if (packageRequest && !packageTools.includes(call.name)) throw new Error('Use the read-only Ticket Package tools for this request.');
             if (actorRole === 'admin' && call.name === 'get_current_user' && !referencesOwnAccount(message)) throw new Error('Use search_users to resolve the requested account. Authenticated identity is only available for an explicit self-reference.');
             const args = { ...(call.args || {}) };
+            if (actorRole === 'staff' && call.name === 'search_users') {
+              const requestedStatus = staffCustomerStatus(message);
+              if (requestedStatus !== undefined) args.status = requestedStatus;
+              args.role = 'customer';
+            }
             if (actorRole === 'admin' && call.name === 'get_subscription_stats' && membershipPresentation.kpis) args.kpis = membershipPresentation.kpis;
             if (actorRole === 'admin' && ['get_subscription_members', 'get_subscription_detail'].includes(call.name) && membershipPresentation.includeVehicles) args.includeVehicles = true;
             output = await execute(call.name, args, actorRole, { actorId: currentActorId });
-            if (actorRole === 'admin') {
-              const adminLinks = entityLinks(call.name, output.data);
+            if (['admin', 'staff'].includes(actorRole)) {
+              const adminLinks = entityLinks(call.name, output.data, actorRole);
               output = { ...output, adminLinks };
               for (const link of adminLinks) if (!links.some(item => item.url === link.url)) links.push(link);
             }
+            if (actorRole === 'staff' && !['search_users', 'get_user_detail'].includes(call.name)) accountResult = null;
             if (actorRole === 'admin' && call.name === 'get_user_summary') accountResult = null;
             if (actorRole === 'admin' && ['get_active_sessions', 'search_sessions', 'get_session_detail'].includes(call.name)) accountResult = null;
             if (actorRole === 'admin' && membershipTools.includes(call.name)) accountResult = null;
             if (actorRole === 'admin' && packageTools.includes(call.name)) accountResult = null;
             if (actorRole === 'admin' && serviceTools.includes(call.name)) accountResult = null;
-            if (actorRole === 'admin' && ['search_users', 'get_user_detail', 'get_current_user'].includes(call.name)) {
+            if (['admin', 'staff'].includes(actorRole) && ['search_users', 'get_user_detail', 'get_current_user'].includes(call.name)) {
               if (accountNotice && accountNotice.tool !== 'prepare_draft') accountNotice = null;
               if (call.name === 'search_users') accountQueries.push(output.data);
               accountResult = membershipRequest || packageRequest ? null : call.name === 'search_users' ? { ...output.data, queries: [...accountQueries] } : { items: [output.data], total: 1, returned: 1, authenticated: call.name === 'get_current_user' };
@@ -280,7 +290,7 @@ async function chat({ message, conversationId, adminUserId, actorId, actorRole =
           trace('TOOL_EXECUTION_SUCCESS', { tool: call.name });
           responses.push({ functionResponse: { name: call.name, response: { result: output } } });
         } catch (error) {
-          if (actorRole === 'admin' && error.publicMessage) accountNotice = { code: error.code, message: error.publicMessage, tool: call.name };
+          if (['admin', 'staff'].includes(actorRole) && error.publicMessage) accountNotice = { code: error.code, message: error.publicMessage, tool: call.name };
           const blocked = call.name === 'prepare_draft' || !tools.some((tool) => tool.name === call.name);
           const category = blocked ? 'TOOL_NOT_FOUND' : /valid|tham số|ngày|khoảng/i.test(error.message || '') ? 'TOOL_VALIDATION_ERROR' : /mongo|database|connection|server selection/i.test(error.message || '') ? 'DATABASE_ERROR' : 'TOOL_EXECUTION_ERROR';
           trace('TOOL_EXECUTION_FAILED', { tool: call.name, category, errorName: error.name });

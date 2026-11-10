@@ -12,9 +12,7 @@ import {
   CircleDollarSign,
   Crown,
   RefreshCw,
-  Repeat,
   WalletCards,
-  Wrench,
 } from 'lucide-react';
 import { inspectRevenueResponse } from './revenueAnalyticsData';
 import './revenueAnalytics.css';
@@ -92,6 +90,7 @@ const formatPeriodLabel = (label, granularity) => {
     return new Date(`${label}T00:00:00+07:00`).toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
+      timeZone: 'Asia/Ho_Chi_Minh',
     });
   } catch {
     return label;
@@ -170,6 +169,7 @@ export default function RevenueAnalytics() {
   const [selectedMonth, setSelectedMonth] = useState(vnMonth);
   const [selectedQuarter, setSelectedQuarter] = useState(Math.ceil(vnMonth / 3));
   const [refreshKey, setRefreshKey] = useState(0);
+  const [transactionPage, setTransactionPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -180,17 +180,18 @@ export default function RevenueAnalytics() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError('');
+    queueMicrotask(() => {
+      if (active) { setLoading(true); setError(''); }
+    });
 
-    const params = { mode };
+    const params = { mode, transactionPage };
     if (mode !== '7d' && mode !== 'years') params.year = String(selectedYear);
     if (mode === 'month') params.month = String(selectedMonth);
     if (mode === 'quarter') params.quarter = String(selectedQuarter);
 
     getAdminPlatformRevenueByMode(params).then((result) => {
       if (!active) return;
-      if (result?.ok && result.data?.success) {
+      if (result?.ok && result.data?.success && result.data.data && typeof result.data.data === 'object') {
         setData(result.data.data);
         setUpdatedAt(new Date());
         setError('');
@@ -199,10 +200,15 @@ export default function RevenueAnalytics() {
         setError('Revenue data could not be loaded. Try again in a moment.');
       }
       setLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setData(null);
+      setError('Revenue data could not be loaded. Try again in a moment.');
+      setLoading(false);
     });
 
     return () => { active = false; };
-  }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey]);
+  }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey, transactionPage]);
 
   const report = inspectRevenueResponse(data);
   const summary = report.summary;
@@ -234,7 +240,7 @@ export default function RevenueAnalytics() {
           </div>
 
           <div className="c4-controls flex flex-wrap items-center gap-2.5">
-            <ModeMenu mode={mode} onChange={(m) => m !== mode && setMode(m)} />
+            <ModeMenu mode={mode} onChange={(m) => m !== mode && (setMode(m), setTransactionPage(1))} />
             {mode !== '7d' && mode !== 'years' && (
               <SecondarySelector
                 mode={mode}
@@ -242,9 +248,9 @@ export default function RevenueAnalytics() {
                 month={selectedMonth}
                 quarter={selectedQuarter}
                 availableYears={availableYears}
-                onYearChange={setSelectedYear}
-                onMonthChange={setSelectedMonth}
-                onQuarterChange={setSelectedQuarter}
+                onYearChange={(value) => { setSelectedYear(value); setTransactionPage(1); }}
+                onMonthChange={(value) => { setSelectedMonth(value); setTransactionPage(1); }}
+                onQuarterChange={(value) => { setSelectedQuarter(value); setTransactionPage(1); }}
               />
             )}
             <button
@@ -267,7 +273,7 @@ export default function RevenueAnalytics() {
           </div>
         )}
 
-        {loading ? (
+        {loading && !data ? (
           <RevenueSkeleton />
         ) : data ? (
           <div className="ra-content">
@@ -283,7 +289,7 @@ export default function RevenueAnalytics() {
             </div>
             <div className="ra-row ra-bottom">
               <StatusDistributionSection statusDistribution={statusDistribution} reduceMotion={reduceMotion} />
-              <RecentRevenueTransactions />
+              <RecentRevenueTransactions transactions={data.recentTransactions} pagination={data.transactionPagination} onPageChange={setTransactionPage} loading={loading} />
             </div>
           </div>
         ) : null}
@@ -361,15 +367,13 @@ function SecondarySelector({
   );
 }
 
-/* ── 6 KPI Cards ──────────────────────────────────────────────────────── */
+/* ── 4 KPI Cards ──────────────────────────────────────────────────────── */
 
 function KPIStrip({ summary, reduceMotion }) {
   const metrics = [
     { icon: CircleDollarSign, label: 'Total Revenue', value: formatCurrency(summary.totalRevenue), colorClass: 'text-yellow-400' },
     { icon: WalletCards, label: 'Booking Revenue', value: formatCurrency(summary.bookingRevenue), colorClass: 'text-blue-400' },
-    { icon: Wrench, label: 'Service Revenue', value: formatCurrency(summary.serviceRevenue), colorClass: 'text-purple-400' },
     { icon: Crown, label: 'Package Revenue', value: formatCurrency(summary.packageRevenue), colorClass: 'text-yellow-400' },
-    { icon: Repeat, label: 'Transfer Fees', value: formatCurrency(summary.membershipTransferFees), colorClass: 'text-emerald-400' },
     { icon: ArrowDownRight, label: 'Refunds', value: formatCurrency(summary.refunds), colorClass: 'text-rose-400' },
   ];
 
@@ -377,7 +381,7 @@ function KPIStrip({ summary, reduceMotion }) {
     <motion.section
       initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      className="c4-kpis c4-revenue ra-kpis grid grid-cols-2 gap-y-4 md:grid-cols-3 xl:grid-cols-6"
+      className="c4-kpis ra-kpis grid grid-cols-1 gap-y-3 min-[480px]:grid-cols-2 md:grid-cols-4"
     >
       {metrics.map((metric) => (
         <div key={metric.label} className="flex items-center gap-3 border-r border-white/[0.04] px-2 last:border-0">
@@ -418,7 +422,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
   const tooltipDate = active && /^\d{4}-\d{2}-\d{2}$/.test(active.period) ? new Date(`${active.period}T00:00:00Z`).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric', timeZone:'UTC'}) : active?.period;
   const hasActivity = points.some((point) => keys.some((key) => safe(point[key]) > 0));
   return <section className="ra-trend">
-    <div className="ra-section-heading"><div><h2><BarChart3 size={20} />Revenue Trend</h2><p>Total revenue over the selected period.</p></div>
+    <div className="ra-section-heading"><div><h2><BarChart3 size={20} />Revenue Trend</h2><p>Net finalized booking and paid package income. Refunds are already deducted.</p></div>
       <div className="ra-switch" aria-label="Revenue chart view">
         <button type="button" aria-pressed={viewMode === 'total'} onClick={() => { setViewMode('total'); setHoveredIndex(null); }}>Total</button>
         <button type="button" aria-pressed={viewMode === 'bySource'} onClick={() => { setViewMode('bySource'); setHoveredIndex(null); }}>By Source</button>
@@ -577,8 +581,39 @@ function PackageValueSection({ packageBreakdown }) {
   </section>;
 }
 
-function RecentRevenueTransactions() {
-  return <section className="ra-transactions"><div className="ra-section-heading"><div><h2><WalletCards size={20} />Recent Revenue Transactions</h2><p>Individual payment records are not provided by the current reporting API.</p></div></div><div className="ra-table-scroll"><table><thead><tr>{['Date & Time','Type','Reference','Description','Amount','Status','Payment Method'].map((label)=><th key={label}>{label}</th>)}</tr></thead><tbody><tr><td colSpan={7}>Unavailable - no transaction records returned. Aggregate totals cannot be converted into individual payments.</td></tr></tbody></table></div></section>;
+function RecentRevenueTransactions({ transactions, pagination, onPageChange, loading }) {
+  const valid = Array.isArray(transactions) && transactions.every(row => row.id && row.paidAt && !Number.isNaN(new Date(row.paidAt).getTime()) && safe(row.amount) !== null);
+  const rows = valid ? transactions : [];
+  const { page = 1, totalPages = 1, total = 0 } = pagination || {};
+  const firstPage = Math.max(1, Math.min(page - 3, totalPages - 6));
+  const labels = ['Date & Time', 'Type', 'Reference', 'Description', 'Amount', 'Status', 'Method'];
+  return <section className="ra-transactions" aria-busy={loading}>
+    <div className="ra-section-heading"><div><h2><WalletCards size={20} />Recent Revenue Transactions</h2><p>Booking wallet payments/refunds, package payments and transfer fees by payment date (Vietnam time). Payment activity differs from finalized revenue.</p></div></div>
+    <div className="ra-transaction-table"><table><colgroup>{['date', 'type', 'reference', 'description', 'amount', 'status', 'method'].map(key => <col key={key} className={`ra-col-${key}`} />)}</colgroup><thead><tr>{labels.map(label => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>
+      {rows.length ? rows.map(row => {
+        const fullDate = new Date(row.paidAt).toLocaleString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
+        const shortDate = new Date(row.paidAt).toLocaleString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const reference = row.reference ? String(row.reference) : 'Unavailable';
+        return <tr key={row.id}>
+          <td data-label={labels[0]}><time dateTime={row.paidAt} title={`${fullDate} ICT`}>{shortDate}</time>{row.dateBasis === 'legacy_created_at' && <small>Legacy creation date</small>}</td>
+          <td data-label={labels[1]}>{row.type?.replaceAll('_', ' ') || 'Unavailable'}</td>
+          <td data-label={labels[2]}><span className="ra-reference" title={reference} tabIndex={0}>{reference}</span></td>
+          <td data-label={labels[3]}>{row.description || 'Unavailable'}</td>
+          <td data-label={labels[4]} className="ra-transaction-amount">{row.type === 'REFUND' ? '- ' : ''}{formatCurrency(row.amount)}</td>
+          <td data-label={labels[5]}><span className="ra-transaction-status" style={{ color: statusTone(row.status).color }}>{statusTone(row.status).label}</span></td>
+          <td data-label={labels[6]}>{row.paymentMethod ? row.paymentMethod.toUpperCase() : 'Unavailable'}</td>
+        </tr>;
+      }) : <tr><td colSpan={7}>{valid ? 'No payment records in this period.' : 'Payment records unavailable.'}</td></tr>}
+    </tbody></table></div>
+    <nav className="ra-pagination" aria-label="Revenue transaction pagination">
+      <span>{pagination && valid ? `Page ${page} of ${totalPages} \u00b7 ${total} results` : 'Pagination unavailable'}</span>
+      <div>
+        <button disabled={loading || !pagination || !valid || page <= 1} onClick={() => onPageChange(page - 1)}>&larr; Prev</button>
+        {pagination && valid && Array.from({ length: Math.min(totalPages, 7) }, (_, index) => firstPage + index).map(number => <button key={number} aria-label={`Page ${number}`} aria-current={number === page ? 'page' : undefined} disabled={loading} onClick={() => onPageChange(number)}>{number}</button>)}
+        <button disabled={loading || !pagination || !valid || page >= totalPages} onClick={() => onPageChange(page + 1)}>Next &rarr;</button>
+      </div>
+    </nav>
+  </section>;
 }
 
 /* ── Shared Components ────────────────────────────────────────────────── */

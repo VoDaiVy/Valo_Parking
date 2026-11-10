@@ -4,14 +4,15 @@ import { formatDistanceToNow } from 'date-fns';
 import ValoAIMascot from './ValoAIMascot';
 import ValoAILauncher from './ValoAILauncher';
 import AIMessageMarkdown from './AIMessageMarkdown';
-import { sourceLabel, sourceUpdatedAt } from '../utils/aiSourceLabels';
+import StaffCustomerCards from './StaffCustomerCards';
+import { AdminDraft } from './AdminChatContent';
 import { notificationClickTarget } from '../utils/notificationTarget';
 import { NotificationFilterBar, NotificationSummary } from './NotificationCenterControls';
 import { adminDate, adminNotification, adminActions } from '../utils/adminPresentation';
 import '../styles/ValoAICopilot.css';
 
 const fieldLabels = {
-  name: 'Name', type: 'Type', price: 'Price', description: 'Description', maxSlots: 'Maximum spaces', timeCost: 'Duration (minutes)',
+  firstName: 'First name', lastName: 'Last name', phone: 'Phone', name: 'Name', type: 'Type', price: 'Price', description: 'Description', maxSlots: 'Maximum spaces', timeCost: 'Duration (minutes)',
   cap12h: '12-hour cap', cap24h: '24-hour cap', timeBlocks: 'Time blocks', isActive: 'Active', status: 'Status', title: 'Title',
   category: 'Category', summary: 'Summary', content: 'Content', effectiveDate: 'Effective date', role: 'Role', username: 'Recipient', email: 'Email', expectedRecipientRole: 'Recipient role'
 };
@@ -53,7 +54,6 @@ function DraftCard({ draft, busy, onDecide, userRole }) {
       {draft.payload && Object.keys(draft.payload).length > 0 && <details open><summary>Proposed change</summary><dl>{Object.entries(draft.payload).map(([key, value]) => <div key={key}><dt>{fieldLabels[key] || key}</dt><dd>{pretty(value, key)}</dd></div>)}</dl></details>}
       {draft.type === 'CREATE_SERVICE' && <p className="valo-ai-draft-warning"><AlertTriangle size={14}/> VALO AI cannot upload images. Add images on the Services page after approval.</p>}
     </>}
-    {draft.evidence?.length > 0 && <p className="valo-ai-draft-evidence-hint">📊 Based on {draft.evidence.length} data sources</p>}
     {!settled && <div className="valo-ai-draft-actions">
       <button type="button" disabled={busy} onClick={() => handleDecide(false)}>Reject</button>
       <button type="button" disabled={busy} onClick={() => handleDecide(true)}>{isSendNotification ? 'Approve & send' : userRole === 'staff' ? 'Confirm & apply' : 'Approve & apply'}</button>
@@ -61,15 +61,14 @@ function DraftCard({ draft, busy, onDecide, userRole }) {
   </div>;
 }
 
-function Message({ row, busy, onDecide, userRole }) {
+function Message({ row, busy, onDecide, userRole, onNavigate }) {
   const user = row.role === 'user';
-  const sources = row.evidence?.map((entry) => ({ label: sourceLabel(entry), updatedAt: sourceUpdatedAt(entry.timestamp) })) || [];
+  const customerResult = row.accountResult || (() => { const latest = row.evidence?.at(-1); const entry = ['search_users', 'get_user_detail'].includes(latest?.tool) ? latest : null; return entry ? entry.data?.items ? entry.data : { items: [entry.data], total: 1 } : null; })();
   return <div className={`valo-ai-message-row ${user ? 'is-user' : 'is-ai'}`}>
     {!user && <span className="valo-ai-message-avatar"><ValoAIMascot size={30}/></span>}
     <div className="valo-ai-message-stack">
-      <div className="valo-ai-message-bubble">{user ? <p>{row.message}</p> : <AIMessageMarkdown text={row.message}/>}
-        {sources.length > 0 && <details className="valo-ai-evidence"><summary>View source data</summary>{sources.length > 1 && <strong>data sources</strong>}<ul>{sources.map((entry, i) => <li key={i}>{entry.label}{entry.updatedAt && <small>{entry.updatedAt}</small>}</li>)}</ul></details>}
-        {row.draft && <DraftCard draft={row.draft} busy={busy} onDecide={onDecide} userRole={userRole}/>}
+      <div className="valo-ai-message-bubble">{user ? <p>{row.message}</p> : customerResult && !row.draft && row.type !== 'error' ? <StaffCustomerCards result={customerResult} onNavigate={onNavigate}/> : <AIMessageMarkdown text={String(row.message || '').split('\n').filter(line => !/^\s*\*{0,2}(?:sources?|timestamp|updated at|verification time|tool)\*{0,2}\s*[:\-]/i.test(line)).join('\n')}/>}
+        {row.draft && (['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(row.draft.type) ? <AdminDraft draft={row.draft} busy={busy} decide={onDecide}/> : <DraftCard draft={row.draft} busy={busy} onDecide={onDecide} userRole={userRole}/>)}
       </div>
       <time>{row.at ? time(row.at) : ''}</time>
     </div>
@@ -102,7 +101,7 @@ export default function ValoAICopilotView({ mascotRef, mascotVisible, position, 
       {tab === 'chat' ? <>
         <div className="valo-ai-conversation">
           {!messages.length && <div className="valo-ai-welcome"><ValoAIMascot size={31}/><div><strong>Hello {userRole === 'staff' ? 'Staff' : 'Admin'}! 👋</strong><p>{userRole === 'staff' ? 'I can help you look up parking sessions, bookings, customers, and parking availability.' : 'I can check VALO data, analyze it, and prepare drafts for approval.'}</p></div></div>}
-          {messages.map((row, index) => <Message key={index} row={row} busy={noticeBusy} onDecide={decide} userRole={userRole}/>)}
+          {messages.map((row, index) => <Message key={index} row={row} busy={noticeBusy} onDecide={decide} userRole={userRole} onNavigate={() => setOpen(false)}/>)}
           {busy && <div className="valo-ai-message-row is-ai"><span className="valo-ai-message-avatar"><ValoAIMascot size={30}/></span><div className="valo-ai-thinking" aria-label="VALO AI is checking data"><i/><i/><i/></div></div>}
           <div ref={bottomRef}/>
         </div>

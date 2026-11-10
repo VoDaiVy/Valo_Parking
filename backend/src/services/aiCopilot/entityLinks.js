@@ -18,7 +18,12 @@ const destinations = {
   get_service_detail: ['/admin/services', 'serviceId', 'Service'],
   get_service_catalog: ['/admin/services', 'serviceId', 'Service'],
 };
-function entityLinks(tool, data) {
+function entityLinks(tool, data, role = 'admin') {
+  if (role === 'staff') {
+    if (!['search_users', 'get_user_detail'].includes(tool)) return [];
+    const rows = data?.items || (data ? [data] : []);
+    return rows.filter(row => row.role === 'customer' && /^[a-f\d]{24}$/i.test(String(row._id))).map(row => ({ url: `/staff/accounts?userId=${row._id}`, label: `Customer: ${row.username || row.email || row._id}` }));
+  }
   if (tool === 'get_pricing_config' && data) return [{ url: '/admin/pricing', label: 'Current pricing' }];
   if (tool === 'get_parking_slots') return (data?.items || []).flatMap(row => {
     const floorId = String(row.floorID?._id || row.floorID || '');

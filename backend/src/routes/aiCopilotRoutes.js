@@ -111,6 +111,17 @@ staffRouter.post('/chat', async (req, res) => {
   try { res.json({ success: true, data: await chat({ message: req.body.message, conversationId: req.body.conversationId, actorId: req.user._id, actorRole: 'staff', adminUserId: req.user._id }) }); }
   catch (error) { sendError(res, error); }
 });
+staffRouter.get('/customers/search', async (req, res) => {
+  try {
+    const args = { ...req.query };
+    if (args.status !== undefined) {
+      if (!['true', 'false'].includes(args.status)) return res.status(400).json({ success: false, message: 'Invalid customer status.' });
+      args.status = args.status === 'true';
+    }
+    const result = await require('../services/aiCopilot/toolRegistry').execute('search_users', args, 'staff', { actorId: req.user._id });
+    res.json({ success: true, data: result.data });
+  } catch (error) { sendError(res, error); }
+});
 staffRouter.get('/notifications', async (req, res) => {
   try {
     const userId = req.user._id;
