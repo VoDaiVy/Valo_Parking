@@ -11,7 +11,8 @@ export async function ensureNotificationChannels() {
       name,
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
-      sound: 'default',
+      // Omitting sound uses Android's system notification sound. An explicit
+      // string is treated as a bundled sound filename by this native module.
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
     });
   }
