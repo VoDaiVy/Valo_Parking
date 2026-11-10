@@ -128,7 +128,7 @@ body[data-valo-typography="staff"] .staff-booking-management .sbm-scope-controls
 body[data-valo-typography="staff"] .staff-booking-management .sbm-controls button[aria-haspopup]:hover { background: var(--sbm-hover); border-color: #10B98155; }
 body[data-valo-typography="staff"] .staff-booking-management .sbm-controls button[aria-haspopup]:active, body[data-valo-typography="staff"] .staff-booking-management .sbm-date button:active { background: #10B98114; }
 @media (min-width: 1280px) {
- body[data-valo-typography="staff"] .staff-booking-management { display: grid; height: calc(100dvh - 70px); min-height: 0; grid-template-columns: minmax(0,.43fr) minmax(0,.57fr); grid-template-rows: auto auto auto minmax(min-content, 1fr); column-gap: 20px; align-content: stretch; align-items: stretch; }
+ body[data-valo-typography="staff"] .staff-booking-management { display: grid; height: calc(100dvh - 70px); min-height: 0; grid-template-columns: minmax(0,.43fr) minmax(0,.57fr); grid-template-rows: auto auto auto minmax(0, 1fr); column-gap: 20px; align-content: stretch; align-items: stretch; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-header, body[data-valo-typography="staff"] .staff-booking-management .sbm-performance { grid-column: 1 / -1; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-controls { grid-column: 1 / -1; grid-row: 3; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-workspace { display: contents; }
