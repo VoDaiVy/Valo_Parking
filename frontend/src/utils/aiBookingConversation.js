@@ -142,8 +142,11 @@ export function routeBookingReply(phase, message, { hasSlotSuggestion = false } 
   // booking interpreter as one unit. Informational shortcuts would otherwise
   // discard its dates, times and vehicle.
   if (containsBookingDetails) return 'interpret';
-  if (isUnclearInquiry(value)) return 'unrecognized';
-  if (isVipInquiry(value) && !isVipDecline(value)) return 'view_vip_packages';
+  if (isUnclearInquiry(value) || /(?:^|\s)cặc(?:$|\s|[.!?])/iu.test(String(message)) || /\b(?:dit|du ma|dm|dmm|fuck|shit)\b/.test(value)) return 'unrecognized';
+  if (isVipInquiry(value) && !isVipDecline(value)) {
+    if (/\b(?:huy|cancel|terminate|cua toi|dang dung|con han|het han|han su dung|my|expiry|expire|expires|expiration|active)\b/.test(value)) return 'interpret';
+    return 'view_vip_packages';
+  }
   if (isServiceInquiry(value)) return 'service_info';
   if (isPricingInquiry(value)) return 'pricing_info';
   // Published policy content and refund rules live on the server and can
@@ -166,6 +169,7 @@ export function routeBookingReply(phase, message, { hasSlotSuggestion = false } 
     return 'interpret';
   }
   if (/^(?:đúng|đúng rồi|đúng vậy)[.! ]*$/iu.test(String(message).trim())) return 'confirm';
+  if (/^dừng(?: lại)?[.! ]*$/iu.test(String(message).trim())) return 'cancel';
   if (/^(?:u|uh|um|da|vang|co|cho|dung)$/.test(value)) return 'clarify';
   if (cancellationPhrases.has(value)) return 'cancel';
   // Wallet actions must be checked before booking edits. Otherwise phrases
@@ -222,15 +226,21 @@ export function bookingPreviewSummary(preview, draft = {}, language = 'vi') {
       ? '\n💡 Tip: For bookings longer than 7 days, consider subscribing to a VIP monthly package for lower rates and a dedicated spot.'
       : '\nvalo Gợi ý: Với thời gian đỗ dài ngày (> 7 ngày), bạn có thể tham khảo đăng ký gói ưu tiên (gói tháng) để có mức giá ưu đãi hơn và được giữ chỗ cố định.')
     : '';
+  const servicesFor = (item, index) => {
+    const rows = Array.isArray(draft.reservationItems) ? draft.reservationItems : [];
+    const row = rows[index] || rows.find((entry) => entry.licensePlate === item.licensePlate);
+    const names = Array.isArray(item.serviceNames) ? item.serviceNames
+      : Array.isArray(row?.serviceNames) ? row.serviceNames : draft.serviceNames || [];
+    if (names.length) return language === 'en'
+      ? ` (Services: ${names.join(', ')})` : ` (Dịch vụ: ${names.join(', ')})`;
+    return items.length > 1 ? (language === 'en' ? ' (No extra services)' : ' (Không kèm dịch vụ)') : '';
+  };
 
   if (language === 'en') {
-    const serviceList = Array.isArray(draft.serviceNames) && draft.serviceNames.length
-      ? ` (${items.length > 1 ? 'Services for each vehicle' : 'With services'}: ${draft.serviceNames.join(', ')})`
-      : '';
-    const details = items.map((item) => {
+    const details = items.map((item, index) => {
       const start = parts(item.startTime, item.date, draft.startTime);
       const end = parts(item.endTime, item.endDate || item.date, draft.endTime);
-      return `Vehicle ${item.licensePlate}: ${start.date} ${start.time} to ${end.date} ${end.time}, ${floorLabel(item.floorName, 'en')}, slot ${item.slotCode}${serviceList}`;
+      return `Vehicle ${item.licensePlate}: ${start.date} ${start.time} to ${end.date} ${end.time}, ${floorLabel(item.floorName, 'en')}, slot ${item.slotCode}${servicesFor(item, index)}`;
     });
     const payment = Number(preview.walletBalance) < Number(preview.total)
       ? 'Your wallet balance is insufficient. Say “top up” to display a payment QR code.'
@@ -240,14 +250,11 @@ export function bookingPreviewSummary(preview, draft = {}, language = 'vi') {
   const payment = Number(preview.walletBalance) < Number(preview.total)
     ? 'Ví chưa đủ tiền. Vui lòng nạp thêm.'
     : 'Bạn có xác nhận đặt chỗ không?';
-  const serviceList = Array.isArray(draft.serviceNames) && draft.serviceNames.length
-    ? ` (${items.length > 1 ? 'Dịch vụ áp dụng cho từng xe' : 'Kèm dịch vụ'}: ${draft.serviceNames.join(', ')})`
-    : '';
   if (items.length === 1) {
     const start = parts(items[0].startTime, items[0].date, draft.startTime);
     const end = parts(items[0].endTime, items[0].endDate || items[0].date, draft.endTime);
     return `Xe ${items[0].licensePlate}: ${start.date} ${start.time} đến ${end.date} ${end.time}. `
-      + `Giữ chỗ liên tục, ${items[0].floorName}, ô ${items[0].slotCode}${serviceList}. `
+      + `Giữ chỗ liên tục, ${items[0].floorName}, ô ${items[0].slotCode}${servicesFor(items[0], 0)}. `
       + `${Number(preview.total).toLocaleString('vi-VN')}đ. ${payment}${vipTip}`;
   }
   const details = items.map((item) => {
@@ -262,14 +269,14 @@ export function bookingPreviewSummary(preview, draft = {}, language = 'vi') {
     && end.time === details[0].end.time
   ));
   const lines = sameSchedule
-    ? details.map(({ item }) => `- ${item.licensePlate}: ${item.floorName}, ô ${item.slotCode}`)
-    : details.map(({ item, start, end }) => (
-      `- ${item.licensePlate}: ${start.date} ${start.time} đến ${end.date} ${end.time}, ${item.floorName}, ô ${item.slotCode}`
+    ? details.map(({ item }, index) => `- ${item.licensePlate}: ${item.floorName}, ô ${item.slotCode}${servicesFor(item, index)}`)
+    : details.map(({ item, start, end }, index) => (
+      `- ${item.licensePlate}: ${start.date} ${start.time} đến ${end.date} ${end.time}, ${item.floorName}, ô ${item.slotCode}${servicesFor(item, index)}`
     ));
   const heading = sameSchedule
     ? `${items.length} xe, ${details[0].start.date} ${details[0].start.time} đến ${details[0].end.date} ${details[0].end.time}:`
     : `${items.length} chỗ:`;
-  return `${heading}\n${lines.join('\n')}${serviceList ? `\n${serviceList.trim()}` : ''}\nTổng ${Number(preview.total).toLocaleString('vi-VN')}đ. `
+  return `${heading}\n${lines.join('\n')}\nTổng ${Number(preview.total).toLocaleString('vi-VN')}đ. `
     + (Number(preview.walletBalance) < Number(preview.total)
       ? 'Ví chưa đủ tiền. Vui lòng nạp thêm.'
       : `Xác nhận đặt ${items.length} chỗ?`)

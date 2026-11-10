@@ -4,12 +4,16 @@ import { AlertCircle, Bot, CalendarDays, CheckCircle2, Loader2, MapPin, Mic, Mic
 import { QRCodeSVG } from 'qrcode.react';
 import ParkingMapViewer from '../ParkingMapViewer';
 import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
+import AiChatHistorySidebar from './AiChatHistorySidebar';
+import './AiBookingAssistant.css';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import {
   completeAiBookingSession,
   createAiBookingSession,
   discardAiBookingSession,
   getLatestAiBookingSession,
+  getAiBookingSession, listAiBookingSessions, renameAiBookingSession, deleteAiBookingHistory,
+  localizeAiBookingReply, transcribeAiBookingVoice,
   interpretAiBooking,
   updateAiBookingSession,
 } from '../../services/aiBookingService';
@@ -25,15 +29,15 @@ import { getServices } from '../../services/extraServiceApi';
 import { addVehicle, deleteVehicle, updateVehicle } from '../../services/vehicleService';
 import { checkAiAvailability, confirmAiBooking, confirmAiExistingAction, findAiActionBookings, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from '../../utils/aiBookingFlow';
 import {
-  createAiBookingVoiceSession,
   createAiBookingSpeaker,
   createConciseAiBookingSpeech,
-  resolveKnownVehiclePlateTranscript,
 } from '../../utils/aiBookingVoice';
-import { applyBookingDraftField, applyMapSlotSelectionToDraft, applySingleVehicleSelectionToDraft, applySlotSuggestionToDraft, bookingPreviewSummary, bookingSuccessSummary, isUnchangedBookingContinuation, isUnclearAiFailure, resolveContextualVehicleReply, routeAssistantActionReply, routeBookingReply, vipPlatePrompt, isVipInquiry, isVipDecline } from '../../utils/aiBookingConversation';
+import { createAutoLanguageVoiceSession } from '../../utils/aiBookingAutoVoice';
+import { createBookingTurnQueue, mayConfirmQueuedBooking } from '../../utils/aiBookingTurnQueue';
+import { applyBookingDraftField, applyMapSlotSelectionToDraft, applySingleVehicleSelectionToDraft, applySlotSuggestionToDraft, bookingPreviewSummary, bookingSuccessSummary, isUnchangedBookingContinuation, isUnclearAiFailure, resolveContextualVehicleReply, routeAssistantActionReply, routeBookingReply, vipPlatePrompt, isVipDecline } from '../../utils/aiBookingConversation';
 import VipPackageModal from './VipPackageModal';
-import { localizeAiBookingMessage } from '../../utils/aiBookingMessages';
-import { detectRequestedConversationLanguage, detectSelectedLanguageMismatch } from '../../utils/aiBookingLanguage';
+import { localizeAiBookingMessage, needsBookingReplyTranslation } from '../../utils/aiBookingMessages';
+import { detectRequestedConversationLanguage, detectBookingInputLanguage, isLanguageOnlyRequest } from '../../utils/aiBookingLanguage';
 import { clearPendingBookingPayment, readPendingBookingPayment, writePendingBookingPayment } from '../../utils/pendingBookingPayment';
 import {
   BOOKING_TIME_STEP_MINUTES,
@@ -192,15 +196,16 @@ const withoutPendingSlotSuggestion = (value = {}) => {
 };
 
 export default function AiBookingPanel({
+  initialLanguage = 'en',
   vehicles = [], onSwitchToManual, onVehiclesChanged,
   mapFloors = [], mapFloorId = null, onMapFloorSelect,
   mapActiveSessions = [], mapDbSlots = [], mapActiveHolds = [],
 }) {
   const [prompt, setPrompt] = useState('');
-  const [language, setLanguage] = useState('en');
-  const [draft, setDraft] = useState({});
+  const [language, setLanguage] = useState(initialLanguage);
+  const [draft, setDraft] = useState({ __language: initialLanguage, __languageLocked: false });
   const [intent, setIntent] = useState('UNKNOWN');
-  const [messages, setMessages] = useState([{ ...englishWelcomeMessage }]);
+  const [messages, setMessages] = useState([{ ...(initialLanguage === 'vi' ? welcomeMessage : englishWelcomeMessage) }]);
   const [preview, setPreview] = useState(null);
   const [conflicts, setConflicts] = useState([]);
   const [availability, setAvailability] = useState(null);
@@ -211,6 +216,7 @@ export default function AiBookingPanel({
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceTranscribing, setVoiceTranscribing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(null);
   const [policyItems, setPolicyItems] = useState([]);
@@ -224,6 +230,17 @@ export default function AiBookingPanel({
   const [resumeCandidate, setResumeCandidate] = useState(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sessionSaving, setSessionSaving] = useState('idle');
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [selectedHistoryId, setSelectedHistoryId] = useState('');
+  const [historyReadOnly, setHistoryReadOnly] = useState(false);
+  const [replyPending, setReplyPending] = useState(false);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const [topUpData, setTopUpData] = useState(() => readPendingBookingPayment('quick'));
   const [showTopUpModal, setShowTopUpModal] = useState(() => Boolean(readPendingBookingPayment('quick')));
   const [topUpLoading, setTopUpLoading] = useState(false);
@@ -237,7 +254,7 @@ export default function AiBookingPanel({
   const servicesRef = useRef([]);
   const voiceSessionRef = useRef(null);
   const speakerRef = useRef(null);
-  const draftRef = useRef({});
+  const draftRef = useRef({ __language: initialLanguage, __languageLocked: false });
   const previewRef = useRef(null);
   const vehiclesRef = useRef(vehicles);
   const speechPendingRef = useRef(false);
@@ -253,7 +270,7 @@ export default function AiBookingPanel({
   const confirmationKeyRef = useRef(null);
   const busyRef = useRef(false);
   const conversationRef = useRef(null);
-  const messagesRef = useRef([{ ...englishWelcomeMessage }]);
+  const messagesRef = useRef([{ ...(initialLanguage === 'vi' ? welcomeMessage : englishWelcomeMessage) }]);
   const sessionIdRef = useRef('');
   const clientSessionIdRef = useRef('');
   const hasStartedRef = useRef(false);
@@ -263,7 +280,17 @@ export default function AiBookingPanel({
   const ownerKeyRef = useRef(getAiBookingOwnerKey());
   const confirmCreationRef = useRef(null);
   const mapRequestRef = useRef(0);
-  const languageRef = useRef('en');
+  const languageRef = useRef(initialLanguage);
+  const navigatingRef = useRef(false);
+  const replyQueueRef = useRef(Promise.resolve());
+  const pendingRepliesRef = useRef(0);
+  const conversationEpochRef = useRef(0);
+  const resumeConversationRef = useRef(null);
+  const turnQueueRef = useRef(null);
+  const submittedLanguageRef = useRef(null);
+  const [queuedTurns, setQueuedTurns] = useState(0);
+  const [turnProcessing, setTurnProcessing] = useState(false);
+  const refreshHistory = () => { setHistoryPage(1); setHistoryVersion((value) => value + 1); };
 
   const requestedVehicleTotal = Math.max(
     Number(draft.requestedVehicleCount || 0),
@@ -368,8 +395,8 @@ export default function AiBookingPanel({
     const next = value === 'en' ? 'en' : 'vi';
     languageRef.current = next;
     setLanguage(next);
-    if (draftRef.current?.__language !== next || draftRef.current?.__languageLocked !== true) {
-      const nextDraft = { ...draftRef.current, __language: next, __languageLocked: true };
+    if (draftRef.current?.__language !== next || draftRef.current?.__languageLocked !== false) {
+      const nextDraft = { ...draftRef.current, __language: next, __languageLocked: false };
       draftRef.current = nextDraft;
       setDraft(nextDraft);
     }
@@ -449,6 +476,7 @@ export default function AiBookingPanel({
   const appendMessage = (message) => {
     const next = [...messagesRef.current, {
       ...message,
+      language: message.language || languageRef.current,
       content: message.content ?? message.text ?? '',
       createdAt: message.createdAt || new Date().toISOString(),
     }];
@@ -465,8 +493,8 @@ export default function AiBookingPanel({
   const buildSessionSnapshot = (status = 'ACTIVE') => createAiBookingSnapshot({
     clientSessionId: clientSessionIdRef.current,
     sessionId: sessionIdRef.current,
-    messages: messagesRef.current,
-    bookingDraft: { ...draftRef.current, __confirmationKey: confirmationKeyRef.current },
+    messages: messagesRef.current.filter((message) => !message.pending),
+    bookingDraft: { ...draftRef.current, __language: languageRef.current, __languageLocked: false, __confirmationKey: confirmationKeyRef.current },
     intent: intentRef.current,
     phase: phaseRef.current,
     preview: previewRef.current,
@@ -487,6 +515,8 @@ export default function AiBookingPanel({
       }
       const saved = normalizeAiBookingSession(response.data.data);
       sessionIdRef.current = saved.sessionId;
+      setSelectedHistoryId(saved.sessionId);
+      refreshHistory();
       const localSnapshot = { ...snapshot, sessionId: saved.sessionId, updatedAt: saved.updatedAt || snapshot.updatedAt };
       if (lastSnapshotRef.current?.status !== 'COMPLETED') {
         lastSnapshotRef.current = localSnapshot;
@@ -499,20 +529,20 @@ export default function AiBookingPanel({
   };
   useEffect(() => { snapshotSaverRef.current = saveSnapshot; });
   const resumeVoiceIfReady = () => {
-    if (!busyRef.current && !handlingInputRef.current && !speechPendingRef.current && !speakingRef.current) {
+    if (!turnQueueRef.current?.busy && !busyRef.current && !handlingInputRef.current && !speechPendingRef.current && !speakingRef.current && pendingRepliesRef.current === 0) {
       voiceSessionRef.current?.resume();
     }
   };
-  const speakAssistantText = (text) => {
+  const speakAssistantText = (text, replyLanguage = languageRef.current) => {
     const fullText = String(text || '').trim();
-    if (!fullText || !voiceEnabledRef.current || !speakerRef.current) {
+    if (!fullText || turnQueueRef.current?.pendingCount > 0 || !voiceEnabledRef.current || !speakerRef.current) {
       resumeVoiceIfReady();
       return;
     }
     speechPendingRef.current = true;
     speakerRef.current.speak(
-      createConciseAiBookingSpeech(fullText, languageRef.current),
-      languageRef.current,
+      createConciseAiBookingSpeech(fullText, replyLanguage),
+      replyLanguage,
     );
   };
 
@@ -524,23 +554,21 @@ export default function AiBookingPanel({
         voiceSessionRef.current?.pause();
       },
       onEnd: () => {
-        speakingRef.current = false; speechPendingRef.current = false;
+        speakingRef.current = false; speechPendingRef.current = pendingRepliesRef.current > 0;
         setSpeaking(false); resumeVoiceIfReady();
       },
       onError: () => {
-        speakingRef.current = false; speechPendingRef.current = false;
+        speakingRef.current = false; speechPendingRef.current = pendingRepliesRef.current > 0;
         setSpeaking(false); resumeVoiceIfReady();
       },
     });
-    voiceSessionRef.current = createAiBookingVoiceSession(window, {
-      onTranscript: (text) => {
-        const existingPlates = Array.isArray(draftRef.current?.licensePlates)
-          ? draftRef.current.licensePlates : [];
-        const normalized = expectsLicensePlateInput()
-          ? resolveKnownVehiclePlateTranscript(text, vehiclesRef.current, existingPlates)
-          : text;
-        voiceHandlersRef.current.submitMessage?.(normalized);
+    voiceSessionRef.current = createAutoLanguageVoiceSession(window, {
+      transcribe: transcribeAiBookingVoice,
+      onTranscribingChange: setVoiceTranscribing,
+      onTranscript: (text, recognizedLanguage) => {
+        voiceHandlersRef.current.submitMessage?.(text, recognizedLanguage);
       },
+      onClarification: () => voiceHandlersRef.current.clarifySpeech?.(),
       onError: (message) => {
         setVoiceActive(voiceSessionRef.current?.isActive() || false);
         voiceHandlersRef.current.reportError?.(message);
@@ -556,6 +584,7 @@ export default function AiBookingPanel({
     voiceSessionRef.current?.setLanguage(languageRef.current);
     voiceSessionRef.current?.setExpectLicensePlate(expectsLicensePlateInput());
     return () => {
+      conversationEpochRef.current += 1;
       requestRef.current += 1;
       voiceSessionRef.current?.stop();
       speakerRef.current?.cancel();
@@ -589,6 +618,24 @@ export default function AiBookingPanel({
 
   useEffect(() => {
     let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setHistoryLoading(true);
+      try {
+        const response = await listAiBookingSessions({ search: historySearch, page: historyPage });
+        if (cancelled) return;
+        if (!response.ok) throw new Error(languageRef.current === 'vi' ? 'Không thể tải lịch sử. Vui lòng thử lại sau.' : 'Unable to load chat history. Please try again.');
+        const data = response.data?.data || {};
+        setHistoryItems((current) => historyPage === 1 ? data.items || [] : [...new Map([...current, ...(data.items || [])].map((item) => [item.sessionId, item])).values()]);
+        setHistoryHasMore(Boolean(data.hasMore));
+        setHistoryError('');
+      } catch (caught) { if (!cancelled) setHistoryError(caught.message); }
+      finally { if (!cancelled) setHistoryLoading(false); }
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [initialLanguage, historySearch, historyPage, historyVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
     const loadSession = async () => {
       const ownerKey = ownerKeyRef.current;
       if (!ownerKey) {
@@ -602,7 +649,7 @@ export default function AiBookingPanel({
           ? await completeAiBookingSession(pendingTerminal.sessionId, pendingTerminal)
           : await discardAiBookingSession(pendingTerminal.sessionId);
         if (synced.ok || synced.status === 404) {
-          clearLocalAiBookingSession();
+          clearLocalAiBookingSession(undefined, ownerKey);
         }
       }
       const response = await getLatestAiBookingSession();
@@ -624,8 +671,15 @@ export default function AiBookingPanel({
           });
         }
       }
-      const candidate = pendingTerminal ? null : chooseNewestAiBookingSession(backend, normalizedLocal);
+      const candidate = pendingTerminal?.status === 'CANCELLED' ? null
+        : chooseNewestAiBookingSession(backend, normalizedLocal || (pendingTerminal?.status === 'COMPLETED' ? normalizeAiBookingSession(pendingTerminal) : null));
       setResumeCandidate(candidate && !['COMPLETED', 'CANCELLED'].includes(candidate.status) ? candidate : null);
+      if (candidate?.messages?.length && candidate.status !== 'CANCELLED') {
+        replaceMessages(normalizeAiBookingSession(candidate).messages);
+        setSelectedHistoryId(candidate.sessionId);
+        setHistoryReadOnly(!['DRAFT', 'ACTIVE'].includes(candidate.status));
+        if (['DRAFT', 'ACTIVE'].includes(candidate.status)) await resumeConversationRef.current?.(candidate);
+      }
       setSessionLoading(false);
       if (!response.ok && normalizedLocal) setSessionSaving('offline');
     };
@@ -634,26 +688,52 @@ export default function AiBookingPanel({
   }, []);
 
   useEffect(() => {
-    if (!hasStarted || !hasStartedRef.current) return;
+    if (!hasStarted || !hasStartedRef.current || navigatingRef.current || historyReadOnly || sessionLoading || replyPending) return;
     snapshotSaverRef.current?.(buildSessionSnapshot());
-  }, [messages, draft, intent, phase, preview, hasStarted]);
+  }, [messages, draft, intent, phase, preview, hasStarted, historyReadOnly, sessionLoading, replyPending]);
 
   useEffect(() => {
     const conversation = conversationRef.current;
-    if (conversation) conversation.scrollTop = conversation.scrollHeight;
-  }, [messages, busy, error]);
+    const frame = window.requestAnimationFrame(() => { if (conversation) conversation.scrollTop = conversation.scrollHeight; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, busy, error, historyCollapsed, replyPending, voiceTranscribing]);
 
-  const say = (text, { speak = true, responseIntent = intentRef.current } = {}) => {
+  const say = (text, { speak = true, responseIntent = intentRef.current, services } = {}) => {
+    const replyLanguage = languageRef.current;
+    const epoch = conversationEpochRef.current;
     const localizedText = localizeAiBookingMessage(text, languageRef.current);
-    appendMessage({ role: 'assistant', text: localizedText, speak, intent: responseIntent, state: phaseRef.current });
-    if (speak) speakAssistantText(localizedText);
-    else resumeVoiceIfReady();
+    if (!needsBookingReplyTranslation(localizedText, replyLanguage)
+      && !(replyLanguage === 'vi' && needsBookingReplyTranslation(text, replyLanguage))) {
+      appendMessage({ role: 'assistant', text: localizedText, speak, services, language: replyLanguage, intent: responseIntent, state: phaseRef.current });
+      if (speak) speakAssistantText(localizedText, replyLanguage); else resumeVoiceIfReady();
+      return Promise.resolve(localizedText);
+    }
+    const id = newClientSessionId();
+    appendMessage({ id, role: 'assistant', text: '…', pending: true, services, language: replyLanguage, intent: responseIntent, state: phaseRef.current });
+    pendingRepliesRef.current++; setReplyPending(true); speechPendingRef.current = true;
+    const task = async () => {
+      let output = replyLanguage === 'vi' ? 'Chưa thể tải câu trả lời bằng tiếng Việt. Vui lòng thử lại.' : 'Unable to display this reply in English. Please try again.';
+      try {
+        const response = await localizeAiBookingReply(text, replyLanguage);
+        if (response.ok && response.data?.data?.text) output = response.data.data.text;
+      } catch { /* Keep a clear fallback in the user's language. */ }
+      if (epoch !== conversationEpochRef.current) return output;
+      replaceMessages(messagesRef.current.map((message) => message.id === id ? { ...message, text: output, content: output, pending: false } : message));
+      pendingRepliesRef.current--; setReplyPending(pendingRepliesRef.current > 0);
+      speechPendingRef.current = pendingRepliesRef.current > 0;
+      if (speak) speakAssistantText(output, replyLanguage); else resumeVoiceIfReady();
+      return output;
+    };
+    replyQueueRef.current = replyQueueRef.current.catch(() => null).then(task);
+    return replyQueueRef.current;
   };
   const reportError = (message) => {
     const text = localizeAiBookingMessage(message || 'Đã xảy ra lỗi. Vui lòng thử lại.', languageRef.current);
-    setError(text);
+    const epoch = conversationEpochRef.current;
+    setError(needsBookingReplyTranslation(text, languageRef.current)
+      ? (languageRef.current === 'vi' ? 'Không thể hoàn tất yêu cầu. Vui lòng thử lại.' : 'Unable to complete this request. Please try again.') : text);
     setConversationPhase('ERROR');
-    say(text);
+    say(text).then((translated) => { if (epoch === conversationEpochRef.current) setError(translated); });
   };
   const cancelPreview = () => {
     updatePreview(null); setConflicts([]); setError('');
@@ -679,22 +759,26 @@ export default function AiBookingPanel({
     confirmationKeyRef.current = null;
   };
   const resetConversation = ({ keepMessages = false, keepLocal = false } = {}) => {
+    if (!keepMessages) { turnQueueRef.current?.clear(); submittedLanguageRef.current = null; }
+    conversationEpochRef.current++; pendingRepliesRef.current = 0; setReplyPending(false);
     requestRef.current += 1;
     clearResult();
     updateDraft({});
-    updateLanguage('en');
+    updateLanguage(languageRef.current);
     intentRef.current = 'UNKNOWN';
     setIntent('UNKNOWN');
     updatePreview(null);
     setConversationPhase('IDLE');
-    if (!keepMessages) replaceMessages([{ ...englishWelcomeMessage, createdAt: new Date().toISOString() }]);
+    if (!keepMessages) replaceMessages([{ ...(languageRef.current === 'vi' ? welcomeMessage : englishWelcomeMessage), createdAt: new Date().toISOString() }]);
     sessionIdRef.current = '';
     clientSessionIdRef.current = '';
     hasStartedRef.current = false;
     setHasStarted(false);
     setResumeCandidate(null);
     setSessionSaving('idle');
-    if (!keepLocal) clearLocalAiBookingSession();
+    setSelectedHistoryId('');
+    setHistoryReadOnly(false);
+    if (!keepLocal) clearLocalAiBookingSession(undefined, ownerKeyRef.current);
   };
   const discardCurrentSession = async ({ keepMessages = false, candidateId = '' } = {}) => {
     setSessionSaving('saving');
@@ -707,43 +791,75 @@ export default function AiBookingPanel({
     resetConversation({ keepMessages, keepLocal: Boolean(pendingDiscard) });
     if (pendingDiscard) saveLocalAiBookingSession(ownerKeyRef.current, pendingDiscard);
   };
-  const switchLanguage = async (value) => {
-    const next = value === 'en' ? 'en' : 'vi';
-    if (next === languageRef.current || sessionLoading || busyRef.current) return;
-
-    voiceSessionRef.current?.stop();
-    speakerRef.current?.cancel();
-    speechPendingRef.current = false;
-    speakingRef.current = false;
-    setListening(false);
-    setVoiceActive(false);
-    setSpeaking(false);
-    setPrompt('');
-
-    const hasActiveConversation = hasStartedRef.current
-      || messagesRef.current.length > 1
-      || Boolean(sessionIdRef.current)
-      || Boolean(resumeCandidate);
-    if (!hasActiveConversation) {
-      updateLanguage(next);
-      return;
-    }
-
-    setSessionLoading(true);
-    try {
-      await discardCurrentSession({ candidateId: resumeCandidate?.sessionId || '' });
-      updateLanguage(next);
-    } finally {
-      setSessionLoading(false);
-    }
+  const stopChatAudio = () => {
+    voiceSessionRef.current?.stop(); speakerRef.current?.cancel();
+    speechPendingRef.current = false; speakingRef.current = false;
+    setVoiceActive(false); setListening(false); setSpeaking(false);
+  };
+  const saveBeforeNavigation = async () => {
+    await turnQueueRef.current?.whenIdle();
+    await replyQueueRef.current.catch(() => null);
+    if (hasStartedRef.current && !historyReadOnly) {
+      const saved = await saveSnapshot();
+      if (!saved) throw new Error(languageRef.current === 'vi' ? 'Chưa lưu được cuộc trò chuyện hiện tại. Vui lòng kiểm tra kết nối và thử lại.' : 'Your current conversation could not be saved. Please check your connection and try again.');
+    } else await sessionQueueRef.current.catch(() => null);
   };
   const handleNewBooking = async () => {
-    setSessionLoading(true);
-    await discardCurrentSession({ candidateId: resumeCandidate?.sessionId || '' });
-    setSessionLoading(false);
+    if (navigatingRef.current || busyRef.current || topUpLoading || showTopUpModal) return;
+    navigatingRef.current = true; setSessionLoading(true); stopChatAudio();
+    try {
+      await saveBeforeNavigation();
+      resetConversation(); setPrompt('');
+      beginSession();
+      await saveSnapshot();
+      refreshHistory();
+    } catch (caught) { setHistoryError(caught.message); }
+    finally { navigatingRef.current = false; setSessionLoading(false); }
   };
-  const completeCurrentSession = (completedIntent = intentRef.current) => {
+  const openHistoryChat = async (item) => {
+    if (navigatingRef.current || item.sessionId === selectedHistoryId || busyRef.current || topUpLoading || showTopUpModal) return;
+    navigatingRef.current = true; setSessionLoading(true); stopChatAudio();
+    try {
+      await saveBeforeNavigation();
+      const response = await getAiBookingSession(item.sessionId);
+      if (!response.ok || !response.data?.data) throw new Error(languageRef.current === 'vi' ? 'Không thể mở cuộc trò chuyện.' : 'Unable to open this conversation.');
+      const restored = normalizeAiBookingSession(response.data.data);
+      resetConversation(); setPrompt('');
+      replaceMessages(restored.messages); setSelectedHistoryId(restored.sessionId);
+      if (['DRAFT', 'ACTIVE'].includes(restored.status)) await continueBooking(restored);
+      else { setHistoryReadOnly(true); setResumeCandidate(null); }
+      setHistoryError('');
+    } catch (caught) { setHistoryError(caught.message); }
+    finally { navigatingRef.current = false; setSessionLoading(false); }
+  };
+  const renameHistoryChat = async (item, title) => {
+    const response = await renameAiBookingSession(item.sessionId, title);
+    if (!response.ok) throw new Error(languageRef.current === 'vi' ? 'Không thể đổi tên. Vui lòng thử lại.' : 'Unable to rename this conversation. Please try again.');
+    refreshHistory();
+  };
+  const deleteHistoryChat = async (item) => {
+    navigatingRef.current = true; setSessionLoading(true);
+    try {
+      await sessionQueueRef.current.catch(() => null);
+      const response = await deleteAiBookingHistory(item.sessionId);
+      if (!response.ok && response.status !== 404) throw new Error(languageRef.current === 'vi' ? 'Không thể xóa. Vui lòng thử lại.' : 'Unable to delete this conversation. Please try again.');
+      const local = readLocalAiBookingSession(ownerKeyRef.current);
+      if (local?.sessionId === item.sessionId) clearLocalAiBookingSession(undefined, ownerKeyRef.current);
+      if (selectedHistoryId === item.sessionId || sessionIdRef.current === item.sessionId) {
+        stopChatAudio(); resetConversation(); setPrompt('');
+      }
+      setHistoryItems((current) => current.filter((entry) => entry.sessionId !== item.sessionId));
+      refreshHistory();
+    } finally { navigatingRef.current = false; setSessionLoading(false); }
+  };
+  const completeCurrentSession = async (completedIntent = intentRef.current) => {
+    const epoch = conversationEpochRef.current;
+    hasStartedRef.current = false;
+    setHasStarted(false);
+    await replyQueueRef.current.catch(() => null);
+    if (epoch !== conversationEpochRef.current) return;
     const completedSnapshot = { ...buildSessionSnapshot('COMPLETED'), intent: completedIntent };
+    setHistoryReadOnly(true);
     lastSnapshotRef.current = completedSnapshot;
     saveLocalAiBookingSession(ownerKeyRef.current, completedSnapshot);
     hasStartedRef.current = false;
@@ -757,26 +873,26 @@ export default function AiBookingPanel({
       }
       const response = await completeAiBookingSession(id, completedSnapshot);
       if (response.ok) {
-        clearLocalAiBookingSession();
+        clearLocalAiBookingSession(undefined, ownerKeyRef.current);
         setSessionSaving('saved');
+        setHistoryReadOnly(true);
+        refreshHistory();
         return response.data?.data;
       }
       setSessionSaving('offline');
       return null;
     });
+    return sessionQueueRef.current;
   };
-  const continueBooking = async () => {
-    const restored = normalizeAiBookingSession(resumeCandidate);
+  const continueBooking = async (candidate) => {
+    const restored = normalizeAiBookingSession(candidate?.bookingDraft ? candidate : resumeCandidate);
     if (!restored || restored.status === 'EXPIRED') return;
-    const restoredLanguage = restored.bookingDraft?.__languageLocked === true
-      && restored.bookingDraft?.__language === 'vi' ? 'vi' : 'en';
+    setHistoryReadOnly(false);
+    setSelectedHistoryId(restored.sessionId);
+    const restoredLanguage = restored.bookingDraft?.__language === 'vi' ? 'vi' : 'en';
     const restoredMessages = restored.messages?.length
-      ? restored.messages.map((message) => (
-        restoredLanguage === 'en' && message.role === 'assistant'
-          ? { ...message, text: localizeAiBookingMessage(message.text ?? message.content, 'en'), content: localizeAiBookingMessage(message.content ?? message.text, 'en') }
-          : message
-      ))
-      : [{ ...englishWelcomeMessage, createdAt: new Date().toISOString() }];
+      ? restored.messages
+      : [{ ...(restoredLanguage === 'en' ? englishWelcomeMessage : welcomeMessage), createdAt: new Date().toISOString() }];
     replaceMessages(restoredMessages);
     updateDraft(restored.bookingDraft || {});
     updateLanguage(restoredLanguage);
@@ -836,6 +952,7 @@ export default function AiBookingPanel({
       resumeVoiceIfReady();
     }
   };
+  useEffect(() => { resumeConversationRef.current = continueBooking; });
   const askForAnotherPlate = (plate) => {
     const blocked = String(plate || draftRef.current.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
     updatePreview(null); setConflicts([]); setError(''); confirmationPendingRef.current = false;
@@ -974,44 +1091,48 @@ export default function AiBookingPanel({
     }
   };
 
-  const submitMessage = async (spokenText) => {
+  const confirmationContext = () => ({
+    ready: !busyRef.current && pendingRepliesRef.current === 0 && (confirmationPendingRef.current || Boolean(pendingAssistantActionRef.current)),
+    key: confirmationKeyRef.current || (pendingAssistantActionRef.current
+      ? JSON.stringify(pendingAssistantActionRef.current)
+      : target ? JSON.stringify({ target, edit, actionQuote, intent: intentRef.current }) : ''),
+  });
+  const submitMessage = (spokenText, spokenLanguage) => {
     const displayedText = String(spokenText ?? prompt).trim();
-    if (!displayedText || busyRef.current || sessionLoading) return;
-    const text = resolveContextualVehicleReply(
-      displayedText, vehiclesRef.current, draftRef.current, languageRef.current,
-    );
+    if (!displayedText || sessionLoading || historyReadOnly || navigatingRef.current) return;
+    const detected = detectBookingInputLanguage(displayedText, submittedLanguageRef.current || languageRef.current);
     const requestedLanguage = detectRequestedConversationLanguage(displayedText);
-    if (requestedLanguage) {
-      setPrompt('');
-      if (requestedLanguage === languageRef.current) {
-        appendMessage({ role: 'user', text: displayedText });
-        say(requestedLanguage === 'en'
-          ? 'English is already selected. Please continue in English.'
-          : 'Tiếng Việt đang được chọn. Bạn hãy tiếp tục bằng tiếng Việt.');
-        return;
-      }
-      await switchLanguage(requestedLanguage);
-      say(requestedLanguage === 'en'
-        ? 'Switched to English. Please continue in English.'
-        : 'Đã chuyển sang tiếng Việt. Bạn hãy tiếp tục bằng tiếng Việt.');
+    const turnLanguage = requestedLanguage || (detected.confidence > 0.55 && ['en', 'vi'].includes(spokenLanguage) ? spokenLanguage : detected.language);
+    submittedLanguageRef.current = turnLanguage;
+    const id = newClientSessionId();
+    appendMessage({ id, role: 'user', text: displayedText, language: turnLanguage });
+    setPrompt('');
+    const confirmation = confirmationContext();
+    confirmation.ready = confirmation.ready && !turnQueueRef.current?.busy;
+    const queued = turnQueueRef.current?.enqueue({ id, text: displayedText, language: turnLanguage, confirmation });
+    voiceSessionRef.current?.pause(); speakerRef.current?.cancel();
+    speechPendingRef.current = pendingRepliesRef.current > 0; speakingRef.current = false; setSpeaking(false);
+    return queued;
+  };
+  const processMessage = async (turn) => {
+    const displayedText = turn.text;
+    const requestedLanguage = detectRequestedConversationLanguage(displayedText);
+    updateLanguage(turn.language);
+    if (historyReadOnly) {
+      await say(turn.language === 'vi' ? 'Cuộc trò chuyện này đã hoàn tất. Vui lòng tạo chat mới để tiếp tục.' : 'This conversation is complete. Please start a new chat to continue.');
       return;
     }
     beginSession();
+    const text = resolveContextualVehicleReply(
+      displayedText, vehiclesRef.current, draftRef.current, languageRef.current,
+    );
+    if (requestedLanguage && isLanguageOnlyRequest(displayedText)) {
+      say(requestedLanguage === 'en' ? 'I will reply in English.' : '\u004d\u00ecnh s\u1ebd tr\u1ea3 l\u1eddi b\u1eb1ng ti\u1ebfng Vi\u1ec7t.');
+      return;
+    }
     handlingInputRef.current = true;
     voiceSessionRef.current?.pause();
     speakerRef.current?.cancel();
-    const languageMismatch = detectSelectedLanguageMismatch(displayedText, languageRef.current);
-    if (languageMismatch) {
-      setPrompt('');
-      appendMessage({ role: 'user', text: displayedText });
-      if (phaseRef.current === 'LISTENING') setConversationPhase(confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : 'IDLE');
-      handlingInputRef.current = false;
-      say(languageRef.current === 'en'
-        ? 'English mode is selected. Please enter or speak your request in English, or switch to VI to use Vietnamese.'
-        : 'Bạn đang chọn chế độ tiếng Việt. Vui lòng nhập hoặc nói yêu cầu bằng tiếng Việt, hoặc chuyển sang EN để dùng tiếng Anh.');
-      resumeVoiceIfReady();
-      return;
-    }
     const route = pendingAssistantActionRef.current
       ? routeAssistantActionReply(text)
       : routeBookingReply(
@@ -1020,12 +1141,15 @@ export default function AiBookingPanel({
         { hasSlotSuggestion: Boolean(draftRef.current.pendingSlotSuggestion) },
       );
     if (route !== 'interpret') {
-      setPrompt('');
-      appendMessage({ role: 'user', text: displayedText });
       if (phaseRef.current === 'LISTENING') setConversationPhase(confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : 'IDLE');
       if (route === 'confirm') {
         handlingInputRef.current = false;
-        if (pendingAssistantActionRef.current) await confirmAssistantAction();
+        if (!mayConfirmQueuedBooking(turn.confirmation, confirmationContext())) {
+          await say(languageRef.current === 'en'
+            ? 'Please review the latest details and confirm again. Your earlier confirmation was not applied because the request was still processing or has changed.'
+            : 'Vui lòng xem lại thông tin mới nhất rồi xác nhận lại. Xác nhận trước đó chưa được áp dụng vì yêu cầu vẫn đang xử lý hoặc đã thay đổi.');
+        }
+        else if (pendingAssistantActionRef.current) await confirmAssistantAction();
         else if (target && ['CANCEL_BOOKING', 'MODIFY_BOOKING'].includes(intentRef.current)) await confirmExistingAction();
         else await confirmCreation();
       }
@@ -1103,12 +1227,7 @@ export default function AiBookingPanel({
             ? `VALO offers the following vehicle care services:\n${serviceLines}\n\nYou can click on any service below or type its name (e.g. “Car wash”) to add it to your booking.`
             : `VALO hiện có các dịch vụ chăm sóc xe sau:\n${serviceLines}\n\nBạn có thể nhấn trực tiếp vào các nút dịch vụ bên dưới hoặc nói/nhắn tên dịch vụ (ví dụ: “Rửa xe”) để thêm vào đơn đặt chỗ.`;
 
-          appendMessage({
-            role: 'assistant',
-            text: replyText,
-            services: list,
-          });
-          speakAssistantText(replyText);
+          say(replyText, { services: list });
         } else {
           say(languageRef.current === 'en'
             ? 'I cannot load the currently available services. Please try again shortly.'
@@ -1190,7 +1309,7 @@ export default function AiBookingPanel({
       pendingAssistantActionRef.current = previousPendingAction;
       setPendingAssistantAction(previousPendingAction);
       setSuccess(previousSuccess);
-      updateDraft(previousDraft);
+      updateDraft({ ...previousDraft, __language: languageRef.current, __languageLocked: false });
       updatePreview(previousPreview);
       setConflicts(previousConflicts);
       setAvailability(previousAvailability);
@@ -1206,19 +1325,13 @@ export default function AiBookingPanel({
     busyRef.current = true;
     handlingInputRef.current = false;
     const request = ++requestRef.current;
-    setPrompt('');
     clearResult();
     setConversationPhase('PROCESSING');
-    appendMessage({ role: 'user', text: displayedText });
     setBusy(true);
     try {
       const directLookup = detectDirectParkingLookup(text);
-      const lastBookingConflict = draftRef.current.assistantContext?.lastBookingConflict;
-      const lookupPlate = compactLicensePlate(directLookup?.licensePlate);
-      const conflictPlate = compactLicensePlate(lastBookingConflict?.licensePlate);
-      const needsConflictAwareLookup = directLookup?.intent === 'CHECK_BOOKING_STATUS'
-        && lastBookingConflict && (!lookupPlate || lookupPlate === conflictPlate);
-      if (directLookup && !needsConflictAwareLookup) {
+      // Booking lookups use the server's account/context-aware continuation.
+      if (directLookup && directLookup.intent !== 'CHECK_BOOKING_STATUS') {
         const response = directLookup.intent === 'CHECK_BOOKING_STATUS'
           ? await getMyBookings()
           : directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS'
@@ -1234,8 +1347,13 @@ export default function AiBookingPanel({
         if (request !== requestRef.current) return;
         const localizedMessage = localizeAiBookingMessage(message, languageRef.current);
         restorePreviousConversationState();
-        setAssistantInfo({ intent: directLookup.intent, intents: [directLookup.intent], message: localizedMessage });
-        say(localizedMessage);
+        updateDraft((currentDraft) => ({ ...currentDraft, assistantContext: {
+          ...(currentDraft.assistantContext || {}),
+          pendingLookupIntent: directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS' && !directLookup.licensePlate ? directLookup.intent : null,
+        } }));
+        const reply = await say(localizedMessage);
+        if (request !== requestRef.current) return;
+        setAssistantInfo({ intent: directLookup.intent, intents: [directLookup.intent], message: reply });
         return;
       }
       const current = nowInVietnam();
@@ -1245,7 +1363,7 @@ export default function AiBookingPanel({
           ...draftRef.current,
           __intent: intentRef.current,
           __language: languageRef.current,
-          __languageLocked: true,
+          __languageLocked: false,
         },
         current.today,
         current.currentTime,
@@ -1257,11 +1375,22 @@ export default function AiBookingPanel({
         throw new Error(result.data?.message || 'AI chưa xử lý được yêu cầu.');
       }
       if (request !== requestRef.current) return;
+      if (result.data?.data?.validationError || result.data?.data?.unrecognized) {
+        restorePreviousConversationState();
+        if (result.data.data.validationError) {
+          updatePreview(null);
+          confirmationPendingRef.current = false;
+          confirmationKeyRef.current = null;
+          setConversationPhase('IDLE');
+        }
+        say(result.data.data.clarification || unclearRequestReply(languageRef.current));
+        return;
+      }
       const nextIntent = result.data?.data?.intent || 'UNKNOWN';
       const nextDraft = {
         ...(result.data?.data?.draft || {}),
         __language: languageRef.current,
-        __languageLocked: true,
+        __languageLocked: false,
         blockedVipPlate: draftRef.current.blockedVipPlate || '',
       };
       if (nextIntent === 'MODIFY_BOOKING' && requestsUnsupportedBookingEdit(text)) {
@@ -1303,7 +1432,7 @@ export default function AiBookingPanel({
           intents: result.data?.data?.intents || [nextIntent],
           message: localizedAssistantMessage,
         });
-        if (!isVipDecline(text) && (assistantResult.showVipModal || isVipInquiry(text))) {
+        if (!isVipDecline(text) && assistantResult.showVipModal) {
           setShowVipModal(true);
         }
         if (assistantResult.pendingAction) {
@@ -1319,9 +1448,14 @@ export default function AiBookingPanel({
         attachedServices = isServiceRelated && servicesRef.current?.length ? servicesRef.current : undefined;
         if (nextIntent !== 'CREATE_BOOKING') {
           const informational = /^(?:CHECK_|GET_|VIEW_|LIST_)/.test(nextIntent);
-          if (informational) restorePreviousConversationState();
-          appendMessage({ role: 'assistant', text: localizedAssistantMessage, services: attachedServices });
-          speakAssistantText(localizedAssistantMessage);
+          if (informational) {
+            restorePreviousConversationState();
+            updateDraft((currentDraft) => ({ ...currentDraft, assistantContext: {
+              ...(currentDraft.assistantContext || {}), ...(nextDraft.assistantContext || {}),
+              pendingAction: previousPendingAction || null,
+            } }));
+          }
+          say(localizedAssistantMessage, { services: attachedServices });
           if (!informational) setConversationPhase('IDLE');
           return;
         }
@@ -1334,8 +1468,7 @@ export default function AiBookingPanel({
           setAwaitingField(nextPreview.awaitingField);
           setConversationPhase('IDLE');
           if (assistantResult) {
-            appendMessage({ role: 'assistant', text: localizedAssistantMessage, services: attachedServices });
-            speakAssistantText(localizedAssistantMessage);
+            say(localizedAssistantMessage, { services: attachedServices });
           } else {
             say(nextPreview.missing.join(' '));
           }
@@ -1360,12 +1493,7 @@ export default function AiBookingPanel({
           confirmationPendingRef.current = true;
           setConversationPhase('WAITING_CONFIRMATION');
           const summaryText = bookingPreviewSummary(nextPreview, nextDraft, languageRef.current);
-          appendMessage({
-            role: 'assistant',
-            text: summaryText,
-            services: attachedServices,
-          });
-          speakAssistantText(summaryText);
+          say(summaryText, { services: attachedServices });
         }
       } else if (nextIntent === 'CHECK_AVAILABILITY') {
         const checked = await checkAiAvailability(nextDraft, gateway);
@@ -1397,7 +1525,10 @@ export default function AiBookingPanel({
   };
 
   const refreshPreview = async () => {
-    if (busyRef.current) return;
+    if (busyRef.current || pendingRepliesRef.current > 0) return;
+    beginSession();
+    intentRef.current = 'CREATE_BOOKING';
+    setIntent('CREATE_BOOKING');
     busyRef.current = true;
     const request = ++requestRef.current;
     voiceSessionRef.current?.pause();
@@ -1575,7 +1706,7 @@ export default function AiBookingPanel({
         confirmationPendingRef.current = false;
         setConversationPhase('SUCCESS');
         say(bookingSuccessSummary(currentPreview.items, languageRef.current));
-        completeCurrentSession();
+        await completeCurrentSession();
       }
     } catch (caught) {
       if (isPolicyAcceptanceRequired(caught.responseData)) setPolicyItems(extractMissingPolicies(caught.responseData));
@@ -1661,13 +1792,13 @@ export default function AiBookingPanel({
       confirmationPendingRef.current = false;
       setConversationPhase('SUCCESS');
       say(intent === 'CANCEL_BOOKING' ? 'Booking đã được hủy.' : 'Booking đã được cập nhật.');
-      completeCurrentSession();
+      await completeCurrentSession();
     } catch (caught) { reportError(caught.message); }
     finally { busyRef.current = false; setBusy(false); resumeVoiceIfReady(); }
   };
 
   const startVoice = () => {
-    if (busyRef.current) return;
+    if (busyRef.current || pendingRepliesRef.current > 0) return;
     speakerRef.current?.cancel();
     setError('');
     const session = voiceSessionRef.current;
@@ -1754,8 +1885,35 @@ export default function AiBookingPanel({
     setMapTargetIndex((current) => Math.min(current, Math.max(plates.length - 1, 0)));
   };
   useEffect(() => {
-    voiceHandlersRef.current = { submitMessage, reportError };
+    voiceHandlersRef.current = {
+      submitMessage, reportError, processMessage,
+      clarifySpeech: () => say(languageRef.current === 'vi'
+        ? 'Mình chưa nghe rõ. Vui lòng nói lại chậm hơn ở nơi ít tiếng ồn, đọc rõ từng chữ và số của biển số, ngày giờ; hoặc nhập bằng bàn phím.'
+        : 'I could not hear clearly. Please repeat slowly in a quieter place, spelling out the plate, date and time, or type your request.'),
+      resumeVoiceIfReady,
+    };
   });
+  useEffect(() => {
+    const queue = createBookingTurnQueue({
+      process: async (turn) => {
+        await voiceHandlersRef.current.processMessage(turn);
+        await replyQueueRef.current.catch(() => null);
+        // Let React commit the resulting preview/action before the next turn.
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      },
+      onStateChange: ({ running, pending }) => {
+        setQueuedTurns(pending); setTurnProcessing(running);
+        if (!running && !pending) { submittedLanguageRef.current = null; voiceHandlersRef.current.resumeVoiceIfReady?.(); }
+      },
+      onError: async (error) => {
+        busyRef.current = false; handlingInputRef.current = false; setBusy(false);
+        voiceHandlersRef.current.reportError?.(error.message);
+        await replyQueueRef.current.catch(() => null);
+      },
+    });
+    turnQueueRef.current = queue;
+    return () => { queue.dispose(); if (turnQueueRef.current === queue) turnQueueRef.current = null; };
+  }, []);
   const fieldClass = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-yellow-400';
   const currentVietnam = nowInVietnam();
   const resumeDraft = resumeCandidate?.bookingDraft || {};
@@ -1814,7 +1972,6 @@ export default function AiBookingPanel({
     noQr: 'Không có mã QR', scanQr: 'Quét bằng ứng dụng ngân hàng hoặc ví điện tử.', alternatively: 'Hoặc',
     checkout: 'nhấn vào đây để thanh toán', received: 'Đã nhận thanh toán! Đang xử lý...',
     waitingPayment: 'Đang chờ thanh toán...', cancelling: 'Đang hủy...',
-    languageLabel: 'Ngôn ngữ hội thoại', viTitle: 'Dùng tiếng Việt', enTitle: 'Dùng tiếng Anh',
     sessionLoading: 'Đang kiểm tra phiên đặt chỗ đã lưu...',
   } : {
     title: 'VALO Parking Assistant', subtitle: 'Book and search by voice or text',
@@ -1829,28 +1986,30 @@ export default function AiBookingPanel({
     noQr: 'No QR data', scanQr: 'Scan with your banking app or e-wallet to pay.', alternatively: 'Alternatively,',
     checkout: 'click here to checkout', received: 'Payment received! Processing checkout...',
     waitingPayment: 'Waiting for your payment...', cancelling: 'Cancelling...',
-    languageLabel: 'Conversation language', viTitle: 'Use Vietnamese', enTitle: 'Use English',
     sessionLoading: 'Checking saved booking session...',
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 pb-8">
-      <section className="xl:col-span-5 rounded-3xl border border-gray-200 bg-white shadow-sm flex flex-col min-h-[560px] overflow-hidden">
-        <div className="border-b border-gray-100 bg-gradient-to-r from-yellow-50 to-white px-5 py-4 flex items-center gap-3">
-          <div className="rounded-2xl bg-yellow-400 p-2.5 text-gray-900"><Bot size={22} /></div>
-          <div className="flex-1"><h2 className="font-black text-gray-900">{conversationUi.title}</h2><p className="text-xs text-gray-500">{conversationUi.subtitle}</p></div>
-          <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1" aria-label={conversationUi.languageLabel}>
-            <button type="button" disabled={sessionLoading || busy} onClick={() => switchLanguage('vi')} className={`rounded-lg px-2 py-1 text-[11px] font-black transition disabled:opacity-50 ${language === 'vi' ? 'bg-yellow-400 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`} aria-pressed={language === 'vi'} title={conversationUi.viTitle}>VI</button>
-            <button type="button" disabled={sessionLoading || busy} onClick={() => switchLanguage('en')} className={`rounded-lg px-2 py-1 text-[11px] font-black transition disabled:opacity-50 ${language === 'en' ? 'bg-yellow-400 text-gray-900' : 'text-gray-500 hover:bg-gray-50'}`} aria-pressed={language === 'en'} title={conversationUi.enTitle}>EN</button>
-          </div>
+    <div className="valo-assistant-page">
+      <div className={`valo-assistant-shell ${historyCollapsed ? 'is-history-collapsed' : ''}`}>
+      <AiChatHistorySidebar language={language} items={historyItems} loading={historyLoading} error={historyError}
+        search={historySearch} onSearch={(value) => { setHistorySearch(value); setHistoryPage(1); setHistoryItems([]); }}
+        onNew={handleNewBooking} onOpen={openHistoryChat} onRename={renameHistoryChat} onDelete={deleteHistoryChat}
+        selectedId={selectedHistoryId} disabled={sessionLoading || busy || turnProcessing || queuedTurns > 0 || replyPending || topUpLoading || showTopUpModal}
+        hasMore={historyHasMore} onMore={() => setHistoryPage((value) => value + 1)} collapsed={historyCollapsed} onToggle={() => setHistoryCollapsed((value) => !value)} />
+      <section className="valo-assistant-chat">
+        <div className="valo-assistant-header">
+          <div className="valo-assistant-brand"><img src="/assets/notification-mascots/success.png" alt="VALO AI" /></div>
+          <div className="min-w-0 flex-1"><h2>{conversationUi.title}</h2><p>{conversationUi.subtitle}</p></div>
           <button type="button" onClick={() => {
             voiceEnabledRef.current = !voiceEnabledRef.current;
             setVoiceEnabled(voiceEnabledRef.current);
             if (!voiceEnabledRef.current) speakerRef.current?.cancel();
-          }} className="rounded-xl border border-gray-200 p-2 text-gray-600" aria-label={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'} title={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'}>{voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
+          }} className="valo-assistant-audio" aria-label={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'} title={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'}>{voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
         </div>
-        <div role="status" aria-live="polite" className="border-b border-gray-100 px-5 py-2 text-xs font-bold text-gray-600">
-          {speaking ? conversationUi.speaking : busy ? selectedPhaseLabels[phase] : listening ? conversationUi.listening : voiceActive ? conversationUi.microphone : selectedPhaseLabels[phase]}
+        <div role="status" aria-live="polite" className="valo-assistant-status">
+          {speaking ? conversationUi.speaking : voiceTranscribing || turnProcessing ? conversationUi.processing : busy ? selectedPhaseLabels[phase] : listening ? conversationUi.listening : voiceActive ? conversationUi.microphone : selectedPhaseLabels[phase]}
+          {queuedTurns > 0 && <span> · {language === 'vi' ? `Đang chờ xử lý: ${queuedTurns}` : `Queued messages: ${queuedTurns}`}</span>}
         </div>
         {sessionLoading && <div className="mx-5 mt-4 flex items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"><Loader2 size={16} className="animate-spin" /> {conversationUi.sessionLoading}</div>}
         {!sessionLoading && resumeCandidate && (
@@ -1886,10 +2045,12 @@ export default function AiBookingPanel({
             </div>
           </div>
         )}
-        <div ref={conversationRef} className="flex-1 max-h-[520px] overflow-y-auto scrollbar-hidden px-5 py-5 space-y-3" aria-live="polite">
+        <div ref={conversationRef} className="valo-assistant-messages" aria-live="polite">
           {messages.map((message, index) => (
-            <div key={message.id || `${message.role}-${index}`} className={`max-w-[90%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'ml-auto bg-gray-900 text-white' : 'bg-yellow-50 border border-yellow-100 text-gray-800'}`}>
-              <div>{message.text ?? message.content}</div>
+            <div key={message.id || `${message.role}-${index}`} className={`valo-assistant-message-row ${message.role === 'user' ? 'is-user' : ''}`}>
+              {message.role === 'assistant' && <img className="valo-assistant-avatar" src="/assets/notification-mascots/success.png" alt="VALO AI" />}
+              <div className="valo-assistant-bubble" lang={message.language === 'vi' ? 'vi' : message.language === 'en' ? 'en' : undefined}>
+              <div>{message.pending ? <span className="valo-assistant-typing" role="status" aria-label={conversationUi.processing}><i /><i /><i /></span> : message.text ?? message.content}</div>
               {message.services && Array.isArray(message.services) && message.services.length > 0 && (
                 <div className="mt-3 pt-2.5 border-t border-amber-200/60 flex flex-wrap gap-2">
                   {message.services.map((service) => {
@@ -1898,7 +2059,7 @@ export default function AiBookingPanel({
                       <button
                         key={service._id}
                         type="button"
-                        disabled={busy}
+                        disabled={busy || historyReadOnly}
                         onClick={() => toggleDraftService(service)}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm ${
                           isSelected
@@ -1919,45 +2080,50 @@ export default function AiBookingPanel({
                   })}
                 </div>
               )}
+              </div>
             </div>
           ))}
-          {busy && <div className="inline-flex items-center gap-2 rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-500"><Loader2 size={16} className="animate-spin" /> {conversationUi.processing}</div>}
+          {(busy || turnProcessing || voiceTranscribing) && !replyPending && <div className="valo-assistant-message-row"><img className="valo-assistant-avatar" src="/assets/notification-mascots/success.png" alt="VALO AI" /><div className="valo-assistant-bubble"><span className="valo-assistant-typing" role="status" aria-label={conversationUi.processing}><i /><i /><i /></span></div></div>}
         </div>
         {error && <div role="alert" className="mx-5 mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
+        {historyReadOnly && <div className="mx-5 mb-3 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+          <span>{language === 'vi' ? 'Bạn đang xem lịch sử. Tạo cuộc trò chuyện mới để tiếp tục.' : 'You are viewing chat history. Start a new chat to continue.'}</span>
+          <button type="button" disabled={sessionLoading} onClick={handleNewBooking} className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 font-bold text-gray-900">{language === 'vi' ? 'Chat mới' : 'New chat'}</button>
+        </div>}
         {sessionSaving === 'offline' && hasStarted && <div className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">This conversation is safely stored on this device and will sync automatically.</div>}
         {manualSuggestion && onSwitchToManual && <button type="button" onClick={onSwitchToManual} className="mx-5 mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-2 text-sm font-bold text-yellow-900">Switch to manual booking</button>}
-        <form className="border-t border-gray-100 p-4 flex gap-2" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
-          <input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={conversationUi.placeholder} className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-none focus:border-yellow-400" aria-label={conversationUi.inputLabel} />
-          <button type="button" disabled={busy && !voiceActive && !speaking} onClick={handleVoiceControl} className={`rounded-xl p-3 disabled:opacity-50 ${speaking ? 'bg-yellow-400 text-gray-900 ring-2 ring-yellow-200' : voiceActive ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-700'}`} aria-label={speaking ? conversationUi.interruptVoice : voiceActive ? conversationUi.stopVoice : conversationUi.startVoice} title={speaking ? conversationUi.interruptTitle : voiceActive ? conversationUi.stopTitle : conversationUi.startTitle}>{speaking ? <Mic size={19} /> : voiceActive ? <MicOff size={19} /> : <Mic size={19} />}</button>
-          <button type="submit" disabled={!prompt.trim() || busy} className="rounded-xl bg-yellow-400 p-3 text-gray-900 disabled:opacity-50" aria-label={conversationUi.send}><Send size={19} /></button>
+        <form className="valo-assistant-composer" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
+          <button type="button" disabled={historyReadOnly || sessionLoading || (replyPending && !speaking) || (busy && !voiceActive && !speaking)} onClick={handleVoiceControl} className={`valo-assistant-mic disabled:opacity-50 ${voiceActive ? "bg-rose-50 text-rose-600" : ""}`} aria-label={speaking ? conversationUi.interruptVoice : voiceActive ? conversationUi.stopVoice : conversationUi.startVoice} title={speaking ? conversationUi.interruptTitle : voiceActive ? conversationUi.stopTitle : conversationUi.startTitle}>{speaking ? <Mic size={19} /> : voiceActive ? <MicOff size={19} /> : <Mic size={19} />}</button>
+          <input disabled={historyReadOnly || sessionLoading} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={conversationUi.placeholder} className="disabled:opacity-50" aria-label={conversationUi.inputLabel} />
+          <button type="submit" disabled={!prompt.trim() || sessionLoading || historyReadOnly} className="valo-assistant-send disabled:opacity-40" aria-label={conversationUi.send}><Send size={19} /></button>
         </form>
       </section>
 
-      <section className="xl:col-span-7 rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm min-h-[560px]">
+      <section className="valo-assistant-preview">
         <div className="mb-5 flex items-center gap-3"><Sparkles size={21} className="text-yellow-500" /><div><h2 className="text-lg font-black text-gray-900">{assistantInfo ? 'Information from VALO' : intent === 'CHECK_AVAILABILITY' ? 'Available spaces' : intent === 'VIEW_BOOKING' ? 'Your booking' : intent === 'CANCEL_BOOKING' ? 'Confirm cancellation' : intent === 'MODIFY_BOOKING' ? 'Edit booking' : 'Booking preview'}</h2><p className="text-xs text-gray-500">Changes are applied only after you confirm.</p></div></div>
         {preview?.items && <div className="mb-4 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">WAITING FOR CONFIRMATION · Booking not created</div><span className="text-xs font-semibold text-gray-500">The space will be rechecked and held when you confirm.</span></div>}
 
         {success && <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800"><div className="flex items-center gap-2 font-black"><CheckCircle2 size={20} /> Action completed</div><Link to="/customer/booking" className="mt-2 inline-block text-sm font-bold underline">View My Bookings</Link></div>}
 
-        {assistantInfo && <div className="mb-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-5 text-sm leading-6 text-gray-800 whitespace-pre-line"><div className="mb-2 text-xs font-black uppercase tracking-wide text-yellow-800">{assistantInfo.intents.map((item) => selectedAssistantIntentLabels[item] || item).join(' · ')}</div>{localizeAiBookingMessage(assistantInfo.message, language)}{pendingAssistantAction && <div className="mt-4 flex gap-3"><button type="button" disabled={busy} onClick={confirmAssistantAction} className="rounded-xl bg-gray-900 px-4 py-2.5 font-black text-white">{conversationUi.confirm}</button><button type="button" disabled={busy} onClick={cancelAssistantAction} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 font-bold">{conversationUi.cancel}</button></div>}</div>}
+        {assistantInfo && <div className="mb-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-5 text-sm leading-6 text-gray-800 whitespace-pre-line"><div className="mb-2 text-xs font-black uppercase tracking-wide text-yellow-800">{assistantInfo.intents.map((item) => selectedAssistantIntentLabels[item] || item).join(' · ')}</div>{localizeAiBookingMessage(assistantInfo.message, language)}{pendingAssistantAction && <div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmAssistantAction} className="rounded-xl bg-gray-900 px-4 py-2.5 font-black text-white">{conversationUi.confirm}</button><button type="button" disabled={busy || replyPending} onClick={cancelAssistantAction} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 font-bold">{conversationUi.cancel}</button></div>}</div>}
 
-        {intent === 'CREATE_BOOKING' && (draft.startDate || draft.startTime || draft.licensePlate) && !success && (
+        {!historyReadOnly && !success && !assistantInfo && !target && (
           <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
             {mapSelectionTargetCount > 1 && <div className="sm:col-span-2 flex flex-wrap gap-2 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><span className="w-full text-xs font-black text-cyan-900">Editing each vehicle separately:</span>{mapSelectionTargets.map((item) => <button key={item.index} type="button" onClick={() => setMapTargetIndex(item.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${activeMapTargetIndex === item.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>{item.licensePlate || `Vehicle ${item.index + 1}`}</button>)}</div>}
-            <label className="text-xs font-bold text-gray-500">Start date<input type="date" min={currentVietnam.today} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">End date<input type="date" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || currentVietnam.today} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endDate : (draft.endDate || draft.startDate)) || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Arrival time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Departure time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Vehicle<select disabled={busy || mapSelectionTargetCount > 1} value={mapSelectionTargetCount > 1 ? '' : (draft.vehicleId || '')} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); requestRef.current += 1; confirmationPendingRef.current = false; confirmationKeyRef.current = null; setConversationPhase('IDLE'); updateDraft((current) => applySingleVehicleSelectionToDraft(current, vehicle)); updatePreview(null); setConflicts([]); setMapTargetIndex(0); }} className={fieldClass}><option value="">{mapSelectionTargetCount > 1 ? 'Edit the list in the license plate field' : 'Select a vehicle or enter a license plate'}</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
-            <label className="text-xs font-bold text-gray-500">License plates (comma-separated for multiple vehicles)<input disabled={busy} value={(draft.licensePlates?.length > 1 ? draft.licensePlates.join(', ') : draft.licensePlate) || ''} onChange={(event) => changePlateInput(event.target.value)} className={fieldClass} placeholder="43A12345, 43B20404" /></label>
-            <label className="text-xs font-bold text-gray-500">Floor (optional)<input disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.floorName : draft.floorName) || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder="Floor 2" /></label>
-            <label className="text-xs font-bold text-gray-500">Parking space (optional)<input disabled={busy} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.slotCode : draft.slotCode) || ''} onChange={(event) => changeDraft('slotCode', event.target.value)} className={fieldClass} placeholder="A-015" /></label>
-            <button type="button" onClick={refreshPreview} disabled={busy} className="sm:col-span-2 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3 font-black text-yellow-900 disabled:opacity-50">Check availability and price again</button>
+            <label className="text-xs font-bold text-gray-500">Start date<input type="date" min={currentVietnam.today} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">End date<input type="date" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || currentVietnam.today} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endDate : (draft.endDate || draft.startDate)) || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Arrival time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Departure time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">Vehicle<select disabled={busy || replyPending || mapSelectionTargetCount > 1} value={mapSelectionTargetCount > 1 ? '' : (draft.vehicleId || '')} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); requestRef.current += 1; confirmationPendingRef.current = false; confirmationKeyRef.current = null; setConversationPhase('IDLE'); updateDraft((current) => applySingleVehicleSelectionToDraft(current, vehicle)); updatePreview(null); setConflicts([]); setMapTargetIndex(0); }} className={fieldClass}><option value="">{mapSelectionTargetCount > 1 ? 'Edit the list in the license plate field' : 'Select a vehicle or enter a license plate'}</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
+            <label className="text-xs font-bold text-gray-500">License plates (comma-separated for multiple vehicles)<input disabled={busy || replyPending} value={(draft.licensePlates?.length > 1 ? draft.licensePlates.join(', ') : draft.licensePlate) || ''} onChange={(event) => changePlateInput(event.target.value)} className={fieldClass} placeholder="43A12345, 43B20404" /></label>
+            <label className="text-xs font-bold text-gray-500">Floor (optional)<input disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.floorName : draft.floorName) || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder="Floor 2" /></label>
+            <label className="text-xs font-bold text-gray-500">Parking space (optional)<input disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.slotCode : draft.slotCode) || ''} onChange={(event) => changeDraft('slotCode', event.target.value)} className={fieldClass} placeholder="A-015" /></label>
+            <button type="button" onClick={refreshPreview} disabled={busy || replyPending} className="sm:col-span-2 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3 font-black text-yellow-900 disabled:opacity-50">Check availability and price again</button>
           </div>
         )}
 
         {/* Extra services selector in right panel */}
-        {services.length > 0 && !success && (intent === 'CREATE_BOOKING' || preview?.items || draft.startDate || draft.licensePlate) && (
+        {services.length > 0 && !success && !historyReadOnly && !assistantInfo && (
           <div className="mb-5 rounded-2xl border border-gray-200 bg-gray-50/50 p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
@@ -1982,7 +2148,7 @@ export default function AiBookingPanel({
                   <button
                     key={service._id}
                     type="button"
-                    disabled={busy}
+                    disabled={busy || replyPending}
                     onClick={() => toggleDraftService(service)}
                     className={`w-full rounded-xl border px-3 py-2 text-left transition flex items-center justify-between ${
                       isSelected
@@ -2078,11 +2244,12 @@ export default function AiBookingPanel({
         {choices.length > 0 && <div className="space-y-2 mb-5">{choices.map((booking) => <button key={booking._id} type="button" onClick={() => selectTarget(booking).catch((caught) => setError(caught.message))} className={`block w-full rounded-xl border p-4 text-left text-sm font-bold ${target?._id === booking._id ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200 hover:border-yellow-300'}`}>{labelBooking(booking)} <span className="ml-2 text-gray-400">{booking.status}</span></button>)}</div>}
 
         {target && intent === 'VIEW_BOOKING' && <div className="rounded-2xl bg-gray-50 p-5 text-sm"><p className="font-black">{labelBooking(target)}</p><p>Status: {target.status}</p><p>Amount paid: {money(target.prepaidAmount)}</p></div>}
-        {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">Estimated refund: {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">Confirm cancellation</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Keep booking</button></div></div>}
-        {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">Arrival date<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startDate: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Arrival time<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startTime: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Departure date<input type="date" value={edit.endDate} onChange={(event) => { setEdit((current) => ({ ...current, endDate: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label><label className="text-xs font-bold">Departure time<input type="time" value={edit.endTime} onChange={(event) => { setEdit((current) => ({ ...current, endTime: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? 'The system will check availability and show the price difference before applying the change.' : 'The vehicle has entered the parking lot, so only the departure time can be changed. The price difference will be shown before the change is applied.'}</p>{actionQuote?.editKey && <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><div className="flex justify-between"><span>New total</span><strong>{money(actionQuote.newPrice)}</strong></div><div className="mt-1 flex justify-between"><span>{actionQuote.extraAmount > 0 ? 'Additional payment' : 'Refund'}</span><strong>{money(actionQuote.extraAmount || actionQuote.refundAmount || 0)}</strong></div></div>}<div className="flex gap-3"><button type="button" disabled={busy} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">{actionQuote?.editKey ? 'Confirm changes' : 'Check price difference'}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Cancel</button></div></div>}
+        {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">Estimated refund: {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">Confirm cancellation</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Keep booking</button></div></div>}
+        {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">Arrival date<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startDate: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Arrival time<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startTime: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Departure date<input type="date" value={edit.endDate} onChange={(event) => { setEdit((current) => ({ ...current, endDate: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label><label className="text-xs font-bold">Departure time<input type="time" value={edit.endTime} onChange={(event) => { setEdit((current) => ({ ...current, endTime: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? 'The system will check availability and show the price difference before applying the change.' : 'The vehicle has entered the parking lot, so only the departure time can be changed. The price difference will be shown before the change is applied.'}</p>{actionQuote?.editKey && <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><div className="flex justify-between"><span>New total</span><strong>{money(actionQuote.newPrice)}</strong></div><div className="mt-1 flex justify-between"><span>{actionQuote.extraAmount > 0 ? 'Additional payment' : 'Refund'}</span><strong>{money(actionQuote.extraAmount || actionQuote.refundAmount || 0)}</strong></div></div>}<div className="flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">{actionQuote?.editKey ? 'Confirm changes' : 'Check price difference'}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Cancel</button></div></div>}
 
-        {!preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">Results or a booking preview will appear here.</p></div>}
+        {historyReadOnly && !preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">{language === 'vi' ? 'Lịch sử trò chuyện được hiển thị bên cạnh.' : 'Your saved conversation is displayed alongside.'}</p></div>}
       </section>
+      </div>
 
       <section className="xl:col-span-12 rounded-3xl border border-gray-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 px-2 pb-3 pt-2">
@@ -2225,7 +2392,7 @@ export default function AiBookingPanel({
           completeCurrentSession('VIP_PURCHASE');
           clearResult();
           clearPendingBookingPayment('quick');
-          updateDraft({ __language: currentLanguage, __languageLocked: true });
+          updateDraft({ __language: currentLanguage, __languageLocked: false });
           intentRef.current = 'UNKNOWN';
           setIntent('UNKNOWN');
           setConversationPhase('IDLE');
