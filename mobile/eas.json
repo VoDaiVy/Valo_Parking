@@ -29,6 +29,14 @@
         "EXPO_PUBLIC_SOCKET_URL": "http://192.168.1.33:5001",
         "EXPO_PUBLIC_ENV": "development"
       }
+    },
+    "cloudflare-demo": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://cos-particle-newest-genealogy.trycloudflare.com/api",
+        "EXPO_PUBLIC_SOCKET_URL": "https://cos-particle-newest-genealogy.trycloudflare.com",
+        "EXPO_PUBLIC_ENV": "development"
+      }
     }
   },
   "submit": {
