@@ -1,3 +1,4 @@
+import { notificationFromSocket } from '../utils/notificationSocketPayload';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSocket } from './useSocket';
 import * as notifApi from '../services/notificationService';
@@ -154,18 +155,7 @@ export function useNotifications({ autoFetch = true, limit = 20, contextRole } =
 
       if (matchesType && matchesRead && matchesSearch) {
         setNotifications((prev) => {
-          const next = [{
-            _id: `temp_${Date.now()}`,
-            notificationId: notification._id,
-            title: notification.title,
-            content: notification.content,
-            type: notification.type,
-            priority: notification.priority,
-            metadata: notification.metadata,
-            isRead: false,
-            readAt: null,
-            createdAt: notification.createdAt || new Date().toISOString(),
-          }, ...prev];
+          const next = [notificationFromSocket(notification), ...prev];
           notificationsRef.current = next;
           return next;
         });
@@ -176,14 +166,21 @@ export function useNotifications({ autoFetch = true, limit = 20, contextRole } =
       setUnreadCount(data.count ?? 0);
     };
 
+    const reconcileInbox = () => {
+      fetchNotifications(1, true);
+      fetchUnreadCount();
+    };
+    socket.on('connect', reconcileInbox);
+    if (socket.connected) reconcileInbox();
     socket.on('notification:new', handleNew);
     socket.on('notification:unreadCount', handleUnreadCount);
 
     return () => {
+      socket.off('connect', reconcileInbox);
       socket.off('notification:new', handleNew);
       socket.off('notification:unreadCount', handleUnreadCount);
     };
-  }, [contextRole, filters, socket]);
+  }, [contextRole, filters, socket, fetchNotifications, fetchUnreadCount]);
 
   useEffect(() => {
     const handleNotificationsChanged = () => {
@@ -211,30 +208,31 @@ export function useNotifications({ autoFetch = true, limit = 20, contextRole } =
     if (!current || current.isRead || pendingReadIds.current.has(id)) return false;
     pendingReadIds.current.add(id);
 
-    try {
-      // Optimistic update
-      setNotifications((prev) =>
-        prev.map((n) =>
-          String(n.notificationId || n._id) === String(notificationId)
-            ? { ...n, isRead: true, readAt: new Date().toISOString() }
-            : n
-        )
-      );
-      setUnreadCount((c) => Math.max(0, c - 1));
+    const applyReadState = () => {
+      setNotifications((prev) => prev.map((n) =>
+        getNotificationId(n) === id
+          ? { ...n, isRead: true, readAt: new Date().toISOString() }
+          : n
+      ));
+      setUnreadCount((count) => Math.max(0, count - 1));
+    };
 
+    try {
+      // Preserve the existing optimistic behavior outside Customer.
+      if (contextRole !== 'customer') applyReadState();
       const response = await notifApi.markAsRead(notificationId);
       requireSuccessfulResponse(response, 'Unable to mark notification as read');
+      if (contextRole === 'customer' && isMounted.current) applyReadState();
       broadcastNotificationsChanged();
       return true;
     } catch {
-      // Revert on failure — re-fetch
-      fetchNotifications(1, true);
-      fetchUnreadCount();
+      // Non-Customer optimistic updates need a refresh on failure. — re-fetch
+      if (contextRole !== 'customer') { fetchNotifications(1, true); fetchUnreadCount(); }
       return false;
     } finally {
       pendingReadIds.current.delete(id);
     }
-  }, [notifications, fetchNotifications, fetchUnreadCount]);
+  }, [contextRole, notifications, fetchNotifications, fetchUnreadCount]);
 
   const markAllAsRead = useCallback(async () => {
     if (markingAllRef.current || unreadCount === 0) return false;

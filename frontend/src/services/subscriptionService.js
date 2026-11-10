@@ -4,6 +4,19 @@ const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
 });
 
+export const getMembershipActivity = ({ page = 1, filter = 'all' } = {}) =>
+  apiFetch(`/subscriptions/membership/history?${new URLSearchParams({ page: String(page), limit: '15', filter })}`, { headers: authHeader() });
+
+const detailPath = (kind, id) => kind === 'entitlement'
+  ? `/subscriptions/entitlements/${encodeURIComponent(id)}`
+  : `/subscriptions/${encodeURIComponent(id)}`;
+
+export const getMembershipDetail = (kind, id) =>
+  apiFetch(`${detailPath(kind, id)}/details`, { headers: authHeader() });
+
+export const getMembershipRenewalHistory = (kind, id, page = 1) =>
+  apiFetch(`${detailPath(kind, id)}/renewals?page=${page}&limit=10`, { headers: authHeader() });
+
 export const getTicketPackages = async () => {
   return apiFetch('/ticket-packages/active', {
     method: 'GET',

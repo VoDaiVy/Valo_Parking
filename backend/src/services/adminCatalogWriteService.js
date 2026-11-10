@@ -1,3 +1,4 @@
+const { profilePayload, assertPhoneAvailable, accountError } = require('./aiCopilot/adminAccounts');
 const PricingConfig = require('../models/PricingConfig');
 const TicketPackage = require('../models/TicketPackage');
 const AdminActionLog = require('../models/AdminActionLog');
@@ -7,6 +8,7 @@ const Service = require('../models/Service');
 const BookingService = require('../models/BookingService');
 const Subscription = require('../models/Subscription');
 const UserDetail = require('../models/UserDetail');
+const aiNotificationEvents = require('./aiCopilot/notificationEvents');
 
 async function applyPricing(payload, { session, expectedConfigId } = {}) {
   const query = PricingConfig.findOne({ isActive: true }).sort({ createdAt: -1 });
@@ -18,13 +20,44 @@ async function applyPricing(payload, { session, expectedConfigId } = {}) {
   const [created] = await PricingConfig.create([{ ...payload, isActive: true }], session ? { session } : {});
   return created;
 }
+function escapeRegex(str) {
+  return str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+}
+
 async function createPackage(payload, { session, draftId, adminId } = {}) {
+  if (payload.name) {
+    const trimmedName = String(payload.name).trim();
+    const query = TicketPackage.findOne({
+      name: { $regex: new RegExp('^' + escapeRegex(trimmedName) + '$', 'i') },
+      isActive: true,
+    });
+    const duplicate = await (session ? query.session(session) : query);
+    if (duplicate) {
+      const error = new Error(`Gói vé "${trimmedName}" đang hoạt động đã tồn tại. Vui lòng đặt tên khác hoặc chỉnh sửa gói hiện có.`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
   const doc = { ...payload, ...(draftId ? { _id: draftId, aiDraftId: draftId } : {}) };
   const [created] = await TicketPackage.create([doc], session ? { session } : {});
   if (adminId) await AdminActionLog.create([{ action: 'Created Ticket Package', target: `${created.name} • ${created.type}`, type: 'create', adminId }], session ? { session } : {});
   return created;
 }
 async function updatePackage(id, payload, { session, expectedUpdatedAt, draftId, adminId } = {}) {
+  if (payload.name && payload.isActive !== false) {
+    const trimmedName = String(payload.name).trim();
+    const query = TicketPackage.findOne({
+      _id: { $ne: id },
+      name: { $regex: new RegExp('^' + escapeRegex(trimmedName) + '$', 'i') },
+      isActive: true,
+    });
+    const duplicate = await (session ? query.session(session) : query);
+    if (duplicate) {
+      const error = new Error(`Gói vé "${trimmedName}" đang hoạt động đã tồn tại. Vui lòng đặt tên khác hoặc chỉnh sửa gói hiện có.`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
   const filter = { _id: id };
   if (expectedUpdatedAt) filter.updatedAt = expectedUpdatedAt;
   if (draftId) filter.aiAppliedDraftIds = { $ne: draftId };
@@ -71,7 +104,10 @@ async function approveVehicleSafely(id, { session, expectedStatus, adminId } = {
   if (vehicle.status === 'approved') return vehicle; // Already approved
   
   vehicle.status = 'approved';
+  vehicle.approvedAt = new Date();
+  vehicle.approvalSource = 'admin';
   await (session ? vehicle.save({ session }) : vehicle.save());
+  await aiNotificationEvents.resolveVehiclePendingSafely(vehicle, adminId, { session });
   
   // Missing log in original controller, but good to have
   if (adminId) {
@@ -213,7 +249,8 @@ async function archiveServiceSafely(id, { session, expectedUpdatedAt, adminId } 
 }
 
 // 4. updateUserProfileSafely
-async function updateUserProfileSafely(id, payload, { session, expectedUpdatedAt, adminId } = {}) {
+async function updateUserProfileSafely(id, payload, { session, expectedUpdatedAt, expectedProfileUpdatedAt, adminId } = {}) {
+  payload = profilePayload(payload);
   const user = await (session ? User.findById(id).session(session) : User.findById(id));
   if (!user) {
     const error = new Error('Không tìm thấy người dùng.'); error.statusCode = 404; throw error;
@@ -232,28 +269,15 @@ async function updateUserProfileSafely(id, payload, { session, expectedUpdatedAt
   }
 
   let userDetail = await (session ? UserDetail.findOne({ userId: user._id }).session(session) : UserDetail.findOne({ userId: user._id }));
+  if (expectedProfileUpdatedAt !== undefined && (userDetail?.updatedAt?.getTime() || null) !== (expectedProfileUpdatedAt ? new Date(expectedProfileUpdatedAt).getTime() : null)) throw accountError('ACCOUNT_CHANGED', 'This profile changed since the proposal was prepared. Request a new proposal.', 409);
   if (!userDetail) {
     userDetail = new UserDetail({ userId: user._id });
   }
 
-  if (change.phone !== undefined) {
-    let cleanPhone = change.phone.replace(/[^\d+]/g, '');
-    if (cleanPhone) {
-      if (cleanPhone.startsWith('84') && cleanPhone.length === 11) {
-        cleanPhone = '0' + cleanPhone.slice(2);
-      } else if (cleanPhone.startsWith('+84')) {
-        cleanPhone = '0' + cleanPhone.slice(3);
-      }
-      
-      const phoneVariants = [cleanPhone, cleanPhone.replace(/^0/, '84'), cleanPhone.replace(/^0/, '+84')];
-      const existingUserWithPhone = await (session ? UserDetail.findOne({ phone: { $in: phoneVariants }, userId: { $ne: user._id } }).session(session) : UserDetail.findOne({ phone: { $in: phoneVariants }, userId: { $ne: user._id } }));
-      
-      if (existingUserWithPhone) {
-        const error = new Error('Số điện thoại này đã được liên kết với tài khoản khác.'); error.statusCode = 400; throw error;
-      }
-      change.phone = cleanPhone;
-    }
-  }
+  // Legacy drafts may include copied, unchanged fields. Never rewrite those or
+  // reject a name-only change because of an unrelated stored phone value.
+  for (const key of Object.keys(change)) if (change[key] === userDetail[key]) delete change[key];
+  if (change.phone !== undefined) await assertPhoneAvailable(change.phone, user._id, session);
 
   if (change.firstName !== undefined) userDetail.firstName = change.firstName;
   if (change.lastName !== undefined) userDetail.lastName = change.lastName;

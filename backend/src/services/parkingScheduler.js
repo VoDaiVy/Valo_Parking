@@ -407,32 +407,33 @@ async function checkExpiredMembershipTransfers() {
   }
 }
 
+let membershipCheckRunning = false;
 async function checkVIPSubscriptions(app) {
+  if (membershipCheckRunning) return;
+  membershipCheckRunning = true;
   try {
     const Subscription = require('../models/Subscription');
     const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
     const {
       recomputeUserMembership,
     } = require('./membershipProjectionService');
+    const membershipNotifications = require('./membershipNotifications');
     const now = new Date();
-    const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     const Slot = require('../models/Slot');
     const entitlementSubscriptions = await MembershipSlotEntitlement.distinct(
       'sourceSubscriptionId'
     );
     const expiringEntitlements = await MembershipSlotEntitlement.find({
-      status: 'active',
-      expireAt: { $lte: threeDaysFromNow, $gt: now },
-      expireWarningSentAt: null,
+      status: { $in: ['active', 'transfer_locked'] },
+      expireAt: { $gt: now },
     });
     for (const entitlement of expiringEntitlements) {
-      notifTriggers.notifySystemMessage(app, entitlement.ownerId, {
-        title: 'VIP parking space expiring',
-        body: `Your VIP space ${entitlement.slotCode} expires on ${entitlement.expireAt.toLocaleDateString()}. Renew this space to keep it reserved.`,
-        type: 'SYSTEM',
-      }).catch((err) => console.error('Failed to send VIP entitlement warning:', err));
-      entitlement.expireWarningSentAt = now;
-      await entitlement.save();
+      if (!await membershipNotifications.hasValidExpiryNotification(entitlement) && await membershipNotifications.notifyExpiry(app, entitlement)) {
+        await MembershipSlotEntitlement.updateOne(
+          { _id: entitlement._id, ownerId: entitlement.ownerId, status: 'active', expireAt: entitlement.expireAt },
+          { $set: { expireWarningSentAt: now } }
+        );
+      }
     }
 
     const expiredEntitlements = await MembershipSlotEntitlement.find({
@@ -448,7 +449,7 @@ async function checkVIPSubscriptions(app) {
           status: { $in: ['active', 'transfer_locked'] },
           expireAt: { $lte: now },
         },
-        { $set: { status: 'expired' } },
+        { $set: { status: 'expired', expiryNotificationPending: true } },
         { new: true }
       );
       if (!updated) continue;
@@ -468,11 +469,7 @@ async function checkVIPSubscriptions(app) {
       );
       affectedUsers.add(String(updated.ownerId));
       affectedSubscriptions.add(String(updated.sourceSubscriptionId));
-      notifTriggers.notifySystemMessage(app, updated.ownerId, {
-        title: 'VIP parking space expired',
-        body: `Your VIP space ${updated.slotCode} has expired and was released.`,
-        type: 'SYSTEM',
-      }).catch((err) => console.error('Failed to send VIP entitlement expiry:', err));
+
     }
     for (const userId of affectedUsers) {
       await recomputeUserMembership(userId, { rotateQr: true, now });
@@ -491,27 +488,32 @@ async function checkVIPSubscriptions(app) {
       }
     }
 
-    // 1. Send warning for subscriptions expiring in <= 3 days
+    // Renewal-window catch-up: persisted flags alone do not prove delivery.
     const expiringSubscriptions = await Subscription.find({
       _id: { $nin: entitlementSubscriptions },
       status: 'active',
-      expireAt: { $lte: threeDaysFromNow, $gt: now },
-      expireWarningSent: { $ne: true }
+      expireAt: { $gt: now }
     });
 
     for (const sub of expiringSubscriptions) {
-      if (sub.user) {
-        notifTriggers.notifySystemMessage(app, sub.user, {
-          title: 'Sắp hết hạn VIP Pass / VIP Pass Expiring',
-          body: `Gói đỗ xe tháng của bạn sẽ hết hạn vào ${sub.expireAt.toLocaleDateString()}. Vui lòng gia hạn để giữ vị trí ô đỗ cố định của bạn. / Your monthly pass expires on ${sub.expireAt.toLocaleDateString()}. Please renew to keep your fixed parking slot.`,
-          type: 'SYSTEM'
-        }).catch(err => console.error('Failed to send VIP warning:', err));
+      if (sub.user && !await membershipNotifications.hasValidExpiryNotification(sub, false, 'subscription') && await membershipNotifications.notifyExpiry(app, sub, false, 'subscription')) {
+        await Subscription.updateOne(
+          { _id: sub._id, user: sub.user, status: 'active', expireAt: sub.expireAt },
+          { $set: { expireWarningSent: true } }
+        );
       }
-      sub.expireWarningSent = true;
-      await sub.save();
-      console.log(`[ParkingScheduler] Sent VIP expiration warning for subscription ${sub._id}.`);
+    }
+    for (const entitlement of await MembershipSlotEntitlement.find({ status: 'expired', expiryNotificationPending: true })) {
+      if (await membershipNotifications.notifyExpiry(app, entitlement, true)) {
+        await MembershipSlotEntitlement.updateOne({ _id: entitlement._id, expireAt: entitlement.expireAt }, { $set: { expiryNotificationPending: false } });
+      }
     }
 
+    for (const sub of await Subscription.find({ _id: { $nin: entitlementSubscriptions }, status: 'expired', expiryNotificationPending: true })) {
+      if (await membershipNotifications.notifyExpiry(app, sub, true, 'subscription')) {
+        await Subscription.updateOne({ _id: sub._id, expireAt: sub.expireAt }, { $set: { expiryNotificationPending: false } });
+      }
+    }
     // 2. Mark expired subscriptions
     const expiredSubscriptions = await Subscription.find({
       _id: { $nin: entitlementSubscriptions },
@@ -528,7 +530,7 @@ async function checkVIPSubscriptions(app) {
       const expiringSubscription = useOwnerGuard
         ? await Subscription.findOneAndUpdate(
           { _id: sub._id, status: 'active', expireAt: { $lte: now } },
-          { status: 'expired' },
+          { status: 'expired', expiryNotificationPending: true },
           { new: true }
         )
         : sub;
@@ -538,6 +540,7 @@ async function checkVIPSubscriptions(app) {
       }
       if (!useOwnerGuard) {
         expiringSubscription.status = 'expired';
+        expiringSubscription.expiryNotificationPending = true;
         await expiringSubscription.save();
       }
       
@@ -575,18 +578,16 @@ async function checkVIPSubscriptions(app) {
       );
       
       if (expiringSubscription.user) {
-        notifTriggers.notifySystemMessage(app, expiringSubscription.user, {
-          title: 'Hết hạn VIP Pass / VIP Pass Expired',
-          body: `Gói đỗ xe tháng của bạn đã hết hạn. Vị trí ô đỗ cố định đã được mở lại cho mọi người. / Your monthly pass has expired. Your fixed parking slot has been released.`,
-          type: 'SYSTEM'
-        }).catch(err => console.error('Failed to send VIP expired:', err));
+        if (await membershipNotifications.notifyExpiry(app, expiringSubscription, true, 'subscription')) {
+          await Subscription.updateOne({ _id: expiringSubscription._id, expireAt: expiringSubscription.expireAt }, { $set: { expiryNotificationPending: false } });
+        }
       }
       console.log(`[ParkingScheduler] Marked subscription ${expiringSubscription._id} as expired and released slots.`);
     }
 
   } catch (err) {
     console.error('[ParkingScheduler] Error checking VIP subscriptions:', err.message);
-  }
+  } finally { membershipCheckRunning = false; }
 }
 
 async function checkPendingSubscriptions() {
@@ -649,8 +650,12 @@ function startScheduler(app) {
     console.error('[ParkingScheduler] Initial pending subscriptions check error:', err.message)
   );
 
+  require('./membershipNotifications').retryPending(app).catch((err) => console.error('[MembershipNotifications]', err.message));
+
   // Then run every interval
   schedulerInterval = setInterval(() => {
+    checkVIPSubscriptions(app).catch((err) => console.error('[ParkingScheduler] Membership window check:', err.message));
+    require('./membershipNotifications').retryPending(app).catch((err) => console.error('[MembershipNotifications]', err.message));
     require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));
     checkActiveSessions(app).catch((err) =>
       console.error('[ParkingScheduler] Interval check error:', err.message)
@@ -669,9 +674,6 @@ function startScheduler(app) {
   contractSchedulerInterval = setInterval(() => {
     checkExpiredContracts(app).catch((err) =>
       console.error('[ParkingScheduler] Contract expiration interval error:', err.message)
-    );
-    checkVIPSubscriptions(app).catch((err) =>
-      console.error('[ParkingScheduler] VIP subscription interval error:', err.message)
     );
   }, CONTRACT_EXPIRATION_INTERVAL_MS);
 

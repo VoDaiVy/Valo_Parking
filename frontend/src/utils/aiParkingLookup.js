@@ -6,6 +6,14 @@ const compactPlate = (value = '') => String(value).toUpperCase().replace(/[^A-Z0
 
 export function detectDirectParkingLookup(message) {
   const text = fold(message);
+  const explicitlyLive = /\b(bay gio|hien tai|luc nay|ngay luc nay|now|currently|right now)\b/.test(text);
+  const hasScheduledTime = !explicitlyLive && (
+    /\b(hom nay|toi nay|ngay mai|ngay kia|mai|cuoi tuan|thu\s*(?:2|3|4|5|6|7)|chu nhat|today|tonight|tomorrow|next\s+week)\b/.test(text)
+    || /\b(?:ngay\s+)?\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/.test(text)
+    || /\b\d{4}-\d{1,2}-\d{1,2}\b/.test(text)
+    || /\b(?:luc|tu|den|vao)\s+\d{1,2}(?:h|\s*gio|:\d{2})\b/.test(text)
+    || /\b\d{1,2}(?:h|:\d{2})\s*(?:den|toi|-)\s*\d{1,2}(?:h|:\d{2})\b/.test(text)
+  );
   const plateMatch = text.match(/\b(\d{2})\s*([a-z]{1,2})\s*(\d{4,5})\b/i);
   const licensePlate = plateMatch ? compactPlate(`${plateMatch[1]}${plateMatch[2]}${plateMatch[3]}`) : '';
   const floorMatch = text.match(/\b(?:tang|floor)\s*([a-z]?\d+)\b/i);
@@ -37,7 +45,7 @@ export function detectDirectParkingLookup(message) {
   if (parkingStatus) return { intent: 'CHECK_VEHICLE_PARKING_STATUS', licensePlate };
 
   const slotStatus = slotCode && /\b(trong|ban|co xe|co ai do|dang dung|dang duoc dung|bi chiem|trang thai|kiem tra)\b/.test(text);
-  if (slotStatus) return { intent: 'CHECK_SLOT_STATUS', slotCode, floorName };
+  if (slotStatus && !hasScheduledTime) return { intent: 'CHECK_SLOT_STATUS', slotCode, floorName };
 
   const parkingAvailability = /\bcon\s+(?:bao nhieu\s+)?(?:cho|o)(?:\s+nao)?(?:\s+trong)?\b/.test(text)
     || /\bco\s+(?:cho|o)\s+trong\s+(?:khong|chua)\b/.test(text)
@@ -45,7 +53,7 @@ export function detectDirectParkingLookup(message) {
     || /\b(?:bai|ham|nha xe)\b.*\b(day|het cho|con cho|con trong)\b/.test(text)
     || /\b(?:tang|floor)\s*[a-z]?\d+\b.*\b(con|co)\b.*\b(cho|o|trong)\b/.test(text)
     || /\b(?:cho|o)\s+trong\b.*\b(con|co|bao nhieu)\b/.test(text);
-  if (parkingAvailability) return { intent: 'CHECK_PARKING_AVAILABILITY', floorName };
+  if (parkingAvailability && !hasScheduledTime) return { intent: 'CHECK_PARKING_AVAILABILITY', floorName };
 
   return null;
 }
@@ -90,13 +98,20 @@ export function bookingStatusReply(response, licensePlate) {
   if (!bookings) throw new Error(response?.data?.message || 'Không thể kiểm tra booking lúc này.');
   const plate = compactPlate(licensePlate);
   if (!plate) return 'Bạn muốn kiểm tra booking của xe nào? Hãy đọc hoặc nhập biển số.';
-  const booking = bookings
-    .filter((item) => compactPlate(item.licensePlate) === plate)
-    .sort((a, b) => new Date(b.createdAt || b.scheduledStart || 0) - new Date(a.createdAt || a.scheduledStart || 0))[0];
+  const matching = bookings.filter((item) => compactPlate(item.licensePlate) === plate);
+  const activeStatuses = new Set(['PENDING', 'PAID', 'ACTIVE', 'PAUSED']);
+  const now = Date.now();
+  const booking = matching
+    .filter((item) => activeStatuses.has(String(item.status || '').toUpperCase())
+      && new Date(item.scheduledEnd || item.endTime || 0).getTime() > now)
+    .sort((a, b) => new Date(a.scheduledStart || a.startTime || 0) - new Date(b.scheduledStart || b.startTime || 0))[0]
+    || matching.sort((a, b) => new Date(b.createdAt || b.scheduledStart || 0) - new Date(a.createdAt || a.scheduledStart || 0))[0];
   if (!booking) return `Xe ${plate} chưa có booking nào trong tài khoản của bạn.`;
+  const isActive = activeStatuses.has(String(booking.status || '').toUpperCase())
+    && new Date(booking.scheduledEnd || booking.endTime || 0).getTime() > now;
   const time = formatTime(booking.scheduledStart || booking.startTime);
   const slot = booking.parkingSlot || booking.slotCode;
-  return `Booking gần nhất của xe ${plate} ${bookingState(booking.status)}${time ? `, bắt đầu ${time}` : ''}${slot ? `, ô ${slot}` : ''}.`;
+  return `${isActive ? 'Booking đang hiệu lực' : 'Xe không có booking đang hiệu lực. Lịch sử gần nhất'} của xe ${plate} ${bookingState(booking.status)}${time ? `, bắt đầu ${time}` : ''}${slot ? `, ô ${slot}` : ''}.`;
 }
 
 const liveSlots = (response) => {
@@ -114,7 +129,10 @@ const sameFloor = (slot, requested) => {
 };
 
 export function parkingAvailabilityReply(response, floorName = '') {
-  const matching = liveSlots(response).filter((slot) => sameFloor(slot, floorName));
+  const matching = liveSlots(response).filter((slot) => {
+    const type = fold(slot.type || slot.slotType || 'standard');
+    return sameFloor(slot, floorName) && !['moto', 'vip', 'monthly', 'yearly'].includes(type);
+  });
   if (!matching.length) return floorName
     ? `Không tìm thấy tầng ${floorName}.`
     : 'Bãi xe chưa có dữ liệu ô đỗ.';

@@ -9,6 +9,7 @@ import { API_BASE } from '../../services/api';
 import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
 
 const createEmptyKioskFormData = () => ({
+  qrPayload: null,
   licensePlate: '',
   phone: '',
   selectedSlot: null,
@@ -152,8 +153,10 @@ export default function KioskFlow() {
       const cleanPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
       const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
         body: JSON.stringify({
+          qrPayload: formData.qrPayload,
           licensePlate: cleanPlate,
           phone: formData.phone,
           parkingSlot: formData.selectedSlot,
@@ -171,7 +174,7 @@ export default function KioskFlow() {
       if (data.success) {
         clearCurrentHoldState();
         // Cập nhật session thành công để chuyển sang màn hình chào đón & chỉ ô đỗ
-        setSuccessSession(data.data);
+        setSuccessSession({ ...data.data, pass: data.pass });
       } else {
         alert(data.message || 'Something went wrong.');
       }
@@ -192,8 +195,10 @@ export default function KioskFlow() {
   const handleFastPassEntry = async () => {
     const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
       body: JSON.stringify({
+        qrPayload: formData.qrPayload,
         licensePlate: formData.licensePlate,
         phone: formData.phone,
         parkingSlot: formData.selectedSlot,

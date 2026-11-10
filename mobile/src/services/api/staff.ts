@@ -44,6 +44,29 @@ export interface StaffBookingQrResolution {
   allowedActions: StaffBookingQrAction[];
 }
 
+export interface StaffParkingPassResolution {
+  credentialType: 'PARKING_PASS';
+  pass: { _id: string };
+  booking: StaffBooking | null;
+  session: StaffSession | null;
+  licensePlate: string;
+  allowedActions: StaffBookingQrAction[];
+}
+export interface ParkingCheckoutQuote {
+  totalPrice: number;
+  amountToPay: number;
+  canAutoPay?: boolean;
+  walletBalance?: number;
+  isEarlyExit?: boolean;
+  remainingHours?: number;
+  refundAmount?: number;
+}
+export interface ParkingPassTransitionResult {
+  success: boolean;
+  requiresPayment?: boolean;
+  data?: { orderCode?: number; qrCode?: string; checkoutUrl?: string; checkoutAttemptId?: string };
+}
+
 export interface StaffBookingTransitionPayload {
   action: StaffBookingQrAction;
   payload: string;
@@ -108,6 +131,7 @@ export interface TicketPackage {
 
 export interface StaffSession {
   _id: string;
+  type?: 'WALK_IN' | 'BOOKING' | 'SUBSCRIPTION';
   licensePlate: string;
   parkingSlot?: string;
   floorId?: string | { _id?: string; name?: string; floorNumber?: number };
@@ -115,6 +139,7 @@ export interface StaffSession {
   checkOutTime?: string;
   status: 'active' | 'completed' | 'cancelled';
   phone?: string;
+  userId?: string;
   vehicleType?: string;
   source?: 'kiosk' | 'app_booking' | 'booking' | 'walk_in' | 'staff_manual';
   totalPrice?: number;
@@ -129,6 +154,10 @@ export interface StaffSession {
 }
 
 export const staffService = {
+  resolveParkingPass: (payload: string) => apiClient.post<APIResponse<StaffParkingPassResolution>>('/parking-passes/resolve', { payload }),
+  transitionParkingPass: (id: string, data: StaffBookingTransitionPayload & { paymentMethod?: string; checkoutAttemptId?: string; keepPaused?: boolean }) => apiClient.post<ParkingPassTransitionResult>(`/parking-passes/${id}/transition`, data),
+  quoteParkingPass: (id: string, payload: string) => apiClient.post<APIResponse<ParkingCheckoutQuote>>(`/parking-passes/${id}/checkout-quote`, { payload }),
+  checkParkingPayment: (orderCode: number, checkoutAttemptId: string) => apiClient.get<{ success: boolean; isPaid: boolean }>(`/sessions/check-payos/${orderCode}`, { params: { checkoutAttemptId } }),
   getCustomers: () => apiClient.get<APIResponse<StaffCustomer[]>>('/staff/users'),
   updateCustomerStatus: (id: string, status: boolean) =>
     apiClient.put<APIResponse<StaffCustomer>>(`/staff/users/${id}/status`, { status }),

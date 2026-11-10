@@ -56,6 +56,7 @@ const subscriptionSchema = new mongoose.Schema(
       default: 1,
       min: 1,
     },
+    expiryNotificationPending: { type: Boolean, default: false },
     expireWarningSent: {
       type: Boolean,
       default: false,

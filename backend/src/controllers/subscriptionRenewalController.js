@@ -1,3 +1,4 @@
+const diagnoseMembershipError = require('../utils/membershipErrorDiagnostics');
 const { validationResult } = require('express-validator');
 const renewalService = require('../services/subscriptionRenewalService');
 
@@ -24,6 +25,7 @@ const getQuote = async (req, res, next) => {
     );
     res.status(200).json({ success: true, data });
   } catch (error) {
+    diagnoseMembershipError(req, error);
     next(error);
   }
 };
@@ -33,11 +35,13 @@ const payWithWallet = async (req, res, next) => {
     if (handleValidation(req, res)) return;
     const data = await renewalService.renewWithWallet({
       userId: req.user._id,
+      app: req.app,
       subscriptionId: req.params.subscriptionId,
       idempotencyKey: req.body.idempotencyKey,
     });
     res.status(200).json({ success: true, message: 'Subscription renewed.', data });
   } catch (error) {
+    diagnoseMembershipError(req, error);
     next(error);
   }
 };
@@ -47,11 +51,13 @@ const createPayosPayment = async (req, res, next) => {
     if (handleValidation(req, res)) return;
     const data = await renewalService.createPayosRenewal({
       userId: req.user._id,
+      app: req.app,
       subscriptionId: req.params.subscriptionId,
       idempotencyKey: req.body.idempotencyKey,
     });
     res.status(200).json({ success: true, data });
   } catch (error) {
+    diagnoseMembershipError(req, error);
     next(error);
   }
 };
@@ -61,10 +67,12 @@ const verifyPayosPayment = async (req, res, next) => {
     if (handleValidation(req, res)) return;
     const data = await renewalService.verifyPayosRenewal({
       userId: req.user._id,
+      app: req.app,
       orderCode: req.body.orderCode,
     });
     res.status(200).json({ success: true, data });
   } catch (error) {
+    diagnoseMembershipError(req, error);
     next(error);
   }
 };

@@ -59,6 +59,7 @@ const activateRenewalInSession = async ({
   session,
   walletTransactionId = null,
 }) => {
+  await validateRenewalEligibility({ userId, subscriptionId: quote.subscription._id, ignoreRenewalId: renewal._id, session });
   const subscription = await Subscription.findOneAndUpdate(
     {
       _id: quote.subscription._id,
@@ -117,6 +118,7 @@ const activateRenewalInSession = async ({
   );
 
   renewal.status = 'paid';
+  renewal.notificationPending = true;
   renewal.oldExpireAt = quote.currentExpireAt;
   renewal.newExpireAt = quote.newExpireAt;
   renewal.walletTransactionId = walletTransactionId || renewal.walletTransactionId;
@@ -126,7 +128,7 @@ const activateRenewalInSession = async ({
   return { renewal, subscription };
 };
 
-const renewWithWallet = async ({ userId, subscriptionId, idempotencyKey }) => {
+const renewWithWallet = async ({ userId, subscriptionId, idempotencyKey, app = null }) => {
   const existing = await findIdempotentRenewal(userId, idempotencyKey);
   if (existing?.status === 'paid') {
     return publicRenewalResult(existing, { alreadyProcessed: true });
@@ -139,11 +141,12 @@ const renewWithWallet = async ({ userId, subscriptionId, idempotencyKey }) => {
     );
   }
 
-  const quote = await validateRenewalEligibility({ userId, subscriptionId });
+  let quote = await validateRenewalEligibility({ userId, subscriptionId });
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
+    quote = await validateRenewalEligibility({ userId, subscriptionId, session });
     const created = await SubscriptionRenewal.create(
       [{
         subscriptionId,
@@ -181,6 +184,7 @@ const renewWithWallet = async ({ userId, subscriptionId, idempotencyKey }) => {
     });
     await session.commitTransaction();
 
+    await require('./membershipNotifications').notifyRenewal(activated.renewal, 'subscription', app);
     return publicRenewalResult(activated.renewal, {
       alreadyProcessed: false,
       walletBalance: debit.newBalance,
@@ -200,7 +204,7 @@ const renewWithWallet = async ({ userId, subscriptionId, idempotencyKey }) => {
   }
 };
 
-const createPayosRenewal = async ({ userId, subscriptionId, idempotencyKey }) => {
+const createPayosRenewal = async ({ userId, subscriptionId, idempotencyKey, app = null }) => {
   const existing = await findIdempotentRenewal(userId, idempotencyKey);
   if (existing) {
     if (!['pending', 'paid'].includes(existing.status)) {
@@ -210,6 +214,8 @@ const createPayosRenewal = async ({ userId, subscriptionId, idempotencyKey }) =>
         409
       );
     }
+    if (String(existing.subscriptionId) !== String(subscriptionId)) throw businessError('Renewal does not belong to this subscription.', 'RENEWAL_SUBSCRIPTION_MISMATCH', 409);
+    if (existing.status !== 'paid') await validateRenewalEligibility({ userId, subscriptionId, ignoreRenewalId: existing._id });
     return publicRenewalResult(existing, {
       checkoutUrl: existing.payosCheckoutUrl,
       paymentLinkId: existing.payosPaymentLinkId,
@@ -254,10 +260,10 @@ const createPayosRenewal = async ({ userId, subscriptionId, idempotencyKey }) =>
       description: 'VALO Renew VIP',
       returnUrl:
         process.env.PAYOS_RENEWAL_RETURN_URL ||
-        `${clientUrl}/customer/membership-transfers?renewOrderCode=${orderCode}`,
+        `${clientUrl}/customer/membership-transfers?subscriptionId=${encodeURIComponent(subscriptionId)}&renewOrderCode=${orderCode}`,
       cancelUrl:
         process.env.PAYOS_RENEWAL_CANCEL_URL ||
-        `${clientUrl}/customer/membership-transfers?renewOrderCode=${orderCode}&cancel=true`,
+        `${clientUrl}/customer/membership-transfers?subscriptionId=${encodeURIComponent(subscriptionId)}&renewOrderCode=${orderCode}&cancel=true`,
       items: [{
         name: `Renew ${quote.ticketPackage.name}`,
         quantity: 1,
@@ -282,7 +288,7 @@ const createPayosRenewal = async ({ userId, subscriptionId, idempotencyKey }) =>
   }
 };
 
-const verifyPayosRenewal = async ({ userId, orderCode }) => {
+const verifyPayosRenewal = async ({ userId, orderCode, app = null }) => {
   const renewal = await SubscriptionRenewal.findOne({
     userId,
     orderCode: Number(orderCode),
@@ -328,6 +334,7 @@ const verifyPayosRenewal = async ({ userId, orderCode }) => {
       session,
     });
     await session.commitTransaction();
+    await require('./membershipNotifications').notifyRenewal(activated.renewal, 'subscription', app);
     return publicRenewalResult(activated.renewal, { alreadyProcessed: false });
   } catch (error) {
     await session.abortTransaction();

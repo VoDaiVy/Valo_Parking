@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import './adminPageConsistency.css';
+import './policyList.css';
+import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Archive,
@@ -99,7 +102,6 @@ const tabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'draft', label: 'Draft', icon: FileText },
   { id: 'versions', label: 'Versions', icon: History },
-  { id: 'acceptances', label: 'Acceptances', icon: Users },
 ];
 
 const policyStatusOptions = [
@@ -202,6 +204,7 @@ export default function PolicyManagement() {
   const [acceptanceMeta, setAcceptanceMeta] = useState(null);
   const [acceptancesLoading, setAcceptancesLoading] = useState(false);
   const [acceptancesError, setAcceptancesError] = useState('');
+  const [listPage, setListPage] = useState(1);
   const reduceMotion = useReducedMotion();
 
   const selectedPolicy = detail?.policy;
@@ -224,14 +227,27 @@ export default function PolicyManagement() {
     setTimeout(() => setToast(''), 3000);
   };
 
+  const aiRefreshGeneration = useRef(0);
   const fetchPolicies = async () => {
+    const generation = ++aiRefreshGeneration.current;
     const res = await getAdminPolicies();
+      if (generation !== aiRefreshGeneration.current) return;
     if (res.ok && res.data?.success) {
       setPolicies(res.data.data || []);
     } else {
       setError(res.data?.message || 'Unable to load policies.');
     }
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchPolicies; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['CREATE_POLICY_DRAFT', 'ARCHIVE_POLICY'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   const loadDetail = async (id) => {
     if (!id) return;
@@ -516,6 +532,17 @@ export default function PolicyManagement() {
       });
   }, [policies, searchQuery, sortMode, statusFilter]);
 
+  const listPageSize = 5;
+  const listTotalPages = Math.max(1, Math.ceil(visiblePolicies.length / listPageSize));
+  const currentListPage = Math.min(listPage, listTotalPages);
+  const listStart = (currentListPage - 1) * listPageSize;
+  const paginatedPolicies = visiblePolicies.slice(listStart, listStart + listPageSize);
+  const firstPageButton = Math.max(1, Math.min(currentListPage - 1, listTotalPages - 2));
+  const listPageButtons = Array.from(
+    { length: Math.min(3, listTotalPages) },
+    (_, index) => firstPageButton + index
+  );
+
   const openCreate = () => {
     setSelectedId('');
     setDetail(null);
@@ -530,9 +557,8 @@ export default function PolicyManagement() {
   };
 
   return (
-    <div className={`relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-6 text-white sm:px-6 lg:px-8 ${scrollbarClass}`}>
-      <div className="pointer-events-none absolute left-8 top-0 h-72 w-72 rounded-full bg-yellow-400/10 blur-[110px]" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
+    <div className={`admin-consistency admin-policy-consistency relative bg-[#090909] px-4 py-6 text-white sm:px-6 lg:px-8 ${scrollbarClass}`}>
+      <AdminBackgroundOverlay />
 
       {toast && (
         <motion.div
@@ -544,19 +570,18 @@ export default function PolicyManagement() {
         </motion.div>
       )}
 
-      <div className="relative mx-auto max-w-[1480px]">
+      <div className="policy-page-content relative mx-auto max-w-[1480px]">
         <motion.header
           {...motionProps}
-          className="mb-7 flex flex-col justify-between gap-5 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-end"
+          className="c4-header mb-7 flex flex-col justify-between gap-5 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-end"
         >
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-300">
+            <div className="c4-title-line"><h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
+              Policies
+            </h1><div className="c4-badge">
               <FileText size={13} />
               Policy Manager
-            </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
-              Policies
-            </h1>
+            </div></div>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-[15px]">
                  Manage policy drafts, versions, and acceptance records.
             </p>
@@ -570,7 +595,7 @@ export default function PolicyManagement() {
         <motion.section
           {...motionProps}
           transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.08 }}
-          className="mb-6 grid border-y border-white/[0.08] md:grid-cols-4"
+          className="c4-kpis c4-four mb-6 grid border-y border-white/[0.08] md:grid-cols-4"
         >
           {summary.map((item, index) => {
             const Icon = item.icon;
@@ -590,7 +615,7 @@ export default function PolicyManagement() {
                     {item.label}
                   </p>
                   <div className="mt-1 flex items-end gap-2">
-                    <span className="text-2xl font-black leading-none text-white">{item.value}</span>
+                    <span className="c4-kpi-value admin-type-kpi text-2xl font-black leading-none text-white">{item.value}</span>
                     <span className="text-xs font-semibold text-slate-500">{item.note}</span>
                   </div>
                 </div>
@@ -602,21 +627,21 @@ export default function PolicyManagement() {
         <motion.section
           {...motionProps}
           transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.12 }}
-          className="mb-6 flex flex-col gap-3 border-b border-white/[0.08] pb-6 lg:flex-row lg:items-center"
+          className="policy-filters mb-3 flex flex-col gap-2 border-b border-white/[0.08] pb-3 lg:flex-row lg:items-center"
         >
           <label className="relative flex-1">
             <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
             <input
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              className="h-12 w-full rounded-[14px] border border-white/[0.08] bg-[#111111]/80 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-400/45 focus:bg-black/60"
+              onChange={(event) => { setSearchQuery(event.target.value); setListPage(1); }}
+              className="h-11 w-full rounded-[14px] border border-white/[0.08] bg-[#111111]/80 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-400/45 focus:bg-black/60"
               placeholder="Search policies by name, slug or category..."
             />
           </label>
           <div className="grid grid-cols-2 gap-3 sm:flex">
             <AdminSelect
               value={statusFilter}
-              onChange={setStatusFilter}
+              onChange={(value) => { setStatusFilter(value); setListPage(1); }}
               options={policyStatusOptions}
               icon={SlidersHorizontal}
               className="w-full sm:w-44"
@@ -624,7 +649,7 @@ export default function PolicyManagement() {
             />
             <AdminSelect
               value={sortMode}
-              onChange={setSortMode}
+              onChange={(value) => { setSortMode(value); setListPage(1); }}
               options={policySortOptions}
               icon={Clock3}
               className="w-full sm:w-44"
@@ -643,13 +668,13 @@ export default function PolicyManagement() {
         <motion.main
           {...motionProps}
           transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.16 }}
-          className="grid min-h-[620px] overflow-hidden border border-white/[0.08] bg-[#0c0c0c]/70 lg:grid-cols-[34%_66%]"
+          className="policy-workspace border border-white/[0.08] bg-[#0c0c0c]/70"
         >
-          <aside className="flex min-h-[520px] flex-col border-b border-white/[0.08] lg:border-b-0 lg:border-r">
-            <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-[0.18em] text-white">Policies</h2>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
+          <aside aria-label="Policy List" className="policy-list flex min-w-0 flex-col border-b border-white/[0.08] lg:border-b-0 lg:border-r">
+            <div className="policy-list-toolbar flex items-center justify-between border-b border-white/[0.08]">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <h2 className="text-sm font-bold text-white">Policy List</h2>
+                <p className="text-xs text-slate-500">
                   {visiblePolicies.length} of {policies.length} policies
                 </p>
               </div>
@@ -658,11 +683,13 @@ export default function PolicyManagement() {
                 onClick={openCreate}
                 className="group flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-slate-300 transition hover:border-yellow-400/40 hover:bg-yellow-400/10 hover:text-yellow-300"
                 title="Create policy"
+                aria-label="Create policy"
               >
                 <Plus size={16} className="transition-transform group-hover:rotate-90" />
               </button>
             </div>
-            <div className={`flex-1 overflow-y-auto ${scrollbarClass}`}>
+            <div aria-hidden="true" className="policy-list-columns"><span>Policy</span><span>Status</span><span /></div>
+            <div className="policy-list-body min-w-0" tabIndex={0} role="region" aria-label="Policy records">
               {loading ? (
                 <div className="flex items-center justify-center gap-3 py-16 text-sm font-bold text-slate-400">
                   <Loader2 size={16} className="animate-spin text-yellow-400" />
@@ -675,44 +702,47 @@ export default function PolicyManagement() {
                 </div>
               ) : (
                 <div>
-                  {visiblePolicies.map((policy, index) => {
+                  {paginatedPolicies.map((policy) => {
                     const selected = selectedId === policy._id && !isCreating;
                     return (
-                      <motion.button
+                      <button
                         key={policy._id}
                         type="button"
-                        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-                        animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-                        transition={{ delay: Math.min(index * 0.025, 0.25) }}
+                        aria-pressed={selected}
                         onClick={() => selectPolicy(policy._id)}
-                        className={`group relative flex w-full items-center gap-4 border-b border-white/[0.06] px-5 py-4 text-left transition ${
-                          selected
-                            ? 'bg-yellow-400/[0.075]'
-                            : 'hover:bg-white/[0.035]'
-                        }`}
+                        className={`policy-list-row group ${selected ? 'is-selected' : ''}`}
                       >
-                        <span className={`absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full bg-yellow-400 transition-all ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-sm font-black text-white">{policy.title}</p>
-                            <StatusBadge status={policy.status} />
-                          </div>
-                          <div className="mt-1 flex items-center gap-2 text-xs font-semibold text-slate-500">
-                            <span className="truncate">/{policy.slug}</span>
-                            <span className="h-1 w-1 rounded-full bg-slate-700" />
-                            <span>v{policy.currentVersionNumber || 0}</span>
-                          </div>
-                        </div>
-                        <ChevronRight size={16} className="shrink-0 text-slate-600 transition group-hover:translate-x-1 group-hover:text-yellow-300" />
-                      </motion.button>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-white" title={policy.title}>{policy.title}</span>
+                          <span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                            <span className="truncate" title={`/${policy.slug}`}>/{policy.slug}</span>
+                            <span aria-hidden="true">&middot;</span>
+                            <span className="shrink-0">v{policy.currentVersionNumber || 0}</span>
+                          </span>
+                        </span>
+                        <span><StatusBadge status={policy.status} /></span>
+                        <ChevronRight size={14} aria-hidden="true" className="text-slate-600 group-hover:text-[#e8d5ad]" />
+                      </button>
                     );
                   })}
                 </div>
               )}
             </div>
+            <footer className="policy-list-pagination">
+              <p className="text-xs text-white/40" aria-live="polite">
+                {visiblePolicies.length ? listStart + 1 : 0}&ndash;{Math.min(listStart + listPageSize, visiblePolicies.length)} of {visiblePolicies.length} policies
+              </p>
+              <nav aria-label="Policy list pagination" className="flex items-center gap-1">
+                <button type="button" disabled={loading || currentListPage === 1} onClick={() => setListPage(currentListPage - 1)} aria-label="Previous policy page">&larr; Prev</button>
+                {listPageButtons.map((page) => (
+                  <button key={page} type="button" disabled={loading || visiblePolicies.length === 0} aria-label={`Policy page ${page}`} aria-current={page === currentListPage ? 'page' : undefined} onClick={() => setListPage(page)}>{page}</button>
+                ))}
+                <button type="button" disabled={loading || currentListPage === listTotalPages} onClick={() => setListPage(currentListPage + 1)} aria-label="Next policy page">Next &rarr;</button>
+              </nav>
+            </footer>
           </aside>
 
-          <section className="relative min-h-[620px] overflow-hidden">
+          <section aria-label="Policy Details" tabIndex={isCreating ? 0 : undefined} className={`policy-detail relative min-w-0 ${isCreating ? 'is-creating' : ''}`}>
             {isCreating ? (
               <CreatePolicyWorkspace
                 createForm={createForm}
@@ -726,7 +756,7 @@ export default function PolicyManagement() {
             ) : !selectedPolicy ? (
               <EmptyWorkspace onCreate={openCreate} />
             ) : detailLoading ? (
-              <div className="flex min-h-[620px] items-center justify-center gap-3 text-sm font-bold text-slate-400">
+              <div className="flex min-h-[280px] items-center justify-center gap-3 text-sm font-bold text-slate-400">
                 <Loader2 size={18} className="animate-spin text-yellow-400" />
                 Loading policy detail
               </div>
@@ -776,22 +806,18 @@ export default function PolicyManagement() {
 
 function EmptyWorkspace({ onCreate }) {
   return (
-    <div className="relative flex min-h-[620px] items-center justify-center overflow-hidden px-6 text-center">
-      <div className="absolute h-80 w-80 rounded-full bg-yellow-400/10 blur-[100px]" />
-      <div className="absolute h-[360px] w-[360px] opacity-25 [background-image:radial-gradient(rgba(250,204,21,.38)_1px,transparent_1px)] [background-size:13px_13px]" />
+    <div className="policy-empty relative flex min-h-[280px] items-center justify-center overflow-hidden px-5 py-7 text-center">
+      <div className="absolute h-[180px] w-[180px] opacity-10 [background-image:radial-gradient(rgba(250,204,21,.38)_1px,transparent_1px)] [background-size:13px_13px]" />
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative max-w-md"
       >
-        <div className="mx-auto mb-7 flex h-20 w-20 items-center justify-center rounded-[22px] border border-yellow-400/25 bg-black/45 text-yellow-300 shadow-[0_0_50px_rgba(234,179,8,0.16)]">
-          <FileText size={38} strokeWidth={1.4} />
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[14px] border border-yellow-400/25 bg-black/45 text-yellow-300">
+          <FileText size={25} strokeWidth={1.4} />
         </div>
-        <h2 className="text-2xl font-black text-white">No Policy Selected</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-400">
-          Select a policy from the navigator to view metadata, drafts, versions, and acceptance records.
-        </p>
-        <PremiumButton onClick={onCreate} className="mt-7">
+        <h2 className="text-xl font-bold text-white">No Policy Selected</h2>
+        <PremiumButton onClick={onCreate} className="mt-4">
           <Plus size={16} />
           Create New Policy
         </PremiumButton>
@@ -810,13 +836,10 @@ function CreatePolicyWorkspace({
   setError,
 }) {
   return (
-    <div className={`h-full overflow-y-auto p-5 lg:p-8 ${scrollbarClass}`}>
+    <div className="min-w-0 p-5 lg:p-6">
       <div className="mb-8 border-b border-white/[0.08] pb-6">
         <SectionLabel>Draft Builder</SectionLabel>
         <h2 className="mt-2 text-3xl font-black text-white">Create New Policy</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Start with editable metadata and an initial draft version.
-        </p>
       </div>
 
       <form onSubmit={handleCreate} className="space-y-6">
@@ -863,7 +886,7 @@ function CreatePolicyWorkspace({
             />
           </label>
           <div className="flex items-end">
-            <label className="flex min-h-[48px] w-full cursor-pointer items-center gap-3 rounded-[14px] border border-white/[0.08] bg-black/45 px-4 text-sm font-bold text-slate-300 transition hover:bg-white/[0.03]">
+            <label className="flex min-h-[48px] w-full cursor-pointer items-center gap-3 text-sm font-bold text-slate-300">
               <input
                 type="checkbox"
                 checked={createForm.requiresAcceptance}
@@ -964,8 +987,8 @@ function PolicyWorkspace({
   acceptancesError,
 }) {
   return (
-    <div className="h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-[#0c0c0c]/95 px-5 py-5 backdrop-blur-xl lg:px-8">
+    <div className="policy-detail-workspace min-w-0">
+      <div className="policy-detail-header z-20 border-b border-white/[0.08] bg-[#0c0c0c]/95 px-5 py-5 backdrop-blur-xl lg:px-8">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
@@ -979,6 +1002,12 @@ function PolicyWorkspace({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {activeTab === 'overview' && metadata && (
+              <PremiumButton variant="light" onClick={handleMetadataSave} disabled={saving}>
+                <Save size={16} />
+                Save Metadata
+              </PremiumButton>
+            )}
             {!activeDraft && (
               <PremiumButton variant="ghost" onClick={handleCreateNextDraft} disabled={saving}>
                 <Plus size={15} />
@@ -1025,14 +1054,12 @@ function PolicyWorkspace({
         </nav>
       </div>
 
-      <div className="p-5 lg:p-8">
+      <div className="policy-tab-content p-5 lg:p-8" tabIndex={0} role="region" aria-label={`${tabs.find((tab) => tab.id === activeTab)?.label} content`}>
         {activeTab === 'overview' && (
           <OverviewPanel
             selectedPolicy={selectedPolicy}
             metadata={metadata}
-            handleMetadataSave={handleMetadataSave}
             setMetadata={setMetadata}
-            saving={saving}
           />
         )}
         {activeTab === 'draft' && (
@@ -1066,18 +1093,14 @@ function PolicyWorkspace({
   );
 }
 
-function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSave, saving }) {
+function OverviewPanel({ selectedPolicy, metadata, setMetadata }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="policy-overview max-w-4xl">
       <div className="mb-7">
-        <SectionLabel>Overview</SectionLabel>
         <h3 className="mt-2 text-2xl font-black text-white">Policy Information</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Metadata stays editable while version content is controlled through drafts.
-        </p>
       </div>
 
-      <div className="border-y border-white/[0.08]">
+      <div className="policy-info-grid border-y border-white/[0.08]">
         <InfoLine label="Policy Name" value={selectedPolicy.title} />
         <InfoLine label="Slug" value={`/${selectedPolicy.slug}`} />
         <InfoLine label="Category" value={categoryLabel(selectedPolicy.category)} />
@@ -1092,16 +1115,13 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
       </div>
 
       {metadata && (
-        <div className="mt-8 border-t border-white/[0.08] pt-7">
-          <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div className="policy-metadata mt-8 border-t border-white/[0.08] pt-7">
+          <div className="policy-metadata-heading mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div>
               <SectionLabel>Editable Metadata</SectionLabel>
-              <p className="mt-2 text-sm text-slate-400">These fields use the existing save metadata handler.</p>
+              <p className="mt-2 text-sm text-slate-400">Update policy details and acceptance requirements.</p>
             </div>
-            <PremiumButton variant="light" onClick={handleMetadataSave} disabled={saving}>
-              <Save size={16} />
-              Save Metadata
-            </PremiumButton>
+
           </div>
           <div className="grid gap-5 xl:grid-cols-2">
             <label>
@@ -1140,7 +1160,7 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
                 ariaLabel="Select policy category"
               />
             </label>
-            <label className="flex min-h-[48px] cursor-pointer items-center gap-3 self-end rounded-[14px] border border-white/[0.08] bg-black/45 px-4 text-sm font-bold text-slate-300 transition hover:bg-white/[0.03]">
+            <label className="flex min-h-[48px] cursor-pointer items-center gap-3 self-end text-sm font-bold text-slate-300">
               <input
                 type="checkbox"
                 checked={metadata.requiresAcceptance}
@@ -1312,7 +1332,7 @@ function DraftPanel({
 
 function VersionTimeline({ versions, currentVersionNumber }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="policy-overview max-w-4xl">
       <div className="mb-7">
         <SectionLabel>Version History</SectionLabel>
         <h3 className="mt-2 text-2xl font-black text-white">Timeline</h3>
@@ -1391,7 +1411,7 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
         </div>
       ) : (
         <div className="overflow-hidden border-y border-white/[0.08]">
-          <div className={`max-h-[520px] overflow-auto ${scrollbarClass}`}>
+          <div className={`overflow-x-auto ${scrollbarClass}`}>
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#111111] text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                 <tr>

@@ -4,6 +4,8 @@ const User = require('../models/User');
 const ACTIVE_STATUSES = ['active', 'transfer_locked'];
 
 const documentId = (value) => String(value?._id || value || '');
+// A dangling populated reference must retain its identity for migration matching.
+const preserveFloorReference = (document, originalId) => document || { _id: originalId };
 
 const sourceSlotKey = (sourceSubscriptionId, floorId, slotCode) =>
   [
@@ -90,6 +92,7 @@ const recomputeUserMembership = async (userId, options = {}) => {
 };
 
 module.exports = {
+  preserveFloorReference,
   ACTIVE_STATUSES,
   sourceSlotKey,
   getUnmigratedLegacySlots,

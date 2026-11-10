@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import './adminPageConsistency.css';
+import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Upload, RefreshCw, CheckCircle2, AlertCircle,
@@ -194,6 +196,19 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
         <p className="mt-1 font-mono text-sm font-black tracking-[0.14em] text-blue-100/80">
           {formatLicensePlateDisplay(vehicle.licensePlateDisplay || vehicle.licensePlate)}
         </p>
+        {vehicle.registrationVerification?.reason && (
+          <p className="mt-1 text-xs text-amber-300">
+            {vehicle.registrationVerification.reason.startsWith('mismatch:')
+              ? `Image mismatch: ${vehicle.registrationVerification.reason.slice(9).split(',').join(', ')}`
+              : ({
+                  image_missing: 'Registration image missing or upload failed',
+                  ai_unavailable: 'AI could not verify the image',
+                  approval_disabled: 'AI approval was switched off during verification',
+                  settings_unavailable: 'AI approval setting was unavailable',
+                  vehicle_changed: 'Vehicle details changed after approval',
+                }[vehicle.registrationVerification.reason] || 'Awaiting manual review')}
+          </p>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
           <span className="inline-flex items-center gap-1">
             {vehicle.vehicleType === 'electric_car' ? <Zap size={12} /> : <Car size={12} />}
@@ -394,8 +409,8 @@ const inputCls =
 
 function SummaryStrip({ metrics }) {
   return (
-    <section className="border-y border-white/[0.08]">
-      <div className="grid grid-cols-1 divide-y divide-white/[0.08] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+    <section className="c4-vehicle-kpis border-y border-white/[0.08]">
+      <div className="c4-kpis c4-four grid grid-cols-1 divide-y divide-white/[0.08] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
           return (
@@ -406,7 +421,7 @@ function SummaryStrip({ metrics }) {
               <div className="min-w-0">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-200/55">{metric.label}</p>
                 <div className="mt-1 flex items-baseline gap-2">
-                  <p className="font-mono text-3xl font-black text-white">{metric.value}</p>
+                  <p className="c4-kpi-value font-mono text-3xl font-black text-white">{metric.value}</p>
                   <p className="truncate text-xs font-bold text-blue-200/50">{metric.note}</p>
                 </div>
               </div>
@@ -426,7 +441,8 @@ function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount }
   ];
 
   return (
-    <div className="inline-grid rounded-[16px] border border-white/[0.08] bg-[#111111]/70 p-1 sm:grid-cols-3">
+    <div className="vehicle-tabs-scroll min-w-0 max-w-full overflow-x-auto">
+    <div className="vehicle-tabs inline-flex w-max items-center gap-1 rounded-[16px] border border-white/[0.08] bg-[#111111]/70 p-1">
       {options.map((option) => {
         const Icon = option.icon;
         const active = tab === option.id;
@@ -435,7 +451,7 @@ function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount }
             key={option.id}
             type="button"
             onClick={() => setTab(option.id)}
-            className={`relative flex h-11 min-w-[150px] items-center justify-center gap-2 rounded-[12px] px-4 text-sm font-black transition ${
+            className={`relative inline-flex h-11 w-max shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition ${
               active ? 'text-black' : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -446,16 +462,17 @@ function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount }
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }}
               />
             )}
-            <span className="relative flex items-center gap-2">
-              <Icon size={15} />
+            <span className="relative inline-flex items-center gap-2 whitespace-nowrap">
+              <Icon size={15} className="shrink-0" />
               {option.label}
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-black/10' : 'bg-white/5'}`}>
+              <span className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] leading-none ${active ? 'bg-black/10' : 'bg-white/5'}`}>
                 {option.count}
               </span>
             </span>
           </button>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -535,6 +552,8 @@ export default function VehicleManagement() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [preview3D, setPreview3D] = useState(null);
+  const [approvalSettings, setApprovalSettings] = useState(null);
+  const [approvalSaving, setApprovalSaving] = useState(false);
   
   const [searchParams, setSearchParams] = useSearchParams();
   const vehicleIdQuery = searchParams.get('vehicleId');
@@ -566,10 +585,10 @@ export default function VehicleManagement() {
   const [modelBrandFilter, setModelBrandFilter] = useState('all');
   const fileRef = useRef();
 
-  const showToast = (msg, type = 'success') => {
+  const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
-  };
+  }, []);
 
   const loadModels = async () => {
     setModelsLoading(true);
@@ -592,15 +611,38 @@ export default function VehicleManagement() {
     if (res.ok) setApproved(res.data?.data || []);
   };
 
+  const loadApprovalSettings = useCallback(async () => {
+    const res = await apiFetch('/admin/vehicles/approval-settings', { headers: authHeader() });
+    if (res.ok) setApprovalSettings(res.data.data);
+    else showToast(res.data?.message || 'Could not load AI approval setting', 'error');
+  }, [showToast]);
+
+  const changeApprovalSettings = async (enabled) => {
+    setApprovalSaving(true);
+    const res = await apiFetch('/admin/vehicles/approval-settings', {
+      method: 'PUT',
+      headers: authHeader(),
+      body: JSON.stringify({ enabled }),
+    });
+    setApprovalSaving(false);
+    if (res.ok) {
+      setApprovalSettings(res.data.data);
+      showToast(enabled ? 'AI approval enabled' : 'AI approval disabled');
+    } else {
+      showToast(res.data?.message || 'Could not update AI approval setting', 'error');
+    }
+  };
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadModels();
       loadPending();
       loadApproved();
+      loadApprovalSettings();
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [loadApprovalSettings]);
 
   useEffect(() => {
     if (vehicleIdQuery && (!pendingLoading || !approvedLoading)) {
@@ -809,34 +851,52 @@ export default function VehicleManagement() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className={`relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-6 text-white sm:px-6 lg:px-8 ${scrollbarClass}`}>
-      <div className="pointer-events-none absolute right-10 top-0 h-72 w-72 rounded-full bg-yellow-400/10 blur-[115px]" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.03] [background-image:linear-gradient(rgba(255,255,255,.62)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.62)_1px,transparent_1px)] [background-size:48px_48px]" />
+    <div className={`admin-consistency admin-vehicle-consistency relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-6 text-white sm:px-6 lg:px-8 ${scrollbarClass}`}>
+      <AdminBackgroundOverlay />
       <div className="relative mx-auto max-w-[1500px]">
         <motion.header
           {...motionProps}
-          className="mb-7 flex flex-col gap-5 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-end lg:justify-between"
+          className="c4-header mb-7 flex flex-col gap-5 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-end lg:justify-between"
         >
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-yellow-300">
+            <div className="c4-title-line"><h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
+              Vehicles &amp; 3D Models
+            </h1><div className="c4-badge">
               <Car size={13} />
               Vehicles
-            </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
-              Vehicles &amp; 3D Models
-            </h1>
+            </div></div>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-blue-200/60 sm:text-[15px]">
               Approve vehicle registrations, manage GLB model assets, and sync previews without leaving the workspace.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => { loadPending(); loadApproved(); loadModels(); }}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
-          >
-            <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
-            Sync
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-3 border-l border-white/10 pl-4">
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-white">AI approval</span>
+                <span className="block text-xs text-slate-400">
+                  {approvalSettings === null ? 'Loading...' : !approvalSettings.configured ? 'Gemini key not configured' : approvalSettings.enabled ? 'On - new registrations' : 'Off - manual review'}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="AI vehicle approval"
+                checked={approvalSettings?.enabled === true}
+                disabled={approvalSettings === null || approvalSaving || (!approvalSettings.configured && !approvalSettings.enabled)}
+                onChange={(event) => changeApprovalSettings(event.target.checked)}
+                className="peer sr-only"
+              />
+              <span aria-hidden="true" className="relative h-6 w-11 shrink-0 rounded-full bg-slate-600 transition-colors peer-checked:bg-yellow-400 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-yellow-400 peer-disabled:opacity-50 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+            </label>
+            <button
+              type="button"
+              onClick={() => { loadPending(); loadApproved(); loadModels(); loadApprovalSettings(); }}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
+            >
+              <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
+              Sync
+            </button>
+          </div>
         </motion.header>
 
         <motion.div {...motionProps} transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.06 }}>
@@ -880,9 +940,8 @@ export default function VehicleManagement() {
                 icon={Building2}
                 ariaLabel="Filter vehicles by manufacturer"
               />
-              <button type="button" onClick={loadPending} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
+              <button type="button" onClick={loadPending} aria-label="Refresh list" title="Refresh list" className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/[0.08] text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
                 <RefreshCw size={15} className={pendingLoading ? 'animate-spin' : ''} />
-                Refresh
               </button>
             </div>
           ) : tab === 'approved' ? (
@@ -906,9 +965,8 @@ export default function VehicleManagement() {
                 icon={Building2}
                 ariaLabel="Filter approved vehicles by manufacturer"
               />
-              <button type="button" onClick={loadApproved} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
+              <button type="button" onClick={loadApproved} aria-label="Refresh list" title="Refresh list" className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/[0.08] text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
                 <RefreshCw size={15} className={approvedLoading ? 'animate-spin' : ''} />
-                Refresh
               </button>
             </div>
           ) : (
