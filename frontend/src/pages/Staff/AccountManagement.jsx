@@ -17,6 +17,18 @@ import {
   getResponseAvailability,
 } from '../../utils/staffOperationalAvailability';
 
+// Match CustomerProfile/Navbar field precedence; stored CDN URLs are already absolute.
+function CustomerAvatar({ user, imageClassName, fallbackClassName, children }) {
+  const [failedSource, setFailedSource] = useState(null);
+  const avatar = user?.profile?.avatar || user?.avatar || user?.avatarUrl;
+  const source = typeof avatar === 'string' ? avatar.trim() : '';
+  return source && failedSource !== source
+    ? <img src={source} alt="" className={imageClassName}
+        referrerPolicy="no-referrer" loading="lazy" decoding="async"
+        onError={() => setFailedSource(source)} />
+    : <div className={fallbackClassName}>{children}</div>;
+}
+
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
   customer: {
@@ -591,10 +603,11 @@ export default function AccountManagement() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="relative flex-shrink-0">
-                          {u.profile?.avatar
-                            ? <img src={u.profile.avatar} alt="" className="g3-avatar w-9 h-9 rounded-full object-cover ring-2 ring-white/10" />
-                            : <div className={`g3-avatar w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>{initials(u)}</div>
-                          }
+                          <CustomerAvatar user={u}
+                            imageClassName="g3-avatar w-9 h-9 rounded-full object-cover ring-2 ring-white/10"
+                            fallbackClassName={`g3-avatar w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>
+                            {initials(u)}
+                          </CustomerAvatar>
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#080808] ${u.status ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                         </div>
                         <div className="min-w-0">
@@ -684,10 +697,11 @@ export default function AccountManagement() {
                   <div className="flex flex-col items-center text-center">
                     <div className="relative mb-3 group cursor-pointer">
                       <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} opacity-20 blur-xl scale-125 group-hover:opacity-40 transition-opacity duration-300`} />
-                      {panelUser.profile?.avatar
-                        ? <img src={panelUser.profile.avatar} alt="" className="relative w-20 h-20 rounded-full object-cover ring-4 ring-[#1B2027] shadow-xl" />
-                        : <div className={`relative w-20 h-20 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} flex items-center justify-center text-white text-3xl font-bold shadow-xl ring-4 ring-[#1B2027]`}>{initials(panelUser)}</div>
-                      }
+                      <CustomerAvatar user={panelUser}
+                        imageClassName="relative w-20 h-20 rounded-full object-cover ring-4 ring-[#1B2027] shadow-xl"
+                        fallbackClassName={`relative w-20 h-20 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} flex items-center justify-center text-white text-3xl font-bold shadow-xl ring-4 ring-[#1B2027]`}>
+                        {initials(panelUser)}
+                      </CustomerAvatar>
                       <span className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-[3px] border-[#1B2027] ${panelUser.status ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`} />
                     </div>
                     <h2 className="text-xl font-bold text-white mb-0.5">{displayName(panelUser)}</h2>
