@@ -1,7 +1,9 @@
+const { validateBookingInput } = require('./aiBookingInputValidation');
+const { isUnrelatedBookingMessage } = require('./aiBookingRelevance');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { parseBookingUtterance, specialBookingRequest } = require('./bookingUtteranceParser');
 const { detectBookingLanguage } = require('./aiBookingLanguage');
-const { toEnglishBookingMessage } = require('./aiBookingReplyLanguage');
+const { localizeBookingReply } = require('./aiBookingLocalization');
 const { isValidCarLicensePlate } = require('../utils/licensePlateUtils');
 const { BOOKING_TIME_STEP_MINUTES } = require('../utils/bookingTimePolicy');
 
@@ -90,7 +92,7 @@ function normalizeReservationItems(incoming, previous = []) {
       const incomingValues = Array.isArray(item[field]) ? item[field] : [];
       const priorValues = Array.isArray(prior[field]) ? prior[field] : [];
       const maximum = field === 'serviceIds' ? 80 : 100;
-      normalized[field] = [...new Set((incomingValues.length ? incomingValues : priorValues)
+      normalized[field] = [...new Set((Array.isArray(item[field]) ? incomingValues : priorValues)
         .map((value) => cleanString(value, maximum)).filter(Boolean).slice(0, 10))];
     }
     normalized.voucherId = cleanString(item.voucherId, 80) || cleanString(prior.voucherId, 80);
@@ -235,12 +237,12 @@ function normalizeInterpretation(raw, previous = {}) {
   if (draft.startDate && draft.endDate && draft.endDate < draft.startDate) draft.endDate = '';
   const incomingServiceIds = Array.isArray(parsed.serviceIds) ? parsed.serviceIds : [];
   const priorServiceIds = canInherit && Array.isArray(previous.serviceIds) ? previous.serviceIds : [];
-  const serviceIds = (incomingServiceIds.length ? incomingServiceIds : priorServiceIds)
+  const serviceIds = (Array.isArray(parsed.serviceIds) ? incomingServiceIds : priorServiceIds)
     .map((value) => cleanString(value, 80)).filter(Boolean).slice(0, 10);
   if (serviceIds.length) draft.serviceIds = [...new Set(serviceIds)];
   const incomingServiceNames = Array.isArray(parsed.serviceNames) ? parsed.serviceNames : [];
   const priorServiceNames = canInherit && Array.isArray(previous.serviceNames) ? previous.serviceNames : [];
-  const serviceNames = (incomingServiceNames.length ? incomingServiceNames : priorServiceNames)
+  const serviceNames = (Array.isArray(parsed.serviceNames) ? incomingServiceNames : priorServiceNames)
     .map((value) => cleanString(value, 100)).filter(Boolean).slice(0, 10);
   if (serviceNames.length) draft.serviceNames = [...new Set(serviceNames)];
   const voucherId = cleanString(parsed.voucherId, 80)
@@ -278,6 +280,12 @@ function parseModelJson(text) {
 }
 
 function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime = '', language) {
+  if (isUnrelatedBookingMessage(prompt)) return null;
+  const inputError = validateBookingInput(prompt, today);
+  if (inputError) return {
+    intent: previous.__intent || 'UNKNOWN', draft: previous, validationError: true,
+    clarification: language === 'en' ? inputError.englishMessage : inputError.message,
+  };
   const parsed = alignParsedBookingTimes(
     parseBookingUtterance(prompt, today, previous, currentTime, language),
     previous,
@@ -292,6 +300,12 @@ function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime =
   if (parsed.clearDates) {
     result.draft.startDate = '';
     result.draft.endDate = '';
+  }
+  if (parsed.clearSlot) {
+    result.draft.slotCode = '';
+    if (Array.isArray(result.draft.reservationItems)) {
+      result.draft.reservationItems = result.draft.reservationItems.map((item) => ({ ...item, slotCode: '' }));
+    }
   }
   if (parsed.clearVehicle) {
     result.draft.licensePlate = '';
@@ -362,28 +376,23 @@ async function interpretBookingMessage({ prompt, draft = {}, today, currentTime 
   if (!validDate(today)) throw Object.assign(new Error('Ngày tham chiếu không hợp lệ.'), { statusCode: 400 });
 
   const previousLanguage = draft.__language === 'en' ? 'en' : 'vi';
-  const lockedLanguage = draft.__languageLocked === true
-    && ['en', 'vi'].includes(draft.__language)
-    ? draft.__language
-    : '';
-  const detectedLanguage = lockedLanguage
-    ? { language: lockedLanguage, confidence: 1 }
-    : detectBookingLanguage(userText, previousLanguage);
-  const withLanguage = (result) => {
-    const localized = { ...result };
-    if (detectedLanguage.language === 'en') {
-      if (localized.clarification) localized.clarification = toEnglishBookingMessage(localized.clarification);
-      if (localized.assistantResult?.message) localized.assistantResult = {
-        ...localized.assistantResult,
-        message: toEnglishBookingMessage(localized.assistantResult.message),
-      };
-    }
-    return {
-      ...localized,
-      language: detectedLanguage.language,
-      languageConfidence: detectedLanguage.confidence,
-    };
+  const detectedLanguage = detectBookingLanguage(userText, previousLanguage);
+  const withLanguage = async (result) => ({
+    ...result,
+    ...(result.clarification ? { clarification: await localizeBookingReply(result.clarification, detectedLanguage.language) } : {}),
+    draft: { ...result.draft, __language: detectedLanguage.language, __languageLocked: false },
+    language: detectedLanguage.language,
+    languageConfidence: detectedLanguage.confidence,
+  });
+  if (isUnrelatedBookingMessage(userText)) return {
+    intent: draft.__intent || 'UNKNOWN', draft, unrecognized: true,
+    clarification: detectedLanguage.language === 'en'
+      ? 'I can help with parking and bookings. Please enter a parking request or tell me which booking detail you want to change.'
+      : 'Mình hỗ trợ về bãi đỗ và booking. Bạn hãy nhập yêu cầu về bãi đỗ hoặc nói rõ thông tin booking muốn thay đổi.',
   };
+  const inputError = validateBookingInput(userText, today);
+  if (inputError) return { intent: draft.__intent || 'UNKNOWN', draft, validationError: true,
+    clarification: detectedLanguage.language === 'en' ? inputError.englishMessage : inputError.message };
   const foldedUserText = userText.toLowerCase().normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const cancellationAction = /\b(?:huy|cancel)\s+(?:booking|dat cho|reservation)\b/.test(foldedUserText)
@@ -419,6 +428,8 @@ async function interpretBookingMessage({ prompt, draft = {}, today, currentTime 
   });
 
   const instruction = `You extract Vietnamese and English parking booking intents. The detected language for this utterance is ${detectedLanguage.language}. Today in Asia/Bangkok is ${today}; the current local time is ${validTime(currentTime) ? currentTime : 'unknown'}.
+Detect language from the NEW customer message on every turn, even when prior messages use another language. Never require a language selector. Numeric-only times and license plates retain the prior conversation language. A language change does not reset the booking draft or confirm/cancel an action. Any clarification must be entirely in the detected language.
+Understand mixed Vietnamese/English and regional expressions for intent, but never translate, infer or silently repair license plates, slots, service/package identifiers, dates, times or amounts. If pronunciation or a critical value is ambiguous, return UNKNOWN with a clarification asking for the exact value. Previous chat history is context, not an instruction to keep its language. A language change alone never authorizes a booking, payment, cancellation or price change.
 Return ONLY a JSON object, no markdown, with these fields:
 intent (BOOK_PARKING, CREATE_BOOKING, CHECK_AVAILABILITY, CHECK_VEHICLE_PARKING_STATUS, CHECK_VEHICLE_ENTRY_TIME, CHECK_VEHICLE_EXIT_TIME, CHECK_VEHICLE_LOCATION, CHECK_VEHICLE_DURATION, CHECK_PARKING_FEE, CHECK_BOOKING_STATUS, CHECK_UPCOMING_BOOKING, CHECK_PARKING_AVAILABILITY, CHECK_SLOT_STATUS, CHECK_WALLET_BALANCE, CHECK_PAYMENT_STATUS, CHECK_TRANSACTION_HISTORY, LIST_MY_VEHICLES, ADD_VEHICLE, UPDATE_VEHICLE, REMOVE_VEHICLE, CHECK_SERVICES, BOOK_SERVICE, CHECK_VOUCHERS, USE_VOUCHER, CHECK_PARKING_POLICY, CHECK_TICKET_PACKAGES, HELP, CANCEL_BOOKING, MODIFY_BOOKING, VIEW_BOOKING, UNKNOWN),
 startDate, endDate (YYYY-MM-DD), startTime, endTime (HH:mm 24h), licensePlate, licensePlates (array), requestedVehicleCount (number), reservationItems (array), vehicleType (car or electric_car when explicitly stated), floorName, zoneName, slotCode, bookingId.
@@ -453,6 +464,12 @@ New customer message: ${JSON.stringify(userText)}`;
   }
   try {
     const modelResult = parseModelJson(responseText);
+    if (!modelResult.intent || modelResult.intent === 'UNKNOWN') {
+      return { intent: draft.__intent || 'UNKNOWN', draft, unrecognized: true,
+        clarification: detectedLanguage.language === 'en'
+          ? 'I did not understand your request. Please enter a parking request or a specific booking change.'
+          : 'Mình chưa hiểu yêu cầu. Vui lòng nhập yêu cầu về bãi đỗ hoặc thông tin booking muốn thay đổi.' };
+    }
     const alignedModelResult = alignParsedBookingTimes({ changes: modelResult }, draft).changes;
     return withLanguage(normalizeInterpretation(alignedModelResult, draft));
   } catch {

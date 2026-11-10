@@ -15,6 +15,7 @@ const aiBookingMessageSchema = new mongoose.Schema(
     },
     intent: { type: String, trim: true, default: '' },
     state: { type: String, trim: true, default: '' },
+    language: { type: String, enum: ['en', 'vi', ''], default: '' },
     createdAt: { type: Date, default: Date.now },
   },
   { _id: true, id: false }
@@ -34,6 +35,8 @@ const aiBookingSessionSchema = new mongoose.Schema(
       maxlength: 100,
       default: () => new mongoose.Types.ObjectId().toString(),
     },
+    title: { type: String, trim: true, maxlength: 100, default: '' },
+    deletedAt: { type: Date, default: null },
     status: {
       type: String,
       enum: ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED'],
@@ -69,6 +72,7 @@ const aiBookingSessionSchema = new mongoose.Schema(
 );
 
 aiBookingSessionSchema.index({ userId: 1, status: 1, updatedAt: -1 });
+aiBookingSessionSchema.index({ userId: 1, deletedAt: 1, 'bookingDraft.__language': 1, updatedAt: -1 });
 aiBookingSessionSchema.index(
   { userId: 1, clientSessionId: 1 },
   { unique: true }

@@ -12,7 +12,12 @@ const { protect, authorize } = require('../middlewares/authMiddleware');
 const aiBookingController = require('../controllers/aiBookingController');
 
 router.post('/booking/interpret', protect, authorize('customer'), aiBookingController.interpret);
+router.post('/booking/localize', protect, authorize('customer'), aiBookingController.localizeReply);
+router.post('/booking/transcribe', protect, authorize('customer'), aiBookingController.transcribeVoice);
 router.get('/booking/sessions/latest', protect, authorize('customer'), aiBookingController.getLatestSession);
+router.get('/booking/sessions', protect, authorize('customer'), aiBookingController.listSessions);
+router.patch('/booking/sessions/:sessionId/title', protect, authorize('customer'), aiBookingController.renameSession);
+router.delete('/booking/sessions/:sessionId/history', protect, authorize('customer'), aiBookingController.deleteSession);
 router.get('/booking/sessions/:sessionId', protect, authorize('customer'), aiBookingController.getSession);
 router.post('/booking/sessions', protect, authorize('customer'), aiBookingController.createSession);
 router.post('/booking/sessions/:sessionId/messages', protect, authorize('customer'), aiBookingController.appendMessages);

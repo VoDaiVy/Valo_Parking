@@ -1,5 +1,8 @@
 export const AI_BOOKING_STORAGE_KEY = 'valo_ai_booking_session';
 export const AI_BOOKING_SESSION_TTL_MS = 30 * 60 * 1000;
+export const aiBookingSessionLanguage = (session) => session?.bookingDraft?.__language === 'vi' ? 'vi' : 'en';
+const languageStorageKey = (ownerKey, language) => `${AI_BOOKING_STORAGE_KEY}:${encodeURIComponent(ownerKey)}:${language === 'vi' ? 'vi' : 'en'}`;
+const automaticStorageKey = (ownerKey) => `${AI_BOOKING_STORAGE_KEY}:${encodeURIComponent(ownerKey)}:auto`;
 
 export const getAiBookingOwnerKey = (storage = globalThis.sessionStorage) => {
   try {
@@ -96,6 +99,7 @@ export const createAiBookingSnapshot = ({
       content: String(message.content ?? message.text ?? '').slice(0, 4000),
       intent: message.intent || '',
       state: message.state || '',
+      language: message.language || '',
       createdAt: message.createdAt || updatedAt,
     })).filter((message) => message.content),
     bookingDraft: persistedDraft,
@@ -110,7 +114,7 @@ export const createAiBookingSnapshot = ({
 export const saveLocalAiBookingSession = (ownerKey, snapshot, storage = globalThis.localStorage) => {
   if (!ownerKey || !snapshot) return false;
   try {
-    storage?.setItem(AI_BOOKING_STORAGE_KEY, JSON.stringify({ ...snapshot, ownerKey }));
+    storage?.setItem(automaticStorageKey(ownerKey), JSON.stringify({ ...snapshot, ownerKey }));
     return true;
   } catch {
     return false;
@@ -120,7 +124,11 @@ export const saveLocalAiBookingSession = (ownerKey, snapshot, storage = globalTh
 export const readLocalAiBookingSession = (ownerKey, storage = globalThis.localStorage, now = Date.now()) => {
   if (!ownerKey) return null;
   try {
-    const value = JSON.parse(storage?.getItem(AI_BOOKING_STORAGE_KEY) || 'null');
+    const automatic = JSON.parse(storage?.getItem(automaticStorageKey(ownerKey)) || 'null');
+    const legacy = [languageStorageKey(ownerKey, 'en'), languageStorageKey(ownerKey, 'vi'), AI_BOOKING_STORAGE_KEY]
+      .map((key) => { try { return JSON.parse(storage?.getItem(key) || 'null'); } catch { return null; } })
+      .filter((item) => item?.ownerKey === ownerKey).sort((a, b) => Date.parse(b.updatedAt || 0) - Date.parse(a.updatedAt || 0));
+    const value = automatic || legacy[0];
     if (!value || value.ownerKey !== ownerKey) return null;
     const age = now - Date.parse(value.updatedAt || 0);
     if (!['COMPLETED', 'CANCELLED'].includes(value.status)
@@ -133,8 +141,16 @@ export const readLocalAiBookingSession = (ownerKey, storage = globalThis.localSt
   }
 };
 
-export const clearLocalAiBookingSession = (storage = globalThis.localStorage) => {
-  try { storage?.removeItem(AI_BOOKING_STORAGE_KEY); } catch { /* storage may be unavailable */ }
+export const clearLocalAiBookingSession = (storage = globalThis.localStorage, ownerKey = '') => {
+  try {
+    if (ownerKey) {
+      storage?.removeItem(automaticStorageKey(ownerKey));
+      storage?.removeItem(languageStorageKey(ownerKey, 'vi'));
+      storage?.removeItem(languageStorageKey(ownerKey, 'en'));
+    }
+    const legacy = JSON.parse(storage?.getItem(AI_BOOKING_STORAGE_KEY) || 'null');
+    if (!ownerKey || legacy?.ownerKey === ownerKey) storage?.removeItem(AI_BOOKING_STORAGE_KEY);
+  } catch { /* storage may be unavailable */ }
 };
 
 export const normalizeAiBookingSession = (session) => {
@@ -152,6 +168,7 @@ export const normalizeAiBookingSession = (session) => {
       content: message.content ?? message.text ?? '',
       intent: message.intent || '',
       state: message.state || '',
+      language: message.language || '',
       createdAt: message.createdAt,
       speak: false,
     })),
