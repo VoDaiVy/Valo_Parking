@@ -1,6 +1,8 @@
 const vietnameseMarker = /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu;
 
 const replacements = [
+  [/M\u00ecnh ch\u01b0a nh\u1eadn di\u1ec7n \u0111\u01b0\u1ee3c m\u00e3 \u00f4\. Vui l\u00f2ng n\u00f3i ho\u1eb7c nh\u1eadp l\u1ea1i r\u00f5 m\u00e3 \u00f4[^.]*\.?/gi,
+    'I could not recognize the parking-space code. Please say or enter it again clearly, for example: “change to space A1”.'],
   [/Mình đã ghi ([A-Z0-9]+)\. Hãy đọc 2 số đầu của biển số\.?/gi,
     'I recorded $1. Please provide the first two digits of the plate.'],
   [/Mình đã ghi ([A-Z0-9]+)\. Hãy đọc chữ cái và dãy số cuối\.?/gi,

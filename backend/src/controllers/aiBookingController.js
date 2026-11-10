@@ -1,5 +1,5 @@
 const { interpretBookingMessage, normalizeInterpretation } = require('../services/aiBookingInterpreter');
-const { detectBookingLanguage } = require('../services/aiBookingLanguage');
+const { detectBookingLanguage, detectSelectedLanguageMismatch } = require('../services/aiBookingLanguage');
 const { toEnglishBookingMessage } = require('../services/aiBookingReplyLanguage');
 const mongoose = require('mongoose');
 const aiBookingSessionService = require('../services/aiBookingSessionService');
@@ -64,8 +64,28 @@ exports.interpret = async (req, res) => {
   const languageInfo = lockedLanguage
     ? { language: lockedLanguage, confidence: 1 }
     : detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const languageMismatch = lockedLanguage
+    ? detectSelectedLanguageMismatch(req.body?.prompt, lockedLanguage)
+    : null;
   const responseMessage = (value) => languageInfo.language === 'en'
     ? toEnglishBookingMessage(value) : value;
+  if (languageMismatch) {
+    const draft = req.body?.draft && typeof req.body.draft === 'object' ? req.body.draft : {};
+    return res.json({
+      success: true,
+      data: {
+        intent: draft.__intent || 'UNKNOWN',
+        draft,
+        language: lockedLanguage,
+        languageConfidence: 1,
+        detectedInputLanguage: languageMismatch.language,
+        languageMismatch: true,
+        clarification: lockedLanguage === 'en'
+          ? 'English mode is selected. Please enter or speak your request in English, or switch to VI to use Vietnamese.'
+          : 'Bạn đang chọn chế độ tiếng Việt. Vui lòng nhập hoặc nói yêu cầu bằng tiếng Việt, hoặc chuyển sang EN để dùng tiếng Anh.',
+      },
+    });
+  }
   try {
     const referenceClock = vietnamBookingClock();
     const assistantRequest = parseAssistantRequest({
@@ -245,7 +265,7 @@ exports.completeSession = async (req, res) => {
       req.user._id, req.params.sessionId, req.body || {}
     ));
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Không thể hoàn tất phiên đặt chỗ lúc này.' });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Không thể hoàn tất phiên đặt chỗ lúc này.' });
   }
 };
 

@@ -1,5 +1,3 @@
-const englishMarker = /\b(?:the|this|that|what|which|would|could|like|vehicle|booking|parking|slot|space|time|date|arrival|departure|invalid|not|found|cannot|only|please|failed|error|hold|payment|wallet|start|end|already|another|during|selected|current|maximum|permission|release|available|overlapping|too|late|cancel|confirm|restriction|network|gateway|unexpected|recorded|digits|floor|more|information|review|again|is|are|was|were|be|been|has|have|your|you|new|status|successfully|cancellable|modified|occupied|insufficient|balance|provide|license|plate|changed|while|updated|retry|service|request)\b/i;
-const vietnameseMarker = /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu;
 
 const vietnameseToEnglish = (value) => {
   let text = String(value || '').trim();
@@ -122,9 +120,7 @@ const vietnameseToEnglish = (value) => {
     [/Đã xảy ra lỗi\.?/gi, 'Something went wrong.'],
   ];
   for (const [pattern, replacement] of translations) text = text.replace(pattern, replacement);
-  return vietnameseMarker.test(text)
-    ? 'I could not complete the booking request. Please review the information and try again.'
-    : text;
+  return text;
 };
 
 export function localizeAiBookingMessage(value, language = 'vi') {
@@ -171,7 +167,7 @@ export function localizeAiBookingMessage(value, language = 'vi') {
     .replace(/\bslot\b/gi, 'ô đỗ')
     .replace(/\bgói\s+VIP\b/gi, 'gói ưu tiên')
     .replace(/\bVIP\b/gi, 'gói ưu tiên')
-    .replace(/\bQR\b/gi, 'mã xác nhận')
+    .replace(/\bQR\b/gi, 'mã QR')
     .replace(/\bPAID\b/g, 'đã thanh toán')
     .replace(/\bCOMPLETED\b/g, 'đã hoàn tất')
     .replace(/\bVND\b/gi, 'đồng')
@@ -182,8 +178,5 @@ export function localizeAiBookingMessage(value, language = 'vi') {
     .replace(/ *\r?\n */g, '\n')
     .trim();
 
-  if (englishMarker.test(text) || /\bI(?:'\w+)?\b/.test(text)) {
-    return 'Không thể hoàn tất yêu cầu đặt chỗ. Vui lòng kiểm tra thông tin và thử lại.';
-  }
   return text;
 }

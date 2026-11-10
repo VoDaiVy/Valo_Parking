@@ -1,4 +1,5 @@
 const AiBookingSession = require('../models/AiBookingSession');
+const BookingOrder = require('../models/BookingOrder');
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const ACTIVE_STATUSES = ['DRAFT', 'ACTIVE'];
@@ -64,7 +65,7 @@ const deriveSessionProgress = ({ bookingDraft = {}, phase = 'IDLE', status } = {
   return { currentStep: 'SELECT_SLOT', completionPercent: 70 };
 };
 
-const buildSummary = (bookingDraft = {}, preview = null, currentStep = 'COLLECT_DATE') => {
+const buildSummary = (bookingDraft = {}, preview = null, currentStep = 'COLLECT_DATE', paymentStatus = 'UNPAID') => {
   const items = draftItems(bookingDraft);
   const first = items[0] || {};
   const dates = [...new Set(items.map((item) => item?.date || item?.startDate).filter(Boolean))];
@@ -83,7 +84,7 @@ const buildSummary = (bookingDraft = {}, preview = null, currentStep = 'COLLECT_
       : [bookingDraft.floorName, bookingDraft.slotCode].filter(Boolean).join(' · '),
     services: Array.isArray(bookingDraft.serviceIds) ? bookingDraft.serviceIds : [],
     currentStep,
-    paymentStatus: 'UNPAID',
+    paymentStatus,
   };
 };
 
@@ -140,18 +141,32 @@ const createSession = async (userId, payload = {}) => {
     const existing = await AiBookingSession.findOne({ userId, clientSessionId });
     if (existing) return existing;
   }
-  await AiBookingSession.updateMany(
-    { userId, status: { $in: ACTIVE_STATUSES } },
-    { $set: { status: 'CANCELLED', cancelledAt: new Date() } }
-  );
   const snapshot = normalizeSnapshot(payload);
-  return AiBookingSession.create({
-    userId,
-    ...(clientSessionId ? { clientSessionId } : {}),
-    status: snapshot.messages.some((message) => message.role === 'user') ? 'ACTIVE' : 'DRAFT',
-    ...snapshot,
-    expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-  });
+  const transaction = await AiBookingSession.startSession();
+  let created;
+  try {
+    await transaction.withTransaction(async () => {
+      if (clientSessionId) {
+        const existing = await AiBookingSession.findOne({ userId, clientSessionId }).session(transaction);
+        if (existing) { created = existing; return; }
+      }
+      await AiBookingSession.updateMany(
+        { userId, status: { $in: ACTIVE_STATUSES } },
+        { $set: { status: 'CANCELLED', cancelledAt: new Date() } },
+        { session: transaction }
+      );
+      [created] = await AiBookingSession.create([{
+        userId,
+        ...(clientSessionId ? { clientSessionId } : {}),
+        status: snapshot.messages.some((message) => message.role === 'user') ? 'ACTIVE' : 'DRAFT',
+        ...snapshot,
+        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      }], { session: transaction });
+    });
+    return created;
+  } finally {
+    await transaction.endSession();
+  }
 };
 
 const updateSession = async (userId, sessionId, payload = {}) => {
@@ -184,13 +199,27 @@ const appendMessages = async (userId, sessionId, payload = {}) => {
 const completeSession = async (userId, sessionId, payload = {}) => {
   const session = await AiBookingSession.findOne({ _id: sessionId, userId });
   if (!session) return { notFound: true };
-  if (session.status === 'CANCELLED') return { inactive: true, session };
+  if (session.status === 'COMPLETED') return { session };
+  if (!ACTIVE_STATUSES.includes(session.status) || session.expiresAt <= new Date()) {
+    return { inactive: true, session };
+  }
+  let paymentStatus = 'UNKNOWN';
+  if ((payload.intent || session.intent) === 'CREATE_BOOKING') {
+    const key = payload.bookingDraft?.__confirmationKey;
+    const order = key && await BookingOrder.findOne({ userId, idempotencyKey: key, status: 'paid' });
+    if (!order) {
+      const error = new Error('Chưa tìm thấy đơn booking đã thanh toán để hoàn tất phiên.');
+      error.statusCode = 409;
+      throw error;
+    }
+    paymentStatus = 'PAID';
+  }
   const snapshot = normalizeSnapshot(payload, 'COMPLETED');
   Object.assign(session, snapshot, {
     status: 'COMPLETED', currentStep: 'COMPLETED', completionPercent: 100,
     phase: 'SUCCESS', completedAt: session.completedAt || new Date(),
   });
-  session.summary = buildSummary(session.bookingDraft, session.preview, 'COMPLETED');
+  session.summary = buildSummary(session.bookingDraft, session.preview, 'COMPLETED', paymentStatus);
   await session.save();
   return { session };
 };

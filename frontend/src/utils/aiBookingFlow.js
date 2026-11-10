@@ -364,6 +364,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
   const conflicts = [];
   const suggestions = [];
   const availabilityCache = new Map();
+  const restrictionCache = new Map();
   const shortageRanges = new Set();
 
   for (const request of requestSpecs) {
@@ -379,6 +380,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       });
       if (!response.ok) throw resultError(response, `Không thể kiểm tra chỗ ngày ${dayLabel(request.date)}.`);
       availabilityCache.set(rangeKey, response.data?.data?.slots || []);
+      restrictionCache.set(rangeKey, response.data?.data?.restrictedSlots || []);
     }
     const vehicle = request.vehicle;
     const selectedVehicle = vehicles.find((item) => String(item._id) === String(vehicle.vehicleId)
@@ -417,6 +419,12 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       continue;
     }
     const exact = exactMatches[0] || null;
+    const preferredSlotRestriction = preferredSlot
+      ? (restrictionCache.get(rangeKey) || []).find((slot) => (
+        normalize(slot.slotCode) === preferredSlot
+        && (!preferredFloor || floorMatches(slot, preferredFloor))
+      ))
+      : null;
     const seed = `${vehicle.licensePlate}:${request.date}:${request.startTime}:${request.endTime}`;
     const chosen = exact || (!preferredSlot ? chooseAutoSlot(floorSlots, seed, vehicleType) : null);
     if (!chosen) {
@@ -445,6 +453,10 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
           floorName: suggestion.floorName,
           slotCode: suggestion.slotCode,
         });
+        if (preferredSlotRestriction?.reason === 'VIP_PACKAGE_REQUIRED') {
+          conflicts.push(`\u00d4 ${preferredSlot} l\u00e0 \u00f4 VIP, ch\u1ec9 d\u00e0nh cho xe c\u00f3 g\u00f3i VIP \u0111\u01b0\u1ee3c c\u1ea5p \u00f4 n\u00e0y. Xe ${vehicle.licensePlate} kh\u00f4ng th\u1ec3 \u0111\u1eb7t \u00f4 VIP theo gi\u1edd.${suggestion ? ` G\u1ee3i \u00fd \u00f4 th\u01b0\u1eddng: ${suggestion.floorName} · ${suggestion.slotCode}.` : ' H\u00e3y ch\u1ecdn m\u1ed9t \u00f4 th\u01b0\u1eddng kh\u00e1c.'}`);
+          continue;
+        }
         conflicts.push(`Không có chỗ phù hợp cho toàn bộ khoảng ${rangeLabel(request)}. Xe ${vehicle.licensePlate} ${preferredSlot
           ? `không thể dùng ô ${preferredSlot} vì ô không còn trống hoặc không phù hợp với loại xe`
           : preferredZone
