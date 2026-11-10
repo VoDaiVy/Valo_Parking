@@ -279,7 +279,7 @@ export default function BookingManagement() {
       try {
         const [floorsRes, bookingsRes] = await Promise.all([
           getAllFloors(),
-          getAllBookings({ ...JSON.parse(scopeKey), page, limit: 20 })
+          getAllBookings({ ...JSON.parse(scopeKey), page, limit: 4 })
         ]);
         if (!activeRequest) return;
         const floorsState = getResponseAvailability(floorsRes, 'Unable to load parking floors.');
@@ -297,7 +297,11 @@ export default function BookingManagement() {
         }
         setFloors(floorsState.data || floorsRes.data.floors || []);
         setBookings(bookingsState.data || []);
-        setPagination(bookingsRes.data.pagination);
+        const nextPagination = bookingsRes.data.pagination;
+        setPagination(nextPagination);
+        if (nextPagination && page > Math.max(1, nextPagination.pages)) {
+          setListPage({ scope: scopeKey, page: Math.max(1, nextPagination.pages) });
+        }
         setSelectedBooking(null);
       } catch (error) {
         if (!activeRequest) return;
@@ -412,7 +416,7 @@ export default function BookingManagement() {
           <div className={`absolute top-0 right-0 w-24 h-24 ${s.bg} rounded-full mix-blend-overlay blur-3xl opacity-40`} />
         )}
 
-        <div className="flex justify-between items-center gap-3 mb-2 relative z-10">
+        <div className="sbm-booking-identity flex justify-between items-center gap-3 mb-2 relative z-10">
           <div className="flex items-center gap-2">
             <LicensePlate plate={booking.licensePlate} />
             <p className="text-xs font-semibold text-white/80 line-clamp-1">{booking.userId?.fullName || 'Guest'}</p>
@@ -422,7 +426,7 @@ export default function BookingManagement() {
           </span>
         </div>
 
-        <div className="flex items-center justify-between text-[11px] relative z-10 mt-3 text-white/60">
+        <div className="sbm-booking-meta flex items-center justify-between text-[11px] relative z-10 mt-3 text-white/60">
           <div className="flex items-center gap-1.5">
             <MapPin size={12} className="text-amber-400" />
             <span className="font-medium">{booking.floorId?.name || 'Floor'} - {booking.parkingSlot}</span>
@@ -651,7 +655,7 @@ export default function BookingManagement() {
       <div className="sbm-workspace flex-1 min-h-0 flex flex-col lg:flex-row gap-8 relative z-10">
 
         {/* LEFT PANEL: Booking List */}
-        <div className="sbm-list w-full lg:w-[420px] xl:w-[480px] shrink-0 flex flex-col gap-8 overflow-y-auto custom-scrollbar pr-4 pb-6">
+        <div className="sbm-list w-full lg:w-[420px] xl:w-[480px] shrink-0 flex flex-col gap-8 pr-4 pb-6">
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center text-white/30 gap-4">
               <Loader2 className="animate-spin text-emerald-500" size={32} />
@@ -673,7 +677,7 @@ export default function BookingManagement() {
               {/* Active Section */}
               {active.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sbm-group-heading sticky top-0 z-20 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
+                  <div className="sbm-group-heading border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-emerald-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                       Currently Parked ({active.length})
@@ -688,7 +692,7 @@ export default function BookingManagement() {
               {/* Upcoming Section */}
               {upcoming.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sbm-group-heading sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
+                  <div className="sbm-group-heading mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-amber-400 flex items-center gap-2">
                       <Clock size={14} />
                       Arriving Soon ({upcoming.length})
@@ -703,7 +707,7 @@ export default function BookingManagement() {
               {/* History Section */}
               {history.length > 0 && (
                 <section className="space-y-4">
-                  <div className="sbm-group-heading sticky top-0 z-20 mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
+                  <div className="sbm-group-heading mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-white/50 flex items-center gap-2">
                       <CheckCircle size={14} />
                       History ({history.length})
@@ -716,7 +720,7 @@ export default function BookingManagement() {
               )}
             </>
           )}
-          {!loading && !dataError && pagination && <nav aria-label="Booking pagination" className="flex items-center justify-between gap-3 text-xs text-white/60">
+          {!loading && !dataError && pagination && <nav aria-label="Booking pagination" className="sbm-list-pagination flex items-center justify-between gap-3 text-xs text-white/60">
             <button type="button" disabled={page <= 1} onClick={() => setListPage({ scope: scopeKey, page: page - 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">Previous</button>
             <span>Page {page} of {pagination.pages} / {pagination.total} bookings</span>
             <button type="button" disabled={page >= pagination.pages} onClick={() => setListPage({ scope: scopeKey, page: page + 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">Next</button>
