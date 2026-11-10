@@ -10,8 +10,8 @@ const floorLabel = (value, language) => {
 const confirmationPhrases = new Set([
   'dat', 'dat cho', 'dat di', 'dat ngay', 'dat luon', 'dat cho nay', 'dat cho nay di',
   'ok', 'oke', 'okay', 'ok dat', 'oke dat', 'ok dat di', 'oke dat di',
-  'u', 'uh', 'um', 'da', 'vang', 'co', 'co dat', 'duoc', 'duoc roi',
-  'chot', 'chot di', 'chot luon', 'cho', 'lam di', 'tiep tuc',
+  'co dat', 'duoc', 'duoc roi', 'dung roi', 'dung vay',
+  'chot', 'chot di', 'chot luon', 'lam di', 'tiep tuc',
   'xac nhan', 'xac nhan dat', 'xac nhan dat cho', 'dong y', 'toi dong y',
   'ok dat', 'oke dat', 'duoc dat cho toi', 'duoc roi dat cho toi', 'tien hanh dat',
   'tien hanh dat cho', 'toi muon xac nhan', 'toi muon xac nhan dat cho',
@@ -43,6 +43,8 @@ const topUpPhrases = new Set([
 const isTopUpRequest = (value) => topUpPhrases.has(value)
   || /^(?:toi|minh)?\s*(?:muon|can|hay|lam|cho)?\s*(?:nap|them)\s+(?:them\s+)?(?:tien|vao\s+vi|tien\s+vao\s+vi)$/i.test(value)
   || /^(?:wallet\s+)?(?:top\s*up|add\s+(?:more\s+)?(?:money|funds))(?:\s+(?:my\s+)?wallet)?$/i.test(value);
+
+export const isVipDecline = (value) => /\b(?:(?:khong|chua|dung)\s+(?:(?:muon|can|mua|dang ky|xem|mo|hien)\s+)*(?:cac\s+)?(?:goi|vip|membership)|(?:do not|dont|not|never)\s+(?:(?:want|need|buy|show|open|a|the|any)\s+)*(?:vip|membership|monthly|annual|package))\b/.test(normalize(value));
 
 export const isVipInquiry = (value) => {
   const text = normalize(value);
@@ -77,6 +79,48 @@ export const isHelpInquiry = (value) => {
 
 export const isGreeting = (value) => /^(xin\s+chao|chao|hello|hi|hey|good\s+(?:morning|afternoon|evening))[!. ]*$/i.test(normalize(value));
 export const isThanks = (value) => /^(cam\s+on|cam\s+on\s+ban|thanks|thank\s+you|thank\s+you\s+very\s+much)[!. ]*$/i.test(normalize(value));
+export const isUnclearInquiry = (value) => {
+  const text = normalize(value);
+  if (/\b(?:ban\s+)?(?:co\s+)?hieu\s+(?:toi|minh)\s+(?:noi|viet)\s+gi\s+khong\b/i.test(text)) return true;
+  const tokens = text.split(/\s+/).filter(Boolean);
+  const fillerTokens = new Set(['a', 'ah', 'alo', 'o', 'oh', 'test', 'abc']);
+  return tokens.length > 0 && tokens.every((token) => fillerTokens.has(token));
+};
+export const isUnclearAiFailure = (value) => /AI chưa (?:hiểu|xử lý được) yêu cầu|không hiểu yêu cầu|could not (?:understand|process) (?:the |your )?request|unable to understand (?:the |your )?request/i
+  .test(String(value || ''));
+
+const comparableBookingDraft = (draft = {}) => ({
+  startDate: draft.startDate || '',
+  endDate: draft.endDate || '',
+  startTime: draft.startTime || '',
+  endTime: draft.endTime || '',
+  vehicleId: String(draft.vehicleId || ''),
+  licensePlate: String(draft.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase(),
+  licensePlates: (Array.isArray(draft.licensePlates) && draft.licensePlates.length
+    ? draft.licensePlates : (draft.licensePlate ? [draft.licensePlate] : []))
+    .map((plate) => String(plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()),
+  requestedVehicleCount: Number(draft.requestedVehicleCount || 0),
+  vehicleType: draft.vehicleType || '',
+  floorName: draft.floorName || '',
+  zoneName: draft.zoneName || '',
+  slotCode: String(draft.slotCode || '').toUpperCase(),
+  serviceIds: Array.isArray(draft.serviceIds) ? draft.serviceIds.map(String) : [],
+  voucherId: String(draft.voucherId || ''),
+  reservationItems: Array.isArray(draft.reservationItems) ? draft.reservationItems : [],
+  pendingLicensePlate: draft.pendingLicensePlate || '',
+  pendingStartTime: draft.pendingStartTime || '',
+  pendingEndTime: draft.pendingEndTime || '',
+});
+
+export function hasMeaningfulBookingDraftChange(previous = {}, next = {}) {
+  return JSON.stringify(comparableBookingDraft(previous)) !== JSON.stringify(comparableBookingDraft(next));
+}
+
+export function isUnchangedBookingContinuation(previousIntent, nextIntent, previousDraft = {}, nextDraft = {}) {
+  return previousIntent === 'CREATE_BOOKING'
+    && nextIntent === 'CREATE_BOOKING'
+    && !hasMeaningfulBookingDraftChange(previousDraft, nextDraft);
+}
 
 export const isOutOfScopeInquiry = (value) => {
   const text = normalize(value);
@@ -98,7 +142,8 @@ export function routeBookingReply(phase, message, { hasSlotSuggestion = false } 
   // booking interpreter as one unit. Informational shortcuts would otherwise
   // discard its dates, times and vehicle.
   if (containsBookingDetails) return 'interpret';
-  if (isVipInquiry(value)) return 'view_vip_packages';
+  if (isUnclearInquiry(value)) return 'unrecognized';
+  if (isVipInquiry(value) && !isVipDecline(value)) return 'view_vip_packages';
   if (isServiceInquiry(value)) return 'service_info';
   if (isPricingInquiry(value)) return 'pricing_info';
   // Published policy content and refund rules live on the server and can
@@ -120,6 +165,8 @@ export function routeBookingReply(phase, message, { hasSlotSuggestion = false } 
     if (cancellationPhrases.has(value)) return 'cancel_draft';
     return 'interpret';
   }
+  if (/^(?:đúng|đúng rồi|đúng vậy)[.! ]*$/iu.test(String(message).trim())) return 'confirm';
+  if (/^(?:u|uh|um|da|vang|co|cho|dung)$/.test(value)) return 'clarify';
   if (cancellationPhrases.has(value)) return 'cancel';
   // Wallet actions must be checked before booking edits. Otherwise phrases
   // such as "nạp thêm" and "làm thêm tiền" are mistaken for an edit merely
@@ -146,7 +193,10 @@ export function routeBookingReply(phase, message, { hasSlotSuggestion = false } 
 
 export function routeAssistantActionReply(message) {
   const value = normalize(message).replace(/^(?:da|vang)\s+/, '').replace(/\s+(?:nhe|nha)$/, '');
-  if (/\b(khong|huy|thoi|dung|no|cancel|stop|nevermind)\b|\bnever mind\b/.test(value)) return 'cancel';
+  if (/^(?:đúng|đúng rồi|đúng vậy)[.! ]*$/iu.test(String(message).trim())) return 'confirm';
+  if (/^(?:u|uh|um|da|vang|co|cho|dung)$/.test(value) && !/^dừng$/iu.test(String(message).trim())) return 'clarify';
+  if (cancellationPhrases.has(value)
+    || /^(?:dung|dung lai|huy thao tac|huy yeu cau|stop please|please cancel)$/.test(value)) return 'cancel';
   if (confirmationPhrases.has(value)
     || /^(?:dong y|xac nhan|ok|oke|duoc)(?:\s+(?:them|xoa|sua|cap nhat|lam))?(?:\s+(?:xe|di))?$/.test(value)
     || /^(?:them|xoa|sua|cap nhat|lam)\s+di$/.test(value)) return 'confirm';

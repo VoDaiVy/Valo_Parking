@@ -258,10 +258,14 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   const text = fold(raw);
   if (!raw) return null;
   let intents = detectIntents(text);
-  const hasActiveBookingDraft = draft.__intent === 'CREATE_BOOKING'
-    && (Number(draft.requestedVehicleCount || 0) > 0
+  const hasMultiVehicleBookingDraft = Number(draft.requestedVehicleCount || 0) > 1
+    || (Array.isArray(draft.licensePlates) && draft.licensePlates.length > 1)
+    || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > 1);
+  const hasActiveBookingDraft = hasMultiVehicleBookingDraft
+    || (draft.__intent === 'CREATE_BOOKING'
+      && (Number(draft.requestedVehicleCount || 0) > 0
       || Boolean(draft.startDate || draft.endDate || draft.startTime || draft.endTime)
-      || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > 0));
+      || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > 0)));
   if (!intents.length && hasActiveBookingDraft
     && /^(?:them|chon|bo|xoa|huy|add|select|remove|delete|cancel)\s+(?!(?:xe|bien|ngay|gio|tang|o\b|slot\b|booking\b|dat cho\b)).+/i.test(text)) {
     // Service names are administrator-defined. Resolve the name against the
@@ -294,7 +298,10 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   }
   if (hasActiveBookingDraft && bookingInterpretation
     && (bookingEntities.licensePlate || bookingEntities.requestedVehicleCount)) {
-    intents = intents.filter((intent) => !['ADD_VEHICLE', 'REMOVE_VEHICLE'].includes(intent));
+    const bookingVehicleIntents = bookingInterpretation.replaceVehicle || bookingInterpretation.clearVehicle
+      ? ['ADD_VEHICLE', 'UPDATE_VEHICLE', 'REMOVE_VEHICLE']
+      : ['ADD_VEHICLE', 'REMOVE_VEHICLE'];
+    intents = intents.filter((intent) => !bookingVehicleIntents.includes(intent));
     if (!intents.length) return null;
   }
 

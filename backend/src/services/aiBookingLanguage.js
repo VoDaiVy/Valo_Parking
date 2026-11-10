@@ -59,4 +59,10 @@ function detectBookingLanguage(value, previousLanguage = 'vi') {
   return { language, confidence: Number(confidence.toFixed(2)) };
 }
 
-module.exports = { detectBookingLanguage };
+function detectSelectedLanguageMismatch(value, selectedLanguage) {
+  const selected = selectedLanguage === 'en' ? 'en' : 'vi';
+  const detected = detectBookingLanguage(value, selected);
+  return detected.language !== selected && detected.confidence >= 0.8 ? detected : null;
+}
+
+module.exports = { detectBookingLanguage, detectSelectedLanguageMismatch };

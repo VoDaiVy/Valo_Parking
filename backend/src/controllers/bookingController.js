@@ -414,7 +414,9 @@ const getUnavailableSlotKeys = async (
     activeHoldsPromise,
     includeOwnedDedicatedSlots
       ? getAiDedicatedSlotKeys(userId, start, end)
-      : getDedicatedSlotKeys(userId),
+      // Hourly booking excludes every dedicated VIP space, including one
+      // owned by the current account; the assigned vehicle uses it directly.
+      : getDedicatedSlotKeys(),
   ]);
 
   const unavailable = new Set();
@@ -442,26 +444,45 @@ const getUnavailableSlotKeys = async (
 
   dedicatedKeys.forEach((key) => unavailable.add(key));
 
-  return unavailable;
+  return { unavailable, dedicatedKeys };
 };
 
 const getAvailableSlotsForRange = async (start, end, userId = null, options = {}) => {
-  const [slots, unavailableSlotKeys, ownedDedicatedSlotKeys] = await Promise.all([
+  const [slots, unavailableState, ownedDedicatedSlotKeys] = await Promise.all([
     getAllBookableSlots(),
     getUnavailableSlotKeys(start, end, userId, options),
     options.includeOwnedDedicatedSlots
       ? getOwnedDedicatedSlotKeys(userId, start, end)
       : Promise.resolve(new Set()),
   ]);
+  const { unavailable: unavailableSlotKeys, dedicatedKeys } = unavailableState;
+  const isVipRestrictedSlot = (slot) => (
+    ['slot-vip', 'vip'].includes(String(slot.slotType || '').toLowerCase())
+    || dedicatedKeys.has(buildSlotKey(slot.floorId, slot.slotCode))
+  );
 
   const availableSlots = slots
+    .filter((slot) => !isVipRestrictedSlot(slot))
     .filter((slot) => !unavailableSlotKeys.has(buildSlotKey(slot.floorId, slot.slotCode)));
-  if (!options.includeOwnedDedicatedSlots) return availableSlots;
-
-  return availableSlots.map((slot) => ({
+  const visibleSlots = !options.includeOwnedDedicatedSlots ? availableSlots : availableSlots.map((slot) => ({
       ...slot,
       isDedicatedToCurrentUser: ownedDedicatedSlotKeys.has(buildSlotKey(slot.floorId, slot.slotCode)),
     }));
+  if (!options.withRestrictions) return visibleSlots;
+
+  return {
+    slots: visibleSlots,
+    restrictedSlots: slots
+      .filter(isVipRestrictedSlot)
+      .map((slot) => ({
+        floorId: slot.floorId,
+        floorName: slot.floorName,
+        floorNumber: slot.floorNumber,
+        slotCode: slot.slotCode,
+        slotType: slot.slotType,
+        reason: 'VIP_PACKAGE_REQUIRED',
+      })),
+  };
 };
 
 // Read-only availability helpers shared with the VALO AI floor monitor.
@@ -580,7 +601,7 @@ exports.getAvailableSlots = async (req, res, next) => {
   try {
     const { startTime, endTime } = req.query;
     const { start, end } = validateBookingTimeRange(startTime, endTime);
-    const slots = await getAvailableSlotsForRange(start, end, req.user?._id, {
+    const availability = await getAvailableSlotsForRange(start, end, req.user?._id, {
       // Regular and AI booking must see identical inventory. A currently
       // occupied slot may be offered only after a reliable expected checkout.
       allowExpectedSessionCheckout: true,
@@ -588,6 +609,9 @@ exports.getAvailableSlots = async (req, res, next) => {
       // Including them here made AI quotes waive the parking component and
       // display only the selected service price.
       includeOwnedDedicatedSlots: false,
+      // Keep VIP spaces out of hourly inventory, but expose the reason so an
+      // explicitly requested VIP space receives a precise explanation.
+      withRestrictions: true,
     });
 
     res.status(200).json({
@@ -595,8 +619,9 @@ exports.getAvailableSlots = async (req, res, next) => {
       data: {
         startTime: start,
         endTime: end,
-        count: slots.length,
-        slots,
+        count: availability.slots.length,
+        slots: availability.slots,
+        restrictedSlots: availability.restrictedSlots,
       },
     });
   } catch (error) {
@@ -2018,6 +2043,7 @@ exports.getActiveHolds = async (req, res, next) => {
 exports.createBookingHold = async (req, res, next) => {
   try {
     const { floorId, slotCode, licensePlate, startTime, endTime, replaceHoldId } = req.body;
+    const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
     
     if (!floorId || !slotCode || !startTime || !endTime) {
       return res.status(400).json({ success: false, message: 'Please provide floorId, slotCode, startTime, endTime' });
