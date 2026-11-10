@@ -93,3 +93,7 @@ body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-pa
 body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="daily"] { --package-accent: #7dd3fc; --package-hover: rgb(125 211 252 / .045); }
 body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="monthly"] { --package-accent: #ffd555; --package-hover: rgb(255 213 85 / .045); }
 body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row[data-package-type="yearly"] { --package-accent: #c4b5fd; --package-hover: rgb(196 181 253 / .045); }
+body[data-valo-typography="admin"] .admin-vip-memberships .admin-vip-row.vip-membership-highlight > td {
+  background: rgba(255, 213, 85, .2);
+  box-shadow: inset 0 1px 0 rgba(255, 213, 85, .65), inset 0 -1px 0 rgba(255, 213, 85, .65);
+}

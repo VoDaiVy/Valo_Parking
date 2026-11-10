@@ -212,6 +212,7 @@ const getInitials = (name = "") =>
     .toUpperCase();
 
 export default function DashboardLayout() {
+  const copilotContentRef = useRef(null);
   const navigate = useNavigate();
   const [user, setUser] = useState(() =>
     JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
@@ -631,12 +632,13 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main
+          ref={copilotContentRef}
           className="dashboard-page-content scrollbar-hidden flex-1 overflow-y-auto bg-gray-100 transition-colors duration-300 dark:bg-[#0D0D0D]"
         >
           <Outlet />
         </main>
       </div>
-      {(role === 'admin' || role === 'staff') && <ValoAICopilot />}
+      {(role === 'admin' || role === 'staff') && <ValoAICopilot contentRef={copilotContentRef} />}
 
       {/* Report Modal */}
       {reportModalOpen && (

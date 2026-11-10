@@ -1,7 +1,7 @@
 import './adminPageConsistency.css';
 import './policyList.css';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Archive,
@@ -227,14 +227,27 @@ export default function PolicyManagement() {
     setTimeout(() => setToast(''), 3000);
   };
 
+  const aiRefreshGeneration = useRef(0);
   const fetchPolicies = async () => {
+    const generation = ++aiRefreshGeneration.current;
     const res = await getAdminPolicies();
+      if (generation !== aiRefreshGeneration.current) return;
     if (res.ok && res.data?.success) {
       setPolicies(res.data.data || []);
     } else {
       setError(res.data?.message || 'Unable to load policies.');
     }
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchPolicies; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['CREATE_POLICY_DRAFT', 'ARCHIVE_POLICY'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   const loadDetail = async (id) => {
     if (!id) return;
@@ -655,7 +668,7 @@ export default function PolicyManagement() {
         <motion.main
           {...motionProps}
           transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.16 }}
-          className="policy-workspace grid items-start border border-white/[0.08] bg-[#0c0c0c]/70 lg:grid-cols-[34%_66%]"
+          className="policy-workspace border border-white/[0.08] bg-[#0c0c0c]/70"
         >
           <aside aria-label="Policy List" className="policy-list flex min-w-0 flex-col border-b border-white/[0.08] lg:border-b-0 lg:border-r">
             <div className="policy-list-toolbar flex items-center justify-between border-b border-white/[0.08]">
@@ -729,7 +742,7 @@ export default function PolicyManagement() {
             </footer>
           </aside>
 
-          <section className={`policy-detail relative min-w-0 ${isCreating ? 'is-creating' : ''}`}>
+          <section aria-label="Policy Details" tabIndex={isCreating ? 0 : undefined} className={`policy-detail relative min-w-0 ${isCreating ? 'is-creating' : ''}`}>
             {isCreating ? (
               <CreatePolicyWorkspace
                 createForm={createForm}

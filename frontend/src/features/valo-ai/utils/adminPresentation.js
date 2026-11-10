@@ -25,11 +25,17 @@ const titles = {
 };
 export const adminNotification = (item) => {
   const e = item.evidence || {};
+  // Legacy booking events stored plate/space only in their Vietnamese summary.
+  const booking = String(item.summary || '').match(/(?:Booking xe|Booking của xe) (.+?) tại vị trí (.+?) đã/);
+  const plate = e.licensePlate || booking?.[1];
+  const slot = e.slot || booking?.[2];
+  const location = `${e.floor ? ` on floor ${e.floor}` : ''}${slot ? ` at space ${slot}` : ''}`;
+  const tier = e.packageType || (String(item.summary || '').includes('VIP Tháng') ? 'monthly' : String(item.summary || '').includes('VIP Năm') ? 'yearly' : null);
   const summaries = {
-    NEW_SESSION: e.licensePlate ? `Vehicle ${e.licensePlate} started parking${e.slot ? ` at space ${e.slot}` : ''}.` : 'A new parking session has started.',
-    NEW_SUBSCRIPTION: 'A VIP subscription was activated. Open the subscription to view package and ownership details.',
-    NEW_BOOKING: 'A parking booking has been paid. Open the booking to view its details.',
-    BOOKING_CANCELLED: 'A parking booking was cancelled. Open the booking to view its details.',
+    NEW_SESSION: e.licensePlate ? `Vehicle ${e.licensePlate} started parking${location}.` : 'A new parking session has started.',
+    NEW_SUBSCRIPTION: `A${tier ? ` ${tier}` : ''} VIP subscription was activated. Open the subscription to view package and ownership details.`,
+    NEW_BOOKING: plate ? `Booking for vehicle ${plate}${location} has been paid.` : 'A parking booking has been paid. Open the booking to view its details.',
+    BOOKING_CANCELLED: plate ? `Booking for vehicle ${plate}${location} was cancelled.` : 'A parking booking was cancelled. Open the booking to view its details.',
     NEW_USER_REGISTERED: e.username ? `${e.username} created a VALO account.` : 'A new customer account was created.',
     VEHICLE_PENDING_VERIFICATION: e.licensePlate ? `Vehicle ${e.licensePlate} requires Admin verification.` : 'A registered vehicle requires Admin verification.',
     FLOOR_FULL: 'No general booking spaces are currently available on this floor.',
@@ -42,7 +48,19 @@ export const adminNotification = (item) => {
   };
   return { ...item, title: titles[item.notificationType] || 'Operational notification', summary: summaries[item.notificationType] || 'Review the operational evidence for this notification.' };
 };
-export const adminActions = (type) => type === 'REVENUE_ANOMALY'
-  ? ['Review revenue figures and pricing for the same period to investigate the variation.']
-  : type === 'SESSION_CHANGE' ? ['Review session statistics and parking occupancy for the same period.'] : [];
+export const adminActions = type => ({
+  REVENUE_ANOMALY: ['Review revenue figures and pricing for the same period to investigate the variation.'],
+  SESSION_CHANGE: ['Review session statistics and parking occupancy for the same period.'],
+  FLOOR_FULL: ['Review the live parking grid and available spaces.'],
+  FLOOR_AVAILABLE_AGAIN: ['Review the available spaces in the parking grid.'],
+  OCCUPANCY_HIGH: ['Monitor parking occupancy and remaining spaces.'],
+  SESSION_OVERDUE: ['Review the parking session and its expected duration.'],
+  NEW_BOOKING: ['Open the booking to review its details.'],
+  BOOKING_CANCELLED: ['Review the cancelled booking.'],
+  NEW_SESSION: ['Open the parking session to review its details.'],
+  NEW_SUBSCRIPTION: ['Review the subscription and assigned spaces.'],
+  NEW_USER_REGISTERED: ['Review the customer account.'],
+  VEHICLE_PENDING_VERIFICATION: ['Review the registered vehicle before approval.'],
+  REFUND_COMPLETED: ['Review the recorded refund transaction.'],
+})[type] || [];
 export const adminSourceLabel = (entry) => readableLabel(String(entry.tool || entry.source || 'Operational data').replace(/^(get|search|check)_/, ''));

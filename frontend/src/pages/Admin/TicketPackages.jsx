@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ticketPackageLinkState, includeLinkedPackage, highlightTicketPackageRow } from './ticketPackageDeepLink.js';
 import {
   AlertCircle,
   CalendarClock,
@@ -160,13 +162,13 @@ function LoadingSkeleton({ isAdmin }) {
   );
 }
 
-function PackageRow({ pkg, isAdmin, onEdit, onDelete, index }) {
+function PackageRow({ pkg, isAdmin, onEdit, onDelete, index, rowRef }) {
   const meta = getTypeMeta(pkg.type);
   const Icon = meta.Icon;
   const isActive = Boolean(pkg.isActive);
 
   if (isAdmin) return (
-    <tr data-package-type={pkg.type} className="admin-package-row">
+    <tr ref={rowRef} data-package-type={pkg.type} className="admin-package-row">
       <td>
         <div className="flex min-w-0 items-center gap-3">
           <Icon size={19} className={`shrink-0 ${meta.icon.split(' ').find((token) => token.startsWith('text-'))}`} aria-hidden="true" />
@@ -266,6 +268,8 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, index }) {
 }
 
 export default function TicketPackages() {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -298,15 +302,27 @@ export default function TicketPackages() {
     isAdmin = false;
   }
 
+  const packageIdQuery = isAdmin && location.pathname === '/admin/tickets' ? searchParams.get('packageId') : null;
+  const packageLinkKey = packageIdQuery ? `${location.key}:${packageIdQuery}` : null;
+  const [packageLink, setPackageLink] = useState({ status: 'idle' });
+  const linkedRowRef = useRef(null);
+  const verifiedPackageId = packageLinkKey && packageLink.key === packageLinkKey && packageLink.status === 'ready' && !loading && !loadError ? packageLink.packageId : null;
+
+  const aiRefreshGeneration = useRef(0);
   const fetchPackages = async () => {
+    const generation = ++aiRefreshGeneration.current;
     try {
       setLoading(true);
       setLoadError('');
+      if (packageLinkKey) setPackageLink({ key: packageLinkKey, status: 'loading' });
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
+        ...(packageLinkKey ? { cache: 'no-store' } : {}),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (generation !== aiRefreshGeneration.current) return;
+      if (packageLinkKey) setPackageLink({ ...ticketPackageLinkState({ ok: res.ok, status: res.status, data }, packageIdQuery), key: packageLinkKey });
+      if (res.ok && data.success && Array.isArray(data.data)) {
         setPackages(data.data);
         setLoadError('');
       } else {
@@ -314,21 +330,33 @@ export default function TicketPackages() {
         setLoadError(data?.message || 'Failed to load ticket packages');
       }
     } catch (err) {
+      if (generation !== aiRefreshGeneration.current) return;
       console.error(err);
       setPackages([]);
       setLoadError('Failed to load ticket packages');
+      if (packageLinkKey) setPackageLink({ key: packageLinkKey, status: 'error' });
     } finally {
-      setLoading(false);
+      if (generation === aiRefreshGeneration.current) setLoading(false);
     }
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchPackages; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE', 'ARCHIVE_TICKET_PACKAGE'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       fetchPackages();
     }, 0);
 
-    return () => window.clearTimeout(timerId);
-  }, []);
+    return () => { window.clearTimeout(timerId); aiRefreshGeneration.current += 1; };
+  }, [packageLinkKey]);
 
   const openModal = (pkg = null) => {
     setError('');
@@ -457,6 +485,11 @@ export default function TicketPackages() {
       return matchesSearch && matchesType && matchesStatus;
     });
   }, [packages, searchQuery, typeFilter, statusFilter]);
+  const visiblePackages = useMemo(() => includeLinkedPackage(filteredPackages, packages, verifiedPackageId), [filteredPackages, packages, verifiedPackageId]);
+  useEffect(() => {
+    if (!verifiedPackageId) return;
+    return highlightTicketPackageRow(linkedRowRef.current);
+  }, [verifiedPackageId, packageLinkKey, loading]);
 
   if (loading && packages.length === 0) {
     return <LoadingSkeleton isAdmin={isAdmin} />;
@@ -469,6 +502,7 @@ export default function TicketPackages() {
       {!isAdmin && <div className="pointer-events-none absolute right-24 top-16 h-px w-96 max-w-[70vw] bg-gradient-to-r from-transparent via-yellow-300/20 to-transparent" />}
 
       <div className="stp-content relative mx-auto max-w-7xl">
+        {packageLinkKey && packageLink.key === packageLinkKey && !['idle', 'ready'].includes(packageLink.status) && <p role={packageLink.status === 'loading' ? 'status' : 'alert'} className="mb-3 text-sm text-yellow-200">{packageLink.status === 'loading' ? 'Locating package...' : packageLink.status === 'missing' ? 'Ticket package not found.' : packageLink.status === 'unavailable' ? 'Package access is unavailable. Check your sign-in and permissions.' : 'Unable to verify the linked package. Please refresh.'}</p>}
         <header className="stp-header mb-8 flex animate-[fadeIn_420ms_ease-out_both] flex-col justify-between gap-4 motion-reduce:animate-none md:flex-row md:items-end">
           <div>
             {isAdmin ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -606,11 +640,11 @@ export default function TicketPackages() {
               <h2 className="mt-3 text-lg font-black text-red-200">Ticket package data unavailable</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{loadError}</p>
             </div>
-          ) : filteredPackages.length > 0 ? (
+          ) : visiblePackages.length > 0 ? (
             isAdmin ? <div className="admin-package-table-scroll" tabIndex={0} role="region" aria-label="Ticket packages list">
               <table>
                 <thead><tr>{['Package', 'Type', 'Price', 'Status', 'Last Updated', 'Actions'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
-                <tbody>{filteredPackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} isAdmin={isAdmin} onEdit={openModal} onDelete={handleDelete} index={index} />)}</tbody>
+                <tbody>{visiblePackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} isAdmin={isAdmin} onEdit={openModal} onDelete={handleDelete} index={index} rowRef={String(pkg._id).toLowerCase() === verifiedPackageId?.toLowerCase() ? linkedRowRef : undefined} />)}</tbody>
               </table>
             </div> : <div className="stp-rows space-y-3">
               {filteredPackages.map((pkg, index) => (

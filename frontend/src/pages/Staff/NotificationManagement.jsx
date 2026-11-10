@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Dialog, DialogPanel, DialogTitle, Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import {
@@ -8,6 +9,7 @@ import {
   BellRing,
   Check,
   CheckCircle2,
+  ChevronDown,
   Globe2,
   History,
   Info,
@@ -29,6 +31,7 @@ import {
 } from "../../utils/staffOperationalAvailability";
 import "./components/staffNotificationManagement.css";
 import { getPaginationPages } from "./sessionPagination.js";
+import StaffNotificationAudience from "./components/StaffNotificationAudience";
 import { STAFF_THEME } from "./components/staffTheme.js";
 
 const TABS = [
@@ -149,30 +152,19 @@ export default function NotificationManagement() {
               Send notifications to the whole system or selected users.
             </p>
           </div>
-          {isStaffView && <HistoryRefreshButton loading={historyLoading} loadingMore={historyLoadingMore} onRefresh={refreshHistory} />}
+          {isStaffView && <span className="snm-header-refresh-slot" data-inactive={tab !== "feed" || undefined} aria-hidden={tab !== "feed"} inert={tab !== "feed"}>
+            <HistoryRefreshButton loading={historyLoading} loadingMore={historyLoadingMore} onRefresh={refreshHistory} />
+          </span>}
         </header>
 
-        <StatsRow stats={apiStats} state={historyState} />
+        {!isStaffView && <StatsRow stats={apiStats} state={historyState} />}
 
-        <nav aria-label="Notification views" className="snm-tabs mt-6 flex flex-wrap gap-2 border-b border-white/10">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              aria-pressed={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                tab === t.id
-                  ? "border-[#ffd555] text-[#ffd555]"
-                  : "border-transparent text-gray-400 hover:text-white"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+        <NotificationTabs activeTab={tab} onChange={setTab} />
 
         <section className="mt-6">
           {tab === "feed" && (
+            <>
+            {isStaffView && <StatsRow stats={apiStats} state={historyState} />}
             <FeedTab
               notifications={historyList}
               loading={historyLoading}
@@ -186,11 +178,33 @@ export default function NotificationManagement() {
               showRefresh={!isStaffView}
               paginated={isStaffView}
             />
+            </>
           )}
           {tab === "compose" && <ComposeTab onSent={() => { setTab("feed"); refreshHistory(); }} />}
         </section>
       </div>
     </div>
+  );
+}
+
+function NotificationTabs({ activeTab, onChange }) {
+  return (
+        <nav aria-label="Notification views" className="snm-tabs mt-6 flex flex-wrap gap-2 border-b border-white/10">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              aria-pressed={activeTab === t.id}
+              onClick={() => onChange(t.id)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === t.id
+                  ? "border-[#ffd555] text-[#ffd555]"
+                  : "border-transparent text-gray-400 hover:text-white"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
   );
 }
 
@@ -280,6 +294,7 @@ function FeedTab({
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const loadMoreRef = useRef(null);
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -356,12 +371,25 @@ function FeedTab({
   return (
     <div data-paginated={paginated} className="snm-feed space-y-4">
       <div className="snm-toolbar flex flex-wrap items-center gap-2">
-        <div className="snm-priority-filters contents">
+        {paginated ? (
+          <Listbox value={filter} onChange={changeFilter}>
+            <ListboxButton className="snm-severity-select" aria-label={`Filter by severity: ${filter === "ALL" ? "All severities" : filter}`}>
+              <span>{filter === "ALL" ? "All severities" : filter}</span><ChevronDown size={14} aria-hidden="true" />
+            </ListboxButton>
+            <ListboxOptions anchor="bottom start" className="snm-severity-options">
+              {["ALL", ...PRIORITIES].map(priority => (
+                <ListboxOption key={priority} value={priority} className="snm-severity-option">
+                  {({ selected }) => <><span>{priority === "ALL" ? "All severities" : priority}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
+                </ListboxOption>
+              ))}
+            </ListboxOptions>
+          </Listbox>
+        ) : <div className="snm-priority-filters contents">
         <FilterChip label="All" active={filter === "ALL"} onClick={() => changeFilter("ALL")} />
         {PRIORITIES.map((p) => (
           <FilterChip key={p} label={p} active={filter === p} onClick={() => changeFilter(p)} tone={p} />
         ))}
-        </div>
+        </div>}
         <div className="snm-toolbar-spacer flex-1" />
         <div className="snm-search-actions contents">
         <input
@@ -398,7 +426,7 @@ function FeedTab({
             <li className="px-5 py-10 text-center text-gray-500 text-sm">Loading history from API...</li>
           )}
           {(!paginated || (!feedLoading && !feedError)) && filtered.map((m) => (
-            <MessageRow key={m._id || m.id} m={m} />
+            <MessageRow key={m._id || m.id} m={m} onOpen={paginated ? () => setSelectedNotification(m) : undefined} />
           ))}
           {!paginated && <li ref={loadMoreRef} className="px-5 py-5 text-center">
             {loadingMore ? (
@@ -424,6 +452,7 @@ function FeedTab({
           </div>
         </nav>}
       </div>
+      <NotificationDrawer notification={selectedNotification} onClose={() => setSelectedNotification(null)} />
     </div>
   );
 }
@@ -448,12 +477,27 @@ function FilterChip({ label, active, onClick, tone }) {
   );
 }
 
-function MessageRow({ m }) {
+function MessageRow({ m, onOpen }) {
   const meta = PRIORITY_META[m.priority] || PRIORITY_META.INFO;
   const targetLabel = m.targetType === "ALL_USERS" ? "Whole system" :
                       m.targetType === "ROLE_BASED" ? `Role: ${(m.targetRoles || []).join(", ")}` :
                       m.targetType === "MULTI_USER" ? `${m.targetUsers?.length || 0} users` :
                       m.targetType === "SINGLE_USER" ? "One user" : "System";
+
+  if (onOpen) return (
+    <li className="snm-compact-event" data-priority={m.priority || "INFO"}>
+      <button type="button" className="snm-event-open" onClick={onOpen} aria-label={`View notification: ${m.title || "Untitled notification"}`} aria-haspopup="dialog">
+        <span className="snm-event-message">
+          <span className="snm-event-title">{m.title || "Untitled notification"}</span>
+          <span className="snm-event-preview">{m.content || "No message content"}</span>
+        </span>
+        <span className="snm-event-severity">{meta.label}</span>
+        <span className="snm-event-recipient" title={targetLabel}><span className="sr-only">Recipient: </span>{targetLabel}</span>
+        <span className="snm-event-status"><span className="sr-only">Status: </span>{m.isRevoked ? "REVOKED" : m.status || "SENT"}</span>
+        <time className="snm-event-time" dateTime={validNotificationDate(m.createdAt)?.toISOString()} title={notificationDate(m.createdAt)}>{validNotificationDate(m.createdAt) ? formatDistanceToNow(new Date(m.createdAt), { addSuffix: true, locale: enUS }) : "Time unavailable"}</time>
+      </button>
+    </li>
+  );
 
   return (
     <li data-priority={m.priority || "INFO"} className="snm-event px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
@@ -480,6 +524,58 @@ function MessageRow({ m }) {
         </div>
       </div>
     </li>
+  );
+}
+
+function validNotificationDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function notificationDate(value) {
+  return validNotificationDate(value)?.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "long" }) || "Unavailable";
+}
+
+function NotificationDrawer({ notification: m, onClose }) {
+  // Unpopulated database references belong in Technical Details, not the summary.
+  const userLabel = (user) => typeof user === "object" && user
+    ? [user.username || user.fullName || user.name, user.email].filter(Boolean).join(", ") || "User details unavailable"
+    : "User details unavailable";
+  const recipient = m?.targetType === "ALL_USERS" ? "All users"
+    : m?.targetType === "ROLE_BASED" ? (m.targetRoles?.join(", ") || "Selected roles")
+      : m?.targetUsers?.length ? m.targetUsers.map(userLabel).join("; ") : "Recipient details unavailable";
+  return (
+    <Dialog open={Boolean(m)} onClose={onClose} className="snm-detail-dialog">
+      <div className="snm-detail-backdrop" aria-hidden="true" />
+      <div className="snm-detail-position">
+        <DialogPanel className="snm-detail-panel">
+          {m && <>
+            <header>
+              <div className="snm-detail-heading">
+                <DialogTitle>{m.title || "Untitled notification"}</DialogTitle>
+                <span className="snm-detail-severity" data-priority={m.priority || "INFO"}>{m.priority || "INFO"}</span>
+              </div>
+              <button type="button" onClick={onClose} aria-label="Close notification details"><X size={18} /></button>
+            </header>
+            <div className="snm-detail-body">
+              <section className="snm-detail-content" aria-label="Notification message">
+                <p className="snm-detail-section-label">Message</p>
+                <p className="snm-detail-message">{m.content || "No message content"}</p>
+              </section>
+              <dl className="snm-detail-info">
+                {[
+                  ["Recipient", recipient, User],
+                  ["Status", m.isRevoked ? "REVOKED" : m.status || "SENT", CheckCircle2],
+                  ["Type", m.type || "SYSTEM", Info],
+                  ["Sent At", notificationDate(m.createdAt), History],
+                ].map(([label, value, Icon]) => <div key={label}><dt><Icon size={14} aria-hidden="true" />{label}</dt><dd>{value}</dd></div>)}
+              </dl>
+            </div>
+          </>}
+        </DialogPanel>
+      </div>
+    </Dialog>
   );
 }
 
@@ -584,8 +680,47 @@ function ComposeTab({ onSent }) {
     }
   }
 
+  const messageSection = (
+          <section className="snm-message-section">
+            <div className="snm-message-heading">
+            <StepHeading number="2" title={isStaffCompose ? "Message" : "Write message"} description="Keep it concise and tell recipients what to do next." />
+              {isStaffCompose && <Listbox value={priority} onChange={setPriority}>
+                <ListboxButton className="snm-priority-select" data-priority={priority} aria-label="Notification priority">
+                  <span className="snm-priority-dot" aria-hidden="true" /><span>{priority}</span><ChevronDown size={14} aria-hidden="true" />
+                </ListboxButton>
+                <ListboxOptions anchor={{ to: 'bottom end', gap: 6, padding: 12 }} className="snm-composer-options snm-priority-menu">
+                  {PRIORITIES.map(item => <ListboxOption key={item} value={item} data-priority={item} className="snm-composer-option">
+                    {({ selected }) => <><span className="snm-priority-dot" aria-hidden="true" /><span>{PRIORITY_META[item].label}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
+                  </ListboxOption>)}
+                </ListboxOptions>
+              </Listbox>}
+            </div>
+            <div className="snm-message-fields mt-4 space-y-4">
+              <Field label="Title" hint={`${title.length}/200`}>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  maxLength={200}
+                  placeholder="Example: Scheduled maintenance tonight"
+                  className="h-12 w-full rounded-xl border border-white/10 bg-[#0b0b0b] px-4 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#ffd555]/50 focus:ring-4 focus:ring-[#ffd555]/[0.06]"
+                />
+              </Field>
+              <Field label="Content" hint={`${message.length}/2000`}>
+                <textarea
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  maxLength={2000}
+                  rows={6}
+                  placeholder="Explain what happened, when it applies, and what the recipient should do..."
+                  className="w-full resize-y rounded-xl border border-white/10 bg-[#0b0b0b] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/25 focus:border-[#ffd555]/50 focus:ring-4 focus:ring-[#ffd555]/[0.06]"
+                />
+              </Field>
+            </div>
+          </section>
+  );
+
   return (
-    <div className="snm-compose max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+    <div data-compact-composer={isStaffCompose} className="snm-compose max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
       <div className="flex flex-col gap-3 border-b border-[#ffd555]/15 bg-gradient-to-r from-[#ffd555]/[0.06] to-transparent px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-[#ffd555]/20 bg-[#ffd555]/10 text-[#ffd555]">
@@ -609,6 +744,11 @@ function ComposeTab({ onSent }) {
         <div className="snm-compose-fields space-y-7 p-5 sm:p-7 lg:border-r lg:border-white/5">
           <section>
             <StepHeading number="1" title={isStaffCompose ? "Audience" : "Choose audience"} description="Select exactly who should receive this message." />
+            {isStaffCompose ? <StaffNotificationAudience
+              kind={audienceKind} options={audienceOptions} onKindChange={changeAudience}
+              users={selectedUsers} onUsersChange={setSelectedUsers}
+              roles={selectedRoles} onRolesChange={setSelectedRoles}
+            /> : <>
             <div className="snm-audience-segments mt-4 grid gap-3 sm:grid-cols-2">
               {audienceOptions.map((option) => {
                 const Icon = option.icon;
@@ -694,36 +834,15 @@ function ComposeTab({ onSent }) {
                 </div>
               )}
             </div>
+            </>}
           </section>
 
-          <section>
-            <StepHeading number="2" title={isStaffCompose ? "Message" : "Write message"} description="Keep it concise and tell recipients what to do next." />
-            <div className="snm-message-fields mt-4 space-y-4">
-              <Field label="Title" hint={`${title.length}/200`}>
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  maxLength={200}
-                  placeholder="Example: Scheduled maintenance tonight"
-                  className="h-12 w-full rounded-xl border border-white/10 bg-[#0b0b0b] px-4 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[#ffd555]/50 focus:ring-4 focus:ring-[#ffd555]/[0.06]"
-                />
-              </Field>
-              <Field label="Content" hint={`${message.length}/2000`}>
-                <textarea
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  maxLength={2000}
-                  rows={6}
-                  placeholder="Explain what happened, when it applies, and what the recipient should do..."
-                  className="w-full resize-y rounded-xl border border-white/10 bg-[#0b0b0b] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/25 focus:border-[#ffd555]/50 focus:ring-4 focus:ring-[#ffd555]/[0.06]"
-                />
-              </Field>
-            </div>
-          </section>
+          {!isStaffCompose && messageSection}
         </div>
 
         <aside className="snm-preview-column space-y-6 bg-[#0d0d0d] p-5 sm:p-7">
-          <section>
+          {isStaffCompose && messageSection}
+          {!isStaffCompose && <section>
             <StepHeading number="3" title="Priority" description="Choose how prominently it appears." compact />
             <div className="snm-priority-options mt-4 grid grid-cols-2 gap-2">
               {PRIORITIES.map((item) => {
@@ -746,7 +865,7 @@ function ComposeTab({ onSent }) {
                 );
               })}
             </div>
-          </section>
+          </section>}
 
           <section className="snm-review-preview">
             <p className="snm-preview-heading text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{isStaffCompose ? 'Live Preview' : 'Preview'}</p>

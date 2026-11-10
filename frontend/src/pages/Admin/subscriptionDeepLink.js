@@ -35,7 +35,7 @@ export const highlightSubscriptionCard = (card, {
   timer = setTimeout, cancelTimer = clearTimeout, reducedMotion = false,
 } = {}) => {
   if (!card) return () => {};
-  const classes = ['!border-yellow-400', 'shadow-[0_0_20px_rgba(250,204,21,0.25)]'];
+  const classes = ['vip-membership-highlight', '!border-yellow-400', 'shadow-[0_0_20px_rgba(250,204,21,0.25)]'];
   let timeout;
   const scheduled = frame(() => {
     card.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });

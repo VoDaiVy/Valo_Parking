@@ -1,7 +1,8 @@
+import { createPortal } from 'react-dom';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Clock3, ArrowDown, ArrowUp, ChartNoAxesColumnIncreasing, List, ShieldPlus, Eye, ChevronDown, Plus, SquarePen, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
-import { formatCurrency, formatHour, getDuration, getRowError, getTimelineSegments, startHourOptions, endHourOptions, numberNoSpinnerClass } from './pricingDisplay';
+import { formatCurrency, formatHour, getDuration, getRowError, getTimelineSegments, formatSchedulePrice, formatScheduleHour, getTimelineWarning, startHourOptions, endHourOptions, numberNoSpinnerClass } from './pricingDisplay';
 
 function getMetrics(blocks) {
   const prices = blocks.filter((block) => block.price !== '' && Number.isFinite(Number(block.price)) && Number(block.price) >= 0).map((block) => Number(block.price));
@@ -51,9 +52,11 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
   const anchorRef = useRef(null);
   const tooltipRef = useRef(null);
   const scheduleRef = useRef(null);
-  const segments = getTimelineSegments(timeBlocks).filter((segment) => segment.width > 0);
+  const warning = getTimelineWarning(timeBlocks);
+  const segments = warning.startsWith('Overlapping') || warning.startsWith('Invalid time') ? [] : getTimelineSegments(timeBlocks).filter((segment) => segment.width > 0);
+  const tooltipId = useId();
   const focused = segments.find((segment) => segment.id === focusedSegment);
-  const describe = (segment) => `Block ${String(segment.sourceIndex + 1).padStart(2, '0')}: ${segment.label}, ${formatCurrency(segment.price)} per block`;
+  const describe = (segment) => `Block ${String(segment.sourceIndex + 1).padStart(2, '0')}: ${segment.label}, ${formatSchedulePrice(segment.price)} per block`;
   const showTooltip = (event, id) => {
     anchorRef.current = event.currentTarget;
     setFocusedSegment(id);
@@ -73,9 +76,8 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
       const viewportWidth = document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight;
       const left = Math.max(12, Math.min(rect.left + rect.width / 2 - width / 2, viewportWidth - width - 12));
-      // Prefer above the segment, and never extend into the following editor.
-      const scheduleBottom = scheduleRef.current.getBoundingClientRect().bottom;
-      const top = Math.min(Math.max(8, rect.top - height - 8), viewportHeight - height - 8, scheduleBottom - height);
+      const preferredTop = rect.top >= height + 8 ? rect.top - height - 8 : rect.bottom + 8;
+      const top = Math.max(8, Math.min(preferredTop, viewportHeight - height - 8));
       tooltip.style.left = `${left}px`;
       tooltip.style.top = `${top}px`;
       tooltip.style.visibility = rect.bottom <= 0 || rect.top >= viewportHeight ? 'hidden' : 'visible';
@@ -93,30 +95,48 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
     };
   }, [focused]);
 
+  useLayoutEffect(() => {
+    const schedule = scheduleRef.current;
+    const measure = () => {
+      schedule.querySelectorAll('.pricing-segment-value').forEach((label) => {
+        const textWidth = label.getBoundingClientRect().width;
+        label.style.visibility = textWidth <= label.parentElement.clientWidth ? 'visible' : 'hidden';
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(schedule);
+    schedule.querySelectorAll('.pricing-segment-value').forEach((label) => observer.observe(label));
+    let active = true;
+    document.fonts?.ready.then(() => { if (active) measure(); });
+    return () => { active = false; observer.disconnect(); };
+  }, [timeBlocks]);
+
   return <section ref={scheduleRef} className="pricing-schedule">
     <div className="pricing-panel-header">
       <SectionTitle icon={ChartNoAxesColumnIncreasing} title="24-Hour Pricing Schedule" />
       <button type="button" className="pricing-details-button" aria-expanded={detailsOpen} aria-controls="pricing-schedule-details" onClick={() => setDetailsOpen(!detailsOpen)}><Eye size={14} aria-hidden="true" />{detailsOpen ? 'Hide details' : 'View details'}</button>
     </div>
-    <div className="pricing-axis" aria-hidden="true">{[0, 6, 12, 18, 24].map((hour) => <span key={hour} style={{ left: `${hour / 24 * 100}%` }}>{formatHour(hour)}</span>)}</div>
+    {warning && <p className="pricing-schedule-warning" role="status">{warning}</p>}
+    <div className="pricing-axis" aria-hidden="true">{[0, 6, 12, 18, 24].map((hour) => <span key={hour} style={{ left: `${hour / 24 * 100}%` }}>{formatScheduleHour(hour)}</span>)}</div>
     <div className="pricing-timeline" onMouseLeave={leaveTooltip}>
       {segments.map((segment) => <button type="button" key={segment.id} className={`pricing-segment ${segment.color}`} style={{ left: `${segment.left}%`, width: `${segment.width}%` }}
-        aria-label={`Edit ${describe(segment)}`} aria-describedby={focusedSegment === segment.id ? 'pricing-timeline-tooltip' : undefined}
+        aria-label={`Edit ${describe(segment)}`} aria-describedby={focusedSegment === segment.id ? tooltipId : undefined}
         onFocus={(event) => showTooltip(event, segment.id)} onBlur={() => setFocusedSegment(null)} onMouseEnter={(event) => showTooltip(event, segment.id)} onMouseLeave={leaveTooltip}
-        onKeyDown={(event) => { if (event.key === 'Escape') setFocusedSegment(null); }} onClick={() => onSelect(segment.sourceIndex)}>
-        <span style={segment.width < 3 ? { visibility: 'hidden' } : undefined} aria-hidden="true" className={segment.width > 15 ? 'pricing-segment-value' : 'pricing-segment-number'}>{segment.width > 15 ? formatCurrency(segment.price) : `B${String(segment.sourceIndex + 1).padStart(2, '0')}`}</span>
+        onKeyDown={(event) => { if (event.key === 'Escape') setFocusedSegment(null); }} onClick={(event) => { showTooltip(event, segment.id); onSelect(segment.sourceIndex); }}>
+        <span aria-hidden="true" className="pricing-segment-value">{formatSchedulePrice(segment.price, false)}</span>
       </button>)}
     </div>
-    {focused && <div ref={tooltipRef} className="pricing-timeline-tooltip" role="tooltip" id="pricing-timeline-tooltip">
+    {focused && createPortal(<div ref={tooltipRef} className="pricing-timeline-tooltip" role="tooltip" id={tooltipId}>
       <strong>Block {String(focused.sourceIndex + 1).padStart(2, '0')}</strong>
-      <span>{focused.label}</span><span>{formatCurrency(focused.price)} per block</span>
-    </div>}
+      <span>{focused.label}</span><span>{formatSchedulePrice(focused.price)} per block</span>
+    </div>, document.body)}
     <ul className="pricing-legend">{timeBlocks.map((block, index) => <li key={index}>
-      <button type="button" onClick={() => onSelect(index)} aria-label={`Edit block ${index + 1}`}><span aria-hidden="true" className={`pricing-dot pricing-tone-${index % 5}`} />{String(index + 1).padStart(2, '0')}: {formatHour(block.startHour)}–{formatHour(block.endHour)} · {formatCurrency(block.price)}</button>
+      <button type="button" onClick={() => onSelect(index)} aria-label={`Edit block ${index + 1}`}><span aria-hidden="true" className={`pricing-dot pricing-tone-${index % 5}`} /><span>B{String(index + 1).padStart(2, '0')} &middot; {formatScheduleHour(block.startHour)}–{formatScheduleHour(block.endHour)} · {formatSchedulePrice(block.price)}</span></button>
     </li>)}</ul>
     <div id="pricing-schedule-details" hidden={!detailsOpen} className="pricing-schedule-details">
       <p>Base schedule · Vietnam time (UTC+7). A flat fee applies to each billable block touched.</p>
-      <dl>{timeBlocks.map((block, index) => <div key={index}><dt>Block {String(index + 1).padStart(2, '0')}</dt><dd>{formatHour(block.startHour)}–{formatHour(block.endHour)} · {getDuration(block.startHour, block.endHour)}h{block.startHour > block.endHour ? ' · Overnight' : ''} · {formatCurrency(block.price)} per block</dd></div>)}</dl>
+      <dl>{timeBlocks.map((block, index) => <div key={index}><dt>Block {String(index + 1).padStart(2, '0')}</dt><dd>{formatScheduleHour(block.startHour)}–{formatScheduleHour(block.endHour)} · {getDuration(block.startHour, block.endHour)}h{block.startHour > block.endHour ? ' · Overnight' : ''} · {formatSchedulePrice(block.price)} per block</dd></div>)}</dl>
     </div>
   </section>;
 }
@@ -226,10 +246,6 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
 
   return <section className="pricing-policies" aria-label="Calendar policies">
     <div className="pricing-panel-header">
-      <div>
-        <h2>Calendar Policies</h2>
-        <p className="pricing-policy-description">Highest priority wins; ties favor date range, then month, then weekday.</p>
-      </div>
       <button type="button" onClick={() => { onAdd(); setSelectedIndex(policies.length); setListPage(Math.floor(policies.length / pageSize) + 1); }} className="pricing-button pricing-primary">
         <Plus size={16} aria-hidden="true" />Add policy
       </button>
@@ -277,13 +293,13 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
         </header>
         <div className="calendar-editor-body" role="region" aria-label="Policy editable fields" tabIndex={0}>
         <div className="pricing-policy-fields">
-          <label>Applies by
-            <select value={policy.scope} onChange={(event) => onChange(index, 'scope', event.target.value)}>
-              <option value="weekday">Day of week</option>
-              <option value="month">Month</option>
-              <option value="date_range">Holiday / date range</option>
-            </select>
-          </label>
+          <div className="pricing-policy-scope-select">
+            <span>Applies by</span>
+            <AdminSelect value={policy.scope} onChange={(value) => onChange(index, 'scope', value)}
+              options={[{ value: 'weekday', label: 'Day of week' }, { value: 'month', label: 'Month' }, { value: 'date_range', label: 'Holiday / date range' }]}
+              ariaLabel="Applies by" icon={null} className="w-full" buttonClassName="pricing-adjustment-button"
+              menuAnchor={{ to: 'bottom start', gap: 6, padding: 12 }} menuClassName="pricing-adjustment-menu" />
+          </div>
           <PolicyAdjustmentInput key={policy._id || index} value={policy.adjustmentPercent} onChange={(value) => onChange(index, 'adjustmentPercent', value)} />
           <label className="pricing-policy-priority">Priority
             <input type="number" min="0" max="10000" value={policy.priority} className={numberNoSpinnerClass}

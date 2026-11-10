@@ -1,11 +1,15 @@
 const ADMIN_NOTIFICATION_ROUTES = new Set([
   '/admin/parking-lots', '/admin/bookings', '/admin/revenue', '/admin/sessions', '/admin/subscriptions',
-  '/admin/vehicle-models',
+  '/admin/vehicle-models', '/admin/accounts', '/admin/pricing',
 ]);
 
 export const notificationTarget = (route) => {
   if (typeof route !== 'string' || /[\\#\s]/.test(route) || [...route].some((char) => char.charCodeAt(0) < 32)) return null;
   const basePath = route.split('?')[0];
+  const query = new URLSearchParams(route.split('?')[1]);
+  for (const key of ['sessionId', 'bookingId', 'subscriptionId', 'userId', 'floorId', 'slotId', 'vehicleId']) {
+    if (query.has(key) && (query.getAll(key).length !== 1 || !/^[a-f\d]{24}$/i.test(query.get(key)))) return null;
+  }
   if (basePath === '/admin/sessions') {
     const params = new URLSearchParams(route.split('?').slice(1).join('?'));
     if (params.getAll('sessionId').length !== 1 || !/^[a-f\d]{24}$/i.test(params.get('sessionId'))) return null;
@@ -15,6 +19,22 @@ export const notificationTarget = (route) => {
 
 export const notificationClickTarget = (item, role) => {
   let route = item.targetRoute;
+  if (role === 'admin') {
+    const entity = String(item.entityType || '').toLowerCase();
+    const id = String(item.entityId || '');
+    const destinations = { session: ['/admin/sessions', 'sessionId'], booking: ['/admin/parking-lots', 'bookingId'], subscription: ['/admin/subscriptions', 'subscriptionId'], user: ['/admin/accounts', 'userId'], floor: ['/admin/parking-lots', 'floorId'] };
+    if (destinations[entity]) {
+      if (!/^[a-f\d]{24}$/i.test(id)) return null;
+      const [path, key] = destinations[entity];
+      if (route) {
+        const old = notificationTarget(route === '/admin/sessions' ? `${route}?sessionId=${id}` : route);
+        if (!old || (old.split('?')[0] !== path && !(entity === 'booking' && old.split('?')[0] === '/admin/bookings'))) return null;
+        const params = new URLSearchParams(route.split('?')[1]);
+        if (params.has(key) && params.get(key).toLowerCase() !== id.toLowerCase()) return null;
+      }
+      return `${path}?${key}=${id}`;
+    }
+  }
   if (item.notificationType === 'NEW_SUBSCRIPTION' && role === 'admin') {
     if (route && !notificationTarget(route)) return null;
     if (route && route.split('?')[0] !== '/admin/subscriptions') return null;

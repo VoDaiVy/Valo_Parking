@@ -62,9 +62,12 @@ export default function ParkingLots() {
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, floorId: null, floorName: "" });
 
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const bookingIdParam = searchParams.get("bookingId");
-  const hasProcessedDeepLink = useRef(false);
+  const floorIdParam = searchParams.get('floorId');
+  const slotIdParam = searchParams.get('slotId');
+  const bookingRequest = useRef(0);
+  const [deepLinkError, setDeepLinkError] = useState('');
 
   useEffect(() => {
     document.body.classList.add("bg-[#080808]");
@@ -174,45 +177,50 @@ export default function ParkingLots() {
     return () => clearTimeout(timer);
   }, [fetchFloors]);
 
-  // Deep Link Logic
+  // Verify each URL independently; stale responses must never open another record.
   useEffect(() => {
-    if (!bookingIdParam || floors.length === 0 || hasProcessedDeepLink.current) return;
-    hasProcessedDeepLink.current = true;
-
-    const loadDeepLinkBooking = async () => {
+    const generation = ++bookingRequest.current;
+    if (!bookingIdParam || floors.length === 0) return;
+    const load = async () => {
+      setSelectedItem(null);
+      setDeepLinkError('');
+      if (!/^[a-f\d]{24}$/i.test(bookingIdParam)) { setDeepLinkError('Invalid booking link.'); return; }
       try {
         const res = await getAllBookings({ bookingId: bookingIdParam });
-        if (res.ok && res.data?.data?.length > 0) {
-          const booking = res.data.data[0];
-          
-          // Select Floor
-          if (booking.floorId) {
-            const fId = typeof booking.floorId === 'object' ? booking.floorId._id : booking.floorId;
-            if (fId) setCurrentFloorId(fId);
-          }
-          
-          // Construct and Select Slot
-          if (booking.parkingSlot) {
-             const fId = typeof booking.floorId === 'object' ? booking.floorId._id : booking.floorId;
-             setSelectedItem({
-               id: booking.parkingSlot,
-               type: 'hourly',
-               floorId: fId,
-               isHeld: true,
-               booking: booking
-             });
-          }
-          
-          // Remove from URL so refresh doesn't keep triggering if they navigate away inside the view
-          setSearchParams({}, { replace: true });
+        if (generation !== bookingRequest.current) return;
+        const booking = res.ok && res.data?.data?.find(row => String(row._id).toLowerCase() === bookingIdParam.toLowerCase());
+        const floorId = booking?.floorId?._id || booking?.floorId;
+        if (!booking || !floors.some(floor => floor._id === floorId) || !booking.parkingSlot) {
+          setDeepLinkError('Booking not found or unavailable on this parking map.'); return;
         }
-      } catch (err) {
-        console.error("Deep link fetch failed", err);
-      }
+        setCurrentFloorId(floorId);
+        setSelectedItem({ id: booking.parkingSlot, type: 'hourly', floorId, isHeld: true, booking });
+      } catch { if (generation === bookingRequest.current) setDeepLinkError('Unable to open this booking. Please try again.'); }
     };
+    const timer = setTimeout(load, 0);
+    return () => { clearTimeout(timer); bookingRequest.current += 1; };
+  }, [bookingIdParam, floors]);
 
-    loadDeepLinkBooking();
-  }, [bookingIdParam, floors, setSearchParams]);
+  useEffect(() => {
+    if (!floorIdParam || bookingIdParam || !floors.length) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      setSelectedItem(null); setDeepLinkError('');
+      const floor = /^[a-f\d]{24}$/i.test(floorIdParam) && floors.find(row => row._id.toLowerCase() === floorIdParam.toLowerCase());
+      if (!floor) { setDeepLinkError('Parking floor not found or unavailable.'); return; }
+      setCurrentFloorId(floor._id);
+      if (!slotIdParam) return;
+      if (!/^[a-f\d]{24}$/i.test(slotIdParam)) { setDeepLinkError('Invalid parking slot link.'); return; }
+      try {
+        const res = await getFloorSlots(floor._id);
+        if (!active) return;
+        const slot = res.ok && res.data?.data?.find(row => row._id.toLowerCase() === slotIdParam.toLowerCase());
+        if (!slot) { setDeepLinkError('Parking slot not found or unavailable.'); return; }
+        setSelectedItem({ id: slot.slotNumber, type: slot.slotType, floorId: floor._id });
+      } catch { if (active) setDeepLinkError('Unable to open this parking slot. Please try again.'); }
+    }, 0);
+    return () => { active = false; clearTimeout(timer); };
+  }, [floorIdParam, slotIdParam, bookingIdParam, floors]);
 
   // Fetch Slots for current floor to know maintenance status
   const fetchDbSlots = useCallback(async (floorId) => {
@@ -434,6 +442,7 @@ export default function ParkingLots() {
   return (
     <div className="flex flex-col h-[calc(100vh-70px)] bg-[#080808] text-gray-200 font-sans relative overflow-hidden"
          style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
+      {deepLinkError && <p role="alert" className="m-4 rounded-lg bg-red-950 p-3 text-red-200">{deepLinkError}</p>}
       
       {/* Top Toolbar */}
       <div className="absolute top-4 left-8 z-50 flex items-center gap-4 bg-[#171717]/80 backdrop-blur border border-white/10 p-2 rounded-xl shadow-lg">

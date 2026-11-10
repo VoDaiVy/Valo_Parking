@@ -19,55 +19,55 @@ body[data-valo-typography="admin"] {
   line-height: var(--admin-leading-body);
 }
 
-body[data-valo-typography="admin"] * {
+body[data-valo-typography="admin"] *:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-family: var(--admin-font-family) !important;
 }
 
-body[data-valo-typography="admin"] :is([class*="tracking-"], [style*="letter-spacing"], .uppercase) {
+body[data-valo-typography="admin"] :is([class*="tracking-"], [style*="letter-spacing"], .uppercase):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   letter-spacing: normal !important;
   text-transform: none;
 }
 
 /* Profile/password forms use inline type sizes instead of Tailwind utilities. */
-body[data-valo-typography="admin"] [style*="font-size"]:not(svg, svg *) {
+body[data-valo-typography="admin"] [style*="font-size"]:not(svg, svg *):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-body) !important;
   line-height: var(--admin-leading-body) !important;
 }
 
-body[data-valo-typography="admin"] :is(label, small, time)[style*="font-size"] {
+body[data-valo-typography="admin"] :is(label, small, time)[style*="font-size"]:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-label) !important;
   font-weight: 500 !important;
   line-height: var(--admin-leading-label) !important;
 }
 
-body[data-valo-typography="admin"] :is([class*="font-black"], [class*="font-extrabold"], [class*="font-bold"], strong, b) {
+body[data-valo-typography="admin"] :is([class*="font-black"], [class*="font-extrabold"], [class*="font-bold"], strong, b):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-weight: 600 !important;
 }
 
 /* Normalize existing utility-based pages without changing their markup/layout.
    SVG/canvas diagram labels keep their coordinate-dependent sizes. */
-body[data-valo-typography="admin"] :is([class*="text-xs"], small, time, [class*="text-[8px]"], [class*="text-[9px]"], [class*="text-[10px]"], [class*="text-[11px]"], [class*="text-[12px]"], [class*="text-[13px]"]):not(svg, svg *) {
+body[data-valo-typography="admin"] :is([class*="text-xs"], small, time, [class*="text-[8px]"], [class*="text-[9px]"], [class*="text-[10px]"], [class*="text-[11px]"], [class*="text-[12px]"], [class*="text-[13px]"]):not(svg, svg *, .valo-ai-notification-view *):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-label) !important;
   font-weight: 500;
   line-height: var(--admin-leading-label) !important;
 }
 
-body[data-valo-typography="admin"] :is([class*="text-sm"], [class*="text-base"], [class*="text-[14px]"], [class*="text-[15px]"], [class*="text-[16px]"]):not(svg, svg *) {
+body[data-valo-typography="admin"] :is([class*="text-sm"], [class*="text-base"], [class*="text-[14px]"], [class*="text-[15px]"], [class*="text-[16px]"]):not(svg, svg *):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-body) !important;
   line-height: var(--admin-leading-body) !important;
 }
 
-body[data-valo-typography="admin"] :is([class*="text-lg"], [class*="text-xl"], [class*="text-[18px]"]):not(svg, svg *) {
+body[data-valo-typography="admin"] :is([class*="text-lg"], [class*="text-xl"], [class*="text-[18px]"]):not(svg, svg *):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-card) !important;
   line-height: var(--admin-leading-heading) !important;
 }
 
-body[data-valo-typography="admin"] :is([class*="text-2xl"], [class*="text-[22px]"]):not(svg, svg *) {
+body[data-valo-typography="admin"] :is([class*="text-2xl"], [class*="text-[22px]"]):not(svg, svg *):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-section) !important;
   line-height: var(--admin-leading-heading) !important;
 }
 
-body[data-valo-typography="admin"] :is([class*="text-3xl"], [class*="text-4xl"], [class*="text-5xl"], [class*="text-6xl"]):not(svg, svg *) {
+body[data-valo-typography="admin"] :is([class*="text-3xl"], [class*="text-4xl"], [class*="text-5xl"], [class*="text-6xl"]):not(svg, svg *):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-page) !important;
   font-weight: 700 !important;
   line-height: var(--admin-leading-heading) !important;
@@ -75,8 +75,8 @@ body[data-valo-typography="admin"] :is([class*="text-3xl"], [class*="text-4xl"],
 }
 
 /* Semantic roles take precedence over legacy size/weight utilities. */
-body[data-valo-typography="admin"] h1,
-body[data-valo-typography="admin"] h1[class] {
+body[data-valo-typography="admin"] h1:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)),
+body[data-valo-typography="admin"] h1[class]:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-page) !important;
   font-weight: 700 !important;
   line-height: var(--admin-leading-heading) !important;
@@ -84,70 +84,70 @@ body[data-valo-typography="admin"] h1[class] {
   overflow-wrap: anywhere;
 }
 
-body[data-valo-typography="admin"] h2,
-body[data-valo-typography="admin"] h2[class] {
+body[data-valo-typography="admin"] h2:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)),
+body[data-valo-typography="admin"] h2[class]:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-section) !important;
   font-weight: 600 !important;
   line-height: var(--admin-leading-heading) !important;
   letter-spacing: normal !important;
 }
 
-body[data-valo-typography="admin"] :is(h3, h4, h5, h6),
-body[data-valo-typography="admin"] :is(h3, h4, h5, h6)[class] {
+body[data-valo-typography="admin"] :is(h3, h4, h5, h6):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)),
+body[data-valo-typography="admin"] :is(h3, h4, h5, h6)[class]:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-card) !important;
   font-weight: 600 !important;
   line-height: var(--admin-leading-heading) !important;
   letter-spacing: normal !important;
 }
 
-body[data-valo-typography="admin"] :is(p, li, dd) {
+body[data-valo-typography="admin"] :is(p, li, dd):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   overflow-wrap: anywhere;
 }
 
-body[data-valo-typography="admin"] :is(label, dt, th),
-body[data-valo-typography="admin"] :is(label, dt, th)[class] {
+body[data-valo-typography="admin"] :is(label, dt, th):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)),
+body[data-valo-typography="admin"] :is(label, dt, th)[class]:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-label) !important;
   font-weight: 500 !important;
   line-height: var(--admin-leading-label) !important;
 }
 
-body[data-valo-typography="admin"] :is(td, td p, td span, td a, td code),
-body[data-valo-typography="admin"] :is(td, td p, td span, td a, td code)[class] {
+body[data-valo-typography="admin"] :is(td, td p, td span, td a, td code):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)),
+body[data-valo-typography="admin"] :is(td, td p, td span, td a, td code)[class]:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-body) !important;
   font-weight: 400 !important;
   line-height: var(--admin-leading-body) !important;
 }
 
-body[data-valo-typography="admin"] :is(button, input, select, textarea, [role="button"], [role="option"], [role="menuitem"]) {
+body[data-valo-typography="admin"] :is(button, input, select, textarea, [role="button"], [role="option"], [role="menuitem"]):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-body) !important;
   font-weight: 500 !important;
   line-height: var(--admin-leading-body) !important;
   letter-spacing: normal !important;
 }
 
-body[data-valo-typography="admin"] :is(button, [role="button"], [role="option"], [role="menuitem"]) :is(span, p) {
+body[data-valo-typography="admin"] :is(button, [role="button"], [role="option"], [role="menuitem"]) :is(span, p):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: inherit !important;
   font-weight: inherit !important;
   line-height: inherit !important;
 }
 
-body[data-valo-typography="admin"] .staff-dashboard-sidebar nav :is(a, span) {
+body[data-valo-typography="admin"] .staff-dashboard-sidebar nav :is(a, span):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-body) !important;
   font-weight: 500 !important;
   line-height: var(--admin-leading-label) !important;
 }
 
-body[data-valo-typography="admin"] .staff-dashboard-sidebar > div:first-child p:first-child {
+body[data-valo-typography="admin"] .staff-dashboard-sidebar > div:first-child p:first-child:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-body) !important;
   font-weight: 700 !important;
   letter-spacing: .04em !important;
 }
 
-body[data-valo-typography="admin"] :is(.font-mono, .tabular-nums, input[type="number"], td) {
+body[data-valo-typography="admin"] :is(.font-mono, .tabular-nums, input[type="number"], td):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-variant-numeric: tabular-nums;
 }
 
-body[data-valo-typography="admin"] :is(.admin-type-kpi, .font-mono.text-xl, .font-mono.text-2xl, .font-mono.text-3xl, .font-mono.text-4xl) {
+body[data-valo-typography="admin"] :is(.admin-type-kpi, .font-mono.text-xl, .font-mono.text-2xl, .font-mono.text-3xl, .font-mono.text-4xl):where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: var(--admin-type-kpi) !important;
   font-weight: 700 !important;
   line-height: var(--admin-leading-heading) !important;
@@ -157,33 +157,16 @@ body[data-valo-typography="admin"] :is(.admin-type-kpi, .font-mono.text-xl, .fon
   overflow-wrap: anywhere;
 }
 
-/* Six-column analytics metrics and the AI panel have deliberately compact roles. */
-body[data-valo-typography="admin"] .admin-type-kpi-compact {
+/* Notification cards use the shared Copilot styles, matching Staff.
+   Keep the Admin type scale for analytics and the remaining AI panel content. */
+body[data-valo-typography="admin"] .admin-type-kpi-compact:where(:not(.valo-ai-panel, .valo-ai-panel *, .valo-ai-anchor, .valo-ai-anchor *)) {
   font-size: 24px !important;
 }
 
-body[data-valo-typography="admin"] .valo-ai-panel :is(.valo-ai-message-bubble, .valo-ai-notification p, .valo-ai-notification-detail, .valo-ai-empty) {
-  font-size: var(--admin-type-body) !important;
-  font-weight: 400 !important;
-  line-height: var(--admin-leading-body) !important;
-}
 
-body[data-valo-typography="admin"] .valo-ai-panel :is(.valo-ai-header h2, .valo-ai-notification-detail h3) {
-  font-size: var(--admin-type-card) !important;
-  font-weight: 600 !important;
-  line-height: var(--admin-leading-heading) !important;
-}
 
-body[data-valo-typography="admin"] .valo-ai-panel .valo-ai-notification strong {
-  font-size: var(--admin-type-card) !important;
-  font-weight: 600 !important;
-  line-height: var(--admin-leading-heading) !important;
-}
 
-body[data-valo-typography="admin"] .valo-ai-panel :is(.valo-ai-header p, .valo-ai-notification time, .valo-ai-notification small, .valo-ai-draft-badge, .valo-ai-evidence, footer) {
-  font-size: var(--admin-type-label) !important;
-  line-height: var(--admin-leading-label) !important;
-}
+
 
 @media (max-width: 767px) {
   body[data-valo-typography="admin"] {

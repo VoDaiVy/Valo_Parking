@@ -1,3 +1,4 @@
+const { paginateRevenueTransactions } = require('./revenueTransactionPagination');
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const BookingService = require('../models/BookingService');
@@ -409,16 +410,12 @@ const calculatePlatformBookingRevenue = (
       0,
       grossServiceAmount - Math.min(grossServiceAmount, paidServiceRefund)
     );
-    const grossBookingAmount = Math.max(0, grossRevenue - paidServiceAmount);
-    const bookingRefund = Math.min(
-      grossBookingAmount,
-      Math.max(0, refundPaid - paidServiceRefund)
-    );
-    const bookingRevenue = Math.max(0, grossBookingAmount - bookingRefund);
+    // Retained service/cancellation fees remain income even if a service was not performed.
+    const bookingRevenue = Math.max(0, grossRevenue - refundPaid - serviceRevenue);
 
     summary.bookingRevenue += bookingRevenue;
     summary.serviceRevenue += serviceRevenue;
-    summary.refundTotal += refundPaid;
+    summary.refundTotal += financial.reportedRefundPaid ?? refundPaid;
     summary.completedBookingCount += 1;
     if (grossServiceAmount > 0) summary.serviceBookingCount += 1;
     return summary;
@@ -463,586 +460,123 @@ const calculatePlatformRevenueTotal = ({
 /* ── Enhanced platform revenue (mode-based, single source of truth) ──── */
 
 const getAdminPlatformRevenueStatistics = async (filters = {}) => {
-  // If no mode is provided, fall back to legacy behavior for backward compatibility
-  if (!filters.mode) {
-    return getAdminPlatformRevenueStatisticsLegacy(filters);
-  }
-
+  if (!filters.mode) return getAdminPlatformRevenueStatisticsLegacy(filters);
+  const { getPackageRevenuePayments } = require('./revenuePackagePayments');
   const now = new Date();
-  // Annual bars cover the first realized revenue year through the current year.
-  // Check every revenue source so older renewal/transfer records are not lost.
-  const earliestRevenueRows = filters.mode === 'years'
-    ? await Promise.all([
-      [Booking, { status: 'COMPLETED' }, { $ifNull: ['$completedAt', '$updatedAt'] }],
-      [Subscription, { paymentStatus: 'paid' }, '$createdAt'],
-      [SubscriptionRenewal, { status: 'paid' }, { $ifNull: ['$paidAt', '$createdAt'] }],
-      [MembershipEntitlementRenewal, { status: 'paid' }, { $ifNull: ['$paidAt', '$createdAt'] }],
-      [WalletTransaction, { type: 'TRANSFER_FEE', status: 'COMPLETED' }, '$createdAt'],
-    ].map(([Model, match, date]) => Model.aggregate([
-      { $match: match },
-      { $group: { _id: null, earliest: { $min: date } } },
-    ])))
-    : [];
-  const earliestRevenueDates = earliestRevenueRows.flat()
-    .map(row => row.earliest)
-    .filter(date => date && !Number.isNaN(new Date(date).getTime()));
-  const firstRevenueYear = earliestRevenueDates.reduce(
-    (year, date) => Math.min(year, toVietnamLocal(new Date(date)).getUTCFullYear()),
-    toVietnamLocal(now).getUTCFullYear()
-  );
-  const { startDate, endDate, granularity, mode } = resolveModeDateRange(filters, now, firstRevenueYear);
-  const bucketFormat = granularity === 'year' ? '%Y' : granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
-  const bucketLabels = generateBucketLabels(startDate, endDate, granularity);
-  // Keep traffic as a time-series line chart even when revenue is grouped by year.
+  const finalizedStatus = { $in: ['COMPLETED', 'CANCELLED'] };
+  const finalizedDate = { $ifNull: ['$completedAt', { $ifNull: ['$cancelledAt', '$updatedAt'] }] };
+  const earliestRows = await Promise.all([
+    [Booking, { status: finalizedStatus }, finalizedDate],
+    [Subscription, { paymentStatus: 'paid' }, '$createdAt'],
+    [SubscriptionRenewal, { status: 'paid' }, { $ifNull: ['$paidAt', '$createdAt'] }],
+    [MembershipEntitlementRenewal, { status: 'paid' }, { $ifNull: ['$paidAt', '$createdAt'] }],
+    [WalletTransaction, { type: 'TRANSFER_FEE', status: 'COMPLETED' }, '$createdAt'],
+  ].map(([Model, match, date]) => Model.aggregate([
+    { $match: match }, { $group: { _id: null, earliest: { $min: date } } },
+  ])));
+  const currentYear = toVietnamLocal(now).getUTCFullYear();
+  const firstYear = earliestRows.flat().reduce((year, row) => row.earliest
+    ? Math.min(year, toVietnamLocal(new Date(row.earliest)).getUTCFullYear()) : year, currentYear);
+  const period = resolveModeDateRange(filters, now, firstYear);
+  const { startDate, endDate, granularity } = period;
+  const range = { $gte: startDate, $lt: endDate };
   const trafficGranularity = granularity === 'year' ? 'month' : granularity;
-  const trafficBucketFormat = trafficGranularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
-  const trafficBucketLabels = generateBucketLabels(startDate, endDate, trafficGranularity);
-
-  // Build date matches for exclusive endDate
-  const bookingDateMatch = buildLifecycleDateMatchExclusive(
-    'completedAt', 'updatedAt', startDate, endDate
-  );
-  const renewalDateMatch = {
-    $or: [
-      { paidAt: { $gte: startDate, $lt: endDate } },
-      { paidAt: null, createdAt: { $gte: startDate, $lt: endDate } },
-    ],
-  };
-  const createdAtMatchExclusive = { createdAt: { $gte: startDate, $lt: endDate } };
-
-  // Status Distribution: use scheduledStart for operational analytics
-  const scheduledStartMatch = { scheduledStart: { $gte: startDate, $lt: endDate } };
-
-  const [
-    completedBookings,
-    subscriptionPurchases,
-    subscriptionRenewals,
-    entitlementRenewals,
-    membershipTransferFees,
-    // Timeline aggregates
-    bookingTimelineRows,
-    serviceTimelineRows,
-    subscriptionPurchaseTimelineRows,
-    subscriptionRenewalTimelineRows,
-    entitlementRenewalTimelineRows,
-    transferFeeTimelineRows,
-    // Traffic
-    entryRows,
-    exitRows,
-    currentlyParked,
-    // Status Distribution (by scheduledStart for operational analytics)
-    statusDistributionRows,
-    // Package breakdown
-    packagePurchaseRows,
-    packageSubRenewalRows,
-    packageEntRenewalRows,
-    // Available years
-    earliestBookingYear,
-    earliestSubscriptionYear,
-  ] = await Promise.all([
-    // Revenue: completed bookings in period
-    Booking.find({ status: 'COMPLETED', ...bookingDateMatch })
-      .select(
-        'prepaidAmount paymentBreakdownSnapshot paidOverageAdjustments refundSettlements completedAt updatedAt'
-      )
-      .lean(),
-    // Revenue: subscription purchases in period
-    aggregatePaidAmount(Subscription, {
-      paymentStatus: 'paid',
-      ...createdAtMatchExclusive,
-    }),
-    // Revenue: subscription renewals in period
-    aggregatePaidAmount(SubscriptionRenewal, {
-      status: 'paid',
-      ...renewalDateMatch,
-    }),
-    // Revenue: entitlement renewals in period
-    aggregatePaidAmount(MembershipEntitlementRenewal, {
-      status: 'paid',
-      ...renewalDateMatch,
-    }),
-    // Revenue: membership transfer fees in period
-    aggregatePaidAmount(WalletTransaction, {
-      type: 'TRANSFER_FEE',
-      status: 'COMPLETED',
-      ...createdAtMatchExclusive,
-    }),
-
-    // Timeline: booking revenue per bucket (completedAt/updatedAt based)
-    Booking.aggregate([
-      { $match: { status: 'COMPLETED', ...bookingDateMatch } },
-      {
-        $group: {
-          _id: timelineDateExpression(
-            bucketFormat,
-            { $ifNull: ['$completedAt', '$updatedAt'] }
-          ),
-          bookingIds: { $push: '$_id' },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-    // Timeline: completed service amounts by bucket
-    BookingService.aggregate([
-      {
-        $match: {
-          status: 'done',
-        },
-      },
-      {
-        $lookup: {
-          from: 'bookings',
-          localField: 'bookingId',
-          foreignField: '_id',
-          as: 'booking',
-          pipeline: [
-            { $match: { status: 'COMPLETED', ...bookingDateMatch } },
-            { $project: { completedAt: 1, updatedAt: 1 } },
-          ],
-        },
-      },
-      { $unwind: '$booking' },
-      {
-        $group: {
-          _id: {
-            bookingId: '$bookingId',
-            period: timelineDateExpression(
-              bucketFormat,
-              { $ifNull: ['$booking.completedAt', '$booking.updatedAt'] }
-            ),
-          },
-          amount: { $sum: '$price' },
-        },
-      },
-    ]),
-    // Timeline: subscription purchases per bucket
-    Subscription.aggregate([
-      { $match: { paymentStatus: 'paid', ...createdAtMatchExclusive } },
-      {
-        $group: {
-          _id: timelineDateExpression(bucketFormat),
-          amount: { $sum: '$amount' },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-    // Timeline: subscription renewals per bucket
-    SubscriptionRenewal.aggregate([
-      { $match: { status: 'paid', ...renewalDateMatch } },
-      {
-        $group: {
-          _id: timelineDateExpression(
-            bucketFormat,
-            { $ifNull: ['$paidAt', '$createdAt'] }
-          ),
-          amount: { $sum: '$amount' },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-    // Timeline: entitlement renewals per bucket
-    MembershipEntitlementRenewal.aggregate([
-      { $match: { status: 'paid', ...renewalDateMatch } },
-      {
-        $group: {
-          _id: timelineDateExpression(
-            bucketFormat,
-            { $ifNull: ['$paidAt', '$createdAt'] }
-          ),
-          amount: { $sum: '$amount' },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-    // Timeline: transfer fees per bucket
-    WalletTransaction.aggregate([
-      { $match: { type: 'TRANSFER_FEE', status: 'COMPLETED', ...createdAtMatchExclusive } },
-      {
-        $group: {
-          _id: timelineDateExpression(bucketFormat),
-          amount: { $sum: '$amount' },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-
-    // Traffic: entries by checkInTime
-    Session.aggregate([
-      { $match: { checkInTime: { $gte: startDate, $lt: endDate } } },
-      {
-        $group: {
-          _id: timelineDateExpression(trafficBucketFormat, '$checkInTime'),
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-    // Traffic: exits by checkOutTime
-    Session.aggregate([
-      { $match: { checkOutTime: { $gte: startDate, $lt: endDate } } },
-      {
-        $group: {
-          _id: timelineDateExpression(trafficBucketFormat, '$checkOutTime'),
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]),
-    // Traffic: currently parked (snapshot, no period filter)
-    Session.countDocuments({ status: 'active' }),
-
-    // Status Distribution: bookings by scheduledStart in period
-    Booking.aggregate([
-      { $match: scheduledStartMatch },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { count: -1 } },
-    ]),
-
-    // Package breakdown: subscription purchases by package
-    Subscription.aggregate([
-      { $match: { paymentStatus: 'paid', ...createdAtMatchExclusive } },
-      {
-        $group: {
-          _id: '$ticketPackage',
-          purchaseAmount: { $sum: '$amount' },
-          purchaseCount: { $sum: 1 },
-        },
-      },
-    ]),
-    // Package breakdown: subscription renewals by package (via subscription lookup)
-    SubscriptionRenewal.aggregate([
-      { $match: { status: 'paid', ...renewalDateMatch } },
-      {
-        $lookup: {
-          from: 'subscriptions',
-          localField: 'subscriptionId',
-          foreignField: '_id',
-          as: 'subscription',
-          pipeline: [{ $project: { ticketPackage: 1 } }],
-        },
-      },
-      { $unwind: { path: '$subscription', preserveNullAndEmptyArrays: true } },
-      {
-        $group: {
-          _id: '$subscription.ticketPackage',
-          renewalAmount: { $sum: '$amount' },
-          renewalCount: { $sum: 1 },
-        },
-      },
-    ]),
-    // Package breakdown: entitlement renewals by package (via subscription → package)
-    MembershipEntitlementRenewal.aggregate([
-      { $match: { status: 'paid', ...renewalDateMatch } },
-      {
-        $lookup: {
-          from: 'subscriptions',
-          localField: 'sourceSubscriptionId',
-          foreignField: '_id',
-          as: 'subscription',
-          pipeline: [{ $project: { ticketPackage: 1 } }],
-        },
-      },
-      { $unwind: { path: '$subscription', preserveNullAndEmptyArrays: true } },
-      {
-        $group: {
-          _id: '$subscription.ticketPackage',
-          renewalAmount: { $sum: '$amount' },
-          renewalCount: { $sum: 1 },
-        },
-      },
-    ]),
-
-    // Available years: earliest booking
-    Booking.aggregate([
-      { $match: { status: 'COMPLETED' } },
-      { $group: { _id: null, earliest: { $min: { $ifNull: ['$completedAt', '$updatedAt'] } } } },
-    ]),
-    // Available years: earliest subscription
-    Subscription.aggregate([
-      { $match: { paymentStatus: 'paid' } },
-      { $group: { _id: null, earliest: { $min: '$createdAt' } } },
-    ]),
+  const bucketFormat = value => value === 'year' ? '%Y' : value === 'month' ? '%Y-%m' : '%Y-%m-%d';
+  const bucketKey = (date) => toVietnamLocal(new Date(date)).toISOString().slice(0, granularity === 'year' ? 4 : granularity === 'month' ? 7 : 10);
+  const [bookings, packagePayments, fees, paymentRecords, entryRows, exitRows, currentlyParked, statusRows] = await Promise.all([
+    Booking.find({ status: finalizedStatus, $expr: { $and: [{ $gte: [finalizedDate, startDate] }, { $lt: [finalizedDate, endDate] }] } })
+      .select('status prepaidAmount paymentBreakdownSnapshot paidOverageAdjustments refundSettlements completedAt cancelledAt updatedAt').lean(),
+    getPackageRevenuePayments(startDate, endDate),
+    WalletTransaction.find({ type: 'TRANSFER_FEE', status: 'COMPLETED', createdAt: range }).select('amount createdAt').lean(),
+    // These are individual ledger rows, never KPI totals. Package wallet debits
+    // are represented by their purchase/renewal records below, exactly once.
+    WalletTransaction.find({ status: 'COMPLETED', createdAt: range, $or: [
+      { type: { $in: ['PAYMENT', 'REFUND'] }, refSource: { $in: BOOKING_SOURCES } },
+      { type: 'TRANSFER_FEE' },
+    ] }).select('type amount createdAt description refSource refSourceId status').sort({ createdAt: -1, _id: -1 }).lean(),
+    Session.aggregate([{ $match: { status: { $ne: 'cancelled' }, checkInTime: range } },
+      { $group: { _id: timelineDateExpression(bucketFormat(trafficGranularity), '$checkInTime'), count: { $sum: 1 } } }]),
+    Session.aggregate([{ $match: { status: 'completed', checkOutTime: range } },
+      { $group: { _id: timelineDateExpression(bucketFormat(trafficGranularity), '$checkOutTime'), count: { $sum: 1 } } }]),
+    Session.countDocuments({ status: 'active', checkInTime: { $lte: now }, checkOutTime: null }),
+    Booking.aggregate([{ $match: { scheduledStart: range } }, { $group: { _id: '$status', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
   ]);
-
-  // ── Process booking revenues ──────────────────────────────────────────
-  const bookingIds = completedBookings.map((b) => b._id);
-  const [financialSummaries, completedServiceRows] = await Promise.all([
-    getBookingFinancialSummaryMap(completedBookings),
-    bookingIds.length
-      ? BookingService.aggregate([
-        { $match: { bookingId: { $in: bookingIds }, status: 'done' } },
-        { $group: { _id: '$bookingId', amount: { $sum: '$price' } } },
-      ])
-      : [],
+  const bookingIds = bookings.map(booking => booking._id);
+  const [financial, serviceRows] = await Promise.all([
+    getBookingFinancialSummaryMap(bookings, { excludeModificationRefunds: true }),
+    bookingIds.length ? BookingService.aggregate([{ $match: { bookingId: { $in: bookingIds }, status: 'done' } },
+      { $group: { _id: '$bookingId', amount: { $sum: '$price' } } }]) : [],
   ]);
-  const completedServiceAmountByBooking = new Map(
-    completedServiceRows.map((row) => [String(row._id), Number(row.amount) || 0])
-  );
-  const bookingRevenueResult = calculatePlatformBookingRevenue(
-    completedBookings,
-    financialSummaries,
-    completedServiceAmountByBooking
-  );
-
-  const bookingRevenue = bookingRevenueResult.bookingRevenue;
-  const serviceRevenue = bookingRevenueResult.serviceRevenue;
-  const refundTotal = bookingRevenueResult.refundTotal;
-  const packageRevenue =
-    subscriptionPurchases.amount +
-    subscriptionRenewals.amount +
-    entitlementRenewals.amount;
-  const membershipTransferFeeRevenue = membershipTransferFees.amount;
-  const totalRevenue = bookingRevenue + serviceRevenue + packageRevenue + membershipTransferFeeRevenue;
-  const sourceCompositionTotal = totalRevenue;
-
-  // ── Build timeline with per-bucket booking/service separation ─────────
-  // We need per-bucket booking revenue. Since calculatePlatformBookingRevenue
-  // does complex per-booking calculation, we approximate by proportional split
-  // for timeline. But for accuracy, we compute per-bucket.
-  const bookingsByBucket = new Map();
-  for (const row of bookingTimelineRows) {
-    bookingsByBucket.set(row._id, row.bookingIds || []);
+  const services = new Map(serviceRows.map(row => [String(row._id), Number(row.amount)]));
+  const zero = () => ({ totalRevenue: 0, bookingRevenue: 0, serviceRevenue: 0, packageRevenue: 0, membershipTransferFees: 0, refunds: 0 });
+  const trend = generateBucketLabels(startDate, endDate, granularity).map(label => ({ period: label, ...zero() }));
+  const buckets = new Map(trend.map(row => [row.period, row]));
+  let serviceBookingCount = 0;
+  for (const booking of bookings) {
+    const row = buckets.get(bucketKey(booking.completedAt || booking.cancelledAt || booking.updatedAt));
+    const revenue = calculatePlatformBookingRevenue([booking], financial, services);
+    row.bookingRevenue += revenue.bookingRevenue;
+    row.serviceRevenue += revenue.serviceRevenue;
+    row.refunds += revenue.refundTotal;
+    serviceBookingCount += revenue.serviceBookingCount;
   }
-
-  // Build per-bucket service amounts
-  const serviceByBucketAndBooking = new Map();
-  for (const row of serviceTimelineRows) {
-    const period = row._id.period;
-    const bookingId = String(row._id.bookingId);
-    if (!serviceByBucketAndBooking.has(period)) {
-      serviceByBucketAndBooking.set(period, new Map());
-    }
-    serviceByBucketAndBooking.get(period).set(bookingId, Number(row.amount) || 0);
-  }
-
-  // Build per-bucket package revenue
-  const packageByBucket = new Map();
-  for (const row of subscriptionPurchaseTimelineRows) {
-    packageByBucket.set(row._id, (packageByBucket.get(row._id) || 0) + Number(row.amount || 0));
-  }
-  for (const row of subscriptionRenewalTimelineRows) {
-    packageByBucket.set(row._id, (packageByBucket.get(row._id) || 0) + Number(row.amount || 0));
-  }
-  for (const row of entitlementRenewalTimelineRows) {
-    packageByBucket.set(row._id, (packageByBucket.get(row._id) || 0) + Number(row.amount || 0));
-  }
-
-  // Build per-bucket transfer fees
-  const transferFeeByBucket = new Map();
-  for (const row of transferFeeTimelineRows) {
-    transferFeeByBucket.set(row._id, Number(row.amount || 0));
-  }
-
-  // Compute per-bucket booking and service revenues
-  const bookingRevenueByBucket = new Map();
-  const serviceRevenueByBucket = new Map();
-  const refundByBucket = new Map();
-
-  // Create a map from bookingId -> booking document for quick lookup
-  const bookingDocMap = new Map(
-    completedBookings.map((b) => [String(b._id), b])
-  );
-
-  for (const [period, bIds] of bookingsByBucket) {
-    const bucketBookings = bIds
-      .map((id) => bookingDocMap.get(String(id)))
-      .filter(Boolean);
-    const bucketServiceMap = serviceByBucketAndBooking.get(period) || new Map();
-    const bucketResult = calculatePlatformBookingRevenue(
-      bucketBookings,
-      financialSummaries,
-      bucketServiceMap
-    );
-    bookingRevenueByBucket.set(period, bucketResult.bookingRevenue);
-    serviceRevenueByBucket.set(period, bucketResult.serviceRevenue);
-    refundByBucket.set(period, bucketResult.refundTotal);
-  }
-
-  // Build final zero-filled trend
-  const trend = bucketLabels.map((label) => ({
-    period: label,
-    totalRevenue:
-      (bookingRevenueByBucket.get(label) || 0) +
-      (serviceRevenueByBucket.get(label) || 0) +
-      (packageByBucket.get(label) || 0) +
-      (transferFeeByBucket.get(label) || 0),
-    bookingRevenue: bookingRevenueByBucket.get(label) || 0,
-    serviceRevenue: serviceRevenueByBucket.get(label) || 0,
-    packageRevenue: packageByBucket.get(label) || 0,
-    membershipTransferFees: transferFeeByBucket.get(label) || 0,
-    refunds: refundByBucket.get(label) || 0,
-  }));
-
-  // ── Traffic ────────────────────────────────────────────────────────────
-  const entryByBucket = new Map(entryRows.map((r) => [r._id, r.count]));
-  const exitByBucket = new Map(exitRows.map((r) => [r._id, r.count]));
-
-  const traffic = trafficBucketLabels.map((label) => ({
-    period: label,
-    entries: entryByBucket.get(label) || 0,
-    exits: exitByBucket.get(label) || 0,
-  }));
-
-  const totalEntries = traffic.reduce((s, p) => s + p.entries, 0);
-  const totalExits = traffic.reduce((s, p) => s + p.exits, 0);
-
-  // ── Status Distribution ───────────────────────────────────────────────
-  const statusMap = new Map(
-    statusDistributionRows.map((r) => [r._id, r.count])
-  );
-  const totalBookings =
-    (statusMap.get('COMPLETED') || 0) +
-    (statusMap.get('CANCELLED') || 0) +
-    (statusMap.get('PAID') || 0) +
-    (statusMap.get('ACTIVE') || 0) +
-    (statusMap.get('PAUSED') || 0) +
-    (statusMap.get('EXPIRED') || 0) +
-    (statusMap.get('PENDING') || 0);
-  const statusDistribution = {
-    completed: statusMap.get('COMPLETED') || 0,
-    cancelled: statusMap.get('CANCELLED') || 0,
-    totalBookings,
-    byStatus: statusDistributionRows.map((r) => ({
-      status: r._id,
-      count: r.count,
-    })),
-  };
-
-  // ── Package breakdown ─────────────────────────────────────────────────
-  // Merge purchases + sub renewals + entitlement renewals by packageId
   const packageMap = new Map();
-  const ensurePackage = (pkgId) => {
-    const key = pkgId ? String(pkgId) : '__unknown__';
-    if (!packageMap.has(key)) {
-      packageMap.set(key, {
-        packageId: pkgId ? String(pkgId) : null,
-        purchaseAmount: 0,
-        purchaseCount: 0,
-        renewalAmount: 0,
-        renewalCount: 0,
-      });
-    }
-    return packageMap.get(key);
-  };
-  for (const row of packagePurchaseRows) {
-    const pkg = ensurePackage(row._id);
-    pkg.purchaseAmount += Number(row.purchaseAmount || 0);
-    pkg.purchaseCount += Number(row.purchaseCount || 0);
+  for (const payment of packagePayments) {
+    buckets.get(bucketKey(payment.paidAt)).packageRevenue += payment.amount;
+    const key = payment.packageId ? String(payment.packageId) : null;
+    if (!packageMap.has(key)) packageMap.set(key, { packageId: key, packageName: payment.packageName, packageType: payment.packageType, purchaseAmount: 0, purchaseCount: 0, renewalAmount: 0, renewalCount: 0 });
+    const row = packageMap.get(key);
+    row[`${payment.kind}Amount`] += payment.amount;
+    row[`${payment.kind}Count`] += 1;
   }
-  for (const row of packageSubRenewalRows) {
-    const pkg = ensurePackage(row._id);
-    pkg.renewalAmount += Number(row.renewalAmount || 0);
-    pkg.renewalCount += Number(row.renewalCount || 0);
+  for (const fee of fees) buckets.get(bucketKey(fee.createdAt)).membershipTransferFees += fee.amount;
+  const summary = zero();
+  for (const row of trend) {
+    // Refunds already reduced their source; subtracting them here would double count.
+    row.totalRevenue = row.bookingRevenue + row.serviceRevenue + row.packageRevenue + row.membershipTransferFees;
+    for (const key of Object.keys(summary)) summary[key] += row[key];
   }
-  for (const row of packageEntRenewalRows) {
-    const pkg = ensurePackage(row._id);
-    pkg.renewalAmount += Number(row.renewalAmount || 0);
-    pkg.renewalCount += Number(row.renewalCount || 0);
-  }
-
-  // Lookup package names (including archived)
-  const packageIds = [...packageMap.values()]
-    .map((p) => p.packageId)
-    .filter(Boolean)
-    .map((id) => {
-      try { return new mongoose.Types.ObjectId(id); } catch { return null; }
-    })
-    .filter(Boolean);
-  const packageDocs = packageIds.length
-    ? await TicketPackage.find({ _id: { $in: packageIds } })
-      .select('name type isActive')
-      .lean()
-    : [];
-  const packageNameMap = new Map(
-    packageDocs.map((p) => [String(p._id), p])
-  );
-
-  const packageBreakdown = [...packageMap.values()]
-    .map((pkg) => {
-      const doc = pkg.packageId ? packageNameMap.get(pkg.packageId) : null;
-      return {
-        packageId: pkg.packageId,
-        packageName: doc?.name || 'Archived package',
-        packageType: doc?.type || null,
-        isActive: doc?.isActive ?? false,
-        totalAmount: pkg.purchaseAmount + pkg.renewalAmount,
-        purchaseAmount: pkg.purchaseAmount,
-        purchaseCount: pkg.purchaseCount,
-        renewalAmount: pkg.renewalAmount,
-        renewalCount: pkg.renewalCount,
-      };
-    })
-    .sort((a, b) => b.totalAmount - a.totalAmount);
-
-  // ── Available years ───────────────────────────────────────────────────
-  const earliestDates = [
-    earliestBookingYear[0]?.earliest,
-    earliestSubscriptionYear[0]?.earliest,
-    ...earliestRevenueDates,
-  ].filter(Boolean);
-  const currentYearVN = toVietnamLocal(now).getUTCFullYear();
-  let minYear = currentYearVN;
-  for (const d of earliestDates) {
-    const y = toVietnamLocal(new Date(d)).getUTCFullYear();
-    if (y < minYear) minYear = y;
-  }
-  const availableYears = [];
-  for (let y = minYear; y <= currentYearVN; y++) {
-    availableYears.push(y);
-  }
-
+  summary.sourceCompositionTotal = summary.totalRevenue;
+  const packageIds = [...packageMap.keys()].filter(Boolean);
+  const docs = packageIds.length ? await TicketPackage.find({ _id: { $in: packageIds } }).select('name type isActive').lean() : [];
+  const packageDocs = new Map(docs.map(doc => [String(doc._id), doc]));
+  const packageBreakdown = [...packageMap.values()].map(row => ({ ...row,
+    packageName: packageDocs.get(row.packageId)?.name || row.packageName || 'Archived package',
+    packageType: packageDocs.get(row.packageId)?.type || row.packageType || null,
+    isActive: packageDocs.get(row.packageId)?.isActive ?? false,
+    totalAmount: row.purchaseAmount + row.renewalAmount,
+  })).sort((left, right) => right.totalAmount - left.totalAmount);
+  const entries = new Map(entryRows.map(row => [row._id, row.count]));
+  const exits = new Map(exitRows.map(row => [row._id, row.count]));
+  const traffic = generateBucketLabels(startDate, endDate, trafficGranularity).map(label => ({ period: label, entries: entries.get(label) || 0, exits: exits.get(label) || 0 }));
+  const { recentTransactions, transactionPagination } = paginateRevenueTransactions([
+    ...paymentRecords.map(row => ({ id: String(row._id), paidAt: row.createdAt, type: row.type, reference: row.refSourceId,
+      description: row.description || row.refSource, amount: row.amount, status: row.status, paymentMethod: 'wallet' })),
+    ...packagePayments.map(row => ({ id: row.id, paidAt: row.paidAt, type: row.kind === 'purchase' ? 'PACKAGE_PURCHASE' : 'PACKAGE_RENEWAL', reference: row.reference,
+      description: packageDocs.get(String(row.packageId))?.name || 'Package payment', amount: row.amount, status: 'PAID', paymentMethod: row.paymentMethod, dateBasis: row.dateBasis })),
+  ], filters.transactionPage);
+  const purchases = packagePayments.filter(row => row.kind === 'purchase');
+  const renewals = packagePayments.filter(row => row.kind === 'renewal');
+  const sumAmounts = rows => rows.reduce((total, row) => total + row.amount, 0);
   return {
-    period: { startDate, endDate, mode, granularity },
-    currency: 'VND',
-    basis: 'realized_completed_revenue',
-    summary: {
-      totalRevenue,
-      bookingRevenue,
-      serviceRevenue,
-      packageRevenue,
-      membershipTransferFees: membershipTransferFeeRevenue,
-      refunds: refundTotal,
-      sourceCompositionTotal,
+    period: { ...period, timeZone: 'Asia/Ho_Chi_Minh', endExclusive: true }, currency: 'VND',
+    basis: 'net_finalized_booking_and_paid_package_revenue', summary, trend,
+    traffic, trafficGranularity,
+    trafficSummary: { totalEntries: traffic.reduce((total, row) => total + row.entries, 0), totalExits: traffic.reduce((total, row) => total + row.exits, 0), currentlyParked },
+    statusDistribution: { completed: statusRows.find(row => row._id === 'COMPLETED')?.count || 0, cancelled: statusRows.find(row => row._id === 'CANCELLED')?.count || 0,
+      totalBookings: statusRows.reduce((total, row) => total + row.count, 0), byStatus: statusRows.map(row => ({ status: row._id, count: row.count })) },
+    packageBreakdown, recentTransactions, transactionPagination,
+    availableYears: Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index),
+    reportingNotes: {
+      revenue: 'Net finalized booking income, completed services, paid packages and transfer fees. Refunds are already deducted from their booking cohort.',
+      bookingDate: 'completedAt, then cancelledAt, then legacy updatedAt',
+      packageDate: 'Payment timestamp; legacy records without a payment timestamp use createdAt.',
+      transactions: 'Paginated recorded booking wallet payments/refunds, package payments and transfer fees, by payment date. This payment activity is distinct from finalized revenue.',
     },
-    trend,
-    traffic,
-    trafficGranularity,
-    trafficSummary: {
-      totalEntries,
-      totalExits,
-      currentlyParked,
-    },
-    statusDistribution,
-    packageBreakdown,
-    availableYears,
-    // Legacy fields for backward compatibility
-    vip: {
-      revenue: packageRevenue,
-      transactionCount:
-        subscriptionPurchases.count +
-        subscriptionRenewals.count +
-        entitlementRenewals.count,
-      purchaseRevenue: subscriptionPurchases.amount,
-      renewalRevenue: subscriptionRenewals.amount + entitlementRenewals.amount,
-    },
-    booking: {
-      revenue: bookingRevenue,
-      completedCount: bookingRevenueResult.completedBookingCount,
-    },
-    service: {
-      revenue: serviceRevenue,
-      completedBookingCount: bookingRevenueResult.serviceBookingCount,
-    },
-    membershipTransferFeesDetail: {
-      revenue: membershipTransferFeeRevenue,
-      transactionCount: membershipTransferFees.count,
-    },
-    totalRevenue,
+    vip: { revenue: summary.packageRevenue, transactionCount: packagePayments.length, purchaseRevenue: sumAmounts(purchases), renewalRevenue: sumAmounts(renewals) },
+    booking: { revenue: summary.bookingRevenue, completedCount: bookings.filter(row => row.status === 'COMPLETED').length, finalizedCount: bookings.length },
+    service: { revenue: summary.serviceRevenue, completedBookingCount: serviceBookingCount },
+    membershipTransferFeesDetail: { revenue: summary.membershipTransferFees, transactionCount: fees.length }, totalRevenue: summary.totalRevenue,
   };
 };
 
@@ -1234,12 +768,8 @@ const getAdminBookingStatistics = async (filters = {}) => {
   const period = resolveDateRange(filters);
   const createdAtMatch = buildCreatedAtMatch(period);
   const bookingScheduleMatch = buildBookingScheduleMatch(period, filters.range || '30d');
-  const bookingScopeMatch = {
-    ...bookingScheduleMatch,
-    ...(filters.range !== 'all' && filters.floorId
-      ? { floorId: new mongoose.Types.ObjectId(filters.floorId) }
-      : {}),
-  };
+  const { bookingManagementFilter, combineBookingFilters } = require('../utils/bookingManagementFilter');
+  const bookingScopeMatch = combineBookingFilters(bookingScheduleMatch, await bookingManagementFilter(filters));
   const timelineBucket = getTimelineBucket(filters, period);
   const [
     bookingRows,

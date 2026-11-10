@@ -96,3 +96,57 @@ body[data-valo-typography="admin"] .admin-revenue-analytics :is(button,summary):
 @media (prefers-reduced-motion: reduce) {
  body[data-valo-typography="admin"] .admin-revenue-analytics *, body[data-valo-typography="admin"] .admin-revenue-analytics *::before, body[data-valo-typography="admin"] .admin-revenue-analytics *::after { animation: none; transition: none; }
 }
+
+/* Keep the four main KPIs compact without changing other Admin KPI strips. */
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; }
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis > div:nth-child(n) { min-height: 80px; padding: 10px 12px; gap: 10px; border-top: 0; border-left: 1px solid rgb(255 255 255 / .1); }
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis > div:first-child { border-left: 0; }
+@media (max-width: 767px) {
+ body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis > div:nth-child(odd) { border-left: 0; }
+ body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis > div:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+@media (max-width: 479px) {
+ body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis { grid-template-columns: minmax(0, 1fr); }
+ body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis > div:nth-child(n) { border-left: 0; }
+ body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .c4-kpis.ra-kpis > div + div { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+
+/* Transaction table stays within the desktop panel; narrow panels use labeled rows. */
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions { container-type: inline-size; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions table { min-width: 0; table-layout: fixed; font-size: 11px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions :is(th, td) { padding: 9px 6px; line-height: 1.45; vertical-align: middle; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions th { white-space: normal; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions td { overflow-wrap: anywhere; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-col-date { width: 20%; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-col-description { width: 34%; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-col-amount { width: 20%; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-col-status { width: 14%; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-col-method { width: 12%; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transaction-description { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transaction-description:focus-visible { outline: 1px solid #F5C84C; outline-offset: 2px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions td.ra-transaction-amount { white-space: nowrap; text-align: right; color: #F5F7FA; font-variant-numeric: tabular-nums; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions th:nth-child(3) { text-align: right; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions small { display: block; color: #9AADC0; font-size: 10px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid #222D36; font-size: 11px; color: #9AADC0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-pagination > div { display: flex; flex-wrap: wrap; gap: 4px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-pagination button { min-width: 28px; min-height: 28px; padding: 4px 8px; border-radius: 7px; transition: background 150ms; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-pagination button:hover:enabled { background: #FFFFFF0F; color: #F5F7FA; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-pagination button[aria-current="page"] { background: #F5C84C; color: #080B0F; font-weight: 600; box-shadow: 0 0 12px #F5C84C33; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-pagination button:disabled { opacity: .3; cursor: not-allowed; }
+@container (max-width: 620px) {
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions :is(table, tbody, tr, td) { display: block; width: 100%; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions :is(thead, colgroup) { display: none; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions tr { padding: 8px 0; border-bottom: 1px solid #222D36; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions td[data-label] { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; border: 0; padding: 4px 6px; text-align: left; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions td[data-label]::before { content: attr(data-label); color: #A9C8D8; font-weight: 500; }
+ body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions td small { grid-column: 2; }
+}
+
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions .ra-transaction-status { font-size: 10px; line-height: 1.4; white-space: nowrap; }
+
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-transactions .ra-transaction-method { white-space: nowrap; }
+
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-toolbar .ra-traffic-summary { margin-bottom: 0; }
+body[data-valo-typography="admin"] .admin-revenue-analytics .ra-traffic-toolbar .ra-chart-legend { flex-shrink: 0; }
