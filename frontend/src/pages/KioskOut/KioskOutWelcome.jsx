@@ -1,7 +1,18 @@
 import { useRef, useEffect, useState } from 'react';
-import { Camera, ScanLine, AlertCircle } from 'lucide-react';
+import { Camera, ScanLine, AlertCircle, QrCode, Car } from 'lucide-react';
 import { API_BASE } from '../../services/api';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
+import { normalizeLicensePlate } from '../../utils/licensePlate';
+import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
+import LaneCameraPreview from '../../components/LaneCameraPreview';
+
+const isLikelyVietnamesePlate = (plate) => {
+  const clean = normalizeLicensePlate(plate);
+  return (
+    /^\d{2}[A-Z]{1,2}\d{4,5}$/.test(clean) ||
+    /^\d{2}[A-Z]\d\d{4,5}$/.test(clean)
+  );
+};
 
 export default function KioskOutWelcome({ onScanSuccess }) {
   const videoRef = useRef(null);
@@ -56,7 +67,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       if (data.success) {
         onScanSuccess(data.data, imageBase64);
       } else {
-        lastScannedPlateRef.current = null;
+        lastErrorPlateAtRef.current = { plate, at: Date.now() };
         setAlarmState(Boolean(data.alarm));
         if (data.alarmReason === 'already_checked_out') {
           setErrorMessage(`Vehicle with plate ${plate} has already checked out.`);
@@ -71,9 +82,13 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       }
     } catch (err) {
       console.error("API error", err);
-      lastScannedPlateRef.current = null;
+      lastErrorPlateAtRef.current = { plate, at: Date.now() };
       setErrorMessage('System error while verifying license plate.');
     }
+  };
+
+  const captureFrameBase64 = () => {
+    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'exit');
   };
 
   const handleHardwareQrScan = async (qrPayload) => {
@@ -81,14 +96,15 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     try {
       setErrorMessage('');
       setAlarmState(false);
+      const exitImage = captureFrameBase64();
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrPayload, exitImageBase64: null })
+        body: JSON.stringify({ qrPayload, exitImageBase64: exitImage })
       });
       const data = await res.json();
       if (data.success) {
-        onScanSuccess(data.data, null);
+        onScanSuccess(data.data, exitImage);
       } else {
         setErrorMessage(data.message || 'Mã QR không hợp lệ hoặc phiên đỗ xe đã kết thúc.');
       }
@@ -122,19 +138,11 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     return clean; // Fallback to raw string
   };
 
-  // Fetch AI API from Backend to analyze plate
+  // Fetch AI API from Backend to analyze plate (left half = exit lane)
   const captureAndAnalyze = async () => {
-    if (!videoRef.current) return null;
     try {
-      const canvas = canvasRef.current;
-      const vWidth = videoRef.current.videoWidth || 800;
-      const vHeight = videoRef.current.videoHeight || 600;
-      const scale = Math.min(1.0, 720 / Math.max(vWidth, vHeight));
-      canvas.width = Math.round(vWidth * scale);
-      canvas.height = Math.round(vHeight * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const imageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      const imageBase64 = captureFrameBase64();
+      if (!imageBase64) return null;
 
       const response = await fetch(`${API_BASE}/ai/scan-plate`, {
         method: 'POST',
@@ -144,8 +152,9 @@ export default function KioskOutWelcome({ onScanSuccess }) {
 
       const data = await response.json();
       const detectedPlate = data.plate || data.licensePlate || data.data?.licensePlate || data.data?.plate;
-      if (response.ok && data.success && detectedPlate) {
-        return { plate: detectedPlate, imageBase64 };
+      const normalized = normalizeLicensePlate(detectedPlate);
+      if (response.ok && data.success && isLikelyVietnamesePlate(normalized)) {
+        return { plate: normalized, imageBase64 };
       }
     } catch (error) {
       console.error('Scan error:', error);
@@ -154,6 +163,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   };
 
   const lastScannedPlateRef = useRef(null);
+  const lastErrorPlateAtRef = useRef({ plate: null, at: 0 });
 
   // Camera Scanning Loop
   useEffect(() => {
@@ -170,14 +180,16 @@ export default function KioskOutWelcome({ onScanSuccess }) {
             const result = await captureAndAnalyze();
             if (result && result.plate) {
               const cleaned = result.plate.replace(/[^A-Z0-9]/g, '');
-              const formatted = formatVietnamesePlate(cleaned) || cleaned; // Fallback to raw string if format fails
+              const formatted = formatVietnamesePlate(cleaned) || cleaned;
 
               if (formatted) {
                 setRecognizedText(formatted);
-                // Only process if it's a NEW plate to avoid spamming the backend
-                if (formatted !== lastScannedPlateRef.current) {
+                const recentlyFailedSamePlate =
+                  lastErrorPlateAtRef.current.plate === formatted &&
+                  Date.now() - lastErrorPlateAtRef.current.at < 2500;
+                if (formatted !== lastScannedPlateRef.current && !recentlyFailedSamePlate) {
                   lastScannedPlateRef.current = formatted;
-                  handlePlateDetected(formatted, result.imageBase64);
+                  await handlePlateDetected(formatted, result.imageBase64);
                 }
               }
             } else {
@@ -202,73 +214,122 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   }, [streamError]);
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center bg-black overflow-hidden">
+    <div className="relative w-full h-full flex items-center justify-center bg-[#07080b] overflow-hidden px-6 py-8">
+      {/* Subtle Ambient Background */}
+      <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-yellow-400/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-amber-500/10 blur-3xl" />
 
-      {/* Live Camera Background */}
-      {streamError ? (
-        <div className="flex flex-col items-center justify-center text-red-400 z-10">
-          <AlertCircle size={48} className="mb-4" />
-          <p>Cannot access Camera.</p>
-        </div>
-      ) : (
+      {/* Hidden Video Source & Capture Canvas (Decoding runs continuously in background) */}
+      {!streamError && (
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="absolute inset-0 w-full h-full object-cover opacity-80"
+          className="absolute h-px w-px opacity-0 pointer-events-none"
+          aria-hidden="true"
         />
       )}
-
-      {/* Hidden Canvas for OCR */}
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* AI Scanner UI Overlay */}
-      <div className="z-10 flex flex-col items-center">
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl md:text-5xl font-black text-white mb-3 tracking-wider drop-shadow-lg">
+      {/* Main Split Kiosk Layout: Dedicated Exit Camera Viewfinder (Left) + Instructions (Right) */}
+      <div className="relative z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        {/* Left: Cropped Exit-Only Camera Viewfinder */}
+        <div className="lg:col-span-6 flex flex-col items-center">
+          <div className="relative w-full max-w-[460px] aspect-[4/4.5] rounded-[28px] overflow-hidden border-2 border-yellow-400/40 bg-black shadow-[0_25px_70px_rgba(250,204,21,0.12)] flex items-center justify-center">
+            {streamError ? (
+              <div className="flex flex-col items-center justify-center text-red-400 p-6 text-center">
+                <AlertCircle size={48} className="mb-3" />
+                <p className="font-bold">Cannot access Camera.</p>
+                <p className="text-xs text-gray-400 mt-1">Please check camera permissions for this browser.</p>
+              </div>
+            ) : (
+              <>
+                <LaneCameraPreview
+                  videoRef={videoRef}
+                  lane="exit"
+                  rotate180={true}
+                  active={!streamError}
+                  className="w-full h-full object-contain"
+                />
+
+                {/* Top Live Badge */}
+                <div className="pointer-events-none absolute top-4 left-4 flex items-center gap-2 rounded-full bg-black/75 backdrop-blur-md border border-yellow-400/40 px-3.5 py-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-[11px] font-black tracking-wider text-yellow-400 uppercase">
+                    Exit Gate Camera
+                  </span>
+                </div>
+
+                {/* Scanning Line Animation */}
+                <div className="pointer-events-none absolute inset-6 rounded-2xl overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-yellow-400 shadow-[0_0_15px_3px_rgba(250,204,21,0.7)] animate-scan" />
+                  <div className="absolute top-0 left-0 w-7 h-7 border-t-4 border-l-4 border-yellow-400 rounded-tl-xl" />
+                  <div className="absolute top-0 right-0 w-7 h-7 border-t-4 border-r-4 border-yellow-400 rounded-tr-xl" />
+                  <div className="absolute bottom-0 left-0 w-7 h-7 border-b-4 border-l-4 border-yellow-400 rounded-bl-xl" />
+                  <div className="absolute bottom-0 right-0 w-7 h-7 border-b-4 border-r-4 border-yellow-400 rounded-br-xl" />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Exit Kiosk Instructions & Live Detection Status */}
+        <div className="lg:col-span-6 flex flex-col items-center lg:items-start text-center lg:text-left">
+          <div className="inline-flex items-center gap-2 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-4 py-1.5 text-xs font-black tracking-widest text-yellow-400 uppercase mb-4">
+            <Car size={15} />
+            <span>Automated Exit Station</span>
+          </div>
+
+          <h1 className="text-4xl md:text-6xl font-black text-white tracking-wider mb-3">
             EXIT KIOSK
           </h1>
-          <p className="text-gray-300 text-lg flex items-center gap-2 drop-shadow-md">
-            <Camera size={20} className="text-yellow-400" />
-            Please proceed into the license plate scanning area
+          <p className="text-gray-300 text-base md:text-lg flex items-center gap-2 mb-8">
+            <Camera size={20} className="text-yellow-400 shrink-0" />
+            <span>Please proceed into the exit lane license plate scanning area</span>
           </p>
-        </div>
 
-        {/* Scanner UI */}
-        <div className="relative w-80 h-48 md:w-[32rem] md:h-64 rounded-3xl flex items-center justify-center overflow-hidden mb-4">
-          {/* Scanning Line Animation */}
-          <div className="absolute top-0 left-0 w-full h-1 bg-yellow-400 shadow-[0_0_15px_3px_rgba(250,204,21,0.6)] animate-scan" />
+          {/* Live AI Status Card */}
+          <div className="w-full rounded-2xl border border-white/10 bg-[#12141a] p-5 mb-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-yellow-400/15 text-yellow-400">
+                  <ScanLine size={22} className={isScanning ? 'animate-pulse' : ''} />
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">AI License Plate Reader</p>
+                  <p className="text-sm font-semibold text-white">
+                    {isScanning ? 'Analyzing exit lane...' : 'Waiting for exiting vehicle...'}
+                  </p>
+                </div>
+              </div>
 
-          {/* Corner accents */}
-          <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-yellow-400 rounded-tl-xl" />
-          <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-yellow-400 rounded-tr-xl" />
-          <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-yellow-400 rounded-bl-xl" />
-          <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-yellow-400 rounded-br-xl" />
+              {recognizedText && (
+                <div className="rounded-xl border border-yellow-400/40 bg-black px-3.5 py-2 font-mono text-base font-black tracking-wider text-yellow-400">
+                  {recognizedText}
+                </div>
+              )}
+            </div>
 
-          {/* Center icon */}
-          <ScanLine size={48} className={`text-yellow-400/30 ${isScanning ? 'animate-pulse' : ''}`} />
-        </div>
-
-        {/* OCR Debug Info (For demonstration) */}
-        {recognizedText && (
-          <p className="mt-4 text-xs font-mono text-gray-500">AI Reading: {recognizedText}</p>
-        )}
-
-        {/* Error Message for Tailgating / Invalid Sessions */}
-        {errorMessage && (
-          <div className={`mt-6 rounded-lg p-4 text-center animate-pulse ${alarmState ? 'bg-red-600/25 border border-red-500/70' : 'bg-red-500/20 border border-red-500/50'
-            }`}>
-            <p className="text-red-400 font-bold">{errorMessage}</p>
-            <p className="text-gray-300 text-sm mt-1">
-              {alarmState
-                ? 'Security alert triggered. Barrier must remain closed.'
-                : 'Barrier cannot open. Please contact security.'}
-            </p>
+            <div className="flex items-center gap-2 pt-2 border-t border-white/10 text-xs text-gray-400">
+              <QrCode size={15} className="text-yellow-400 shrink-0" />
+              <span>You can also scan your Parking / Membership QR code at the reader below.</span>
+            </div>
           </div>
-        )}
-      </div>
 
+          {/* Error Message for Tailgating / Invalid Sessions */}
+          {errorMessage && (
+            <div className={`w-full rounded-2xl p-4 text-left ${alarmState ? 'bg-red-600/25 border border-red-500/70' : 'bg-red-500/15 border border-red-500/45'}`}>
+              <p className="text-red-300 font-bold text-sm">{errorMessage}</p>
+              <p className="text-gray-300 text-xs mt-1">
+                {alarmState
+                  ? 'Security alert triggered. Barrier must remain closed.'
+                  : 'Barrier cannot open. Please contact security.'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

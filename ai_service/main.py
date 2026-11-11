@@ -21,6 +21,7 @@ app = FastAPI(title="ValoParking ALPR & Document AI Service")
 
 class ScanRequest(BaseModel):
     image: str # Base64 encoded image
+    lane: Optional[str] = None # 'entry' (nửa phải, 0°) | 'exit' (nửa trái, xoay 180°) | None (toàn khung)
 
 class SlotROI(BaseModel):
     slotCode: str
@@ -1609,9 +1610,87 @@ async def auto_detect_grid(request: AutoDetectGridRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_SCAN_NOISE_WORDS = {'EXIT', 'KIOSK', 'PLEASE', 'PROCEED', 'INTO', 'AREA', 'SCANNING', 'VALO', 'PARKING', 'CAMERA', 'ZONE', 'SLOT', 'EMPTY'}
+
+
+def _is_scan_ui_noise(txt: str) -> bool:
+    alpha = re.sub(r'[^A-Z]', '', str(txt).upper())
+    return any(nw in alpha for nw in _SCAN_NOISE_WORDS) if alpha else False
+
+
+def _extract_valid_plate_from_easyocr(ocr_rows):
+    if not ocr_rows:
+        return None, "", 0.0
+    ocr_rows.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
+    max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in ocr_rows])
+    valid_rows = [
+        r for r in ocr_rows
+        if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not _is_scan_ui_noise(r[1])
+    ]
+    if not valid_rows:
+        return None, "", 0.0
+    valid_texts = [r[1] for r in valid_rows]
+    txt = "".join(valid_texts)
+    candidate = clean_plate_text(txt, valid_texts)
+    if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
+        conf = max([float(r[2]) for r in valid_rows] or [0.85])
+        return candidate, txt, conf
+    return None, "", 0.0
+
+
+def _scan_plate_from_image(img_bgr):
+    """Run YOLO plate detection + EasyOCR (with CLAHE fallback) on a single oriented frame/ROI."""
+    if img_bgr is None or img_bgr.size == 0:
+        return None, "", 0.0
+
+    work_img = img_bgr
+    h_orig, w_orig = work_img.shape[:2]
+    if max(h_orig, w_orig) > 720:
+        scale_in = 720.0 / max(h_orig, w_orig)
+        work_img = cv2.resize(
+            work_img,
+            (max(1, int(w_orig * scale_in)), max(1, int(h_orig * scale_in))),
+            interpolation=cv2.INTER_AREA
+        )
+
+    h, w = work_img.shape[:2]
+    allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+    # 1. Phát hiện vị trí biển số bằng mô hình YOLOv8 ALPR (best.pt)
+    if yolo_model:
+        results = yolo_model(work_img, conf=0.15)
+        if len(results) > 0 and len(results[0].boxes) > 0:
+            sorted_boxes = sorted(results[0].boxes, key=lambda b: float(b.conf[0]), reverse=True)
+            for b in sorted_boxes:
+                box = b.xyxy[0].cpu().numpy().astype(int)
+                x1, y1, x2, y2 = box
+                x1 = max(0, x1 - 12)
+                y1 = max(0, y1 - 4)
+                x2 = min(w, x2 + 12)
+                y2 = min(h, y2 + 4)
+                crop = work_img[y1:y2, x1:x2]
+                if crop.size == 0:
+                    continue
+
+                for ocr_input in (crop, preprocess_image_for_ocr(crop)):
+                    ocr_crop = reader.readtext(ocr_input, allowlist=allowlist)
+                    candidate, txt, _ = _extract_valid_plate_from_easyocr(ocr_crop)
+                    if candidate:
+                        return candidate, txt, float(b.conf[0])
+
+    # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn ROI
+    for ocr_input in (work_img, preprocess_image_for_ocr(work_img)):
+        direct_ocr = reader.readtext(ocr_input, allowlist=allowlist)
+        candidate, txt, conf = _extract_valid_plate_from_easyocr(direct_ocr)
+        if candidate:
+            return candidate, txt, conf
+
+    return None, "", 0.0
+
+
 @app.post("/scan")
 async def scan_license_plate(request: ScanRequest):
-    """Quét Biển số xe (ALPR) đơn lẻ"""
+    """Quét Biển số xe (ALPR) đơn lẻ, hỗ trợ chia đôi 1 camera cho Entry (phải) & Exit (trái, xoay 180°)."""
     if not reader:
         raise HTTPException(status_code=500, detail="OCR engine not initialized.")
 
@@ -1619,70 +1698,35 @@ async def scan_license_plate(request: ScanRequest):
         base64_data = request.image
         if "," in base64_data:
             base64_data = base64_data.split(",")[1]
-            
+
         contents = base64.b64decode(base64_data)
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None or img.size == 0:
+            raise HTTPException(status_code=400, detail="Invalid image payload.")
 
-        # Giới hạn kích thước ảnh tối đa 720px để EasyOCR xử lý nhanh trong < 1.5 giây
         h_orig, w_orig = img.shape[:2]
-        if max(h_orig, w_orig) > 720:
-            scale_in = 720.0 / max(h_orig, w_orig)
-            img = cv2.resize(img, (int(w_orig * scale_in), int(h_orig * scale_in)), interpolation=cv2.INTER_AREA)
+        lane_mode = (request.lane or "").strip().lower()
 
-        h, w = img.shape[:2]
-        allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        if lane_mode == "exit":
+            # Làn ra nằm nửa bên trái, xe đi từ trong ra ngoài nên biển số bị ngược 180°
+            roi = img[:, :max(1, w_orig // 2)]
+            orientations = [cv2.rotate(roi, cv2.ROTATE_180), roi]
+        elif lane_mode == "entry":
+            # Làn vào nằm nửa bên phải, xe đi từ ngoài vào trong nên biển số xuôi chiều
+            roi = img[:, w_orig // 2:]
+            orientations = [roi, cv2.rotate(roi, cv2.ROTATE_180)]
+        else:
+            orientations = [img]
+
         cleaned_plate = None
         raw_text = ""
         confidence = 0.0
 
-        NOISE_WORDS = {'EXIT', 'KIOSK', 'PLEASE', 'PROCEED', 'INTO', 'AREA', 'SCANNING', 'VALO', 'PARKING', 'CAMERA', 'ZONE', 'SLOT', 'EMPTY'}
-        def is_ui_noise(txt):
-            alpha = re.sub(r'[^A-Z]', '', txt.upper())
-            return any(nw in alpha for nw in NOISE_WORDS) if alpha else False
-        
-        # 1. Phát hiện vị trí biển số bằng mô hình YOLOv8 ALPR (best.pt)
-        if yolo_model:
-            results = yolo_model(img, conf=0.15)
-            if len(results) > 0 and len(results[0].boxes) > 0:
-                for b in results[0].boxes:
-                    box = b.xyxy[0].cpu().numpy().astype(int)
-                    x1, y1, x2, y2 = box
-                    pad_x = 12
-                    pad_y = 4
-                    x1 = max(0, x1 - pad_x)
-                    y1 = max(0, y1 - pad_y)
-                    x2 = min(w, x2 + pad_x)
-                    y2 = min(h, y2 + pad_y)
-                    crop = img[y1:y2, x1:x2]
-                    
-                    # Chạy OCR trực tiếp trên vùng cắt từ YOLO
-                    ocr_crop = reader.readtext(crop, allowlist=allowlist)
-                    if ocr_crop:
-                        ocr_crop.sort(key=lambda r: r[0][0][1])
-                        max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in ocr_crop]) if ocr_crop else 0
-                        valid_texts = [r[1] for r in ocr_crop if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not is_ui_noise(r[1])]
-                        txt = "".join(valid_texts)
-                        candidate = clean_plate_text(txt, valid_texts)
-                        if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
-                            cleaned_plate = candidate
-                            raw_text = txt
-                            confidence = float(b.conf[0])
-                            break
-
-        # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn bộ ảnh
-        if not cleaned_plate or len(cleaned_plate.replace("-", "")) < 6:
-            direct_ocr = reader.readtext(img, allowlist=allowlist)
-            if direct_ocr:
-                direct_ocr.sort(key=lambda r: r[0][0][1])
-                max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in direct_ocr])
-                direct_valid = [r[1] for r in direct_ocr if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not is_ui_noise(r[1])]
-                direct_raw = "".join(direct_valid)
-                candidate = clean_plate_text(direct_raw, direct_valid)
-                if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
-                    cleaned_plate = candidate
-                    raw_text = direct_raw
-                    confidence = max([float(r[2]) for r in direct_ocr if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not is_ui_noise(r[1])] or [0.85])
+        for candidate_img in orientations:
+            cleaned_plate, raw_text, confidence = _scan_plate_from_image(candidate_img)
+            if cleaned_plate:
+                break
 
         detected = cleaned_plate if cleaned_plate and len(cleaned_plate.replace("-", "").replace(".", "")) >= 6 else None
         return {
@@ -1691,9 +1735,12 @@ async def scan_license_plate(request: ScanRequest):
             "licensePlate": detected,
             "rawText": raw_text,
             "raw_ocr": raw_text,
-            "confidence": round(confidence, 2)
+            "confidence": round(confidence, 2),
+            "lane": lane_mode or "full"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error during scan: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

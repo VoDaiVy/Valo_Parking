@@ -10,6 +10,8 @@ import { API_BASE, apiFetch } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
 import { getAllFloors } from '../../services/parkingFloorService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
+import { captureVideoLaneBase64, cropImageDataUrlForLane } from '../../utils/cameraLaneCapture';
+import LaneCameraPreview from '../../components/LaneCameraPreview';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal';
 import { STAFF_THEME } from './components/staffTheme';
 
@@ -136,6 +138,9 @@ export default function GateControl() {
   const [availableCameras, setAvailableCameras] = useState([]);
   const [entryDeviceId, setEntryDeviceId] = useState(() => localStorage.getItem('valo_entry_cam') || '');
   const [exitDeviceId, setExitDeviceId] = useState(() => localStorage.getItem('valo_exit_cam') || '');
+  const [manualSplitOverride, setManualSplitOverride] = useState(null);
+  const isSharedCamera = availableCameras.length <= 1 || !entryDeviceId || !exitDeviceId || entryDeviceId === exitDeviceId;
+  const dualLaneSplitMode = manualSplitOverride ?? isSharedCamera;
 
   const enumerateAllCameras = useCallback(async () => {
     try {
@@ -221,13 +226,9 @@ export default function GateControl() {
   const captureFrame = (lane) => {
     const video = lane === 'entry' ? entryVideoRef.current : exitVideoRef.current;
     const canvas = lane === 'entry' ? entryCanvasRef.current : exitCanvasRef.current;
-    if (!video || !canvas) return null;
-
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const targetMode = dualLaneSplitMode ? lane : 'full';
+    const dataUrl = captureVideoLaneBase64(video, canvas, targetMode);
+    if (!dataUrl) return null;
 
     if (lane === 'entry') setEntrySnapshot(dataUrl);
     else setExitSnapshot(dataUrl);
@@ -237,7 +238,11 @@ export default function GateControl() {
 
   // ─── 3. LÀN VÀO (ENTRY ACTIONS) ───
   const handleEntryScanPlate = async (manualImage = null) => {
-    const imageToScan = manualImage || captureFrame('entry');
+    const rawImage = manualImage
+      ? (dualLaneSplitMode ? await cropImageDataUrlForLane(manualImage, 'entry') : manualImage)
+      : captureFrame('entry');
+    if (manualImage) setEntrySnapshot(rawImage);
+    const imageToScan = rawImage;
     if (!imageToScan) {
       toast.error('Vui lòng cấp quyền Camera hoặc tải ảnh lên để quét');
       return;
@@ -373,7 +378,11 @@ export default function GateControl() {
 
   // ─── 4. LÀN RA (EXIT ACTIONS) ───
   const handleExitScanPlate = async (manualImage = null) => {
-    const imageToScan = manualImage || captureFrame('exit');
+    const rawImage = manualImage
+      ? (dualLaneSplitMode ? await cropImageDataUrlForLane(manualImage, 'exit') : manualImage)
+      : captureFrame('exit');
+    if (manualImage) setExitSnapshot(rawImage);
+    const imageToScan = rawImage;
     if (!imageToScan) {
       toast.error('Vui lòng cấp quyền Camera hoặc tải ảnh lên');
       return;
@@ -399,7 +408,7 @@ export default function GateControl() {
       }
 
       if (detectedPlate) {
-        await lookupExitSession(detectedPlate);
+        await lookupExitSession(detectedPlate, imageToScan);
       }
     } catch (err) {
       console.error('Exit scan plate error:', err);
@@ -409,7 +418,7 @@ export default function GateControl() {
     }
   };
 
-  const lookupExitSession = async (plateToLookup) => {
+  const lookupExitSession = async (plateToLookup, imageOverride = null) => {
     const cleanPlate = normalizeLicensePlate(plateToLookup || exitPlate);
     if (!cleanPlate) return;
 
@@ -422,7 +431,7 @@ export default function GateControl() {
           Authorization: `Bearer ${token}`,
           'Idempotency-Key': `staff-exit-scan:${cleanPlate}`,
         },
-        body: JSON.stringify({ licensePlate: cleanPlate, exitImageBase64: exitSnapshot || null })
+        body: JSON.stringify({ licensePlate: cleanPlate, exitImageBase64: imageOverride || exitSnapshot || null })
       });
       const data = await res.json();
       if (data.success) {
@@ -605,6 +614,24 @@ export default function GateControl() {
             <span>Auto-Pilot {autoPilot ? 'ON' : 'OFF'}</span>
           </button>
 
+          {/* Split-camera mode toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !dualLaneSplitMode;
+              setManualSplitOverride(next);
+              toast(next ? 'Đã BẬT chế độ 1 Camera chia 2 làn (Trái = Ra, Phải = Vào)' : 'Đã chuyển sang chế độ Camera độc lập toàn khung');
+            }}
+            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${
+              dualLaneSplitMode
+                ? 'border-sky-400/50 bg-sky-500/15 text-sky-300'
+                : 'border-white/10 bg-[#111111] text-white/60 hover:text-white'
+            }`}
+          >
+            <Camera size={15} />
+            <span>{dualLaneSplitMode ? '1 Cam Chia Đôi (Trái Ra / Phải Vào)' : '2 Cam Độc Lập'}</span>
+          </button>
+
           {/* Emergency Open All */}
           <button
             type="button"
@@ -666,23 +693,48 @@ export default function GateControl() {
               autoPlay
               playsInline
               muted
-              className={`h-full w-full object-cover ${entrySnapshot ? 'hidden' : 'block'}`}
+              className={
+                dualLaneSplitMode || entrySnapshot
+                  ? 'absolute h-px w-px opacity-0 pointer-events-none'
+                  : 'h-full w-full object-cover'
+              }
             />
+            {dualLaneSplitMode && !entrySnapshot && (
+              <LaneCameraPreview
+                videoRef={entryVideoRef}
+                lane="entry"
+                rotate180={false}
+                active={dualLaneSplitMode && !entrySnapshot}
+                className="h-full w-full object-contain bg-black"
+              />
+            )}
             {entrySnapshot && (
               <img
                 src={entrySnapshot}
                 alt="Entry Snapshot"
-                className="h-full w-full object-cover"
+                className={`h-full w-full ${dualLaneSplitMode ? 'object-contain bg-black' : 'object-cover'}`}
               />
             )}
             <canvas ref={entryCanvasRef} className="hidden" />
 
             {/* Bounding Box Guide */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-28 w-64 rounded-lg border-2 border-dashed border-emerald-400/50 bg-emerald-400/5 flex flex-col items-center justify-center text-center p-2">
-                <span className="text-[10px] font-bold text-emerald-300 drop-shadow">KHUNG SOI BIỂN SỐ LÀN VÀO</span>
+            {dualLaneSplitMode ? (
+              <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-2">
+                <div className="flex justify-end">
+                  <span className="rounded bg-emerald-500/90 px-2 py-0.5 text-[9px] font-black text-black">
+                    LÀN VÀO · CHỈ HIỂN THỊ NỬA PHẢI
+                  </span>
+                </div>
+                <div className="mx-auto my-auto h-28 w-52 rounded-lg border-2 border-dashed border-emerald-400/60 bg-emerald-400/5" />
+                <div />
               </div>
-            </div>
+            ) : (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="h-28 w-64 rounded-lg border-2 border-dashed border-emerald-400/50 bg-emerald-400/5 flex flex-col items-center justify-center text-center p-2">
+                  <span className="text-[10px] font-bold text-emerald-300 drop-shadow">KHUNG SOI BIỂN SỐ LÀN VÀO</span>
+                </div>
+              </div>
+            )}
 
             {/* Camera Overlay Controls */}
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded-lg bg-black/70 backdrop-blur-md px-3 py-1.5 border border-white/10 gap-2">
@@ -951,23 +1003,48 @@ export default function GateControl() {
               autoPlay
               playsInline
               muted
-              className={`h-full w-full object-cover ${exitSnapshot ? 'hidden' : 'block'}`}
+              className={
+                dualLaneSplitMode || exitSnapshot
+                  ? 'absolute h-px w-px opacity-0 pointer-events-none'
+                  : 'h-full w-full object-cover'
+              }
             />
+            {dualLaneSplitMode && !exitSnapshot && (
+              <LaneCameraPreview
+                videoRef={exitVideoRef}
+                lane="exit"
+                rotate180={true}
+                active={dualLaneSplitMode && !exitSnapshot}
+                className="h-full w-full object-contain bg-black"
+              />
+            )}
             {exitSnapshot && (
               <img
                 src={exitSnapshot}
                 alt="Exit Snapshot"
-                className="h-full w-full object-cover"
+                className={`h-full w-full ${dualLaneSplitMode ? 'object-contain bg-black' : 'object-cover'}`}
               />
             )}
             <canvas ref={exitCanvasRef} className="hidden" />
 
             {/* Bounding Box Guide */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-28 w-64 rounded-lg border-2 border-dashed border-sky-400/50 bg-sky-400/5 flex flex-col items-center justify-center text-center p-2">
-                <span className="text-[10px] font-bold text-sky-300 drop-shadow">KHUNG SOI BIỂN SỐ LÀN RA</span>
+            {dualLaneSplitMode ? (
+              <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-2">
+                <div className="flex justify-start">
+                  <span className="rounded bg-sky-400/90 px-2 py-0.5 text-[9px] font-black text-black">
+                    LÀN RA · CHỈ HIỂN THỊ NỬA TRÁI (XOAY 180°)
+                  </span>
+                </div>
+                <div className="mx-auto my-auto h-28 w-52 rounded-lg border-2 border-dashed border-sky-400/60 bg-sky-400/5" />
+                <div />
               </div>
-            </div>
+            ) : (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="h-28 w-64 rounded-lg border-2 border-dashed border-sky-400/50 bg-sky-400/5 flex flex-col items-center justify-center text-center p-2">
+                  <span className="text-[10px] font-bold text-sky-300 drop-shadow">KHUNG SOI BIỂN SỐ LÀN RA</span>
+                </div>
+              </div>
+            )}
 
             {/* Camera Overlay Controls */}
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded-lg bg-black/70 backdrop-blur-md px-3 py-1.5 border border-white/10 gap-2">

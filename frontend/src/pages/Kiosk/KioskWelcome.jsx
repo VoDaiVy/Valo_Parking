@@ -7,6 +7,7 @@ import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
 import { getAvailableBookingSlots } from '../../services/bookingService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
+import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 const SCAN_ATTEMPTS = 20;
@@ -38,6 +39,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   const [scanMessage, setScanMessage] = useState('Scanning Plate...');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showAlreadyInsideModal, setShowAlreadyInsideModal] = useState(false);
+  const [inlineNotice, setInlineNotice] = useState(null);
   const [mismatchData, setMismatchData] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -181,22 +183,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   };
 
   const buildScanImageBase64 = async () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !video.videoWidth || !video.videoHeight) return null;
-
-    const vWidth = video.videoWidth || 800;
-    const vHeight = video.videoHeight || 600;
-    const scale = Math.min(1.0, 720 / Math.max(vWidth, vHeight));
-    canvas.width = Math.round(vWidth * scale);
-    canvas.height = Math.round(vHeight * scale);
-
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'entry');
   };
 
   const formatVietnamesePlate = (plate) => {
@@ -290,16 +277,21 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     }
 
     if (verifyData.isMonthly || verifyData.hasPreBooking) {
+      const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
+      const canFastPassNow = Boolean(verifyData.assignedSlot && !needsReallocation);
       updateFormData({
-        step3Mode: verifyData.requiresSlotReallocation ? 'policy' : 'fastpass',
-        isMonthly: verifyData.isMonthly,
+        step3Mode: canFastPassNow ? 'fastpass' : 'policy',
+        isMonthly: Boolean(verifyData.isMonthly),
         membershipType: verifyData.membershipType || null,
-        hasPreBooking: verifyData.hasPreBooking,
-        isVipReallocation: !!verifyData.requiresSlotReallocation,
-        selectedSlot: verifyData.assignedSlot,
-        floorId: verifyData.assignedFloorId,
-        bookingId: verifyData.bookingId,
-        bookingFloorName: verifyData.assignedFloorName,
+        hasPreBooking: Boolean(verifyData.hasPreBooking),
+        isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
+        isBookingReallocation: Boolean(verifyData.isBookingReallocation),
+        quotaExhausted: Boolean(verifyData.quotaExhausted),
+        originalSlot: verifyData.originalSlot || null,
+        selectedSlot: needsReallocation ? null : (verifyData.assignedSlot || null),
+        floorId: needsReallocation ? null : (verifyData.assignedFloorId || null),
+        bookingId: verifyData.bookingId || null,
+        bookingFloorName: verifyData.assignedFloorName || null,
         durationHours: verifyData.bookingDurationHours || 1,
         licensePlate: formatted,
         phone: verifyData.phone || '',
@@ -308,7 +300,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         bookingMode: verifyData.bookingMode || 'hourly',
       });
 
-      if (verifyData.assignedSlot && !verifyData.requiresSlotReallocation) {
+      if (canFastPassNow) {
         setScanMessage('Opening Barrier & Assigning Slot...');
         try {
           const entryPayload = {
@@ -352,34 +344,39 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
       }
 
-      onStart(verifyData.assignedSlot ? 3 : 2);
+      onStart(2);
       return true;
     }
 
-    if (isParkingFullRef.current) {
+    if (isParkingFullRef.current || verifyData.isFull) {
       setShowFullModal(true);
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
       return true;
     }
 
-    if (verifyData.isRegisteredVehicle || verifyData.isVIP) {
+    if (verifyData.isRegisteredVehicle || verifyData.isVIP || verifyData.quotaExhausted) {
       updateFormData({
-        step3Mode: verifyData.assignedSlot ? 'fastpass' : 'policy',
+        step3Mode: 'policy',
         licensePlate: formatted,
         entryImageBase64: imageBase64,
         phone: verifyData.phone || '',
         isVIP: !!verifyData.isVIP,
-        isRegisteredVehicle: true,
+        isRegisteredVehicle: !!verifyData.isRegisteredVehicle,
+        quotaExhausted: !!verifyData.quotaExhausted,
+        upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+        suggestedSlot: verifyData.suggestedSlot || null,
+        suggestedFloorId: verifyData.suggestedFloorId || null,
+        suggestedFloorName: verifyData.suggestedFloorName || null,
         membershipType: verifyData.membershipType || null,
         pricingPackage: verifyData.pricingPackage || null,
         pricingSource: verifyData.pricingSource || 'default',
         ticketPackageId: verifyData.pricingPackage?._id || null,
         bookingMode: 'hourly',
-        selectedSlot: verifyData.assignedSlot || null,
-        floorId: verifyData.assignedFloorId || null,
-        bookingFloorName: verifyData.assignedFloorName || null,
+        selectedSlot: null,
+        floorId: null,
+        bookingFloorName: null,
       });
-      onStart(verifyData.assignedSlot ? 3 : 2);
+      onStart(2);
       return true;
     }
 
@@ -388,6 +385,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       licensePlate: formatted,
       entryImageBase64: imageBase64,
       phone: verifyData.phone || '',
+      upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
       pricingPackage: verifyData.pricingPackage || null,
       pricingSource: verifyData.pricingSource || 'default',
       ticketPackageId: verifyData.pricingPackage?._id || null,
@@ -446,8 +444,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               stopCamera();
               setIsScanning(false);
               setScanMessage(rawResult.message);
-              alert(rawResult.message);
-              onStart(1);
+              setInlineNotice({ title: 'Please Wait', message: rawResult.message });
               return;
             }
             const normalizedPlate = normalizeLicensePlate(rawResult.plate);
@@ -524,7 +521,10 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       if (!qrData.success) {
         setIsScanning(false);
         setScanMessage('Scanning Plate...');
-        alert(qrData.message || 'Mã QR không hợp lệ!');
+        setInlineNotice({
+          title: 'QR Verification Failed',
+          message: qrData.message || 'Mã QR không hợp lệ!',
+        });
         return;
       }
 
@@ -561,17 +561,17 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       }
 
       // 5. Nếu là Khách VIP hoặc Đặt trước -> Tự động tạo phiên check-in & Mở barrier & Chuyển thẳng đến màn hình chỉ ô đỗ
-      if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation) {
+      if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation && verifyData.assignedSlot) {
         setScanMessage('Opening Barrier & Assigning Slot...');
         const entryPayload = {
           licensePlate: cleanPlate,
           phone: phone || verifyData.phone || '',
           parkingSlot: verifyData.assignedSlot,
           floorId: verifyData.assignedFloorId,
-          durationHours: 1,
+          durationHours: verifyData.bookingDurationHours || 1,
           entryImageBase64: entryImage,
           ticketPackageId: verifyData.pricingPackage?._id || null,
-          bookingMode: 'hourly',
+          bookingMode: verifyData.bookingMode || 'hourly',
           bookingId: verifyData.bookingId || null,
           bookingHoldId: null,
         };
@@ -603,27 +603,44 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
       }
 
-      // 6. Nếu xe cần chọn ô đỗ hoặc cần duyệt lại
+      if (!verifyData?.isMonthly && !verifyData?.hasPreBooking && (isParkingFullRef.current || verifyData?.isFull)) {
+        stopCamera();
+        setIsScanning(false);
+        setShowFullModal(true);
+        return;
+      }
+
+      // 6. Nếu xe cần chọn ô đỗ mới hoặc cần duyệt lại
+      const needsReallocation = Boolean(verifyData?.requiresSlotReallocation);
       updateFormData({
         licensePlate: cleanPlate,
         phone: phone || verifyData?.phone || '',
         entryImageBase64: entryImage,
-        step3Mode: verifyData?.requiresSlotReallocation ? 'policy' : (verifyData?.hasPreBooking || verifyData?.isMonthly ? 'fastpass' : 'policy'),
+        step3Mode: 'policy',
         isMonthly: verifyData?.isMonthly || false,
         hasPreBooking: verifyData?.hasPreBooking || false,
-        selectedSlot: verifyData?.assignedSlot || null,
-        floorId: verifyData?.assignedFloorId || null,
+        isVipReallocation: Boolean(verifyData?.vipSlotOccupiedByOther),
+        isBookingReallocation: Boolean(verifyData?.isBookingReallocation),
+        quotaExhausted: Boolean(verifyData?.quotaExhausted),
+        originalSlot: verifyData?.originalSlot || null,
+        upcomingBookingTooEarly: verifyData?.upcomingBookingTooEarly || null,
+        selectedSlot: needsReallocation ? null : (verifyData?.assignedSlot || null),
+        floorId: needsReallocation ? null : (verifyData?.assignedFloorId || null),
         bookingId: verifyData?.bookingId || null,
+        durationHours: verifyData?.bookingDurationHours || 1,
       });
 
       stopCamera();
       setIsScanning(false);
-      onStart(verifyData?.assignedSlot ? 3 : 2);
+      onStart(2);
 
     } catch (err) {
       console.error('Error during QR hardware scan:', err);
       setIsScanning(false);
-      alert('Lỗi khi xử lý mã QR từ máy quét!');
+      setInlineNotice({
+        title: 'Scanner Error',
+        message: 'Lỗi khi xử lý mã QR từ máy quét!',
+      });
     }
   };
 
@@ -700,6 +717,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         onClose={() => {
           setShowAlreadyInsideModal(false);
           window.location.replace('/kiosk');
+        }}
+      />
+
+      <ParkingFullModal
+        isOpen={!!inlineNotice}
+        title={inlineNotice?.title || 'NOTICE'}
+        message={inlineNotice?.message || ''}
+        onClose={() => {
+          setInlineNotice(null);
         }}
       />
 

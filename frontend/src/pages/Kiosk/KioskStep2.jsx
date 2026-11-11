@@ -31,9 +31,15 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
     });
     return block ? block.price : 10000;
   };
-  
+
   const appliedPricing = formData.pricingPackage || { name: 'Standard' };
   const hourlyRate = formData.pricingPackage?.price ? Number(formData.pricingPackage.price) : calculateCurrentHourlyRate();
+  const isFreeReallocation = Boolean(formData.isVipReallocation || formData.isBookingReallocation);
+  const pricingDisplayName = formData.isVipReallocation
+    ? 'VIP Subscription (Replacement)'
+    : formData.isBookingReallocation
+      ? 'Pre-Booked (Replacement)'
+      : appliedPricing.name;
 
   useEffect(() => {
     const fetchDbSlots = async () => {
@@ -97,7 +103,7 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
         if (sessionData.success) {
           setActiveSessions(sessionData.data);
         }
-        
+
         const holdsRes = await getActiveHolds();
         if (holdsRes.ok && holdsRes.data?.data) {
           setActiveHolds(holdsRes.data.data);
@@ -149,20 +155,37 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
     <div className="flex flex-col flex-1 w-full mx-auto pb-0 relative h-full">
       <div className="flex-1 rounded-[32px] overflow-hidden relative flex flex-col w-full min-h-0 pt-0 pb-0 shadow-sm border border-[#0b0e16]">
         <div className="flex-1 w-full relative overflow-hidden bg-[#0b0e16] shadow-inner flex items-center justify-center">
-          <div className="absolute top-6 left-0 right-0 flex justify-center gap-2 z-30 px-6 pointer-events-auto">
-            {floors.map((floor) => (
-              <button
-                key={floor._id}
-                onClick={() => setCurrentFloorId(floor._id)}
-                className={`px-8 py-2 rounded-full font-bold text-sm transition-all shadow-sm ${
-                  currentFloorId === floor._id
-                    ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20'
-                    : 'bg-[#181c23]/80 border border-white/10 text-gray-400 hover:text-white hover:bg-[#1f242d]/80 backdrop-blur'
-                }`}
-              >
-                {floor.name}
-              </button>
-            ))}
+          <div className="absolute top-6 left-0 right-0 flex flex-col items-center gap-2 z-30 px-6 pointer-events-none">
+            <div className="flex justify-center gap-2 pointer-events-auto">
+              {floors.map((floor) => (
+                <button
+                  key={floor._id}
+                  onClick={() => setCurrentFloorId(floor._id)}
+                  className={`px-8 py-2 rounded-full font-bold text-sm transition-all shadow-sm ${currentFloorId === floor._id
+                      ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20'
+                      : 'bg-[#181c23]/80 border border-white/10 text-gray-400 hover:text-white hover:bg-[#1f242d]/80 backdrop-blur'
+                    }`}
+                >
+                  {floor.name}
+                </button>
+              ))}
+            </div>
+            {(formData.isVipReallocation || formData.isBookingReallocation || formData.quotaExhausted || formData.upcomingBookingTooEarly) && (
+              <div className="bg-[#181c23]/95 backdrop-blur border border-amber-400/40 text-amber-200 px-5 py-2 rounded-2xl text-xs font-semibold shadow-lg max-w-2xl text-center pointer-events-auto">
+                {formData.isVipReallocation && (
+                  <span>VIP slot <strong>{formData.originalSlot || ''}</strong> is currently occupied. Please choose any available replacement slot at <strong>0 VND/hr</strong>.</span>
+                )}
+                {formData.isBookingReallocation && (
+                  <span>Reserved slot <strong>{formData.originalSlot || ''}</strong> is currently unavailable. Please choose a replacement slot at <strong>no extra charge</strong>.</span>
+                )}
+                {!formData.isVipReallocation && !formData.isBookingReallocation && formData.quotaExhausted && (
+                  <span>All of your VIP subscription slots are currently occupied by your vehicles. Select an available slot below — standard hourly rate applies.</span>
+                )}
+                {!formData.isVipReallocation && !formData.isBookingReallocation && !formData.quotaExhausted && formData.upcomingBookingTooEarly && (
+                  <span>Your booking at slot <strong>{formData.upcomingBookingTooEarly.parkingSlot}</strong> is scheduled for {new Date(formData.upcomingBookingTooEarly.scheduledStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} (more than 30 min away). Continuing now starts a standard hourly session.</span>
+                )}
+              </div>
+            )}
           </div>
 
           {loading || checkingSlots ? (
@@ -265,13 +288,13 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                   <div>
                     <p className="text-[10px] text-gray-400 font-medium">Applied Pricing</p>
                     <p className="font-bold text-sm">
-                      {formData.isVipReallocation ? 'VIP Subscription' : appliedPricing.name}
+                      {pricingDisplayName}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] text-gray-400 font-medium">Rate</p>
                     <p className="font-bold text-sm text-[#FFDF00]">
-                      {formData.isVipReallocation ? '0 VND / hr' : `${hourlyRate.toLocaleString('vi-VN')} VND / hr`}
+                      {isFreeReallocation ? '0 VND / hr' : `${hourlyRate.toLocaleString('vi-VN')} VND / hr`}
                     </p>
                   </div>
                 </div>
@@ -281,10 +304,14 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                 <div className="border-t-2 border-dashed border-gray-200 pt-6 pb-2">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs text-gray-500 font-medium">
-                      {formData.isVipReallocation ? 'Temporary VIP Slot' : 'Standard Rate'}
+                      {formData.isVipReallocation
+                        ? 'Temporary VIP Slot'
+                        : formData.isBookingReallocation
+                          ? 'Replacement Booking Slot'
+                          : 'Standard Rate'}
                     </span>
                     <span className="text-sm font-bold text-gray-700">
-                      {formData.isVipReallocation ? '0 VND / hr' : `${hourlyRate.toLocaleString('vi-VN')} VND / hr`}
+                      {isFreeReallocation ? '0 VND / hr' : `${hourlyRate.toLocaleString('vi-VN')} VND / hr`}
                     </span>
                   </div>
                   <div className="flex justify-between items-center mb-4">
@@ -296,16 +323,20 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                     <div className="flex items-center gap-2 text-[#0f172a]">
                       <CreditCard size={20} />
                       <span className="text-xs font-bold uppercase tracking-widest">
-                        {formData.isVipReallocation ? 'Included in VIP' : 'Pay at Exit'}
+                        {formData.isVipReallocation
+                          ? 'Included in VIP'
+                          : formData.isBookingReallocation
+                            ? 'Pre-Paid Booking'
+                            : 'Pay at Exit'}
                       </span>
                     </div>
-                    {!formData.isVipReallocation && (
+                    {!isFreeReallocation && (
                       <div className="flex flex-col items-end">
                         <span className="text-3xl font-black text-[#0f172a] leading-none">{hourlyRate.toLocaleString('vi-VN')}</span>
                         <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">VND / hr</span>
                       </div>
                     )}
-                    {formData.isVipReallocation && (
+                    {isFreeReallocation && (
                       <div className="flex flex-col items-end">
                         <span className="text-3xl font-black text-emerald-500 leading-none">FREE</span>
                       </div>
@@ -314,7 +345,9 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                   <p className="text-[10px] text-gray-500 text-center mt-3 font-medium">
                     {formData.isVipReallocation
                       ? '* This slot is temporarily assigned to you as a replacement for your occupied VIP slot. No extra charges apply.'
-                      : '* Price is calculated from the member package configured by admin; no package selection is needed at the kiosk.'}
+                      : formData.isBookingReallocation
+                        ? '* This slot replaces your unavailable reserved slot at no additional charge.'
+                        : '* Standard pricing is calculated by parking time block and settled at exit.'}
                   </p>
                 </div>
 
@@ -328,11 +361,10 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                   <button
                     onClick={onNext}
                     disabled={!formData.selectedSlot || isHoldingSlot}
-                    className={`flex-[2] flex items-center justify-center gap-2 text-lg font-bold py-4 rounded-2xl transition-all ${
-                      !formData.selectedSlot || isHoldingSlot
+                    className={`flex-[2] flex items-center justify-center gap-2 text-lg font-bold py-4 rounded-2xl transition-all ${!formData.selectedSlot || isHoldingSlot
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-[#FFDF00] text-[#0f172a] hover:bg-[#e6c800] shadow-[0_8px_20px_rgba(255,223,0,0.3)] active:scale-95'
-                    }`}
+                      }`}
                   >
                     {isHoldingSlot ? 'Holding Slot...' : 'Next Step'}
                     {!isHoldingSlot && <ArrowRight size={20} strokeWidth={3} />}

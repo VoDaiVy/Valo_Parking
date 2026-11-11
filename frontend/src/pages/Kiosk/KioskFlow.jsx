@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import KioskWelcome from './KioskWelcome';
 import KioskStep1 from './KioskStep1';
 import KioskStep2 from './KioskStep2';
@@ -23,6 +24,11 @@ const createEmptyKioskFormData = () => ({
   bookingHoldFloorId: null,
   bookingId: null,
   bookingFloorName: null,
+  originalSlot: null,
+  suggestedSlot: null,
+  suggestedFloorId: null,
+  suggestedFloorName: null,
+  upcomingBookingTooEarly: null,
   step3Mode: 'policy',
   durationHours: 1,
   entryImageBase64: null,
@@ -31,6 +37,9 @@ const createEmptyKioskFormData = () => ({
   pricingSource: 'default',
   bookingMode: 'hourly',
   isMonthly: false,
+  isVipReallocation: false,
+  isBookingReallocation: false,
+  quotaExhausted: false,
   membershipType: null,
   hasPreBooking: false,
   isVIP: false,
@@ -38,10 +47,14 @@ const createEmptyKioskFormData = () => ({
   entryIdempotencyKey: createRequestKey(),
 });
 
+const KIOSK_IDLE_TIMEOUT_MS = 120000;
+
 export default function KioskFlow() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successSession, setSuccessSession] = useState(null); // stores the successful session data
+  const [kioskAlert, setKioskAlert] = useState(null);
 
   // Shared State across steps
   const [formData, setFormData] = useState(createEmptyKioskFormData);
@@ -68,6 +81,51 @@ export default function KioskFlow() {
     clearCurrentHoldState();
   };
 
+  useEffect(() => {
+    const isWorkingStep = location.pathname.startsWith('/kiosk/step') && !successSession;
+    if (!isWorkingStep) return undefined;
+
+    let idleTimer = null;
+    const resetFlowOnIdle = async () => {
+      if (formData.bookingHoldId) {
+        const cleanPlate = formData.licensePlate
+          ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+          : '';
+        await releaseBookingHold(formData.bookingHoldId, {
+          licensePlate: cleanPlate,
+          floorId: formData.bookingHoldFloorId,
+          slotCode: formData.bookingHoldSlot,
+        }).catch(() => null);
+      }
+      setKioskAlert(null);
+      setSuccessSession(null);
+      setFormData(createEmptyKioskFormData());
+      navigate('/kiosk', { replace: true });
+    };
+
+    const armTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(resetFlowOnIdle, KIOSK_IDLE_TIMEOUT_MS);
+    };
+
+    const events = ['pointerdown', 'keydown', 'touchstart'];
+    events.forEach((evt) => window.addEventListener(evt, armTimer, { passive: true }));
+    armTimer();
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      events.forEach((evt) => window.removeEventListener(evt, armTimer));
+    };
+  }, [
+    location.pathname,
+    successSession,
+    formData.bookingHoldId,
+    formData.bookingHoldFloorId,
+    formData.bookingHoldSlot,
+    formData.licensePlate,
+    navigate,
+  ]);
+
   const clearCurrentHoldState = () => {
     updateFormData({
       bookingHoldId: null,
@@ -78,7 +136,7 @@ export default function KioskFlow() {
 
   const handleHoldSlotAndNext = async () => {
     if (!formData.selectedSlot || !formData.floorId) {
-      alert('Please select a parking slot first.');
+      setKioskAlert({ title: 'Slot Required', message: 'Please select a parking slot first.' });
       return;
     }
 
@@ -117,10 +175,16 @@ export default function KioskFlow() {
         licensePlate: cleanPlate,
         startTime: now.toISOString(),
         endTime: endTime.toISOString(),
+        ...(formData.isBookingReallocation && formData.bookingId
+          ? { bookingSource: 'KIOSK_REALLOCATION', reallocateBookingId: formData.bookingId }
+          : {}),
       }, { anonymous: true });
 
       if (!res.ok) {
-        alert('Ô đỗ này vừa có người khác chọn. Vui lòng chọn ô khác!');
+        setKioskAlert({
+          title: 'Slot Unavailable',
+          message: res.data?.message || 'Ô đỗ này vừa có người khác chọn. Vui lòng chọn ô khác!',
+        });
         updateFormData({
           selectedSlot: null,
           floorId: null,
@@ -139,7 +203,10 @@ export default function KioskFlow() {
       handleNext(3);
     } catch (error) {
       console.error('Hold slot error:', error);
-      alert('Network error while holding this slot. Please try again.');
+      setKioskAlert({
+        title: 'Connection Error',
+        message: 'Network error while holding this slot. Please try again.',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -182,11 +249,17 @@ export default function KioskFlow() {
         // Cập nhật session thành công để chuyển sang màn hình chào đón & chỉ ô đỗ
         setSuccessSession(data.data);
       } else {
-        alert(data.message || 'Something went wrong.');
+        setKioskAlert({
+          title: 'Check-in Failed',
+          message: data.message || 'Something went wrong.',
+        });
       }
     } catch (error) {
       console.error('Submission error:', error);
-      alert('Network error. Please try again.');
+      setKioskAlert({
+        title: 'Connection Error',
+        message: 'Network error. Please try again.',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -241,6 +314,29 @@ export default function KioskFlow() {
       {isSubmitting && (
         <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center">
           <div className="text-2xl font-bold text-[#0f172a] animate-pulse">CREATING SESSION...</div>
+        </div>
+      )}
+
+      {kioskAlert && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+          <div className="bg-white rounded-[32px] p-8 max-w-[440px] w-full shadow-2xl flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-5">
+              <AlertCircle size={34} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 uppercase tracking-wide mb-2">
+              {kioskAlert.title || 'Notice'}
+            </h3>
+            <p className="text-sm font-medium text-slate-600 mb-6 leading-relaxed">
+              {kioskAlert.message}
+            </p>
+            <button
+              type="button"
+              onClick={() => setKioskAlert(null)}
+              className="w-full h-[54px] bg-[#0f172a] hover:bg-black text-white text-base font-black rounded-2xl transition-all"
+            >
+              OK
+            </button>
+          </div>
         </div>
       )}
 

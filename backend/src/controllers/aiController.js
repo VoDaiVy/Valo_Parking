@@ -27,10 +27,14 @@ const isQuotaError = (error) => {
 
 exports.scanPlate = async (req, res, next) => {
   try {
-    const { image } = req.body;
+    const { image, lane } = req.body;
     if (!image) {
       return res.status(400).json({ success: false, message: 'Image is required' });
     }
+
+    const normalizedLane = ['entry', 'exit'].includes(String(lane || '').trim().toLowerCase())
+      ? String(lane).trim().toLowerCase()
+      : null;
 
     // Strip data URL prefix if present
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
@@ -39,10 +43,11 @@ exports.scanPlate = async (req, res, next) => {
     // Use Local Python AI Service (YOLO + EasyOCR)
     // -------------------------------------------------------------
     try {
-      console.log('[AI Scan] Attempting Local Python AI for License Plate...');
+      console.log('[AI Scan] Attempting Local Python AI for License Plate...', normalizedLane ? `(lane=${normalizedLane})` : '');
       const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
       const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
-        image: base64Data
+        image: base64Data,
+        ...(normalizedLane ? { lane: normalizedLane } : {}),
       }, {
         timeout: 10000 // 10 seconds timeout
       });
