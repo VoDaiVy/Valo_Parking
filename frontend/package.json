@@ -7,7 +7,6 @@
     "dev": "vite --configLoader runner --host 0.0.0.0",
     "build": "vite build",
     "lint": "eslint .",
-    "test:vouchers": "vitest run --config vitest.config.js",
     "preview": "vite preview"
   },
   "dependencies": {
