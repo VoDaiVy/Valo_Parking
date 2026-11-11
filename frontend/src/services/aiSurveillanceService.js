@@ -7,7 +7,7 @@ const getAuthHeaders = () => {
   return headers;
 };
 
-export const getViolationLogs = async (params = {}) => {
+export const getViolationLogs = async (params = {}, { signal } = {}) => {
   const query = new URLSearchParams();
   if (params.floorId) query.append('floorId', params.floorId);
   if (params.status) query.append('status', params.status);
@@ -23,8 +23,34 @@ export const getViolationLogs = async (params = {}) => {
 
   const res = await fetch(`${API_BASE}/ai/violation-logs?${query.toString()}`, {
     headers: getAuthHeaders(),
+    signal,
   });
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      success: false,
+      message: data.message || `HTTP ${res.status}`,
+      data: [],
+    };
+  }
+  return data;
+};
+
+export const getViolationLogEvidence = async (logId, { signal } = {}) => {
+  if (!logId) return { success: false, data: null };
+  const res = await fetch(`${API_BASE}/ai/violation-logs/${encodeURIComponent(logId)}/evidence`, {
+    headers: getAuthHeaders(),
+    signal,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      success: false,
+      message: data.message || `HTTP ${res.status}`,
+      data: null,
+    };
+  }
+  return data;
 };
 
 export const getSlotLogs = async (slotCode, floorId = null) => {

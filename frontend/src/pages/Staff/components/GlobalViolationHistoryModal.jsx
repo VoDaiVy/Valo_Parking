@@ -20,11 +20,22 @@ import {
   Camera,
   Layers,
   Filter,
-  Info
+  Info,
+  AlertTriangle,
+  Sparkles,
+  Navigation,
+  CheckCheck
 } from 'lucide-react';
-import { getViolationLogs, resolveViolation, clearAllViolationsApi } from '../../../services/aiSurveillanceService';
+import {
+  getViolationLogs,
+  getViolationLogEvidence,
+  resolveViolation,
+  clearAllViolationsApi,
+} from '../../../services/aiSurveillanceService';
 import { formatLicensePlateDisplay } from '../../../utils/licensePlate';
 import toast from 'react-hot-toast';
+
+const PAGE_SIZE = 30;
 
 export default function GlobalViolationHistoryModal({
   isOpen,
@@ -35,12 +46,28 @@ export default function GlobalViolationHistoryModal({
 }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [serverEmptySlotPendingCount, setServerEmptySlotPendingCount] = useState(0);
+
   const [selectedLog, setSelectedLog] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Custom Time Filter States
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Lazy-loaded evidence state & in-memory cache
+  const evidenceCacheRef = useRef(new Map());
+  const listAbortRef = useRef(null);
+  const evidenceAbortRef = useRef(null);
+  const [selectedEvidence, setSelectedEvidence] = useState(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState(false);
+
+  // Custom Time Filter States (defaults to Today's violations for shift clarity)
   const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
-  const [timeFilter, setTimeFilter] = useState('all'); // 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'single' | 'range'
+  const [timeFilter, setTimeFilter] = useState('today'); // 'today' | 'all' | 'yesterday' | 'week' | 'month' | 'single' | 'range'
   const [singleDate, setSingleDate] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -76,29 +103,188 @@ export default function GlobalViolationHistoryModal({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch all logs from backend
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getViolationLogs({
+  // Debounce server-side search so typing remains 0ms responsive while still querying full history
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const buildQueryParams = useCallback(
+    (targetPage = 1) => {
+      const params = {
         floorId: floorFilter || undefined,
-        limit: 200,
-      });
-      if (res.success) {
-        setLogs(res.data || []);
+        status: statusFilter || undefined,
+        search: debouncedSearch || undefined,
+        page: targetPage,
+        limit: PAGE_SIZE,
+      };
+      if (['today', 'yesterday', 'week', 'month'].includes(timeFilter)) {
+        params.quickRange = timeFilter;
+      } else if (timeFilter === 'single' && singleDate) {
+        params.date = singleDate;
+      } else if (timeFilter === 'range') {
+        if (startDate) params.startDate = startDate;
+        if (endDate) params.endDate = endDate;
       }
-    } catch (err) {
-      console.error('Failed to load violation logs:', err);
-      toast.error('Không thể tải lịch sử vi phạm');
-    } finally {
-      setLoading(false);
-    }
-  }, [floorFilter]);
+      return params;
+    },
+    [floorFilter, statusFilter, debouncedSearch, timeFilter, singleDate, startDate, endDate]
+  );
+
+  // Fetch paginated lightweight metadata logs from backend (snapshots lazy-loaded on demand)
+  const fetchLogs = useCallback(
+    async ({ targetPage = 1, append = false, clearCache = false } = {}) => {
+      if (clearCache) {
+        evidenceCacheRef.current.clear();
+      }
+
+      if (listAbortRef.current) {
+        listAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      listAbortRef.current = controller;
+
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setLoadError(null);
+      }
+
+      try {
+        const res = await getViolationLogs(buildQueryParams(targetPage), {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+
+        if (res.success) {
+          const incoming = res.data || [];
+          setLogs((prev) => {
+            if (!append) return incoming;
+            const seenIds = new Set(prev.map((item) => item._id));
+            return [...prev, ...incoming.filter((item) => !seenIds.has(item._id))];
+          });
+          setPage(res.page || targetPage);
+          setTotalRecords(typeof res.total === 'number' ? res.total : incoming.length);
+          setHasMore(Boolean(res.hasMore));
+          if (typeof res.emptySlotPendingCount === 'number') {
+            setServerEmptySlotPendingCount(res.emptySlotPendingCount);
+          }
+          setLoadError(null);
+        } else {
+          const errMsg = res.message || 'Unable to load violation logs';
+          setLoadError(errMsg);
+          toast.error(errMsg);
+        }
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+        console.error('Failed to load violation logs:', err);
+        const errMsg = err?.message || 'Unable to load violation logs';
+        setLoadError(errMsg);
+        toast.error('Unable to load violation logs');
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [buildQueryParams]
+  );
 
   useEffect(() => {
-    if (!isOpen) return;
-    fetchLogs();
+    if (!isOpen) {
+      if (listAbortRef.current) listAbortRef.current.abort();
+      if (evidenceAbortRef.current) evidenceAbortRef.current.abort();
+      setTimeFilter('today');
+      setSingleDate('');
+      setStartDate('');
+      setEndDate('');
+      return;
+    }
+    fetchLogs({ targetPage: 1, append: false });
+    return () => {
+      if (listAbortRef.current) listAbortRef.current.abort();
+    };
   }, [isOpen, fetchLogs]);
+
+  // Lazy-load evidenceSnapshot & fullSnapshot ONLY for the currently selected log
+  useEffect(() => {
+    if (!isOpen || !selectedLog?._id) {
+      setSelectedEvidence(null);
+      setEvidenceLoading(false);
+      setEvidenceError(false);
+      return;
+    }
+
+    const logId = selectedLog._id;
+    const cached = evidenceCacheRef.current.get(logId);
+    if (cached) {
+      setSelectedEvidence(cached);
+      setEvidenceLoading(false);
+      setEvidenceError(false);
+      return;
+    }
+
+    // If log somehow already includes snapshot URLs/data, cache & show immediately
+    if (selectedLog.evidenceSnapshot || selectedLog.fullSnapshot) {
+      const direct = {
+        evidenceSnapshot: selectedLog.evidenceSnapshot || null,
+        fullSnapshot: selectedLog.fullSnapshot || null,
+      };
+      evidenceCacheRef.current.set(logId, direct);
+      setSelectedEvidence(direct);
+      setEvidenceLoading(false);
+      setEvidenceError(false);
+      return;
+    }
+
+    if (evidenceAbortRef.current) {
+      evidenceAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    evidenceAbortRef.current = controller;
+
+    setSelectedEvidence(null);
+    setEvidenceLoading(true);
+    setEvidenceError(false);
+
+    getViolationLogEvidence(logId, { signal: controller.signal })
+      .then((res) => {
+        if (controller.signal.aborted) return;
+        if (res.success && res.data) {
+          const payload = {
+            evidenceSnapshot: res.data.evidenceSnapshot || null,
+            fullSnapshot: res.data.fullSnapshot || null,
+          };
+          const hasAnySnapshot = Boolean(payload.evidenceSnapshot || payload.fullSnapshot);
+          const isOldRecord =
+            selectedLog.createdAt &&
+            Date.now() - new Date(selectedLog.createdAt).getTime() > 15000;
+          if (hasAnySnapshot || isOldRecord) {
+            evidenceCacheRef.current.set(logId, payload);
+          }
+          setSelectedEvidence(payload);
+        } else {
+          setEvidenceError(true);
+        }
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setEvidenceError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setEvidenceLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isOpen, selectedLog?._id]);
 
   // Instant Client-side Filter (0ms latency on typing E9, e9, 99C, date range, etc.)
   const filteredLogs = useMemo(() => {
@@ -135,7 +321,15 @@ export default function GlobalViolationHistoryModal({
     }
 
     if (statusFilter) {
-      result = result.filter((l) => l.status === statusFilter);
+      if (statusFilter === 'ACTIVE_OCCUPIED') {
+        result = result.filter((l) => l.status === 'PENDING' && !l.isVehicleGone && !l.isSlotEmpty);
+      } else if (statusFilter === 'SELF_CORRECTED') {
+        result = result.filter((l) => l.resolutionAction === 'SELF_CORRECTED' || l.vehicleCurrentStatus?.status === 'SELF_CORRECTED' || l.isNowInCorrectSlot);
+      } else if (statusFilter === 'EMPTY_MOVED') {
+        result = result.filter((l) => l.status === 'PENDING' && (l.isVehicleGone || l.isSlotEmpty));
+      } else {
+        result = result.filter((l) => l.status === statusFilter);
+      }
     }
 
     if (timeFilter !== 'all') {
@@ -201,11 +395,14 @@ export default function GlobalViolationHistoryModal({
     }
   }, [filteredLogs]);
 
+  const isTodayView = timeFilter === 'today' && !singleDate && !startDate && !endDate;
+  const isCustomDateFilter = !['today', 'all'].includes(timeFilter);
+
   const hasActiveFilter = Boolean(
     searchTerm ||
     (floorFilter && floorFilter !== currentFloorId) ||
     statusFilter ||
-    timeFilter !== 'all' ||
+    timeFilter !== 'today' ||
     singleDate ||
     startDate ||
     endDate
@@ -215,52 +412,75 @@ export default function GlobalViolationHistoryModal({
     setSearchTerm('');
     setFloorFilter(currentFloorId || '');
     setStatusFilter('');
-    setTimeFilter('all');
+    setTimeFilter('today');
     setSingleDate('');
     setStartDate('');
     setEndDate('');
   };
 
+  const handleSwitchToToday = () => {
+    setTimeFilter('today');
+    setSingleDate('');
+    setStartDate('');
+    setEndDate('');
+    setTimeDropdownOpen(false);
+  };
+
+  const handleSwitchToHistory = () => {
+    setTimeFilter('all');
+    setSingleDate('');
+    setStartDate('');
+    setEndDate('');
+    setTimeDropdownOpen(false);
+  };
+
   const getTimeLabel = () => {
     switch (timeFilter) {
       case 'today':
-        return 'Hôm nay';
+      case 'all':
+        return 'Filter Date';
       case 'yesterday':
-        return 'Hôm qua';
+        return 'Yesterday';
       case 'week':
-        return '7 ngày qua';
+        return 'Last 7 Days';
       case 'month':
-        return 'Tháng này';
+        return 'This Month';
       case 'single':
-        return singleDate ? new Date(singleDate + 'T00:00:00').toLocaleDateString('vi-VN') : '1 ngày cụ thể';
+        return singleDate ? new Date(singleDate + 'T00:00:00').toLocaleDateString('en-US') : 'Specific Date';
       case 'range':
         if (startDate && endDate) {
-          return `${new Date(startDate + 'T00:00:00').toLocaleDateString('vi-VN')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('vi-VN')}`;
+          return `${new Date(startDate + 'T00:00:00').toLocaleDateString('en-US')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-US')}`;
         }
-        if (startDate) return `Từ ${new Date(startDate + 'T00:00:00').toLocaleDateString('vi-VN')}`;
-        if (endDate) return `Đến ${new Date(endDate + 'T00:00:00').toLocaleDateString('vi-VN')}`;
-        return 'Khoảng ngày';
+        if (startDate) return `From ${new Date(startDate + 'T00:00:00').toLocaleDateString('en-US')}`;
+        if (endDate) return `To ${new Date(endDate + 'T00:00:00').toLocaleDateString('en-US')}`;
+        return 'Date Range';
       default:
-        return 'Tất cả thời gian';
+        return 'Filter Date';
     }
   };
 
   const getFloorLabel = () => {
-    if (!floorFilter) return 'Tất cả các tầng';
+    if (!floorFilter) return 'All Floors';
     const found = floors.find((f) => f._id === floorFilter);
-    return found ? (found.name || `Floor ${found.floorNumber}`) : 'Tất cả các tầng';
+    return found ? (found.name || `Floor ${found.floorNumber}`) : 'All Floors';
   };
 
   const getStatusLabel = () => {
     switch (statusFilter) {
       case 'PENDING':
-        return 'Chưa xử lý';
+        return 'All Pending';
+      case 'ACTIVE_OCCUPIED':
+        return '🔴 Occupied';
+      case 'SELF_CORRECTED':
+        return '🟢 Self-Corrected';
+      case 'EMPTY_MOVED':
+        return '⚪ Vehicle Left';
       case 'RESOLVED':
-        return 'Đã xử lý';
+        return 'Resolved';
       case 'DISMISSED':
-        return 'Đã bỏ qua';
+        return 'Dismissed';
       default:
-        return 'Tất cả trạng thái';
+        return 'All Statuses';
     }
   };
 
@@ -275,74 +495,123 @@ export default function GlobalViolationHistoryModal({
         action: 'REASSIGN_SLOT',
         newSlotCode: log.slotCode,
         sessionId: log.sessionId?._id || log.sessionId,
-        note: `Nhân viên xử lý đổi ô đỗ sang ${log.slotCode} từ lịch sử vi phạm`,
+        note: `Staff reassigned parking slot to ${log.slotCode} from violation logs`,
       });
 
       if (res.success) {
-        toast.success(res.message || 'Đã giải quyết vi phạm thành công!');
-        fetchLogs();
-        if (onViolationResolved) onViolationResolved(log.slotCode);
+        toast.success(res.message || 'Violation resolved successfully!');
+        fetchLogs({ targetPage: 1, append: false, clearCache: true });
+        if (onViolationResolved) onViolationResolved(log.slotCode, log.expectedSlot);
       } else {
-        toast.error(res.message || 'Xử lý thất bại');
+        toast.error(res.message || 'Failed to resolve violation');
       }
     } catch (err) {
-      toast.error(err.message || 'Lỗi kết nối khi xử lý');
+      toast.error(err.message || 'Connection error while resolving violation');
     } finally {
       setActionLoading(false);
     }
   };
 
+  const emptySlotPendingCount = useMemo(() => {
+    const localCount = logs.filter(l => l.status === 'PENDING' && (l.isSlotEmpty || l.isVehicleGone)).length;
+    return Math.max(serverEmptySlotPendingCount, localCount);
+  }, [logs, serverEmptySlotPendingCount]);
+
   const handleDismissOrWarning = async (log, actionType) => {
     if (!log) return;
     setActionLoading(true);
     try {
+      let defaultNote = '';
+      if (actionType === 'SELF_CORRECTED') {
+        const correctSlot = log.vehicleCurrentStatus?.slotNumber || log.expectedSlot || '';
+        defaultNote = `Confirmed driver self-corrected and moved to assigned slot${correctSlot ? ` (${correctSlot})` : ''}`;
+      } else if (actionType === 'DISMISS') {
+        defaultNote = 'Violation alert dismissed by staff';
+      } else {
+        defaultNote = 'Staff contacted driver / issued warning to move vehicle';
+      }
+
       const res = await resolveViolation({
         logId: log._id,
         slotCode: log.slotCode,
         floorId: log.floorId?._id || log.floorId,
         action: actionType,
-        note: actionType === 'DISMISS' ? 'Bỏ qua cảnh báo vi phạm' : 'Nhân viên đã gọi điện nhắc nhở tài xế dời xe',
+        note: defaultNote,
       });
 
       if (res.success) {
-        toast.success(res.message || 'Đã cập nhật trạng thái xử lý!');
-        fetchLogs();
+        toast.success(res.message || 'Violation status updated!');
+        fetchLogs({ targetPage: 1, append: false, clearCache: true });
         if (onViolationResolved) onViolationResolved(log.slotCode);
       } else {
-        toast.error(res.message || 'Xử lý thất bại');
+        toast.error(res.message || 'Action failed');
       }
     } catch (err) {
-      toast.error(err.message || 'Lỗi kết nối');
+      toast.error(err.message || 'Connection error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDismissEmptySlots = async () => {
+    if (!window.confirm(`Close ${emptySlotPendingCount} pending violation alerts where the vehicle has already left the slot?`)) return;
+    setActionLoading(true);
+    try {
+      const res = await resolveViolation({
+        action: 'DISMISS_EMPTY_SLOTS',
+      });
+      if (res.success) {
+        toast.success(res.message || 'Cleared empty-slot violation alerts!');
+        fetchLogs({ targetPage: 1, append: false, clearCache: true });
+        if (onViolationResolved) onViolationResolved(null);
+      } else {
+        toast.error(res.message || 'Unable to clear empty-slot alerts');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Connection error');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleClearAll = async () => {
-    if (!window.confirm('Bạn có chắc muốn xóa/hủy tất cả cảnh báo vi phạm để bắt đầu lượt kiểm tra mới?')) return;
+    if (!window.confirm('Are you sure you want to clear/reset all violation alerts to start a fresh inspection?')) return;
     setActionLoading(true);
     try {
       const res = await clearAllViolationsApi(floorFilter || null);
       if (res.success) {
-        toast.success(res.message || 'Đã hủy và đặt lại cảnh báo thành công!');
-        fetchLogs();
+        toast.success(res.message || 'All violation alerts have been reset!');
+        fetchLogs({ targetPage: 1, append: false, clearCache: true });
         if (onViolationResolved) onViolationResolved(null);
       } else {
-        toast.error(res.message || 'Không thể đặt lại cảnh báo');
+        toast.error(res.message || 'Unable to reset alerts');
       }
     } catch (err) {
-      toast.error(err.message || 'Lỗi kết nối');
+      toast.error(err.message || 'Connection error');
     } finally {
       setActionLoading(false);
     }
   };
 
+  const handleRefresh = () => {
+    fetchLogs({ targetPage: 1, append: false, clearCache: true });
+  };
+
+  const handleLoadMore = () => {
+    if (!hasMore || loadingMore || loading) return;
+    fetchLogs({ targetPage: page + 1, append: true });
+  };
+
   if (!isOpen) return null;
+
+  const displayEvidenceUrl = selectedEvidence?.evidenceSnapshot || selectedLog?.evidenceSnapshot || null;
+  const displayFullUrl = selectedEvidence?.fullSnapshot || selectedLog?.fullSnapshot || null;
+  const remainingCount = Math.max(0, totalRecords - logs.length);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="w-full max-w-5xl h-[85vh] bg-[#10141d] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100 font-sans">
-        
+
         {/* Header - Minimalist & Focused */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#141a26]/90 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -351,33 +620,44 @@ export default function GlobalViolationHistoryModal({
             </div>
             <div>
               <h2 className="text-lg font-black tracking-wide text-white flex items-center gap-2">
-                LỊCH SỬ VI PHẠM BÃI ĐỖ
+                PARKING VIOLATION LOGS
                 <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 font-bold">
-                  {filteredLogs.length} / {logs.length} bản ghi
+                  {filteredLogs.length} / {totalRecords || logs.length} records
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">Theo dõi ảnh chụp camera, đối chiếu xe và nhật ký xử lý vi phạm</p>
+              <p className="text-xs text-slate-400">Monitor camera snapshots, vehicle matching, and violation audit logs</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
+            {emptySlotPendingCount > 0 && (
+              <button
+                onClick={handleDismissEmptySlots}
+                disabled={actionLoading}
+                className="p-2 px-3 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer animate-in fade-in"
+                title="Close all pending alerts where AI confirms the slot is now empty"
+              >
+                <CheckCheck size={14} className={actionLoading ? 'animate-spin' : ''} />
+                <span>Clear {emptySlotPendingCount} Empty</span>
+              </button>
+            )}
             <button
               onClick={handleClearAll}
               disabled={actionLoading}
               className="p-2 px-3 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold"
-              title="Hủy/Đặt lại toàn bộ cảnh báo để kiểm tra lại từ đầu"
+              title="Clear/reset all violation alerts to start a fresh check"
             >
               <RotateCcw size={14} className={actionLoading ? 'animate-spin' : ''} />
-              <span>Đặt lại cảnh báo</span>
+              <span>Reset Alerts</span>
             </button>
             <button
-              onClick={fetchLogs}
+              onClick={handleRefresh}
               disabled={loading}
               className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold"
-              title="Làm mới danh sách"
+              title="Refresh list"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>Làm mới</span>
+              <span>Refresh</span>
             </button>
             <button
               onClick={onClose}
@@ -388,35 +668,61 @@ export default function GlobalViolationHistoryModal({
           </div>
         </div>
 
-        {/* Unified, Clean 1-Row Filter Bar */}
-        <div className="px-6 py-3 border-b border-white/10 bg-[#121620] flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-          
+        {/* Unified, Streamlined Filter Bar: Today/History Switcher + Search + Date/Floor/Status */}
+        <div className="px-5 py-2.5 border-b border-white/10 bg-[#121620] flex items-center justify-between gap-2 flex-wrap lg:flex-nowrap flex-shrink-0">
+
+          {/* Quick View Switcher: Today (Default) vs Full History */}
+          <div className="inline-flex items-center p-0.5 rounded-xl bg-black/50 border border-white/15 shrink-0">
+            <button
+              type="button"
+              onClick={handleSwitchToToday}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${isTodayView
+                  ? 'bg-amber-400 text-black shadow-sm'
+                  : 'text-slate-300 hover:text-white'
+                }`}
+            >
+              <Clock size={12} />
+              <span>Today</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSwitchToHistory}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${!isTodayView
+                  ? 'bg-amber-400 text-black shadow-sm'
+                  : 'text-slate-300 hover:text-white'
+                }`}
+            >
+              <History size={12} />
+              <span>Full History</span>
+            </button>
+          </div>
+
           {/* Main Search Input: Filters instantly as you type */}
-          <div className="relative flex-1 min-w-[280px]">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative flex-1 min-w-[165px]">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="🔍 Tìm nhanh ô (E9, F4...), biển số xe, người xử lý..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition"
+              placeholder="Search slot (E9, F4...), plate, handler..."
+              className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-black/40 border border-white/15 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition"
             />
             {searchTerm && (
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                title="Xóa tìm kiếm"
+                title="Clear search"
               >
-                <X size={14} />
+                <X size={12} />
               </button>
             )}
           </div>
 
-          {/* Quick Filters Group: All Custom Sleek Dropdowns */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            
-            {/* 1. Custom Time Filter Dropdown Popover (Dark Glassmorphism) */}
+          {/* Quick Filters Group */}
+          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
+
+            {/* 1. Date & Range Filter Dropdown Popover */}
             <div className="relative" ref={timeDropdownRef}>
               <button
                 type="button"
@@ -425,124 +731,109 @@ export default function GlobalViolationHistoryModal({
                   setFloorDropdownOpen(false);
                   setStatusDropdownOpen(false);
                 }}
-                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs transition border cursor-pointer ${
-                  timeFilter !== 'all'
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] transition border whitespace-nowrap cursor-pointer ${isCustomDateFilter
                     ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold shadow-sm'
                     : 'bg-black/40 hover:bg-black/60 border-white/15 text-slate-200'
-                }`}
-              >
-                <Calendar size={13} className="text-amber-400 shrink-0" />
-                <span className="truncate max-w-[150px]">{getTimeLabel()}</span>
-                <ChevronDown
-                  size={13}
-                  className={`text-slate-400 transition-transform duration-200 ${
-                    timeDropdownOpen ? 'rotate-180' : ''
                   }`}
+                title="Filter violation history by specific date or date range"
+              >
+                <Calendar size={12} className="text-amber-400 shrink-0" />
+                <span className="truncate max-w-[135px]">{getTimeLabel()}</span>
+                <ChevronDown
+                  size={12}
+                  className={`text-slate-400 transition-transform duration-200 ${timeDropdownOpen ? 'rotate-180' : ''
+                    }`}
                 />
               </button>
 
               {timeDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-80 bg-[#141a26]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl p-3 space-y-1 text-xs animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-1 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                    <span>Lọc theo thời gian</span>
-                    {timeFilter !== 'all' && (
+                <div className="absolute left-0 top-full mt-2 z-50 w-80 max-w-[calc(100vw-2rem)] bg-[#141a26]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl p-3 space-y-2.5 text-xs animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-0.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                    <span>Filter by Date</span>
+                    {!isTodayView && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setTimeFilter('all');
-                          setSingleDate('');
-                          setStartDate('');
-                          setEndDate('');
-                        }}
-                        className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold lowercase"
+                        onClick={handleSwitchToToday}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold lowercase cursor-pointer whitespace-nowrap"
                       >
-                        đặt lại
+                        reset to today
                       </button>
                     )}
                   </div>
 
-                  {/* Preset Options */}
-                  <div className="space-y-0.5">
+                  {/* Quick Date Presets (Single-line compact buttons) */}
+                  <div className="grid grid-cols-3 gap-1.5">
                     {[
-                      { id: 'all', label: 'Tất cả thời gian', icon: Clock },
-                      { id: 'today', label: 'Hôm nay', icon: Calendar },
-                      { id: 'yesterday', label: 'Hôm qua', icon: CalendarDays },
-                      { id: 'week', label: '7 ngày qua', icon: CalendarDays },
-                      { id: 'month', label: 'Tháng này', icon: CalendarDays },
+                      { id: 'yesterday', label: 'Yesterday' },
+                      { id: 'week', label: 'Last 7 Days' },
+                      { id: 'month', label: 'This Month' },
                     ].map((preset) => {
                       const isSelected = timeFilter === preset.id;
-                      const IconComp = preset.icon;
                       return (
                         <button
                           key={preset.id}
                           type="button"
                           onClick={() => {
                             setTimeFilter(preset.id);
+                            setSingleDate('');
+                            setStartDate('');
+                            setEndDate('');
                             setTimeDropdownOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${
-                            isSelected
-                              ? 'bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30'
-                              : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                          }`}
+                          className={`px-1.5 py-1.5 rounded-xl text-[10.5px] font-semibold transition text-center whitespace-nowrap cursor-pointer border ${isSelected
+                              ? 'bg-amber-400/20 text-amber-300 font-bold border-amber-400/40'
+                              : 'bg-black/40 border-white/10 text-slate-300 hover:bg-white/5 hover:text-white'
+                            }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <IconComp size={14} className={isSelected ? 'text-amber-400' : 'text-slate-400'} />
-                            <span>{preset.label}</span>
-                          </div>
-                          {isSelected && <Check size={14} className="text-amber-400" />}
+                          {preset.label}
                         </button>
                       );
                     })}
                   </div>
-
-                  <div className="border-t border-white/10 my-2" />
 
                   {/* Option: Specific Single Day */}
                   <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
                     <button
                       type="button"
                       onClick={() => setTimeFilter('single')}
-                      className={`w-full flex items-center justify-between text-left cursor-pointer ${
-                        timeFilter === 'single' ? 'text-amber-300 font-bold' : 'text-slate-300'
-                      }`}
+                      className={`w-full flex items-center justify-between text-left cursor-pointer ${timeFilter === 'single' ? 'text-amber-300 font-bold' : 'text-slate-300'
+                        }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <CalendarDays size={13} className="text-amber-400" />
-                        <span className="text-[11px] font-semibold">1 ngày cụ thể</span>
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <CalendarDays size={12} className="text-amber-400 shrink-0" />
+                        <span className="text-[11px] font-semibold">Specific Date</span>
                       </div>
-                      {timeFilter === 'single' && <Check size={13} className="text-amber-400" />}
+                      {timeFilter === 'single' && <Check size={12} className="text-amber-400 shrink-0" />}
                     </button>
                     <input
                       type="date"
                       value={singleDate}
                       onChange={(e) => {
                         setSingleDate(e.target.value);
-                        setTimeFilter('single');
+                        setTimeFilter(e.target.value ? 'single' : 'all');
                       }}
-                      className="w-full bg-black/60 border border-white/15 focus:border-amber-400 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-mono focus:outline-none"
+                      className="w-full bg-black/60 border border-white/15 focus:border-amber-400 rounded-lg px-2.5 py-1.5 text-[11px] font-medium tabular-nums text-amber-300 focus:outline-none"
                     />
                   </div>
 
-                  {/* Option: Date Range (Từ ngày -> Đến ngày) */}
+                  {/* Option: Date Range (From -> To) */}
                   <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
                     <button
                       type="button"
                       onClick={() => setTimeFilter('range')}
-                      className={`w-full flex items-center justify-between text-left cursor-pointer ${
-                        timeFilter === 'range' ? 'text-amber-300 font-bold' : 'text-slate-300'
-                      }`}
+                      className={`w-full flex items-center justify-between text-left cursor-pointer ${timeFilter === 'range' ? 'text-amber-300 font-bold' : 'text-slate-300'
+                        }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <CalendarRange size={13} className="text-amber-400" />
-                        <span className="text-[11px] font-semibold">Khoảng ngày (Từ ngày → Đến ngày)</span>
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <CalendarRange size={12} className="text-amber-400 shrink-0" />
+                        <span className="text-[11px] font-semibold">Date Range (From → To)</span>
                       </div>
-                      {timeFilter === 'range' && <Check size={13} className="text-amber-400" />}
+                      {timeFilter === 'range' && <Check size={12} className="text-amber-400 shrink-0" />}
                     </button>
 
                     <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Từ ngày</span>
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-slate-400 block mb-1">From</span>
                         <input
                           type="date"
                           value={startDate}
@@ -550,11 +841,11 @@ export default function GlobalViolationHistoryModal({
                             setStartDate(e.target.value);
                             setTimeFilter('range');
                           }}
-                          className="w-full bg-black/60 border border-white/15 focus:border-amber-400 rounded-lg px-2 py-1 text-[11px] text-amber-300 font-mono focus:outline-none"
+                          className="w-full bg-black/60 border border-white/15 focus:border-amber-400 rounded-lg px-2 py-1 text-[11px] font-medium tabular-nums text-amber-300 focus:outline-none"
                         />
                       </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block mb-1">Đến ngày</span>
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-slate-400 block mb-1">To</span>
                         <input
                           type="date"
                           value={endDate}
@@ -562,14 +853,14 @@ export default function GlobalViolationHistoryModal({
                             setEndDate(e.target.value);
                             setTimeFilter('range');
                           }}
-                          className="w-full bg-black/60 border border-white/15 focus:border-amber-400 rounded-lg px-2 py-1 text-[11px] text-amber-300 font-mono focus:outline-none"
+                          className="w-full bg-black/60 border border-white/15 focus:border-amber-400 rounded-lg px-2 py-1 text-[11px] font-medium tabular-nums text-amber-300 focus:outline-none"
                         />
                       </div>
                     </div>
 
                     {(startDate || endDate) && (
                       <div className="flex items-center justify-between pt-0.5">
-                        <span className="text-[10px] text-amber-400/80">Đang lọc khoảng ngày</span>
+                        <span className="text-[10px] text-amber-400/80">Date range active</span>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -580,20 +871,29 @@ export default function GlobalViolationHistoryModal({
                           }}
                           className="text-[10px] text-red-400 hover:text-red-300 underline font-semibold cursor-pointer"
                         >
-                          Xóa khoảng
+                          Clear range
                         </button>
                       </div>
                     )}
                   </div>
 
                   {/* Apply / Close button */}
-                  <div className="pt-1.5">
+                  <div className="flex items-center gap-2 pt-0.5">
+                    {isCustomDateFilter && (
+                      <button
+                        type="button"
+                        onClick={handleSwitchToHistory}
+                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-bold text-xs transition cursor-pointer"
+                      >
+                        All History
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setTimeDropdownOpen(false)}
-                      className="w-full py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs uppercase tracking-wider transition cursor-pointer shadow-md"
+                      className="flex-1 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs uppercase tracking-wider transition cursor-pointer shadow-md"
                     >
-                      Xác nhận
+                      Apply
                     </button>
                   </div>
                 </div>
@@ -609,26 +909,24 @@ export default function GlobalViolationHistoryModal({
                   setTimeDropdownOpen(false);
                   setStatusDropdownOpen(false);
                 }}
-                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs transition border cursor-pointer ${
-                  floorFilter && floorFilter !== currentFloorId
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] transition border whitespace-nowrap cursor-pointer ${floorFilter && floorFilter !== currentFloorId
                     ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold shadow-sm'
                     : 'bg-black/40 hover:bg-black/60 border-white/15 text-slate-200'
-                }`}
-              >
-                <Layers size={13} className="text-amber-400 shrink-0" />
-                <span className="truncate max-w-[130px]">{getFloorLabel()}</span>
-                <ChevronDown
-                  size={13}
-                  className={`text-slate-400 transition-transform duration-200 ${
-                    floorDropdownOpen ? 'rotate-180' : ''
                   }`}
+              >
+                <Layers size={12} className="text-amber-400 shrink-0" />
+                <span className="truncate max-w-[100px]">{getFloorLabel()}</span>
+                <ChevronDown
+                  size={12}
+                  className={`text-slate-400 transition-transform duration-200 ${floorDropdownOpen ? 'rotate-180' : ''
+                    }`}
                 />
               </button>
 
               {floorDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 z-50 w-52 bg-[#141a26]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl p-2 space-y-1 text-xs animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Chọn tầng
+                    Select Floor
                   </div>
                   <button
                     type="button"
@@ -636,13 +934,12 @@ export default function GlobalViolationHistoryModal({
                       setFloorFilter('');
                       setFloorDropdownOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${
-                      !floorFilter
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${!floorFilter
                         ? 'bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30'
                         : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                    }`}
+                      }`}
                   >
-                    <span>Tất cả các tầng</span>
+                    <span>All Floors</span>
                     {!floorFilter && <Check size={14} className="text-amber-400" />}
                   </button>
 
@@ -656,11 +953,10 @@ export default function GlobalViolationHistoryModal({
                           setFloorFilter(f._id);
                           setFloorDropdownOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${
-                          isSelected
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${isSelected
                             ? 'bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30'
                             : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                        }`}
+                          }`}
                       >
                         <span>{f.name || `Floor ${f.floorNumber}`}</span>
                         {isSelected && <Check size={14} className="text-amber-400" />}
@@ -680,11 +976,10 @@ export default function GlobalViolationHistoryModal({
                   setTimeDropdownOpen(false);
                   setFloorDropdownOpen(false);
                 }}
-                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs transition border cursor-pointer ${
-                  statusFilter
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] transition border whitespace-nowrap cursor-pointer ${statusFilter
                     ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold shadow-sm'
                     : 'bg-black/40 hover:bg-black/60 border-white/15 text-slate-200'
-                }`}
+                  }`}
               >
                 {statusFilter === 'PENDING' ? (
                   <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
@@ -693,27 +988,29 @@ export default function GlobalViolationHistoryModal({
                 ) : statusFilter === 'DISMISSED' ? (
                   <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
                 ) : (
-                  <Filter size={13} className="text-amber-400 shrink-0" />
+                  <Filter size={12} className="text-amber-400 shrink-0" />
                 )}
-                <span className="truncate max-w-[130px]">{getStatusLabel()}</span>
+                <span className="truncate max-w-[110px]">{getStatusLabel()}</span>
                 <ChevronDown
-                  size={13}
-                  className={`text-slate-400 transition-transform duration-200 ${
-                    statusDropdownOpen ? 'rotate-180' : ''
-                  }`}
+                  size={12}
+                  className={`text-slate-400 transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''
+                    }`}
                 />
               </button>
 
               {statusDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-52 bg-[#141a26]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl p-2 space-y-1 text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 z-50 w-56 bg-[#141a26]/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-xl p-2 space-y-1 text-xs animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Trạng thái xử lý
+                    Resolution Status
                   </div>
                   {[
-                    { id: '', label: 'Tất cả trạng thái', dot: null },
-                    { id: 'PENDING', label: 'Chưa xử lý', dot: 'bg-red-500' },
-                    { id: 'RESOLVED', label: 'Đã xử lý', dot: 'bg-emerald-500' },
-                    { id: 'DISMISSED', label: 'Đã bỏ qua', dot: 'bg-slate-400' },
+                    { id: '', label: 'All Statuses', dot: null },
+                    { id: 'ACTIVE_OCCUPIED', label: '🔴 Occupied (Action Needed)', dot: 'bg-red-500 animate-pulse' },
+                    { id: 'SELF_CORRECTED', label: '🟢 Self-Corrected', dot: 'bg-cyan-400' },
+                    { id: 'EMPTY_MOVED', label: '⚪ Vehicle Left', dot: 'bg-slate-500' },
+                    { id: 'PENDING', label: 'All Pending', dot: 'bg-red-500' },
+                    { id: 'RESOLVED', label: 'Resolved', dot: 'bg-emerald-500' },
+                    { id: 'DISMISSED', label: 'Dismissed', dot: 'bg-slate-400' },
                   ].map((st) => {
                     const isSelected = statusFilter === st.id;
                     return (
@@ -724,11 +1021,10 @@ export default function GlobalViolationHistoryModal({
                           setStatusFilter(st.id);
                           setStatusDropdownOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${
-                          isSelected
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition text-left cursor-pointer ${isSelected
                             ? 'bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30'
                             : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-2">
                           {st.dot && <span className={`w-2 h-2 rounded-full ${st.dot}`} />}
@@ -747,9 +1043,10 @@ export default function GlobalViolationHistoryModal({
               <button
                 type="button"
                 onClick={handleResetFilters}
-                className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-semibold transition cursor-pointer"
+                className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition whitespace-nowrap cursor-pointer"
+                title="Reset all filters back to Today"
               >
-                Đặt lại
+                Reset
               </button>
             )}
           </div>
@@ -757,37 +1054,67 @@ export default function GlobalViolationHistoryModal({
 
         {/* Main Content: Split View (List on Left, Details on Right) */}
         <div className="flex-1 flex overflow-hidden">
-          
+
           {/* Left Column: Timeline List */}
           <div className="w-[360px] border-r border-white/10 flex flex-col bg-[#0e1219]/70 flex-shrink-0">
             <div className="p-3 border-b border-white/5 flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              <span>Danh sách sự kiện vi phạm</span>
-              <span className="font-mono text-amber-400 font-bold">{filteredLogs.length} bản ghi</span>
+              <span>{isTodayView ? "TODAY'S VIOLATIONS" : 'VIOLATION HISTORY'}</span>
+              <span className="font-mono text-amber-400 font-bold">
+                {filteredLogs.length}
+                {totalRecords > filteredLogs.length ? ` / ${totalRecords}` : ''} records
+              </span>
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-white/5">
               {loading && logs.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 text-xs">
                   <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-amber-400" />
-                  Đang tải lịch sử...
+                  Loading violation logs...
+                </div>
+              ) : loadError && logs.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs space-y-2.5">
+                  <AlertTriangle size={28} className="mx-auto text-red-400" />
+                  <p className="text-red-300 font-semibold">Unable to load violation logs</p>
+                  <p className="text-[11px] text-slate-500">{loadError}</p>
+                  <button
+                    type="button"
+                    onClick={handleRefresh}
+                    className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition cursor-pointer"
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : filteredLogs.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs space-y-2">
+                <div className="p-8 text-center text-slate-500 text-xs space-y-3">
                   <ShieldAlert size={28} className="mx-auto text-slate-600" />
                   <p>
                     {searchTerm
-                      ? `Không tìm thấy vi phạm nào khớp với "${searchTerm}".`
-                      : 'Không có bản ghi vi phạm nào phù hợp với bộ lọc.'}
+                      ? `No violations matching "${searchTerm}".`
+                      : isTodayView
+                        ? 'No violations recorded today.'
+                        : 'No violation records match the selected filters.'}
                   </p>
-                  {hasActiveFilter && (
-                    <button
-                      type="button"
-                      onClick={handleResetFilters}
-                      className="px-3 py-1 rounded bg-white/5 hover:bg-white/10 text-amber-400 text-xs font-semibold transition"
-                    >
-                      Xóa bộ lọc để xem tất cả
-                    </button>
-                  )}
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    {isTodayView && (
+                      <button
+                        type="button"
+                        onClick={handleSwitchToHistory}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <History size={13} />
+                        <span>Open Full History</span>
+                      </button>
+                    )}
+                    {hasActiveFilter && (
+                      <button
+                        type="button"
+                        onClick={handleResetFilters}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold transition cursor-pointer"
+                      >
+                        Reset Filters
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 filteredLogs.map((log) => {
@@ -797,6 +1124,50 @@ export default function GlobalViolationHistoryModal({
                   const timeStr = new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                   const dateStr = new Date(log.createdAt).toLocaleDateString();
 
+                  // Dynamic smart status badge
+                  let dynamicBadge = null;
+                  if (isPending) {
+                    if (log.isNowInCorrectSlot) {
+                      dynamicBadge = (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                          <CheckCheck size={10} /> Moved to {log.currentVehicleSlot}
+                        </span>
+                      );
+                    } else if (log.isSlotEmpty || log.isVehicleGone) {
+                      dynamicBadge = (
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider bg-slate-700/60 text-slate-300 border border-slate-600/40">
+                          Vehicle Left
+                        </span>
+                      );
+                    } else {
+                      dynamicBadge = (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                          Pending
+                        </span>
+                      );
+                    }
+                  } else if (isResolved) {
+                    if (log.resolutionAction === 'SELF_CORRECTED') {
+                      dynamicBadge = (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                          Self-Corrected
+                        </span>
+                      );
+                    } else {
+                      dynamicBadge = (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Resolved
+                        </span>
+                      );
+                    }
+                  } else {
+                    dynamicBadge = (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider bg-slate-700/40 text-slate-400">
+                        Dismissed
+                      </span>
+                    );
+                  }
+
                   return (
                     <button
                       key={log._id}
@@ -804,37 +1175,34 @@ export default function GlobalViolationHistoryModal({
                         setSelectedLog(log);
                         setViewFullImage(false);
                       }}
-                      className={`w-full text-left p-3.5 transition flex items-start justify-between gap-3 ${
-                        isSelected ? 'bg-amber-500/10 border-l-4 border-amber-400' : 'hover:bg-white/5'
-                      }`}
+                      className={`w-full text-left p-3.5 transition flex items-start justify-between gap-3 ${isSelected ? 'bg-amber-500/10 border-l-4 border-amber-400' : 'hover:bg-white/5'
+                        }`}
                     >
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-mono font-black text-sm text-amber-300">
-                            Ô {log.slotCode}
+                            Slot {log.slotCode}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10 text-slate-300 font-bold">
                             {log.floorId?.name || 'Floor 2'}
                           </span>
-                          <span
-                            className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
-                              isPending
-                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                : isResolved
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : 'bg-slate-700/40 text-slate-400'
-                            }`}
-                          >
-                            {isPending ? 'Chưa xử lý' : isResolved ? 'Đã xử lý' : 'Bỏ qua'}
-                          </span>
+                          {dynamicBadge}
+                          {log.plateViolationCount > 1 && (
+                            <span
+                              className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                              title={`This vehicle has ${log.plateViolationCount} violation events in the selected range`}
+                            >
+                              Violation x{log.plateViolationCount}
+                            </span>
+                          )}
                         </div>
 
                         <div className="text-xs text-slate-300 font-mono font-bold">
-                          {log.detectedPlate ? formatLicensePlateDisplay(log.detectedPlate) : 'Chưa rõ biển số'}
+                          {log.detectedPlate ? formatLicensePlateDisplay(log.detectedPlate) : 'Plate Unknown'}
                         </div>
 
                         <div className="text-[11px] text-slate-400 line-clamp-1">
-                          {log.expectedSlot ? `Gốc: Ô ${log.expectedSlot} → Đỗ: ${log.slotCode}` : (log.violationMessage || 'Đỗ sai ô quy định')}
+                          {log.expectedSlot ? `Assigned: Slot ${log.expectedSlot} → Parked: ${log.slotCode}` : (log.violationMessage || 'Parked in unauthorized slot')}
                         </div>
                       </div>
 
@@ -846,6 +1214,23 @@ export default function GlobalViolationHistoryModal({
                   );
                 })
               )}
+              {hasMore && filteredLogs.length > 0 && (
+                <div className="p-3 text-center">
+                  <button
+                    type="button"
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-amber-300 transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    <RefreshCw size={13} className={loadingMore ? 'animate-spin' : ''} />
+                    <span>
+                      {loadingMore
+                        ? 'Loading more...'
+                        : `Load more records${remainingCount > 0 ? ` (${remainingCount} remaining)` : ''}`}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -853,36 +1238,35 @@ export default function GlobalViolationHistoryModal({
           <div className="flex-1 overflow-y-auto p-6 bg-[#10141d] flex flex-col justify-between">
             {selectedLog ? (
               <div className="space-y-5">
-                
+
                 {/* Detail Header */}
                 <div className="flex items-start justify-between border-b border-white/10 pb-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-300 font-mono font-black text-base">
-                        Ô {selectedLog.slotCode}
+                        Slot {selectedLog.slotCode}
                       </span>
                       <span className="text-sm font-bold text-slate-300">
                         {selectedLog.floorId?.name || 'Floor 2'}
                       </span>
                       <span
-                        className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          selectedLog.status === 'PENDING'
+                        className={`text-xs font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${selectedLog.status === 'PENDING'
                             ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse'
                             : selectedLog.status === 'RESOLVED'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-700/50 text-slate-400'
-                        }`}
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-slate-700/50 text-slate-400'
+                          }`}
                       >
-                        {selectedLog.status === 'PENDING' ? 'Chưa xử lý' : selectedLog.status === 'RESOLVED' ? 'Đã xử lý' : 'Đã bỏ qua'}
+                        {selectedLog.status === 'PENDING' ? 'Pending' : selectedLog.status === 'RESOLVED' ? 'Resolved' : 'Dismissed'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400">
-                      Ghi nhận lúc: <strong className="text-slate-200">{new Date(selectedLog.createdAt).toLocaleString()}</strong>
+                      Recorded at: <strong className="text-slate-200">{new Date(selectedLog.createdAt).toLocaleString()}</strong>
                     </p>
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Biển số phát hiện</span>
+                    <span className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Detected Plate</span>
                     <span className="font-mono font-black text-lg px-3 py-1 rounded-lg bg-black border border-white/20 text-amber-300 inline-block shadow-inner">
                       {formatLicensePlateDisplay(selectedLog.detectedPlate || 'N/A')}
                     </span>
@@ -894,42 +1278,60 @@ export default function GlobalViolationHistoryModal({
                   <div className="flex items-center justify-between text-xs font-bold text-slate-400">
                     <span className="flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
                       <Eye size={14} className="text-amber-400" />
-                      {viewFullImage ? 'Ảnh Camera Toàn Bãi Đỗ' : 'Ảnh AI Crop Cận Cảnh Ô Đỗ Vi Phạm'}
+                      {viewFullImage ? 'Full Parking Lot Camera View' : 'AI Cropped Violation Slot View'}
                     </span>
-                    {selectedLog.fullSnapshot && selectedLog.evidenceSnapshot && (
+                    {displayFullUrl && displayEvidenceUrl && (
                       <button
                         onClick={() => setViewFullImage(!viewFullImage)}
-                        className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition text-xs font-semibold"
+                        className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition text-xs font-semibold cursor-pointer"
                       >
                         <Maximize2 size={13} />
-                        <span>{viewFullImage ? 'Xem ảnh crop ô đỗ' : 'Xem toàn cảnh bãi đỗ'}</span>
+                        <span>{viewFullImage ? 'View Cropped Slot' : 'View Full Parking Lot'}</span>
                       </button>
                     )}
                   </div>
 
                   <div className="relative rounded-xl border border-white/10 bg-black/60 overflow-hidden min-h-[220px] max-h-[300px] flex items-center justify-center">
-                    {viewFullImage && selectedLog.fullSnapshot ? (
+                    {evidenceLoading ? (
+                      <div className="p-8 text-center text-slate-400 text-xs space-y-2">
+                        <RefreshCw size={22} className="animate-spin mx-auto text-amber-400" />
+                        <p>Loading evidence image...</p>
+                      </div>
+                    ) : evidenceError ? (
+                      <div className="p-8 text-center text-slate-500 text-xs">
+                        <Camera size={28} className="mx-auto mb-2 opacity-40" />
+                        Unable to load evidence image for this event
+                      </div>
+                    ) : viewFullImage && displayFullUrl ? (
                       <img
-                        src={selectedLog.fullSnapshot}
+                        src={displayFullUrl}
                         alt="Camera Full Evidence"
+                        loading="lazy"
+                        onError={() => setEvidenceError(true)}
                         className="w-full h-auto max-h-[300px] object-contain"
                       />
-                    ) : selectedLog.evidenceSnapshot ? (
+                    ) : displayEvidenceUrl ? (
                       <img
-                        src={selectedLog.evidenceSnapshot}
+                        src={displayEvidenceUrl}
                         alt="Camera Cropped Slot Evidence"
+                        loading="lazy"
+                        onError={() => setEvidenceError(true)}
                         className="w-full h-auto max-h-[300px] object-contain"
                       />
-                    ) : selectedLog.fullSnapshot ? (
+                    ) : displayFullUrl ? (
                       <img
-                        src={selectedLog.fullSnapshot}
+                        src={displayFullUrl}
                         alt="Camera Evidence"
+                        loading="lazy"
+                        onError={() => setEvidenceError(true)}
                         className="w-full h-auto max-h-[300px] object-contain"
                       />
                     ) : (
                       <div className="p-8 text-center text-slate-500 text-xs">
                         <Camera size={28} className="mx-auto mb-2 opacity-40" />
-                        Chưa có hình ảnh chụp khoảnh khắc này
+                        {evidenceError
+                          ? 'Unable to load evidence image for this event'
+                          : 'No snapshot captured for this event'}
                       </div>
                     )}
                   </div>
@@ -938,15 +1340,15 @@ export default function GlobalViolationHistoryModal({
                 {/* Slot Comparison Box */}
                 <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10 text-center">
                   <div className="p-2.5 rounded-lg bg-black/40 border border-white/10">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Ô cấp phép ban đầu</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Assigned Slot</span>
                     <span className="text-base font-black text-emerald-400 font-mono">
-                      {selectedLog.expectedSlot || 'Khác / Chưa đăng ký'}
+                      {selectedLog.expectedSlot || 'Other / Unregistered'}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-500/30">
-                    <span className="text-[10px] text-red-300 uppercase font-bold block mb-1">Ô đang đỗ thực tế</span>
+                    <span className="text-[10px] text-red-300 uppercase font-bold block mb-1">Actual Occupied Slot</span>
                     <span className="text-base font-black text-red-400 font-mono">
-                      Ô {selectedLog.slotCode}
+                      Slot {selectedLog.slotCode}
                     </span>
                   </div>
                 </div>
@@ -956,14 +1358,14 @@ export default function GlobalViolationHistoryModal({
                   <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/40 space-y-1.5 text-xs text-emerald-200">
                     <div className="flex items-center gap-2 font-bold text-emerald-400">
                       <CheckCircle2 size={16} />
-                      <span>Đã giải quyết vi phạm</span>
+                      <span>Violation Resolved</span>
                     </div>
                     <p className="text-slate-300">
-                      Xử lý bởi: <strong className="text-white">{selectedLog.resolverName || 'Nhân viên trực'}</strong> lúc{' '}
+                      Handled by: <strong className="text-white">{selectedLog.resolverName || 'On-duty Staff'}</strong> at{' '}
                       {selectedLog.resolvedAt ? new Date(selectedLog.resolvedAt).toLocaleString() : 'N/A'}
                     </p>
                     {selectedLog.resolutionNote && (
-                      <p className="text-slate-400 italic">Ghi chú: {selectedLog.resolutionNote}</p>
+                      <p className="text-slate-400 italic">Note: {selectedLog.resolutionNote}</p>
                     )}
                   </div>
                 )}
@@ -972,21 +1374,106 @@ export default function GlobalViolationHistoryModal({
                 {selectedLog.status === 'PENDING' && (
                   <div className="pt-2 border-t border-white/10 space-y-2.5">
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      Hành động xử lý vi phạm:
+                      Resolution Actions:
                     </div>
 
-                    {selectedLog.isVehicleGone || selectedLog.isSlotEmpty || selectedLog.isSessionEnded ? (
+                    {/* Scenario A: Customer self-corrected and moved to the correct expected slot */}
+                    {selectedLog.isNowInCorrectSlot || selectedLog.vehicleCurrentStatus?.status === 'SELF_CORRECTED' ? (
+                      <div className="space-y-3">
+                        <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 via-teal-950/30 to-black border border-emerald-500/40 text-xs text-emerald-200 flex items-start gap-3 shadow-lg">
+                          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 shrink-0">
+                            <Sparkles size={18} />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="font-bold text-white text-sm flex items-center gap-2">
+                              <span>Driver self-corrected to assigned slot</span>
+                              <span className="font-mono text-emerald-300 font-black px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30">
+                                Slot {selectedLog.currentVehicleSlot || selectedLog.expectedSlot}
+                              </span>
+                            </p>
+                            <p className="text-[11px] text-slate-300">
+                              AI Camera confirms the vehicle has vacated slot {selectedLog.slotCode} and moved into its assigned slot ({selectedLog.expectedSlot}).
+                              Recommended to confirm self-correction and close this alert without penalty.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleDismissOrWarning(selectedLog, 'SELF_CORRECTED')}
+                            disabled={actionLoading}
+                            className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95 cursor-pointer"
+                          >
+                            <CheckCircle2 size={16} />
+                            <span>Confirm Self-Correction</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDismissOrWarning(selectedLog, 'DISMISS')}
+                            disabled={actionLoading}
+                            className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 border border-white/10 shadow disabled:opacity-50 active:scale-95 cursor-pointer"
+                          >
+                            <span>Close / Dismiss Alert</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : selectedLog.isRoamingMismatch || selectedLog.vehicleCurrentStatus?.status === 'ROAMING_MISMATCH' ? (
+                      /* Scenario B: Vehicle left this slot but moved to another WRONG slot */
+                      <div className="space-y-3">
+                        <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-950/40 via-orange-950/30 to-black border border-amber-500/40 text-xs text-amber-200 flex items-start gap-3 shadow-lg">
+                          <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
+                            <AlertTriangle size={18} />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="font-bold text-white text-sm flex items-center gap-2">
+                              <span>Vehicle is still parked in another wrong slot</span>
+                              <span className="font-mono text-amber-300 font-black px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30">
+                                Slot {selectedLog.currentVehicleSlot}
+                              </span>
+                            </p>
+                            <p className="text-[11px] text-slate-300">
+                              Vehicle left slot {selectedLog.slotCode} but has not moved to {selectedLog.expectedSlot}; currently parked at slot {selectedLog.currentVehicleSlot}.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setSearchTerm(selectedLog.currentVehicleSlot || '')}
+                            disabled={actionLoading}
+                            className="py-2.5 px-4 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow disabled:opacity-50 active:scale-95 cursor-pointer"
+                          >
+                            <Search size={15} />
+                            <span>Inspect Slot {selectedLog.currentVehicleSlot}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDismissOrWarning(selectedLog, 'ISSUE_WARNING')}
+                            disabled={actionLoading}
+                            className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95 cursor-pointer"
+                          >
+                            <Phone size={15} />
+                            <span>Issue Warning / Log</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : selectedLog.isVehicleGone || selectedLog.isSlotEmpty || selectedLog.isSessionEnded ? (
+                      /* Scenario C: Vehicle left or already checked out */
                       <div className="space-y-2.5">
                         <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 flex items-start gap-2.5 shadow-inner">
                           <Info size={16} className="text-cyan-400 flex-shrink-0 mt-0.5" />
                           <div className="space-y-0.5">
                             <p className="font-bold text-white">
                               {selectedLog.isSessionEnded
-                                ? 'Phương tiện đã checkout hoàn tất khỏi bãi đỗ.'
-                                : 'Camera AI ghi nhận ô hiện đã trống (xe đã rời đi).'}
+                                ? 'Vehicle has completed checkout and exited the parking lot.'
+                                : `AI Camera confirms slot ${selectedLog.slotCode} is now empty (vehicle left).`}
                             </p>
                             <p className="text-[11px] text-slate-400">
-                              Không khả dụng chức năng đổi ô do xe không còn hiện diện tại vị trí đỗ.
+                              Slot reassignment is unavailable because the vehicle is no longer at this slot.
                             </p>
                           </div>
                         </div>
@@ -996,42 +1483,43 @@ export default function GlobalViolationHistoryModal({
                             type="button"
                             onClick={() => handleDismissOrWarning(selectedLog, 'DISMISS')}
                             disabled={actionLoading}
-                            className="py-2.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow disabled:opacity-50 active:scale-95"
+                            className="py-2.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow disabled:opacity-50 active:scale-95 cursor-pointer"
                           >
-                            <span>Đóng / Bỏ qua cảnh báo</span>
+                            <span>Close / Dismiss Alert</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => handleDismissOrWarning(selectedLog, 'ISSUE_WARNING')}
                             disabled={actionLoading}
-                            className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
+                            className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95 cursor-pointer"
                           >
                             <Phone size={15} />
-                            <span>Lập biên bản / Lưu vết</span>
+                            <span>Issue Warning / Log</span>
                           </button>
                         </div>
                       </div>
                     ) : (
+                      /* Scenario D: Vehicle is physically still at the wrong slot */
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           type="button"
                           onClick={() => handleReassign(selectedLog)}
                           disabled={actionLoading}
-                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
+                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95 cursor-pointer"
                         >
                           <RotateCw size={15} className={actionLoading ? 'animate-spin' : ''} />
-                          <span>Chấp nhận cho đỗ ô {selectedLog.slotCode}</span>
+                          <span>Allow Slot {selectedLog.slotCode}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleDismissOrWarning(selectedLog, 'ISSUE_WARNING')}
                           disabled={actionLoading}
-                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95"
+                          className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-95 cursor-pointer"
                         >
                           <Phone size={15} />
-                          <span>Nhắc nhở / Lập biên bản</span>
+                          <span>Notify / Issue Warning</span>
                         </button>
                       </div>
                     )}
@@ -1040,7 +1528,7 @@ export default function GlobalViolationHistoryModal({
               </div>
             ) : (
               <div className="h-full flex items-center justify-center text-slate-500 text-xs">
-                Chọn một sự kiện từ danh sách bên trái để xem bằng chứng chi tiết.
+                Select an event from the left list to view detailed evidence.
               </div>
             )}
           </div>

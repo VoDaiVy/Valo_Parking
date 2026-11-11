@@ -7,7 +7,9 @@ const {
   resolveUnclearPlate,
   scanParkingSlots,
   autoDetectSlotGrid,
+  downloadArucoMarkersSheet,
   getViolationLogs,
+  getViolationLogEvidence,
   getSlotLogs,
   resolveViolation,
   clearAllViolations,
@@ -56,10 +58,20 @@ router.post('/scan-slots', protect, authorize('staff', 'admin'), scanParkingSlot
 // @access  Public / Staff
 router.post('/auto-detect-grid', protect, authorize('staff', 'admin'), autoDetectSlotGrid);
 
+// @route   GET /api/ai/aruco-markers-sheet
+// @desc    Download printable 4-corner ArUco marker sheet (IDs 0-3)
+// @access  Public / Staff
+router.get('/aruco-markers-sheet', protect, authorize('staff', 'admin'), downloadArucoMarkersSheet);
+
 // @route   GET /api/ai/violation-logs
 // @desc    Get global parking lot violation logs
 // @access  Public / Staff
 router.get('/violation-logs', protect, authorize('staff', 'admin'), getViolationLogs);
+
+// @route   GET /api/ai/violation-logs/:id/evidence
+// @desc    Lazy-load snapshot images for a single violation log
+// @access  Staff / Admin
+router.get('/violation-logs/:id/evidence', protect, authorize('staff', 'admin'), getViolationLogEvidence);
 
 // @route   GET /api/ai/slot-logs/:slotCode
 // @desc    Get history logs for a specific parking slot

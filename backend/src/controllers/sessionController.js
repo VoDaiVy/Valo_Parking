@@ -2089,47 +2089,105 @@ exports.kioskCheckout = async (req, res, next) => {
       }
     }
 
-    // Release slot to available if vehicle is no longer physically occupying it
-    if (session.parkingSlot && session.floorId) {
-      const slotCode = normalizeSlotCode(session.parkingSlot);
-      const floorId = session.floorId;
-      try {
-        const slotDoc = await Slot.findOne({ floorID: floorId, slotNumber: slotCode });
-        const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
-        const activeMaintenance = slotDoc ? await SlotMaintenanceLog.findOne({
-          slotID: slotDoc._id,
-          $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
-        }) : null;
-        const isUnderMaintenance = Boolean(activeMaintenance || slotDoc?.status === 'maintenance');
+    // Release assigned slot & any extra AI-tracked slots held by this vehicle (wrong slot / double-parking)
+    try {
+      const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
+      const SlotAuditLog = require('../models/SlotAuditLog');
+      const normSessionPlate = normalizeLicensePlate(session.licensePlate);
+      const candidateFilter = {
+        $or: [
+          ...(session.parkingSlot && session.floorId
+            ? [{ floorID: session.floorId, slotNumber: normalizeSlotCode(session.parkingSlot) }]
+            : []),
+          { 'aiObservation.sessionId': session._id },
+          { 'aiObservation.occupied': true },
+          { 'aiObservation.isViolation': true },
+          { 'aiObservation.violationType': 'CHECKED_IN_PENDING_PARK' },
+        ],
+      };
 
-        if (slotDoc && !isUnderMaintenance) {
-          slotDoc.status = 'available';
-          if (slotDoc.aiObservation) {
-            slotDoc.aiObservation.occupied = false;
-            slotDoc.aiObservation.detectedPlate = null;
-            slotDoc.aiObservation.sessionId = null;
-            slotDoc.aiObservation.isViolation = false;
+      const candidateSlots = await Slot.find(candidateFilter);
+      const matchingSlots = candidateSlots.filter((s) => {
+        const isAssignedSlot =
+          session.parkingSlot &&
+          session.floorId &&
+          String(s.floorID) === String(session.floorId) &&
+          s.slotNumber === normalizeSlotCode(session.parkingSlot);
+        const matchesSession = s.aiObservation?.sessionId && String(s.aiObservation.sessionId) === String(session._id);
+        const matchesDetectedPlate =
+          normSessionPlate &&
+          s.aiObservation?.detectedPlate &&
+          normalizeLicensePlate(s.aiObservation.detectedPlate) === normSessionPlate;
+        const matchesExpectedPlate =
+          normSessionPlate &&
+          s.aiObservation?.expectedPlate &&
+          normalizeLicensePlate(s.aiObservation.expectedPlate) === normSessionPlate;
+        return isAssignedSlot || matchesSession || matchesDetectedPlate || matchesExpectedPlate;
+      });
+
+      const matchingSlotIds = matchingSlots.map((s) => s._id);
+      const activeMaintLogs = matchingSlotIds.length > 0
+        ? await SlotMaintenanceLog.find({
+            slotID: { $in: matchingSlotIds },
+            $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
+          }).select('slotID').lean()
+        : [];
+      const maintSet = new Set(activeMaintLogs.map((m) => String(m.slotID)));
+
+      for (const sDoc of matchingSlots) {
+        const isUnderMaint = sDoc.status === 'maintenance' || maintSet.has(String(sDoc._id));
+        if (!isUnderMaint) {
+          sDoc.status = 'available';
+          if (sDoc.aiObservation) {
+            sDoc.aiObservation.occupied = false;
+            sDoc.aiObservation.detectedPlate = null;
+            sDoc.aiObservation.sessionId = null;
+            sDoc.aiObservation.isViolation = false;
+            sDoc.aiObservation.violationType = null;
+            sDoc.aiObservation.violationMessage = null;
+            sDoc.aiObservation.expectedSlot = null;
+            sDoc.aiObservation.expectedPlate = null;
+            sDoc.aiObservation.evidenceSnapshot = null;
           }
-          await slotDoc.save();
+          await sDoc.save();
+        }
+      }
 
-          // Ghi nhận lịch sử ô đỗ: Xe checkout tại cổng và giải phóng ô thành ô trống
-          const SlotAuditLog = require('../models/SlotAuditLog');
-          await SlotAuditLog.create({
-            slotId: slotDoc._id,
-            slotCode: slotDoc.slotNumber,
-            floorId: floorId,
-            changeType: 'OCCUPANCY_CHANGED',
-            detectedPlate: session.licensePlate,
+      if (matchingSlotIds.length > 0) {
+        await SlotAuditLog.updateMany(
+          { slotId: { $in: matchingSlotIds }, status: 'PENDING' },
+          {
             status: 'RESOLVED',
             resolutionAction: 'CHECKOUT_RELEASED',
-            resolutionNote: `Xe ${session.licensePlate} đã checkout thành công tại cổng ra, ô đỗ chuyển sang trạng thái trống`,
+            resolutionNote: `Xe ${session.licensePlate} đã checkout thành công tại cổng ra, giải phóng cảnh báo & ô đỗ`,
             resolvedAt: new Date(),
-            sessionId: session._id,
-          });
-        }
-      } catch (err) {
-        console.warn('Failed to release slot on checkout:', err.message);
+          }
+        );
       }
+
+      const primarySlotDoc = matchingSlots.find(
+        (s) =>
+          session.parkingSlot &&
+          session.floorId &&
+          String(s.floorID) === String(session.floorId) &&
+          s.slotNumber === normalizeSlotCode(session.parkingSlot)
+      );
+      if (primarySlotDoc) {
+        await SlotAuditLog.create({
+          slotId: primarySlotDoc._id,
+          slotCode: primarySlotDoc.slotNumber,
+          floorId: session.floorId,
+          changeType: 'OCCUPANCY_CHANGED',
+          detectedPlate: session.licensePlate,
+          status: 'RESOLVED',
+          resolutionAction: 'CHECKOUT_RELEASED',
+          resolutionNote: `Xe ${session.licensePlate} đã checkout thành công tại cổng ra, ô đỗ chuyển sang trạng thái trống`,
+          resolvedAt: new Date(),
+          sessionId: session._id,
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to release slot on checkout:', err.message);
     }
 
     if (paymentIntentId) {
@@ -2397,11 +2455,87 @@ exports.reassignSlot = async (req, res, next) => {
     }
 
     const oldSlot = session.parkingSlot;
-    session.parkingSlot = String(newSlotCode).trim().toUpperCase();
+    const oldFloorId = session.floorId;
+    const targetNewSlot = String(newSlotCode).trim().toUpperCase();
+    session.parkingSlot = targetNewSlot;
     if (floorId) {
       session.floorId = floorId;
     }
     await session.save();
+
+    try {
+      const SlotAuditLog = require('../models/SlotAuditLog');
+      if (oldSlot && oldSlot.toUpperCase() !== targetNewSlot) {
+        const oldSlotFilter = oldFloorId
+          ? { floorID: oldFloorId, slotNumber: oldSlot.toUpperCase() }
+          : { slotNumber: oldSlot.toUpperCase() };
+        const oldDoc = await Slot.findOne(oldSlotFilter);
+        if (oldDoc && oldDoc.status !== 'maintenance') {
+          const isOldOcc = Boolean(oldDoc.aiObservation?.occupied);
+          await Slot.updateOne(
+            { _id: oldDoc._id },
+            {
+              $set: {
+                status: isOldOcc ? 'occupied' : 'available',
+                'aiObservation.isViolation': false,
+                'aiObservation.violationType': null,
+                'aiObservation.violationMessage': null,
+                'aiObservation.expectedSlot': null,
+                'aiObservation.expectedPlate': null,
+                'aiObservation.sessionId': null,
+                ...(isOldOcc ? {} : {
+                  'aiObservation.occupied': false,
+                  'aiObservation.detectedPlate': null,
+                  'aiObservation.evidenceSnapshot': null,
+                }),
+              },
+            }
+          );
+          await SlotAuditLog.updateMany(
+            { slotId: oldDoc._id, status: 'PENDING' },
+            {
+              status: 'RESOLVED',
+              resolutionAction: 'REASSIGN_SLOT',
+              resolutionNote: `Staff chuyển ô từ ${oldSlot} sang ${targetNewSlot}`,
+              resolvedAt: new Date(),
+            }
+          );
+        }
+      }
+
+      const newSlotFilter = session.floorId
+        ? { floorID: session.floorId, slotNumber: targetNewSlot }
+        : { slotNumber: targetNewSlot };
+      const newDoc = await Slot.findOne(newSlotFilter);
+      if (newDoc && newDoc.status !== 'maintenance') {
+        const isNewOcc = Boolean(newDoc.aiObservation?.occupied);
+        await Slot.updateOne(
+          { _id: newDoc._id },
+          {
+            $set: {
+              status: 'occupied',
+              'aiObservation.isViolation': false,
+              'aiObservation.violationType': isNewOcc ? null : 'CHECKED_IN_PENDING_PARK',
+              'aiObservation.violationMessage': null,
+              'aiObservation.expectedSlot': targetNewSlot,
+              'aiObservation.expectedPlate': session.licensePlate,
+              'aiObservation.sessionId': session._id,
+            },
+          }
+        );
+        await SlotAuditLog.updateMany(
+          { slotId: newDoc._id, status: 'PENDING' },
+          {
+            status: 'RESOLVED',
+            resolutionAction: 'REASSIGN_SLOT',
+            resolutionNote: `Staff chấp nhận đổi ô sang ${targetNewSlot}`,
+            resolvedAt: new Date(),
+          }
+        );
+      }
+    } catch (syncErr) {
+      console.warn('[reassignSlot] Slot sync warning:', syncErr.message);
+    }
 
     console.log(`[reassignSlot] Session ${session.licensePlate} reassigned from ${oldSlot} to ${session.parkingSlot} by ${req.user?.username || 'Staff'}. Reason: ${reason || 'N/A'}`);
 

@@ -207,38 +207,38 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'invoice' && invoiceData && (
             <div className="flex flex-col flex-1 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              {/* Cảnh báo vi phạm được Camera AI phát hiện */}
+              {/* Parking Violation Alert detected by AI Camera */}
               {invoiceData.violationDetails && (
                 <div className="mb-4 rounded-xl border border-red-500/50 bg-red-950/70 p-4 text-xs text-red-200 shadow-lg space-y-2.5">
                   <div className="flex items-center justify-between pb-2 border-b border-red-500/30">
                     <span className="flex items-center gap-1.5 font-black text-red-400 uppercase tracking-wider text-[11px]">
                       <ShieldAlert size={16} className="animate-pulse text-red-400" />
-                      Phát Hiện Vi Phạm Đỗ Sai Vị Trí
+                      Wrong-Slot Violation Detected
                     </span>
                     <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-300 font-mono text-[10px] font-bold border border-red-500/30">
-                      CAMERA AI
+                      AI CAMERA
                     </span>
                   </div>
 
                   <div className="space-y-1">
                     <p className="text-white font-medium">
-                      <strong className="text-red-300">Lý do vi phạm:</strong>{' '}
-                      {invoiceData.violationDetails.violationMessage || `Đỗ sai vị trí tại ô ${invoiceData.violationDetails.slotCode}`}
+                      <strong className="text-red-300">Violation Reason:</strong>{' '}
+                      {invoiceData.violationDetails.violationMessage || `Unauthorized parking at slot ${invoiceData.violationDetails.slotCode}`}
                     </p>
                     <div className="flex items-center gap-1.5 text-slate-300 text-[11px]">
                       <Clock size={13} className="text-amber-400 flex-shrink-0" />
                       <span>
-                        <strong className="text-slate-200">Thời gian vi phạm:</strong> Từ{' '}
+                        <strong className="text-slate-200">Violation Duration:</strong> From{' '}
                         <span className="text-white font-mono font-bold">
-                          {new Date(invoiceData.violationDetails.detectedAt).toLocaleString('vi-VN')}
+                          {new Date(invoiceData.violationDetails.detectedAt).toLocaleString('en-US')}
                         </span>{' '}
-                        đến{' '}
+                        to{' '}
                         <span className="text-white font-mono font-bold">
                           {invoiceData.violationDetails.resolvedAt
-                            ? new Date(invoiceData.violationDetails.resolvedAt).toLocaleString('vi-VN')
-                            : 'Hiện tại'}
+                            ? new Date(invoiceData.violationDetails.resolvedAt).toLocaleString('en-US')
+                            : 'Present'}
                         </span>{' '}
-                        ({invoiceData.violationDetails.durationMinutes} phút)
+                        ({invoiceData.violationDetails.durationMinutes} min)
                       </span>
                     </div>
                   </div>
@@ -250,7 +250,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                   )}
 
                   <p className="text-[10px] text-amber-300/80 italic pt-1">
-                    * Nhân viên vui lòng đối chiếu và giải thích lỗi vi phạm cho khách trước khi hoàn tất checkout.
+                    * Staff please review and explain this violation to the driver before completing checkout.
                   </p>
                 </div>
               )}

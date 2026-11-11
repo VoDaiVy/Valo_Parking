@@ -1,7 +1,9 @@
 const axios = require('axios');
 const FormData = require('form-data');
+const mongoose = require('mongoose');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
+const { scheduleViolationSnapshotUpload } = require('../utils/violationSnapshotStorage');
 
 const isLikelyVietnamesePlate = (plate = '') => {
   const clean = normalizeLicensePlate(plate);
@@ -535,8 +537,9 @@ function cleanAndNormalizePlate(rawPlate, slotCode = '') {
 };
 
 exports.scanParkingSlots = async (req, res) => {
+  const scanReqStartMs = Date.now();
   try {
-    const { image, slots, aiMode = 'hybrid', forceDeepScan = false, currentFloor, crops } = req.body;
+    const { image, slots, aiMode = 'hybrid', forceDeepScan = false, currentFloor, crops, skipAutoCalibrate = false } = req.body;
     if (!image || !Array.isArray(slots)) {
       return res.status(400).json({
         success: false,
@@ -695,12 +698,15 @@ If isParkingLotScene is false:
     if (scannedSlots.length === 0 && !isSceneInvalid) {
       try {
         console.log('[AI Slot Scan] Running Fast Local Python Edge ALPR (0 token, offline)...');
+        const localStartMs = Date.now();
         const aiResponse = await axios.post(`${aiServiceUrl}/scan-slots`, {
           image,
           slots,
+          skipAutoCalibrate: Boolean(skipAutoCalibrate),
         }, {
-          timeout: 8000,
+          timeout: 25000, // 25s to handle 4K frame on CPU (was 8s)
         });
+        console.log(`[AI Slot Scan] Local Edge ALPR responded in ${Date.now() - localStartMs}ms (pythonScanTime=${aiResponse.data?.scanTime ?? '?'}s)`);
 
         if (aiResponse.data && aiResponse.data.isParkingLotScene === false) {
           isSceneInvalid = true;
@@ -731,12 +737,11 @@ If isParkingLotScene is false:
       }
     }
 
-    // Mode 3: Intelligent Hybrid Fusion (Bổ sung Gemini Vision khi Local AI nhận diện chưa đủ số lượng xe)
+    // Mode 3: Intelligent Hybrid Fusion (Bổ sung Gemini Vision khi Local AI không trả về slots nào)
     if (aiMode === 'hybrid' && process.env.GEMINI_API_KEY && !isSceneInvalid) {
-      const occupiedWithPlate = scannedSlots.filter((s) => s.occupied && s.plate);
-      const isFloor2 = selectedFloorNumber === 2;
-      const minExpectedPlates = isFloor2 ? 6 : 3;
-      const needsCloudFusion = (scannedSlots.length === 0) || (occupiedWithPlate.length < minExpectedPlates);
+      // Only call Gemini if local AI completely failed (returned 0 slots)
+      // Do NOT escalate just because no plates found — empty parking lots are valid!
+      const needsCloudFusion = scannedSlots.length === 0;
 
       if (needsCloudFusion) {
         console.log(`[AI Slot Scan] 🚀 Hybrid Auto-Backup: Local AI detected ${occupiedWithPlate.length}/${minExpectedPlates} plates. Fusing with Gemini 2.5 Flash Vision for 100% full coverage...`);
@@ -810,14 +815,14 @@ If isParkingLotScene is false:
       } catch (polyErr) { }
     }
 
-    // Format scannedSlots using physicalCalibratedSlots detected from camera, or fallback to request polygon
+    // Format scannedSlots using physicalCalibratedSlots detected from camera (when not locked), or fallback to request polygon
     const calMap = new Map(physicalCalibratedSlots.map((cs) => [cs.slotCode?.toUpperCase(), cs.polygon]));
     scannedSlots = scannedSlots.map((s, idx) => {
       const origDef = slots.find((ds) => ds.slotCode?.toUpperCase() === s.slotCode?.toUpperCase()) || slots[idx];
       const calPoly = calMap.get(s.slotCode?.toUpperCase());
       return {
         ...s,
-        polygon: (origDef && origDef.polygon && origDef.polygon.length >= 3) ? origDef.polygon : (calPoly || s.polygon),
+        polygon: (!skipAutoCalibrate && calPoly) ? calPoly : ((origDef && origDef.polygon && origDef.polygon.length >= 3) ? origDef.polygon : (calPoly || s.polygon)),
       };
     });
 
@@ -1068,14 +1073,20 @@ If isParkingLotScene is false:
 
           const vipEntitlement = vipEntitlementBySlot.get(slotCodeUpper);
 
-          if (actualSession) {
+          if (slot.occupiedByOverlap) {
+            isViolation = true;
+            violationType = 'DOUBLE_PARKING_VIOLATION';
+            expectedSlot = slot.primarySlot || actualSession?.parkingSlot || null;
+            matchedSession = actualSession || expectedSession || null;
+            violationMessage = `Vehicle ${slot.plate} parked in ${slot.primarySlot || 'adjacent slot'} is encroaching into slot ${slot.slotCode}!`;
+          } else if (actualSession) {
             matchedSession = actualSession;
             const assignedSlotUpper = actualSession.parkingSlot?.toUpperCase();
             if (assignedSlotUpper && assignedSlotUpper !== slotCodeUpper) {
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = actualSession.parkingSlot;
-              violationMessage = `Phương tiện ${slot.plate} được cấp phép đỗ ở ô ${actualSession.parkingSlot}, nhưng đang đỗ sai vị trí tại ô ${slot.slotCode}!`;
+              violationMessage = `Vehicle ${slot.plate} is assigned to slot ${actualSession.parkingSlot}, but parked in wrong slot ${slot.slotCode}!`;
             }
           } else if (actualBooking) {
             const bookedSlotUpper = actualBooking.parkingSlot?.toUpperCase();
@@ -1083,7 +1094,7 @@ If isParkingLotScene is false:
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = actualBooking.parkingSlot;
-              violationMessage = `Phương tiện ${slot.plate} đã đặt trước ô ${actualBooking.parkingSlot}, nhưng đang đỗ sai vị trí tại ô ${slot.slotCode}!`;
+              violationMessage = `Vehicle ${slot.plate} reserved slot ${actualBooking.parkingSlot}, but parked in wrong slot ${slot.slotCode}!`;
             } else if (bookedSlotUpper === slotCodeUpper) {
               // Valid reserved parking
               isViolation = false;
@@ -1105,23 +1116,23 @@ If isParkingLotScene is false:
               // Unauthorized vehicle occupying a VIP slot!
               isViolation = true;
               violationType = 'UNAUTHORIZED_PARKING';
-              const ownerName = vipEntitlement.ownerId?.username || vipEntitlement.ownerId?.fullName || 'khách VIP';
-              violationMessage = `Phương tiện ${slot.plate} không có quyền sử dụng và đang chiếm dụng trái phép ô VIP ${slot.slotCode} (Đã đăng ký cho ${ownerName})!`;
+              const ownerName = vipEntitlement.ownerId?.username || vipEntitlement.ownerId?.fullName || 'VIP member';
+              violationMessage = `Vehicle ${slot.plate} is not authorized and is occupying reserved VIP slot ${slot.slotCode} (Assigned to ${ownerName})!`;
             }
           } else {
             // Vehicle has no active session and no booking
             isViolation = true;
             violationType = 'UNAUTHORIZED_PARKING';
-            violationMessage = `Phương tiện ${slot.plate} đỗ tại ô ${slot.slotCode} nhưng chưa có phiên gửi xe hợp lệ tại cổng!`;
+            violationMessage = `Vehicle ${slot.plate} parked at slot ${slot.slotCode} without an active gate check-in session!`;
           }
 
-          if (expectedPlate && !isViolation) {
+          if (expectedPlate && !isViolation && !slot.occupiedByOverlap) {
             const normExpected = expectedPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
             if (normDetected !== normExpected) {
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = expectedSession.parkingSlot;
-              violationMessage = `Ô ${slot.slotCode} được đăng ký cho xe ${expectedPlate}, nhưng ghi nhận xe ${slot.plate} đỗ!`;
+              violationMessage = `Slot ${slot.slotCode} is registered for ${expectedPlate}, but ${slot.plate} was detected!`;
             }
           }
         } else if (!slot.occupied) {
@@ -1176,8 +1187,24 @@ If isParkingLotScene is false:
         }
 
         if (targetFloorId) {
-          const existingSlots = await Slot.find({ floorID: targetFloorId });
+          const persistStartMs = Date.now();
+          const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
+          const existingSlots = await Slot.find({ floorID: targetFloorId })
+            .select('slotNumber status floorID aiObservation.occupied aiObservation.detectedPlate aiObservation.isViolation aiObservation.violationType')
+            .lean();
           const slotMap = new Map(existingSlots.map(s => [s.slotNumber?.toUpperCase(), s]));
+
+          const existingSlotIds = existingSlots.map(s => s._id);
+          const activeMaintLogs = existingSlotIds.length > 0
+            ? await SlotMaintenanceLog.find({
+                slotID: { $in: existingSlotIds },
+                $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
+              }).select('slotID').lean()
+            : [];
+          const maintenanceSlotSet = new Set(activeMaintLogs.map(m => String(m.slotID)));
+
+          const dbWritePromises = [];
+          const violationSnapshotQueue = [];
 
           for (const scanned of enrichedSlots) {
             const codeUpper = scanned.slotCode?.toUpperCase();
@@ -1187,51 +1214,55 @@ If isParkingLotScene is false:
             const currObs = slotDoc.aiObservation || {};
             const newOccupied = Boolean(scanned.occupied);
             const newPlate = scanned.plate || null;
-            const newIsViolation = Boolean(scanned.isViolation);
             const newViolationType = scanned.violationType || null;
+            // CHECKED_IN_PENDING_PARK (in transit from gate) is informational, not a stored violation alert
+            const newIsViolation = Boolean(scanned.isViolation && newViolationType !== 'CHECKED_IN_PENDING_PARK');
 
-            // Smart Diffing: Has occupancy or violation or plate changed?
+            const isUnderMaintenance = Boolean(maintenanceSlotSet.has(String(slotDoc._id)) || slotDoc.status === 'maintenance');
+            const nextStatus = isUnderMaintenance
+              ? 'maintenance'
+              : (newOccupied ? 'occupied' : (slotDoc.status === 'booked' ? 'booked' : 'available'));
+
+            // Smart Diffing: Persist whenever occupancy, plate, violation state/type, expected slot, or DB status drifts
             const occChanged = Boolean(currObs.occupied) !== newOccupied;
             const plateChanged = (currObs.detectedPlate || '') !== (newPlate || '');
             const violChanged = Boolean(currObs.isViolation) !== newIsViolation;
+            const violTypeChanged = (currObs.violationType || null) !== newViolationType;
+            const expectedSlotChanged = (currObs.expectedSlot || null) !== (scanned.expectedSlot || null);
+            const expectedPlateChanged = (currObs.expectedPlate || null) !== (scanned.expectedPlate || null);
+            const statusDrifted = slotDoc.status !== nextStatus;
 
             const cropImg = (crops && crops[scanned.slotCode]) || null;
 
-            if (occChanged || plateChanged || violChanged) {
-              // State changed -> Update slot state
-              slotDoc.aiObservation = {
-                occupied: newOccupied,
-                detectedPlate: newPlate,
-                confidence: scanned.confidence || 0.95,
-                isViolation: newIsViolation,
-                violationType: newViolationType,
-                expectedSlot: scanned.expectedSlot || null,
-                expectedPlate: scanned.expectedPlate || null,
-                evidenceSnapshot: cropImg || currObs.evidenceSnapshot || null,
-                fullSnapshot: image ? (image.length < 500000 ? image : null) : null,
-                violationMessage: scanned.violationMessage || null,
-                sessionId: scanned.session?._id || null,
-                lastScannedAt: new Date(),
+            if (occChanged || plateChanged || violChanged || violTypeChanged || expectedSlotChanged || expectedPlateChanged || statusDrifted) {
+              const slotSetFields = {
+                status: nextStatus,
+                'aiObservation.occupied': newOccupied,
+                'aiObservation.detectedPlate': newPlate,
+                'aiObservation.confidence': scanned.confidence || 0.95,
+                'aiObservation.isViolation': newIsViolation,
+                'aiObservation.violationType': newViolationType,
+                'aiObservation.expectedSlot': scanned.expectedSlot || null,
+                'aiObservation.expectedPlate': scanned.expectedPlate || null,
+                // Never bloat Slot documents with multi-hundred-KB full frames (stored in SlotAuditLog when needed)
+                'aiObservation.fullSnapshot': null,
+                'aiObservation.violationMessage': scanned.violationMessage || null,
+                'aiObservation.sessionId': scanned.session?._id || null,
+                'aiObservation.lastScannedAt': new Date(),
               };
-
-              const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
-              const activeMaintenance = await SlotMaintenanceLog.findOne({
-                slotID: slotDoc._id,
-                $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
-              });
-              const isUnderMaintenance = Boolean(activeMaintenance || slotDoc.status === 'maintenance');
-
-              if (isUnderMaintenance) {
-                slotDoc.status = 'maintenance';
-              } else {
-                slotDoc.status = newOccupied ? 'occupied' : 'available';
+              if (cropImg) {
+                slotSetFields['aiObservation.evidenceSnapshot'] = cropImg;
+              } else if (!newOccupied) {
+                slotSetFields['aiObservation.evidenceSnapshot'] = null;
               }
 
-              await slotDoc.save();
+              dbWritePromises.push(Slot.updateOne({ _id: slotDoc._id }, { $set: slotSetFields }));
 
-              // Write Audit Log
-              if (newIsViolation) {
-                await SlotAuditLog.create({
+              // Write Audit Log only for actual physical/violation transitions
+              if (newIsViolation && (violChanged || violTypeChanged || plateChanged || occChanged)) {
+                const auditLogId = new mongoose.Types.ObjectId();
+                dbWritePromises.push(SlotAuditLog.create({
+                  _id: auditLogId,
                   slotId: slotDoc._id,
                   slotCode: slotDoc.slotNumber,
                   floorId: targetFloorId,
@@ -1240,14 +1271,22 @@ If isParkingLotScene is false:
                   detectedPlate: newPlate,
                   expectedSlot: scanned.expectedSlot || null,
                   expectedPlate: scanned.expectedPlate || null,
-                  evidenceSnapshot: cropImg || null,
-                  fullSnapshot: image || null,
+                  // Snapshots are uploaded to Cloudinary asynchronously (or capped fallback) to prevent MongoDB bloat
+                  evidenceSnapshot: null,
+                  fullSnapshot: null,
                   violationMessage: scanned.violationMessage || null,
                   status: 'PENDING',
                   sessionId: scanned.session?._id || null,
-                });
+                }));
+                if (cropImg || image) {
+                  violationSnapshotQueue.push({
+                    logId: auditLogId,
+                    slotCode: slotDoc.slotNumber,
+                    cropImage: cropImg || null,
+                  });
+                }
               } else if (currObs.isViolation && !newIsViolation) {
-                await SlotAuditLog.updateMany(
+                dbWritePromises.push(SlotAuditLog.updateMany(
                   { slotId: slotDoc._id, status: 'PENDING' },
                   {
                     status: 'RESOLVED',
@@ -1255,10 +1294,10 @@ If isParkingLotScene is false:
                     resolutionNote: 'Xe đã dời khỏi ô hoặc đã được điều chỉnh hợp lệ theo lượt quét mới nhất.',
                     resolvedAt: new Date(),
                   }
-                );
+                ));
 
-                if (!newOccupied) {
-                  await SlotAuditLog.create({
+                if (!newOccupied && occChanged) {
+                  dbWritePromises.push(SlotAuditLog.create({
                     slotId: slotDoc._id,
                     slotCode: slotDoc.slotNumber,
                     floorId: targetFloorId,
@@ -1270,10 +1309,10 @@ If isParkingLotScene is false:
                       ? `Xe ${currObs.detectedPlate} đã rời khỏi ô, ô hiện đang trống`
                       : 'Xe đã rời khỏi ô, ô hiện đang trống',
                     resolvedAt: new Date(),
-                  });
+                  }));
                 }
-              } else {
-                await SlotAuditLog.create({
+              } else if (occChanged || plateChanged) {
+                dbWritePromises.push(SlotAuditLog.create({
                   slotId: slotDoc._id,
                   slotCode: slotDoc.slotNumber,
                   floorId: targetFloorId,
@@ -1286,10 +1325,28 @@ If isParkingLotScene is false:
                     ? (newPlate ? `Xe ${newPlate} đã vào đỗ tại ô` : 'Ghi nhận có xe vào đỗ tại ô')
                     : (currObs.detectedPlate ? `Xe ${currObs.detectedPlate} đã rời khỏi ô, ô hiện đang trống` : 'Xe đã rời khỏi ô, ô hiện đang trống'),
                   resolvedAt: new Date(),
-                });
+                }));
               }
+            } else {
+              // Keep lastScannedAt fresh so live status reflects latest scan timestamp
+              dbWritePromises.push(Slot.updateOne(
+                { _id: slotDoc._id },
+                { $set: { 'aiObservation.lastScannedAt': new Date() } }
+              ));
             }
           }
+
+          if (dbWritePromises.length > 0) {
+            await Promise.all(dbWritePromises);
+          }
+          if (violationSnapshotQueue.length > 0) {
+            scheduleViolationSnapshotUpload({
+              SlotAuditLogModel: SlotAuditLog,
+              items: violationSnapshotQueue,
+              fullFrameImage: image || null,
+            });
+          }
+          console.log(`[AI Slot Scan] MongoDB persist (${dbWritePromises.length} ops) finished in ${Date.now() - persistStartMs}ms | TOTAL=${Date.now() - scanReqStartMs}ms`);
         }
       } catch (persistErr) {
         console.warn('[AI Slot Scan] MongoDB smart persistence warning:', persistErr.message);
@@ -1303,8 +1360,8 @@ If isParkingLotScene is false:
         isFloorMismatch: false,
         totalSlots: enrichedSlots.length,
         slots: enrichedSlots,
-        calibratedSlots: null,
-        corners: detectedCorners,
+        calibratedSlots: (!skipAutoCalibrate && physicalCalibratedSlots.length > 0) ? physicalCalibratedSlots : null,
+        corners: !skipAutoCalibrate ? detectedCorners : null,
       });
     } catch (dbErr) {
       console.warn('[AI Slot Scan] Database cross-check warning:', dbErr.message);
@@ -1488,149 +1545,526 @@ Do NOT include any extra text or markdown formatting. Return raw JSON only.`;
   }
 };
 
+exports.downloadArucoMarkersSheet = async (req, res) => {
+  try {
+    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const response = await axios.get(`${aiServiceUrl}/aruco-markers-sheet`, {
+      responseType: 'arraybuffer',
+      timeout: 10000,
+    });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', 'attachment; filename="valoparking-aruco-4corners.png"');
+    return res.status(200).send(Buffer.from(response.data));
+  } catch (error) {
+    console.error('[AI ArUco Sheet] Error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate ArUco calibration marker sheet. Make sure ai_service is running.',
+      error: error.message,
+    });
+  }
+};
+
+const VIOLATION_CHANGE_TYPES = [
+  'VIOLATION_DETECTED',
+  'VIOLATION_RESOLVED',
+  'WARNING_ISSUED',
+  'SLOT_REASSIGNED',
+];
+
+const DERIVED_VIOLATION_STATUSES = new Set([
+  'ACTIVE_OCCUPIED',
+  'SELF_CORRECTED',
+  'EMPTY_MOVED',
+]);
+
+const escapeRegex = (str = '') => String(str).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+
+const parseLocalDateBoundary = (dateStr, endOfDay = false) => {
+  if (!dateStr) return null;
+  const isoDateOnly = String(dateStr).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let d;
+  if (isoDateOnly) {
+    const [, y, m, day] = isoDateOnly;
+    d = new Date(Number(y), Number(m) - 1, Number(day));
+  } else {
+    d = new Date(dateStr);
+  }
+  if (Number.isNaN(d.getTime())) return null;
+  if (endOfDay) {
+    d.setHours(23, 59, 59, 999);
+  } else {
+    d.setHours(0, 0, 0, 0);
+  }
+  return d;
+};
+
+const buildViolationDateRange = ({ quickRange, date, month, startDate, endDate }) => {
+  const now = new Date();
+  if (quickRange === 'today') {
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { $gte: startOfDay, $lte: endOfDay };
+  }
+  if (quickRange === 'yesterday') {
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    const startOfDay = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
+    return { $gte: startOfDay, $lte: endOfDay };
+  }
+  if (quickRange === 'week') {
+    const past7 = new Date(now);
+    past7.setDate(past7.getDate() - 7);
+    past7.setHours(0, 0, 0, 0);
+    return { $gte: past7 };
+  }
+  if (quickRange === 'month') {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    return { $gte: startOfMonth };
+  }
+  if (month) {
+    const [yStr, mStr] = String(month).split('-');
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10) - 1;
+    if (!Number.isNaN(y) && !Number.isNaN(m)) {
+      const startOfMonth = new Date(y, m, 1, 0, 0, 0, 0);
+      const endOfMonth = new Date(y, m + 1, 0, 23, 59, 59, 999);
+      return { $gte: startOfMonth, $lte: endOfMonth };
+    }
+  }
+  if (date) {
+    const start = parseLocalDateBoundary(date, false);
+    const end = parseLocalDateBoundary(date, true);
+    if (start && end) return { $gte: start, $lte: end };
+  }
+  if (startDate || endDate) {
+    const range = {};
+    const s = parseLocalDateBoundary(startDate, false);
+    const e = parseLocalDateBoundary(endDate, true);
+    if (s) range.$gte = s;
+    if (e) range.$lte = e;
+    if (Object.keys(range).length > 0) return range;
+  }
+  return null;
+};
+
+const buildViolationSearchConditions = (search, slotCode) => {
+  if (search && search.trim()) {
+    const term = search.trim();
+    const regex = new RegExp(escapeRegex(term), 'i');
+    const orList = [
+      { slotCode: regex },
+      { detectedPlate: regex },
+      { expectedSlot: regex },
+      { expectedPlate: regex },
+      { resolverName: regex },
+      { violationMessage: regex },
+      { resolutionNote: regex },
+    ];
+    // Allow searching plates without punctuation (e.g. "99C12345" matches "99C-123.45")
+    const cleanAlphaNum = term.replace(/[^A-Z0-9]/gi, '');
+    if (cleanAlphaNum.length >= 3 && cleanAlphaNum.length <= 12) {
+      const fuzzyPlatePattern = cleanAlphaNum
+        .split('')
+        .map((ch) => escapeRegex(ch))
+        .join('[-.\\s]*');
+      const fuzzyPlateRegex = new RegExp(fuzzyPlatePattern, 'i');
+      orList.push({ detectedPlate: fuzzyPlateRegex }, { expectedPlate: fuzzyPlateRegex });
+    }
+    return { $or: orList };
+  }
+  if (slotCode) {
+    return { slotCode: String(slotCode).trim().toUpperCase() };
+  }
+  return null;
+};
+
+const normalizePlateKey = (plate) =>
+  plate ? String(plate).replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+
+const buildLiveParkingLookup = async ({ logs, SlotModel, SessionModel }) => {
+  const slotCodes = [...new Set(logs.map((l) => l.slotCode).filter(Boolean))];
+  const plates = [...new Set(logs.map((l) => l.detectedPlate).filter(Boolean))];
+
+  const [currentSlots, activeSessions, allOccupiedSlots] = await Promise.all([
+    slotCodes.length > 0
+      ? SlotModel.find({ slotNumber: { $in: slotCodes } })
+          .select('slotNumber floorID status aiObservation.occupied aiObservation.detectedPlate')
+          .lean()
+      : [],
+    plates.length > 0
+      ? SessionModel.find({ licensePlate: { $in: plates }, status: 'active' })
+          .select('licensePlate parkingSlot status checkOutTime floorId')
+          .lean()
+      : [],
+    SlotModel.find({ 'aiObservation.occupied': true })
+      .select('slotNumber floorID aiObservation.occupied aiObservation.detectedPlate')
+      .populate('floorID', 'name')
+      .lean(),
+  ]);
+
+  const slotMap = new Map();
+  currentSlots.forEach((s) => slotMap.set(`${String(s.floorID || '')}:${s.slotNumber}`, s));
+
+  const activePlateMap = new Map();
+  activeSessions.forEach((s) => {
+    const cleanP = normalizePlateKey(s.licensePlate);
+    if (cleanP) activePlateMap.set(cleanP, s);
+  });
+
+  const occupiedPlateSlotMap = new Map();
+  allOccupiedSlots.forEach((s) => {
+    const cleanP = normalizePlateKey(s.aiObservation?.detectedPlate);
+    if (cleanP) {
+      occupiedPlateSlotMap.set(cleanP, {
+        slotNumber: s.slotNumber,
+        floorName: s.floorID?.name || null,
+        floorId: s.floorID?._id || s.floorID || null,
+      });
+    }
+  });
+
+  return { slotMap, activePlateMap, occupiedPlateSlotMap };
+};
+
+const enrichViolationLog = (log, { slotMap, activePlateMap, occupiedPlateSlotMap, plateViolationCounts }) => {
+  const sKey = `${String(log.floorId?._id || log.floorId || '')}:${log.slotCode}`;
+  const currentSlot = slotMap.get(sKey);
+
+  const sessionEnded = Boolean(
+    log.sessionId && (log.sessionId.status === 'completed' || log.sessionId.checkOutTime != null)
+  );
+  const normPlate = normalizePlateKey(log.detectedPlate) || null;
+  const activeSess = normPlate ? activePlateMap.get(normPlate) : null;
+  const hasActiveSession = Boolean(activeSess);
+
+  const isSlotEmpty = currentSlot
+    ? !currentSlot.aiObservation?.occupied && currentSlot.status !== 'occupied'
+    : false;
+  const isVehicleGone = Boolean(sessionEnded || isSlotEmpty || (normPlate && !hasActiveSession && log.sessionId));
+
+  const occupiedInfo = normPlate ? occupiedPlateSlotMap.get(normPlate) : null;
+  const currentVehicleSlot = occupiedInfo?.slotNumber || activeSess?.parkingSlot || null;
+  const currentFloorName = occupiedInfo?.floorName || null;
+  const expectedSlotNorm = (log.expectedSlot || '').toUpperCase().trim();
+
+  const isNowInCorrectSlot = Boolean(
+    currentVehicleSlot && expectedSlotNorm && currentVehicleSlot.toUpperCase() === expectedSlotNorm
+  );
+  const isRoamingMismatch = Boolean(
+    currentVehicleSlot &&
+      currentVehicleSlot.toUpperCase() !== String(log.slotCode || '').toUpperCase() &&
+      currentVehicleSlot.toUpperCase() !== expectedSlotNorm
+  );
+
+  let vehicleCurrentStatus;
+  if (sessionEnded) {
+    vehicleCurrentStatus = {
+      status: 'CHECKED_OUT',
+      message: 'Vehicle has completed payment and checked out of the parking lot.',
+      slotNumber: null,
+      floorName: null,
+      isCorrectSlot: false,
+    };
+  } else if (isNowInCorrectSlot) {
+    vehicleCurrentStatus = {
+      status: 'SELF_CORRECTED',
+      message: `Driver moved back to the assigned slot ${currentVehicleSlot}${currentFloorName ? ` (${currentFloorName})` : ''}.`,
+      slotNumber: currentVehicleSlot,
+      floorName: currentFloorName,
+      isCorrectSlot: true,
+    };
+  } else if (isRoamingMismatch) {
+    vehicleCurrentStatus = {
+      status: 'ROAMING_MISMATCH',
+      message: `Vehicle is still parked in another wrong slot ${currentVehicleSlot}${currentFloorName ? ` (${currentFloorName})` : ''}.`,
+      slotNumber: currentVehicleSlot,
+      floorName: currentFloorName,
+      isCorrectSlot: false,
+    };
+  } else if (isSlotEmpty) {
+    vehicleCurrentStatus = {
+      status: 'SLOT_EMPTY_MOVED',
+      message: `Slot ${log.slotCode} is now empty. Vehicle has left this spot.`,
+      slotNumber: null,
+      floorName: null,
+      isCorrectSlot: false,
+    };
+  } else {
+    vehicleCurrentStatus = {
+      status: 'STILL_AT_VIOLATION_SLOT',
+      message: `Vehicle is still occupying violation slot ${log.slotCode}.`,
+      slotNumber: log.slotCode,
+      floorName: log.floorId?.name || null,
+      isCorrectSlot: false,
+    };
+  }
+
+  return {
+    ...log,
+    isVehicleGone,
+    isSlotEmpty,
+    isSessionEnded: sessionEnded,
+    currentSlotOccupied: Boolean(currentSlot?.aiObservation?.occupied),
+    isNowInCorrectSlot,
+    isRoamingMismatch,
+    currentVehicleSlot,
+    vehicleCurrentStatus,
+    plateViolationCount: normPlate ? plateViolationCounts.get(normPlate) || 1 : 1,
+  };
+};
+
+const matchesDerivedViolationStatus = (log, status) => {
+  if (status === 'ACTIVE_OCCUPIED') {
+    return log.status === 'PENDING' && !log.isVehicleGone && !log.isSlotEmpty;
+  }
+  if (status === 'SELF_CORRECTED') {
+    return (
+      log.resolutionAction === 'SELF_CORRECTED' ||
+      log.vehicleCurrentStatus?.status === 'SELF_CORRECTED' ||
+      log.isNowInCorrectSlot
+    );
+  }
+  if (status === 'EMPTY_MOVED') {
+    return log.status === 'PENDING' && (log.isVehicleGone || log.isSlotEmpty);
+  }
+  return true;
+};
+
 // @route   GET /api/ai/violation-logs
-// @desc    Get global parking lot violation logs with search, date filters & pagination
-// @access  Public / Staff
+// @desc    Get global parking lot violation logs (lightweight metadata only; snapshots lazy-loaded)
+// @access  Staff / Admin
 exports.getViolationLogs = async (req, res) => {
   try {
     const SlotAuditLog = require('../models/SlotAuditLog');
-    const { floorId, status, slotCode, search, date, month, startDate, endDate, quickRange, page = 1, limit = 100 } = req.query;
-
-    const filter = {
-      changeType: { $in: ['VIOLATION_DETECTED', 'VIOLATION_RESOLVED', 'WARNING_ISSUED', 'SLOT_REASSIGNED'] },
-    };
-    if (floorId) filter.floorId = floorId;
-    if (status) filter.status = status;
-
-    // Search query (Mã ô, biển số, ghi chú, tên người xử lý)
-    if (search && search.trim()) {
-      const term = search.trim();
-      const regex = new RegExp(term.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'), 'i');
-      filter.$or = [
-        { slotCode: regex },
-        { detectedPlate: regex },
-        { expectedSlot: regex },
-        { expectedPlate: regex },
-        { resolverName: regex },
-        { violationMessage: regex },
-        { resolutionNote: regex },
-      ];
-    } else if (slotCode) {
-      filter.slotCode = slotCode.toUpperCase();
-    }
-
-    // Date filtering
-    const now = new Date();
-    if (quickRange === 'today') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      filter.createdAt = { $gte: startOfDay, $lte: endOfDay };
-    } else if (quickRange === 'yesterday') {
-      const y = new Date(now);
-      y.setDate(y.getDate() - 1);
-      const startOfDay = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0, 0);
-      const endOfDay = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
-      filter.createdAt = { $gte: startOfDay, $lte: endOfDay };
-    } else if (quickRange === 'week') {
-      const past7 = new Date(now);
-      past7.setDate(past7.getDate() - 7);
-      past7.setHours(0, 0, 0, 0);
-      filter.createdAt = { $gte: past7 };
-    } else if (quickRange === 'month') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      filter.createdAt = { $gte: startOfMonth };
-    } else if (month) {
-      const [yStr, mStr] = month.split('-');
-      const y = parseInt(yStr, 10);
-      const m = parseInt(mStr, 10) - 1;
-      if (!isNaN(y) && !isNaN(m)) {
-        const startOfMonth = new Date(y, m, 1, 0, 0, 0, 0);
-        const endOfMonth = new Date(y, m + 1, 0, 23, 59, 59, 999);
-        filter.createdAt = { $gte: startOfMonth, $lte: endOfMonth };
-      }
-    } else if (date) {
-      const d = new Date(date);
-      if (!isNaN(d.getTime())) {
-        const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-        const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-        filter.createdAt = { $gte: start, $lte: end };
-      }
-    } else if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) {
-        const s = new Date(startDate);
-        s.setHours(0, 0, 0, 0);
-        filter.createdAt.$gte = s;
-      }
-      if (endDate) {
-        const e = new Date(endDate);
-        e.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = e;
-      }
-    }
-
-    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-    const [total, logs] = await Promise.all([
-      SlotAuditLog.countDocuments(filter),
-      SlotAuditLog.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit, 10))
-        .populate('floorId', 'name floorNumber')
-        .populate('resolvedBy', 'fullName username email phone')
-        .populate('sessionId')
-        .lean(),
-    ]);
-
     const Session = require('../models/Session');
     const Slot = require('../models/Slot');
+    const {
+      floorId,
+      status,
+      slotCode,
+      search,
+      date,
+      month,
+      startDate,
+      endDate,
+      quickRange,
+      page = 1,
+      limit = 30,
+    } = req.query;
 
-    const slotCodes = [...new Set(logs.map(l => l.slotCode).filter(Boolean))];
-    const plates = [...new Set(logs.map(l => l.detectedPlate).filter(Boolean))];
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
+    const skip = (pageNum - 1) * limitNum;
 
-    const [currentSlots, activeSessions] = await Promise.all([
-      Slot.find({ slotNumber: { $in: slotCodes } }).lean(),
-      Session.find({ licensePlate: { $in: plates }, status: 'active' }).lean(),
-    ]);
+    const filter = {
+      changeType: { $in: VIOLATION_CHANGE_TYPES },
+    };
 
-    const slotMap = new Map();
-    currentSlots.forEach(s => slotMap.set(`${String(s.floorID || '')}:${s.slotNumber}`, s));
-    const activePlateSet = new Set(activeSessions.map(s => s.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+    if (floorId) {
+      if (!mongoose.isValidObjectId(floorId)) {
+        return res.status(200).json({
+          success: true,
+          total: 0,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: 0,
+          hasMore: false,
+          emptySlotPendingCount: 0,
+          data: [],
+        });
+      }
+      filter.floorId = new mongoose.Types.ObjectId(floorId);
+    }
 
-    const enrichedLogs = logs.map(log => {
-      const sKey = `${String(log.floorId?._id || log.floorId || '')}:${log.slotCode}`;
-      const currentSlot = slotMap.get(sKey);
+    const isDerivedStatus = DERIVED_VIOLATION_STATUSES.has(status);
+    if (status) {
+      if (status === 'ACTIVE_OCCUPIED' || status === 'EMPTY_MOVED') {
+        filter.status = 'PENDING';
+      } else if (status === 'SELF_CORRECTED') {
+        filter.status = { $in: ['PENDING', 'RESOLVED'] };
+      } else {
+        filter.status = status;
+      }
+    }
 
-      const sessionEnded = Boolean(
-        log.sessionId && (log.sessionId.status === 'completed' || log.sessionId.checkOutTime != null)
-      );
-      const normPlate = log.detectedPlate ? log.detectedPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : null;
-      const hasActiveSession = normPlate ? activePlateSet.has(normPlate) : false;
+    const searchFilter = buildViolationSearchConditions(search, slotCode);
+    if (searchFilter) Object.assign(filter, searchFilter);
 
-      // Slot is physically empty if currentSlot has occupied: false
-      const isSlotEmpty = currentSlot ? (!currentSlot.aiObservation?.occupied && currentSlot.status !== 'occupied') : false;
-
-      // Vehicle has left if session ended OR slot is empty OR (has plate but no active session and session existed)
-      const isVehicleGone = Boolean(sessionEnded || isSlotEmpty || (normPlate && !hasActiveSession && log.sessionId));
-
-      return {
-        ...log,
-        isVehicleGone,
-        isSlotEmpty,
-        isSessionEnded: sessionEnded,
-        currentSlotOccupied: Boolean(currentSlot?.aiObservation?.occupied),
-      };
+    const createdAtRange = buildViolationDateRange({
+      quickRange,
+      date,
+      month,
+      startDate,
+      endDate,
     });
+    if (createdAtRange) filter.createdAt = createdAtRange;
+
+    const baseProjection = '-fullSnapshot -evidenceSnapshot -evidencePublicId -fullSnapshotPublicId';
+
+    const pendingBaseFilter = {
+      changeType: { $in: VIOLATION_CHANGE_TYPES },
+      status: 'PENDING',
+      ...(floorId ? { floorId } : {}),
+    };
+
+    let total = 0;
+    let rawLogs = [];
+    let pendingCandidates = [];
+
+    if (isDerivedStatus) {
+      // Derived statuses depend on live Slot/Session occupancy; inspect metadata-only records safely
+      const [candidateDocs, pendingDocs] = await Promise.all([
+        SlotAuditLog.find(filter)
+          .select(baseProjection)
+          .sort({ createdAt: -1 })
+          .limit(500)
+          .populate('floorId', 'name floorNumber')
+          .populate('resolvedBy', 'fullName username email phone')
+          .populate('sessionId', 'status checkOutTime parkingSlot licensePlate')
+          .lean(),
+        SlotAuditLog.find(pendingBaseFilter)
+          .select('_id floorId slotCode detectedPlate sessionId status')
+          .limit(500)
+          .populate('sessionId', 'status checkOutTime')
+          .lean(),
+      ]);
+      rawLogs = candidateDocs;
+      pendingCandidates = pendingDocs;
+    } else {
+      const [countRes, pageDocs, pendingDocs] = await Promise.all([
+        SlotAuditLog.countDocuments(filter),
+        SlotAuditLog.find(filter)
+          .select(baseProjection)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limitNum)
+          .populate('floorId', 'name floorNumber')
+          .populate('resolvedBy', 'fullName username email phone')
+          .populate('sessionId', 'status checkOutTime parkingSlot licensePlate')
+          .lean(),
+        SlotAuditLog.find(pendingBaseFilter)
+          .select('_id floorId slotCode detectedPlate sessionId status')
+          .limit(500)
+          .populate('sessionId', 'status checkOutTime')
+          .lean(),
+      ]);
+      total = countRes;
+      rawLogs = pageDocs;
+      pendingCandidates = pendingDocs;
+    }
+
+    const combinedForLookup = [...rawLogs, ...pendingCandidates];
+    const lookup = await buildLiveParkingLookup({
+      logs: combinedForLookup,
+      SlotModel: Slot,
+      SessionModel: Session,
+    });
+
+    const plateViolationCounts = new Map();
+    const pagePlates = [...new Set(rawLogs.map((l) => l.detectedPlate).filter(Boolean))];
+    if (!isDerivedStatus && pagePlates.length > 0 && typeof SlotAuditLog.aggregate === 'function') {
+      try {
+        const aggCounts = await SlotAuditLog.aggregate([
+          { $match: { ...filter, detectedPlate: { $in: pagePlates } } },
+          { $group: { _id: '$detectedPlate', count: { $sum: 1 } } },
+        ]);
+        aggCounts.forEach(({ _id, count }) => {
+          const cleanP = normalizePlateKey(_id);
+          if (cleanP) {
+            plateViolationCounts.set(cleanP, (plateViolationCounts.get(cleanP) || 0) + count);
+          }
+        });
+      } catch (_aggErr) {
+        // Fallback to batch count if aggregation is unavailable
+      }
+    }
+    if (plateViolationCounts.size === 0) {
+      rawLogs.forEach((l) => {
+        const cleanP = normalizePlateKey(l.detectedPlate);
+        if (cleanP) {
+          plateViolationCounts.set(cleanP, (plateViolationCounts.get(cleanP) || 0) + 1);
+        }
+      });
+    }
+
+    let enrichedLogs = rawLogs.map((log) =>
+      enrichViolationLog(log, { ...lookup, plateViolationCounts })
+    );
+
+    if (isDerivedStatus) {
+      enrichedLogs = enrichedLogs.filter((log) => matchesDerivedViolationStatus(log, status));
+      total = enrichedLogs.length;
+      enrichedLogs = enrichedLogs.slice(skip, skip + limitNum);
+    }
+
+    // Accurate floor-wide count of pending logs where the vehicle has already left
+    let emptySlotPendingCount = 0;
+    for (const pLog of pendingCandidates) {
+      const sKey = `${String(pLog.floorId || '')}:${pLog.slotCode}`;
+      const currentSlot = lookup.slotMap.get(sKey);
+      const sessionEnded = Boolean(
+        pLog.sessionId && (pLog.sessionId.status === 'completed' || pLog.sessionId.checkOutTime != null)
+      );
+      const normPlate = normalizePlateKey(pLog.detectedPlate) || null;
+      const hasActiveSession = Boolean(normPlate && lookup.activePlateMap.has(normPlate));
+      const isSlotEmpty = currentSlot
+        ? !currentSlot.aiObservation?.occupied && currentSlot.status !== 'occupied'
+        : false;
+      const isVehicleGone = Boolean(sessionEnded || isSlotEmpty || (normPlate && !hasActiveSession && pLog.sessionId));
+      if (isSlotEmpty || isVehicleGone) {
+        emptySlotPendingCount += 1;
+      }
+    }
+
+    const totalPages = Math.ceil(total / limitNum);
 
     res.status(200).json({
       success: true,
       total,
-      page: parseInt(page, 10),
-      totalPages: Math.ceil(total / parseInt(limit, 10)),
+      page: pageNum,
+      limit: limitNum,
+      totalPages,
+      hasMore: pageNum < totalPages,
+      emptySlotPendingCount,
       data: enrichedLogs,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @route   GET /api/ai/violation-logs/:id/evidence
+// @desc    Lazy-load evidenceSnapshot & fullSnapshot for a single violation log
+// @access  Staff / Admin
+exports.getViolationLogEvidence = async (req, res) => {
+  try {
+    const SlotAuditLog = require('../models/SlotAuditLog');
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid violation log ID' });
+    }
+
+    const log = await SlotAuditLog.findById(id)
+      .select('_id evidenceSnapshot fullSnapshot')
+      .lean();
+
+    if (!log) {
+      return res.status(404).json({ success: false, message: 'Violation log not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        _id: log._id,
+        evidenceSnapshot: log.evidenceSnapshot || null,
+        fullSnapshot: log.fullSnapshot || null,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -1773,7 +2207,10 @@ exports.resolveViolation = async (req, res) => {
       }
 
       const assignedNewSlot = (newSlotCode || slotCode).toUpperCase();
-      const currentSlot = await Slot.findOne({ slotNumber: assignedNewSlot });
+      const assignedFloorFilter = (floorId || targetSession?.floorId || auditLogDoc?.floorId)
+        ? { floorID: floorId || targetSession?.floorId || auditLogDoc?.floorId, slotNumber: assignedNewSlot }
+        : { slotNumber: assignedNewSlot };
+      const currentSlot = await Slot.findOne(assignedFloorFilter) || await Slot.findOne({ slotNumber: assignedNewSlot });
       if (currentSlot && !currentSlot.aiObservation?.occupied && currentSlot.status !== 'occupied') {
         return res.status(400).json({
           success: false,
@@ -1787,7 +2224,11 @@ exports.resolveViolation = async (req, res) => {
         await targetSession.save();
 
         if (oldSlotCode && oldSlotCode.toUpperCase() !== assignedNewSlot) {
-          const oldSlotDoc = await Slot.findOne({ slotNumber: oldSlotCode.toUpperCase() });
+          const oldSlotUpper = oldSlotCode.toUpperCase();
+          const oldSlotFilter = (targetSession.floorId || floorId)
+            ? { floorID: targetSession.floorId || floorId, slotNumber: oldSlotUpper }
+            : { slotNumber: oldSlotUpper };
+          const oldSlotDoc = await Slot.findOne(oldSlotFilter) || await Slot.findOne({ slotNumber: oldSlotUpper });
           const isOldOccupied = Boolean(oldSlotDoc?.aiObservation?.occupied);
           const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
           const oldMaintenance = await SlotMaintenanceLog.findOne({
@@ -1796,37 +2237,55 @@ exports.resolveViolation = async (req, res) => {
           });
           const isOldMaintenance = Boolean(oldMaintenance || oldSlotDoc?.status === 'maintenance');
 
-          await Slot.updateOne(
-            { slotNumber: oldSlotCode.toUpperCase() },
-            {
-              $set: {
-                status: isOldMaintenance ? 'maintenance' : (isOldOccupied ? 'occupied' : 'available'),
-                'aiObservation.isViolation': false,
-                'aiObservation.expectedSlot': null,
-                'aiObservation.expectedPlate': null,
-                'aiObservation.sessionId': null,
-                ...(isOldOccupied ? {} : {
-                  'aiObservation.occupied': false,
-                  'aiObservation.detectedPlate': null,
-                }),
-              },
-            }
-          );
+          if (oldSlotDoc) {
+            await Slot.updateOne(
+              { _id: oldSlotDoc._id },
+              {
+                $set: {
+                  status: isOldMaintenance ? 'maintenance' : (isOldOccupied ? 'occupied' : 'available'),
+                  'aiObservation.isViolation': false,
+                  'aiObservation.violationType': null,
+                  'aiObservation.violationMessage': null,
+                  'aiObservation.expectedSlot': null,
+                  'aiObservation.expectedPlate': null,
+                  'aiObservation.sessionId': null,
+                  ...(isOldOccupied ? {} : {
+                    'aiObservation.occupied': false,
+                    'aiObservation.detectedPlate': null,
+                    'aiObservation.evidenceSnapshot': null,
+                  }),
+                },
+              }
+            );
+            await SlotAuditLog.updateMany(
+              { slotId: oldSlotDoc._id, status: 'PENDING' },
+              {
+                status: 'RESOLVED',
+                resolutionAction: 'REASSIGN_SLOT',
+                resolutionNote: note || `Xe đã được chấp nhận chuyển sang ô ${assignedNewSlot}`,
+                resolvedBy: resolvedById,
+                resolverName: resolvedByName,
+                resolvedAt: new Date(),
+              }
+            );
+          }
         }
       }
 
-      // Lock new slot to occupied status
+      // Lock new slot to occupied status cleanly
+      const resolvedPlate = targetSession?.licensePlate || auditLogDoc?.detectedPlate || currentSlot?.aiObservation?.detectedPlate || null;
       await Slot.updateOne(
-        { slotNumber: assignedNewSlot },
+        currentSlot ? { _id: currentSlot._id } : { slotNumber: assignedNewSlot },
         {
           $set: {
             status: 'occupied',
             'aiObservation.occupied': true,
-            'aiObservation.detectedPlate': targetSession?.licensePlate || auditLogDoc?.detectedPlate || null,
+            'aiObservation.detectedPlate': resolvedPlate,
             'aiObservation.isViolation': false,
             'aiObservation.violationType': null,
             'aiObservation.violationMessage': null,
             'aiObservation.expectedSlot': assignedNewSlot,
+            'aiObservation.expectedPlate': resolvedPlate,
             'aiObservation.sessionId': targetSession?._id || null,
           },
         }
@@ -1857,17 +2316,75 @@ exports.resolveViolation = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: `Đã đổi ô đỗ thành công sang ${assignedNewSlot} và giải phóng vi phạm!`,
+        message: `Slot reassigned to ${assignedNewSlot} and violation cleared!`,
       });
     }
 
-    if (action === 'ISSUE_WARNING' || action === 'DISMISS') {
+    if (action === 'DISMISS_EMPTY_SLOTS') {
+      // Find all PENDING audit logs
+      const pendingLogs = await SlotAuditLog.find({ status: 'PENDING' });
+      const pendingCodes = [...new Set(pendingLogs.map(l => l.slotCode).filter(Boolean))];
+      const slots = await Slot.find({ slotNumber: { $in: pendingCodes } }).lean();
+      const emptySlotCodes = new Set(
+        slots.filter(s => !s.aiObservation?.occupied && s.status !== 'occupied').map(s => s.slotNumber.toUpperCase())
+      );
+
+      const toDismissLogs = pendingLogs.filter(l => emptySlotCodes.has(l.slotCode?.toUpperCase()));
+      const toDismissIds = toDismissLogs.map(l => l._id);
+
+      if (toDismissIds.length > 0) {
+        await SlotAuditLog.updateMany(
+          { _id: { $in: toDismissIds } },
+          {
+            status: 'DISMISSED',
+            resolutionAction: 'AUTO_DISMISS_EMPTY',
+            resolutionNote: `Staff ${resolvedByName} dismissed empty-slot alert after vehicle left`,
+            resolvedBy: resolvedById,
+            resolverName: resolvedByName,
+            resolvedAt: new Date(),
+          }
+        );
+
+        const emptySlotIds = [...new Set(toDismissLogs.map(l => l.slotId).filter(Boolean))];
+        if (emptySlotIds.length > 0) {
+          await Slot.updateMany(
+            { _id: { $in: emptySlotIds }, 'aiObservation.occupied': { $ne: true } },
+            {
+              $set: {
+                'aiObservation.isViolation': false,
+                'aiObservation.violationType': null,
+                'aiObservation.violationMessage': null,
+                'aiObservation.evidenceSnapshot': null,
+              },
+            }
+          );
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Dismissed ${toDismissIds.length} empty-slot alert(s) where vehicles have already left!`,
+        count: toDismissIds.length,
+      });
+    }
+
+    if (action === 'ISSUE_WARNING' || action === 'DISMISS' || action === 'SELF_CORRECTED') {
       const isDismiss = action === 'DISMISS';
+      const isSelfCorrected = action === 'SELF_CORRECTED';
+      const targetStatus = isDismiss ? 'DISMISSED' : 'RESOLVED';
+
+      let noteText = note;
+      if (!noteText) {
+        if (isSelfCorrected) noteText = `Driver moved vehicle back to assigned slot (confirmed by Staff ${resolvedByName})`;
+        else if (isDismiss) noteText = `Staff ${resolvedByName} dismissed the alert`;
+        else noteText = `Staff ${resolvedByName} contacted driver / issued warning citation`;
+      }
+
       if (logId) {
         await SlotAuditLog.findByIdAndUpdate(logId, {
-          status: isDismiss ? 'DISMISSED' : 'RESOLVED',
+          status: targetStatus,
           resolutionAction: action,
-          resolutionNote: note || `Staff ${resolvedByName} đã xử lý (${isDismiss ? 'Bỏ qua cảnh báo' : 'Nhắc nhở / Lập biên bản'})`,
+          resolutionNote: noteText,
           resolvedBy: resolvedById,
           resolverName: resolvedByName,
           resolvedAt: new Date(),
@@ -1876,9 +2393,9 @@ exports.resolveViolation = async (req, res) => {
         await SlotAuditLog.updateMany(
           { slotCode: slotCode.toUpperCase(), status: 'PENDING' },
           {
-            status: isDismiss ? 'DISMISSED' : 'RESOLVED',
+            status: targetStatus,
             resolutionAction: action,
-            resolutionNote: note || `Staff ${resolvedByName} đã xử lý (${isDismiss ? 'Bỏ qua cảnh báo' : 'Nhắc nhở / Lập biên bản'})`,
+            resolutionNote: noteText,
             resolvedBy: resolvedById,
             resolverName: resolvedByName,
             resolvedAt: new Date(),
@@ -1887,32 +2404,52 @@ exports.resolveViolation = async (req, res) => {
       }
 
       // PHYSICAL GROUND TRUTH: If vehicle is physically parked, lock status to 'occupied' to prevent double booking!
-      const currentSlot = await Slot.findOne({ slotNumber: slotCode.toUpperCase() });
-      const isPhysicallyOccupied = Boolean(currentSlot?.aiObservation?.occupied);
-      const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
-      const activeMaintenance = await SlotMaintenanceLog.findOne({
-        slotID: currentSlot?._id,
-        $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
-      });
-      const isUnderMaintenance = Boolean(activeMaintenance || currentSlot?.status === 'maintenance');
+      // Exception: SELF_CORRECTED means staff confirmed the car already moved out of the wrong slot.
+      const codeUpper = slotCode.toUpperCase();
+      const targetFloor = floorId || auditLogDoc?.floorId;
+      const currentSlot = (targetFloor
+        ? await Slot.findOne({ floorID: targetFloor, slotNumber: codeUpper })
+        : null) || await Slot.findOne({ slotNumber: codeUpper });
 
-      await Slot.updateOne(
-        { slotNumber: slotCode.toUpperCase() },
-        {
-          $set: {
-            status: isUnderMaintenance
-              ? 'maintenance'
-              : (isPhysicallyOccupied ? 'occupied' : 'available'),
-            'aiObservation.isViolation': false,
-            'aiObservation.violationType': null,
-            'aiObservation.violationMessage': null,
-          },
-        }
-      );
+      if (currentSlot) {
+        const isPhysicallyOccupied = isSelfCorrected ? false : Boolean(currentSlot.aiObservation?.occupied);
+        const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
+        const activeMaintenance = await SlotMaintenanceLog.findOne({
+          slotID: currentSlot._id,
+          $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
+        });
+        const isUnderMaintenance = Boolean(activeMaintenance || currentSlot.status === 'maintenance');
+
+        await Slot.updateOne(
+          { _id: currentSlot._id },
+          {
+            $set: {
+              status: isUnderMaintenance
+                ? 'maintenance'
+                : (isPhysicallyOccupied ? 'occupied' : (currentSlot.status === 'booked' ? 'booked' : 'available')),
+              'aiObservation.isViolation': false,
+              'aiObservation.violationType': null,
+              'aiObservation.violationMessage': null,
+              ...(isSelfCorrected ? {
+                'aiObservation.occupied': false,
+                'aiObservation.detectedPlate': null,
+                'aiObservation.expectedSlot': null,
+                'aiObservation.expectedPlate': null,
+                'aiObservation.sessionId': null,
+                'aiObservation.evidenceSnapshot': null,
+              } : {}),
+            },
+          }
+        );
+      }
+
+      let successMsg = 'Driver warning / citation recorded!';
+      if (isSelfCorrected) successMsg = 'Confirmed self-correction and closed violation alert!';
+      else if (isDismiss) successMsg = 'Alert dismissed and slot occupancy locked safely!';
 
       return res.status(200).json({
         success: true,
-        message: isDismiss ? 'Đã bỏ qua cảnh báo và khóa trạng thái ô an toàn' : 'Đã ghi nhận nhắc nhở/lập biên bản cho tài xế!',
+        message: successMsg,
       });
     }
 
@@ -1932,7 +2469,9 @@ exports.clearAllViolations = async (req, res) => {
     const { floorId } = req.body || {};
 
     const query = floorId ? { floorID: floorId } : {};
-    const slots = await Slot.find(query);
+    const slots = await Slot.find(query)
+      .select('slotNumber status floorID aiObservation.occupied')
+      .lean();
 
     const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
     const activeMaintenanceLogs = await SlotMaintenanceLog.find({
@@ -1941,25 +2480,28 @@ exports.clearAllViolations = async (req, res) => {
     }).select('slotID').lean();
     const maintenanceSet = new Set(activeMaintenanceLogs.map(m => String(m.slotID)));
 
-    for (const slot of slots) {
-      const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
-      const isUnderMaintenance = slot.status === 'maintenance' || maintenanceSet.has(String(slot._id));
-
-      slot.aiObservation = {
-        ...(slot.aiObservation || {}),
-        isViolation: false,
-        violationType: null,
-        violationMessage: null,
-        expectedSlot: null,
-        expectedPlate: null,
-      };
-
-      if (isUnderMaintenance) {
-        slot.status = 'maintenance';
-      } else {
-        slot.status = isPhysicallyOccupied ? 'occupied' : (slot.status === 'booked' ? 'booked' : 'available');
-      }
-      await slot.save();
+    if (slots.length > 0) {
+      await Promise.all(slots.map((slot) => {
+        const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
+        const isUnderMaintenance = slot.status === 'maintenance' || maintenanceSet.has(String(slot._id));
+        const nextStatus = isUnderMaintenance
+          ? 'maintenance'
+          : (isPhysicallyOccupied ? 'occupied' : (slot.status === 'booked' ? 'booked' : 'available'));
+        return Slot.updateOne(
+          { _id: slot._id },
+          {
+            $set: {
+              status: nextStatus,
+              'aiObservation.isViolation': false,
+              'aiObservation.violationType': null,
+              'aiObservation.violationMessage': null,
+              'aiObservation.expectedSlot': null,
+              'aiObservation.expectedPlate': null,
+              'aiObservation.fullSnapshot': null,
+            },
+          }
+        );
+      }));
     }
 
     await SlotAuditLog.updateMany(
@@ -1968,7 +2510,7 @@ exports.clearAllViolations = async (req, res) => {
         $set: {
           status: 'DISMISSED',
           resolutionAction: 'RESET_BY_STAFF',
-          resolutionNote: 'Nhân viên đã đặt lại / xóa toàn bộ cảnh báo thử nghiệm',
+          resolutionNote: 'Staff reset / cleared all active alerts',
           resolvedAt: new Date(),
         },
       }
@@ -1976,7 +2518,7 @@ exports.clearAllViolations = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Đã hủy và đặt lại cảnh báo thành công! Các ô có xe đỗ đã được khóa trạng thái an toàn.',
+      message: 'All alerts cleared and occupied slots safely locked!',
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -2175,24 +2717,24 @@ exports.sendViolationEmail = async (req, res) => {
       html: htmlContent,
     });
 
-    // Ghi log vào SlotAuditLog
+    // Log action into SlotAuditLog
     await SlotAuditLog.create({
       slotCode: cleanSlot,
       detectedPlate: cleanPlate,
       eventType: 'STAFF_ACTION',
       resolutionAction: 'ISSUE_WARNING',
-      resolutionNote: `Staff đã gửi email cảnh báo vi phạm tới ${toEmail}`,
+      resolutionNote: `Staff sent violation warning email to ${toEmail}`,
       status: 'RESOLVED',
       resolvedAt: new Date(),
     }).catch(() => { });
 
     return res.status(200).json({
       success: true,
-      message: `Đã gửi email cảnh báo vi phạm tới ${toEmail} thành công!`,
+      message: `Violation warning email sent to ${toEmail}!`,
     });
   } catch (err) {
     console.error('sendViolationEmail error:', err);
-    res.status(500).json({ success: false, message: `Lỗi gửi email: ${err.message}` });
+    res.status(500).json({ success: false, message: `Email error: ${err.message}` });
   }
 };
 

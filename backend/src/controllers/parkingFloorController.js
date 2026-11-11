@@ -362,7 +362,10 @@ exports.getFloorSlots = async (req, res) => {
     const { id } = req.params;
     const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
 
-    const slots = await Slot.find({ floorID: id }).populate('zoneID', 'zoneName zoneType').lean();
+    const slots = await Slot.find({ floorID: id })
+      .select('-aiObservation.fullSnapshot')
+      .populate('zoneID', 'zoneName zoneType')
+      .lean();
 
     const [rawEntitlements, activeMaintenanceLogs] = await Promise.all([
       MembershipSlotEntitlement.find({
@@ -426,10 +429,12 @@ exports.getLiveMapData = async (req, res) => {
     const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
 
     const slots = await Slot.find()
+      .select('-aiObservation.fullSnapshot -aiObservation.evidenceSnapshot')
       .populate('zoneID', 'zoneName zoneType')
       .populate('floorID', 'name floorNumber')
       .populate('reservedFor', '_id')
-      .populate('reservedByEntitlementId', 'ownerId status expireAt');
+      .populate('reservedByEntitlementId', 'ownerId status expireAt')
+      .lean();
 
     const now = new Date();
     const next2Hours = new Date(now.getTime() + 2 * 60 * 60 * 1000);

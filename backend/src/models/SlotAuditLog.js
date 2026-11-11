@@ -57,7 +57,15 @@ const slotAuditLogSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    evidencePublicId: {
+      type: String,
+      default: null,
+    },
     fullSnapshot: {
+      type: String,
+      default: null,
+    },
+    fullSnapshotPublicId: {
       type: String,
       default: null,
     },
@@ -107,5 +115,9 @@ slotAuditLogSchema.index({ floorId: 1, createdAt: -1 });
 slotAuditLogSchema.index({ slotCode: 1, createdAt: -1 });
 slotAuditLogSchema.index({ slotCode: 1, floorId: 1, createdAt: -1 });
 slotAuditLogSchema.index({ status: 1, createdAt: -1 });
+slotAuditLogSchema.index({ changeType: 1, createdAt: -1 });
+slotAuditLogSchema.index({ floorId: 1, changeType: 1, createdAt: -1 });
+slotAuditLogSchema.index({ changeType: 1, status: 1, createdAt: -1 });
+slotAuditLogSchema.index({ floorId: 1, changeType: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('SlotAuditLog', slotAuditLogSchema);

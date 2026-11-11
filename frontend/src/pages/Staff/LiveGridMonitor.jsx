@@ -80,49 +80,52 @@ export default function LiveGridMonitor() {
   // Persistence: Merge DB-saved slot observations with fresh camera scans
   const aiSlotStatuses = useMemo(() => {
     const dbStatuses = (dbSlots || [])
-      .filter((s) => s.aiObservation && (s.aiObservation.occupied || s.aiObservation.isViolation))
-      .map((s) => ({
-        slotCode: s.slotNumber,
-        floorId: s.floorID?._id || s.floorID,
-        occupied: s.aiObservation.occupied,
-        plate: s.aiObservation.detectedPlate,
-        detectedPlate: s.aiObservation.detectedPlate,
-        isViolation: s.aiObservation.isViolation,
-        violationType: s.aiObservation.violationType,
-        status: s.aiObservation.isViolation
-          ? (s.aiObservation.violationType || 'WRONG_SLOT_VIOLATION')
-          : 'OCCUPIED_VALID',
-        expectedSlot: s.aiObservation.expectedSlot,
-        expectedPlate: s.aiObservation.expectedPlate,
-        evidenceSnapshot: s.aiObservation.evidenceSnapshot,
-        fullSnapshot: s.aiObservation.fullSnapshot,
-        violationMessage: s.aiObservation.violationMessage,
-        sessionId: s.aiObservation.sessionId,
-      }));
+      .filter((s) => (
+        s.aiObservation && (
+          s.aiObservation.occupied ||
+          s.aiObservation.isViolation ||
+          s.aiObservation.violationType === 'CHECKED_IN_PENDING_PARK'
+        )
+      ))
+      .map((s) => {
+        const vType = s.aiObservation.violationType || null;
+        const isPending = vType === 'CHECKED_IN_PENDING_PARK';
+        return {
+          slotCode: s.slotNumber,
+          floorId: String(s.floorID?._id || s.floorID || ''),
+          occupied: Boolean(s.aiObservation.occupied),
+          plate: s.aiObservation.detectedPlate,
+          detectedPlate: s.aiObservation.detectedPlate,
+          isViolation: Boolean(s.aiObservation.isViolation && !isPending),
+          violationType: vType,
+          status: isPending
+            ? 'CHECKED_IN_PENDING_PARK'
+            : (s.aiObservation.isViolation ? (vType || 'WRONG_SLOT_VIOLATION') : 'OCCUPIED_VALID'),
+          expectedSlot: s.aiObservation.expectedSlot,
+          expectedPlate: s.aiObservation.expectedPlate,
+          evidenceSnapshot: s.aiObservation.evidenceSnapshot,
+          fullSnapshot: s.aiObservation.fullSnapshot,
+          violationMessage: s.aiObservation.violationMessage,
+          sessionId: s.aiObservation.sessionId,
+          lastScannedAt: s.aiObservation.lastScannedAt,
+        };
+      });
 
-    const freshScans = Object.values(floorAiStatusesMap).flat();
     const map = new Map();
-    dbStatuses.forEach((s) => map.set(s.slotCode?.toUpperCase(), s));
-    freshScans.forEach((s) => map.set(s.slotCode?.toUpperCase(), s));
+    const makeKey = (s) => `${String(s.floorId?._id || s.floorId || '')}-${String(s.slotCode || '').trim().toUpperCase()}`;
+    dbStatuses.forEach((s) => {
+      if (s.slotCode) map.set(makeKey(s), s);
+    });
 
-    const seenPlates = new Set();
-    const seenSlots = new Set();
-    const result = [];
+    Object.entries(floorAiStatusesMap).forEach(([fId, fSlots]) => {
+      (fSlots || []).forEach((s) => {
+        if (!s?.slotCode) return;
+        const normalized = { ...s, floorId: String(s.floorId?._id || s.floorId || fId || '') };
+        map.set(makeKey(normalized), normalized);
+      });
+    });
 
-    for (const slot of map.values()) {
-      const slotKey = `${slot.slotCode?.toUpperCase()}`;
-      const plate = (slot.plate || slot.detectedPlate || slot.session?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      
-      if (seenSlots.has(slotKey)) continue;
-      seenSlots.add(slotKey);
-
-      if (plate) {
-        if (seenPlates.has(plate)) continue;
-        seenPlates.add(plate);
-      }
-      result.push(slot);
-    }
-    return result;
+    return Array.from(map.values());
   }, [dbSlots, floorAiStatusesMap]);
 
   useEffect(() => {
@@ -213,17 +216,20 @@ export default function LiveGridMonitor() {
     };
   }, [fetchLiveStatus]);
 
-  // Violations list computed from AI surveillance: only actual wrong-slot / unauthorized violations
+  // Violations list computed from AI surveillance: wrong-slot, double-parking, unauthorized
   const violations = useMemo(() => {
     if (!Array.isArray(aiSlotStatuses)) return [];
     return aiSlotStatuses.filter((s) => {
-      const isWrongSlot = s.status === 'WRONG_SLOT_VIOLATION' || s.violationType === 'WRONG_SLOT_VIOLATION';
-      const isUnauth = s.status === 'UNAUTHORIZED_PARKING' || s.violationType === 'UNAUTHORIZED_PARKING' || s.status === 'UNAUTHORIZED_OCCUPANCY';
-      // If expectedSlot matches current slot, vehicle is parked in its assigned slot (NOT a wrong slot!)
-      if (isWrongSlot && s.expectedSlot && s.slotCode && s.expectedSlot.toUpperCase() === s.slotCode.toUpperCase()) {
+      const vType = s.violationType || s.status;
+      if (vType === 'CHECKED_IN_PENDING_PARK') return false;
+      const isWrongSlot = vType === 'WRONG_SLOT_VIOLATION';
+      const isUnauth = vType === 'UNAUTHORIZED_PARKING' || vType === 'UNAUTHORIZED_OCCUPANCY';
+      const isDoubleParking = vType === 'DOUBLE_PARKING_VIOLATION' || Boolean(s.occupiedByOverlap);
+      // If expectedSlot matches current slot and not overlapping another, vehicle is in its assigned slot
+      if (isWrongSlot && !isDoubleParking && s.expectedSlot && s.slotCode && s.expectedSlot.toUpperCase() === s.slotCode.toUpperCase()) {
         return false;
       }
-      return (isWrongSlot || isUnauth) && s.isViolation;
+      return (isWrongSlot || isUnauth || isDoubleParking) && Boolean(s.isViolation);
     });
   }, [aiSlotStatuses]);
 
@@ -231,14 +237,14 @@ export default function LiveGridMonitor() {
     try {
       const res = await clearAllViolationsApi(currentFloorId || null);
       if (res.success) {
-        toast.success(res.message || 'Đã đặt lại và hủy cảnh báo!');
+        toast.success(res.message || 'Alerts cleared and safely locked!');
         setFloorAiStatusesMap({});
         fetchLiveStatus();
       } else {
-        toast.error(res.message || 'Không thể đặt lại cảnh báo');
+        toast.error(res.message || 'Unable to reset alerts');
       }
     } catch (err) {
-      toast.error('Lỗi khi đặt lại cảnh báo');
+      toast.error('Error resetting alerts');
     }
   };
 
@@ -261,13 +267,24 @@ export default function LiveGridMonitor() {
 
   // Handle slot click from 3D map
   const handleSlotClick = (clickedItem) => {
-    if (clickedItem?.isWrongSlot && clickedItem?.aiStatus) {
-      setSelectedViolation({
-        ...clickedItem.aiStatus,
+    if (clickedItem?.isWrongSlot) {
+      const obsFallback = clickedItem?.dbSlot?.aiObservation;
+      const violationSource = clickedItem?.aiStatus || (obsFallback?.isViolation ? {
+        ...obsFallback,
+        plate: obsFallback.detectedPlate,
         slotCode: clickedItem.id,
-        actualSlot: clickedItem.id,
-      });
-      return;
+        floorId: clickedItem.floorId,
+      } : null);
+      if (violationSource) {
+        setSelectedViolation({
+          ...violationSource,
+          floorId: clickedItem.floorId || violationSource.floorId,
+          slotCode: clickedItem.id,
+          actualSlot: clickedItem.id,
+          session: clickedItem.session || violationSource.session || null,
+        });
+        return;
+      }
     }
     setSelectedSlot(clickedItem);
   };
@@ -306,31 +323,31 @@ export default function LiveGridMonitor() {
           </span>
         </div>
 
-        {/* Primary Action 1: Camera AI */}
+        {/* Primary Action 1: AI Camera */}
         <button
           type="button"
           onClick={() => setShowSurveillanceModal(true)}
           className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95"
-          title="Mở Camera AI Giám Sát Ô Đỗ"
+          title="Open AI Slot Surveillance Camera"
         >
           <Camera size={14} className="text-cyan-400" />
           <span>Camera AI</span>
           {violations.length > 0 && (
             <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
-              {violations.length} Vi phạm
+              {violations.length} {violations.length === 1 ? 'Violation' : 'Violations'}
             </span>
           )}
         </button>
 
-        {/* Primary Action 2: Lịch Sử Vi Phạm Toàn Bãi */}
+        {/* Primary Action 2: Global Violation History */}
         <button
           type="button"
           onClick={() => setShowHistoryModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-sm active:scale-95"
-          title="Xem toàn bộ lịch sử vi phạm & nhật ký xử lý bãi đỗ"
+          title="View parking violation history and resolution audit logs"
         >
           <History size={14} className="text-amber-400" />
-          <span>Lịch Sử Vi Phạm</span>
+          <span>Violation History</span>
         </button>
 
         {/* Admin Action: Chuyển sang thiết kế sơ đồ bãi đỗ */}
@@ -357,7 +374,7 @@ export default function LiveGridMonitor() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-black text-xs text-red-300 uppercase tracking-wider">
-                  Cảnh báo: Phát hiện {violations.length} xe đỗ sai vị trí!
+                  Alert: {violations.length} parking {violations.length === 1 ? 'violation' : 'violations'} detected!
                 </span>
                 <span className="px-2 py-0.2 text-[9px] font-bold bg-red-500 text-white rounded-full uppercase">
                   AI Surveillance
@@ -366,29 +383,35 @@ export default function LiveGridMonitor() {
               <div className="flex items-center gap-2 flex-wrap mt-1">
                 {violations.map((v) => {
                   const plateText = v.plate || v.detectedPlate || v.session?.licensePlate;
+                  const isDouble = (v.violationType || v.status) === 'DOUBLE_PARKING_VIOLATION' || Boolean(v.occupiedByOverlap);
                   return (
                     <button
-                      key={v.slotCode}
+                      key={`${v.floorId || ''}-${v.slotCode}`}
                       type="button"
                       onClick={() => setSelectedViolation({
                         ...v,
                         actualSlot: v.slotCode,
                         detectedPlate: plateText
                       })}
-                      className="px-2.5 py-1 rounded-lg bg-black/50 hover:bg-black/80 border border-red-500/40 text-xs text-left transition hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-sm"
-                      title="Bấm để xem bằng chứng & xử lý vi phạm ô này"
+                      className={`px-2.5 py-1 rounded-lg bg-black/50 hover:bg-black/80 border ${isDouble ? 'border-orange-500/50' : 'border-red-500/40'} text-xs text-left transition hover:scale-105 active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-sm`}
+                      title="Click to view evidence & resolve this slot violation"
                     >
                       <span className="font-mono font-black text-amber-300">
                         {plateText ? formatLicensePlateDisplay(plateText) : 'Vehicle'}
                       </span>
                       <span className="text-gray-300 text-[11px]">
-                        {v.expectedSlot ? (
+                        {isDouble ? (
                           <>
-                            (Gốc: <strong className="text-emerald-300">{v.expectedSlot}</strong> → Đỗ: <strong className="text-red-400 underline">{v.slotCode}</strong>)
+                            (<strong className="text-orange-400 font-bold">Encroaching slot {v.slotCode}</strong>
+                            {v.expectedSlot ? ` · Assigned: ${v.expectedSlot}` : ''})
+                          </>
+                        ) : v.expectedSlot ? (
+                          <>
+                            (Assigned: <strong className="text-emerald-300">{v.expectedSlot}</strong> → Parked: <strong className="text-red-400 underline">{v.slotCode}</strong>)
                           </>
                         ) : (
                           <>
-                            (<strong className="text-amber-400 font-bold">Chiếm dụng ô {v.slotCode}</strong>)
+                            (<strong className="text-amber-400 font-bold">Unauthorized slot {v.slotCode}</strong>)
                           </>
                         )}
                       </span>
@@ -404,10 +427,10 @@ export default function LiveGridMonitor() {
               type="button"
               onClick={handleResetAlerts}
               className="px-3.5 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-extrabold text-xs uppercase tracking-wider transition border border-red-500/30 flex items-center gap-1.5 shadow-sm active:scale-95"
-              title="Hủy/Đặt lại cảnh báo để test lại từ đầu"
+              title="Reset / clear active violation alerts"
             >
               <RotateCcw size={14} />
-              <span>Hủy Cảnh Báo</span>
+              <span>Reset Alerts</span>
             </button>
             <button
               type="button"
@@ -415,7 +438,7 @@ export default function LiveGridMonitor() {
               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs uppercase tracking-wider transition border border-white/10 flex items-center gap-1.5 shadow-sm active:scale-95"
             >
               <History size={14} className="text-amber-400" />
-              <span>Xem Lịch Sử & Xử Lý</span>
+              <span>View History & Resolve</span>
             </button>
           </div>
         </div>
@@ -499,17 +522,37 @@ export default function LiveGridMonitor() {
                   const dbSlotInfo = dbSlots.find(s => s.slotNumber === selectedSlot.id && (s.floorID === selectedSlot.floorId || s.floorID?._id === selectedSlot.floorId));
                   const isMaintenance = dbSlotInfo?.status === 'maintenance';
                   const aiObs = dbSlotInfo?.aiObservation;
-                  const isViolation = aiObs?.isViolation || selectedSlot.isWrongSlot;
+                  const isPendingSlot = Boolean(
+                    selectedSlot.isPendingPark ||
+                    aiObs?.violationType === 'CHECKED_IN_PENDING_PARK' ||
+                    selectedSlot.aiStatus?.violationType === 'CHECKED_IN_PENDING_PARK'
+                  );
+                  const isViolation = Boolean(
+                    (aiObs?.isViolation && aiObs?.violationType !== 'CHECKED_IN_PENDING_PARK') ||
+                    selectedSlot.isWrongSlot
+                  );
 
                   return (
                     <div className="space-y-4">
+                      {/* In-Transit Info Box */}
+                      {isPendingSlot && !isViolation && !aiObs?.occupied && (
+                        <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-500/50 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-purple-300">
+                            <span>⏳ VEHICLE EN ROUTE TO SLOT (IN TRANSIT)</span>
+                          </div>
+                          <div className="text-xs text-purple-200">
+                            {aiObs?.violationMessage || selectedSlot.aiStatus?.violationMessage || 'Vehicle has checked in at the gate and is moving toward its assigned slot.'}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Violation Alert Box inside Slot Drawer */}
                       {isViolation && (
                         <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 space-y-2">
                           <div className="flex items-center justify-between text-xs font-bold text-red-300">
                             <span className="flex items-center gap-1.5">
                               <ShieldAlert size={15} className="text-red-400 animate-pulse" />
-                              Ô ĐANG BỊ VI PHẠM ĐỖ SAI!
+                              PARKING VIOLATION ACTIVE!
                             </span>
                           </div>
 
@@ -520,7 +563,7 @@ export default function LiveGridMonitor() {
                           )}
 
                           <div className="text-xs text-red-200">
-                            {aiObs?.violationMessage || 'Xe đỗ không đúng vị trí quy định.'}
+                            {aiObs?.violationMessage || 'Vehicle is not parked in its assigned slot.'}
                           </div>
 
                           <button
@@ -535,7 +578,7 @@ export default function LiveGridMonitor() {
                             }}
                             className="w-full py-2 rounded-lg bg-red-500 hover:bg-red-400 text-white font-extrabold text-xs uppercase tracking-wider transition shadow"
                           >
-                            Xử Lý Vi Phạm Ô Này
+                            Resolve Slot Violation
                           </button>
                         </div>
                       )}
@@ -545,36 +588,36 @@ export default function LiveGridMonitor() {
                           <div className="w-16 h-16 rounded-full bg-red-900/30 flex items-center justify-center border border-red-500/50 mb-2">
                             <span className="text-red-500 font-bold text-2xl">⚠</span>
                           </div>
-                          <p className="text-red-400 font-bold uppercase tracking-widest">Bảo trì ô đỗ</p>
-                          <p className="text-xs text-red-500 max-w-[200px]">Ô này đang tạm khóa để bảo trì kỹ thuật.</p>
+                          <p className="text-red-400 font-bold uppercase tracking-widest">Slot Maintenance</p>
+                          <p className="text-xs text-red-500 max-w-[200px]">This slot is temporarily locked for technical maintenance.</p>
                         </div>
                       ) : selectedSlot.session ? (
                         <div className="flex flex-col gap-3">
                           <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
-                            <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Trạng thái</span>
-                            <span className="text-base text-white font-black uppercase">Đang đỗ xe</span>
+                            <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                            <span className="text-base text-white font-black uppercase">Occupied</span>
                           </div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Biển số xe</span><span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">{selectedSlot.session.licensePlate}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Số điện thoại</span><span className="font-medium text-white">{selectedSlot.session.phone || <span className="text-slate-500 italic">Khách lẻ</span>}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">{selectedSlot.session.licensePlate}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Phone</span><span className="font-medium text-white">{selectedSlot.session.phone || <span className="text-slate-500 italic">Walk-in</span>}</span></div>
                           {selectedSlot.session.userId?.email && (
                             <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Email</span><span className="font-medium text-emerald-400">{selectedSlot.session.userId.email}</span></div>
                           )}
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Loại xe</span><span className="font-medium text-white uppercase">{selectedSlot.session.vehicleType || 'Ô tô'}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Giờ vào cổng</span><span className="font-medium text-white">{new Date(selectedSlot.session.checkInTime).toLocaleString('vi-VN')}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Vehicle Type</span><span className="font-medium text-white uppercase">{selectedSlot.session.vehicleType || 'Car'}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Check-in Time</span><span className="font-medium text-white">{new Date(selectedSlot.session.checkInTime).toLocaleString('en-US')}</span></div>
                         </div>
                       ) : (aiObs?.occupied || dbSlotInfo?.status === 'occupied' || selectedSlot.isOccupied) ? (
                         <div className="flex flex-col gap-3">
                           <div className="bg-rose-900/20 border border-rose-500/40 rounded-xl p-3 flex flex-col items-center justify-center text-center">
-                            <span className="text-[10px] text-rose-400 uppercase tracking-widest font-bold mb-0.5">Trạng thái</span>
-                            <span className="text-base text-white font-black uppercase">Đang Có Xe Đỗ (AI Khóa)</span>
+                            <span className="text-[10px] text-rose-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                            <span className="text-base text-white font-black uppercase">Occupied (AI Locked)</span>
                             <span className="text-[11px] text-amber-300 font-semibold mt-1 flex items-center gap-1">
-                              🛡️ Tự động khóa an toàn chống trùng ô
+                              🛡️ Safety lock prevents duplicate assignment
                             </span>
                           </div>
 
                           {(aiObs?.detectedPlate || selectedSlot.aiStatus?.detectedPlate || selectedSlot.aiStatus?.plate) && (
                             <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                              <span className="text-slate-400 text-xs">Biển số nhận diện</span>
+                              <span className="text-slate-400 text-xs">Detected Plate</span>
                               <span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">
                                 {aiObs?.detectedPlate || selectedSlot.aiStatus?.detectedPlate || selectedSlot.aiStatus?.plate}
                               </span>
@@ -582,41 +625,41 @@ export default function LiveGridMonitor() {
                           )}
 
                           <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                            <span className="text-slate-400 text-xs">Ghi nhận bởi</span>
-                            <span className="font-medium text-cyan-400 text-xs">Camera AI Giám Sát</span>
+                            <span className="text-slate-400 text-xs">Recorded By</span>
+                            <span className="font-medium text-cyan-400 text-xs">AI Surveillance Camera</span>
                           </div>
 
                           {(aiObs?.lastSeenAt || aiObs?.detectedAt) && (
                             <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                              <span className="text-slate-400 text-xs">Thời điểm phát hiện</span>
+                              <span className="text-slate-400 text-xs">Detected At</span>
                               <span className="font-medium text-slate-300 text-xs">
-                                {new Date(aiObs.lastSeenAt || aiObs.detectedAt).toLocaleString('vi-VN')}
+                                {new Date(aiObs.lastSeenAt || aiObs.detectedAt).toLocaleString('en-US')}
                               </span>
                             </div>
                           )}
 
                           <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200/90 leading-relaxed">
-                            💡 <strong>Khóa an toàn:</strong> Dù cảnh báo vi phạm đã được hủy hoặc xe chưa có phiên đăng ký tại ô này, hệ thống vẫn khóa trạng thái thực tế để ngăn không cho Kiosk hoặc App cấp trùng ô cho xe khác.
+                            💡 <strong>Safety Lock:</strong> Even if alerts are cleared or there is no active session on this slot, the physical occupied state stays locked so Kiosk/App cannot assign it to another vehicle.
                           </div>
                         </div>
                       ) : selectedSlot.isReserved ? (
                         <div className="flex flex-col gap-3">
                           <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
-                            <span className="text-[10px] text-purple-400 uppercase tracking-widest font-bold mb-0.5">Trạng thái</span>
-                            <span className="text-base text-white font-black uppercase">Đã Đặt / VIP</span>
+                            <span className="text-[10px] text-purple-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                            <span className="text-base text-white font-black uppercase">Reserved / VIP</span>
                           </div>
                           {dbSlotInfo?.subscriptionDetail ? (
                             <>
                               {dbSlotInfo.subscriptionDetail.user && (
                                 <>
-                                  <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Khách hàng</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.username || 'N/A'}</span></div>
-                                  <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">SĐT</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.phone || 'N/A'}</span></div>
+                                  <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.username || 'N/A'}</span></div>
+                                  <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Phone</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.phone || 'N/A'}</span></div>
                                 </>
                               )}
-                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Hết hạn</span><span className="font-bold text-purple-400">{new Date(dbSlotInfo.subscriptionDetail.expireAt).toLocaleString('vi-VN')}</span></div>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Expires</span><span className="font-bold text-purple-400">{new Date(dbSlotInfo.subscriptionDetail.expireAt).toLocaleString('en-US')}</span></div>
                             </>
                           ) : (
-                            <p className="text-xs text-purple-300 text-center mt-4">Ô đỗ được giữ trước cho khách VIP hoặc lượt đặt trước.</p>
+                            <p className="text-xs text-purple-300 text-center mt-4">Slot is reserved for a VIP member or pre-booked driver.</p>
                           )}
                         </div>
                       ) : (
@@ -624,8 +667,8 @@ export default function LiveGridMonitor() {
                           <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 mb-2">
                             <MonitorCheck size={24} className="text-slate-500" />
                           </div>
-                          <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Ô đang trống</p>
-                          <p className="text-xs text-slate-500 max-w-[200px]">Sẵn sàng tiếp nhận xe tiếp theo vào đỗ.</p>
+                          <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Slot Available</p>
+                          <p className="text-xs text-slate-500 max-w-[200px]">Ready for the next incoming vehicle.</p>
                         </div>
                       )}
                     </div>
@@ -640,11 +683,11 @@ export default function LiveGridMonitor() {
                 {loadingSlotLogs ? (
                   <div className="p-8 text-center text-slate-500 text-xs">
                     <RefreshCw size={18} className="animate-spin mx-auto mb-2 text-amber-400" />
-                    Đang tải nhật ký ô...
+                    Loading slot history...
                   </div>
                 ) : slotLogs.length === 0 ? (
                   <div className="p-8 text-center text-slate-500 text-xs">
-                    Chưa có ghi nhận lịch sử nào cho ô này.
+                    No history recorded for this slot yet.
                   </div>
                 ) : (
                   slotLogs.map((log) => {
@@ -655,25 +698,25 @@ export default function LiveGridMonitor() {
                     const isVehicleLeft = log.resolutionAction === 'VEHICLE_LEFT';
                     const isVehicleParked = log.resolutionAction === 'VEHICLE_PARKED';
 
-                    let badgeText = 'Biến động đỗ xe';
+                    let badgeText = 'Parking Event';
                     let badgeClass = 'bg-slate-700/40 text-slate-300';
                     if (isViol) {
-                      badgeText = 'Phát hiện vi phạm';
+                      badgeText = 'Violation Detected';
                       badgeClass = 'bg-red-500/20 text-red-400 border border-red-500/30';
                     } else if (isMaintenance) {
-                      badgeText = 'Bảo trì ô đỗ';
+                      badgeText = 'Slot Maintenance';
                       badgeClass = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
                     } else if (isCheckout) {
-                      badgeText = 'Checkout - Ô trống';
+                      badgeText = 'Checkout - Available';
                       badgeClass = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
                     } else if (isVehicleLeft) {
-                      badgeText = 'Xe rời đi - Ô trống';
+                      badgeText = 'Vehicle Left - Available';
                       badgeClass = 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
                     } else if (isVehicleParked) {
-                      badgeText = 'Xe vào đỗ';
+                      badgeText = 'Vehicle Parked';
                       badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
                     } else if (isReassigned) {
-                      badgeText = 'Đã đổi ô';
+                      badgeText = 'Slot Reassigned';
                       badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
                     }
 
@@ -690,7 +733,7 @@ export default function LiveGridMonitor() {
 
                         {log.detectedPlate && (
                           <div className="text-slate-200 font-mono font-bold">
-                            Biển số: {formatLicensePlateDisplay(log.detectedPlate)}
+                            Plate: {formatLicensePlateDisplay(log.detectedPlate)}
                           </div>
                         )}
 
@@ -718,7 +761,7 @@ export default function LiveGridMonitor() {
                   onClick={() => setShowCheckoutModal(true)}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]">
                   <X size={18} />
-                  Thanh Toán & Trả Ô (Check-out)
+                  Checkout & Release Slot
                 </button>
               </div>
             )}
@@ -733,9 +776,22 @@ export default function LiveGridMonitor() {
           onClose={() => setShowCheckoutModal(false)}
           session={{ ...selectedSlot.session, parkingSlot: selectedSlot.id }}
           onSuccess={() => {
+            const targetCode = String(selectedSlot.id || '').trim().toUpperCase();
+            const targetPlate = String(selectedSlot.session?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            setFloorAiStatusesMap((prev) => {
+              const updated = {};
+              Object.entries(prev).forEach(([fId, slots]) => {
+                updated[fId] = (slots || []).filter((s) => {
+                  const sCode = String(s.slotCode || '').trim().toUpperCase();
+                  const sPlate = String(s.plate || s.detectedPlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                  return sCode !== targetCode && (!targetPlate || sPlate !== targetPlate);
+                });
+              });
+              return updated;
+            });
             setShowCheckoutModal(false);
             setSelectedSlot(null);
-            fetchLiveStatus();
+            fetchLiveStatus(false);
           }}
         />
       )}
@@ -768,6 +824,7 @@ export default function LiveGridMonitor() {
               updated[floorId] = results;
               return updated;
             });
+            fetchLiveStatus(false);
           }}
           onCheckoutSlot={(sessionOrSlot) => {
             setSelectedSlot({
@@ -786,14 +843,21 @@ export default function LiveGridMonitor() {
           onClose={() => setSelectedViolation(null)}
           violation={selectedViolation}
           onReassignSuccess={(sessionId, newSlotCode) => {
-            fetchLiveStatus();
+            const codesToClear = new Set(
+              [selectedViolation?.slotCode, selectedViolation?.expectedSlot, newSlotCode]
+                .filter(Boolean)
+                .map((c) => String(c).trim().toUpperCase())
+            );
             setFloorAiStatusesMap((prev) => {
               const updated = {};
               Object.entries(prev).forEach(([fId, slots]) => {
-                updated[fId] = slots.filter((s) => s.slotCode !== selectedViolation.slotCode);
+                updated[fId] = (slots || []).filter(
+                  (s) => !codesToClear.has(String(s.slotCode || '').trim().toUpperCase())
+                );
               });
               return updated;
             });
+            fetchLiveStatus(false);
           }}
           onCheckout={(session) => {
             setSelectedSlot({
@@ -811,17 +875,23 @@ export default function LiveGridMonitor() {
         onClose={() => setShowHistoryModal(false)}
         floors={floors}
         currentFloorId={currentFloorId}
-        onViolationResolved={(slotCode) => {
-          fetchLiveStatus();
-          if (slotCode) {
+        onViolationResolved={(slotCode, expectedSlot) => {
+          const codes = [slotCode, expectedSlot].filter(Boolean).map((c) => String(c).trim().toUpperCase());
+          if (codes.length > 0) {
+            const codeSet = new Set(codes);
             setFloorAiStatusesMap((prev) => {
               const updated = {};
               Object.entries(prev).forEach(([fId, slots]) => {
-                updated[fId] = slots.filter((s) => s.slotCode !== slotCode);
+                updated[fId] = (slots || []).filter(
+                  (s) => !codeSet.has(String(s.slotCode || '').trim().toUpperCase())
+                );
               });
               return updated;
             });
+          } else {
+            setFloorAiStatusesMap({});
           }
+          fetchLiveStatus(false);
         }}
       />
     </div>

@@ -920,8 +920,8 @@ public:
 GateController entryGate("ENTRY_1", ENTRY_SERVO_PIN, ENTRY_SENSOR_PIN, LOW,
                          &lcdEntry);
 
-// Cổng Ra (EXIT_1): Cảm biến Active HIGH (Che tay = HIGH 3.3V, Thông thoáng = LOW 0V)
-GateController exitGate("EXIT_1", EXIT_SERVO_PIN, EXIT_SENSOR_PIN, HIGH,
+// Cổng Ra (EXIT_1): Cảm biến Active LOW (Che tay = LOW 0V, Thông thoáng = HIGH 3.3V)
+GateController exitGate("EXIT_1", EXIT_SERVO_PIN, EXIT_SENSOR_PIN, LOW,
                         &lcdExit);
 
 // ════════════════════════════════════════════════════════════════════

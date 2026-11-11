@@ -6,7 +6,7 @@ import {
   Upload, Eye, AlertCircle, Check, Loader2, Maximize2
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
-import { API_BASE } from '../../services/api';
+import { API_BASE, apiFetch } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
 import { getAllFloors } from '../../services/parkingFloorService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
@@ -516,18 +516,20 @@ export default function GateControl() {
         payload = { gate };
       }
 
-      const res = await fetch(`${API_BASE}${endpoint}`, {
+      const token = localStorage.getItem('accessToken');
+      const res = await apiFetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.ok && res.data?.success) {
         toast.success(`Lệnh ${action.toUpperCase()} cổng ${gate} thành công`);
         fetchBarrierStatus();
+      } else {
+        toast.error(res.data?.message || `Không thể gửi lệnh điều khiển cổng ${gate}`);
       }
     } catch (e) {
       console.error('Barrier command error:', e);
@@ -1100,38 +1102,38 @@ export default function GateControl() {
                 </div>
               </div>
 
-              {/* Cảnh báo vi phạm được Camera AI phát hiện */}
+              {/* Parking Violation Alert detected by AI Camera */}
               {exitInvoiceData.violationDetails && (
                 <div className="rounded-lg border border-red-500/50 bg-red-950/70 p-3 text-xs text-red-200 space-y-2">
                   <div className="flex items-center justify-between pb-1.5 border-b border-red-500/20">
                     <span className="flex items-center gap-1.5 font-black text-red-400 uppercase tracking-wide text-[11px]">
                       <AlertTriangle size={15} className="animate-pulse text-red-400" />
-                      Phát hiện vi phạm đỗ xe (Camera AI)
+                      Parking Violation Detected (AI Camera)
                     </span>
                     <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-mono text-[10px] font-bold border border-red-500/30">
-                      CẢNH BÁO
+                      ALERT
                     </span>
                   </div>
 
                   <div className="space-y-1">
                     <p className="text-white font-medium">
-                      <strong className="text-red-300">Lý do:</strong>{' '}
-                      {exitInvoiceData.violationDetails.violationMessage || `Đỗ sai vị trí tại ô ${exitInvoiceData.violationDetails.slotCode}`}
+                      <strong className="text-red-300">Reason:</strong>{' '}
+                      {exitInvoiceData.violationDetails.violationMessage || `Unauthorized parking at slot ${exitInvoiceData.violationDetails.slotCode}`}
                     </p>
                     <div className="flex items-center gap-1.5 text-slate-300 text-[11px]">
                       <Clock size={12} className="text-amber-400 flex-shrink-0" />
                       <span>
-                        <strong>Thời gian:</strong> Từ{' '}
+                        <strong>Duration:</strong> From{' '}
                         <span className="text-white font-mono font-bold">
-                          {new Date(exitInvoiceData.violationDetails.detectedAt).toLocaleTimeString('vi-VN')}
+                          {new Date(exitInvoiceData.violationDetails.detectedAt).toLocaleTimeString('en-US')}
                         </span>{' '}
-                        đến{' '}
+                        to{' '}
                         <span className="text-white font-mono font-bold">
                           {exitInvoiceData.violationDetails.resolvedAt
-                            ? new Date(exitInvoiceData.violationDetails.resolvedAt).toLocaleTimeString('vi-VN')
-                            : 'Hiện tại'}
+                            ? new Date(exitInvoiceData.violationDetails.resolvedAt).toLocaleTimeString('en-US')
+                            : 'Present'}
                         </span>{' '}
-                        ({exitInvoiceData.violationDetails.durationMinutes} phút)
+                        ({exitInvoiceData.violationDetails.durationMinutes} min)
                       </span>
                     </div>
                   </div>
@@ -1143,7 +1145,7 @@ export default function GateControl() {
                   )}
 
                   <p className="text-[10px] text-amber-300/80 italic">
-                    * Nhân viên kiểm tra và giải thích lỗi vi phạm cho khách trước khi mở barrier ra.
+                    * Staff should review and notify the driver about this violation before opening the exit barrier.
                   </p>
                 </div>
               )}
