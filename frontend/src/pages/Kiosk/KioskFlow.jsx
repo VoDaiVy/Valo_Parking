@@ -178,7 +178,7 @@ export default function KioskFlow() {
         endTime: endTime.toISOString(),
         ...(formData.isBookingReallocation && formData.bookingId
           ? { bookingSource: 'KIOSK_REALLOCATION', reallocateBookingId: formData.bookingId }
-          : {}),
+          : { bookingSource: 'KIOSK_WALK_IN' }),
       }, { anonymous: true });
 
       if (!res.ok) {
@@ -226,11 +226,9 @@ export default function KioskFlow() {
       const cleanPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
       const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Idempotency-Key': formData.entryIdempotencyKey,
-          'X-Kiosk-Gate': 'ENTRY_1',
         },
         body: JSON.stringify({
           qrPayload: formData.qrPayload,
@@ -278,11 +276,9 @@ export default function KioskFlow() {
   const handleFastPassEntry = async () => {
     const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'Idempotency-Key': formData.entryIdempotencyKey,
-        'X-Kiosk-Gate': 'ENTRY_1',
       },
       body: JSON.stringify({
         qrPayload: formData.qrPayload,

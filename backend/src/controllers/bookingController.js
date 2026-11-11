@@ -657,6 +657,7 @@ exports.getAvailableSlots = async (req, res, next) => {
     const { start, end } = validateBookingTimeRange(effectiveStart, effectiveEnd, {
       requireFuture: false,
       minMinutes: 0,
+      requireStepAlignment: false,
     });
     const availability = await getAvailableSlotsForRange(start, end, req.user?._id, {
       allowExpectedSessionCheckout: true,
@@ -2222,6 +2223,7 @@ exports.createBookingHold = async (req, res, next) => {
       try {
         ({ start, end } = validateBookingTimeRange(startTime, endTime, {
           requireFuture: false,
+          requireStepAlignment: bookingSource !== 'KIOSK_WALK_IN',
         }));
       } catch (timeError) {
         return res.status(timeError.statusCode || 400).json({

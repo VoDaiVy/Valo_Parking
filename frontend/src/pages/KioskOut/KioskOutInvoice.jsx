@@ -29,11 +29,9 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
         : (typeof paymentRef === 'string' ? paymentRef : null);
       const res = await fetch(`${API_BASE}/sessions/kiosk-checkout`, {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Idempotency-Key': `kiosk-checkout:${sessionId}:${paymentIntentId || checkoutAttemptId || paymentMethod}`,
-          'X-Kiosk-Gate': 'EXIT_1',
         },
         body: JSON.stringify({
           qrPayload: sessionData?.qrPayload,
@@ -99,7 +97,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           const attemptQuery = paymentData.checkoutAttemptId
             ? `?checkoutAttemptId=${encodeURIComponent(paymentData.checkoutAttemptId)}`
             : '';
-          const res = await fetch(`${API_BASE}/sessions/check-payos/${paymentData.orderCode}${attemptQuery}`, { credentials: 'include', headers: { 'X-Kiosk-Gate': 'EXIT_1' } });
+          const res = await fetch(`${API_BASE}/sessions/check-payos/${paymentData.orderCode}${attemptQuery}`);
           const data = await res.json();
           if (data.success && data.isPaid) {
             clearInterval(intervalId);

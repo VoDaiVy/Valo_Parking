@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, Pointer } from 'lucide-react';
 import backgroundImage from '../../assets/images/Kiosk/BackgroundWelcomeKiosk.png';
 import logoImage from '../../assets/images/Kiosk/LogoKiosk.png';
-import KioskDeviceSetup from './KioskDeviceSetup';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
@@ -316,11 +315,9 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
           const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
             method: 'POST',
-            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
               'Idempotency-Key': getFastPassKey(formatted),
-              'X-Kiosk-Gate': 'ENTRY_1',
             },
             body: JSON.stringify(entryPayload),
           });
@@ -511,12 +508,9 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       }
 
       // 2. Xác thực mã QR và đối chiếu biển số xe thực tế qua API Backend
-      if (!entryImage) throw new Error('Unable to capture the vehicle. Please position it in the camera area and retry.');
-
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ qrPayload, entryImageBase64: entryImage }),
       });
       const qrData = await response.json();
@@ -582,11 +576,9 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
         const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
           method: 'POST',
-          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             'Idempotency-Key': getFastPassKey(cleanPlate),
-            'X-Kiosk-Gate': 'ENTRY_1',
           },
           body: JSON.stringify(entryPayload),
         });
@@ -656,7 +648,6 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-gray-900 overflow-hidden font-sans">
-      <div className="absolute top-4 right-4 z-40 max-w-sm"><KioskDeviceSetup gate="ENTRY_1" /></div>
       {/* Background Image */}
       <div
         className="absolute inset-0 z-0 bg-cover bg-center blur-sm scale-105 opacity-90"

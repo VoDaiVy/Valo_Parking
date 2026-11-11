@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { Camera, ScanLine, AlertCircle, QrCode, Car } from 'lucide-react';
 import KioskQrScannerModal from '../Kiosk/KioskQrScannerModal';
-import KioskDeviceSetup from '../Kiosk/KioskDeviceSetup';
 import { API_BASE } from '../../services/api';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
@@ -60,8 +59,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       setAlarmState(false);
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'EXIT_1' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           licensePlate: plate,
           detectedPlate: plate,
@@ -147,17 +145,20 @@ export default function KioskOutWelcome({ onScanSuccess }) {
     setShowQrModal(false); setErrorMessage(''); setAlarmState(false);
     try {
       const captured = await captureAndAnalyze();
-      if (!captured?.plate) throw new Error('Unable to read the vehicle plate. Please retry or ask staff to scan your ticket.');
+      const exitImg = captured?.imageBase64 || captureFrameBase64();
+      const payload = captured?.plate
+        ? { qrPayload, licensePlate: captured.plate, detectedPlate: captured.plate, exitImageBase64: exitImg }
+        : { qrPayload, exitImageBase64: exitImg };
       const response = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'EXIT_1' },
-        body: JSON.stringify({ qrPayload, licensePlate: captured.plate, detectedPlate: captured.plate, exitImageBase64: captured.imageBase64 }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       const result = await response.json();
       if (!result.success) {
         setAlarmState(Boolean(result.alarm));
         throw new Error(result.message || 'This parking ticket cannot be used for checkout.');
       }
-      onScanSuccess({ ...result.data, qrPayload, observedLicensePlate: captured.plate }, captured.imageBase64);
+      onScanSuccess({ ...result.data, qrPayload, observedLicensePlate: captured?.plate || null }, exitImg);
     } catch (err) { setErrorMessage(err.message || 'Unable to verify ticket.'); }
     finally { qrScanningRef.current = false; }
   };
@@ -333,8 +334,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
         </div>
       </div>
 
-      <div className="absolute top-4 right-4 z-30 max-w-sm flex flex-col gap-3">
-        <KioskDeviceSetup gate="EXIT_1" />
+      <div className="absolute top-4 right-4 z-30 flex flex-col gap-3">
         <button disabled={isScanning} onClick={() => setShowQrModal(true)} className="min-h-12 rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black">Scan parking ticket QR</button>
       </div>
       <KioskQrScannerModal isOpen={showQrModal} onClose={() => setShowQrModal(false)} onScan={handleTicketScanned} />

@@ -14,6 +14,7 @@ function validateBookingTimeRange(startTime, endTime, {
   requireFuture = true,
   minMinutes = MIN_BOOKING_MINUTES,
   maxMinutes = MAX_BOOKING_MINUTES,
+  requireStepAlignment = true,
 } = {}) {
   const start = new Date(startTime);
   const end = new Date(endTime);
@@ -28,7 +29,7 @@ function validateBookingTimeRange(startTime, endTime, {
   if (requireFuture && start <= reference) {
     throw bookingTimeError('Ngày hoặc giờ bắt đầu đã qua. Vui lòng chọn thời gian trong tương lai.', 'PAST_BOOKING_TIME');
   }
-  if (!isBookingStepAligned(start) || !isBookingStepAligned(end)) {
+  if (requireStepAlignment && (!isBookingStepAligned(start) || !isBookingStepAligned(end))) {
     throw bookingTimeError(
       `Giờ booking phải theo mốc ${BOOKING_TIME_STEP_MINUTES} phút (00, 15, 30 hoặc 45).`,
       'BOOKING_TIME_NOT_ALIGNED',
