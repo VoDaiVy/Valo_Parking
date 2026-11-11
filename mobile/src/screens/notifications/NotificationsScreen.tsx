@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import type { NavigationProp } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NavigationProp, ParamListBase } from '@react-navigation/native';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,11 +16,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState, ErrorState, ScreenHeader } from '@/components/common';
+import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
-import type { NotificationStackParamList } from '@/navigation/types';
+import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   getNotificationId,
   getNotificationNavigationTarget,
@@ -29,7 +30,7 @@ import {
   type NotificationFilter,
 } from '@/utils/notifications';
 
-type Props = NativeStackScreenProps<NotificationStackParamList, 'Notifications'>;
+type Props = { navigation: NavigationProp<ParamListBase> };
 
 const filters: NotificationFilter[] = ['ALL', 'UNREAD', 'READ', ...NOTIFICATION_TYPES];
 
@@ -49,6 +50,9 @@ const FILTER_LABELS: Record<NotificationFilter, string> = {
 };
 
 export const NotificationsScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
+  const { user } = useAuth();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<NotificationFilter>('ALL');
   const {
     notifications,
@@ -66,6 +70,11 @@ export const NotificationsScreen = ({ navigation }: Props) => {
 
   const openNotification = async (id: string, notification: Parameters<typeof getNotificationNavigationTarget>[0]) => {
     if (id) await markAsRead(id).catch(() => undefined);
+    if (user?.role === 'staff' || user?.role === 'admin') {
+      if (notification.type === 'BOOKING') navigation.navigate('Bookings');
+      else if (notification.type === 'VIOLATION' || notification.type === 'CAMERA') navigation.navigate('ParkingOperations');
+      return;
+    }
     const target = getNotificationNavigationTarget(notification);
     const tabs = navigation.getParent<NavigationProp<CustomerTabParamList>>();
     if (!target || !tabs) return;
@@ -73,6 +82,8 @@ export const NotificationsScreen = ({ navigation }: Props) => {
     if (target.tab === 'WalletTab') {
       if (target.screen === 'Wallet') {
         tabs.navigate('WalletTab', { screen: 'Wallet' });
+      } else if (target.screen === 'Rewards') {
+        tabs.navigate('WalletTab', { screen: 'Rewards' });
       } else if (target.screen === 'Membership') {
         tabs.navigate('WalletTab', { screen: 'Membership' });
       } else {
@@ -101,24 +112,26 @@ export const NotificationsScreen = ({ navigation }: Props) => {
     }
 
     if (error) {
-      return <ErrorState message={error} onRetry={refetch} />;
+      return <ErrorState message={translateUi(error)} onRetry={refetch} />;
     }
 
     return (
       <EmptyState
         icon="notifications-outline"
-        title="No notifications"
-        message="Updates about bookings, your wallet, and your account will appear here."
+        title={translateUi("No notifications")}
+        message={translateUi("Updates about bookings, your wallet, and your account will appear here.")}
       />
     );
   };
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
+      <CustomerAmbientBackground />
       <ScreenHeader
-        title="Notifications"
-        subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'Up to date'}
+        onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+        title={t('notifications')}
+        subtitle={unreadCount > 0 ? translateUi('{count} unread', { count: unreadCount }) : translateUi('Up to date')}
         right={
           unreadCount > 0 ? (
             <TouchableOpacity
@@ -128,7 +141,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
               onPress={() => void markAllAsRead()}
             >
               <Ionicons name="checkmark-done-outline" size={16} color={COLORS.gold} />
-              <Text style={styles.readAllText}>Mark all read</Text>
+              <Text style={styles.readAllText}>{translateUi("Mark all read")}</Text>
             </TouchableOpacity>
           ) : null
         }
@@ -142,7 +155,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
         ListFooterComponent={
           hasMore && notifications.length > 0 ? (
             <ActivityIndicator color={COLORS.gold} style={styles.footerLoader} />
-          ) : null
+          ) : undefined
         }
         ListHeaderComponent={
           <ScrollView
@@ -153,16 +166,18 @@ export const NotificationsScreen = ({ navigation }: Props) => {
             {filters.map((item) => {
               const active = filter === item;
               const label = item === 'UNREAD' && unreadCount > 0
-                ? `${FILTER_LABELS[item]} ${unreadCount > 99 ? '99+' : unreadCount}`
-                : FILTER_LABELS[item];
+                ? `${translateUi(FILTER_LABELS[item])} ${unreadCount > 99 ? '99+' : unreadCount}`
+                : translateUi(FILTER_LABELS[item]);
 
               return (
                 <Pressable
                   key={item}
-                  style={[styles.filter, active && styles.filterActive]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={({ pressed }) => [styles.filter, active && styles.filterActive, pressed && { opacity: 0.85 }]}
                   onPress={() => setFilter(item)}
                 >
-                  <Text style={[styles.filterText, active && styles.filterTextActive]}>{label}</Text>
+                  <Text style={[styles.filterText, active && styles.filterTextActive]}>{translateUi(label)}</Text>
                 </Pressable>
               );
             })}
@@ -203,15 +218,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 4,
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    maxWidth: 132,
   },
   readAllText: {
     color: COLORS.gold,
     fontSize: FONT_SIZES.xs,
     fontWeight: '700',
+    lineHeight: 16,
+    flexShrink: 1,
   },
   list: {
+    flexGrow: 1,
     padding: SPACING.lg,
     paddingTop: SPACING.sm,
   },
@@ -224,12 +244,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: RADIUS.round,
     borderWidth: 1,
-    minHeight: 36,
+    minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
   filterActive: {
-    backgroundColor: 'rgba(212,175,55,0.12)',
+    backgroundColor: COLORS.goldTint,
     borderColor: COLORS.gold,
   },
   filterText: {

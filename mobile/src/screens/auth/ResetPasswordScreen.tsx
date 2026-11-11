@@ -1,5 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useState } from 'react';
+import { StyleSheet } from 'react-native';
 
 import { AppText, Button, Input } from '@/components/common';
 import { Screen } from '@/components/layout/Screen';
@@ -12,6 +14,7 @@ import { isValidPassword } from '@/utils/validation';
 type Props = NativeStackScreenProps<AuthStackParamList, 'ResetPassword'>;
 
 export const ResetPasswordScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const toast = useToast();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -47,17 +50,21 @@ export const ResetPasswordScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <Screen>
-      <AppText variant="h1">New Password</AppText>
-      <Input label="New password" onChangeText={setNewPassword} secureTextEntry value={newPassword} />
+    <Screen scrollable contentStyle={styles.content}>
+      <AppText variant="h1">{translateUi("New Password")}</AppText>
+      <Input label={translateUi("New password")} onChangeText={setNewPassword} secureTextEntry value={newPassword} />
       <Input
-        label="Confirm password"
+        label={translateUi("Confirm password")}
         onChangeText={setConfirmPassword}
         secureTextEntry
         value={confirmPassword}
       />
-      {error ? <AppText color={colors.error.main}>{error}</AppText> : null}
-      <Button loading={loading} title="Reset Password" onPress={handleSubmit} />
+      {error ? <AppText color={colors.error.main}>{translateUi(error)}</AppText> : null}
+      <Button loading={loading} title={translateUi("Reset Password")} onPress={handleSubmit} />
     </Screen>
   );
 };
+
+const styles = StyleSheet.create({
+  content: { width: '100%', maxWidth: 480, alignSelf: 'center', justifyContent: 'center' },
+});

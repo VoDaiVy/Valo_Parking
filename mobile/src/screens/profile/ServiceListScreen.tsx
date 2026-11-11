@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -19,7 +20,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState, ErrorState } from '@/components/common';
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import type { ProfileStackParamList } from '@/navigation/types';
 import serviceService from '@/services/ServiceService';
@@ -37,6 +39,7 @@ const getServiceDuration = (service: ServiceWithTimeCost) =>
   service.estimatedTimeMinutes ?? service.estimatedTime ?? service.timeCost ?? 0;
 
 function EditorialHeader({ onBack }: { onBack: () => void }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(0)).current;
 
@@ -73,7 +76,7 @@ function EditorialHeader({ onBack }: { onBack: () => void }) {
     >
       <Animated.View style={{ transform: [{ scale: pressScale }] }}>
         <Pressable
-          accessibilityLabel="Go back"
+          accessibilityLabel={translateUi("Go back")}
           accessibilityRole="button"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={styles.backButton}
@@ -99,14 +102,15 @@ function EditorialHeader({ onBack }: { onBack: () => void }) {
         </Pressable>
       </Animated.View>
       <View style={styles.headerCopy}>
-        <Text style={styles.title}>Services</Text>
-        <Text style={styles.subtitle}>Premium care for your vehicle</Text>
+        <Text style={styles.title}>{translateUi("Services")}</Text>
+        <Text style={styles.subtitle}>{translateUi("Premium care for your vehicle")}</Text>
       </View>
     </Animated.View>
   );
 }
 
 function ServiceSummary({ count }: { count: number }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -138,23 +142,24 @@ function ServiceSummary({ count }: { count: number }) {
     >
       <View style={styles.sectionLabelRow}>
         <View style={styles.goldLine} />
-        <Text style={styles.sectionLabel}>Available now</Text>
+        <Text style={styles.sectionLabel}>{translateUi("Available now")}</Text>
       </View>
       <View style={styles.summaryLine}>
         <Ionicons name="sparkles-outline" size={15} color={COLORS.goldLight} />
-        <Text style={styles.summaryPrimary}>{count} services available</Text>
+        <Text style={styles.summaryPrimary}>{count} {" "}{translateUi("services available")}</Text>
         <Text style={styles.summaryDivider}>·</Text>
-        <Text style={styles.summarySecondary}>By appointment</Text>
+        <Text style={styles.summarySecondary}>{translateUi("By appointment")}</Text>
       </View>
       <View style={styles.summaryLine}>
         <Ionicons name="shield-checkmark-outline" size={15} color={COLORS.textMuted} />
-        <Text style={styles.summarySecondary}>Quality assured</Text>
+        <Text style={styles.summarySecondary}>{translateUi("Quality assured")}</Text>
       </View>
     </Animated.View>
   );
 }
 
 function ServiceRow({ item, index, onPress }: { item: Service; index: number; onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   const image = item.imageUrl || item.image;
   const duration = getServiceDuration(item);
   const entrance = useRef(new Animated.Value(0)).current;
@@ -335,7 +340,7 @@ function ServiceRow({ item, index, onPress }: { item: Service; index: number; on
                 <View style={styles.metaCluster}>
                   <View style={styles.metaItem}>
                     <Ionicons name="calendar-clear-outline" size={14} color={COLORS.textMuted} />
-                    <Text style={styles.metaText}>{duration > 0 ? `${duration} min` : 'By appointment'}</Text>
+                    <Text style={styles.metaText}>{duration > 0 ? `${duration} min` : translateUi("By appointment")}</Text>
                   </View>
                   <View style={styles.metaItem}>
                     <Animated.View
@@ -347,7 +352,7 @@ function ServiceRow({ item, index, onPress }: { item: Service; index: number; on
                         },
                       ]}
                     />
-                    <Text style={styles.metaText}>Available</Text>
+                    <Text style={styles.metaText}>{translateUi("Available")}</Text>
                   </View>
                 </View>
                 <View style={styles.priceAction}>
@@ -378,6 +383,7 @@ function ServiceRow({ item, index, onPress }: { item: Service; index: number; on
 }
 
 export const ServiceListScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -419,7 +425,7 @@ export const ServiceListScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <EditorialHeader onBack={() => navigation.goBack()} />
 
       {loading ? (
@@ -427,7 +433,7 @@ export const ServiceListScreen = ({ navigation }: Props) => {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={loadServices} />
+        <ErrorState message={translateUi(error)} onRetry={loadServices} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
@@ -437,8 +443,8 @@ export const ServiceListScreen = ({ navigation }: Props) => {
           ListEmptyComponent={
             <EmptyState
               icon="sparkles-outline"
-              title="No services available"
-              message="New services will appear here as they become available."
+              title={translateUi("No services available")}
+              message={translateUi("New services will appear here as they become available.")}
             />
           }
           refreshControl={
@@ -474,8 +480,8 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.035)',
-    borderRadius: RADIUS.round,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.md,
     height: 48,
     justifyContent: 'center',
     width: 48,
@@ -485,17 +491,12 @@ const styles = StyleSheet.create({
     paddingTop: 1,
   },
   title: {
+    ...typography.h2,
     color: COLORS.textPrimary,
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: 0,
-    lineHeight: 38,
   },
   subtitle: {
+    ...typography.body2,
     color: COLORS.textMuted,
-    fontSize: FONT_SIZES.md,
-    fontWeight: '500',
-    lineHeight: 22,
     marginTop: 3,
   },
   list: {
@@ -529,6 +530,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 7,
+    flexWrap: 'wrap',
   },
   summaryPrimary: {
     color: COLORS.textPrimary,
@@ -549,21 +551,21 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
   },
   serviceRow: {
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     gap: SPACING.md,
     minHeight: 0,
     paddingHorizontal: SPACING.xs,
     paddingVertical: SPACING.sm,
   },
   serviceTint: {
-    borderRadius: 18,
+    borderRadius: RADIUS.lg,
     overflow: 'hidden',
   },
   imageShadow: {
     borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.12,
     shadowRadius: 18,
   },
   imageClip: {
@@ -599,20 +601,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   serviceName: {
+    ...typography.h3,
     color: COLORS.textPrimary,
-    fontSize: 22,
-    fontWeight: '700',
     letterSpacing: 0,
-    lineHeight: 27,
     minWidth: 0,
   },
   servicePrice: {
+    ...typography.h3,
+    fontVariant: ['tabular-nums'],
     color: COLORS.gold,
     flexShrink: 0,
-    fontSize: 22,
-    fontWeight: '900',
     letterSpacing: 0,
-    lineHeight: 27,
     maxWidth: 142,
     textAlign: 'right',
   },
@@ -643,9 +642,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   metaText: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
+    ...typography.body2,
+    color: COLORS.textSecondary,
   },
   statusDot: {
     backgroundColor: COLORS.success,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Car, Zap, Check, X, Loader2, RefreshCw, Image } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
@@ -8,6 +8,17 @@ const authHeader = () => ({
 });
 
 const VEHICLE_TYPE_LABELS = { car: 'Car', electric_car: 'Electric car' };
+const verificationLabel = (verification) => {
+  const reason = verification?.reason || '';
+  if (reason.startsWith('mismatch:')) return `Image mismatch: ${reason.slice(9).split(',').join(', ')}`;
+  return {
+    image_missing: 'Registration image missing or upload failed',
+    ai_unavailable: 'AI could not verify the image',
+    approval_disabled: 'AI approval was switched off during verification',
+    settings_unavailable: 'AI approval setting was unavailable',
+    vehicle_changed: 'Vehicle details changed after approval',
+  }[reason] || 'Awaiting manual review';
+};
 
 export default function VehiclePending() {
   const [vehicles, setVehicles] = useState([]);
@@ -22,12 +33,25 @@ export default function VehiclePending() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const aiRefreshGeneration = useRef(0);
   const fetchPending = async () => {
+    const generation = ++aiRefreshGeneration.current;
     setLoading(true);
     const res = await apiFetch('/admin/vehicles/pending', { headers: authHeader() });
+      if (generation !== aiRefreshGeneration.current) return;
     setLoading(false);
     if (res.ok) setVehicles(res.data.data || []);
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchPending; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['APPROVE_VEHICLE'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -231,6 +255,7 @@ function VehicleApprovalCard({ vehicle, processing, onApprove, onReject, onPrevi
         <p className="text-lg font-black font-mono text-gray-200 tracking-widest mb-2">
           {vehicle.licensePlate}
         </p>
+        <p className="mb-2 text-xs text-amber-300">{verificationLabel(vehicle.registrationVerification)}</p>
 
         <div className="flex items-center gap-2 flex-wrap text-sm text-gray-400 mb-3">
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold

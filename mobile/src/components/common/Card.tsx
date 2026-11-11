@@ -23,8 +23,7 @@ export const Card = ({ elevation = 'sm', padding = spacing.lg, style, ...props }
 const styles = StyleSheet.create({
   base: {
     backgroundColor: colors.light.surface,
-    borderColor: colors.light.border,
-    borderRadius: borderRadius.xl,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.lg,
+    minWidth: 0,
   },
 });

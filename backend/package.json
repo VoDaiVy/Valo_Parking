@@ -15,7 +15,11 @@
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
     "test:notification": "node src/tests/notificationService.test.js",
     "test:parking": "node --test src/tests/parkingLayout.unit.test.js src/tests/parkingFloorManagement.integration.test.js",
-    "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js"
+    "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js",
+    "telegram:webhook": "node src/scripts/telegramWebhook.js",
+    "audit:parking-passes": "node src/scripts/auditParkingPasses.js",
+    "audit:telegram-phones": "node src/scripts/auditTelegramPhoneRecipients.js",
+    "migrate:parking-passes": "node src/scripts/backfillParkingPasses.js"
   },
   "keywords": [],
   "author": "",
@@ -42,10 +46,11 @@
     "nodemailer": "^8.0.8",
     "pdfkit": "^0.19.1",
     "socket.io": "^4.8.3",
-    "streamifier": "^0.1.1"
+    "streamifier": "^0.1.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "fast-check": "^4.10.0",
+    "fast-check": "^4.10.2",
     "mongodb-memory-server": "^11.3.0",
     "nodemon": "^3.1.10"
   }

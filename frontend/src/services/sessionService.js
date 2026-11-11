@@ -4,7 +4,9 @@ const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
 });
 
-export const getAllSessions = () => apiFetch('/sessions', { method: 'GET', headers: authHeader() });
+export const getAllSessions = ({ cache } = {}) => apiFetch('/sessions', {
+  method: 'GET', headers: authHeader(), ...(cache ? { cache } : {}),
+});
 export const getActiveSessions = () => apiFetch('/sessions/active-status', { method: 'GET', headers: authHeader() });
 export const getMyParkingHistory = () => apiFetch('/sessions/my-history', { method: 'GET', headers: authHeader() });
 export const reassignSessionSlot = (sessionId, data) =>

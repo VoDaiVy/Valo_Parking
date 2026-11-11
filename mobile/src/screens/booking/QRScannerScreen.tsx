@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
@@ -9,11 +10,12 @@ import { Screen } from '@/components/layout/Screen';
 import { useBooking } from '@/hooks/useBooking';
 import { useToast } from '@/hooks/useToast';
 import type { BookingStackParamList } from '@/navigation/types';
-import { colors } from '@/theme';
+import { borderRadius, colors } from '@/theme';
 
 type Props = NativeStackScreenProps<BookingStackParamList, 'QRScanner'>;
 
 export const QRScannerScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const toast = useToast();
   const { checkInBooking, checkOutBooking, isLoading } = useBooking();
   const [permission, requestPermission] = useCameraPermissions();
@@ -59,17 +61,17 @@ export const QRScannerScreen = ({ navigation, route }: Props) => {
 
   if (permission?.granted === false) {
     return (
-      <Screen>
-        <AppText variant="h1">Camera Permission</AppText>
-        <AppText color={colors.error.main}>Camera permission is required to scan QR codes.</AppText>
-        <Button title="Open Settings" onPress={() => Linking.openSettings()} />
+      <Screen scrollable>
+        <AppText variant="h1">{translateUi("Camera Permission")}</AppText>
+        <AppText color={colors.error.main}>{translateUi("Camera permission is required to scan QR codes.")}</AppText>
+        <Button title={translateUi("Open Settings")} onPress={() => Linking.openSettings()} />
       </Screen>
     );
   }
 
   return (
-    <Screen>
-      <AppText variant="h1">{route.params.mode === 'check-in' ? 'Check-In' : 'Check-Out'} Scanner</AppText>
+    <Screen scrollable>
+      <AppText variant="h1">{route.params.mode === 'check-in' ? 'Check-In' : translateUi("Check-Out")} {" "}{translateUi("Scanner")}</AppText>
       <View style={styles.scanner}>
         {permission?.granted ? (
           <CameraView
@@ -78,22 +80,22 @@ export const QRScannerScreen = ({ navigation, route }: Props) => {
             style={StyleSheet.absoluteFill}
           />
         ) : (
-          <AppText>Requesting camera permission...</AppText>
+          <AppText>{translateUi("Requesting camera permission...")}</AppText>
         )}
-        <View style={styles.viewfinder} />
+        <View pointerEvents="none" style={styles.viewfinder} />
       </View>
-      {isLoading ? <AppText>Processing...</AppText> : null}
-      {error ? <AppText color={colors.error.main}>{error}</AppText> : null}
-      <Input label="Manual booking ID" onChangeText={setManualId} value={manualId} />
+      {isLoading ? <AppText>{translateUi("Processing...")}</AppText> : null}
+      {error ? <AppText color={colors.error.main}>{translateUi(error)}</AppText> : null}
+      <Input label={translateUi("Manual booking ID")} onChangeText={setManualId} value={manualId} />
       <Button
         loading={isLoading}
-        title="Submit Booking ID"
+        title={translateUi("Submit Booking ID")}
         onPress={() => {
           setScanned(true);
           void processBookingId(manualId.trim());
         }}
       />
-      {scanned ? <Button title="Scan Again" variant="outline" onPress={() => setScanned(false)} /> : null}
+      {scanned ? <Button title={translateUi("Scan Again")} variant="outline" onPress={() => setScanned(false)} /> : null}
     </Screen>
   );
 };
@@ -102,16 +104,16 @@ const styles = StyleSheet.create({
   scanner: {
     alignItems: 'center',
     backgroundColor: colors.neutral[900],
-    borderRadius: 8,
-    height: 320,
+    borderRadius: borderRadius.lg,
+    aspectRatio: 1,
     justifyContent: 'center',
     overflow: 'hidden',
   },
   viewfinder: {
-    borderColor: colors.neutral.white,
-    borderRadius: 8,
+    borderColor: colors.primary[500],
+    borderRadius: borderRadius.md,
     borderWidth: 2,
-    height: 220,
-    width: 220,
+    height: '70%',
+    width: '70%',
   },
 });

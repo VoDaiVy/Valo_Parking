@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -50,7 +51,7 @@ const STATUS_LABELS: Record<BookingStatus, { label: string; color: string; bg: s
   confirmed: { label: 'Confirmed', color: COLORS.staffBlue, bg: 'rgba(96,180,255,0.12)' },
   active: { label: 'Parked', color: COLORS.success, bg: 'rgba(76,175,80,0.12)' },
   paused: { label: 'Paused', color: COLORS.warning, bg: 'rgba(255,159,67,0.12)' },
-  completed: { label: 'Completed', color: COLORS.textMuted, bg: COLORS.surfaceElevated },
+  completed: { label: 'Completed', color: COLORS.success, bg: COLORS.successTint },
   cancelled: { label: 'Cancelled', color: COLORS.error, bg: 'rgba(255,77,77,0.12)' },
   expired: { label: 'Expired', color: COLORS.warning, bg: 'rgba(255,159,67,0.12)' },
 };
@@ -69,15 +70,17 @@ const PAYMENT_LABELS: Record<PaymentStatus, string> = {
 };
 
 function InfoRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoLabel}>{translateUi(label)}</Text>
       <Text style={[styles.infoValue, valueColor ? { color: valueColor } : null]}>{value}</Text>
     </View>
   );
 }
 
 export const BookingDetailScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const {
     isLoading,
     fetchBookings,
@@ -224,13 +227,17 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
     });
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (!booking) return;
-
-    setActionDialog({
+    setActionLoading(true);
+    try {
+      const response = await bookingService.getCancellationQuote(booking._id);
+      const amount = response.data?.refundAmount;
+      if (typeof amount !== 'number' || !Number.isFinite(amount)) throw new Error('Unable to load the refund amount. Please try again.');
+      setActionDialog({
       variant: 'error',
       title: 'Cancel booking?',
-      message: `${formatCurrency(booking.prepaidAmount)} will be refunded to your VALO Wallet after cancellation.`,
+      message: `Estimated refund: ${formatCurrency(amount)}. The booking refund policy applies; the final amount is calculated when cancellation is confirmed.`,
       primaryLabel: 'Confirm cancellation',
       secondaryLabel: 'Keep booking',
       destructive: true,
@@ -238,10 +245,13 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
         runAction(
           () => cancelBooking(booking._id),
           'Booking cancelled',
-          'Your prepayment has been refunded to your VALO Wallet.',
+          'Booking cancelled. Check your wallet and transaction history for the policy-based refund.',
           'Cancellation failed',
         ),
-    });
+      });
+    } catch (error) {
+      showFeedback('error', 'Unable to load refund quote', error instanceof Error ? error.message : 'Please try again.');
+    } finally { setActionLoading(false); }
   };
 
   const handleExtend = async (minutes: number) => {
@@ -254,7 +264,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
     }
 
     if (!canExtendBookingBy(booking, minutes)) {
-      showFeedback('warning', 'Time limit exceeded', 'The total booking duration cannot exceed 24 hours.');
+      showFeedback('warning', 'Invalid extension', 'The new end time must be in the future and total duration must be at least one hour.');
       return;
     }
 
@@ -304,16 +314,16 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
   if (!booking) {
     return (
       <SafeAreaView edges={['top']} style={styles.safe}>
-        <StatusBar barStyle="light-content" backgroundColor="#080808" />
-        <ScreenHeader title="Booking details" onBack={() => navigation.goBack()} />
+        <StatusBar barStyle="light-content" />
+        <ScreenHeader title={translateUi("Booking details")} onBack={() => navigation.goBack()} />
         <View style={styles.center}>
           {isLoading ? (
             <ActivityIndicator color={COLORS.gold} size="large" />
           ) : (
             <EmptyState
               icon="calendar-outline"
-              title="Booking not found"
-              message="The booking may have changed. Return to the list and refresh."
+              title={translateUi("Booking not found")}
+              message={translateUi("The booking may have changed. Return to the list and refresh.")}
             />
           )}
         </View>
@@ -327,8 +337,8 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Booking details" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Booking details")} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.statusCard}>
@@ -344,15 +354,15 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
               <Text style={styles.slotBig}>{booking.slotCode}</Text>
             </View>
             <View style={[styles.statusPill, { backgroundColor: statusConfig.bg }]}>
-              <Text style={[styles.statusText, { color: statusConfig.color }]}>{statusConfig.label}</Text>
+              <Text style={[styles.statusText, { color: statusConfig.color }]}>{translateUi(statusConfig.label)}</Text>
             </View>
           </View>
-          {floorName ? <Text style={styles.floorName}>Floor: {floorName}</Text> : null}
+          {floorName ? <Text style={styles.floorName}>{translateUi("Floor:")}{" "}{floorName}</Text> : null}
         </View>
 
         {['confirmed', 'active', 'paused'].includes(booking.status) ? (
           <View style={styles.section}>
-            <SectionTitle>Booking QR</SectionTitle>
+            <SectionTitle>{translateUi("Booking QR")}</SectionTitle>
             {qrLoading ? (
               <ActivityIndicator color={COLORS.gold} size="large" />
             ) : qrPayload ? (
@@ -363,8 +373,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                   showBrightnessControl
                 />
                 <Text style={styles.qrHint}>
-                  Present this same code on mobile or web to the kiosk or a staff member.
-                </Text>
+                  {" "}{translateUi("Present this same code on mobile or web to the kiosk or a staff member.")}{" "}</Text>
               </>
             ) : (
               <Text style={styles.qrError}>{qrError || 'This QR code is no longer available.'}</Text>
@@ -373,10 +382,10 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
         ) : null}
 
         <View style={styles.section}>
-          <SectionTitle>Booking time</SectionTitle>
+          <SectionTitle>{translateUi("Booking time")}</SectionTitle>
           <View style={styles.timeRow}>
             <View style={styles.timeBlock}>
-              <Text style={styles.timeLabel}>Arrival</Text>
+              <Text style={styles.timeLabel}>{translateUi("Arrival")}</Text>
               <Text style={styles.timeValue}>{safeFormat(booking.startTime, 'HH:mm')}</Text>
               <Text style={styles.timeDate}>{safeFormat(booking.startTime, 'dd/MM/yyyy')}</Text>
             </View>
@@ -385,7 +394,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
               <Text style={styles.timeDuration}>{booking.paidHours}h</Text>
             </View>
             <View style={[styles.timeBlock, styles.timeBlockRight]}>
-              <Text style={styles.timeLabel}>Departure</Text>
+              <Text style={styles.timeLabel}>{translateUi("Departure")}</Text>
               <Text style={styles.timeValue}>{safeFormat(booking.endTime, 'HH:mm')}</Text>
               <Text style={styles.timeDate}>{safeFormat(booking.endTime, 'dd/MM/yyyy')}</Text>
             </View>
@@ -393,7 +402,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
         </View>
 
         <View style={styles.section}>
-          <SectionTitle>Vehicle</SectionTitle>
+          <SectionTitle>{translateUi("Vehicle")}</SectionTitle>
           <View style={styles.infoCard}>
             <View style={styles.plateBig}>
               <Text style={styles.plateBigText}>{booking.licensePlate}</Text>
@@ -406,35 +415,35 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                 onPress={() => setVehicleModalVisible(true)}
               >
                 <Ionicons name="swap-horizontal-outline" size={18} color={COLORS.staffBlue} />
-                <Text style={styles.changeVehicleText}>Change vehicle</Text>
+                <Text style={styles.changeVehicleText}>{translateUi("Change vehicle")}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
         </View>
 
         <View style={styles.section}>
-          <SectionTitle>Payment</SectionTitle>
+          <SectionTitle>{translateUi("Payment")}</SectionTitle>
           <View style={styles.infoCard}>
-            <InfoRow label="Method" value={booking.paymentMethod === 'vietqr' ? 'VietQR' : 'VALO Wallet'} />
+            <InfoRow label={translateUi("Method")} value={booking.paymentMethod === 'vietqr' ? 'VietQR' : 'VALO Wallet'} />
             <View style={styles.divider} />
             <InfoRow
-              label="Status"
+              label={translateUi("Status")}
               value={PAYMENT_LABELS[booking.paymentStatus]}
               valueColor={booking.paymentStatus === 'paid' ? COLORS.success : undefined}
             />
             <View style={styles.divider} />
-            <InfoRow label="Prepaid" value={formatCurrency(booking.prepaidAmount)} />
+            <InfoRow label={translateUi("Prepaid")} value={formatCurrency(booking.prepaidAmount)} />
             {booking.serviceAmount > 0 ? (
               <>
                 <View style={styles.divider} />
-                <InfoRow label="Services" value={formatCurrency(booking.serviceAmount)} />
+                <InfoRow label={translateUi("Services")} value={formatCurrency(booking.serviceAmount)} />
               </>
             ) : null}
             {(booking.refundAmount ?? 0) > 0 ? (
               <>
                 <View style={styles.divider} />
                 <InfoRow
-                  label="Refund"
+                  label={translateUi("Refund")}
                   value={`-${formatCurrency(booking.refundAmount ?? 0)}`}
                   valueColor={COLORS.success}
                 />
@@ -442,7 +451,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
             ) : null}
             <View style={[styles.divider, styles.strongDivider]} />
             <View style={styles.infoRow}>
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalLabel}>{translateUi("Total")}</Text>
               <Text style={styles.totalValue}>{formatCurrency(booking.finalAmount ?? booking.prepaidAmount ?? 0)}</Text>
             </View>
           </View>
@@ -458,7 +467,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                 onPress={() => setExtendModalVisible(true)}
               >
                 <Ionicons name="time-outline" size={19} color={COLORS.gold} />
-                <Text style={styles.extendText}>Extend</Text>
+                <Text style={styles.extendText}>{translateUi("Extend")}</Text>
               </TouchableOpacity>
             ) : null}
             {canCancel ? (
@@ -469,7 +478,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                 onPress={handleCancel}
               >
                 <Ionicons name="trash-outline" size={19} color={COLORS.error} />
-                <Text style={styles.cancelText}>Cancel booking</Text>
+                <Text style={styles.cancelText}>{translateUi("Cancel booking")}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -489,7 +498,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                 ) : (
                   <>
                     <Ionicons name="log-in-outline" size={20} color={COLORS.staffBlue} />
-                    <Text style={styles.checkInText}>Check-in</Text>
+                    <Text style={styles.checkInText}>{translateUi("Check-in")}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -512,7 +521,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                   ) : (
                     <>
                       <Ionicons name="log-out-outline" size={20} color={COLORS.textInverse} />
-                      <Text style={styles.checkoutText}>Check-out</Text>
+                      <Text style={styles.checkoutText}>{translateUi("Check-out")}</Text>
                     </>
                   )}
                 </LinearGradient>
@@ -530,8 +539,8 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Change vehicle</Text>
-            <Text style={styles.modalSubtitle}>Only approved vehicles can be used for this booking.</Text>
+            <Text style={styles.modalTitle}>{translateUi("Change vehicle")}</Text>
+            <Text style={styles.modalSubtitle}>{translateUi("Only approved vehicles can be used for this booking.")}</Text>
             {vehiclesLoading ? (
               <ActivityIndicator color={COLORS.gold} size="large" style={styles.vehicleLoader} />
             ) : (
@@ -558,7 +567,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                     </TouchableOpacity>
                   );
                 })}
-                {!vehicles.length ? <Text style={styles.modalNote}>You do not have any approved vehicles.</Text> : null}
+                {!vehicles.length ? <Text style={styles.modalNote}>{translateUi("You do not have any approved vehicles.")}</Text> : null}
               </View>
             )}
             <TouchableOpacity
@@ -567,7 +576,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
               style={[styles.vehicleConfirmBtn, (!selectedVehicleId || vehiclesLoading) && styles.vehicleConfirmDisabled]}
               onPress={() => void handleChangeVehicle()}
             >
-              {actionLoading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : <Text style={styles.vehicleConfirmText}>Confirm vehicle</Text>}
+              {actionLoading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : <Text style={styles.vehicleConfirmText}>{translateUi("Confirm vehicle")}</Text>}
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.8}
@@ -575,7 +584,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
               style={styles.modalCloseBtn}
               onPress={() => setVehicleModalVisible(false)}
             >
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={styles.modalCloseText}>{translateUi("Close")}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -592,11 +601,11 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
             <View style={styles.modalIconGlow}>
               <Ionicons name="time" size={70} color={COLORS.gold} />
             </View>
-            <Text style={styles.modalTitle}>Extend booking</Text>
+            <Text style={styles.modalTitle}>{translateUi("Extend booking")}</Text>
             <Text style={styles.modalSubtitle}>
-              Current end time: {safeFormat(booking.endTime, 'HH:mm dd/MM/yyyy')}
+              {" "}{translateUi("Current end time:")}{" "}{safeFormat(booking.endTime, 'HH:mm dd/MM/yyyy')}
             </Text>
-            <Text style={styles.modalHint}>Choose an extension</Text>
+            <Text style={styles.modalHint}>{translateUi("Choose an extension")}</Text>
             <View style={styles.extensionOptions}>
               {EXTENSION_OPTIONS.map((minutes) => {
                 const optionAvailable = canExtendBookingBy(booking, minutes);
@@ -631,14 +640,14 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
                 );
               })}
             </View>
-            <Text style={styles.modalNote}>Any additional fee will be charged to your wallet after availability is verified.</Text>
+            <Text style={styles.modalNote}>{translateUi("Any additional fee will be charged to your wallet after availability is verified.")}</Text>
             <TouchableOpacity
               activeOpacity={0.8}
               disabled={actionLoading}
               style={styles.modalCloseBtn}
               onPress={() => setExtendModalVisible(false)}
             >
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={styles.modalCloseText}>{translateUi("Close")}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -665,7 +674,7 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   center: { alignItems: 'center', flex: 1, justifyContent: 'center' },
-  scroll: { gap: SPACING.md, padding: SPACING.lg, paddingBottom: SPACING.xxl },
+  scroll: { gap: SPACING.lg, padding: SPACING.lg, paddingBottom: SPACING.xxl },
   statusCard: {
     backgroundColor: COLORS.surface,
     borderColor: 'rgba(212,175,55,0.2)',
@@ -676,7 +685,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
   },
   cardTopLine: { height: 2, left: 0, position: 'absolute', right: 0, top: 0 },
-  statusRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  statusRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, justifyContent: 'space-between' },
   slotCircle: { alignItems: 'center', flexDirection: 'row', gap: SPACING.xs },
   slotBig: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xxl, fontWeight: '800' },
   statusPill: { borderRadius: RADIUS.round, paddingHorizontal: SPACING.md, paddingVertical: 5 },
@@ -695,7 +704,7 @@ const styles = StyleSheet.create({
   timeBlock: { flex: 1 },
   timeBlockRight: { alignItems: 'flex-end' },
   timeLabel: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs },
-  timeValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, fontWeight: '700' },
+  timeValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, lineHeight: 28, fontWeight: '700', fontVariant: ['tabular-nums'] },
   timeDate: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs },
   timeSep: { alignItems: 'center', paddingHorizontal: SPACING.sm },
   timeDuration: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 2 },
@@ -740,6 +749,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     marginTop: SPACING.md,
     paddingVertical: SPACING.xs,
+    minHeight: 44,
   },
   changeVehicleText: { color: COLORS.staffBlue, fontSize: FONT_SIZES.sm, fontWeight: '700' },
   infoRow: {
@@ -747,13 +757,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: SPACING.xs,
+    gap: SPACING.md,
   },
-  infoLabel: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm },
-  infoValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '500' },
+  infoLabel: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, lineHeight: 20, flex: 1 },
+  infoValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, lineHeight: 20, fontWeight: '500', flex: 1.4, textAlign: 'right' },
   divider: { backgroundColor: COLORS.border, height: 1, marginVertical: 2 },
   strongDivider: { backgroundColor: COLORS.borderLight },
   totalLabel: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '700' },
-  totalValue: { color: COLORS.gold, fontSize: FONT_SIZES.lg, fontWeight: '800' },
+  totalValue: { color: COLORS.gold, fontSize: FONT_SIZES.lg, lineHeight: 24, fontWeight: '700', fontVariant: ['tabular-nums'], flexShrink: 1, textAlign: 'right' },
   actionsRow: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.sm },
   managementRow: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.sm },
   managementBtn: {
@@ -763,13 +774,14 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: SPACING.xs,
-    height: 52,
+    minHeight: 52,
+    padding: 12,
     justifyContent: 'center',
   },
   extendBtn: { backgroundColor: 'rgba(212,175,55,0.1)', borderColor: COLORS.gold },
-  extendText: { color: COLORS.gold, fontSize: FONT_SIZES.md, fontWeight: '600' },
+  extendText: { color: COLORS.gold, fontSize: FONT_SIZES.md, lineHeight: 24, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
   cancelBtn: { backgroundColor: 'rgba(255,77,77,0.1)', borderColor: COLORS.error },
-  cancelText: { color: COLORS.error, fontSize: FONT_SIZES.md, fontWeight: '600' },
+  cancelText: { color: COLORS.error, fontSize: FONT_SIZES.md, lineHeight: 24, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
   checkInBtn: {
     alignItems: 'center',
     backgroundColor: 'rgba(96,180,255,0.12)',
@@ -779,19 +791,21 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: SPACING.xs,
-    height: 52,
+    minHeight: 52,
+    padding: 12,
     justifyContent: 'center',
   },
-  checkInText: { color: COLORS.staffBlue, fontSize: FONT_SIZES.md, fontWeight: '600' },
+  checkInText: { color: COLORS.staffBlue, fontSize: FONT_SIZES.md, lineHeight: 24, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
   checkoutBtn: { borderRadius: RADIUS.md, flex: 1, overflow: 'hidden' },
   checkoutGrad: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: SPACING.xs,
-    height: 52,
+    minHeight: 52,
+    padding: 12,
     justifyContent: 'center',
   },
-  checkoutText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, fontWeight: '700' },
+  checkoutText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, lineHeight: 24, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
   modalOverlay: {
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.72)',

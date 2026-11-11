@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -44,6 +45,7 @@ function formatGender(value?: string | null) {
 }
 
 export const PersonalProfileScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { user } = useAuth();
   const { error, fetchProfile, loading, profile } = useProfileData();
   const avatarEntrance = useProfileEntrance(110);
@@ -54,7 +56,7 @@ export const PersonalProfileScreen = ({ navigation }: Props) => {
     }, [fetchProfile]),
   );
 
-  const fullName = [profile?.lastName, profile?.firstName].filter(Boolean).join(' ').trim();
+  const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim();
   const displayName = fullName || user?.username || 'Customer';
   const email = user?.email || '';
   const role = user?.role === 'customer' ? 'Customer' : user?.role || 'Account';
@@ -63,10 +65,10 @@ export const PersonalProfileScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <ProfileScreenHeader
-        title="Personal profile"
-        subtitle="Your account information"
+        title={translateUi("Personal profile")}
+        subtitle={translateUi("Your account information")}
         onBack={() => navigation.goBack()}
       />
 
@@ -106,7 +108,7 @@ export const PersonalProfileScreen = ({ navigation }: Props) => {
               </View>
             </Animated.View>
             <Text numberOfLines={1} style={styles.displayName}>{displayName}</Text>
-            <Text numberOfLines={1} style={styles.email}>{email || 'No email available'}</Text>
+            <Text numberOfLines={1} style={styles.email}>{email || translateUi("No email available")}</Text>
             <View style={styles.rolePill}>
               <Ionicons name="shield-checkmark-outline" size={13} color={COLORS.gold} />
               <Text numberOfLines={1} style={styles.roleText}>{role}</Text>
@@ -114,23 +116,23 @@ export const PersonalProfileScreen = ({ navigation }: Props) => {
           </StaggeredView>
 
           <StaggeredView delay={210} style={styles.details}>
-            <SectionHeader title="Personal details" />
-            <ProfileDetailRow icon="call-outline" label="Phone number" value={profile?.phone} />
-            <ProfileDetailRow icon="calendar-outline" label="Date of birth" value={formatDate(profile?.dob)} />
-            <ProfileDetailRow icon="person-outline" label="Gender" value={formatGender(profile?.gender)} />
+            <SectionHeader title={translateUi("Personal details")} />
+            <ProfileDetailRow icon="call-outline" label={translateUi("Phone number")} value={profile?.phone} />
+            <ProfileDetailRow icon="calendar-outline" label={translateUi("Date of birth")} value={formatDate(profile?.dob)} />
+            <ProfileDetailRow icon="person-outline" label={translateUi("Gender")} value={formatGender(profile?.gender)} />
             <ProfileDetailRow icon="mail-outline" label="Email" value={email} />
-            <ProfileDetailRow icon="shield-outline" label="Role" value={role} />
+            <ProfileDetailRow icon="shield-outline" label={translateUi("Role")} value={role} />
           </StaggeredView>
 
           {error ? (
             <StaggeredView delay={260} style={styles.errorBanner}>
               <Ionicons name="alert-circle-outline" size={17} color={COLORS.error} />
-              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.errorText}>{translateUi(error)}</Text>
             </StaggeredView>
           ) : null}
 
           <StaggeredView delay={330} style={styles.cta}>
-            <PrimaryCTA label="Edit profile" onPress={() => navigation.navigate('EditProfile')} />
+            <PrimaryCTA label={translateUi("Edit profile")} onPress={() => navigation.navigate('EditProfile')} />
           </StaggeredView>
         </ScrollView>
       )}
@@ -176,7 +178,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: COLORS.gold,
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.08,
     shadowRadius: 22,
     width: 110,
   },
@@ -191,14 +193,16 @@ const styles = StyleSheet.create({
   },
   displayName: {
     color: COLORS.textPrimary,
-    fontSize: 26,
-    fontWeight: '900',
+    fontSize: FONT_SIZES.xxl,
+    lineHeight: 32,
+    fontWeight: '700',
     marginTop: SPACING.md,
     maxWidth: '100%',
   },
   email: {
     color: COLORS.textMuted,
-    fontSize: 14,
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
     fontWeight: '500',
     marginTop: 5,
     maxWidth: '92%',
@@ -223,7 +227,7 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.08)',
+    backgroundColor: COLORS.errorTint,
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,

@@ -1,9 +1,12 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -16,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/common';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 import { useToast } from '@/hooks/useToast';
 import { vehiclesService } from '@/services/api/vehicles';
 import type { VehicleType } from '@/types/models';
@@ -23,6 +27,7 @@ import { isValidNormalizedLicensePlate, normalizeLicensePlate } from '@/utils/pr
 import { getCenteredCropForAspect } from '@/utils/registrationCardImage';
 
 export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => void } }) => {
+  const { t: translateUi } = useLanguage();
   const cameraRef = useRef<CameraView>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const toast = useToast();
@@ -141,19 +146,19 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
   if (cameraOpen) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.cameraScreen}>
-        <StatusBar barStyle="light-content" backgroundColor="#050505" />
+        <StatusBar barStyle="light-content" />
         <View style={styles.cameraHeader}>
           <TouchableOpacity style={styles.cameraHeaderButton} onPress={() => setCameraOpen(false)} disabled={scanning}>
             <Ionicons name="close" size={28} color={COLORS.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.cameraTitle}>Photograph vehicle registration</Text>
+          <Text style={styles.cameraTitle}>{translateUi("Photograph vehicle registration")}</Text>
           <TouchableOpacity style={styles.cameraHeaderButton} onPress={() => setTorchEnabled((current) => !current)}>
             <Ionicons name={torchEnabled ? 'flash' : 'flash-off'} size={23} color={torchEnabled ? COLORS.gold : COLORS.textPrimary} />
           </TouchableOpacity>
         </View>
 
         <View style={styles.cameraBody}>
-          <Text style={styles.cameraGuide}>Fit the entire registration card inside the 9 × 6 cm frame</Text>
+          <Text style={styles.cameraGuide}>{translateUi("Fit the entire registration card inside the 9 × 6 cm frame")}</Text>
           <View style={styles.cardCameraFrame}>
             <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" enableTorch={torchEnabled} />
             <View pointerEvents="none" style={styles.frameBorder}>
@@ -165,13 +170,13 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
           <View style={styles.cameraTips}>
             <Ionicons name="sunny-outline" size={18} color={COLORS.gold} />
-            <Text style={styles.cameraTipText}>Keep it straight, avoid glare, and make sure all text is clear</Text>
+            <Text style={styles.cameraTipText}>{translateUi("Keep it straight, avoid glare, and make sure all text is clear")}</Text>
           </View>
         </View>
 
         <View style={styles.captureControls}>
           <TouchableOpacity
-            accessibilityLabel="Photograph vehicle registration"
+            accessibilityLabel={translateUi("Photograph vehicle registration")}
             activeOpacity={0.8}
             disabled={scanning}
             style={[styles.captureButtonOuter, scanning && styles.disabled]}
@@ -187,10 +192,11 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Add vehicle" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Add vehicle")} onBack={() => navigation.goBack()} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
         
         <TouchableOpacity activeOpacity={0.8} style={styles.scanButton} onPress={openRegistrationCardCamera} disabled={scanning}>
           {scanning ? (
@@ -207,7 +213,7 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
 
         <View style={styles.formCard}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>License plate</Text>
+            <Text style={styles.label}>{translateUi("License plate")}</Text>
             <View style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
@@ -221,20 +227,20 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Vehicle type</Text>
-            <View style={styles.inputWrap}>
-              <TextInput
-                style={styles.input}
-                placeholder="car or electric_car"
-                placeholderTextColor={COLORS.textMuted}
-                value={vehicleType}
-                onChangeText={(val) => setVehicleType(val as VehicleType)}
-              />
+            <Text style={styles.label}>{translateUi("Vehicle type")}</Text>
+            <View style={styles.typeOptions}>
+              {(['car', 'electric_car'] as const).map((type) => (
+                <TouchableOpacity key={type} accessibilityRole="radio" accessibilityState={{ checked: vehicleType === type }} onPress={() => setVehicleType(type)} style={[styles.typeOption, vehicleType === type && styles.typeSelected]}>
+                  <Ionicons name={type === 'electric_car' ? 'flash-outline' : 'car-outline'} size={22} color={vehicleType === type ? COLORS.gold : COLORS.textSecondary} />
+                  <Text style={[styles.typeText, vehicleType === type && { color: COLORS.gold }]}>{translateUi(type === 'car' ? 'Car' : 'Electric car')}</Text>
+                  <Ionicons name={vehicleType === type ? 'radio-button-on' : 'radio-button-off'} size={18} color={vehicleType === type ? COLORS.gold : COLORS.textMuted} />
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Make</Text>
+            <Text style={styles.label}>{translateUi("Make")}</Text>
             <View style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
@@ -247,7 +253,7 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Model</Text>
+            <Text style={styles.label}>{translateUi("Model")}</Text>
             <View style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
@@ -260,11 +266,11 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Color</Text>
+            <Text style={styles.label}>{translateUi("Color")}</Text>
             <View style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. White"
+                placeholder={translateUi("e.g. White")}
                 placeholderTextColor={COLORS.textMuted}
                 value={color}
                 onChangeText={setColor}
@@ -273,11 +279,11 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Vehicle nickname</Text>
+            <Text style={styles.label}>{translateUi("Vehicle nickname")}</Text>
             <View style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
-                placeholder="Name or nickname"
+                placeholder={translateUi("Name or nickname")}
                 placeholderTextColor={COLORS.textMuted}
                 value={nickname}
                 onChangeText={setNickname}
@@ -286,7 +292,7 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Hex color code</Text>
+            <Text style={styles.label}>{translateUi("Hex color code")}</Text>
             <View style={styles.inputWrap}>
               <View style={[styles.colorPreview, { backgroundColor: hexColor }]} />
               <TextInput
@@ -300,7 +306,7 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           </View>
         </View>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {error ? <Text style={styles.errorText}>{translateUi(error)}</Text> : null}
 
         <TouchableOpacity 
           activeOpacity={0.8} 
@@ -311,15 +317,21 @@ export const AddVehicleScreen = ({ navigation }: { navigation: { goBack: () => v
           {loading ? (
             <ActivityIndicator color={COLORS.textInverse} size="small" />
           ) : (
-            <Text style={styles.primaryButtonText}>Add vehicle</Text>
+            <Text style={styles.primaryButtonText}>{translateUi("Add vehicle")}</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  typeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  typeOption: { flexGrow: 1, flexBasis: 140, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 56, paddingHorizontal: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surfaceElevated },
+  typeSelected: { borderColor: COLORS.gold, backgroundColor: COLORS.goldTint },
+  typeText: { flex: 1, color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
+  keyboard: { flex: 1 },
   cameraScreen: {
     backgroundColor: '#050505',
     flex: 1,
@@ -465,8 +477,6 @@ const styles = StyleSheet.create({
   },
   formCard: {
     backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderWidth: 1,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     gap: SPACING.md,
@@ -487,10 +497,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
-    height: 48,
+    minHeight: 48,
   },
   input: {
+    ...typography.body1,
     flex: 1,
+    minWidth: 0,
+    paddingVertical: 12,
     color: COLORS.textPrimary,
     fontSize: FONT_SIZES.md,
   },
@@ -510,7 +523,9 @@ const styles = StyleSheet.create({
   primaryButton: {
     backgroundColor: COLORS.gold,
     borderRadius: RADIUS.md,
-    height: 52,
+    minHeight: 52,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -518,6 +533,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   primaryButtonText: {
+    ...typography.button,
+    textAlign: 'center',
     color: COLORS.textInverse,
     fontSize: FONT_SIZES.md,
     fontWeight: '700',

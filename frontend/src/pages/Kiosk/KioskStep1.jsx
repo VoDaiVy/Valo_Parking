@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { Delete, AlertCircle, ScanLine } from 'lucide-react';
 import KioskQrScannerModal from './KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
+import { captureKioskPlate } from '../../services/kioskCamera';
 import { isValidLicensePlate } from '../../utils/licensePlate';
+import KioskDeviceSetup from './KioskDeviceSetup';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
@@ -32,7 +34,8 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
     try {
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
         body: JSON.stringify({
           qrPayload,
           entryImageBase64: formData.entryImageBase64 || null,
@@ -61,10 +64,20 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         return;
       }
 
+      let capturedPlate = data.licensePlate;
+      let capturedImage = formData.entryImageBase64 || null;
+      if (!capturedImage) {
+        const vehicle = await captureKioskPlate(data.licensePlate);
+        capturedPlate = vehicle.licensePlate;
+        capturedImage = vehicle.imageBase64;
+      }
+
       lastCheckedPlateRef.current = '';
       setUserTypedPlate(true);
       updateFormData({
-        licensePlate: data.licensePlate,
+        qrPayload,
+        licensePlate: capturedPlate,
+        entryImageBase64: capturedImage,
         phone: data.phone || formData.phone || '',
       });
       setIsVerifying(false);
@@ -74,7 +87,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       setIsVerifying(false);
       setStepAlert({
         title: 'Connection Error',
-        message: 'Lỗi kết nối khi xác thực mã QR.',
+        message: err.message || 'Lỗi kết nối khi xác thực mã QR.',
       });
     }
   };
@@ -560,6 +573,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         </button>
       </div>
 
+      <KioskDeviceSetup gate="ENTRY_1" />
       <KioskQrScannerModal
         isOpen={showQrModal}
         onClose={() => setShowQrModal(false)}

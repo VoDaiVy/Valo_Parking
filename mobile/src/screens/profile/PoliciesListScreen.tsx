@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -41,6 +42,7 @@ const CATEGORY_ICON: Record<PolicyCategory, React.ComponentProps<typeof Ionicons
 };
 
 export const PoliciesListScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,9 +85,9 @@ export const PoliciesListScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <ScreenHeader
-        title="Policies"
+        title={translateUi("Policies")}
         subtitle={`${policies.length} documents`}
         onBack={() => navigation.goBack()}
       />
@@ -95,12 +97,12 @@ export const PoliciesListScreen = ({ navigation }: Props) => {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : policies.length === 0 ? (
         <EmptyState
           icon="document-text-outline"
-          title="No policies available"
-          message="New policies will appear here."
+          title={translateUi("No policies available")}
+          message={translateUi("New policies will appear here.")}
         />
       ) : (
         <ScrollView
@@ -120,7 +122,7 @@ export const PoliciesListScreen = ({ navigation }: Props) => {
                     <Pressable
                       key={policy._id || policy.id || policy.slug}
                       accessibilityRole="button"
-                      style={styles.policyCard}
+                      style={({ pressed }) => [styles.policyCard, pressed && { opacity: 0.88 }]}
                       onPress={() => navigation.navigate('PolicyDetail', { slug: policy.slug })}
                     >
                       <View style={styles.policyIcon}>
@@ -140,15 +142,15 @@ export const PoliciesListScreen = ({ navigation }: Props) => {
                         ) : null}
                         <View style={styles.policyMeta}>
                           <Text style={styles.versionText}>
-                            Version {policy.currentVersionNumber || policy.versionNumber || 'current'}
+                            {" "}{translateUi("Version")}{" "}{policy.currentVersionNumber || policy.versionNumber || 'current'}
                           </Text>
                           {accepted ? (
                             <View style={[styles.statusPill, styles.statusAccepted]}>
-                              <Text style={[styles.statusText, { color: COLORS.success }]}>Accepted</Text>
+                              <Text style={[styles.statusText, { color: COLORS.success }]}>{translateUi("Accepted")}</Text>
                             </View>
                           ) : required ? (
                             <View style={[styles.statusPill, styles.statusRequired]}>
-                              <Text style={[styles.statusText, { color: COLORS.warning }]}>Review required</Text>
+                              <Text style={[styles.statusText, { color: COLORS.warning }]}>{translateUi("Review required")}</Text>
                             </View>
                           ) : null}
                         </View>
@@ -240,10 +242,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   statusAccepted: {
-    backgroundColor: 'rgba(126,232,162,0.12)',
+    backgroundColor: COLORS.successTint,
   },
   statusRequired: {
-    backgroundColor: 'rgba(255,159,67,0.12)',
+    backgroundColor: COLORS.warningTint,
   },
   statusText: {
     fontSize: FONT_SIZES.xs,

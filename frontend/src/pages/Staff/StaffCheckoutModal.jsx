@@ -131,6 +131,11 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         return;
       }
 
+      if (data.requiresPayment) {
+        setErrorMsg('Bank payment is required. Complete checkout at the exit kiosk or use the staff mobile QR scanner.');
+        setStep('invoice');
+        return;
+      }
       setCompletedCheckout(data.data || null);
       setStep('success');
       setTimeout(() => {

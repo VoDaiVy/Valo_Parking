@@ -1,4 +1,8 @@
 const axios = require('axios');
+const { assertCredentialCurrent, recordPassCommit } = require('../services/parkingTransitionService');
+const parkingPassService = require('../services/parkingPassService');
+const checkoutAttempts = require('../services/checkoutAttemptService');
+const CheckoutAttempt = require('../models/CheckoutAttempt');
 const Session = require('../models/Session');
 const UserDetail = require('../models/UserDetail');
 const User = require('../models/User');
@@ -154,6 +158,7 @@ exports.verifyPlate = async (req, res, next) => {
     }
 
     const cleanPlate = normalizeLicensePlate(licensePlate);
+
 
     // 1. Kiểm tra xe đang có session ACTIVE trong bãi không
     const activeSession = await Session.findOne({ licensePlate: cleanPlate, status: 'active' });
@@ -522,7 +527,7 @@ exports.kioskVerifyQr = async (req, res) => {
     const trimmedPayload = String(qrPayload).trim();
     let resolved = null;
 
-    // 1. Mã QR Đặt trước có chữ ký (VALO_BOOKING:...)
+    // 1. Mã QR Đặt trước có chữ ký (VALO_BOOKING:...) hoặc Vé đỗ xe (VALO_PASS:...)
     if (trimmedPayload.startsWith('VALO_BOOKING')) {
       const parsed = parseAndVerifyBookingQr(trimmedPayload);
       const booking = await Booking.findById(parsed.bookingId).populate('vehicleId userId');
@@ -553,14 +558,35 @@ exports.kioskVerifyQr = async (req, res) => {
         });
       }
 
+      let passTicket = null;
+      try {
+        passTicket = await parkingPassService.resolveParkingCredential(trimmedPayload);
+      } catch (_) {
+        passTicket = null;
+      }
+
       resolved = {
         type: 'BOOKING',
         licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
         phone: await getCanonicalUserPhone(booking.userId?._id || booking.userId),
         bookingId: booking._id,
         booking,
+        passId: passTicket?.pass?._id || null,
+        allowedActions: passTicket?.allowedActions || ['CHECK_IN'],
         assignedSlot: booking.parkingSlot,
         assignedFloorId: booking.floorId,
+      };
+    } else if (trimmedPayload.startsWith('VALO_PASS')) {
+      const ticket = await parkingPassService.resolveParkingCredential(trimmedPayload);
+      resolved = {
+        type: ticket.booking ? 'BOOKING' : 'WALK_IN',
+        licensePlate: ticket.licensePlate,
+        phone: ticket.booking?.phone || ticket.session?.phone || '',
+        bookingId: ticket.booking?._id || null,
+        passId: ticket.pass._id,
+        allowedActions: ticket.allowedActions,
+        assignedSlot: ticket.booking?.parkingSlot || ticket.session?.parkingSlot || null,
+        assignedFloorId: ticket.booking?.floorId || ticket.session?.floorId || null,
       };
     }
 
@@ -647,6 +673,8 @@ exports.kioskVerifyQr = async (req, res) => {
       isPlateMatched,
       mismatchReason,
       bookingId: resolved.bookingId || null,
+      passId: resolved.passId || null,
+      allowedActions: resolved.allowedActions || [],
       assignedSlot: resolved.assignedSlot || null,
       assignedFloorId: resolved.assignedFloorId || null,
       membershipActive: resolved.type === 'MEMBERSHIP' ? Boolean(resolved.membershipActive) : undefined,
@@ -707,6 +735,15 @@ exports.createKioskSession = async (req, res, next) => {
       }
     }
 
+    let qrTicket = null;
+    if (typeof req.body.qrPayload === 'string' && /^(VALO_PASS|VALO_BOOKING):/.test(req.body.qrPayload.trim())) {
+      req.body.qrPayload = req.body.qrPayload.trim();
+      if (req.kioskDevice && !entryImageBase64) return res.status(400).json({ success: false, message: 'Capture vehicle evidence before QR check-in' });
+      qrTicket = await parkingPassService.resolveParkingCredential(req.body.qrPayload);
+      req.parkingQrCredential = { passId: qrTicket.pass._id, expectedVersion: qrTicket.pass.legacy ? null : qrTicket.pass.qrVersion, bookingId: qrTicket.booking?._id, expectedBookingQrVersion: req.body.qrPayload.startsWith('VALO_BOOKING:') ? parseAndVerifyBookingQr(req.body.qrPayload).version : null };
+      if (!qrTicket.allowedActions.includes('CHECK_IN') || normalizeLicensePlate(qrTicket.licensePlate) !== cleanPlate) return res.status(409).json({ success: false, message: 'Ticket is not valid for check-in of this vehicle' });
+    }
+
     // Đề phòng xe check-in trùng
     const existingSession = await Session.findOne({ licensePlate: cleanPlate, status: 'active' });
     if (existingSession) {
@@ -724,6 +761,7 @@ exports.createKioskSession = async (req, res, next) => {
     const cancelCheckinLimit = new Date(now.getTime() - 30 * 60 * 1000);
 
     const bookingWindow = {
+      ...(qrTicket?.booking ? { _id: qrTicket.booking._id } : {}),
       licensePlate: cleanPlate,
       $or: [
         { status: 'PAID', scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit } },
@@ -955,6 +993,8 @@ exports.createKioskSession = async (req, res, next) => {
     let bookingOriginalStatus = null;
     let bookingSlotChange = null;
 
+    if (qrTicket && !activeBooking) return res.status(409).json({ success: false, message: 'Booking is no longer available for check-in' });
+
     if (activeBooking) {
       const wasExpiredBooking = activeBooking.status === 'EXPIRED';
       bookingOriginalStatus = activeBooking.status;
@@ -1165,9 +1205,11 @@ exports.createKioskSession = async (req, res, next) => {
     }
 
     let newSession;
+    let pass = null;
     const entryDbSession = await mongoose.startSession();
     try {
       await entryDbSession.withTransaction(async () => {
+        await assertCredentialCurrent(req, entryDbSession);
         const duplicateSession = await Session.findOne({
           licensePlate: cleanPlate,
           status: 'active',
@@ -1246,6 +1288,7 @@ exports.createKioskSession = async (req, res, next) => {
           subscriptionId: finalSubscriptionId,
           entitlementId: finalEntitlementId,
           type: sessionType,
+          source: req.parkingPassAction && req.user ? 'staff_manual' : 'kiosk',
           phone: finalPhone || null,
           vehicleType: vehicleType || 'car',
           parkingSlot: normalizedFinalSlot || null,
@@ -1279,6 +1322,11 @@ exports.createKioskSession = async (req, res, next) => {
           }
         }
 
+        await recordPassCommit(req, newSession, entryDbSession);
+        if (parkingPassService.isPassIssuanceEnabled() && ['BOOKING', 'WALK_IN'].includes(newSession.type)) {
+          pass = await parkingPassService.ensureSessionPass(newSession, { session: entryDbSession });
+        }
+
         if (holdToConsume) {
           const consumedHold = await BookingHold.updateOne(
             {
@@ -1300,7 +1348,6 @@ exports.createKioskSession = async (req, res, next) => {
     } finally {
       await entryDbSession.endSession();
     }
-
     aiNotificationEvents.notifySessionCreatedSafely(newSession, req.app);
 
     // Gửi email check-in thành công
@@ -1337,7 +1384,7 @@ exports.createKioskSession = async (req, res, next) => {
     }
 
     // Trigger IoT ESP32 Barrier Open
-    triggerBarrierOpen(cleanPlate, normalizedFinalSlot || 'N/A', entryGate || 'ENTRY_1', req.app);
+    if (req.kioskDevice) triggerBarrierOpen(cleanPlate, normalizedFinalSlot || 'N/A', req.kioskDevice.gate, req.app);
 
     res.status(201).json({
       success: true,
@@ -1350,6 +1397,7 @@ exports.createKioskSession = async (req, res, next) => {
         ...toKioskSession(newSession),
         exitQrPayload: buildSessionExitQrPayload(newSession),
       },
+      pass: pass ? { id: pass._id, payload: require('../services/parkingPassQrService').buildParkingPassQrPayload(pass) } : null,
       vipRedirected,
       originalVipSlot,
       bookingSlotReallocated: Boolean(bookingSlotChange),
@@ -1408,9 +1456,20 @@ exports.createKioskSession = async (req, res, next) => {
  */
 exports.kioskExitScan = async (req, res, next) => {
   try {
-    const { licensePlate, sessionId, qrPayload, exitImageBase64, detectedPlate } = req.body;
+    const { sessionId, qrPayload, exitImageBase64, detectedPlate } = req.body;
+    let { licensePlate } = req.body;
+    let credentialSession = null;
+    const credentialPayload = typeof qrPayload === 'string' ? qrPayload.trim() : '';
+    if (credentialPayload.startsWith('VALO_PASS') || credentialPayload.startsWith('VALO_BOOKING')) {
+      const ticket = await parkingPassService.resolveParkingCredential(credentialPayload);
+      if (!ticket.allowedActions.includes('CHECK_OUT')) return res.status(409).json({ success: false, message: 'Ticket is not available for checkout' });
+      if (licensePlate && normalizeLicensePlate(licensePlate) !== normalizeLicensePlate(ticket.licensePlate)) return res.status(409).json({ success: false, message: 'Vehicle does not match ticket' });
+      if (sessionId && String(ticket.session?._id) !== String(sessionId)) return res.status(409).json({ success: false, message: 'Session does not match ticket' });
+      licensePlate = ticket.licensePlate;
+      credentialSession = ticket.session;
+    }
 
-    let session = null;
+    let session = credentialSession;
     const trimmedPayload = typeof qrPayload === 'string' ? qrPayload.trim() : '';
     const isStaff = ['staff', 'admin'].includes(req.user?.role);
     let resolvedBySessionQr = false;
@@ -1548,7 +1607,7 @@ exports.kioskExitScan = async (req, res, next) => {
     let refundBreakdown = null;
     let subscriptionExpiredAt = null;
 
-    if (session.userId) {
+    if (session.userId && session.type !== 'WALK_IN') {
       const wallet = await walletService.getOrCreateWallet(session.userId);
       walletBalance = wallet.balance;
     }
@@ -1612,7 +1671,7 @@ exports.kioskExitScan = async (req, res, next) => {
       }
     }
 
-    const canAutoPay = walletBalance >= amountToPay;
+    const canAutoPay = session.type !== 'WALK_IN' && Boolean(session.userId) && walletBalance >= amountToPay;
     const canUseWallet = Boolean(
       req.user
       && session.userId
@@ -1788,7 +1847,21 @@ exports.kioskCheckout = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy phiên đỗ xe hoạt động' });
     }
 
-    const now = new Date();
+    if (typeof req.body.qrPayload === 'string' && /^(VALO_PASS|VALO_BOOKING):/.test(req.body.qrPayload.trim())) {
+      req.body.qrPayload = req.body.qrPayload.trim();
+      const ticket = await parkingPassService.resolveParkingCredential(req.body.qrPayload);
+      if (!ticket.allowedActions.includes('CHECK_OUT') || String(ticket.session?._id) !== String(session._id)) return res.status(409).json({ success: false, message: 'QR is not valid for this checkout session' });
+      if (req.kioskDevice && (!req.body.licensePlate || normalizeLicensePlate(req.body.licensePlate) !== normalizeLicensePlate(ticket.licensePlate))) return res.status(400).json({ success: false, message: 'Captured vehicle plate must match the checkout QR' });
+      req.parkingQrCredential = { passId: ticket.pass._id, expectedVersion: ticket.pass.legacy ? null : ticket.pass.qrVersion, bookingId: ticket.booking?._id, expectedBookingQrVersion: req.body.qrPayload.startsWith('VALO_BOOKING:') ? parseAndVerifyBookingQr(req.body.qrPayload).version : null };
+    }
+
+    if (paymentMethod === 'wallet' && session.type === 'WALK_IN') return res.status(403).json({ success: false, code: 'WALK_IN_WALLET_UNVERIFIED', message: 'Walk-in sessions require confirmed bank payment or staff cash payment' });
+
+    let now = new Date();
+    const verifiedAttempt = paymentMethod === 'qr' && req.body.checkoutAttemptId
+      ? await checkoutAttempts.verifyAttempt({ attemptId: req.body.checkoutAttemptId, sessionId: session._id })
+      : null;
+    if (verifiedAttempt) now = verifiedAttempt.quoteTime;
     let pricing = await pricingEngine.calculatePrice(session.checkInTime, now);
 
     // Xử lý upload ảnh exit
@@ -1900,6 +1973,11 @@ exports.kioskCheckout = async (req, res, next) => {
         }
         session.paymentStatus = 'paid';
       } else if (paymentMethod === 'vietqr') {
+        if (req.parkingPassAction || req.body.useCheckoutAttempt) {
+          const payment = await checkoutAttempts.createAttempt({ sessionId: session._id, amountDue: amountToPay, quoteTime: now });
+          return res.status(200).json({ success: true, requiresPayment: true, data: payment });
+        }
+
         const paymentIntent = await createKioskPaymentIntent({
           session,
           amount: amountToPay,
@@ -1961,48 +2039,56 @@ exports.kioskCheckout = async (req, res, next) => {
           }
         });
       } else if (paymentMethod === 'qr') {
-        if (!paymentIntentId) {
-          return res.status(400).json({ success: false, message: 'Thiếu payment intent cho giao dịch QR' });
-        }
-        const PaymentIntent = require('../models/PaymentIntent');
-        const paymentIntent = await PaymentIntent.findOne({
-          _id: paymentIntentId,
-          purpose: 'KIOSK_CHECKOUT',
-          sessionId: session._id,
-          provider: 'PAYOS',
-        });
-        if (!paymentIntent || !['PAID', 'SETTLED'].includes(paymentIntent.status)) {
-          return res.status(402).json({ success: false, message: 'Thanh toán QR chưa được xác nhận' });
-        }
-        if (paymentIntent.expiresAt && paymentIntent.expiresAt <= now && paymentIntent.status === 'PENDING') {
-          return res.status(402).json({ success: false, message: 'Payment intent đã hết hạn, vui lòng tạo lại giao dịch' });
-        }
-        const quotedAmount = Number(paymentIntent.metadata?.quotedAmount);
-        if (
-          (Number.isFinite(quotedAmount) && Number(paymentIntent.amount) !== quotedAmount)
-          || (!Number.isFinite(quotedAmount) && Number(paymentIntent.amount) !== Number(amountToPay))
-        ) {
-          return res.status(409).json({
-            success: false,
-            code: 'PAYMENT_AMOUNT_MISMATCH',
-            message: 'Payment intent có số tiền không hợp lệ, vui lòng tạo lại giao dịch',
+        if (req.body.checkoutAttemptId) {
+          if (!verifiedAttempt || verifiedAttempt.amountDue !== amountToPay) {
+            return res.status(402).json({ success: false, message: 'Payment amount does not match checkout' });
+          }
+        } else {
+          if (!paymentIntentId) {
+            return res.status(400).json({ success: false, message: 'Thiếu payment intent cho giao dịch QR' });
+          }
+          const PaymentIntent = require('../models/PaymentIntent');
+          const paymentIntent = await PaymentIntent.findOne({
+            _id: paymentIntentId,
+            purpose: 'KIOSK_CHECKOUT',
+            sessionId: session._id,
+            provider: 'PAYOS',
           });
-        }
-        amountToPay = Number(paymentIntent.amount);
-        if (paymentIntent.metadata) {
-          keepPaused = paymentIntent.metadata.keepPaused;
-          exitCamera = paymentIntent.metadata.exitCamera || exitCamera;
-          exitGate = paymentIntent.metadata.exitGate || exitGate;
-          refundAmount = Number(paymentIntent.metadata.refundAmount || 0);
-          refundBreakdown = paymentIntent.metadata.refundBreakdown || refundBreakdown;
-          pricing = paymentIntent.metadata.pricing || pricing;
+          if (!paymentIntent || !['PAID', 'SETTLED'].includes(paymentIntent.status)) {
+            return res.status(402).json({ success: false, message: 'Thanh toán QR chưa được xác nhận' });
+          }
+          if (paymentIntent.expiresAt && paymentIntent.expiresAt <= now && paymentIntent.status === 'PENDING') {
+            return res.status(402).json({ success: false, message: 'Payment intent đã hết hạn, vui lòng tạo lại giao dịch' });
+          }
+          const quotedAmount = Number(paymentIntent.metadata?.quotedAmount);
+          if (
+            (Number.isFinite(quotedAmount) && Number(paymentIntent.amount) !== quotedAmount)
+            || (!Number.isFinite(quotedAmount) && Number(paymentIntent.amount) !== Number(amountToPay))
+          ) {
+            return res.status(409).json({
+              success: false,
+              code: 'PAYMENT_AMOUNT_MISMATCH',
+              message: 'Payment intent có số tiền không hợp lệ, vui lòng tạo lại giao dịch',
+            });
+          }
+          amountToPay = Number(paymentIntent.amount);
+          if (paymentIntent.metadata) {
+            keepPaused = paymentIntent.metadata.keepPaused;
+            exitCamera = paymentIntent.metadata.exitCamera || exitCamera;
+            exitGate = paymentIntent.metadata.exitGate || exitGate;
+            refundAmount = Number(paymentIntent.metadata.refundAmount || 0);
+            refundBreakdown = paymentIntent.metadata.refundBreakdown || refundBreakdown;
+            pricing = paymentIntent.metadata.pricing || pricing;
+          }
         }
         session.paymentStatus = 'paid';
       } else if (paymentMethod === 'cash') {
         if (!req.user || !['staff', 'admin'].includes(req.user.role)) {
           return res.status(403).json({ success: false, message: 'Chỉ nhân viên mới được xác nhận thanh toán tiền mặt' });
         }
-        const receivedAmount = Number(cashReceivedAmount);
+        const receivedAmount = (cashReceivedAmount !== undefined && cashReceivedAmount !== null && cashReceivedAmount !== '')
+          ? Number(cashReceivedAmount)
+          : amountToPay;
         if (!Number.isInteger(receivedAmount) || receivedAmount < amountToPay) {
           return res.status(400).json({
             success: false,
@@ -2037,6 +2123,8 @@ exports.kioskCheckout = async (req, res, next) => {
       session.paymentStatus = 'paid';
     }
 
+    if (amountToPay > 0 && !['wallet', 'vietqr', 'qr', 'cash'].includes(paymentMethod)) return res.status(400).json({ success: false, message: 'Payment method is required' });
+
     // 2. Xử lý trả sớm Booking
     let sessionFinalizedAtomically = false;
     if (booking) {
@@ -2045,6 +2133,7 @@ exports.kioskCheckout = async (req, res, next) => {
         const pauseSession = await mongoose.startSession();
         try {
           pauseSession.startTransaction();
+          await assertCredentialCurrent(req, pauseSession);
 
           if (amountToPay >= 1000 && paymentMethod === 'wallet') {
             await walletService.debitWallet(
@@ -2107,6 +2196,12 @@ exports.kioskCheckout = async (req, res, next) => {
             });
           }
 
+          await recordPassCommit(req, completedSession, pauseSession);
+          if (verifiedAttempt) {
+            const paid = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: pauseSession });
+            if (!paid.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
+          }
+
           await pauseSession.commitTransaction();
           booking = pausedBooking;
           payoutStatus = amountToPay > 0
@@ -2138,6 +2233,7 @@ exports.kioskCheckout = async (req, res, next) => {
               ? refundAmount - amountToPay
               : refundAmount,
           applyState: async ({ booking: currentBooking, session: mongoSession }) => {
+            await assertCredentialCurrent(req, mongoSession);
             if (currentBooking.status !== 'ACTIVE') {
               throw Object.assign(new Error('Booking is no longer active'), {
                 statusCode: 409,
@@ -2150,12 +2246,17 @@ exports.kioskCheckout = async (req, res, next) => {
                 amount: amountToPay, paymentMethod, sessionId: session._id, paidAt: now,
               });
             }
+            if (verifiedAttempt) {
+              const paid = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: mongoSession });
+              if (!paid.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
+            }
             const updatedSession = await Session.findOneAndUpdate(
               { _id: session._id, status: 'active' },
               {
                 status: 'completed',
                 checkOutTime: now,
                 totalPrice: refundBreakdown.actualParkingCharge,
+                settledPaidAmount: amountToPay,
                 pricingBreakdown: pricing,
                 paymentStatus: session.paymentStatus,
                 ...(exitImage_url ? { exitImage_url } : {}),
@@ -2169,6 +2270,7 @@ exports.kioskCheckout = async (req, res, next) => {
                 statusCode: 409,
               });
             }
+            await recordPassCommit(req, updatedSession, mongoSession);
           },
         });
         booking = settled.booking;
@@ -2180,24 +2282,52 @@ exports.kioskCheckout = async (req, res, next) => {
 
     // 3. Hoàn tất Session đỗ xe
     if (!sessionFinalizedAtomically) {
-      const completedSession = await Session.findOneAndUpdate(
-        { _id: session._id, status: 'active' },
-        {
-          $set: {
-            status: 'completed',
-            checkOutTime: now,
-            totalPrice: refundBreakdown?.actualParkingCharge ?? pricing.finalTotal,
-            settledPaidAmount: amountToPay,
-            paymentStatus: session.paymentStatus,
-            pricingBreakdown: pricing,
-            ...(exitImage_url ? { exitImage_url } : {}),
-            ...(exitCamera ? { exitCamera } : {}),
-            ...(exitGate ? { exitGate } : {}),
-          },
-        },
-        { new: true }
-      );
-      if (!completedSession) {
+      let alreadyCompleted = false;
+      let completedSession = null;
+      const transaction = await mongoose.startSession();
+      try {
+        await transaction.withTransaction(async () => {
+          await assertCredentialCurrent(req, transaction);
+          const updated = await Session.findOneAndUpdate(
+            { _id: session._id, status: 'active' },
+            {
+              $set: {
+                status: 'completed',
+                checkOutTime: now,
+                totalPrice: refundBreakdown?.actualParkingCharge ?? pricing.finalTotal,
+                settledPaidAmount: amountToPay,
+                paymentStatus: session.paymentStatus,
+                pricingBreakdown: pricing,
+                ...(exitImage_url ? { exitImage_url } : {}),
+                ...(exitCamera ? { exitCamera } : {}),
+                ...(exitGate ? { exitGate } : {}),
+              },
+            },
+            { new: true, session: transaction }
+          );
+          if (!updated) {
+            const latest = await Session.findById(session._id).session(transaction);
+            if (latest?.status === 'completed') {
+              alreadyCompleted = true;
+              return;
+            }
+            throw Object.assign(new Error('Session already completed'), { statusCode: 409 });
+          }
+          await recordPassCommit(req, updated, transaction);
+          if (verifiedAttempt) {
+            const settledAttempt = await CheckoutAttempt.updateOne(
+              { _id: verifiedAttempt._id, status: 'paid' },
+              { $set: { status: 'settled', settledAt: new Date() } },
+              { session: transaction }
+            );
+            if (!settledAttempt.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
+          }
+          completedSession = updated;
+        });
+      } finally {
+        await transaction.endSession();
+      }
+      if (alreadyCompleted || !completedSession) {
         return res.status(200).json({
           success: true,
           replayed: true,
@@ -2384,7 +2514,7 @@ exports.kioskCheckout = async (req, res, next) => {
     }
 
     // Trigger IoT ESP32 Barrier Open on Exit
-    triggerBarrierOpen(session.licensePlate, session.parkingSlot || 'N/A', exitGate || 'EXIT_1', req.app);
+    if (req.kioskDevice) triggerBarrierOpen(session.licensePlate, session.parkingSlot || 'N/A', exitGate || 'EXIT_1', req.app);
 
     res.status(200).json({
       success: true,
@@ -2398,8 +2528,12 @@ exports.kioskCheckout = async (req, res, next) => {
           : null,
         ...(paymentMethod === 'cash' && amountToPay > 0
           ? {
-            cashReceivedAmount: Number(cashReceivedAmount),
-            changeAmount: Number(cashReceivedAmount) - Number(amountToPay),
+            cashReceivedAmount: (cashReceivedAmount !== undefined && cashReceivedAmount !== null && cashReceivedAmount !== '')
+              ? Number(cashReceivedAmount)
+              : amountToPay,
+            changeAmount: ((cashReceivedAmount !== undefined && cashReceivedAmount !== null && cashReceivedAmount !== '')
+              ? Number(cashReceivedAmount)
+              : amountToPay) - Number(amountToPay),
             paymentMethod: 'cash',
           }
           : {}),
@@ -2438,12 +2572,16 @@ exports.getMyHistory = async (req, res, next) => {
     const Vehicle = require('../models/Vehicle');
     const Booking = require('../models/Booking');
     const myVehicles = await Vehicle.find({ owner: req.user._id, status: 'approved' }).distinct('licensePlate');
-    const myBookings = await Booking.find({ userId: req.user._id }).distinct('_id');
-
+    const myBookings = await Booking.find({
+      $or: [
+        { userId: req.user._id },
+        { licensePlate: { $in: myVehicles } },
+      ],
+    }).distinct('_id');
     const userDetail = await UserDetail.findOne({ userId: req.user._id });
     const orConditions = [
       { userId: req.user._id },
-      { licensePlate: { $in: myVehicles } },
+      { licensePlate: { $in: myVehicles }, userId: null, bookingId: null },
       { bookingId: { $in: myBookings } }
     ];
 
@@ -2503,6 +2641,22 @@ exports.checkPayosStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Thiếu mã đơn hàng' });
     }
 
+    if (req.query.checkoutAttemptId !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.checkoutAttemptId)) {
+        return res.status(400).json({ success: false, message: 'Thiếu mã checkoutAttemptId hợp lệ' });
+      }
+      const attempt = await CheckoutAttempt.findOne({ orderCode: Number(orderCode), _id: req.query.checkoutAttemptId });
+      if (!attempt) return res.status(404).json({ success: false, isPaid: false });
+      const payosInfo = await payos.paymentRequests.get(Number(orderCode));
+      checkoutAttempts.verifyProviderPayment(attempt, payosInfo);
+      await CheckoutAttempt.updateOne({ _id: attempt._id, status: 'pending' }, { $set: { status: 'paid' } });
+      return res.status(200).json({
+        success: true,
+        isPaid: true,
+        checkoutAttemptId: attempt._id,
+      });
+    }
+
     const PaymentIntent = require('../models/PaymentIntent');
     const intent = await PaymentIntent.findOne({
       purpose: 'KIOSK_CHECKOUT',
@@ -2514,7 +2668,6 @@ exports.checkPayosStatus = async (req, res, next) => {
     }
 
     const payosInfo = await payos.paymentRequests.get(Number(orderCode));
-
     if (payosInfo && payosInfo.status === 'PAID') {
       const paidIntent = await markPaymentIntentPaid({
         orderCode,

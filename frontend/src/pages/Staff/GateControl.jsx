@@ -604,11 +604,10 @@ export default function GateControl() {
               setAutoPilot(!autoPilot);
               toast(autoPilot ? 'Chuyển sang chế độ xác nhận thủ công (Manual)' : 'Đã BẬT Auto-Pilot: Tự mở cổng cho VIP/Booking hợp lệ!');
             }}
-            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${
-              autoPilot
-                ? 'border-[#ffd555] bg-[#ffd555]/20 text-[#ffd555] shadow-lg shadow-yellow-500/10'
-                : 'border-white/10 bg-[#111111] text-white/60 hover:text-white'
-            }`}
+            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${autoPilot
+              ? 'border-[#ffd555] bg-[#ffd555]/20 text-[#ffd555] shadow-lg shadow-yellow-500/10'
+              : 'border-white/10 bg-[#111111] text-white/60 hover:text-white'
+              }`}
           >
             <Zap size={15} className={autoPilot ? 'fill-[#ffd555] text-[#ffd555]' : 'text-gray-400'} />
             <span>Auto-Pilot {autoPilot ? 'ON' : 'OFF'}</span>
@@ -622,11 +621,10 @@ export default function GateControl() {
               setManualSplitOverride(next);
               toast(next ? 'Đã BẬT chế độ 1 Camera chia 2 làn (Trái = Ra, Phải = Vào)' : 'Đã chuyển sang chế độ Camera độc lập toàn khung');
             }}
-            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${
-              dualLaneSplitMode
-                ? 'border-sky-400/50 bg-sky-500/15 text-sky-300'
-                : 'border-white/10 bg-[#111111] text-white/60 hover:text-white'
-            }`}
+            className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 font-bold text-xs transition ${dualLaneSplitMode
+              ? 'border-sky-400/50 bg-sky-500/15 text-sky-300'
+              : 'border-white/10 bg-[#111111] text-white/60 hover:text-white'
+              }`}
           >
             <Camera size={15} />
             <span>{dualLaneSplitMode ? '1 Cam Chia Đôi (Trái Ra / Phải Vào)' : '2 Cam Độc Lập'}</span>
@@ -675,11 +673,10 @@ export default function GateControl() {
 
             {/* Barrier status badge */}
             <div className="flex items-center gap-2">
-              <span className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase border ${
-                gatesState.ENTRY_1?.open
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-red-500/20 text-red-300 border-red-500/40'
-              }`}>
+              <span className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase border ${gatesState.ENTRY_1?.open
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-red-500/20 text-red-300 border-red-500/40'
+                }`}>
                 {gatesState.ENTRY_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
                 Barrier: {gatesState.ENTRY_1?.open ? 'ĐANG MỞ' : 'ĐANG ĐÓNG'}
               </span>
@@ -845,25 +842,24 @@ export default function GateControl() {
 
             {/* Classification & Verification Alert */}
             {entryVerifyData && (
-              <div className={`p-3 rounded-lg border flex items-start gap-2.5 ${
-                entryVerifyData.isActive
-                  ? 'bg-red-500/10 border-red-500/30 text-red-300'
-                  : entryVerifyData.isMonthly
+              <div className={`p-3 rounded-lg border flex items-start gap-2.5 ${entryVerifyData.isActive
+                ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                : entryVerifyData.isMonthly
                   ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
                   : entryVerifyData.hasPreBooking
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              }`}>
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                }`}>
                 <ShieldCheck size={16} className="mt-0.5 shrink-0" />
                 <div className="text-xs">
                   <p className="font-bold">
                     {entryVerifyData.isActive
                       ? '⚠️ CẢNH BÁO: Xe đang có trong bãi!'
                       : entryVerifyData.isMonthly
-                      ? `👑 Khách VIP: ${entryVerifyData.membershipType || 'Vé tháng'}`
-                      : entryVerifyData.hasPreBooking
-                      ? `📅 Khách đã đặt chỗ trước (Booking ${entryVerifyData.bookingId || ''})`
-                      : '🎟️ Khách vãng lai hợp lệ'}
+                        ? `👑 Khách VIP: ${entryVerifyData.membershipType || 'Vé tháng'}`
+                        : entryVerifyData.hasPreBooking
+                          ? `📅 Khách đã đặt chỗ trước (Booking ${entryVerifyData.bookingId || ''})`
+                          : '🎟️ Khách vãng lai hợp lệ'}
                   </p>
                   <p className="text-[10px] opacity-80 mt-0.5">
                     {entryVerifyData.assignedSlot
@@ -985,11 +981,10 @@ export default function GateControl() {
 
             {/* Barrier status badge */}
             <div className="flex items-center gap-2">
-              <span className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase border ${
-                gatesState.EXIT_1?.open
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-red-500/20 text-red-300 border-red-500/40'
-              }`}>
+              <span className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase border ${gatesState.EXIT_1?.open
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-red-500/20 text-red-300 border-red-500/40'
+                }`}>
                 {gatesState.EXIT_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
                 Barrier: {gatesState.EXIT_1?.open ? 'ĐANG MỞ' : 'ĐANG ĐÓNG'}
               </span>

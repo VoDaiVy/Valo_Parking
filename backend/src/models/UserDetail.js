@@ -25,6 +25,8 @@ const userDetailSchema = new mongoose.Schema(
       default: '',
       set: (value) => normalizePhone(value),
     },
+    // Internal transaction fence shared by profile changes and Telegram linking.
+    telegramLinkRevision: { type: Number, default: 0, select: false },
     dob: {
       type: Date,
       default: null,

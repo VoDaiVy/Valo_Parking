@@ -1,3 +1,4 @@
+const { isInRenewalWindow } = require('../utils/membershipRenewalWindow');
 const Subscription = require('../models/Subscription');
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
@@ -8,7 +9,6 @@ const walletService = require('../services/walletService');
 const {
   validateNewSubscriptionEligibility,
 } = require('../services/subscriptionEligibilityService');
-const { isEnabled, defaultForCurrentEnvironment } = require('../utils/featureFlags');
 const {
   buildAccountMembershipQrPayload,
   buildMembershipQrPayload,
@@ -21,6 +21,7 @@ const {
 } = require('../services/membershipEntitlementService');
 const {
   getUnmigratedLegacySlots,
+  preserveFloorReference,
 } = require('../services/membershipProjectionService');
 const {
   buildSubscriptionPaymentUrls,
@@ -30,14 +31,38 @@ const {
 } = require('../services/adminSubscriptionProjectionService');
 const { notifySubscriptionActivatedSafely } = require('../services/aiCopilot/notificationEvents');
 
+const { _private: { addMonthsClamped } } = require('../services/subscriptionEligibilityService');
+
+const isPayosChannelUnavailable = (error) => {
+  const providerCode = String(
+    error?.response?.data?.code
+    ?? error?.body?.code
+    ?? error?.cause?.code
+    ?? error?.code
+    ?? ''
+  );
+  const providerMessage = String(
+    error?.response?.data?.message
+    ?? error?.body?.message
+    ?? error?.desc
+    ?? error?.message
+    ?? ''
+  );
+
+  return providerCode === '215'
+    || /code\s*:\s*215|kh[oô]ng c[oó] g[oó]i n[aà]o [đd]ang ho[aạ]t [đd]ộng/i.test(providerMessage);
+};
+
+/**
+ * Build subscription expiration date from a base date.
+ * Uses addMonthsClamped to correctly handle end-of-month overflow
+ * (e.g. Jan 31 + 1 month → Feb 28, not Mar 3).
+ */
 const buildExpirationDate = (packageType, fromDate = new Date()) => {
-  const expireAt = new Date(fromDate);
-  if (packageType === 'monthly') {
-    expireAt.setMonth(expireAt.getMonth() + 1);
-  } else {
-    expireAt.setFullYear(expireAt.getFullYear() + 1);
-  }
-  return expireAt;
+  if (packageType === 'monthly') return addMonthsClamped(fromDate, 1);
+  if (packageType === 'yearly') return addMonthsClamped(fromDate, 12);
+  // Fallback: treat unknown type as monthly
+  return addMonthsClamped(fromDate, 1);
 };
 
 
@@ -60,8 +85,10 @@ exports.createSubscriptionPayment = async (req, res, next) => {
 
     const amount = ticketPackage.price * Math.max(1, slots.length);
 
-    // Generate Order Code for PayOS
-    const orderCode = Number(String(Date.now()).slice(-6) + Math.floor(Math.random() * 100));
+    // Keep the same 10-digit PayOS order-code format used by regular bookings.
+    const orderCode = Number(
+      `${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`
+    );
 
     // Calculate expiration date
     const expireAt = buildExpirationDate(ticketPackage.type);
@@ -71,7 +98,8 @@ exports.createSubscriptionPayment = async (req, res, next) => {
     const paymentData = {
       orderCode,
       amount: parseInt(amount),
-      description: `VIP ${ticketPackage.type === 'monthly' ? 'Thang' : 'Nam'}`,
+      // Keep this short and ASCII-safe for every PayOS-linked bank.
+      description: 'VALO VIP',
       returnUrl: paymentUrls.returnUrl,
       cancelUrl: paymentUrls.cancelUrl,
       items: [
@@ -83,7 +111,19 @@ exports.createSubscriptionPayment = async (req, res, next) => {
       ],
     };
 
-    const paymentLink = await payos.paymentRequests.create(paymentData);
+    let paymentLink;
+    try {
+      paymentLink = await payos.paymentRequests.create(paymentData);
+    } catch (payosError) {
+      if (isPayosChannelUnavailable(payosError)) {
+        return res.status(503).json({
+          success: false,
+          code: 'PAYOS_CHANNEL_UNAVAILABLE',
+          message: 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.',
+        });
+      }
+      throw payosError;
+    }
     const checkoutUrl = paymentLink.checkoutUrl;
 
     // Create pending subscription
@@ -341,7 +381,7 @@ exports.getMembership = async (req, res, next) => {
           'packageId',
           'name type price description isActive isRenewable renewalWindowDays maxSlots'
         )
-        .populate('floorId', 'name floorNumber')
+        .populate({ path: 'floorId', select: 'name floorNumber', transform: preserveFloorReference })
         .lean(),
       Subscription.find({
       user: req.user._id,
@@ -354,7 +394,7 @@ exports.getMembership = async (req, res, next) => {
           'ticketPackage',
           'name type price description isActive isRenewable renewalWindowDays maxSlots'
         )
-        .populate('slots.floorId', 'name floorNumber')
+        .populate({ path: 'slots.floorId', select: 'name floorNumber', transform: preserveFloorReference })
         .lean(),
     ]);
 
@@ -390,33 +430,16 @@ exports.getMembership = async (req, res, next) => {
       null;
 
     const renewalWindowDays = Number(pkg?.renewalWindowDays || 7);
-    const canRenew = Boolean(
-      isEnabled('SUBSCRIPTION_RENEWAL_ENABLED', defaultForCurrentEnvironment()) &&
-      isActive &&
-      latestSubscription?._id &&
-      pkg?.isRenewable !== false &&
-      daysUntilExpiration !== null &&
-      daysUntilExpiration <= renewalWindowDays
-    );
+    const legacyRenewal = latestSubscription && !entitlements.length
+      ? await require('../services/membershipDetailsService').renewalState(req.user._id, latestSubscription, 'subscription', now)
+      : { canRenew: false, renewalWindowDays, message: 'Select a space below to review its renewal eligibility.' };
+
 
     const reservedSlots = [
-      ...entitlements.map((entitlement) => ({
-          entitlementId: entitlement._id,
-          sourceSubscriptionId: entitlement.sourceSubscriptionId,
-          floorId: entitlement.floorId?._id || entitlement.floorId,
-          floorName: entitlement.floorId?.name || '',
-          floorNumber: entitlement.floorId?.floorNumber || null,
-          slotCode: entitlement.slotCode,
-          status: entitlement.status,
-          validFrom: entitlement.validFrom,
-          expireAt: entitlement.expireAt,
-          unitAmount: entitlement.unitAmount,
-          transferCount: entitlement.transferCount,
-          canTransfer:
-            entitlement.status === 'active' &&
-            Number(entitlement.transferCount || 0) < 1,
-      })),
-      ...legacySlots.map(({ subscription, slot }) => ({
+      ...await Promise.all(entitlements.map((entitlement) =>
+        require('../services/membershipDetailsService').presentEntitlement(req.user._id, entitlement, now)
+      )),
+      ...await Promise.all(legacySlots.map(async ({ subscription, slot }) => ({
         entitlementId: null,
         sourceSubscriptionId: subscription._id,
         floorId: slot.floorId?._id || slot.floorId,
@@ -432,7 +455,10 @@ exports.getMembership = async (req, res, next) => {
         transferCount: 0,
         canTransfer: false,
         legacy: true,
-      })),
+        daysRemaining: Math.max(0, Math.ceil((new Date(subscription.expireAt) - now) / 86400000)),
+        expiringSoon: isInRenewalWindow(subscription.expireAt, subscription.ticketPackage, now),
+        renewal: await require('../services/membershipDetailsService').renewalState(req.user._id, subscription, 'subscription', now),
+      }))),
     ];
 
     res.status(200).json({
@@ -445,7 +471,9 @@ exports.getMembership = async (req, res, next) => {
         entitlementCount: reservedSlots.length,
         expireAt,
         daysUntilExpiration,
-        expirationWarning: Boolean(isActive && daysUntilExpiration !== null && daysUntilExpiration <= 7),
+        expirationWarning: reservedSlots.some((slot) => slot.expiringSoon),
+        earliestExpireAt: reservedSlots.length ? new Date(Math.min(...reservedSlots.map((slot) => new Date(slot.expireAt).getTime()))) : null,
+        expiringEntitlementCount: reservedSlots.filter((slot) => slot.expiringSoon).length,
         freeServiceCount: user?.membership?.freeServiceCount || 0,
         package: pkg
           ? {
@@ -464,11 +492,7 @@ exports.getMembership = async (req, res, next) => {
           status: 'manual',
           nextRenewalDate: expireAt,
           price: pkg?.price || 0,
-          canRenew,
-          renewalWindowDays,
-          message: canRenew
-            ? 'Your renewal window is open. Renew now to keep your reserved spaces.'
-            : 'Manual renewal opens before your membership expires.',
+          ...legacyRenewal,
         },
       },
     });
@@ -720,7 +744,19 @@ exports.renewSubscription = async (req, res, next) => {
         items: [{ name: `Renew VIP ${ticketPackage.type}`, quantity: 1, price: parseInt(amount) }]
       };
 
-      const paymentLink = await payos.paymentRequests.create(paymentData);
+      let paymentLink;
+      try {
+        paymentLink = await payos.paymentRequests.create(paymentData);
+      } catch (payosError) {
+        if (isPayosChannelUnavailable(payosError)) {
+          return res.status(503).json({
+            success: false,
+            code: 'PAYOS_CHANNEL_UNAVAILABLE',
+            message: 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.',
+          });
+        }
+        throw payosError;
+      }
       
       subscription.pendingRenewal = {
         orderCode,
@@ -735,7 +771,9 @@ exports.renewSubscription = async (req, res, next) => {
           subscriptionId: subscription._id,
           orderCode,
           amount,
-          checkoutUrl: paymentLink.checkoutUrl
+          checkoutUrl: paymentLink.checkoutUrl,
+          qrCode: paymentLink.qrCode,
+          paymentLinkId: paymentLink.paymentLinkId,
         }
       });
     } else {

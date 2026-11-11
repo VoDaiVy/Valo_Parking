@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, Pointer } from 'lucide-react';
 import backgroundImage from '../../assets/images/Kiosk/BackgroundWelcomeKiosk.png';
 import logoImage from '../../assets/images/Kiosk/LogoKiosk.png';
+import KioskDeviceSetup from './KioskDeviceSetup';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
-import { getAvailableBookingSlots } from '../../services/bookingService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
 import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
@@ -36,7 +36,7 @@ const plateFingerprint = (plate) => {
 export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass }) {
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
-  const [scanMessage, setScanMessage] = useState('Scanning Plate...');
+  const [, setScanMessage] = useState('Scanning Plate...');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showAlreadyInsideModal, setShowAlreadyInsideModal] = useState(false);
   const [inlineNotice, setInlineNotice] = useState(null);
@@ -63,36 +63,6 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       streamRef.current = null;
     }
   };
-
-  // Khởi động Camera ngầm để luôn sẵn sàng chụp ảnh tức thì khi quét QR từ GM65
-  useEffect(() => {
-    let isMounted = true;
-    const initCam = async () => {
-      try {
-        if (!streamRef.current) {
-          const stream = await openCameraStream();
-          if (!isMounted) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          streamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(() => { });
-            await configureCameraTrack(stream);
-          }
-        }
-      } catch (e) {
-        console.warn('[KioskWelcome] Background camera warmup skipped:', e?.message);
-      }
-    };
-    initCam();
-    return () => {
-      isMounted = false;
-      stopCamera();
-    };
-  }, []);
-
   const openCameraStream = async () => {
     const cameraOptions = [
       {
@@ -170,6 +140,34 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       console.info('[Kiosk scan] Camera track tuning skipped', error?.message || error);
     }
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    const initCam = async () => {
+      try {
+        if (!streamRef.current) {
+          const stream = await openCameraStream();
+          if (!isMounted) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play().catch(() => {});
+            await configureCameraTrack(stream);
+          }
+        }
+      } catch (e) {
+        console.warn('[KioskWelcome] Background camera warmup skipped:', e?.message);
+      }
+    };
+    initCam();
+    return () => {
+      isMounted = false;
+      stopCamera();
+    };
+  }, []);
 
   const waitForVideoFrame = async (video) => {
     const startedAt = Date.now();
@@ -318,16 +316,18 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
           const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
               'Idempotency-Key': getFastPassKey(formatted),
+              'X-Kiosk-Gate': 'ENTRY_1',
             },
             body: JSON.stringify(entryPayload),
           });
           const entryData = await entryRes.json();
 
           if (entryData.success) {
-            onDirectFastPass?.(entryData.data, {
+            onDirectFastPass?.({ ...entryData.data, pass: entryData.pass }, {
               licensePlate: formatted,
               phone: verifyData.phone || '',
               selectedSlot: verifyData.assignedSlot,
@@ -511,9 +511,12 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       }
 
       // 2. Xác thực mã QR và đối chiếu biển số xe thực tế qua API Backend
+      if (!entryImage) throw new Error('Unable to capture the vehicle. Please position it in the camera area and retry.');
+
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
         body: JSON.stringify({ qrPayload, entryImageBase64: entryImage }),
       });
       const qrData = await response.json();
@@ -564,6 +567,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation && verifyData.assignedSlot) {
         setScanMessage('Opening Barrier & Assigning Slot...');
         const entryPayload = {
+          qrPayload,
           licensePlate: cleanPlate,
           phone: phone || verifyData.phone || '',
           parkingSlot: verifyData.assignedSlot,
@@ -578,9 +582,11 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
         const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             'Idempotency-Key': getFastPassKey(cleanPlate),
+            'X-Kiosk-Gate': 'ENTRY_1',
           },
           body: JSON.stringify(entryPayload),
         });
@@ -589,7 +595,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         if (entryData.success) {
           stopCamera();
           setIsScanning(false);
-          onDirectFastPass?.(entryData.data, {
+          onDirectFastPass?.({ ...entryData.data, pass: entryData.pass }, {
+            qrPayload,
             licensePlate: cleanPlate,
             phone: phone || verifyData.phone || '',
             selectedSlot: verifyData.assignedSlot,
@@ -613,6 +620,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       // 6. Nếu xe cần chọn ô đỗ mới hoặc cần duyệt lại
       const needsReallocation = Boolean(verifyData?.requiresSlotReallocation);
       updateFormData({
+        qrPayload,
         licensePlate: cleanPlate,
         phone: phone || verifyData?.phone || '',
         entryImageBase64: entryImage,
@@ -648,6 +656,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-gray-900 overflow-hidden font-sans">
+      <div className="absolute top-4 right-4 z-40 max-w-sm"><KioskDeviceSetup gate="ENTRY_1" /></div>
       {/* Background Image */}
       <div
         className="absolute inset-0 z-0 bg-cover bg-center blur-sm scale-105 opacity-90"

@@ -7,7 +7,8 @@ import {
   View,
 } from 'react-native';
 
-import { COLORS } from '../constants/theme';
+import { COLORS, CONTROL, RADIUS, SPACE } from '../constants/theme';
+import { typography } from '@/theme';
 
 interface CustomInputProps extends TextInputProps {
   icon?: React.ReactNode;
@@ -20,6 +21,8 @@ export default function CustomInput({
   rightIcon,
   onRightIconPress,
   style,
+  onFocus,
+  onBlur,
   ...props
 }: CustomInputProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -28,6 +31,7 @@ export default function CustomInput({
     <View
       style={[
         styles.container,
+        props.editable === false && styles.disabled,
         isFocused ? styles.containerFocused : styles.containerDefault,
         style as object,
       ]}
@@ -37,8 +41,8 @@ export default function CustomInput({
       <TextInput
         style={styles.input}
         placeholderTextColor={COLORS.textMuted}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
+        onFocus={(event) => { setIsFocused(true); onFocus?.(event); }}
+        onBlur={(event) => { setIsFocused(false); onBlur?.(event); }}
         {...props}
       />
 
@@ -59,36 +63,37 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    borderWidth: 1.5,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
     backgroundColor: COLORS.surface,
-    height: 58,
-    paddingHorizontal: 16,
-    marginBottom: 14,
+    minHeight: CONTROL.minHeight,
+    paddingHorizontal: SPACE[16],
+    marginBottom: SPACE[16],
   },
   containerDefault: {
     borderColor: COLORS.border,
   },
   containerFocused: {
     borderColor: COLORS.gold,
-    shadowColor: COLORS.gold,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
+    backgroundColor: COLORS.surfaceElevated,
   },
   iconLeft: {
-    marginRight: 12,
+    marginRight: SPACE[12],
   },
   iconRight: {
-    marginLeft: 10,
-    padding: 2,
+    marginLeft: SPACE[8],
+    minWidth: CONTROL.minTouchSize,
+    minHeight: CONTROL.minTouchSize,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   input: {
+    ...typography.body1,
     flex: 1,
+    minWidth: 0,
+    minHeight: CONTROL.minHeight,
+    paddingVertical: SPACE[12],
     color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '400',
-    letterSpacing: 0.3,
   },
+  disabled: { opacity: 0.55 },
 });

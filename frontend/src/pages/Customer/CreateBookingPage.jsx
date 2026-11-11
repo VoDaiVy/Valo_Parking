@@ -1,3 +1,5 @@
+import TelegramReceiptModal from '../../components/TelegramReceiptModal';
+import TelegramReceiptButton from '../../components/TelegramReceiptButton';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -21,6 +23,7 @@ import {
 } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
+import VipPackageModal from '../../components/Customer/VipPackageModal';
 
 import AiBookingPanel from '../../components/Customer/AiBookingPanel';
 
@@ -53,8 +56,13 @@ import {
 import { findRequestedService } from '../../utils/bookingNavigation';
 import { getVipBookingSelection } from '../../utils/vipBookingPolicy';
 import { getMyVouchers } from '../../services/loyaltyService';
+import {
+  BOOKING_TIME_STEP_MINUTES,
+  MIN_BOOKING_DURATION_MINUTES,
+  roundUpToBookingStep,
+} from '../../utils/bookingTimePolicy';
 
-const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
+const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('en-US')} VND`;
 
 const toDateTimeLocal = (date) => {
   const pad = (value) => String(value).padStart(2, '0');
@@ -76,7 +84,7 @@ const getLocalTimeString = () => {
 
 const getMinEndTimeStr = (startStr) => {
   let [h, m] = startStr.split(':').map(Number);
-  m += 30;
+  m += MIN_BOOKING_DURATION_MINUTES;
   if (m >= 60) {
     h += 1;
     m -= 60;
@@ -86,20 +94,11 @@ const getMinEndTimeStr = (startStr) => {
 };
 
 const getInitialTimeRange = () => {
-  const start = new Date();
-  
-  // Round up to the next 15-minute block (example: 9:07 -> 9:15)
-  const minutes = start.getMinutes();
-  const remainder = minutes % 15;
-  const hasPartialMinute = start.getSeconds() > 0 || start.getMilliseconds() > 0;
-  const addMinutes = remainder === 0 ? (hasPartialMinute ? 15 : 0) : 15 - remainder;
-  
-  start.setMinutes(minutes + addMinutes);
-  start.setSeconds(0, 0);
+  const start = roundUpToBookingStep(new Date(), { strictlyFuture: true });
 
   // Default checkout is 30 minutes after check-in
   const end = new Date(start);
-  end.setMinutes(end.getMinutes() + 30);
+  end.setMinutes(end.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
 
   return {
     startTime: toDateTimeLocal(start),
@@ -108,7 +107,7 @@ const getInitialTimeRange = () => {
 };
 
 const formatDateTime = (value) =>
-  new Date(value).toLocaleString('vi-VN', {
+  new Date(value).toLocaleString('en-US', {
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -127,7 +126,7 @@ const toItemErrorMap = (itemErrors = []) =>
 
 const TIME_OPTIONS = [];
 for (let h = 0; h < 24; h++) {
-  for (let m = 0; m < 60; m += 15) {
+  for (let m = 0; m < 60; m += BOOKING_TIME_STEP_MINUTES) {
     TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   }
 }
@@ -171,7 +170,7 @@ const formatLocalDateValue = (date) => {
 const formatDateButtonLabel = (value) => {
   const date = parseLocalDate(value);
   return date
-    ? date.toLocaleDateString('vi-VN', {
+    ? date.toLocaleDateString('en-US', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -335,7 +334,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
                   key={formatLocalDateValue(date)}
                   type="button"
                   disabled={isDisabled}
-                  aria-label={date.toLocaleDateString('vi-VN')}
+                  aria-label={date.toLocaleDateString('en-US')}
                   aria-pressed={isSelected}
                   onClick={() => selectDate(date)}
                   className={`mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold transition ${
@@ -563,7 +562,7 @@ const getVoucherBenefitLabel = (voucher) => {
 const getVoucherExpiryLabel = (voucher) => {
   const expiresAt = new Date(voucher?.expiresAt);
   if (Number.isNaN(expiresAt.getTime())) return 'No expiry date';
-  return `Expires ${expiresAt.toLocaleDateString('vi-VN')}`;
+  return `Expires ${expiresAt.toLocaleDateString('en-US')}`;
 };
 
 const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
@@ -735,7 +734,7 @@ export default function CreateBookingPage() {
     if (!forecastHourSelection.allowed) return false;
     const candidateStart = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
     const currentEnd = new Date(endTime);
-    const minimumEnd = new Date(candidateStart.getTime() + 30 * 60 * 1000);
+    const minimumEnd = new Date(candidateStart.getTime() + MIN_BOOKING_DURATION_MINUTES * 60 * 1000);
     const candidateEnd = currentEnd >= minimumEnd ? currentEnd : minimumEnd;
     const now = new Date();
     const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -781,7 +780,9 @@ export default function CreateBookingPage() {
   const [topUpSuccess, setTopUpSuccess] = useState(false);
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [telegramBookingId, setTelegramBookingId] = useState(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
+  const [showVipModal, setShowVipModal] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
   const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(4);
 
@@ -921,7 +922,7 @@ export default function CreateBookingPage() {
       const currentEndObj = new Date(`${endDate}T${endTimeStr}`);
       
       const minEndObj = new Date(newStartObj);
-      minEndObj.setMinutes(minEndObj.getMinutes() + 30);
+      minEndObj.setMinutes(minEndObj.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
       
       // If the current end time is earlier than the minimum end time (30 minutes later), adjust automatically
       if (currentEndObj < minEndObj) {
@@ -938,7 +939,7 @@ export default function CreateBookingPage() {
       const newEndObj = new Date(`${newDate}T${newTime}`);
       
       const minEndObj = new Date(startObj);
-      minEndObj.setMinutes(minEndObj.getMinutes() + 30);
+      minEndObj.setMinutes(minEndObj.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
       
       if (newEndObj < minEndObj) {
         const minEndStr = toDateTimeLocal(minEndObj);
@@ -961,9 +962,12 @@ export default function CreateBookingPage() {
 
   const todayDateStr = getLocalDateString();
   const currentTimeStr = getLocalTimeString();
+  const earliestStart = roundUpToBookingStep(new Date(), { strictlyFuture: true });
+  const earliestStartDate = toDateTimeLocal(earliestStart).split('T')[0];
+  const earliestStartTime = toDateTimeLocal(earliestStart).split('T')[1];
 
   const startMinTime = startDate === todayDateStr 
-    ? currentTimeStr 
+    ? (earliestStartDate === todayDateStr ? earliestStartTime : '24:00')
     : (startDate < todayDateStr ? '24:00' : null);
 
   const endMinTime = endDate === startDate 
@@ -1185,7 +1189,7 @@ export default function CreateBookingPage() {
   }, [showTopUpModal, topUpData?.orderCode]);
 
   useEffect(() => {
-    if (!showSuccessModal || !bookingInfo) return undefined;
+    if (!showSuccessModal || !bookingInfo || telegramBookingId) return undefined;
 
     const resetTimer = setTimeout(() => {
       setSuccessRedirectCountdown(4);
@@ -1212,7 +1216,7 @@ export default function CreateBookingPage() {
       clearInterval(countdownTimer);
       clearTimeout(redirectTimer);
     };
-  }, [showSuccessModal, bookingInfo]);
+  }, [showSuccessModal, bookingInfo, telegramBookingId]);
 
   const handleFindSlots = async () => {
     const requestId = ++slotsRequestIdRef.current;
@@ -1281,8 +1285,8 @@ export default function CreateBookingPage() {
       return;
     }
 
-    if ((endObj.getTime() - startObj.getTime()) / 60000 < 30) {
-      setError('Minimum booking duration is 30 minutes.');
+    if ((endObj.getTime() - startObj.getTime()) / 60000 < MIN_BOOKING_DURATION_MINUTES) {
+      setError(`Minimum booking duration is ${MIN_BOOKING_DURATION_MINUTES} minutes.`);
       return;
     }
 
@@ -1516,7 +1520,7 @@ export default function CreateBookingPage() {
     const now = new Date();
     
     if (startObj < now) return;
-    if ((endObj - startObj) / 60000 < 30) return;
+    if ((endObj - startObj) / 60000 < MIN_BOOKING_DURATION_MINUTES) return;
     
     const timer = setTimeout(() => {
       handleFindSlots();
@@ -1748,8 +1752,8 @@ export default function CreateBookingPage() {
         </div>
 
         <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
-          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Tự chọn chỗ</button>
-          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Trợ lý đỗ xe AI</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Choose a space</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>AI Parking Assistant</button>
         </div>
 
         {(error || success) && (
@@ -1812,29 +1816,26 @@ export default function CreateBookingPage() {
                 </div>
               </div>
 
-              {/* AI 24h Busyness & Popular Times Forecast */}
+              {/* AI Occupancy & Peak Times Forecast is positioned on the right below the slots map */}
               <div className="mt-4">
-                <AIBusynessForecast
-                  selectedDate={startDate}
-                  selectedHour={parseInt(startTimeStr?.split(':')[0] || 12, 10)}
-                  vehicleType={
-                    vehicles.find((v) => v._id === vehicleId)?.type ||
-                    'car'
-                  }
-                  floorId={currentFloorId}
-                  canSelectHour={forecastHourSelection.allowed}
-                  isHourSelectable={isForecastHourSelectable}
-                  isEndHourSelectable={isForecastEndHourSelectable}
-                  selectionDisabledReason={forecastHourSelection.reason}
-                  onSelectHour={(hour, rangePoint = 'start') => {
-                    const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
-                    if (rangePoint === 'end') handleEndChange(startDate, nextTimeStr);
-                    else handleStartChange(startDate, nextTimeStr);
-                  }}
-                />
-              </div>
+              {durationHours > 168 && (
+                <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={16} className="text-amber-600 shrink-0" />
+                    <span>
+                      <strong>Tip:</strong> This is a long-stay booking ({Math.floor(durationHours / 24)} days {durationHours % 24} hours). Review the available <strong>VIP monthly packages</strong> for their current rates, benefits, and conditions.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowVipModal(true)}
+                    className="inline-flex items-center justify-center whitespace-nowrap rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-black text-white hover:bg-amber-600 transition shadow-sm self-start sm:self-auto"
+                  >
+                    View VIP Packages
+                  </button>
+                </div>
+              )}
 
-              <div className="mt-4">
                 <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Vehicle</span>
                 {vehicles.length > 0 ? (
                   <CustomVehiclePicker
@@ -2129,7 +2130,8 @@ export default function CreateBookingPage() {
             </div>
           </section>
 
-          <section className="xl:col-span-8 rounded-3xl bg-white border border-gray-200 p-3 shadow-sm flex flex-col h-[500px] xl:h-[calc(100vh-140px)]">
+          <section className="xl:col-span-8 flex flex-col gap-6">
+            <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm flex flex-col h-[520px]">
             <div className="flex items-center justify-between gap-4 mb-3 px-2 pt-2">
               <div>
                 <h2 className="text-lg font-black text-gray-900">Available Slots Map</h2>
@@ -2230,8 +2232,60 @@ export default function CreateBookingPage() {
                 </div>
               )}
             </div>
+            </div>
+
+            <div className="rounded-3xl bg-white border border-gray-200 p-5 shadow-sm">
+              <AIBusynessForecast
+                selectedDate={startDate}
+                selectedHour={parseInt(startTimeStr?.split(':')[0] || 12, 10)}
+                vehicleType={
+                  vehicles.find((v) => v._id === vehicleId)?.type ||
+                  'car'
+                }
+                floorId={currentFloorId}
+                canSelectHour={forecastHourSelection.allowed}
+                isHourSelectable={isForecastHourSelectable}
+                isEndHourSelectable={isForecastEndHourSelectable}
+                selectionDisabledReason={forecastHourSelection.reason}
+                onSelectHour={(hour, rangePoint = 'start') => {
+                  const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
+                  if (rangePoint === 'end') handleEndChange(startDate, nextTimeStr);
+                  else handleStartChange(startDate, nextTimeStr);
+                }}
+              />
+            </div>
           </section>
         </div>}
+
+      <VipPackageModal
+        isOpen={showVipModal}
+        onClose={() => setShowVipModal(false)}
+        onSubscribed={async (vipInfo) => {
+          const vipVehicleId = String(vipInfo.vehicle?._id || '');
+          const vipPlate = String(vipInfo.vehicle?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          const belongsToVipVehicle = (item) => (
+            (vipVehicleId && String(item.vehicleId || '') === vipVehicleId)
+            || (vipPlate && String(item.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === vipPlate)
+          );
+          const removedItems = cartItems.filter(belongsToVipVehicle);
+
+          setShowVipModal(false);
+          setShowCheckoutConfirm(false);
+          setCartQuote(null);
+          setCartItemErrors({});
+          setEditingClientItemId(null);
+          setCartItems((current) => current.filter((item) => !belongsToVipVehicle(item)));
+          setSelectedServices([]);
+          setSelectedVoucherId('');
+          setSelectedSlotKey('');
+          setError('');
+          setSuccess(`VIP activated for ${vipPlate || 'the selected vehicle'}. Its hourly-booking draft was removed because the dedicated VIP space can be used directly.`);
+          await Promise.all(removedItems
+            .filter((item) => item.holdId)
+            .map((item) => releaseBookingHold(item.holdId).catch(() => null)));
+          await loadData(true);
+        }}
+      />
       </div>
 
       {showCheckoutConfirm && (
@@ -2322,6 +2376,7 @@ export default function CreateBookingPage() {
                       <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.endTime)}</span>
                     </div>
                   </div>
+                  <TelegramReceiptButton bookingId={booking.bookingId || booking._id} refreshKey={telegramBookingId} onClick={() => setTelegramBookingId(booking.bookingId || booking._id)} className="mt-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800" />
                 </div>
               ))}
             </div>
@@ -2339,6 +2394,8 @@ export default function CreateBookingPage() {
           </div>
         </div>
       )}
+
+      {telegramBookingId && <TelegramReceiptModal key={telegramBookingId} open onClose={() => setTelegramBookingId(null)} bookingId={telegramBookingId} />}
 
       {/* TOP UP MODAL */}
       {showTopUpModal && topUpData && (

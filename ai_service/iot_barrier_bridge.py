@@ -80,8 +80,8 @@ def main():
 
     ser = None
     last_trigger_ids = {
-        'ENTRY_1': 0,
-        'EXIT_1': 0
+        'ENTRY_1': None,
+        'EXIT_1': None
     }
     was_hold_states = {
         'ENTRY_1': False,
@@ -197,8 +197,8 @@ def main():
                         force_close = gate_info.get('forceClose', False)
 
                         # Khởi tạo triggerId ban đầu
-                        if last_trigger_ids.get(norm_gate, 0) == 0:
-                            if should_open:
+                        if last_trigger_ids.get(norm_gate) is None:
+                            if should_open or is_hold or force_close:
                                 last_trigger_ids[norm_gate] = -1
                             else:
                                 last_trigger_ids[norm_gate] = trigger_id

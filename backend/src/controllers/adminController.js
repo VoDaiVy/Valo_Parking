@@ -7,6 +7,11 @@ const { processGlb } = require("gltf-pipeline");
 
 const User = require("../models/User");
 const UserDetail = require("../models/UserDetail");
+const {
+  getVehicleApprovalConfig,
+  setVehicleApprovalEnabled,
+} = require('../services/vehicleApprovalConfigService');
+const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 
 // Same normalizer as vehicleController – must stay in sync
 const normalizeSlug = (str = "") =>
@@ -320,6 +325,29 @@ exports.listUsers = async (req, res, next) => {
  * @route GET /api/admin/vehicles/pending
  * @access Admin only
  */
+exports.getVehicleApprovalSettings = async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, data: await getVehicleApprovalConfig() });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateVehicleApprovalSettings = async (req, res, next) => {
+  try {
+    if (typeof req.body?.enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled must be a boolean' });
+    }
+    if (req.body.enabled && !process.env.GEMINI_API_KEY) {
+      return res.status(409).json({ success: false, message: 'Gemini API key is not configured' });
+    }
+    const data = await setVehicleApprovalEnabled(req.body.enabled, req.user._id);
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 exports.getPendingVehicles = async (req, res, next) => {
   try {
     const vehicles = await Vehicle.find({ status: "pending" })
@@ -397,9 +425,14 @@ exports.approveVehicle = async (req, res, next) => {
         .status(404)
         .json({ success: false, message: "Vehicle not found" });
 
-    vehicle.status = "approved";
+    if (vehicle.status !== 'approved') {
+      vehicle.status = 'approved';
+      vehicle.approvedAt = new Date();
+      vehicle.approvalSource = 'admin';
+    }
     if (req.body.modelUrl !== undefined) vehicle.modelUrl = req.body.modelUrl;
     await vehicle.save();
+    await aiNotificationEvents.resolveVehiclePendingSafely(vehicle, req.user._id);
 
     res
       .status(200)
@@ -585,6 +618,7 @@ exports.rejectVehicle = async (req, res, next) => {
       return res
         .status(404)
         .json({ success: false, message: "Vehicle not found" });
+    await aiNotificationEvents.clearVehiclePendingSafely(vehicle);
     res
       .status(200)
       .json({ success: true, message: "Vehicle rejected and removed" });

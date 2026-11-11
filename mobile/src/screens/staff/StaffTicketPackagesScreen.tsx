@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StatusBar, StyleSheet, View } from 'react-native';
@@ -27,6 +28,7 @@ const TYPE_TONES: Record<TicketPackage['type'], 'info' | 'brand' | 'warning'> = 
 };
 
 export function StaffTicketPackagesScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const [items, setItems] = useState<TicketPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,11 +58,11 @@ export function StaffTicketPackagesScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Catalog"
-        title="Ticket packages"
-        subtitle="Package catalog"
+        title={translateUi("Ticket packages")}
+        subtitle={translateUi("Package catalog")}
         onBack={() => navigation.navigate('ManagementHome')}
         right={<StatusBadge label={`${items.length} plans`} />}
       />
@@ -68,7 +70,7 @@ export function StaffTicketPackagesScreen({ navigation }: Props) {
       {loading ? (
         <TicketSkeleton />
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -77,12 +79,12 @@ export function StaffTicketPackagesScreen({ navigation }: Props) {
         >
           <InfoBanner
             icon="eye-outline"
-            message="Packages are maintained by administrators; staff can inspect active plans for customer support."
-            title="View-only access"
+            message={translateUi("Packages are maintained by administrators; staff can inspect active plans for customer support.")}
+            title={translateUi("View-only access")}
           />
-          <SectionTitle title="Packages" detail="Type · price · status" />
+          <SectionTitle title={translateUi("Packages")} detail="Type · price · status" />
           {items.length === 0 ? (
-            <EmptyState icon="ticket-outline" title="No ticket packages" message="No ticket packages are currently configured." accentColor={COLORS.gold} />
+            <EmptyState icon="ticket-outline" title={translateUi("No ticket packages")} message={translateUi("No ticket packages are currently configured.")} accentColor={COLORS.gold} />
           ) : (
             <View style={styles.list}>
               {items.map((item, index) => {
@@ -123,7 +125,7 @@ function TicketSkeleton() {
 
 const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
-  scroll: { gap: SPACING.md, padding: SPACING.lg, paddingBottom: 112 },
+  scroll: { gap: SPACING.lg, padding: SPACING.lg, paddingBottom: 112 },
   list: { borderTopColor: COLORS.border, borderTopWidth: StyleSheet.hairlineWidth },
   skeleton: { gap: SPACING.md, padding: SPACING.lg },
   skeletonRow: { gap: SPACING.sm, minHeight: 68 },

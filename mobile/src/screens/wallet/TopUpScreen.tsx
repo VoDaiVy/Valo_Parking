@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { NavigationProp } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -30,6 +31,7 @@ type Props = NativeStackScreenProps<WalletStackParamList, 'TopUp'>;
 const QUICK_AMOUNTS = [50000, 100000, 200000, 500000];
 
 export const TopUpScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [policyRequired, setPolicyRequired] = useState(false);
@@ -162,21 +164,22 @@ export const TopUpScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Top up wallet" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Top up wallet")} onBack={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.amountCard}>
-          <SectionTitle>Amount</SectionTitle>
+          <SectionTitle>{translateUi("Amount")}</SectionTitle>
           <View style={styles.inputWrap}>
             <TextInput
               keyboardType="numeric"
-              placeholder="Enter amount"
+              accessibilityLabel={translateUi("Amount")}
+              placeholder={translateUi("Enter amount")}
               placeholderTextColor={COLORS.textMuted}
               style={styles.input}
-              value={amount}
+              value={amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
               onChangeText={(value) => {
-                setAmount(value.replace(/[^\d]/g, ''));
+                setAmount(value.replace(/[^\d]/g, '').replace(/^0+(?=\d)/, ''));
                 setError('');
               }}
             />
@@ -188,7 +191,7 @@ export const TopUpScreen = ({ navigation }: Props) => {
                 key={value}
                 activeOpacity={0.75}
                 style={[styles.quickChip, Number(amount) === value && styles.quickChipActive]}
-                onPress={() => setAmount(String(value))}
+                onPress={() => { setAmount(String(value)); setError(''); }}
               >
                 <Text style={[styles.quickText, Number(amount) === value && styles.quickTextActive]}>
                   {formatCurrency(value)}
@@ -198,7 +201,7 @@ export const TopUpScreen = ({ navigation }: Props) => {
           </View>
         </View>
 
-        {error && !payment ? <ErrorState message={error} /> : null}
+        {error && !payment ? <ErrorState message={translateUi(error)} /> : null}
 
         {policyRequired && !payment ? (
           <TouchableOpacity
@@ -206,7 +209,7 @@ export const TopUpScreen = ({ navigation }: Props) => {
             style={styles.outlineButton}
             onPress={() => navigation.getParent<NavigationProp<CustomerTabParamList>>()?.navigate('ProfileTab', { screen: 'Policies' })}
           >
-            <Text style={styles.outlineButtonText}>Review and accept policy</Text>
+            <Text style={styles.outlineButtonText}>{translateUi("Review and accept policy")}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -216,7 +219,7 @@ export const TopUpScreen = ({ navigation }: Props) => {
           ) : (
             <>
               <Ionicons name="card-outline" size={20} color={COLORS.textInverse} />
-              <Text style={styles.primaryButtonText}>Continue to payment</Text>
+              <Text style={styles.primaryButtonText}>{translateUi("Continue to payment")}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -226,13 +229,13 @@ export const TopUpScreen = ({ navigation }: Props) => {
             <View style={styles.paymentHeader}>
               <View>
                 <Text style={styles.paymentTitle}>PayOS</Text>
-                <Text style={styles.paymentMeta}>Order ID: {payment.orderCode}</Text>
+                <Text style={styles.paymentMeta}>{translateUi("Order ID:")}{" "}{payment.orderCode}</Text>
               </View>
               <Text style={styles.paymentAmount}>{formatCurrency(payment.amount || Number(amount))}</Text>
             </View>
             <View style={styles.statusRow}>
               <Ionicons name="sync-circle-outline" size={18} color={COLORS.gold} />
-              <Text style={styles.statusText}>Status: {status}</Text>
+              <Text style={styles.statusText}>{translateUi("Status:")}{" "}{status}</Text>
             </View>
                         {payment.qrCode ? (
               <View style={styles.qrWrapper}>
@@ -242,30 +245,29 @@ export const TopUpScreen = ({ navigation }: Props) => {
                   backgroundColor="white"
                   color="black"
                 />
-                <Text style={styles.qrHint}>Scan with your banking app to pay</Text>
+                <Text style={styles.qrHint}>{translateUi("Scan with your banking app to pay")}</Text>
               </View>
             ) : null}
             <Text style={styles.helpText}>
-              Scan the QR code with your banking app or open the PayOS checkout page. Payment status updates automatically.
-            </Text>
-            {error ? <Text style={styles.inlineError}>{error}</Text> : null}
+              {" "}{translateUi("Scan the QR code with your banking app or open the PayOS checkout page. Payment status updates automatically.")}{" "}</Text>
+            {error ? <Text style={styles.inlineError}>{translateUi(error)}</Text> : null}
 
             {/* Success banner */}
             {(status === 'COMPLETED' || status === 'SUCCESS') && successCountdown !== null ? (
               <View style={styles.successBanner}>
                 <Ionicons name="checkmark-circle" size={28} color="#7EE8A2" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.successTitle}>Top-up successful</Text>
-                  <Text style={styles.successSub}>Returning to your wallet in {successCountdown}s...</Text>
+                  <Text style={styles.successTitle}>{translateUi("Top-up successful")}</Text>
+                  <Text style={styles.successSub}>{translateUi("Returning to your wallet in")}{" "}{successCountdown}s...</Text>
                 </View>
               </View>
             ) : (
               <View style={styles.actions}>
                 <TouchableOpacity activeOpacity={0.8} style={styles.outlineButton} onPress={() => Linking.openURL(payment.checkoutUrl)}>
-                  <Text style={styles.outlineButtonText}>Open PayOS</Text>
+                  <Text style={styles.outlineButtonText}>{translateUi("Open PayOS")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity activeOpacity={0.8} style={styles.outlineButton} onPress={checkStatus}>
-                  <Text style={styles.outlineButtonText}>Check status</Text>
+                  <Text style={styles.outlineButtonText}>{translateUi("Check status")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
@@ -276,7 +278,7 @@ export const TopUpScreen = ({ navigation }: Props) => {
                   {cancelLoading ? (
                     <ActivityIndicator color={COLORS.error} size="small" />
                   ) : (
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                    <Text style={styles.cancelButtonText}>{translateUi("Cancel")}</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -359,7 +361,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,
-    height: 54,
+    minHeight: 54,
     justifyContent: 'center',
   },
   disabled: {
@@ -395,6 +397,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   paymentAmount: {
+    fontVariant: ['tabular-nums'],
+    flexShrink: 1,
     color: COLORS.gold,
     fontSize: FONT_SIZES.md,
     fontWeight: '900',
@@ -461,14 +465,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    backgroundColor: 'rgba(126,232,162,0.1)',
+    backgroundColor: COLORS.successTint,
     borderColor: 'rgba(126,232,162,0.35)',
     borderWidth: 1,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
   },
   successTitle: {
-    color: '#7EE8A2',
+    lineHeight: 24,
+    color: COLORS.success,
     fontSize: FONT_SIZES.md,
     fontWeight: '800',
   },

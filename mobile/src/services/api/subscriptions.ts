@@ -17,7 +17,7 @@ import type {
 
 export const subscriptionsService = {
   getPackages: () => apiClient.get<APIResponse<SubscriptionPackage[]>>('/ticket-packages/active'),
-  getMembership: () => apiClient.get<APIResponse<MembershipStatus>>('/users/membership'),
+  getMembership: () => apiClient.get<APIResponse<MembershipStatus>>('/subscriptions/membership'),
   getMembershipQr: (_subscriptionId?: string) =>
     apiClient.get<
       APIResponse<{
@@ -29,7 +29,7 @@ export const subscriptionsService = {
       }>
     >('/subscriptions/membership/qr'),
   createPayment: (data: CreateSubscriptionPaymentRequest) =>
-    apiClient.post<CreateSubscriptionPaymentResponse>('/subscriptions/payment', data),
+    apiClient.post<CreateSubscriptionPaymentResponse>('/subscriptions/create-payment', data),
   verifyPayment: (data: { orderCode: number }) =>
     apiClient.post<APIResponse>('/subscriptions/verify-payment', data),
   payWithWallet: (data: CreateSubscriptionPaymentRequest) =>
@@ -52,6 +52,10 @@ export const subscriptionsService = {
     apiClient.post<APIResponse<SubscriptionRenewalResult>>(
       '/subscriptions/renew/verify-payment',
       { orderCode },
+    ),
+  verifyEntitlementRenewalPayment: (orderCode: number) =>
+    apiClient.post<APIResponse<SubscriptionRenewalResult>>(
+      '/subscriptions/entitlements/renew/verify-payment', { orderCode },
     ),
   getEntitlementRenewalQuote: (entitlementId: string) =>
     apiClient.post<APIResponse<SubscriptionRenewalQuote>>(

@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -32,6 +33,7 @@ const formatCountdown = (milliseconds: number) => {
 };
 
 export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { transferId } = route.params;
   const [listing, setListing] = useState<MembershipTransferMarketplaceListing | null>(null);
   const [claim, setClaim] = useState<MembershipTransferClaimResult | null>(null);
@@ -95,8 +97,8 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
     setError('');
     try {
       await subscriptionsService.settleEntitlementTransfer(transferId);
-      Alert.alert('Transfer completed', 'The membership space is now in your account.', [
-        { text: 'View membership', onPress: () => navigation.navigate('Membership') },
+      Alert.alert(translateUi('Transfer completed'), translateUi('The membership space is now in your account.'), [
+        { text: translateUi('View membership'), onPress: () => navigation.navigate('Membership') },
       ]);
     } catch (settleError) {
       setError(settleError instanceof Error ? settleError.message : 'Wallet payment failed.');
@@ -113,8 +115,8 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <ScreenHeader
-        title="Listing details"
-        subtitle="Review live availability before claiming"
+        title={translateUi("Listing details")}
+        subtitle={translateUi("Review live availability before claiming")}
         onBack={() => navigation.goBack()}
       />
       {loading && !current ? (
@@ -122,7 +124,7 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error && !current ? (
-        <ErrorState message={error} onRetry={() => void loadListing()} />
+        <ErrorState message={translateUi(error)} onRetry={() => void loadListing()} />
       ) : current ? (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.hero}>
@@ -139,14 +141,14 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
           </View>
 
           <View style={styles.card}>
-            <Row label="Package" value={current.package?.name || 'Membership'} />
-            <Row label="Valid until" value={formatDate(current.expireAt)} />
-            <Row label="Listing expires" value={formatDate(current.listingExpiresAt)} />
+            <Row label={translateUi("Package")} value={current.package?.name || 'Membership'} />
+            <Row label={translateUi("Valid until")} value={formatDate(current.expireAt)} />
+            <Row label={translateUi("Listing expires")} value={formatDate(current.listingExpiresAt)} />
             <View style={styles.divider} />
-            <Row label="Asking price" value={formatCurrency(current.askingPrice)} />
-            <Row label="Transfer fee" value={formatCurrency(current.transferFee)} />
+            <Row label={translateUi("Asking price")} value={formatCurrency(current.askingPrice)} />
+            <Row label={translateUi("Transfer fee")} value={formatCurrency(current.transferFee)} />
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total due</Text>
+              <Text style={styles.totalLabel}>{translateUi("Total due")}</Text>
               <Text style={styles.total}>{formatCurrency(current.totalDue)}</Text>
             </View>
           </View>
@@ -164,13 +166,13 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
                     : 'This payment hold belongs to you.'}
                 </Text>
                 {shortfall > 0 ? (
-                  <Text style={styles.shortfall}>Top up {formatCurrency(shortfall)} before paying.</Text>
+                  <Text style={styles.shortfall}>{translateUi("Top up")}{" "}{formatCurrency(shortfall)} {" "}{translateUi("before paying.")}</Text>
                 ) : null}
               </View>
             </View>
           ) : null}
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={styles.error}>{translateUi(error)}</Text> : null}
 
           {!ownsHold && current.status === 'LISTED' && current.available !== false ? (
             <TouchableOpacity
@@ -180,7 +182,7 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
               style={[styles.primaryButton, submitting && styles.disabled]}
             >
               {submitting ? <ActivityIndicator color={COLORS.textInverse} /> : null}
-              <Text style={styles.primaryText}>Claim for 15 minutes</Text>
+              <Text style={styles.primaryText}>{translateUi("Claim for 15 minutes")}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -192,7 +194,7 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
                   onPress={() => navigation.navigate('TopUp')}
                   style={styles.secondaryButton}
                 >
-                  <Text style={styles.secondaryText}>Top up wallet</Text>
+                  <Text style={styles.secondaryText}>{translateUi("Top up wallet")}</Text>
                 </TouchableOpacity>
               ) : null}
               <TouchableOpacity
@@ -202,7 +204,7 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
                 style={[styles.primaryButton, (!canSettle || submitting) && styles.disabled]}
               >
                 {submitting ? <ActivityIndicator color={COLORS.textInverse} /> : null}
-                <Text style={styles.primaryText}>Pay with wallet</Text>
+                <Text style={styles.primaryText}>{translateUi("Pay with wallet")}</Text>
               </TouchableOpacity>
             </>
           ) : null}
@@ -212,12 +214,12 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
   );
 };
 
-const Row = ({ label, value }: { label: string; value: string }) => (
+const Row = ({ label, value }: { label: string; value: string }) => { const { t: translateUi } = useLanguage(); return (
   <View style={styles.row}>
-    <Text style={styles.rowLabel}>{label}</Text>
+    <Text style={styles.rowLabel}>{translateUi(label)}</Text>
     <Text style={styles.rowValue}>{value}</Text>
   </View>
-);
+); };
 
 const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     width: 64,
   },
-  slotCode: { color: COLORS.textPrimary, fontSize: 30, fontWeight: '900' },
+  slotCode: { color: COLORS.textPrimary, fontSize: 30, fontWeight: '700' },
   location: { color: COLORS.gold, fontSize: FONT_SIZES.md, fontWeight: '700', marginTop: SPACING.xs },
   address: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: SPACING.xs, textAlign: 'center' },
   card: {
@@ -246,11 +248,11 @@ const styles = StyleSheet.create({
   },
   row: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   rowLabel: { color: COLORS.textMuted, fontSize: FONT_SIZES.sm },
-  rowValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '700' },
+  rowValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, lineHeight: 20, fontWeight: '600', flex: 1, textAlign: 'right' },
   divider: { backgroundColor: COLORS.border, height: StyleSheet.hairlineWidth },
   totalRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   totalLabel: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '800' },
-  total: { color: COLORS.gold, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  total: { color: COLORS.gold, fontSize: FONT_SIZES.lg, lineHeight: 24, fontWeight: '700', fontVariant: ['tabular-nums'] },
   holdCard: {
     backgroundColor: COLORS.surface,
     borderColor: 'rgba(255,193,7,0.35)',
@@ -277,7 +279,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: SPACING.lg,
   },
-  primaryText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  primaryText: { color: COLORS.textInverse, fontSize: FONT_SIZES.md, fontWeight: '700' },
   secondaryButton: {
     alignItems: 'center',
     borderColor: COLORS.gold,

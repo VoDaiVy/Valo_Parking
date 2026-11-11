@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
@@ -12,7 +13,8 @@ import {
   View,
 } from 'react-native';
 
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, CONTROL, MOTION, RADIUS, SPACE, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 type HeaderAlign = 'left' | 'center';
@@ -51,6 +53,7 @@ export function ScreenHeader({
   progress,
   progressVariant,
 }: ScreenHeaderProps) {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(0)).current;
   const hasProgress = typeof progress === 'number' || progressVariant === 'accent';
@@ -61,12 +64,14 @@ export function ScreenHeader({
   const titleAlignItems = titleAlign === 'center' ? 'center' : 'flex-start';
 
   useEffect(() => {
-    Animated.timing(entrance, {
-      duration: 340,
+    const animation = Animated.timing(entrance, {
+      duration: MOTION.normal,
       easing: Easing.out(Easing.cubic),
       toValue: 1,
       useNativeDriver: true,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [entrance]);
 
   const animatePress = (toValue: number) => {
@@ -81,7 +86,7 @@ export function ScreenHeader({
 
   const buttonScale = press.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 0.94],
+    outputRange: [1, MOTION.pressedScale],
   });
 
   return (
@@ -94,7 +99,7 @@ export function ScreenHeader({
             {
               translateY: entrance.interpolate({
                 inputRange: [0, 1],
-                outputRange: [-10, 0],
+                outputRange: [-4, 0],
               }),
             },
           ],
@@ -105,7 +110,7 @@ export function ScreenHeader({
         {onBack ? (
           <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
             <Pressable
-              accessibilityLabel="Go back"
+              accessibilityLabel={translateUi("Go back")}
               accessibilityRole="button"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.backButton}
@@ -132,12 +137,12 @@ export function ScreenHeader({
             </View>
           ) : null}
           <Text style={[styles.title, textAlignStyle]} numberOfLines={titleNumberOfLines}>
-            {title}
+            {translateUi(title)}
           </Text>
         </View>
         {subtitle ? (
           <Text style={[styles.subtitle, textAlignStyle]} numberOfLines={subtitleNumberOfLines}>
-            {subtitle}
+            {translateUi(subtitle)}
           </Text>
         ) : null}
         {hasProgress ? (
@@ -161,36 +166,29 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'flex-start',
     flexDirection: 'row',
-    gap: SPACING.md,
-    paddingBottom: SPACING.xl,
-    paddingHorizontal: 24,
+    gap: SPACE[12],
+    paddingBottom: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.md,
   },
   leftSlot: {
     alignItems: 'flex-start',
-    minWidth: 50,
+    minWidth: CONTROL.minTouchSize,
   },
   emptyLeftSlot: {
     display: 'none',
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.055)',
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.round,
-    borderWidth: 1,
-    height: 50,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.md,
+    height: CONTROL.minTouchSize,
     justifyContent: 'center',
-    shadowColor: COLORS.gold,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    width: 50,
+    width: CONTROL.minTouchSize,
   },
   titleWrap: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 1,
   },
   titleRow: {
     alignItems: 'center',
@@ -200,26 +198,20 @@ const styles = StyleSheet.create({
   },
   headerIconWrap: {
     alignItems: 'center',
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
+    borderRadius: RADIUS.sm,
     height: 32,
     justifyContent: 'center',
     width: 32,
   },
   title: {
+    ...typography.h2,
     color: COLORS.textPrimary,
     flexShrink: 1,
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: 0,
   },
   subtitle: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    lineHeight: 20,
-    marginTop: 4,
+    ...typography.body2,
+    color: COLORS.textSecondary,
+    marginTop: SPACE[4],
   },
   progressTrack: {
     backgroundColor: COLORS.surfaceElevated,
@@ -241,6 +233,6 @@ const styles = StyleSheet.create({
   rightSlot: {
     alignItems: 'flex-end',
     justifyContent: 'center',
-    minHeight: 50,
+    minHeight: CONTROL.minTouchSize,
   },
 });

@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -66,6 +67,7 @@ const statusText = (gate: GateState, available: boolean) => {
 };
 
 export function GateControlPanel() {
+  const { t: translateUi } = useLanguage();
   const focused = useIsFocused();
   const socket = useSocket();
   const { showError, showSuccess } = useToast();
@@ -174,11 +176,11 @@ export function GateControlPanel() {
           <Ionicons name="radio-outline" size={21} color={COLORS.success} />
         </View>
         <View style={styles.summaryCopy}>
-          <Text style={styles.summaryTitle}>Gate & Actions</Text>
+          <Text style={styles.summaryTitle}>{translateUi("Gate & Actions")}</Text>
           <Text numberOfLines={1} style={styles.summarySubtitle}>{summary}</Text>
         </View>
         <View style={styles.summaryAction}>
-          <Text style={styles.summaryActionText}>CONTROL</Text>
+          <Text style={styles.summaryActionText}>{translateUi("CONTROL")}</Text>
           <Ionicons name="chevron-forward" size={15} color={COLORS.gold} />
         </View>
       </Pressable>
@@ -195,9 +197,9 @@ export function GateControlPanel() {
             <View style={styles.sheetHeader}>
               <View style={styles.headerTitleWrap}>
                 <Ionicons name="radio-outline" size={22} color={COLORS.success} />
-                <Text style={styles.sheetTitle}>Gate & Actions</Text>
+                <Text style={styles.sheetTitle}>{translateUi("Gate & Actions")}</Text>
               </View>
-              <Pressable accessibilityLabel="Close gate controls" onPress={() => setVisible(false)} style={styles.closeButton}>
+              <Pressable accessibilityLabel={translateUi("Close gate controls")} onPress={() => setVisible(false)} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color={COLORS.textSecondary} />
               </Pressable>
             </View>
@@ -244,7 +246,7 @@ export function GateControlPanel() {
               </View>
 
               {!statusAvailable ? (
-                <Text style={styles.connectionNote}>Can’t read gate status. You can still try a command; the app will report if the server can’t be reached.</Text>
+                <Text style={styles.connectionNote}>{translateUi("Can’t read gate status. You can still try a command; the app will report if the server can’t be reached.")}</Text>
               ) : null}
 
               <Pressable
@@ -279,7 +281,7 @@ export function GateControlPanel() {
 
               <View style={styles.notice}>
                 <Ionicons name="information-circle-outline" size={18} color={COLORS.staffBlue} />
-                <Text style={styles.noticeText}>The status confirms the command reached the server. The hardware may take a moment to respond.</Text>
+                <Text style={styles.noticeText}>{translateUi("The status confirms the command reached the server. The hardware may take a moment to respond.")}</Text>
               </View>
             </ScrollView>
           </SafeAreaView>
@@ -303,10 +305,10 @@ const styles = StyleSheet.create({
   },
   gateTab: {
     alignItems: 'center', borderRadius: RADIUS.sm, flex: 1, flexDirection: 'row',
-    gap: SPACING.xs, justifyContent: 'center', minHeight: 43, paddingHorizontal: SPACING.xs,
+    gap: SPACING.xs, justifyContent: 'center', minHeight: 44, paddingHorizontal: SPACING.xs,
   },
   gateTabActive: { backgroundColor: COLORS.gold },
-  gateTabText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '900' },
+  gateTabText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '700' },
   gateTabTextActive: { color: COLORS.textInverse },
   headerTitleWrap: { alignItems: 'center', flexDirection: 'row', gap: SPACING.sm },
   modalBackdrop: { backgroundColor: 'rgba(0,0,0,0.68)', flex: 1, justifyContent: 'flex-end' },
@@ -320,13 +322,13 @@ const styles = StyleSheet.create({
     alignItems: 'center', borderRadius: RADIUS.md, flexDirection: 'row', gap: SPACING.sm,
     justifyContent: 'center', minHeight: 54, paddingHorizontal: SPACING.md,
   },
-  primaryButtonText: { color: '#FFFFFF', fontSize: FONT_SIZES.sm, fontWeight: '900', letterSpacing: 0.5 },
+  primaryButtonText: { color: '#FFFFFF', fontSize: FONT_SIZES.sm, fontWeight: '700', letterSpacing: 0.5 },
   secondaryButton: {
     alignItems: 'center', backgroundColor: 'rgba(255,159,67,0.1)', borderColor: 'rgba(255,159,67,0.3)',
     borderRadius: RADIUS.md, borderWidth: 1, flexDirection: 'row', gap: SPACING.sm,
     justifyContent: 'center', minHeight: 48, paddingHorizontal: SPACING.md,
   },
-  secondaryButtonText: { color: COLORS.warning, fontSize: FONT_SIZES.xs, fontWeight: '900', letterSpacing: 0.3 },
+  secondaryButtonText: { color: COLORS.warning, fontSize: FONT_SIZES.xs, fontWeight: '700', letterSpacing: 0.3 },
   sheet: {
     backgroundColor: COLORS.background, borderColor: COLORS.border, borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl, borderWidth: 1, maxHeight: '92%', paddingBottom: SPACING.md,
@@ -337,7 +339,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
   },
-  sheetTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  sheetTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   statusCard: {
     alignItems: 'center', backgroundColor: COLORS.surface, borderColor: COLORS.border,
     borderRadius: RADIUS.lg, borderWidth: 1, flexDirection: 'row', gap: SPACING.md, minHeight: 82,
@@ -353,9 +355,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', backgroundColor: COLORS.surfaceElevated, borderRadius: RADIUS.md,
     height: 48, justifyContent: 'center', width: 48,
   },
-  statusTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xs, fontWeight: '900', letterSpacing: 0.3 },
+  statusTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xs, fontWeight: '700', letterSpacing: 0.3 },
   summaryAction: { alignItems: 'center', flexDirection: 'row', gap: 2 },
-  summaryActionText: { color: COLORS.gold, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 },
+  summaryActionText: { color: COLORS.gold, fontSize: FONT_SIZES.xs, fontWeight: '700', letterSpacing: 0.6 },
   summaryCard: {
     alignItems: 'center', backgroundColor: COLORS.surface, borderColor: COLORS.border,
     borderRadius: RADIUS.lg, borderWidth: 1, flexDirection: 'row', gap: SPACING.md, minHeight: 78,
@@ -367,5 +369,5 @@ const styles = StyleSheet.create({
     height: 44, justifyContent: 'center', width: 44,
   },
   summarySubtitle: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs },
-  summaryTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  summaryTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
 });

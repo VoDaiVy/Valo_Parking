@@ -1,4 +1,8 @@
 const MIN_BOOKING_MINUTES = 30;
+const { BOOKING_TIME_STEP_MINUTES, isBookingStepAligned } = require('./bookingTimePolicy');
+const VIP_SUGGESTION_DAYS = 7;
+const MAX_BOOKING_DAYS = 90;
+const MAX_BOOKING_MINUTES = MAX_BOOKING_DAYS * 24 * 60;
 
 const bookingTimeError = (message, code) => Object.assign(new Error(message), {
   statusCode: 400,
@@ -9,6 +13,7 @@ function validateBookingTimeRange(startTime, endTime, {
   now = new Date(),
   requireFuture = true,
   minMinutes = MIN_BOOKING_MINUTES,
+  maxMinutes = MAX_BOOKING_MINUTES,
 } = {}) {
   const start = new Date(startTime);
   const end = new Date(endTime);
@@ -23,15 +28,31 @@ function validateBookingTimeRange(startTime, endTime, {
   if (requireFuture && start <= reference) {
     throw bookingTimeError('Ngày hoặc giờ bắt đầu đã qua. Vui lòng chọn thời gian trong tương lai.', 'PAST_BOOKING_TIME');
   }
+  if (!isBookingStepAligned(start) || !isBookingStepAligned(end)) {
+    throw bookingTimeError(
+      `Giờ booking phải theo mốc ${BOOKING_TIME_STEP_MINUTES} phút (00, 15, 30 hoặc 45).`,
+      'BOOKING_TIME_NOT_ALIGNED',
+    );
+  }
 
   const durationMinutes = (end.getTime() - start.getTime()) / 60000;
   if (Number.isFinite(minMinutes) && durationMinutes < minMinutes) {
     throw bookingTimeError(`Thời gian đặt chỗ phải tối thiểu ${minMinutes} phút.`, 'BOOKING_DURATION_TOO_SHORT');
   }
-  return { start, end, durationMinutes };
+  if (Number.isFinite(maxMinutes) && durationMinutes > maxMinutes) {
+    throw bookingTimeError(
+      `Thời gian đặt chỗ tối đa là ${MAX_BOOKING_DAYS} ngày.`,
+      'BOOKING_DURATION_EXCEEDS_LIMIT',
+    );
+  }
+  const suggestVip = durationMinutes > VIP_SUGGESTION_DAYS * 24 * 60;
+  return { start, end, durationMinutes, suggestVip };
 }
 
 module.exports = {
   MIN_BOOKING_MINUTES,
+  VIP_SUGGESTION_DAYS,
+  MAX_BOOKING_DAYS,
+  MAX_BOOKING_MINUTES,
   validateBookingTimeRange,
 };
