@@ -1,5 +1,5 @@
 import { format, formatDistanceToNow } from 'date-fns';
-import { enGB } from 'date-fns/locale';
+import { enGB, vi } from 'date-fns/locale';
 
 import { colors } from '@/theme';
 import type { NotificationPriority, NotificationType, UserNotification } from '@/types/models';
@@ -40,11 +40,11 @@ export const getNotificationColor = (priority: NotificationPriority) =>
     SYSTEM: colors.secondary[500],
   })[priority];
 
-export const formatNotificationTimestamp = (createdAt: string, now = new Date()) => {
+export const formatNotificationTimestamp = (createdAt: string, now = new Date(), language: 'en' | 'vi' = 'en') => {
   const date = new Date(createdAt);
   const diff = now.getTime() - date.getTime();
   if (diff < 24 * 60 * 60 * 1000) {
-    return formatDistanceToNow(date, { addSuffix: true, locale: enGB });
+    return formatDistanceToNow(date, { addSuffix: true, locale: language === 'vi' ? vi : enGB });
   }
   return format(date, 'HH:mm dd/MM/yyyy', { locale: enGB });
 };
@@ -67,6 +67,7 @@ export type NotificationNavigationTarget =
     }
   | { tab: 'WalletTab'; screen: 'Membership' }
   | { tab: 'WalletTab'; screen: 'Wallet' }
+  | { tab: 'WalletTab'; screen: 'Rewards' }
   | { tab: 'ProfileTab'; screen: 'Profile' };
 
 const getMarketplaceTransferId = (metadata: Record<string, unknown>) => {
@@ -93,6 +94,9 @@ const getMarketplaceTransferId = (metadata: Record<string, unknown>) => {
 
 export const getNotificationNavigationTarget = (item: UserNotification) => {
   const metadata = item.metadata || {};
+  if (typeof metadata.deepLink === 'string' && /^(?:valo:\/\/|\/)(?:customer\/)?rewards\/?(?:[?#].*)?$/.test(metadata.deepLink.trim())) {
+    return { tab: 'WalletTab', screen: 'Rewards' } satisfies NotificationNavigationTarget;
+  }
   if (
     metadata.eventType === 'MEMBERSHIP_TRANSFER_CLAIMED' ||
     metadata.eventType === 'MEMBERSHIP_TRANSFER_COMPLETED'

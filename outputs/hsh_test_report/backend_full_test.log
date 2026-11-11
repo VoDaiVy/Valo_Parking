@@ -1,0 +1,1933 @@
+
+> valo-parking-backend@1.0.0 test
+> node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js
+
+TAP version 13
+# Subtest: Admin Catalog Write Service (Safe Actions)
+    # Subtest: createServiceSafely
+        # Subtest: valid service succeeds
+        ok 1 - valid service succeeds
+          ---
+          duration_ms: 514.3113
+          type: 'test'
+          ...
+        # Subtest: unsupported fields cannot be injected
+        ok 2 - unsupported fields cannot be injected
+          ---
+          duration_ms: 70.0802
+          type: 'test'
+          ...
+        1..2
+    ok 1 - createServiceSafely
+      ---
+      duration_ms: 586.8425
+      type: 'suite'
+      ...
+    # Subtest: updateServiceSafely
+        # Subtest: allowed delta succeeds
+        ok 1 - allowed delta succeeds
+          ---
+          duration_ms: 36.8534
+          type: 'test'
+          ...
+        # Subtest: unsupported field rejected
+        ok 2 - unsupported field rejected
+          ---
+          duration_ms: 130.5437
+          type: 'test'
+          ...
+        # Subtest: stale state rejected
+        ok 3 - stale state rejected
+          ---
+          duration_ms: 161.0566
+          type: 'test'
+          ...
+        1..3
+    ok 2 - updateServiceSafely
+      ---
+      duration_ms: 329.4485
+      type: 'suite'
+      ...
+    # Subtest: archiveServiceSafely
+        # Subtest: active dependency blocks archive
+        ok 1 - active dependency blocks archive
+          ---
+          duration_ms: 159.888
+          type: 'test'
+          ...
+        # Subtest: safe service archives/deactivates and no hard delete occurs
+        ok 2 - safe service archives/deactivates and no hard delete occurs
+          ---
+          duration_ms: 212.0181
+          type: 'test'
+          ...
+        1..2
+    ok 3 - archiveServiceSafely
+      ---
+      duration_ms: 372.719
+      type: 'suite'
+      ...
+    # Subtest: updateUserProfileSafely
+        # Subtest: allowed delta succeeds
+        ok 1 - allowed delta succeeds
+          ---
+          duration_ms: 585.834
+          type: 'test'
+          ...
+        # Subtest: role/status/security fields cannot be changed
+        ok 2 - role/status/security fields cannot be changed
+          ---
+          duration_ms: 561.6726
+          type: 'test'
+          ...
+        # Subtest: uniqueness/validation preserved
+        ok 3 - uniqueness/validation preserved
+          ---
+          duration_ms: 1766.888
+          type: 'test'
+          ...
+        # Subtest: stale state rejected
+        ok 4 - stale state rejected
+          ---
+          duration_ms: 364.5153
+          type: 'test'
+          ...
+        1..4
+    ok 4 - updateUserProfileSafely
+      ---
+      duration_ms: 3280.0758
+      type: 'suite'
+      ...
+    # Subtest: archivePackageSafely
+        # Subtest: unsafe active subscription dependency blocks
+        ok 1 - unsafe active subscription dependency blocks
+          ---
+          duration_ms: 286.6096
+          type: 'test'
+          ...
+        # Subtest: historical non-blocking dependency behaves correctly
+        ok 2 - historical non-blocking dependency behaves correctly
+          ---
+          duration_ms: 302.1869
+          type: 'test'
+          ...
+        1..2
+    ok 5 - archivePackageSafely
+      ---
+      duration_ms: 588.9929
+      type: 'suite'
+      ...
+    1..5
+ok 1 - Admin Catalog Write Service (Safe Actions)
+  ---
+  duration_ms: 5166.9705
+  type: 'suite'
+  ...
+# Subtest: uses the entitlement owner as the current owner after a transfer
+ok 2 - uses the entitlement owner as the current owner after a transfer
+  ---
+  duration_ms: 4.2785
+  type: 'test'
+  ...
+# Subtest: keeps multiple current owners separate for multi-slot subscriptions
+ok 3 - keeps multiple current owners separate for multi-slot subscriptions
+  ---
+  duration_ms: 0.5037
+  type: 'test'
+  ...
+# Subtest: falls back to the original purchaser before entitlements are activated
+ok 4 - falls back to the original purchaser before entitlements are activated
+  ---
+  duration_ms: 0.3643
+  type: 'test'
+  ...
+# Subtest: AI interpreter extracts booking data without creating anything
+ok 5 - AI interpreter extracts booking data without creating anything
+  ---
+  duration_ms: 19.1089
+  type: 'test'
+  ...
+# Subtest: model response tolerates brief surrounding text and lowercase intent
+ok 6 - model response tolerates brief surrounding text and lowercase intent
+  ---
+  duration_ms: 4.1317
+  type: 'test'
+  ...
+# Subtest: follow-up keeps date while adding hours
+ok 7 - follow-up keeps date while adding hours
+  ---
+  duration_ms: 22.6421
+  type: 'test'
+  ...
+# Subtest: Gemini receives the correct prior context for availability follow-ups
+ok 8 - Gemini receives the correct prior context for availability follow-ups
+  ---
+  duration_ms: 0.962
+  type: 'test'
+  ...
+# Subtest: switching intent discards stale booking fields
+ok 9 - switching intent discards stale booking fields
+  ---
+  duration_ms: 0.469
+  type: 'test'
+  ...
+# Subtest: invalid or invented model fields do not become valid booking values
+ok 10 - invalid or invented model fields do not become valid booking values
+  ---
+  duration_ms: 0.3527
+  type: 'test'
+  ...
+# Subtest: malformed AI response fails closed
+ok 11 - malformed AI response fails closed
+  ---
+  duration_ms: 2.6693
+  type: 'test'
+  ...
+# Subtest: blank prompt is rejected before calling provider
+ok 12 - blank prompt is rejected before calling provider
+  ---
+  duration_ms: 0.7196
+  type: 'test'
+  ...
+# Subtest: quota fallback understands a Vietnamese evening booking request
+ok 13 - quota fallback understands a Vietnamese evening booking request
+  ---
+  duration_ms: 9.7483
+  type: 'test'
+  ...
+# Subtest: quota fallback can complete booking hours from a previous draft
+ok 14 - quota fallback can complete booking hours from a previous draft
+  ---
+  duration_ms: 2.9811
+  type: 'test'
+  ...
+# Subtest: quota reports the real cause when a request is outside the safe fallback
+ok 15 - quota reports the real cause when a request is outside the safe fallback
+  ---
+  duration_ms: 2.9891
+  type: 'test'
+  ...
+# Subtest: quota fallback preserves explicit floor and slot requirements
+ok 16 - quota fallback preserves explicit floor and slot requirements
+  ---
+  duration_ms: 1.3938
+  type: 'test'
+  ...
+# Subtest: provider failures are not described as a misunderstanding
+ok 17 - provider failures are not described as a misunderstanding
+  ---
+  duration_ms: 1.2468
+  type: 'test'
+  ...
+# Subtest: common booking phrases work without contacting Gemini
+ok 18 - common booking phrases work without contacting Gemini
+  ---
+  duration_ms: 6.3855
+  type: 'test'
+  ...
+# Subtest: ambiguous hours request clarification and keep the date
+ok 19 - ambiguous hours request clarification and keep the date
+  ---
+  duration_ms: 4.8772
+  type: 'test'
+  ...
+# Subtest: conflicting duration and clock range is clarified
+ok 20 - conflicting duration and clock range is clarified
+  ---
+  duration_ms: 0.6289
+  type: 'test'
+  ...
+# Subtest: short follow-ups fill date, plate, floor and change only the departure time
+ok 21 - short follow-ups fill date, plate, floor and change only the departure time
+  ---
+  duration_ms: 2.6449
+  type: 'test'
+  ...
+# Subtest: duration-only follow-up computes departure from the selected arrival
+ok 22 - duration-only follow-up computes departure from the selected arrival
+  ---
+  duration_ms: 0.8537
+  type: 'test'
+  ...
+# Subtest: changing floor clears an old slot instead of silently reusing it
+ok 23 - changing floor clears an old slot instead of silently reusing it
+  ---
+  duration_ms: 0.5412
+  type: 'test'
+  ...
+# Subtest: incomplete plate or floor preference is clarified before slot selection
+ok 24 - incomplete plate or floor preference is clarified before slot selection
+  ---
+  duration_ms: 0.5303
+  type: 'test'
+  ...
+# Subtest: explicit electric-car request remains a vehicle constraint across follow-ups
+ok 25 - explicit electric-car request remains a vehicle constraint across follow-ups
+  ---
+  duration_ms: 0.476
+  type: 'test'
+  ...
+# Subtest: local parser does not silently ignore unavailable service, recurring or multiple-car requirements
+ok 26 - local parser does not silently ignore unavailable service, recurring or multiple-car requirements
+  ---
+  duration_ms: 4.5079
+  type: 'test'
+  ...
+# Subtest: manual-only and motorbike requests do not produce an incomplete booking preview
+ok 27 - manual-only and motorbike requests do not produce an incomplete booking preview
+  ---
+  duration_ms: 0.5294
+  type: 'test'
+  ...
+# Subtest: cross-date stay is not mistaken for a booking repeated on both dates
+ok 28 - cross-date stay is not mistaken for a booking repeated on both dates
+  ---
+  duration_ms: 0.4447
+  type: 'test'
+  ...
+# Subtest: AI booking interpretation is customer-only and has no booking mutation route
+ok 29 - AI booking interpretation is customer-only and has no booking mutation route
+  ---
+  duration_ms: 5.0777
+  type: 'test'
+  ...
+# [VALO_AI_CHAT] {"stage":"CHAT_REQUEST_RECEIVED"}
+# [VALO_AI_CHAT] {"stage":"GEMINI_TOOL_SELECTION_START","step":0}
+# [VALO_AI_CHAT] {"stage":"GEMINI_TOOL_SELECTION_SUCCESS","step":0,"selectedTools":["check_system_health"]}
+# [VALO_AI_CHAT] {"stage":"TOOL_EXECUTION_START","tool":"check_system_health"}
+# [VALO_AI_CHAT] {"stage":"TOOL_EXECUTION_SUCCESS","tool":"check_system_health"}
+# [VALO_AI_CHAT] {"stage":"GEMINI_FINAL_SYNTHESIS_START","step":1}
+# [VALO_AI_CHAT] {"stage":"GEMINI_FINAL_SYNTHESIS_SUCCESS","step":1,"selectedTools":[]}
+# [VALO_AI_CHAT] {"stage":"CHAT_RESPONSE_VALIDATION","evidenceCount":1,"hasDraft":false}
+# [VALO_AI_CHAT] {"stage":"CHAT_REQUEST_RECEIVED"}
+# [VALO_AI_CHAT] {"stage":"GEMINI_TOOL_SELECTION_START","step":0}
+# [VALO_AI_CHAT] {"stage":"CHAT_FAILED","failedStage":"GEMINI_TOOL_SELECTION_START","category":"GEMINI_RATE_LIMIT","errorName":"Error","httpStatus":429}
+# Subtest: AI copilot exposes an express router with multiple endpoints
+ok 30 - AI copilot exposes an express router with multiple endpoints
+  ---
+  duration_ms: 1.4685
+  type: 'test'
+  ...
+# Subtest: AI copilot rejects a request without an access token
+ok 31 - AI copilot rejects a request without an access token
+  ---
+  duration_ms: 0.6265
+  type: 'test'
+  ...
+# Subtest: chat reports unavailable Gemini without inventing any metrics
+ok 32 - chat reports unavailable Gemini without inventing any metrics
+  ---
+  duration_ms: 2.518
+  type: 'test'
+  ...
+# Subtest: chat sends a function-role tool response before final synthesis
+ok 33 - chat sends a function-role tool response before final synthesis
+  ---
+  duration_ms: 45.3166
+  type: 'test'
+  ...
+# Subtest: Gemini 429 is classified at the exact failed call without business writes
+ok 34 - Gemini 429 is classified at the exact failed call without business writes
+  ---
+  duration_ms: 3.8499
+  type: 'test'
+  ...
+# Subtest: read allowlist contains the 11 original aggregate tools plus 12 drill-down read tools
+ok 35 - read allowlist contains the 11 original aggregate tools plus 12 drill-down read tools
+  ---
+  duration_ms: 1.9441
+  type: 'test'
+  ...
+# Subtest: date tool rejects reversed and oversized periods
+ok 36 - date tool rejects reversed and oversized periods
+  ---
+  duration_ms: 1.3288
+  type: 'test'
+  ...
+# Subtest: pricing draft must cover every hour exactly once
+ok 37 - pricing draft must cover every hour exactly once
+  ---
+  duration_ms: 1.6979
+  type: 'test'
+  ...
+# Subtest: package draft accepts only supported operations and valid fields
+ok 38 - package draft accepts only supported operations and valid fields
+  ---
+  duration_ms: 0.8859
+  type: 'test'
+  ...
+# Subtest: draft service supports Phase 2A allowlist validation
+ok 39 - draft service supports Phase 2A allowlist validation
+  ---
+  duration_ms: 3.5725
+  type: 'test'
+  ...
+# Subtest: monitor requires comparable history before creating candidates
+ok 40 - monitor requires comparable history before creating candidates
+  ---
+  duration_ms: 0.8095
+  type: 'test'
+  ...
+# Subtest: revenue monitor anti-spam threshold tests
+ok 41 - revenue monitor anti-spam threshold tests
+  ---
+  duration_ms: 0.5528
+  type: 'test'
+  ...
+# Subtest: monitor creates no notification without a historical baseline and makes no Gemini call
+ok 42 - monitor creates no notification without a historical baseline and makes no Gemini call
+  ---
+  duration_ms: 1.061
+  type: 'test'
+  ...
+# Subtest: monitor persists and deduplicates a statistical candidate with deterministic actions and zero Gemini calls
+ok 43 - monitor persists and deduplicates a statistical candidate with deterministic actions and zero Gemini calls
+  ---
+  duration_ms: 1.8364
+  type: 'test'
+  ...
+# Subtest: standalone package approval uses one deterministic business write and blocks a second approval
+ok 44 - standalone package approval uses one deterministic business write and blocks a second approval
+  ---
+  duration_ms: 2.7105
+  type: 'test'
+  ...
+# Subtest: standalone pricing approval refuses multi-document write and keeps draft pending
+ok 45 - standalone pricing approval refuses multi-document write and keeps draft pending
+  ---
+  duration_ms: 1.106
+  type: 'test'
+  ...
+# Subtest: get_revenue_metrics correctly branches between platform and parking scope and combines timelines
+not ok 46 - get_revenue_metrics correctly branches between platform and parking scope and combines timelines
+  ---
+  duration_ms: 2.1929
+  type: 'test'
+  location: 'D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\tests\\aiCopilot.unit.test.js:312:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'totalRevenue')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    Object.run (D:\ki7\WDP\Valo_Parking\backend\src\services\aiCopilot\toolRegistry.js:109:39)
+    async execute (D:\ki7\WDP\Valo_Parking\backend\src\services\aiCopilot\toolRegistry.js:340:16)
+    async TestContext.<anonymous> (D:\ki7\WDP\Valo_Parking\backend\src\tests\aiCopilot.unit.test.js:337:28)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: AI Draft Catalog Actions Execution & Wiring
+    # Subtest: 1. UPDATE_USER_PROFILE tạo Draft nhưng chưa thay DB
+    ok 1 - 1. UPDATE_USER_PROFILE tạo Draft nhưng chưa thay DB
+      ---
+      duration_ms: 1671.8432
+      type: 'test'
+      ...
+    # Subtest: 2. Approve mới thay phone/name
+    ok 2 - 2. Approve mới thay phone/name
+      ---
+      duration_ms: 935.0525
+      type: 'test'
+      ...
+    # Subtest: 3. Payload cố đổi role/email bị strip/reject
+    ok 3 - 3. Payload cố đổi role/email bị strip/reject
+      ---
+      duration_ms: 1367.3726
+      type: 'test'
+      ...
+    # Subtest: 4. Stale profile -> 409
+    ok 4 - 4. Stale profile -> 409
+      ---
+      duration_ms: 304.6884
+      type: 'test'
+      ...
+    # Subtest: 5. CREATE_SERVICE Draft chưa tạo Service trước approval
+    ok 5 - 5. CREATE_SERVICE Draft chưa tạo Service trước approval
+      ---
+      duration_ms: 13.0567
+      type: 'test'
+      ...
+    # Subtest: 6. Approve tạo đúng 1 Service, 8. Không fake cloudinary_id
+    ok 6 - 6. Approve tạo đúng 1 Service, 8. Không fake cloudinary_id
+      ---
+      duration_ms: 25.2776
+      type: 'test'
+      ...
+    # Subtest: 7. Double approve không tạo Service thứ hai
+    ok 7 - 7. Double approve không tạo Service thứ hai
+      ---
+      duration_ms: 28.4962
+      type: 'test'
+      ...
+    # Subtest: 9. UPDATE_SERVICE delta update đúng field
+    ok 8 - 9. UPDATE_SERVICE delta update đúng field
+      ---
+      duration_ms: 25.3132
+      type: 'test'
+      ...
+    # Subtest: 10. ARCHIVE_SERVICE dependency -> 409
+    ok 9 - 10. ARCHIVE_SERVICE dependency -> 409
+      ---
+      duration_ms: 26.9552
+      type: 'test'
+      ...
+    # Subtest: 11. ARCHIVE_TICKET_PACKAGE active subscription -> 409
+    ok 10 - 11. ARCHIVE_TICKET_PACKAGE active subscription -> 409
+      ---
+      duration_ms: 286.713
+      type: 'test'
+      ...
+    # Subtest: 12. Reject Draft -> DB unchanged
+    ok 11 - 12. Reject Draft -> DB unchanged
+      ---
+      duration_ms: 39.3924
+      type: 'test'
+      ...
+    # Subtest: 13. Existing Draft actions vẫn hoạt động
+    ok 12 - 13. Existing Draft actions vẫn hoạt động
+      ---
+      duration_ms: 301.0817
+      type: 'test'
+      ...
+    # Subtest: 14. Gemini function-call regression
+    ok 13 - 14. Gemini function-call regression
+      ---
+      duration_ms: 7.2052
+      type: 'test'
+      ...
+    1..13
+ok 47 - AI Draft Catalog Actions Execution & Wiring
+  ---
+  duration_ms: 5041.814
+  type: 'suite'
+  ...
+# Subtest: floor full creates one open event per full period and rearms after recovery
+ok 48 - floor full creates one open event per full period and rearms after recovery
+  ---
+  duration_ms: 3.7122
+  type: 'test'
+  ...
+# Subtest: paid booking notification is idempotent and pending booking is ignored
+ok 49 - paid booking notification is idempotent and pending booking is ignored
+  ---
+  duration_ms: 0.7778
+  type: 'test'
+  ...
+# Subtest: booking notification failure does not escape the safe side effect
+ok 50 - booking notification failure does not escape the safe side effect
+  ---
+  duration_ms: 0.6479
+  type: 'test'
+  ...
+# Subtest: completed, credited booking refund notifies once; other payout states do not
+ok 51 - completed, credited booking refund notifies once; other payout states do not
+  ---
+  duration_ms: 53.1755
+  type: 'test'
+  ...
+# Subtest: floor detector reuses booking availability for every real blocker and ignores ghost/fixed slots
+ok 52 - floor detector reuses booking availability for every real blocker and ignores ghost/fixed slots
+  ---
+  duration_ms: 6.5924
+  type: 'test'
+  ...
+# [VALO AI Notification] BOOKING_CANCELLED: Error: DB Error
+#     at AINotification.updateOne (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\tests\\aiNotificationCenterV2.unit.test.js:87:52)
+#     at insertEvent (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\services\\aiCopilot\\notificationEvents.js:6:35)
+#     at notifyBookingCancelled (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\services\\aiCopilot\\notificationEvents.js:51:10)
+#     at notifyBookingCancelledSafely (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\services\\aiCopilot\\notificationEvents.js:65:10)
+#     at TestContext.<anonymous> (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\tests\\aiNotificationCenterV2.unit.test.js:88:24)
+#     at async Test.run (node:internal/test_runner/test:1054:7)
+#     at async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+# [VALO AI Notification] NEW_SUBSCRIPTION: Error: DB Error
+#     at AINotification.updateOne (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\tests\\aiNotificationCenterV2.unit.test.js:129:52)
+#     at insertEvent (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\services\\aiCopilot\\notificationEvents.js:6:35)
+#     at notifySubscriptionActivated (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\services\\aiCopilot\\notificationEvents.js:73:10)
+#     at notifySubscriptionActivatedSafely (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\services\\aiCopilot\\notificationEvents.js:87:10)
+#     at TestContext.<anonymous> (D:\\ki7\\WDP\\Valo_Parking\\backend\\src\\tests\\aiNotificationCenterV2.unit.test.js:130:24)
+#     at async Test.run (node:internal/test_runner/test:1054:7)
+#     at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+# Subtest: BOOKING_CANCELLED notification triggers correctly on real cancellation
+ok 53 - BOOKING_CANCELLED notification triggers correctly on real cancellation
+  ---
+  duration_ms: 8.4007
+  type: 'test'
+  ...
+# Subtest: NEW_BOOKING notification targets Parking Lots and preserves bookingId
+ok 54 - NEW_BOOKING notification targets Parking Lots and preserves bookingId
+  ---
+  duration_ms: 1.4033
+  type: 'test'
+  ...
+# Subtest: NEW_SUBSCRIPTION notification triggers on first activation
+ok 55 - NEW_SUBSCRIPTION notification triggers on first activation
+  ---
+  duration_ms: 1.7821
+  type: 'test'
+  ...
+# Subtest: FLOOR state machine: available -> full -> available
+ok 56 - FLOOR state machine: available -> full -> available
+  ---
+  duration_ms: 4.1424
+  type: 'test'
+  ...
+# Subtest: OCCUPANCY state machine
+ok 57 - OCCUPANCY state machine
+  ---
+  duration_ms: 1.9246
+  type: 'test'
+  ...
+# Subtest: SESSION_OVERDUE monitor
+ok 58 - SESSION_OVERDUE monitor
+  ---
+  duration_ms: 2.7657
+  type: 'test'
+  ...
+# Subtest: AI Notification Operational Events
+    # Subtest: 1. Customer registration mới -> đúng 1 NEW_USER_REGISTERED (và 11. targetRole, 12. Deep-link)
+    ok 1 - 1. Customer registration mới -> đúng 1 NEW_USER_REGISTERED (và 11. targetRole, 12. Deep-link)
+      ---
+      duration_ms: 959.431
+      type: 'test'
+      ...
+    # Subtest: 2. Duplicate notification call -> vẫn 1
+    ok 2 - 2. Duplicate notification call -> vẫn 1
+      ---
+      duration_ms: 493.0004
+      type: 'test'
+      ...
+# [VALO AI Notification] NEW_USER_REGISTERED: CastError: Cast to ObjectId failed for value "invalid-id" (type string) at path "entityId" because of "BSONError"
+#     at SchemaObjectId.cast (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\schema\\objectId.js:253:11)
+#     at SchemaType.applySetters (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\schemaType.js:1288:12)
+#     at SchemaType.castForQuery (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\schemaType.js:1718:17)
+#     at castUpdateVal (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\helpers\\query\\castUpdate.js:633:19)
+#     at walkUpdatePath (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\helpers\\query\\castUpdate.js:438:24)
+#     at castUpdate (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\helpers\\query\\castUpdate.js:144:7)
+#     at model.Query._castUpdate (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\query.js:4874:10)
+#     at model.Query._updateThunk (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\query.js:4062:25)
+#     at model.Query._updateOne (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\query.js:4150:23)
+#     at model.Query.exec (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\query.js:4627:80) {
+#   stringValue: '"invalid-id"',
+#   messageFormat: undefined,
+#   kind: 'ObjectId',
+#   value: 'invalid-id',
+#   path: 'entityId',
+#   reason: BSONError: input must be a 24 character hex string, 12 byte Uint8Array, or an integer
+#       at new ObjectId (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\bson\\lib\\bson.cjs:2538:23)
+#       at castObjectId (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\cast\\objectid.js:25:12)
+#       at SchemaObjectId.cast (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\schema\\objectId.js:251:12)
+#       at SchemaType.applySetters (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\schemaType.js:1288:12)
+#       at SchemaType.castForQuery (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\schemaType.js:1718:17)
+#       at castUpdateVal (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\helpers\\query\\castUpdate.js:633:19)
+#       at walkUpdatePath (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\helpers\\query\\castUpdate.js:438:24)
+#       at castUpdate (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\helpers\\query\\castUpdate.js:144:7)
+#       at model.Query._castUpdate (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\query.js:4874:10)
+#       at model.Query._updateThunk (D:\\ki7\\WDP\\Valo_Parking\\backend\\node_modules\\mongoose\\lib\\query.js:4062:25),
+#   valueType: 'string'
+# }
+    # Subtest: 3. Notification failure -> không throw error làm crash flow
+    ok 3 - 3. Notification failure -> không throw error làm crash flow
+      ---
+      duration_ms: 13.1583
+      type: 'test'
+      ...
+    # Subtest: 4. Session được tạo -> NEW_SESSION, và 6. initial status khác nhau vẫn hoạt động
+    ok 4 - 4. Session được tạo -> NEW_SESSION, và 6. initial status khác nhau vẫn hoạt động
+      ---
+      duration_ms: 190.0521
+      type: 'test'
+      ...
+    # Subtest: 5. Same Session status update -> không tạo NEW_SESSION thứ hai
+    ok 5 - 5. Same Session status update -> không tạo NEW_SESSION thứ hai
+      ---
+      duration_ms: 227.6097
+      type: 'test'
+      ...
+    # Subtest: 7. Vehicle pending mới -> đúng 1 urgent notification
+    ok 6 - 7. Vehicle pending mới -> đúng 1 urgent notification
+      ---
+      duration_ms: 72.1587
+      type: 'test'
+      ...
+    # Subtest: 8. Vehicle không pending -> không emit
+    ok 7 - 8. Vehicle không pending -> không emit
+      ---
+      duration_ms: 44.0263
+      type: 'test'
+      ...
+    # Subtest: 9. Duplicate vehicle hook -> không duplicate
+    ok 8 - 9. Duplicate vehicle hook -> không duplicate
+      ---
+      duration_ms: 53.6137
+      type: 'test'
+      ...
+    # Subtest: 13. Existing (NEW_BOOKING, NEW_SUBSCRIPTION) không regression
+    ok 9 - 13. Existing (NEW_BOOKING, NEW_SUBSCRIPTION) không regression
+      ---
+      duration_ms: 50.352
+      type: 'test'
+      ...
+    1..9
+ok 59 - AI Notification Operational Events
+  ---
+  duration_ms: 2114.6828
+  type: 'suite'
+  ...
+# Subtest: AI Copilot - Pricing & Ticket Package Actions
+    # Subtest: Pricing Actions
+        # Subtest: 1. Create pricing delta draft and apply (preserves others)
+        ok 1 - 1. Create pricing delta draft and apply (preserves others)
+          ---
+          duration_ms: 107.4702
+          type: 'test'
+          ...
+        # Subtest: 2. Rejects invalid pricing (overlap/gaps)
+        ok 2 - 2. Rejects invalid pricing (overlap/gaps)
+          ---
+          duration_ms: 18.208
+          type: 'test'
+          ...
+        1..2
+    ok 1 - Pricing Actions
+      ---
+      duration_ms: 127.4804
+      type: 'suite'
+      ...
+    # Subtest: Ticket Package Actions
+        # Subtest: 3. Rejects CREATE_TICKET_PACKAGE with missing fields
+        ok 1 - 3. Rejects CREATE_TICKET_PACKAGE with missing fields
+          ---
+          duration_ms: 19.8834
+          type: 'test'
+          ...
+        # Subtest: 4. Rejects invalid package type
+        ok 2 - 4. Rejects invalid package type
+          ---
+          duration_ms: 16.2884
+          type: 'test'
+          ...
+        # Subtest: 5. Approves CREATE_TICKET_PACKAGE with full fields
+        ok 3 - 5. Approves CREATE_TICKET_PACKAGE with full fields
+          ---
+          duration_ms: 84.3769
+          type: 'test'
+          ...
+        # Subtest: 6. UPDATE_TICKET_PACKAGE preserves other fields (delta update)
+        ok 4 - 6. UPDATE_TICKET_PACKAGE preserves other fields (delta update)
+          ---
+          duration_ms: 125.3111
+          type: 'test'
+          ...
+        # Subtest: 7. ARCHIVE_TICKET_PACKAGE rejects if there is active dependency
+        ok 5 - 7. ARCHIVE_TICKET_PACKAGE rejects if there is active dependency
+          ---
+          duration_ms: 78.1691
+          type: 'test'
+          ...
+        # Subtest: 8. ARCHIVE_TICKET_PACKAGE succeeds if no active dependency
+        ok 6 - 8. ARCHIVE_TICKET_PACKAGE succeeds if no active dependency
+          ---
+          duration_ms: 79.0104
+          type: 'test'
+          ...
+        # Subtest: 9. Double approve executes only once (idempotent)
+        ok 7 - 9. Double approve executes only once (idempotent)
+          ---
+          duration_ms: 76.9595
+          type: 'test'
+          ...
+        # Subtest: 10. Staff cannot use Admin write capabilities
+        ok 8 - 10. Staff cannot use Admin write capabilities
+          ---
+          duration_ms: 12.5823
+          type: 'test'
+          ...
+        1..8
+    ok 2 - Ticket Package Actions
+      ---
+      duration_ms: 494.6096
+      type: 'suite'
+      ...
+    1..2
+ok 60 - AI Copilot - Pricing & Ticket Package Actions
+  ---
+  duration_ms: 2571.7962
+  type: 'suite'
+  ...
+# Subtest: AI Copilot - Service Management Actions
+    # Subtest: 1. search exact
+    ok 1 - 1. search exact
+      ---
+      duration_ms: 64.1511
+      type: 'test'
+      ...
+    # Subtest: 2. search ambiguous
+    ok 2 - 2. search ambiguous
+      ---
+      duration_ms: 78.8597
+      type: 'test'
+      ...
+    # Subtest: 3. create thiếu Name
+    ok 3 - 3. create thiếu Name
+      ---
+      duration_ms: 14.0357
+      type: 'test'
+      ...
+    # Subtest: 4. create thiếu Price
+    ok 4 - 4. create thiếu Price
+      ---
+      duration_ms: 8.332
+      type: 'test'
+      ...
+    # Subtest: 5. create thiếu Duration / 6. create thiếu Description / 7. đủ 4 field -> Draft
+    ok 5 - 5. create thiếu Duration / 6. create thiếu Description / 7. đủ 4 field -> Draft
+      ---
+      duration_ms: 25.3605
+      type: 'test'
+      ...
+    # Subtest: 8. payload không chứa fake image
+    ok 6 - 8. payload không chứa fake image
+      ---
+      duration_ms: 36.4786
+      type: 'test'
+      ...
+    # Subtest: 9. update price only -> preserve field khác
+    ok 7 - 9. update price only -> preserve field khác
+      ---
+      duration_ms: 460.6265
+      type: 'test'
+      ...
+    # Subtest: 10. attempt update image -> stripped/rejected
+    ok 8 - 10. attempt update image -> stripped/rejected
+      ---
+      duration_ms: 34.9313
+      type: 'test'
+      ...
+    # Subtest: 11. archive có active dependency -> reject/no mutation
+    ok 9 - 11. archive có active dependency -> reject/no mutation
+      ---
+      duration_ms: 100.9527
+      type: 'test'
+      ...
+    # Subtest: 12. archive hợp lệ -> deactivate
+    ok 10 - 12. archive hợp lệ -> deactivate
+      ---
+      duration_ms: 134.9147
+      type: 'test'
+      ...
+    # Subtest: 13. reject Draft -> no mutation
+    ok 11 - 13. reject Draft -> no mutation
+      ---
+      duration_ms: 93.6722
+      type: 'test'
+      ...
+    # Subtest: 14. double approve -> one execution
+    ok 12 - 14. double approve -> one execution
+      ---
+      duration_ms: 395.6549
+      type: 'test'
+      ...
+    # Subtest: 15. Staff unauthorized
+    ok 13 - 15. Staff unauthorized
+      ---
+      duration_ms: 247.3203
+      type: 'test'
+      ...
+    1..13
+ok 61 - AI Copilot - Service Management Actions
+  ---
+  duration_ms: 3355.7634
+  type: 'suite'
+  ...
+# Subtest: booking financial summary combines base, overage, settlement and paid refund
+ok 62 - booking financial summary combines base, overage, settlement and paid refund
+  ---
+  duration_ms: 5.031
+  type: 'test'
+  ...
+# Subtest: booking financial summary falls back to credited settlement refund
+ok 63 - booking financial summary falls back to credited settlement refund
+  ---
+  duration_ms: 1.4299
+  type: 'test'
+  ...
+# Subtest: booking notification milestone selection
+    # Subtest: selects only the closest check-in milestone
+    ok 1 - selects only the closest check-in milestone
+      ---
+      duration_ms: 1.2048
+      type: 'test'
+      ...
+    # Subtest: selects 30, 15 and 5 minute ending milestones without overlap
+    ok 2 - selects 30, 15 and 5 minute ending milestones without overlap
+      ---
+      duration_ms: 0.3124
+      type: 'test'
+      ...
+    # Subtest: does not select a milestone outside the window or after expiration
+    ok 3 - does not select a milestone outside the window or after expiration
+      ---
+      duration_ms: 0.3034
+      type: 'test'
+      ...
+    1..3
+ok 64 - booking notification milestone selection
+  ---
+  duration_ms: 3.2352
+  type: 'suite'
+  ...
+# Subtest: direct booking notification triggers
+    # Subtest: check-in reminder bypasses rules and uses a schedule-specific dedup key
+    ok 1 - check-in reminder bypasses rules and uses a schedule-specific dedup key
+      ---
+      duration_ms: 0.8504
+      type: 'test'
+      ...
+    # Subtest: ending reminder uses scheduledEnd in its dedup key
+    ok 2 - ending reminder uses scheduledEnd in its dedup key
+      ---
+      duration_ms: 0.4597
+      type: 'test'
+      ...
+    # Subtest: invalid reminder milestones are ignored
+    ok 3 - invalid reminder milestones are ignored
+      ---
+      duration_ms: 0.6784
+      type: 'test'
+      ...
+    # Subtest: overdue and no-show notifications use different event types and references
+    ok 4 - overdue and no-show notifications use different event types and references
+      ---
+      duration_ms: 1.3846
+      type: 'test'
+      ...
+    1..4
+ok 65 - direct booking notification triggers
+  ---
+  duration_ms: 49.9144
+  type: 'suite'
+  ...
+# Subtest: direct VIP notification triggers
+    # Subtest: expiring and expired notifications bypass rules and have distinct keys
+    ok 1 - expiring and expired notifications bypass rules and have distinct keys
+      ---
+      duration_ms: 1.0473
+      type: 'test'
+      ...
+    1..1
+ok 66 - direct VIP notification triggers
+  ---
+  duration_ms: 2.302
+  type: 'suite'
+  ...
+# Subtest: available slots permits staff while customer booking routes stay customer/admin-only
+ok 67 - available slots permits staff while customer booking routes stay customer/admin-only
+  ---
+  duration_ms: 6.7655
+  type: 'test'
+  ...
+# [Loyalty] Could not load stale voucher reservations: Unexpected Booking.find query: {"status":"PENDING","paymentMethod":"vietqr","createdAt":{"$lt":"2026-10-06T17:58:59.273Z"},"paymentBreakdownSnapshot.voucherId":{"$ne":null}}
+# [Loyalty] Could not load stale voucher reservations: Unexpected Booking.find query: {"status":"PENDING","paymentMethod":"vietqr","createdAt":{"$lt":"2026-10-06T17:58:59.383Z"},"paymentBreakdownSnapshot.voucherId":{"$ne":null}}
+# Subtest: booking scheduler end-to-end decision flow
+    # Subtest: routes every booking state to the correct transition and notification
+    ok 1 - routes every booking state to the correct transition and notification
+      ---
+      duration_ms: 103.5535
+      type: 'test'
+      ...
+    # Subtest: excludes booking sessions from generic parking-time reminders
+    ok 2 - excludes booking sessions from generic parking-time reminders
+      ---
+      duration_ms: 4.4552
+      type: 'test'
+      ...
+    # Subtest: does not send a stale reminder after the booking schedule changes
+    ok 3 - does not send a stale reminder after the booking schedule changes
+      ---
+      duration_ms: 8.803
+      type: 'test'
+      ...
+    1..3
+ok 68 - booking scheduler end-to-end decision flow
+  ---
+  duration_ms: 121.3254
+  type: 'suite'
+  ...
+# Subtest: adds profile name and phone from UserDetail to populated booking users
+ok 69 - adds profile name and phone from UserDetail to populated booking users
+  ---
+  duration_ms: 3.4782
+  type: 'test'
+  ...
+# Subtest: a registered vehicle matches both its ID and older plate-only bookings
+ok 70 - a registered vehicle matches both its ID and older plate-only bookings
+  ---
+  duration_ms: 2.6768
+  type: 'test'
+  ...
+# Subtest: a manual vehicle matches its normalized plate without an account-wide restriction
+ok 71 - a manual vehicle matches its normalized plate without an account-wide restriction
+  ---
+  duration_ms: 0.5755
+  type: 'test'
+  ...
+# Subtest: a vehicle identifier is required before checking for overlap
+ok 72 - a vehicle identifier is required before checking for overlap
+  ---
+  duration_ms: 0.8455
+  type: 'test'
+  ...
+# Subtest: all routes, controllers and services can be required without throwing MODULE_NOT_FOUND
+ok 73 - all routes, controllers and services can be required without throwing MODULE_NOT_FOUND
+  ---
+  duration_ms: 5500.0596
+  type: 'test'
+  ...
+# Subtest: demandForecastingService returns valid 24h forecast structure
+ok 74 - demandForecastingService returns valid 24h forecast structure
+  ---
+  duration_ms: 9.9088
+  type: 'test'
+  ...
+# Subtest: demandForecastingService returns valid 7-day weekly forecast structure
+ok 75 - demandForecastingService returns valid 7-day weekly forecast structure
+  ---
+  duration_ms: 0.7154
+  type: 'test'
+  ...
+# Subtest: demandForecastingService returns valid monthly forecast structure
+ok 76 - demandForecastingService returns valid monthly forecast structure
+  ---
+  duration_ms: 0.5566
+  type: 'test'
+  ...
+# Subtest: demandForecastingService returns valid 12-month yearly forecast structure
+ok 77 - demandForecastingService returns valid 12-month yearly forecast structure
+  ---
+  duration_ms: 0.4575
+  type: 'test'
+  ...
+# Subtest: demandForecastingService gracefully handles undefined or empty params
+ok 78 - demandForecastingService gracefully handles undefined or empty params
+  ---
+  duration_ms: 1.3265
+  type: 'test'
+  ...
+# Subtest: demandForecastingService supports floorId filtering
+ok 79 - demandForecastingService supports floorId filtering
+  ---
+  duration_ms: 1.4881
+  type: 'test'
+  ...
+# Subtest: demandForecastingService uses Booking scheduledStart/scheduledEnd fields
+ok 80 - demandForecastingService uses Booking scheduledStart/scheduledEnd fields
+  ---
+  duration_ms: 2.7247
+  type: 'test'
+  ...
+# Subtest: far-date daily forecast is explicitly reference-only
+ok 81 - far-date daily forecast is explicitly reference-only
+  ---
+  duration_ms: 0.5029
+  type: 'test'
+  ...
+# Subtest: P1 calculates earned points using floor division
+ok 82 - P1 calculates earned points using floor division
+  ---
+  duration_ms: 6.1802
+  type: 'test'
+  ...
+# Subtest: P2 earning increases balance by exactly the calculated amount
+ok 83 - P2 earning increases balance by exactly the calculated amount
+  ---
+  duration_ms: 1.3213
+  type: 'test'
+  ...
+# Subtest: P3 balance equals earns minus revokes and redemptions
+ok 84 - P3 balance equals earns minus revokes and redemptions
+  ---
+  duration_ms: 26.5578
+  type: 'test'
+  ...
+# Subtest: P4 balance never becomes negative
+ok 85 - P4 balance never becomes negative
+  ---
+  duration_ms: 4.6206
+  type: 'test'
+  ...
+# Subtest: P5 revoke amount is clamped
+ok 86 - P5 revoke amount is clamped
+  ---
+  duration_ms: 0.9716
+  type: 'test'
+  ...
+# Subtest: P6 failed redemption preserves both balance and voucher collection
+ok 87 - P6 failed redemption preserves both balance and voucher collection
+  ---
+  duration_ms: 2.0614
+  type: 'test'
+  ...
+# Subtest: P7 voucher expiry is exactly thirty days after redemption
+ok 88 - P7 voucher expiry is exactly thirty days after redemption
+  ---
+  duration_ms: 357.5388
+  type: 'test'
+  ...
+# Subtest: P8 a balance below cost can never satisfy the redemption guard
+ok 89 - P8 a balance below cost can never satisfy the redemption guard
+  ---
+  duration_ms: 0.9439
+  type: 'test'
+  ...
+# Subtest: P9 paid transition produces a used voucher state
+ok 90 - P9 paid transition produces a used voucher state
+  ---
+  duration_ms: 4.3188
+  type: 'test'
+  ...
+# Subtest: P10 used voucher cannot be applied again
+ok 91 - P10 used voucher cannot be applied again
+  ---
+  duration_ms: 6.4096
+  type: 'test'
+  ...
+# Subtest: P11 expired voucher is rejected for every status
+ok 92 - P11 expired voucher is rejected for every status
+  ---
+  duration_ms: 1.6593
+  type: 'test'
+  ...
+# Subtest: P12 percentage discounts use floor division
+ok 93 - P12 percentage discounts use floor division
+  ---
+  duration_ms: 40.3605
+  type: 'test'
+  ...
+# Subtest: P13 transaction timestamps sort newest first
+ok 94 - P13 transaction timestamps sort newest first
+  ---
+  duration_ms: 8.5291
+  type: 'test'
+  ...
+# Subtest: P14 invalid percentage voucher values are rejected
+ok 95 - P14 invalid percentage voucher values are rejected
+  ---
+  duration_ms: 59.0487
+  type: 'test'
+  ...
+# Subtest: amounts below 1000 earn no points
+ok 96 - amounts below 1000 earn no points
+  ---
+  duration_ms: 1.6258
+  type: 'test'
+  ...
+# Subtest: point calculation never rounds up
+ok 97 - point calculation never rounds up
+  ---
+  duration_ms: 0.2904
+  type: 'test'
+  ...
+# Subtest: earned points are configured to expire after exactly 30 days
+ok 98 - earned points are configured to expire after exactly 30 days
+  ---
+  duration_ms: 0.1194
+  type: 'test'
+  ...
+# Subtest: point ledger accepts an expiry transaction
+ok 99 - point ledger accepts an expiry transaction
+  ---
+  duration_ms: 19.3277
+  type: 'test'
+  ...
+# Subtest: a used voucher reports an idempotent rejection code
+ok 100 - a used voucher reports an idempotent rejection code
+  ---
+  duration_ms: 0.5502
+  type: 'test'
+  ...
+# Subtest: expiry takes precedence over status
+ok 101 - expiry takes precedence over status
+  ---
+  duration_ms: 0.4463
+  type: 'test'
+  ...
+# Subtest: 100 percent voucher reduces the amount to zero
+ok 102 - 100 percent voucher reduces the amount to zero
+  ---
+  duration_ms: 0.4268
+  type: 'test'
+  ...
+# Subtest: free-service template requires a service
+ok 103 - free-service template requires a service
+  ---
+  duration_ms: 4.7036
+  type: 'test'
+  ...
+# Subtest: percentage template requires an integer percentage
+ok 104 - percentage template requires an integer percentage
+  ---
+  duration_ms: 3.381
+  type: 'test'
+  ...
+# Subtest: limited voucher requires a positive integer quantity
+ok 105 - limited voucher requires a positive integer quantity
+  ---
+  duration_ms: 2.3162
+  type: 'test'
+  ...
+# Subtest: voucher limit cannot be lower than the number already redeemed
+ok 106 - voucher limit cannot be lower than the number already redeemed
+  ---
+  duration_ms: 1.432
+  type: 'test'
+  ...
+# Subtest: transfer contract uses available snapshot fields and omits unsupported identity fields
+ok 107 - transfer contract uses available snapshot fields and omits unsupported identity fields
+  ---
+  duration_ms: 48.8762
+  type: 'test'
+  ...
+# Subtest: PDF builder creates a valid multi-page document
+ok 108 - PDF builder creates a valid multi-page document
+  ---
+  duration_ms: 337.2824
+  type: 'test'
+  ...
+# Subtest: styled transfer agreement renders as a valid Vietnamese PDF
+ok 109 - styled transfer agreement renders as a valid Vietnamese PDF
+  ---
+  duration_ms: 456.1112
+  type: 'test'
+  ...
+# Subtest: embedded TrueType font covers every Vietnamese contract character
+ok 110 - embedded TrueType font covers every Vietnamese contract character
+  ---
+  duration_ms: 385.914
+  type: 'test'
+  ...
+# Subtest: transfer fee is exactly 5% without rounding or minimum and maximum clamps
+ok 111 - transfer fee is exactly 5% without rounding or minimum and maximum clamps
+  ---
+  duration_ms: 4.7758
+  type: 'test'
+  ...
+# Subtest: wallet transaction accepts a transfer fee below 1,000 VND only for TRANSFER_FEE
+ok 112 - wallet transaction accepts a transfer fee below 1,000 VND only for TRANSFER_FEE
+  ---
+  duration_ms: 22.319
+  type: 'test'
+  ...
+# Subtest: marketplace schema keeps direct compatibility and supports public listing state
+ok 113 - marketplace schema keeps direct compatibility and supports public listing state
+  ---
+  duration_ms: 7.9861
+  type: 'test'
+  ...
+# Subtest: one-open-transfer index includes public listings
+ok 114 - one-open-transfer index includes public listings
+  ---
+  duration_ms: 1.14
+  type: 'test'
+  ...
+# Subtest: new transfers omit contractNumber until settlement
+ok 115 - new transfers omit contractNumber until settlement
+  ---
+  duration_ms: 8.3575
+  type: 'test'
+  ...
+# Subtest: duplicate-key mapping only treats entitlementId as an open transfer
+ok 116 - duplicate-key mapping only treats entitlementId as an open transfer
+  ---
+  duration_ms: 0.425
+  type: 'test'
+  ...
+# Subtest: public marketplace uses the existing transfer pricing policy
+ok 117 - public marketplace uses the existing transfer pricing policy
+  ---
+  duration_ms: 0.6164
+  type: 'test'
+  ...
+# Subtest: marketplace projection hides seller identity and exposes hold only to its buyer
+ok 118 - marketplace projection hides seller identity and exposes hold only to its buyer
+  ---
+  duration_ms: 5.2879
+  type: 'test'
+  ...
+# Subtest: expired public hold relists only while its seven-day listing is still valid
+ok 119 - expired public hold relists only while its seven-day listing is still valid
+  ---
+  duration_ms: 0.4703
+  type: 'test'
+  ...
+# [ParkingScheduler] Released 1 expired membership transfer holds.
+# Subtest: membership transfer hold cleanup delegates to the transfer expiry service
+ok 120 - membership transfer hold cleanup delegates to the transfer expiry service
+  ---
+  duration_ms: 2.2812
+  type: 'test'
+  ...
+# Subtest: notification request validation
+    # Subtest: accepts a system-wide violation notification without targetUsers
+    ok 1 - accepts a system-wide violation notification without targetUsers
+      ---
+      duration_ms: 11.5884
+      type: 'test'
+      ...
+    # Subtest: requires one recipient for SINGLE_USER
+    ok 2 - requires one recipient for SINGLE_USER
+      ---
+      duration_ms: 6.9526
+      type: 'test'
+      ...
+    # Subtest: requires two distinct recipients for MULTI_USER
+    ok 3 - requires two distinct recipients for MULTI_USER
+      ---
+      duration_ms: 2.7873
+      type: 'test'
+      ...
+    # Subtest: rejects selected recipients for ALL_USERS
+    ok 4 - rejects selected recipients for ALL_USERS
+      ---
+      duration_ms: 2.561
+      type: 'test'
+      ...
+    # Subtest: accepts role-based delivery with explicit valid roles
+    ok 5 - accepts role-based delivery with explicit valid roles
+      ---
+      duration_ms: 2.9982
+      type: 'test'
+      ...
+    # Subtest: rejects role-based delivery without roles
+    ok 6 - rejects role-based delivery without roles
+      ---
+      duration_ms: 2.1427
+      type: 'test'
+      ...
+    1..6
+ok 121 - notification request validation
+  ---
+  duration_ms: 31.1937
+  type: 'suite'
+  ...
+# Subtest: notification recipient delivery
+    # Subtest: sends to exactly one active user
+    ok 1 - sends to exactly one active user
+      ---
+      duration_ms: 4.6487
+      type: 'test'
+      ...
+    # Subtest: deduplicates recipients when sending to multiple users
+    ok 2 - deduplicates recipients when sending to multiple users
+      ---
+      duration_ms: 1.0652
+      type: 'test'
+      ...
+    # Subtest: can fan out without exposing the full recipient audience on notification payload
+    ok 3 - can fan out without exposing the full recipient audience on notification payload
+      ---
+      duration_ms: 0.9459
+      type: 'test'
+      ...
+    # Subtest: sends system-wide notifications to all active application roles
+    ok 4 - sends system-wide notifications to all active application roles
+      ---
+      duration_ms: 0.8622
+      type: 'test'
+      ...
+    # Subtest: sends role-based notifications only to users resolved from selected roles
+    ok 5 - sends role-based notifications only to users resolved from selected roles
+      ---
+      duration_ms: 0.6871
+      type: 'test'
+      ...
+    # Subtest: rejects missing or inactive selected recipients before creating delivery rows
+    ok 6 - rejects missing or inactive selected recipients before creating delivery rows
+      ---
+      duration_ms: 0.8677
+      type: 'test'
+      ...
+    # Subtest: rejects malformed recipient IDs
+    ok 7 - rejects malformed recipient IDs
+      ---
+      duration_ms: 0.4475
+      type: 'test'
+      ...
+    # Subtest: rolls back the notification when recipient delivery fails
+    ok 8 - rolls back the notification when recipient delivery fails
+      ---
+      duration_ms: 0.5434
+      type: 'test'
+      ...
+    1..8
+ok 122 - notification recipient delivery
+  ---
+  duration_ms: 11.8871
+  type: 'suite'
+  ...
+# Subtest: authenticated notification context
+    # Subtest: ignores a spoofed query role and uses the authenticated user role
+    ok 1 - ignores a spoofed query role and uses the authenticated user role
+      ---
+      duration_ms: 0.3746
+      type: 'test'
+      ...
+    1..1
+ok 123 - authenticated notification context
+  ---
+  duration_ms: 0.5513
+  type: 'suite'
+  ...
+# Subtest: areCharactersConfusable identifies standard optical OCR confusion pairs
+ok 124 - areCharactersConfusable identifies standard optical OCR confusion pairs
+  ---
+  duration_ms: 1.8535
+  type: 'test'
+  ...
+# Subtest: calculateAlprDistance applies optical penalty for confusable OCR characters
+ok 125 - calculateAlprDistance applies optical penalty for confusable OCR characters
+  ---
+  duration_ms: 4.3574
+  type: 'test'
+  ...
+# Subtest: calculatePlateSimilarity produces high percentage for optical OCR misreads
+ok 126 - calculatePlateSimilarity produces high percentage for optical OCR misreads
+  ---
+  duration_ms: 20.8377
+  type: 'test'
+  ...
+# Subtest: resolveUnclearPlate returns structured resolution response with suggestions
+ok 127 - resolveUnclearPlate returns structured resolution response with suggestions
+  ---
+  duration_ms: 2.5263
+  type: 'test'
+  ...
+# Subtest: permanently deleting a policy removes all dependent policy records in one transaction
+ok 128 - permanently deleting a policy removes all dependent policy records in one transaction
+  ---
+  duration_ms: 19.6513
+  type: 'test'
+  ...
+# Subtest: calendar pricing selects the highest priority matching policy
+ok 129 - calendar pricing selects the highest priority matching policy
+  ---
+  duration_ms: 2.4447
+  type: 'test'
+  ...
+# Subtest: date range wins a priority tie over month and weekday
+ok 130 - date range wins a priority tie over month and weekday
+  ---
+  duration_ms: 0.5753
+  type: 'test'
+  ...
+# Subtest: calendar adjustment supports discounts and rounds up to 1000 VND
+ok 131 - calendar adjustment supports discounts and rounds up to 1000 VND
+  ---
+  duration_ms: 0.3223
+  type: 'test'
+  ...
+# Subtest: active day and night blocks replace the regular schedule with two 12-hour prices
+ok 132 - active day and night blocks replace the regular schedule with two 12-hour prices
+  ---
+  duration_ms: 2.6716
+  type: 'test'
+  ...
+# Subtest: an inactive day/night period falls back to the original time blocks
+ok 133 - an inactive day/night period falls back to the original time blocks
+  ---
+  duration_ms: 1.2091
+  type: 'test'
+  ...
+# Subtest: booking calculation charges the configured 12-hour day price
+ok 134 - booking calculation charges the configured 12-hour day price
+  ---
+  duration_ms: 0.9481
+  type: 'test'
+  ...
+# Subtest: admin pricing validation preserves valid day/night settings
+ok 135 - admin pricing validation preserves valid day/night settings
+  ---
+  duration_ms: 1.2034
+  type: 'test'
+  ...
+# Subtest: admin pricing validation rejects overlapping active 12-hour periods
+ok 136 - admin pricing validation rejects overlapping active 12-hour periods
+  ---
+  duration_ms: 1.144
+  type: 'test'
+  ...
+# Subtest: normalizeRule sorts unordered cancellation tiers descending
+ok 137 - normalizeRule sorts unordered cancellation tiers descending
+  ---
+  duration_ms: 4.0794
+  type: 'test'
+  ...
+# Subtest: normalizeRule accepts legacy service refund configuration but forces every status to zero
+ok 138 - normalizeRule accepts legacy service refund configuration but forces every status to zero
+  ---
+  duration_ms: 47.631
+  type: 'test'
+  ...
+# Subtest: cancellation below every configured threshold defaults to zero refund
+ok 139 - cancellation below every configured threshold defaults to zero refund
+  ---
+  duration_ms: 0.9544
+  type: 'test'
+  ...
+# Subtest: normalizeRule rejects duplicate cancellation thresholds
+ok 140 - normalizeRule rejects duplicate cancellation thresholds
+  ---
+  duration_ms: 2.0709
+  type: 'test'
+  ...
+# Subtest: normalizeRule rejects invalid tiers, percentages, modes, and billable minutes
+ok 141 - normalizeRule rejects invalid tiers, percentages, modes, and billable minutes
+  ---
+  duration_ms: 9.7963
+  type: 'test'
+  ...
+# Subtest: custom no-show rule refunds parking only and never refunds services
+ok 142 - custom no-show rule refunds parking only and never refunds services
+  ---
+  duration_ms: 0.5873
+  type: 'test'
+  ...
+# Subtest: service refund compatibility helper always returns zero
+ok 143 - service refund compatibility helper always returns zero
+  ---
+  duration_ms: 0.7876
+  type: 'test'
+  ...
+# Subtest: cancellation and actual-usage checkout never refund service add-ons
+ok 144 - cancellation and actual-usage checkout never refund service add-ons
+  ---
+  duration_ms: 0.8395
+  type: 'test'
+  ...
+# Subtest: actual-usage early checkout refunds unused parking and reports overage
+ok 145 - actual-usage early checkout refunds unused parking and reports overage
+  ---
+  duration_ms: 0.8512
+  type: 'test'
+  ...
+# Subtest: fixed-percent mode applies percentage to unused parking only
+ok 146 - fixed-percent mode applies percentage to unused parking only
+  ---
+  duration_ms: 1.1364
+  type: 'test'
+  ...
+# Subtest: no-refund mode does not refund parking or services
+ok 147 - no-refund mode does not refund parking or services
+  ---
+  duration_ms: 0.5362
+  type: 'test'
+  ...
+# Subtest: fee uses floor rounding and 100% fee removes the parking refund
+ok 148 - fee uses floor rounding and 100% fee removes the parking refund
+  ---
+  duration_ms: 0.2972
+  type: 'test'
+  ...
+# Subtest: refund is floored and clamped to the amount actually paid
+ok 149 - refund is floored and clamped to the amount actually paid
+  ---
+  duration_ms: 0.2833
+  type: 'test'
+  ...
+# Subtest: minimum billable intervals accept 0 and extend short occupancy to 30/60/1440 minutes
+ok 150 - minimum billable intervals accept 0 and extend short occupancy to 30/60/1440 minutes
+  ---
+  duration_ms: 0.9935
+  type: 'test'
+  ...
+# Subtest: minimum billable time extends the first interval and preserves later intervals
+ok 151 - minimum billable time extends the first interval and preserves later intervals
+  ---
+  duration_ms: 2.3702
+  type: 'test'
+  ...
+# Subtest: minimum billable time remains satisfied when extension overlaps another interval
+ok 152 - minimum billable time remains satisfied when extension overlaps another interval
+  ---
+  duration_ms: 0.564
+  type: 'test'
+  ...
+# Subtest: invalid intervals are ignored without mutating caller-owned dates
+ok 153 - invalid intervals are ignored without mutating caller-owned dates
+  ---
+  duration_ms: 0.3866
+  type: 'test'
+  ...
+# Subtest: legacy cancellation preserves the 60/59/30/29 minute boundaries
+ok 154 - legacy cancellation preserves the 60/59/30/29 minute boundaries
+  ---
+  duration_ms: 8.014
+  type: 'test'
+  ...
+# Subtest: legacy no-show keeps parking refund at zero
+ok 155 - legacy no-show keeps parking refund at zero
+  ---
+  duration_ms: 0.6932
+  type: 'test'
+  ...
+# Subtest: cloning legacy rules is deep and does not mutate the frozen defaults
+ok 156 - cloning legacy rules is deep and does not mutate the frozen defaults
+  ---
+  duration_ms: 0.4115
+  type: 'test'
+  ...
+# Subtest: refund engine mode defaults to active policy and accepts rollout modes
+ok 157 - refund engine mode defaults to active policy and accepts rollout modes
+  ---
+  duration_ms: 1.426
+  type: 'test'
+  ...
+# Subtest: normalizePhone handles various Vietnam phone formats
+ok 158 - normalizePhone handles various Vietnam phone formats
+  ---
+  duration_ms: 1.1322
+  type: 'test'
+  ...
+# Subtest: getPhoneVariants generates all database query match variants
+ok 159 - getPhoneVariants generates all database query match variants
+  ---
+  duration_ms: 0.4882
+  type: 'test'
+  ...
+# Subtest: getPhoneRegex matches various real-world phone formats
+ok 160 - getPhoneRegex matches various real-world phone formats
+  ---
+  duration_ms: 0.442
+  type: 'test'
+  ...
+# Subtest: getPhoneSearchConditions returns query conditions with variants and regex
+ok 161 - getPhoneSearchConditions returns query conditions with variants and regex
+  ---
+  duration_ms: 0.2369
+  type: 'test'
+  ...
+# Subtest: GET / requires staff or admin authorization before listing sessions
+ok 162 - GET / requires staff or admin authorization before listing sessions
+  ---
+  duration_ms: 8.0097
+  type: 'test'
+  ...
+# Subtest: Vietnam month boundary and exactly seven days
+ok 163 - Vietnam month boundary and exactly seven days
+  ---
+  duration_ms: 3.1377
+  type: 'test'
+  ...
+# Subtest: quarter boundaries use Vietnam-local month and reject malformed quarters
+ok 164 - quarter boundaries use Vietnam-local month and reject malformed quarters
+  ---
+  duration_ms: 1.6843
+  type: 'test'
+  ...
+# Subtest: only highest newly reached milestone; refunds cannot re-award old tiers
+ok 165 - only highest newly reached milestone; refunds cannot re-award old tiers
+  ---
+  duration_ms: 0.326
+  type: 'test'
+  ...
+# Subtest: program rejects invalid money, duplicate tiers, over-discounts and malformed settings
+ok 166 - program rejects invalid money, duplicate tiers, over-discounts and malformed settings
+  ---
+  duration_ms: 0.6645
+  type: 'test'
+  ...
+# Subtest: settled spending includes actual extras, subtracts actual refunds, excludes cancelled bookings
+ok 167 - settled spending includes actual extras, subtracts actual refunds, excludes cancelled bookings
+  ---
+  duration_ms: 0.3051
+  type: 'test'
+  ...
+# [VALO_AI_CHAT] {"stage":"CHAT_REQUEST_RECEIVED"}
+# [VALO_AI_CHAT] {"stage":"GEMINI_TOOL_SELECTION_START","step":0}
+# [VALO_AI_CHAT] {"stage":"GEMINI_TOOL_SELECTION_SUCCESS","step":0,"selectedTools":["search_notification_recipients"]}
+# [VALO_AI_CHAT] {"stage":"TOOL_EXECUTION_START","tool":"search_notification_recipients"}
+# [VALO_AI_CHAT] {"stage":"TOOL_EXECUTION_SUCCESS","tool":"search_notification_recipients"}
+# [VALO_AI_CHAT] {"stage":"GEMINI_FINAL_SYNTHESIS_START","step":1}
+# [VALO_AI_CHAT] {"stage":"GEMINI_FINAL_SYNTHESIS_SUCCESS","step":1,"selectedTools":["prepare_draft"]}
+# [VALO_AI_CHAT] {"stage":"TOOL_EXECUTION_START","tool":"prepare_draft"}
+# [VALO_AI_CHAT] {"stage":"TOOL_EXECUTION_SUCCESS","tool":"prepare_draft"}
+# [VALO_AI_CHAT] {"stage":"GEMINI_FINAL_SYNTHESIS_START","step":2}
+# [VALO_AI_CHAT] {"stage":"GEMINI_FINAL_SYNTHESIS_SUCCESS","step":2,"selectedTools":[]}
+# [VALO_AI_CHAT] {"stage":"CHAT_RESPONSE_VALIDATION","evidenceCount":1,"hasDraft":true}
+# Subtest: notification recipient tool is Staff-only and general Staff user tools remain separate
+ok 168 - notification recipient tool is Staff-only and general Staff user tools remain separate
+  ---
+  duration_ms: 1.5569
+  type: 'test'
+  ...
+# Subtest: purpose-specific recipient search returns only bounded identity fields and exact username grounding
+ok 169 - purpose-specific recipient search returns only bounded identity fields and exact username grounding
+  ---
+  duration_ms: 1.324
+  type: 'test'
+  ...
+# Subtest: SEND_NOTIFICATION validation requires an AI-proposed title and content
+ok 170 - SEND_NOTIFICATION validation requires an AI-proposed title and content
+  ---
+  duration_ms: 0.6814
+  type: 'test'
+  ...
+# Subtest: SEND_NOTIFICATION draft target must be uniquely grounded and DB role replaces forged role
+ok 171 - SEND_NOTIFICATION draft target must be uniquely grounded and DB role replaces forged role
+  ---
+  duration_ms: 1.3578
+  type: 'test'
+  ...
+# Subtest: approval atomically claims and sends exactly once while trusting live recipient role
+ok 172 - approval atomically claims and sends exactly once while trusting live recipient role
+  ---
+  duration_ms: 4.3413
+  type: 'test'
+  ...
+# Subtest: inactive recipient fails approval before dispatch and leaves the Draft pending
+ok 173 - inactive recipient fails approval before dispatch and leaves the Draft pending
+  ---
+  duration_ms: 1.1813
+  type: 'test'
+  ...
+# Subtest: shared single-user dispatch reuses createForUser and aiDraftId prevents a retry duplicate
+ok 174 - shared single-user dispatch reuses createForUser and aiDraftId prevents a retry duplicate
+  ---
+  duration_ms: 0.5938
+  type: 'test'
+  ...
+# Subtest: dispatch integration creates exactly one Notification and one UserNotification record
+ok 175 - dispatch integration creates exactly one Notification and one UserNotification record
+  ---
+  duration_ms: 0.6451
+  type: 'test'
+  ...
+# Subtest: Staff chat resolves recipient then prepares title/content Draft without sending
+ok 176 - Staff chat resolves recipient then prepares title/content Draft without sending
+  ---
+  duration_ms: 18.1547
+  type: 'test'
+  ...
+# Subtest: resolveDateRange creates a bounded 30 day period
+ok 177 - resolveDateRange creates a bounded 30 day period
+  ---
+  duration_ms: 3.396
+  type: 'test'
+  ...
+# Subtest: resolveDateRange rejects reversed custom dates
+ok 178 - resolveDateRange rejects reversed custom dates
+  ---
+  duration_ms: 0.8362
+  type: 'test'
+  ...
+# Subtest: resolveDateRange starts the month at midnight in Vietnam
+ok 179 - resolveDateRange starts the month at midnight in Vietnam
+  ---
+  duration_ms: 0.2782
+  type: 'test'
+  ...
+# Subtest: resolveDateRange starts today at midnight in Vietnam
+ok 180 - resolveDateRange starts today at midnight in Vietnam
+  ---
+  duration_ms: 0.2446
+  type: 'test'
+  ...
+# Subtest: daily range resolves the selected Vietnam calendar date
+ok 181 - daily range resolves the selected Vietnam calendar date
+  ---
+  duration_ms: 0.5099
+  type: 'test'
+  ...
+# Subtest: daily range rejects an invalid calendar date
+ok 182 - daily range rejects an invalid calendar date
+  ---
+  duration_ms: 2.1923
+  type: 'test'
+  ...
+# Subtest: daily booking match uses the same overlap rules as Booking Management
+ok 183 - daily booking match uses the same overlap rules as Booking Management
+  ---
+  duration_ms: 0.6664
+  type: 'test'
+  ...
+# Subtest: today booking statistics use the full local booking schedule day
+ok 184 - today booking statistics use the full local booking schedule day
+  ---
+  duration_ms: 0.2408
+  type: 'test'
+  ...
+# Subtest: all-time booking statistics do not restrict the booking schedule
+ok 185 - all-time booking statistics do not restrict the booking schedule
+  ---
+  duration_ms: 1.4118
+  type: 'test'
+  ...
+# Subtest: normalizeBookingSummary computes completion rate from terminal bookings
+ok 186 - normalizeBookingSummary computes completion rate from terminal bookings
+  ---
+  duration_ms: 1.1146
+  type: 'test'
+  ...
+# Subtest: timeline uses daily buckets for short ranges and monthly buckets for all time
+ok 187 - timeline uses daily buckets for short ranges and monthly buckets for all time
+  ---
+  duration_ms: 0.5308
+  type: 'test'
+  ...
+# Subtest: completed revenue summary keeps gross and actual revenue separate
+ok 188 - completed revenue summary keeps gross and actual revenue separate
+  ---
+  duration_ms: 0.4158
+  type: 'test'
+  ...
+# Subtest: platform booking revenue separates parking and service without double counting
+ok 189 - platform booking revenue separates parking and service without double counting
+  ---
+  duration_ms: 0.4777
+  type: 'test'
+  ...
+# Subtest: platform service revenue excludes paid services that are not completed
+ok 190 - platform service revenue excludes paid services that are not completed
+  ---
+  duration_ms: 0.1177
+  type: 'test'
+  ...
+# Subtest: refund is tracked separately and not double-subtracted
+ok 191 - refund is tracked separately and not double-subtracted
+  ---
+  duration_ms: 0.0948
+  type: 'test'
+  ...
+# Subtest: platform revenue includes realized membership transfer fees exactly once
+ok 192 - platform revenue includes realized membership transfer fees exactly once
+  ---
+  duration_ms: 0.1084
+  type: 'test'
+  ...
+# Subtest: platform revenue uses lifecycle timestamps with a legacy fallback
+ok 193 - platform revenue uses lifecycle timestamps with a legacy fallback
+  ---
+  duration_ms: 0.1839
+  type: 'test'
+  ...
+# Subtest: resolveModeDateRange: 7d gives exactly 7 calendar days
+ok 194 - resolveModeDateRange: 7d gives exactly 7 calendar days
+  ---
+  duration_ms: 0.2305
+  type: 'test'
+  ...
+# Subtest: resolveModeDateRange: month uses full calendar month in Vietnam
+ok 195 - resolveModeDateRange: month uses full calendar month in Vietnam
+  ---
+  duration_ms: 0.098
+  type: 'test'
+  ...
+# Subtest: resolveModeDateRange: quarter covers exactly 3 months
+ok 196 - resolveModeDateRange: quarter covers exactly 3 months
+  ---
+  duration_ms: 0.0686
+  type: 'test'
+  ...
+# Subtest: resolveModeDateRange: year has all 12 months
+ok 197 - resolveModeDateRange: year has all 12 months
+  ---
+  duration_ms: 0.0709
+  type: 'test'
+  ...
+# Subtest: resolveModeDateRange: leap year February has 29 days
+ok 198 - resolveModeDateRange: leap year February has 29 days
+  ---
+  duration_ms: 0.2143
+  type: 'test'
+  ...
+# Subtest: resolveModeDateRange: non-leap year February has 28 days
+ok 199 - resolveModeDateRange: non-leap year February has 28 days
+  ---
+  duration_ms: 0.2056
+  type: 'test'
+  ...
+# Subtest: generateBucketLabels: year mode produces exactly 12 months
+ok 200 - generateBucketLabels: year mode produces exactly 12 months
+  ---
+  duration_ms: 0.1567
+  type: 'test'
+  ...
+# Subtest: generateBucketLabels: 7d mode produces exactly 7 days
+ok 201 - generateBucketLabels: 7d mode produces exactly 7 days
+  ---
+  duration_ms: 0.0647
+  type: 'test'
+  ...
+# Subtest: generateBucketLabels: quarter mode produces exactly 3 months
+ok 202 - generateBucketLabels: quarter mode produces exactly 3 months
+  ---
+  duration_ms: 0.1248
+  type: 'test'
+  ...
+# Subtest: buildLifecycleDateMatchExclusive uses $lt for endDate
+ok 203 - buildLifecycleDateMatchExclusive uses $lt for endDate
+  ---
+  duration_ms: 0.1122
+  type: 'test'
+  ...
+# Subtest: startOfSpecificVietnamMonth gives correct boundary
+ok 204 - startOfSpecificVietnamMonth gives correct boundary
+  ---
+  duration_ms: 0.0517
+  type: 'test'
+  ...
+# Subtest: endOfSpecificVietnamMonth gives start of next month
+ok 205 - endOfSpecificVietnamMonth gives start of next month
+  ---
+  duration_ms: 0.0465
+  type: 'test'
+  ...
+# Subtest: source sum invariant: booking + service + package + transfer = total
+ok 206 - source sum invariant: booking + service + package + transfer = total
+  ---
+  duration_ms: 0.1886
+  type: 'test'
+  ...
+# Subtest: allows vehicle registration while the account is below the limit
+ok 207 - allows vehicle registration while the account is below the limit
+  ---
+  duration_ms: 7.4165
+  type: 'test'
+  ...
+# Subtest: blocks vehicle registration at and above the three-vehicle limit
+ok 208 - blocks vehicle registration at and above the three-vehicle limit
+  ---
+  duration_ms: 0.712
+  type: 'test'
+  ...
+# Subtest: blocks deletion while the vehicle has an active parking session
+ok 209 - blocks deletion while the vehicle has an active parking session
+  ---
+  duration_ms: 2.0413
+  type: 'test'
+  ...
+# Subtest: blocks deletion for an active, paused, or upcoming paid booking
+ok 210 - blocks deletion for an active, paused, or upcoming paid booking
+  ---
+  duration_ms: 0.8764
+  type: 'test'
+  ...
+# Subtest: allows deletion when neither an active session nor blocking booking exists
+ok 211 - allows deletion when neither an active session nor blocking booking exists
+  ---
+  duration_ms: 0.6198
+  type: 'test'
+  ...
+# Subtest: matches bookings by vehicle id or license plate and only blocks relevant states
+ok 212 - matches bookings by vehicle id or license plate and only blocks relevant states
+  ---
+  duration_ms: 1.9121
+  type: 'test'
+  ...
+1..212
+# tests 284
+# suites 19
+# pass 283
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7101.2858

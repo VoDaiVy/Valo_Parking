@@ -69,9 +69,14 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
           const isOpen = Boolean(data.data.open);
           if (isOpen) {
             hasSeenOpenRef.current = true;
-          } else if (hasSeenOpenRef.current || data.data.forceClose) {
-            // Cổng đã đóng lại sau khi mở -> tự động chuyển về Welcome
-            returnToStart();
+          } else if (hasSeenOpenRef.current) {
+            // Cổng ENTRY_1 đã đóng sau khi xe qua cảm biến -> đợi đủ 1.5s rồi mới quay về màn hình chính
+            const elapsed = Date.now() - mountTimeRef.current;
+            if (elapsed >= 1500) {
+              returnToStart();
+            } else {
+              setTimeout(returnToStart, 1500 - elapsed);
+            }
           }
         }
       } catch {
@@ -94,8 +99,13 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         if (data.open) {
           hasSeenOpenRef.current = true;
         } else if (!data.open && hasSeenOpenRef.current) {
-          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ
-          returnToStart();
+          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ sau tối thiểu 1.5s
+          const elapsed = Date.now() - mountTimeRef.current;
+          if (elapsed >= 1500) {
+            returnToStart();
+          } else {
+            setTimeout(returnToStart, 1500 - elapsed);
+          }
         }
       }
     };

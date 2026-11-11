@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -35,6 +36,7 @@ type GenderOption = 'male' | 'female' | 'other';
 const GENDER_OPTIONS: GenderOption[] = ['male', 'female', 'other'];
 
 export const EditProfileScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const toast = useToast();
   const { user, refreshUser } = useAuth();
   const { profile, loading: profileLoading, updateProfile } = useProfileData();
@@ -127,8 +129,8 @@ export const EditProfileScreen = ({ navigation }: Props) => {
   if (profileLoading) {
     return (
       <SafeAreaView edges={['top']} style={styles.safe}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-        <ProfileScreenHeader title="Edit profile" subtitle="Update your personal details" onBack={() => navigation.goBack()} />
+        <StatusBar barStyle="light-content" />
+        <ProfileScreenHeader title={translateUi("Edit profile")} subtitle={translateUi("Update your personal details")} onBack={() => navigation.goBack()} />
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
@@ -138,21 +140,22 @@ export const EditProfileScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
         style={styles.keyboard}
       >
-        <ProfileScreenHeader title="Edit profile" subtitle="Update your personal details" onBack={() => navigation.goBack()} />
+        <ProfileScreenHeader title={translateUi("Edit profile")} subtitle={translateUi("Update your personal details")} onBack={() => navigation.goBack()} />
 
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
           <StaggeredView delay={80} style={styles.avatarSection}>
-            <AnimatedPressable accessibilityLabel="Change profile photo" disabled={uploadingAvatar} onPress={() => void uploadAvatar()}>
+            <AnimatedPressable accessibilityLabel={translateUi("Change profile photo")} disabled={uploadingAvatar} onPress={() => void uploadAvatar()}>
               <View style={styles.avatarWrap}>
                 <View style={styles.avatarHalo} />
                 <View style={styles.avatarRing}>
@@ -171,36 +174,36 @@ export const EditProfileScreen = ({ navigation }: Props) => {
                 </View>
               </View>
             </AnimatedPressable>
-            <Text style={styles.avatarHint}>Tap to change photo</Text>
+            <Text style={styles.avatarHint}>{translateUi("Tap to change photo")}</Text>
           </StaggeredView>
 
           <StaggeredView delay={180} style={styles.formSection}>
-            <SectionHeader title="Name" />
+            <SectionHeader title={translateUi("Name")} />
             <ProfileFormField
               autoCapitalize="words"
               icon="person-outline"
-              label="Last name"
-              placeholder="e.g. Nguyen"
+              label={translateUi("Last name")}
+              placeholder={translateUi("e.g. Nguyen")}
               value={lastName}
               onChangeText={setLastName}
             />
             <ProfileFormField
               autoCapitalize="words"
               icon="person-outline"
-              label="First name"
-              placeholder="e.g. Van A"
+              label={translateUi("First name")}
+              placeholder={translateUi("e.g. Van A")}
               value={firstName}
               onChangeText={setFirstName}
             />
           </StaggeredView>
 
           <StaggeredView delay={270} style={styles.formSection}>
-            <SectionHeader title="Contact details" />
+            <SectionHeader title={translateUi("Contact details")} />
             <ProfileFormField
               error={errors.phone}
               icon="call-outline"
               keyboardType="phone-pad"
-              label="Phone number"
+              label={translateUi("Phone number")}
               placeholder="VD: 0912345678"
               value={phone}
               onChangeText={setPhone}
@@ -208,14 +211,14 @@ export const EditProfileScreen = ({ navigation }: Props) => {
             <ProfileFormField
               error={errors.dob}
               icon="calendar-outline"
-              label="Date of birth"
+              label={translateUi("Date of birth")}
               placeholder="YYYY-MM-DD"
               value={dob}
               onChangeText={setDob}
             />
 
             <View style={styles.genderBlock}>
-              <Text style={[styles.genderLabel, errors.gender && styles.genderLabelError]}>Gender</Text>
+              <Text style={[styles.genderLabel, errors.gender && styles.genderLabelError]}>{translateUi("Gender")}</Text>
               <View style={styles.genderOptions}>
                 {GENDER_OPTIONS.map((option) => {
                   const selected = gender === option;
@@ -241,14 +244,14 @@ export const EditProfileScreen = ({ navigation }: Props) => {
           {error ? (
             <StaggeredView delay={320} style={styles.errorBanner}>
               <Ionicons name="alert-circle-outline" size={17} color={COLORS.error} />
-              <Text style={styles.errorBannerText}>{error}</Text>
+              <Text style={styles.errorBannerText}>{translateUi(error)}</Text>
             </StaggeredView>
           ) : null}
 
           <StaggeredView delay={390} style={styles.cta}>
             <PrimaryCTA
               disabled={disabled}
-              label="Save changes"
+              label={translateUi("Save changes")}
               loading={loading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : undefined}
               onPress={handleSubmit}
             />
@@ -328,7 +331,8 @@ const styles = StyleSheet.create({
   },
   avatarHint: {
     color: COLORS.textMuted,
-    fontSize: 13,
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
     fontWeight: '600',
     marginTop: SPACING.sm,
   },
@@ -340,7 +344,8 @@ const styles = StyleSheet.create({
   },
   genderLabel: {
     color: COLORS.textSecondary,
-    fontSize: 13,
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
     fontWeight: '700',
   },
   genderLabelError: {
@@ -365,10 +370,11 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     color: COLORS.textMuted,
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
+    fontWeight: '600',
     minHeight: 46,
-    paddingTop: 14,
+    paddingVertical: 12,
     textAlign: 'center',
   },
   genderTextSelected: {
@@ -383,7 +389,7 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.08)',
+    backgroundColor: COLORS.errorTint,
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,

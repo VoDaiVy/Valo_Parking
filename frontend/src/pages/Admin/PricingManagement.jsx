@@ -180,7 +180,7 @@ export default function PricingManagement() {
     }
     for (const policy of pricePolicies) {
       if (!policy.name?.trim() || policy.adjustmentPercent === '' || !Number.isFinite(Number(policy.adjustmentPercent)) || Number(policy.adjustmentPercent) < -100 || Number(policy.adjustmentPercent) > 500) {
-        setError('Mỗi chính sách cần có tên và phần trăm hợp lệ: giảm tối đa 100%, tăng tối đa 500%.');
+        setError('Each policy needs a name and a valid percentage: decrease up to 100%, increase up to 500%.');
         return;
       }
       if (policy.scope === 'weekday' && !policy.daysOfWeek?.length) {

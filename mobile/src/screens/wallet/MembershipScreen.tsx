@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Crypto from 'expo-crypto';
@@ -171,6 +172,7 @@ function MembershipHero({
   active: boolean;
   membership: MembershipStatus;
 }) {
+  const { t: translateUi } = useLanguage();
   const sweep = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -216,7 +218,7 @@ function MembershipHero({
         </View>
         <View style={[styles.statusPill, { backgroundColor: `${statusColor}22` }]}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusText, { color: statusColor }]}>{active ? 'Active' : 'Expired'}</Text>
+          <Text style={[styles.statusText, { color: statusColor }]}>{active ? translateUi("Active") : translateUi("Expired")}</Text>
         </View>
       </View>
 
@@ -229,7 +231,7 @@ function MembershipHero({
       {membership.expirationWarning ? (
         <View style={styles.warningInline}>
           <Ionicons name="alert-circle-outline" size={15} color={COLORS.warning} />
-          <Text style={styles.warningText}>Your membership expires within 7 days.</Text>
+          <Text style={styles.warningText}>{translateUi("Your membership expires within 7 days.")}</Text>
         </View>
       ) : null}
     </StaggeredView>
@@ -237,18 +239,19 @@ function MembershipHero({
 }
 
 function BenefitsStrip({ membership }: { membership: MembershipStatus }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredView delay={170} style={styles.benefitsBlock}>
       <View style={styles.metricStrip}>
         <MetricItem
           icon="gift-outline"
-          label="Complimentary Services"
+          label={translateUi("Complimentary Services")}
           value={membership.freeServiceCount}
         />
         <View style={styles.metricDivider} />
         <MetricItem
           icon="location-outline"
-          label="Reserved Spaces"
+          label={translateUi("Reserved Spaces")}
           value={membership.reservedSlots.length}
         />
       </View>
@@ -278,11 +281,12 @@ function MetricItem({
   label: string;
   value: number;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.metricItem}>
       <View style={styles.metricLabelRow}>
         <Ionicons name={icon} size={16} color={COLORS.gold} />
-        <Text numberOfLines={1} style={styles.metricLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.metricLabel}>{translateUi(label)}</Text>
       </View>
       <Text style={styles.metricValue}>{value}</Text>
     </View>
@@ -298,17 +302,18 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 function ReservedSpacesBlock({ membership }: { membership: MembershipStatus }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredView delay={260} style={styles.sectionBlock}>
-      <MinimalHeading>Reserved spaces</MinimalHeading>
+      <MinimalHeading>{translateUi("Reserved spaces")}</MinimalHeading>
       {membership.reservedSlots.length === 0 ? (
         <View style={styles.emptyReserved}>
           <View style={styles.emptyIcon}>
             <Ionicons name="car-sport-outline" size={22} color={COLORS.textMuted} />
           </View>
           <View style={styles.emptyCopy}>
-            <Text style={styles.emptyTitle}>No reserved spaces</Text>
-            <Text style={styles.emptyText}>Reserve one with a premium membership plan.</Text>
+            <Text style={styles.emptyTitle}>{translateUi("No reserved spaces")}</Text>
+            <Text style={styles.emptyText}>{translateUi("Reserve one with a premium membership plan.")}</Text>
           </View>
         </View>
       ) : (
@@ -341,21 +346,22 @@ function RenewalInfo({
   renewalQuote: SubscriptionRenewalQuote | null;
   onReview: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <StaggeredView delay={350} style={styles.sectionBlock}>
-      <MinimalHeading>Renewal</MinimalHeading>
+      <MinimalHeading>{translateUi("Renewal")}</MinimalHeading>
       <View style={styles.renewalSheet}>
         <View style={styles.renewalTop}>
           <View style={styles.renewalIcon}>
             <Ionicons name="wallet-outline" size={18} color={COLORS.gold} />
           </View>
           <View style={styles.renewalCopy}>
-            <Text style={styles.renewalLabel}>Renewal price</Text>
+            <Text style={styles.renewalLabel}>{translateUi("Renewal price")}</Text>
             <Text style={styles.renewalPrice}>{formatCurrency(membership.renewal.price)}</Text>
           </View>
         </View>
         {membership.renewal.nextRenewalDate ? (
-          <Text style={styles.renewalMeta}>Next renewal: {formatDate(membership.renewal.nextRenewalDate)}</Text>
+          <Text style={styles.renewalMeta}>{translateUi("Next renewal:")}{" "}{formatDate(membership.renewal.nextRenewalDate)}</Text>
         ) : null}
         <Text style={styles.renewalMessage}>{membership.renewal.message}</Text>
         {membership.renewal.canRenew && !renewalQuote ? (
@@ -368,7 +374,7 @@ function RenewalInfo({
                 ) : (
                   <Ionicons name="refresh-outline" size={17} color={COLORS.gold} />
                 )}
-                <Text style={styles.reviewRenewalText}>Review renewal</Text>
+                <Text style={styles.reviewRenewalText}>{translateUi("Review renewal")}</Text>
                 <Ionicons name="chevron-forward" size={16} color={COLORS.gold} />
               </View>
             </AnimatedPressable>
@@ -396,6 +402,7 @@ function RenewalReviewPanel({
   onConfirm: () => void;
   onMethodChange: (method: SubscriptionPaymentMethod) => void;
 }) {
+  const { t: translateUi } = useLanguage();
   if (!renewalQuote) {
     return renewalError ? <Text style={styles.renewalError}>{renewalError}</Text> : null;
   }
@@ -406,22 +413,22 @@ function RenewalReviewPanel({
     <StaggeredView delay={420} style={styles.renewalReview}>
       <View style={styles.renewalDates}>
         <View style={styles.reviewDateColumn}>
-          <Text style={styles.reviewLabel}>Current expiry</Text>
+          <Text style={styles.reviewLabel}>{translateUi("Current expiry")}</Text>
           <Text numberOfLines={1} style={styles.reviewValue}>{formatDate(renewalQuote.currentExpireAt)}</Text>
         </View>
         <Ionicons name="arrow-forward" size={16} color={COLORS.gold} />
         <View style={[styles.reviewDateColumn, styles.reviewDateRight]}>
-          <Text style={styles.reviewLabel}>New expiry</Text>
+          <Text style={styles.reviewLabel}>{translateUi("New expiry")}</Text>
           <Text numberOfLines={1} style={styles.reviewValue}>{formatDate(renewalQuote.newExpireAt)}</Text>
         </View>
       </View>
       <View style={styles.inlineDivider} />
       <View style={styles.reviewAmountRow}>
         <View>
-          <Text style={styles.reviewLabel}>Amount due</Text>
+          <Text style={styles.reviewLabel}>{translateUi("Amount due")}</Text>
           <Text style={styles.reviewAmount}>{formatCurrency(renewalQuote.amount)}</Text>
         </View>
-        <Text style={styles.reviewMeta}>{renewalQuote.retainedSlots.length} spaces retained</Text>
+        <Text style={styles.reviewMeta}>{renewalQuote.retainedSlots.length} {" "}{translateUi("spaces retained")}</Text>
       </View>
       <View style={styles.methodRow}>
         {(['wallet', 'payos'] as const).map((method) => (
@@ -437,12 +444,12 @@ function RenewalReviewPanel({
               color={renewalMethod === method ? COLORS.gold : COLORS.textMuted}
             />
             <Text style={[styles.methodText, renewalMethod === method && styles.methodTextActive]}>
-              {method === 'wallet' ? 'Wallet' : 'PayOS'}
+              {method === 'wallet' ? translateUi("Wallet") : 'PayOS'}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
-      {walletInsufficient ? <Text style={styles.renewalError}>Wallet balance is not enough.</Text> : null}
+      {walletInsufficient ? <Text style={styles.renewalError}>{translateUi("Wallet balance is not enough.")}</Text> : null}
       {renewalError ? <Text style={styles.renewalError}>{renewalError}</Text> : null}
       <AnimatedPressable
         disabled={renewalLoading || walletInsufficient}
@@ -455,7 +462,7 @@ function RenewalReviewPanel({
           ) : (
             <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.textInverse} />
           )}
-          <Text style={styles.renewButtonText}>Pay {formatCurrency(renewalQuote.amount)}</Text>
+          <Text style={styles.renewButtonText}>{translateUi("Pay")}{" "}{formatCurrency(renewalQuote.amount)}</Text>
         </View>
       </AnimatedPressable>
     </StaggeredView>
@@ -463,6 +470,7 @@ function RenewalReviewPanel({
 }
 
 function StickyMembershipCTA({ onPress }: { onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useEntrance(500);
   const arrow = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(0)).current;
@@ -526,7 +534,7 @@ function StickyMembershipCTA({ onPress }: { onPress: () => void }) {
             style={styles.primaryButton}
           >
             <Ionicons name="cube-outline" size={19} color={COLORS.textInverse} />
-            <Text style={styles.primaryButtonText}>View membership plans</Text>
+            <Text style={styles.primaryButtonText}>{translateUi("View membership plans")}</Text>
             <Animated.View style={{ transform: [{ translateX }] }}>
               <Ionicons name="chevron-forward" size={18} color={COLORS.textInverse} />
             </Animated.View>
@@ -538,6 +546,7 @@ function StickyMembershipCTA({ onPress }: { onPress: () => void }) {
 }
 
 export const MembershipScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { user } = useAuth();
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -659,6 +668,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
           qrCode: response.data?.qrCode,
           amount: response.data?.amount,
           renewal: true,
+          entitlementRenewal: Boolean(renewalEntitlementId),
         });
       }
     } catch (renewError) {
@@ -737,15 +747,15 @@ export const MembershipScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <BackgroundGlow />
       <ScreenHeader
         accentColor={COLORS.gold}
         headerIcon="ribbon-outline"
         headerIconBackground="rgba(226,186,75,0.12)"
         headerIconColor={COLORS.gold}
-        subtitle="Manage your VALO benefits"
-        title="Membership"
+        subtitle={translateUi("Manage your VALO benefits")}
+        title={translateUi("Membership")}
         onBack={() => navigation.goBack()}
       />
 
@@ -754,13 +764,13 @@ export const MembershipScreen = ({ navigation }: Props) => {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={loadMembership} />
+        <ErrorState message={translateUi(error)} onRetry={loadMembership} />
       ) : !membership ? (
         <View style={styles.emptyMembershipActions}>
           <EmptyState
             icon="ribbon-outline"
-            title="No active membership"
-            message="Choose a plan or buy an approved membership transfer."
+            title={translateUi("No active membership")}
+            message={translateUi("Choose a plan or buy an approved membership transfer.")}
           />
           <TouchableOpacity
             activeOpacity={0.85}
@@ -768,14 +778,14 @@ export const MembershipScreen = ({ navigation }: Props) => {
             style={styles.renewButton}
           >
             <Ionicons name="storefront-outline" size={18} color={COLORS.textInverse} />
-            <Text style={styles.renewButtonText}>Browse Transfer Marketplace</Text>
+            <Text style={styles.renewButtonText}>{translateUi("Browse Transfer Marketplace")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => navigation.navigate('SubscriptionPackages')}
             style={styles.emptySecondaryButton}
           >
-            <Text style={styles.emptySecondaryText}>View membership plans</Text>
+            <Text style={styles.emptySecondaryText}>{translateUi("View membership plans")}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -794,44 +804,43 @@ export const MembershipScreen = ({ navigation }: Props) => {
               <View style={[styles.statusPill, { backgroundColor: active ? 'rgba(126,232,162,0.12)' : 'rgba(255,77,77,0.12)' }]}>
                 <View style={[styles.statusDot, { backgroundColor: active ? COLORS.success : COLORS.error }]} />
                 <Text style={[styles.statusText, { color: active ? COLORS.success : COLORS.error }]}>
-                  {active ? 'Active' : 'Expired'}
+                  {active ? translateUi("Active") : translateUi("Expired")}
                 </Text>
               </View>
             </View>
             <Text style={styles.packageName}>{membership.package?.name ?? 'VALO Membership'}</Text>
             {membership.expireAt ? (
-              <Text style={styles.expireText}>Expires: {formatDate(membership.expireAt)}</Text>
+              <Text style={styles.expireText}>{translateUi("Expires:")}{" "}{formatDate(membership.expireAt)}</Text>
             ) : (
-              <Text style={styles.expireText}>No expiration date</Text>
+              <Text style={styles.expireText}>{translateUi("No expiration date")}</Text>
             )}
             {membership.expirationWarning ? (
               <View style={styles.warningBox}>
                 <Ionicons name="alert-circle-outline" size={16} color={COLORS.warning} />
-                <Text style={styles.warningText}>Your membership expires within 7 days.</Text>
+                <Text style={styles.warningText}>{translateUi("Your membership expires within 7 days.")}</Text>
               </View>
             ) : null}
           </View>
 
           {active ? (
             <View style={styles.section}>
-              <SectionTitle>Membership QR</SectionTitle>
+              <SectionTitle>{translateUi("Membership QR")}</SectionTitle>
               {qrPayload ? (
                 <>
                   <QRCodeDisplay
                     value={qrPayload}
                     reference={membership.subscriptionId || undefined}
                     shareLabel="VALO membership"
-                    shareTitle="Share membership pass"
+                    shareTitle={translateUi("Share membership pass")}
                     showBrightnessControl
                   />
                   <Text style={styles.qrHint}>
-                    Use this pass for every membership visit. It expires with your plan.
-                  </Text>
+                    {" "}{translateUi("Use this pass for every membership visit. It expires with your plan.")}{" "}</Text>
                 </>
               ) : (
                 <View style={styles.softState}>
                   <Text style={styles.qrError}>
-                    {qrError || 'Membership QR is unavailable.'}
+                    {qrError || translateUi("Membership QR is unavailable.")}
                   </Text>
                 </View>
               )}
@@ -839,15 +848,15 @@ export const MembershipScreen = ({ navigation }: Props) => {
           ) : null}
 
           <View style={styles.section}>
-            <SectionTitle>Benefits</SectionTitle>
+            <SectionTitle>{translateUi("Benefits")}</SectionTitle>
             <View style={styles.grid}>
               <View style={styles.metricCard}>
                 <Text style={styles.metricValue}>{membership.freeServiceCount}</Text>
-                <Text style={styles.metricLabel}>Complimentary services</Text>
+                <Text style={styles.metricLabel}>{translateUi("Complimentary services")}</Text>
               </View>
               <View style={styles.metricCard}>
                 <Text style={styles.metricValue}>{membership.reservedSlots.length}</Text>
-                <Text style={styles.metricLabel}>Reserved spaces</Text>
+                <Text style={styles.metricLabel}>{translateUi("Reserved spaces")}</Text>
               </View>
             </View>
             {(membership.benefits ?? []).map((benefit) => (
@@ -868,18 +877,18 @@ export const MembershipScreen = ({ navigation }: Props) => {
                 <Ionicons name="storefront-outline" size={22} color={COLORS.gold} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.marketplaceTitle}>Transfer Marketplace</Text>
-                <Text style={styles.renewalMeta}>Browse admin-approved membership spaces</Text>
+                <Text style={styles.marketplaceTitle}>{translateUi("Transfer Marketplace")}</Text>
+                <Text style={styles.renewalMeta}>{translateUi("Browse admin-approved membership spaces")}</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.section}>
-            <SectionTitle>Reserved spaces</SectionTitle>
+            <SectionTitle>{translateUi("Reserved spaces")}</SectionTitle>
             {membership.reservedSlots.length === 0 ? (
               <View style={styles.softState}>
-                <Text style={styles.softStateText}>No reserved spaces assigned.</Text>
+                <Text style={styles.softStateText}>{translateUi("No reserved spaces assigned.")}</Text>
               </View>
             ) : (
               membership.reservedSlots.map((slot) => (
@@ -890,7 +899,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                       {slot.slotCode} - {slot.floorName || `Floor ${slot.floorNumber || ''}`}
                     </Text>
                     {slot.expireAt ? (
-                      <Text style={styles.renewalMeta}>Expires {formatDate(slot.expireAt)}</Text>
+                      <Text style={styles.renewalMeta}>{translateUi("Expires")}{" "}{formatDate(slot.expireAt)}</Text>
                     ) : null}
                   </View>
                   {slot.entitlementId ? (
@@ -900,7 +909,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                         onPress={() => void openRenewal(slot.entitlementId)}
                         style={styles.slotAction}
                       >
-                        <Text style={styles.slotActionText}>Renew</Text>
+                        <Text style={styles.slotActionText}>{translateUi("Renew")}</Text>
                       </TouchableOpacity>
                       {slot.canTransfer ? (
                         <TouchableOpacity
@@ -908,7 +917,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                           onPress={() => setTransferSlot(slot)}
                           style={styles.slotAction}
                         >
-                          <Text style={styles.slotActionText}>Transfer</Text>
+                          <Text style={styles.slotActionText}>{translateUi("Transfer")}</Text>
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -946,20 +955,19 @@ export const MembershipScreen = ({ navigation }: Props) => {
                     autoCapitalize="none"
                     keyboardType="email-address"
                     onChangeText={setRecipientEmail}
-                    placeholder="Recipient email"
+                    placeholder={translateUi("Recipient email")}
                     placeholderTextColor={COLORS.textMuted}
                     style={styles.transferInput}
                     value={recipientEmail}
                   />
                 ) : (
                   <Text style={styles.publicHint}>
-                    After admin approval, all eligible customers can see and claim this listing.
-                  </Text>
+                    {" "}{translateUi("After admin approval, all eligible customers can see and claim this listing.")}{" "}</Text>
                 )}
                 <TextInput
                   keyboardType="number-pad"
                   onChangeText={setAskingPrice}
-                  placeholder="Price in VND (0 is allowed)"
+                  placeholder={translateUi("Price in VND (0 is allowed)")}
                   placeholderTextColor={COLORS.textMuted}
                   style={styles.transferInput}
                   value={askingPrice}
@@ -967,7 +975,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                 <TextInput
                   multiline
                   onChangeText={setTransferReason}
-                  placeholder="Transfer reason"
+                  placeholder={translateUi("Transfer reason")}
                   placeholderTextColor={COLORS.textMuted}
                   style={[styles.transferInput, styles.transferReason]}
                   value={transferReason}
@@ -995,7 +1003,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
 
           {transfers.length ? (
             <View style={styles.section}>
-              <SectionTitle>Transfer requests</SectionTitle>
+              <SectionTitle>{translateUi("Transfer requests")}</SectionTitle>
               {transfers.map((transfer) => {
                 const recipientId =
                   !transfer.toUserId
@@ -1020,8 +1028,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                         {entitlement?.slotCode || 'Membership space'} · {transfer.mode || 'DIRECT'} · {transfer.status}
                       </Text>
                       <Text style={styles.renewalMeta}>
-                        {formatCurrency(transfer.askingPrice)} + {formatCurrency(transfer.transferFee)} fee
-                      </Text>
+                        {formatCurrency(transfer.askingPrice)} + {formatCurrency(transfer.transferFee)} {" "}{translateUi("fee")}{" "}</Text>
                     </View>
                     {isRecipient && transfer.status === 'PENDING_RECIPIENT' ? (
                       <View style={styles.slotActions}>
@@ -1029,13 +1036,13 @@ export const MembershipScreen = ({ navigation }: Props) => {
                           onPress={() => void updateTransfer(transfer, 'reject')}
                           style={styles.slotAction}
                         >
-                          <Text style={styles.slotActionText}>Decline</Text>
+                          <Text style={styles.slotActionText}>{translateUi("Decline")}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => void updateTransfer(transfer, 'accept')}
                           style={styles.slotAction}
                         >
-                          <Text style={styles.slotActionText}>Accept</Text>
+                          <Text style={styles.slotActionText}>{translateUi("Accept")}</Text>
                         </TouchableOpacity>
                       </View>
                     ) : null}
@@ -1044,7 +1051,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                         onPress={() => void updateTransfer(transfer, 'settle')}
                         style={styles.slotAction}
                       >
-                        <Text style={styles.slotActionText}>Pay wallet</Text>
+                        <Text style={styles.slotActionText}>{translateUi("Pay wallet")}</Text>
                       </TouchableOpacity>
                     ) : null}
                     {isSender && ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'LISTED'].includes(transfer.status) ? (
@@ -1053,7 +1060,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                         onPress={() => void updateTransfer(transfer, 'cancel')}
                         style={styles.slotAction}
                       >
-                        <Text style={styles.slotActionText}>Cancel</Text>
+                        <Text style={styles.slotActionText}>{translateUi("Cancel")}</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -1063,11 +1070,11 @@ export const MembershipScreen = ({ navigation }: Props) => {
           ) : null}
 
           <View style={styles.section}>
-            <SectionTitle>Renewal</SectionTitle>
+            <SectionTitle>{translateUi("Renewal")}</SectionTitle>
             <View style={styles.renewalCard}>
               <Text style={styles.renewalPrice}>{formatCurrency(membership.renewal.price)}</Text>
               {membership.renewal.nextRenewalDate ? (
-                <Text style={styles.renewalMeta}>Next renewal: {formatDate(membership.renewal.nextRenewalDate)}</Text>
+                <Text style={styles.renewalMeta}>{translateUi("Next renewal:")}{" "}{formatDate(membership.renewal.nextRenewalDate)}</Text>
               ) : null}
               <Text style={styles.renewalMessage}>{membership.renewal.message}</Text>
               {membership.renewal.canRenew &&
@@ -1075,7 +1082,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
               !renewalQuote ? (
                 <TouchableOpacity activeOpacity={0.85} style={styles.renewButton} onPress={() => void openRenewal()} disabled={renewalLoading}>
                   {renewalLoading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : <Ionicons name="refresh-outline" size={18} color={COLORS.textInverse} />}
-                  <Text style={styles.renewButtonText}>Review renewal</Text>
+                  <Text style={styles.renewButtonText}>{translateUi("Review renewal")}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -1083,17 +1090,17 @@ export const MembershipScreen = ({ navigation }: Props) => {
               <View style={styles.renewalReview}>
                 <View style={styles.renewalDates}>
                   <View>
-                    <Text style={styles.reviewLabel}>Current expiry</Text>
+                    <Text style={styles.reviewLabel}>{translateUi("Current expiry")}</Text>
                     <Text style={styles.reviewValue}>{formatDate(renewalQuote.currentExpireAt)}</Text>
                   </View>
                   <Ionicons name="arrow-forward" size={16} color={COLORS.gold} />
                   <View style={styles.reviewDateRight}>
-                    <Text style={styles.reviewLabel}>New expiry</Text>
+                    <Text style={styles.reviewLabel}>{translateUi("New expiry")}</Text>
                     <Text style={styles.reviewValue}>{formatDate(renewalQuote.newExpireAt)}</Text>
                   </View>
                 </View>
                 <Text style={styles.reviewAmount}>{formatCurrency(renewalQuote.amount)}</Text>
-                <Text style={styles.reviewMeta}>{renewalQuote.retainedSlots.length} spaces retained</Text>
+                <Text style={styles.reviewMeta}>{renewalQuote.retainedSlots.length} {" "}{translateUi("spaces retained")}</Text>
                 <View style={styles.methodRow}>
                   {(['wallet', 'payos'] as const).map((method) => (
                     <TouchableOpacity
@@ -1103,12 +1110,12 @@ export const MembershipScreen = ({ navigation }: Props) => {
                       style={[styles.methodButton, renewalMethod === method && styles.methodButtonActive]}
                     >
                       <Ionicons name={method === 'wallet' ? 'wallet-outline' : 'qr-code-outline'} size={17} color={renewalMethod === method ? COLORS.gold : COLORS.textMuted} />
-                      <Text style={[styles.methodText, renewalMethod === method && styles.methodTextActive]}>{method === 'wallet' ? 'Wallet' : 'PayOS'}</Text>
+                      <Text style={[styles.methodText, renewalMethod === method && styles.methodTextActive]}>{method === 'wallet' ? translateUi("Wallet") : 'PayOS'}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
                 {renewalMethod === 'wallet' && walletBalance < renewalQuote.amount ? (
-                  <Text style={styles.renewalError}>Wallet balance is not enough.</Text>
+                  <Text style={styles.renewalError}>{translateUi("Wallet balance is not enough.")}</Text>
                 ) : null}
                 {renewalError ? <Text style={styles.renewalError}>{renewalError}</Text> : null}
                 <TouchableOpacity
@@ -1118,7 +1125,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                   onPress={confirmRenewal}
                 >
                   {renewalLoading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.textInverse} />}
-                  <Text style={styles.renewButtonText}>Pay {formatCurrency(renewalQuote.amount)}</Text>
+                  <Text style={styles.renewButtonText}>{translateUi("Pay")}{" "}{formatCurrency(renewalQuote.amount)}</Text>
                 </TouchableOpacity>
               </View>
             ) : renewalError ? <Text style={styles.renewalError}>{renewalError}</Text> : null}
@@ -1126,7 +1133,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
 
           <TouchableOpacity activeOpacity={0.85} style={styles.primaryButton} onPress={() => navigation.navigate('SubscriptionPackages')}>
             <Ionicons name="cube-outline" size={20} color={COLORS.textInverse} />
-            <Text style={styles.primaryButtonText}>View membership plans</Text>
+            <Text style={styles.primaryButtonText}>{translateUi("View membership plans")}</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -1163,7 +1170,7 @@ const styles = StyleSheet.create({
     width: 300,
   },
   vignette: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.06)',
   },
   scroll: {
@@ -1192,12 +1199,12 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
   },
   heroRim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
   },
   heroTexture: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.28,
   },
   textureLineA: {
@@ -1264,12 +1271,12 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   packageName: {
     color: COLORS.textPrimary,
     fontSize: 25,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0,
     marginTop: SPACING.md,
   },
@@ -1393,7 +1400,7 @@ const styles = StyleSheet.create({
   metricValue: {
     color: COLORS.gold,
     fontSize: 30,
-    fontWeight: '900',
+    fontWeight: '700',
     marginTop: 4,
   },
   metricDivider: {
@@ -1426,7 +1433,7 @@ const styles = StyleSheet.create({
   minimalHeading: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.9,
     textTransform: 'uppercase',
   },
@@ -1536,7 +1543,7 @@ const styles = StyleSheet.create({
   marketplaceTitle: {
     color: COLORS.textPrimary,
     fontSize: FONT_SIZES.md,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   modeRow: {
     flexDirection: 'row',
@@ -1635,7 +1642,7 @@ const styles = StyleSheet.create({
   renewalPrice: {
     color: COLORS.gold,
     fontSize: 25,
-    fontWeight: '900',
+    fontWeight: '700',
     marginTop: 2,
   },
   renewalMeta: {
@@ -1660,13 +1667,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: SPACING.xs,
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: SPACING.md,
   },
   reviewRenewalText: {
     color: COLORS.gold,
     fontSize: FONT_SIZES.sm,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   renewButton: {
     alignItems: 'center',
@@ -1703,7 +1710,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  reviewAmount: { color: COLORS.gold, fontSize: FONT_SIZES.xxl, fontWeight: '900' },
+  reviewAmount: { color: COLORS.gold, fontSize: FONT_SIZES.xxl, fontWeight: '700' },
   reviewMeta: { color: COLORS.textSecondary, flexShrink: 1, fontSize: FONT_SIZES.xs, textAlign: 'right' },
   methodRow: { flexDirection: 'row', gap: SPACING.sm },
   methodButton: {
@@ -1737,7 +1744,7 @@ const styles = StyleSheet.create({
   renewButtonText: {
     color: COLORS.textInverse,
     fontSize: FONT_SIZES.sm,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   disabled: { opacity: 0.45 },
   inlineDivider: {
@@ -1758,18 +1765,18 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,
-    height: 54,
+    minHeight: 54,
     justifyContent: 'center',
     overflow: 'hidden',
     shadowColor: COLORS.gold,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.12,
     shadowRadius: 18,
   },
   primaryButtonText: {
     color: COLORS.textInverse,
     flexShrink: 1,
     fontSize: FONT_SIZES.md,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 });

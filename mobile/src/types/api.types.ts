@@ -47,6 +47,7 @@ export interface BulkBookingItem {
   endTime: string;
   serviceIds?: string[];
   holdId?: string;
+  voucherId?: string;
 }
 
 export interface BulkBookingQuoteResponse extends APIResponse<{
@@ -57,6 +58,8 @@ export interface BulkBookingQuoteResponse extends APIResponse<{
     vehicleId?: string;
     totalAmount: number;
     servicesTotal: number;
+    voucherDiscount?: number;
+    earlyBookingDiscount?: number;
   }>;
 }> {}
 

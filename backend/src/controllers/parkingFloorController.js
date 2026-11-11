@@ -277,11 +277,21 @@ exports.getFloorSlots = async (req, res) => {
       };
     });
 
-    const enrichedSlots = slots.map(slot => ({
-      ...slot,
-      subscriptionType: slotPackageMap[slot.slotNumber] || null,
-      subscriptionDetail: slotSubscriptionMap[slot.slotNumber] || null
-    }));
+    const enrichedSlots = slots.map(slot => {
+      const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
+      let resolvedStatus = slot.status;
+      if (slot.status !== 'maintenance') {
+        if (isPhysicallyOccupied || slot.status === 'occupied') {
+          resolvedStatus = 'occupied';
+        }
+      }
+      return {
+        ...slot,
+        status: resolvedStatus,
+        subscriptionType: slotPackageMap[slot.slotNumber] || null,
+        subscriptionDetail: slotSubscriptionMap[slot.slotNumber] || null
+      };
+    });
 
     res.status(200).json({ success: true, data: enrichedSlots });
   } catch (error) {
@@ -344,9 +354,11 @@ exports.getLiveMapData = async (req, res) => {
     const mapData = slots.map(slot => {
       let status = 'available';
       const currentSlotKey = slotKey(slot.floorID?._id || slot.floorID, slot.slotNumber);
+      const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
+
       if (slot.status === 'maintenance' || maintenanceSet.has(String(slot._id))) {
         status = 'maintenance';
-      } else if (occupiedSlots.has(currentSlotKey)) {
+      } else if (occupiedSlots.has(currentSlotKey) || slot.status === 'occupied' || isPhysicallyOccupied) {
         status = 'occupied';
       } else if (bookedSlots.has(currentSlotKey) || heldSlots.has(currentSlotKey) || subscriptionSlots.has(String(slot._id))) {
         status = 'reserved';
@@ -365,6 +377,9 @@ exports.getLiveMapData = async (req, res) => {
         zone: slot.zoneID ? slot.zoneID.zoneName : '',
         type,
         status,
+        detectedPlate: slot.aiObservation?.detectedPlate || null,
+        isViolation: Boolean(slot.aiObservation?.isViolation),
+        violationType: slot.aiObservation?.violationType || null,
         price: type === 'vip' ? '30,000₫/h' : type === 'ev' ? '20,000₫/h + EV' : '10,000₫/h'
       };
     });

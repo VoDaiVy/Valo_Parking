@@ -54,7 +54,9 @@ axiosClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     const normalizedError = new Error(
-      getErrorMessage(error.response?.data, error.message || 'Request failed'),
+      error.response
+        ? getErrorMessage(error.response.data, error.message || 'Request failed')
+        : `${error.message || 'Request failed'} · API: ${API_URL}`,
     ) as NormalizedApiError;
 
     normalizedError.status = error.response?.status;

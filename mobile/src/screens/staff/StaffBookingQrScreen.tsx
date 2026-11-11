@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -19,7 +20,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StaffHeader, StatusBadge, StatusStrip } from '@/components/staff';
@@ -30,13 +30,11 @@ import {
   type StaffBookingQrAction,
   type StaffBookingQrResolution,
   type StaffMembershipQrResolution,
-  type StaffParkingPassResolution,
-  type ParkingCheckoutQuote,
 } from '@/services/api/staff';
 
 type Props = NativeStackScreenProps<StaffManagementStackParamList, 'BookingScanner'>;
 type Phase = 'scan' | 'detail' | 'capture' | 'confirm' | 'success';
-type QrResolution = StaffBookingQrResolution | StaffMembershipQrResolution | StaffParkingPassResolution;
+type QrResolution = StaffBookingQrResolution | StaffMembershipQrResolution;
 
 const actionLabel = (action: StaffBookingQrAction) =>
   action === 'CHECK_IN' ? 'Check in vehicle' : 'Check out vehicle';
@@ -45,9 +43,8 @@ const isMembershipResolution = (
 ): value is StaffMembershipQrResolution => Boolean(value && 'membership' in value);
 
 export function StaffBookingQrScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const cameraRef = useRef<CameraView | null>(null);
-  const resolvingRef = useRef(false);
-  const submittingRef = useRef(false);
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [permission, requestPermission] = useCameraPermissions();
@@ -63,11 +60,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [evidenceUri, setEvidenceUri] = useState('');
   const [evidenceBase64, setEvidenceBase64] = useState('');
-  const [reason, setReason] = useState('Staff assisted parking');
-  const [quote, setQuote] = useState<ParkingCheckoutQuote | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [payment, setPayment] = useState<{ orderCode?: number; qrCode?: string; checkoutUrl?: string; checkoutAttemptId?: string } | null>(null);
-  const [keepPaused, setKeepPaused] = useState(false);
+  const [reason, setReason] = useState('Kiosk unavailable');
   const [idempotencyKey, setIdempotencyKey] = useState('');
 
   useEffect(() => {
@@ -89,35 +82,28 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     setSelectedSessionId('');
     setEvidenceUri('');
     setEvidenceBase64('');
-    setReason('Staff assisted parking');
-    setQuote(null); setPayment(null); setPaymentMethod('cash'); setKeepPaused(false);
+    setReason('Kiosk unavailable');
     setIdempotencyKey('');
   };
 
   const resolveQr = async (payload: string) => {
-    if (busy || resolvingRef.current) return;
-    resolvingRef.current = true;
+    if (busy) return;
     setBusy(true);
     setError('');
     try {
       const isMembershipQr =
         payload.startsWith('VALO_MEMBERSHIP:') ||
         payload.startsWith('VALO_MEMBERSHIP_ACCOUNT:');
-      const isParkingPass = !isMembershipQr;
-      const response = isParkingPass ? await staffService.resolveParkingPass(payload) : isMembershipQr
+      const response = isMembershipQr
         ? await staffService.resolveMembershipQr(payload)
         : await staffService.resolveBookingQr(payload);
       const result = response.data;
       if (
         !result ||
-        (!isMembershipQr && !isParkingPass && !('booking' in result)) ||
+        (!isMembershipQr && !('booking' in result)) ||
         (isMembershipQr && !('membership' in result))
       ) {
         throw new Error('Parking credential information was not returned.');
-      }
-      if (isParkingPass && result && 'pass' in result && result.allowedActions.includes('CHECK_OUT')) {
-        const response = await staffService.quoteParkingPass(result.pass._id, payload);
-        setQuote(response.data || null);
       }
       setQrPayload(payload);
       setResolution(result as QrResolution);
@@ -125,7 +111,6 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : 'Unable to resolve this QR code.');
     } finally {
-      resolvingRef.current = false;
       setBusy(false);
     }
   };
@@ -210,19 +195,17 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   };
 
   const submitTransition = async () => {
-    const passResolution = resolution && 'pass' in resolution ? resolution : null;
     const booking = resolution && 'booking' in resolution ? resolution.booking : null;
     const membershipResolution = isMembershipResolution(resolution) ? resolution : null;
     if (
-      (!booking && !membershipResolution && !passResolution) ||
+      (!booking && !membershipResolution) ||
       !selectedAction ||
       !evidenceBase64 ||
       !reason.trim() ||
       !idempotencyKey ||
-      busy || submittingRef.current
+      busy
     ) return;
 
-    submittingRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -233,10 +216,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
         idempotencyKey,
         reason: reason.trim(),
       };
-      if (passResolution) {
-        const result = await staffService.transitionParkingPass(passResolution.pass._id, { ...commonPayload, paymentMethod: selectedAction === 'CHECK_OUT' ? (payment?.checkoutAttemptId ? 'qr' : paymentMethod) : undefined, checkoutAttemptId: payment?.checkoutAttemptId, keepPaused });
-        if (result.requiresPayment) { setPayment(result.data || null); setIdempotencyKey(Crypto.randomUUID()); return; }
-      } else if (booking) {
+      if (booking) {
         await staffService.transitionBookingByQr(booking._id, commonPayload);
       } else if (membershipResolution) {
         const selectedSlot = membershipResolution.membership.slots?.find((slot) => {
@@ -258,22 +238,17 @@ export function StaffBookingQrScreen({ navigation }: Props) {
       }
       setPhase('success');
     } catch (transitionError) {
-      if (transitionError && typeof transitionError === 'object' && 'status' in transitionError) {
-        setIdempotencyKey(Crypto.randomUUID());
-      }
       setError(
         transitionError instanceof Error
           ? transitionError.message
           : 'Unable to update parking access.',
       );
     } finally {
-      submittingRef.current = false;
       setBusy(false);
     }
   };
 
-  const passResolution = resolution && 'pass' in resolution ? resolution : null;
-  const bookingResolution = resolution && !('pass' in resolution) && 'booking' in resolution ? resolution : null;
+  const bookingResolution = resolution && 'booking' in resolution ? resolution : null;
   const booking = bookingResolution?.booking || null;
   const membershipResolution = isMembershipResolution(resolution) ? resolution : null;
   const selectedVehicle = membershipResolution?.vehicles.find(
@@ -293,15 +268,15 @@ export function StaffBookingQrScreen({ navigation }: Props) {
       <SafeAreaView style={styles.safe}>
         <StaffHeader
           eyebrow="Verification"
-          title="Parking QR"
+          title={translateUi("Parking QR")}
           onBack={() => navigation.goBack()}
-          right={<StatusBadge label="Blocked" tone="danger" />}
+          right={<StatusBadge label={translateUi("Blocked")} tone="danger" />}
         />
         <View style={styles.center}>
           <Ionicons name="camera-outline" size={42} color={COLORS.error} />
-          <Text style={styles.title}>Camera permission required</Text>
-          <Text style={styles.helper}>Camera access is required for QR scanning and vehicle evidence.</Text>
-          <ActionButton label="Open settings" onPress={() => Linking.openSettings()} />
+          <Text style={styles.title}>{translateUi("Camera permission required")}</Text>
+          <Text style={styles.helper}>{translateUi("Camera access is required for QR scanning and vehicle evidence.")}</Text>
+          <ActionButton label={translateUi("Open settings")} onPress={() => Linking.openSettings()} />
         </View>
       </SafeAreaView>
     );
@@ -309,10 +284,10 @@ export function StaffBookingQrScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Verification"
-        title="Parking QR"
+        title={translateUi("Parking QR")}
         onBack={() => navigation.goBack()}
         right={<StatusBadge label={phase === 'scan' ? 'Scan' : phase} tone={phase === 'success' ? 'success' : phase === 'confirm' ? 'warning' : 'info'} />}
       />
@@ -334,9 +309,9 @@ export function StaffBookingQrScreen({ navigation }: Props) {
               )}
               <View pointerEvents="none" style={styles.viewfinder} />
             </View>
-            <Text style={styles.scanHint}>Align QR inside frame</Text>
+            <Text style={styles.scanHint}>{translateUi("Align QR inside frame")}</Text>
             {busy ? <ActivityIndicator color={COLORS.staffBlue} /> : null}
-            {error ? <ErrorMessage message={error} /> : null}
+            {error ? <ErrorMessage message={translateUi(error)} /> : null}
           </View>
           <ShutterActionBar bottom={shutterBottom}>
             <CameraShutterControl
@@ -350,7 +325,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
 
       {phase === 'detail' && booking ? (
         <ScrollView contentContainerStyle={styles.content}>
-          <StatusStrip icon="shield-checkmark-outline" label="Step 2" value="Verify booking" tone="success" />
+          <StatusStrip icon="shield-checkmark-outline" label={translateUi("Step 2")} value="Verify booking" tone="success" />
           <View style={styles.bookingCard}>
             <View style={styles.statusRow}>
               <Text style={styles.plate}>{booking.licensePlate}</Text>
@@ -358,17 +333,17 @@ export function StaffBookingQrScreen({ navigation }: Props) {
                 <Text style={styles.statusText}>{booking.status}</Text>
               </View>
             </View>
-            <DetailRow label="Booking" value={booking._id} />
+            <DetailRow label={translateUi("Booking")} value={booking._id} />
             <DetailRow
-              label="Customer"
+              label={translateUi("Customer")}
               value={booking.userId?.fullName || booking.userId?.email || 'Customer'}
             />
             <DetailRow
-              label="Parking space"
+              label={translateUi("Parking space")}
               value={`${typeof booking.floorId === 'object' ? booking.floorId.name || 'Floor' : 'Floor'} / ${booking.parkingSlot}`}
             />
             <DetailRow
-              label="Schedule"
+              label={translateUi("Schedule")}
               value={`${new Date(booking.scheduledStart).toLocaleString()} - ${new Date(booking.scheduledEnd).toLocaleString()}`}
             />
           </View>
@@ -380,48 +355,26 @@ export function StaffBookingQrScreen({ navigation }: Props) {
             />
           ))}
           {bookingResolution?.allowedActions.length === 0 ? (
-            <ErrorMessage message="No manual action is allowed for this booking status." />
+            <ErrorMessage message={translateUi("No manual action is allowed for this booking status.")} />
           ) : null}
-          <ActionButton label="Scan another QR" secondary onPress={reset} />
-        </ScrollView>
-      ) : null}
-
-      {phase === 'detail' && passResolution ? (
-        <ScrollView contentContainerStyle={styles.content}>
-          <StatusStrip icon="ticket-outline" label="Parking ticket" value="Verify vehicle" tone="success" />
-          <View style={styles.bookingCard}>
-            <Text style={styles.plate}>{passResolution.licensePlate}</Text>
-            <DetailRow label="Ticket status" value={passResolution.booking?.status || passResolution.session?.status || 'Unavailable'} />
-            <DetailRow label="Parking space" value={passResolution.session?.parkingSlot || passResolution.booking?.parkingSlot || 'Not assigned'} />
-            {passResolution.session ? <DetailRow label="Check-in" value={new Date(passResolution.session.checkInTime).toLocaleString()} /> : null}
-            {quote ? <><DetailRow label="Amount due" value={`${quote.amountToPay.toLocaleString('vi-VN')} VND`} /><DetailRow label="Refund" value={`${(quote.refundAmount || 0).toLocaleString('vi-VN')} VND`} /></> : null}
-          </View>
-          {quote ? <>
-            <Text style={styles.sectionLabel}>Checkout payment</Text>
-            {['cash', 'vietqr', ...(passResolution.session?.userId && passResolution.session.type !== 'WALK_IN' ? ['wallet'] : [])].map(method => <SelectionCard key={method} selected={paymentMethod === method} title={method === 'cash' ? 'Cash received by staff' : method === 'vietqr' ? 'Bank QR ? wait for verified payment' : 'Customer wallet'} onPress={() => setPaymentMethod(method)} />)}
-            {quote.isEarlyExit ? <SelectionCard selected={keepPaused} title={keepPaused ? 'Pause booking ? customer will return' : 'End booking and release space'} subtitle="Tap to change the departure choice" onPress={() => setKeepPaused(value => !value)} /> : null}
-          </> : null}
-          {passResolution.allowedActions.map(action => <ActionButton key={action} label={actionLabel(action)} onPress={() => startEvidenceCapture(action)} />)}
-          {!passResolution.allowedActions.length ? <ErrorMessage message="This ticket has no available parking action." /> : null}
-          {error ? <ErrorMessage message={error} /> : null}
-          <ActionButton label="Scan another QR" secondary onPress={reset} />
+          <ActionButton label={translateUi("Scan another QR")} secondary onPress={reset} />
         </ScrollView>
       ) : null}
 
       {phase === 'detail' && membershipResolution ? (
         <ScrollView contentContainerStyle={styles.content}>
-          <StatusStrip icon="diamond-outline" label="Step 2" value="Select vehicle or session" tone="success" />
+          <StatusStrip icon="diamond-outline" label={translateUi("Step 2")} value="Select vehicle or session" tone="success" />
           <View style={styles.bookingCard}>
             <View style={styles.statusRow}>
               <Text style={styles.membershipTitle}>
-                {membershipResolution.membership.ticketPackage?.name || 'Membership'}
+                {membershipResolution.membership.ticketPackage?.name || translateUi("Membership")}
               </Text>
               <View style={styles.statusPill}>
                 <Text style={styles.statusText}>{membershipResolution.membership.status}</Text>
               </View>
             </View>
             <DetailRow
-              label="Customer"
+              label={translateUi("Customer")}
               value={
                 membershipResolution.membership.user?.username ||
                 membershipResolution.membership.user?.email ||
@@ -429,14 +382,14 @@ export function StaffBookingQrScreen({ navigation }: Props) {
               }
             />
             <DetailRow
-              label="Valid until"
+              label={translateUi("Valid until")}
               value={new Date(membershipResolution.membership.expireAt).toLocaleString()}
             />
           </View>
 
           {membershipResolution.allowedActions.includes('CHECK_IN') ? (
             <>
-              <Text style={styles.sectionLabel}>Vehicle for check-in</Text>
+              <Text style={styles.sectionLabel}>{translateUi("Vehicle for check-in")}</Text>
               {membershipResolution.vehicles.map((vehicle) => (
                 <SelectionCard
                   key={vehicle._id}
@@ -446,7 +399,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
                   onPress={() => setSelectedVehicleId(vehicle._id)}
                 />
               ))}
-              <Text style={styles.sectionLabel}>Reserved parking space</Text>
+              <Text style={styles.sectionLabel}>{translateUi("Reserved parking space")}</Text>
               {membershipResolution.membership.slots?.map((slot) => {
                 const floor = typeof slot.floorId === 'object' ? slot.floorId : null;
                 const floorId = floor?._id || (typeof slot.floorId === 'string' ? slot.floorId : '');
@@ -470,7 +423,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
 
           {membershipResolution.allowedActions.includes('CHECK_OUT') ? (
             <>
-              <Text style={styles.sectionLabel}>Active session for check-out</Text>
+              <Text style={styles.sectionLabel}>{translateUi("Active session for check-out")}</Text>
               {membershipResolution.activeSessions.map((session) => (
                 <SelectionCard
                   key={session._id}
@@ -488,17 +441,17 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           ) : null}
 
           {membershipResolution.allowedActions.length === 0 ? (
-            <ErrorMessage message="No manual action is available for this membership." />
+            <ErrorMessage message={translateUi("No manual action is available for this membership.")} />
           ) : null}
-          {error ? <ErrorMessage message={error} /> : null}
-          <ActionButton label="Scan another QR" secondary onPress={reset} />
+          {error ? <ErrorMessage message={translateUi(error)} /> : null}
+          <ActionButton label={translateUi("Scan another QR")} secondary onPress={reset} />
         </ScrollView>
       ) : null}
 
       {phase === 'capture' ? (
         <>
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: shutterContentPadding }]}>
-            <StatusStrip icon="camera-outline" label="Step 3" value="Vehicle evidence" tone="warning" />
+            <StatusStrip icon="camera-outline" label={translateUi("Step 3")} value="Vehicle evidence" tone="warning" />
             <View style={styles.evidenceCamera}>
               {permission?.granted ? (
                 <CameraView ref={cameraRef} facing="back" style={StyleSheet.absoluteFill} />
@@ -507,8 +460,8 @@ export function StaffBookingQrScreen({ navigation }: Props) {
               )}
               <View pointerEvents="none" style={styles.plateGuide} />
             </View>
-            <Text style={styles.scanHint}>Keep plate readable</Text>
-            {error ? <ErrorMessage message={error} /> : null}
+            <Text style={styles.scanHint}>{translateUi("Keep plate readable")}</Text>
+            {error ? <ErrorMessage message={translateUi(error)} /> : null}
           </ScrollView>
           <ShutterActionBar bottom={shutterBottom}>
             <CameraShutterControl
@@ -523,51 +476,43 @@ export function StaffBookingQrScreen({ navigation }: Props) {
             onPress={() => setPhase('detail')}
             style={[styles.floatingBackAction, { bottom: shutterBottom + 108 }]}
           >
-            <Text style={styles.shutterTextActionLabel}>Back to details</Text>
+            <Text style={styles.shutterTextActionLabel}>{translateUi("Back to details")}</Text>
           </TouchableOpacity>
         </>
       ) : null}
 
-      {phase === 'confirm' && (booking || membershipResolution || passResolution) && selectedAction ? (
+      {phase === 'confirm' && (booking || membershipResolution) && selectedAction ? (
         <>
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: stickyContentPadding }]}>
-            <StatusStrip icon="checkmark-done-outline" label="Final step" value="Confirm transition" tone="warning" />
+            <StatusStrip icon="checkmark-done-outline" label={translateUi("Final step")} value="Confirm transition" tone="warning" />
             <Image source={{ uri: evidenceUri }} style={styles.preview} />
-            <Text style={styles.title}>Confirm {actionLabel(selectedAction).toLowerCase()}</Text>
+            <Text style={styles.title}>{translateUi("Confirm")}{" "}{actionLabel(selectedAction).toLowerCase()}</Text>
             <Text style={styles.helper}>
-              {passResolution ? `${passResolution.licensePlate} / ${passResolution.session?.parkingSlot || passResolution.booking?.parkingSlot || ''}` : booking
+              {booking
                 ? `${booking.licensePlate} / ${booking.parkingSlot}`
                 : selectedAction === 'CHECK_IN'
                   ? `${selectedVehicle?.licensePlate || 'Vehicle'} / ${selectedSlotKey.split(':')[1] || 'Parking space'}`
                   : `${selectedSession?.licensePlate || 'Vehicle'} / ${selectedSession?.parkingSlot || 'Parking space'}`}
             </Text>
-            <Text style={styles.inputLabel}>Staff action reason</Text>
+            <Text style={styles.inputLabel}>{translateUi("Override reason")}</Text>
             <TextInput
               maxLength={500}
               multiline
-              placeholder="Why is staff performing this action?"
+              placeholder={translateUi("Why is staff performing this action?")}
               placeholderTextColor={COLORS.textMuted}
               style={styles.input}
               value={reason}
               onChangeText={setReason}
             />
-            {passResolution && selectedAction === 'CHECK_OUT' ? <Text style={styles.helper}>{quote?.amountToPay.toLocaleString('vi-VN')} VND ? {paymentMethod === 'cash' ? 'Confirm only after receiving cash.' : paymentMethod === 'wallet' ? 'Backend will verify wallet payment.' : 'Checkout completes after bank payment is verified.'}</Text> : null}
-            {payment?.qrCode ? <View style={styles.center}><QRCode value={payment.qrCode} size={200} /><Text style={styles.helper}>Ask the customer to pay. Then verify payment below.</Text></View> : null}
-            {error ? <ErrorMessage message={error} /> : null}
+            {error ? <ErrorMessage message={translateUi(error)} /> : null}
           </ScrollView>
           <StickyActionBar bottom={stickyBottom} paddingBottom={stickyPaddingBottom}>
             <ActionButton
               disabled={busy || !reason.trim()}
-              label={busy ? 'Submitting...' : payment ? 'Verify bank payment and checkout' : `Confirm ${actionLabel(selectedAction)}`}
-              onPress={() => void (async () => {
-                if (payment?.orderCode && payment.checkoutAttemptId) {
-                  try { const result = await staffService.checkParkingPayment(payment.orderCode, payment.checkoutAttemptId); if (!result.isPaid) { setError('Payment has not been confirmed yet.'); return; } }
-                  catch (err) { setError(err instanceof Error ? err.message : 'Unable to verify payment.'); return; }
-                }
-                await submitTransition();
-              })()}
+              label={busy ? 'Submitting...' : `Confirm ${actionLabel(selectedAction)}`}
+              onPress={() => void submitTransition()}
             />
-            <ActionButton label="Retake photo" secondary onPress={() => setPhase('capture')} />
+            <ActionButton label={translateUi("Retake photo")} secondary onPress={() => setPhase('capture')} />
           </StickyActionBar>
         </>
       ) : null}
@@ -577,10 +522,10 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           <View style={styles.successIcon}>
             <Ionicons name="checkmark" size={42} color={COLORS.textInverse} />
           </View>
-          <Text style={styles.title}>Parking access updated</Text>
-          <Text style={styles.helper}>Evidence saved to the parking session.</Text>
-          <ActionButton label="Scan another QR" onPress={reset} />
-          <ActionButton label="Back to bookings" secondary onPress={() => navigation.navigate('Bookings')} />
+          <Text style={styles.title}>{translateUi("Parking access updated")}</Text>
+          <Text style={styles.helper}>{translateUi("Evidence saved to the parking session.")}</Text>
+          <ActionButton label={translateUi("Scan another QR")} onPress={reset} />
+          <ActionButton label={translateUi("Back to bookings")} secondary onPress={() => navigation.navigate('Bookings')} />
         </View>
       ) : null}
     </SafeAreaView>
@@ -588,9 +533,10 @@ export function StaffBookingQrScreen({ navigation }: Props) {
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailLabel}>{translateUi(label)}</Text>
       <Text selectable style={styles.detailValue}>{value}</Text>
     </View>
   );
@@ -674,6 +620,7 @@ function CameraShutterControl({
   label: string;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const press = useRef(new Animated.Value(0)).current;
   const ripple = useRef(new Animated.Value(0)).current;
   const scale = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] });
@@ -710,7 +657,7 @@ function CameraShutterControl({
     <View style={styles.shutterWrap}>
       <Animated.View style={[styles.shutterAnimated, { opacity: disabled ? 0.5 : 1, transform: [{ scale }] }]}>
         <TouchableOpacity
-          accessibilityLabel="Capture QR"
+          accessibilityLabel={translateUi("Capture QR")}
           accessibilityRole="button"
           activeOpacity={0.92}
           disabled={disabled}
@@ -728,7 +675,7 @@ function CameraShutterControl({
           </View>
         </TouchableOpacity>
       </Animated.View>
-      <Text style={styles.shutterLabel}>{label}</Text>
+      <Text style={styles.shutterLabel}>{translateUi(label)}</Text>
     </View>
   );
 }
@@ -744,6 +691,7 @@ function ActionButton({
   onPress: () => void;
   secondary?: boolean;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <TouchableOpacity
       activeOpacity={0.84}
@@ -751,7 +699,7 @@ function ActionButton({
       onPress={onPress}
       style={[styles.button, secondary && styles.buttonSecondary, disabled && styles.buttonDisabled]}
     >
-      <Text numberOfLines={1} style={[styles.buttonText, secondary && styles.buttonTextSecondary]}>{label}</Text>
+      <Text numberOfLines={1} style={[styles.buttonText, secondary && styles.buttonTextSecondary]}>{translateUi(label)}</Text>
     </TouchableOpacity>
   );
 }
@@ -832,14 +780,14 @@ const styles = StyleSheet.create({
   plate: {
     color: COLORS.textPrimary,
     fontSize: FONT_SIZES.xxl,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 2,
   },
   membershipTitle: {
     color: COLORS.textPrimary,
     flex: 1,
     fontSize: FONT_SIZES.xl,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   sectionLabel: {
     color: COLORS.textSecondary,
@@ -948,7 +896,7 @@ const styles = StyleSheet.create({
   shutterLabel: {
     color: COLORS.textSecondary,
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
     textTransform: 'uppercase',
   },
   shutterAnimated: {

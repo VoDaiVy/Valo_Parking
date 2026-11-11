@@ -1,5 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect } from 'react';
+import { StyleSheet } from 'react-native';
 
 import { PriceBreakdown } from '@/components/booking/PriceBreakdown';
 import { QRCodeDisplay } from '@/components/booking/QRCodeDisplay';
@@ -9,12 +11,13 @@ import { Screen } from '@/components/layout/Screen';
 import { useBooking } from '@/hooks/useBooking';
 import { useToast } from '@/hooks/useToast';
 import type { BookingStackParamList } from '@/navigation/types';
-import { colors } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 
 type Props = NativeStackScreenProps<BookingStackParamList, 'BookingDetails'>;
 
 export const BookingDetailsScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const toast = useToast();
   const { bookings, isLoading, fetchBookings, getBookingById, checkInBooking, checkOutBooking } = useBooking();
   const booking = getBookingById(route.params.bookingId);
@@ -46,28 +49,28 @@ export const BookingDetailsScreen = ({ navigation, route }: Props) => {
   if (!booking) {
     return (
       <Screen>
-        {isLoading ? <LoadingSpinner /> : <AppText>Booking not found.</AppText>}
+        {isLoading ? <LoadingSpinner /> : <AppText>{translateUi("Booking not found.")}</AppText>}
       </Screen>
     );
   }
 
   return (
     <Screen scrollable>
-      <AppText variant="h1">Booking Details</AppText>
-      <Card>
+      <AppText variant="h1">{translateUi("Booking Details")}</AppText>
+      <Card style={styles.card}>
         <StatusBadge status={booking.status} />
-        <AppText variant="h3">#{booking._id}</AppText>
-        <AppText color={colors.light.text.secondary}>Created: {formatDate(booking.createdAt)}</AppText>
+        <AppText style={styles.identifier} variant="body2">#{booking._id}</AppText>
+        <AppText color={colors.light.text.secondary}>{translateUi("Created:")}{" "}{formatDate(booking.createdAt)}</AppText>
       </Card>
-      <Card>
-        <AppText variant="h3">Parking</AppText>
-        <AppText>Slot: {booking.slotCode}</AppText>
-        <AppText>Zone: {booking.zoneName || 'General zone'}</AppText>
-        <AppText>Start: {formatDate(booking.startTime)}</AppText>
-        <AppText>End: {formatDate(booking.endTime)}</AppText>
+      <Card style={styles.card}>
+        <AppText variant="h3">{translateUi("Parking")}</AppText>
+        <AppText>{translateUi("Slot:")}{" "}{booking.slotCode}</AppText>
+        <AppText>{translateUi("Zone:")}{" "}{booking.zoneName || 'General zone'}</AppText>
+        <AppText>{translateUi("Start:")}{" "}{formatDate(booking.startTime)}</AppText>
+        <AppText>{translateUi("End:")}{" "}{formatDate(booking.endTime)}</AppText>
       </Card>
-      <Card>
-        <AppText variant="h3">Vehicle</AppText>
+      <Card style={styles.card}>
+        <AppText variant="h3">{translateUi("Vehicle")}</AppText>
         <AppText>{booking.licensePlate}</AppText>
       </Card>
       <PriceBreakdown
@@ -76,18 +79,18 @@ export const BookingDetailsScreen = ({ navigation, route }: Props) => {
         refundAmount={booking.refundAmount || 0}
         serviceCost={booking.serviceAmount || 0}
       />
-      <Card>
-        <AppText variant="h3">Payment</AppText>
-        <AppText>Method: {booking.paymentMethod}</AppText>
-        <AppText>Status: {booking.paymentStatus}</AppText>
-        <AppText>Total: {formatCurrency(booking.finalAmount || booking.totalAmount || 0)}</AppText>
+      <Card style={styles.card}>
+        <AppText variant="h3">{translateUi("Payment")}</AppText>
+        <AppText>{translateUi("Method:")}{" "}{booking.paymentMethod}</AppText>
+        <AppText>{translateUi("Status:")}{" "}{booking.paymentStatus}</AppText>
+        <AppText color={colors.primary[500]} style={styles.amount}>{translateUi("Total:")}{" "}{formatCurrency(booking.finalAmount || booking.totalAmount || 0)}</AppText>
       </Card>
       {['confirmed', 'active'].includes(booking.status) ? <QRCodeDisplay bookingId={booking._id} /> : null}
       {booking.status === 'confirmed' ? (
         <>
-          <Button loading={isLoading} title="Manual Check-In" onPress={handleCheckIn} />
+          <Button loading={isLoading} title={translateUi("Manual Check-In")} onPress={handleCheckIn} />
           <Button
-            title="Scan QR to Check-In"
+            title={translateUi("Scan QR to Check-In")}
             variant="outline"
             onPress={() => navigation.navigate('QRScanner', { mode: 'check-in', bookingId: booking._id })}
           />
@@ -95,9 +98,9 @@ export const BookingDetailsScreen = ({ navigation, route }: Props) => {
       ) : null}
       {booking.status === 'active' ? (
         <>
-          <Button loading={isLoading} title="Check-Out" onPress={handleCheckOut} />
+          <Button loading={isLoading} title={translateUi("Check-Out")} onPress={handleCheckOut} />
           <Button
-            title="Scan QR to Check-Out"
+            title={translateUi("Scan QR to Check-Out")}
             variant="outline"
             onPress={() => navigation.navigate('QRScanner', { mode: 'check-out', bookingId: booking._id })}
           />
@@ -106,3 +109,9 @@ export const BookingDetailsScreen = ({ navigation, route }: Props) => {
     </Screen>
   );
 };
+
+const styles = StyleSheet.create({
+  card: { gap: spacing.md },
+  identifier: { fontWeight: '600', fontVariant: ['tabular-nums'] },
+  amount: { fontWeight: '600', fontVariant: ['tabular-nums'] },
+});

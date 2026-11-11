@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { NavigationProp } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -37,6 +38,7 @@ import {
 type Props = NativeStackScreenProps<WalletStackParamList, 'SubscriptionCheckout'>;
 
 export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [packages, setPackages] = useState<SubscriptionPackage[]>([]);
   const [floors, setFloors] = useState<ParkingFloor[]>([]);
   const [selectedFloorId, setSelectedFloorId] = useState('');
@@ -175,32 +177,32 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Plan checkout" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Plan checkout")} onBack={() => navigation.goBack()} />
 
       {loading ? (
         <View style={styles.stateWrap}>
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error && !pkg ? (
-        <ErrorState message={error} onRetry={loadData} />
+        <ErrorState message={translateUi(error)} onRetry={loadData} />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {pkg ? (
             <View style={styles.packageCard}>
               <Text style={styles.packageName}>{pkg.name}</Text>
               <Text style={styles.packagePrice}>{formatCurrency(pkg.price)}</Text>
-              <Text style={styles.packageMeta}>Total for selected spaces: {formatCurrency(subscriptionTotal)}</Text>
+              <Text style={styles.packageMeta}>{translateUi("Total for selected spaces:")}{" "}{formatCurrency(subscriptionTotal)}</Text>
               <Text style={styles.packageMeta}>
-                Expires: {calculateExpirationDate(pkg.type).toLocaleDateString('en-GB')}
+                {" "}{translateUi("Expires:")}{" "}{calculateExpirationDate(pkg.type).toLocaleDateString('en-GB')}
               </Text>
             </View>
           ) : (
-            <EmptyState icon="cube-outline" title="Plan not found" message="Please go back and choose another plan." />
+            <EmptyState icon="cube-outline" title={translateUi("Plan not found")} message={translateUi("Please go back and choose another plan.")} />
           )}
 
           <View style={styles.section}>
-            <SectionTitle>Payment method</SectionTitle>
+            <SectionTitle>{translateUi("Payment method")}</SectionTitle>
             {(['wallet', 'payos'] as const).map((option) => {
               const active = method === option;
               return (
@@ -216,7 +218,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
                       color={active ? COLORS.gold : COLORS.textMuted}
                     />
                     <Text style={[styles.methodText, active && styles.methodTextActive]}>
-                      {option === 'wallet' ? 'VALO Wallet' : 'PayOS QR'}
+                      {option === 'wallet' ? translateUi("VALO Wallet") : 'PayOS QR'}
                     </Text>
                   </View>
                   {active ? <Ionicons name="checkmark-circle" size={20} color={COLORS.gold} /> : null}
@@ -224,12 +226,12 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
               );
             })}
             <Text style={[styles.walletBalance, { color: hasEnoughWallet ? COLORS.success : COLORS.error }]}>
-              Wallet balance: {formatCurrency(wallet?.balance || 0)}
+              {" "}{translateUi("Wallet balance:")}{" "}{formatCurrency(wallet?.balance || 0)}
             </Text>
           </View>
 
           <View style={styles.section}>
-            <SectionTitle>Select reserved spaces</SectionTitle>
+            <SectionTitle>{translateUi("Select reserved spaces")}</SectionTitle>
             <Text style={styles.helperText}>
               {maxSlots > 0
                 ? `Select 1-${maxSlots} spaces based on your registered vehicles. Gold spaces are already reserved; blue spaces are your selection.`
@@ -247,7 +249,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
               })}
             </View>
             {!selectedFloor ? (
-              <EmptyState icon="car-outline" title="No spaces available" message="Please try again later." />
+              <EmptyState icon="car-outline" title={translateUi("No spaces available")} message={translateUi("Please try again later.")} />
             ) : (
               <View style={styles.mapCard}>
                 <ParkingMap2D
@@ -262,7 +264,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
                 />
               </View>
             )}
-            <Text style={styles.selectedCount}>Selected: {selectedSlots.length}/{maxSlots}</Text>
+            <Text style={styles.selectedCount}>{translateUi("Selected:")}{" "}{selectedSlots.length}/{maxSlots}</Text>
           </View>
 
           {error || packageRestriction ? (
@@ -278,7 +280,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
               style={styles.policyButton}
               onPress={() => navigation.getParent<NavigationProp<CustomerTabParamList>>()?.navigate('ProfileTab', { screen: 'Policies' })}
             >
-              <Text style={styles.policyButtonText}>Review and accept policy</Text>
+              <Text style={styles.policyButtonText}>{translateUi("Review and accept policy")}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -288,7 +290,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
             ) : (
               <>
                 <Ionicons name="checkmark-circle-outline" size={20} color={COLORS.textInverse} />
-                <Text style={styles.primaryButtonText}>Confirm purchase</Text>
+                <Text style={styles.primaryButtonText}>{translateUi("Confirm purchase")}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -383,6 +385,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   floorTab: {
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
     borderRadius: RADIUS.round,
@@ -441,18 +445,23 @@ const styles = StyleSheet.create({
   },
   policyButtonText: { color: COLORS.gold, fontSize: FONT_SIZES.sm, fontWeight: '800' },
   primaryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     alignItems: 'center',
     backgroundColor: COLORS.gold,
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,
-    height: 54,
+    minHeight: 54,
     justifyContent: 'center',
   },
   disabled: {
     opacity: 0.6,
   },
   primaryButtonText: {
+    flexShrink: 1,
+    textAlign: 'center',
+    lineHeight: 24,
     color: COLORS.textInverse,
     fontSize: FONT_SIZES.md,
     fontWeight: '800',

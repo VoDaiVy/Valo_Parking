@@ -1,9 +1,8 @@
+import { GoogleIcon } from '@/components/auth/GoogleIcon';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -21,12 +20,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { config } from '@/config/env';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
+import { useGoogleSignIn } from '@/hooks/useGoogleSignIn';
 import { useAppAlert } from '@/contexts/AppAlertContext';
 
-WebBrowser.maybeCompleteAuthSession();
 
 const LogoImg = require('../../../assets/logo.png') as number;
 
@@ -36,16 +34,6 @@ interface LoginScreenProps {
   };
 }
 
-function GoogleIcon() {
-  return (
-    <View style={googleIconStyles.wrap}>
-      <View style={[googleIconStyles.quad, { backgroundColor: '#4285F4' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#34A853' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#FBBC05' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#EA4335' }]} />
-    </View>
-  );
-}
 
 function Field({
   icon,
@@ -107,69 +95,14 @@ function Field({
 }
 
 export default function LoginScreen({ navigation }: LoginScreenProps) {
-  const { login, googleLogin } = useAuth();
+  const { t: translateUi } = useLanguage();
+  const { login } = useAuth();
   const { alert } = useAppAlert();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordHidden, setPasswordHidden] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-
-  const [googleRequest, googleResponse, googlePromptAsync] = Google.useIdTokenAuthRequest({
-    androidClientId: config.googleAndroidClientId || undefined,
-    clientId: config.googleClientId,
-    iosClientId: config.googleIosClientId || undefined,
-    webClientId: config.googleClientId,
-    scopes: ['openid', 'profile', 'email'],
-    selectAccount: true,
-  });
-
-  const handleGoogleLogin = useCallback(
-    async (idToken: string) => {
-      setGoogleLoading(true);
-      try {
-        await googleLogin({ idToken });
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
-        alert('Google sign-in failed', message);
-      } finally {
-        setGoogleLoading(false);
-      }
-    },
-    [alert, googleLogin],
-  );
-
-  useEffect(() => {
-    if (googleResponse?.type !== 'success') return;
-
-    const idToken =
-      googleResponse.authentication?.idToken ??
-      (googleResponse.params as Record<string, string>)?.id_token;
-
-    if (idToken) {
-      void handleGoogleLogin(idToken);
-    } else {
-      alert('Error', 'Unable to retrieve the Google ID token.');
-    }
-  }, [alert, googleResponse, handleGoogleLogin]);
-
-  const promptGoogleLogin = async () => {
-    if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-      alert(
-        'Google sign-in requires a development build',
-        'Expo Go cannot use this app\'s OAuth redirect. Install and open the VALO development build, then try again.',
-      );
-      return;
-    }
-
-    if (!config.googleClientId) {
-      alert('Google sign-in unavailable', 'Missing EXPO_PUBLIC_GOOGLE_CLIENT_ID.');
-      return;
-    }
-
-    await googlePromptAsync();
-  };
+  const { loading: googleLoading, enabled: googleEnabled, signIn: promptGoogleLogin } = useGoogleSignIn();
 
   const handleLogin = async () => {
     const trimEmail = email.trim();
@@ -193,7 +126,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <LinearGradient
         colors={['#080808', '#111111', '#161208']}
         locations={[0, 0.6, 1]}
@@ -219,7 +152,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             <Text style={styles.brandSub}>PARKING</Text>
             <View style={styles.badge}>
               <Ionicons name="flash" size={11} color={COLORS.gold} />
-              <Text style={styles.badgeText}>Smart Parking Platform</Text>
+              <Text style={styles.badgeText}>{translateUi("Smart Parking Platform")}</Text>
             </View>
           </View>
 
@@ -230,14 +163,14 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               start={{ x: 0, y: 0 }}
               style={styles.cardTopLine}
             />
-            <Text style={styles.cardTitle}>Sign in</Text>
-            <Text style={styles.cardSub}>Welcome back to VALO Parking</Text>
+            <Text style={styles.cardTitle}>{translateUi("Sign in")}</Text>
+            <Text style={styles.cardSub}>{translateUi("Welcome back to VALO Parking")}</Text>
 
             <Field
               autoCapitalize="none"
               icon={<Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />}
               keyboardType="email-address"
-              placeholder="Your email"
+              placeholder={translateUi("Your email")}
               returnKeyType="next"
               value={email}
               onChangeText={setEmail}
@@ -245,7 +178,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
             <Field
               icon={<Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />}
-              placeholder="Password"
+              placeholder={translateUi("Password")}
               returnKeyType="done"
               rightIcon={
                 <Ionicons
@@ -265,7 +198,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               style={({ pressed }) => [styles.forgotRow, pressed && styles.pressed]}
               onPress={() => navigation?.navigate('ForgotPassword')}
             >
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              <Text style={styles.forgotText}>{translateUi("Forgot password?")}</Text>
             </Pressable>
 
             <TouchableOpacity
@@ -284,7 +217,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                   <ActivityIndicator color={COLORS.textInverse} size="small" />
                 ) : (
                   <>
-                    <Text style={styles.loginBtnText}>Sign in</Text>
+                    <Text style={styles.loginBtnText}>{translateUi("Sign in")}</Text>
                     <Ionicons name="arrow-forward" size={18} color={COLORS.textInverse} />
                   </>
                 )}
@@ -293,14 +226,14 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
+              <Text style={styles.dividerText}>{translateUi("or continue with")}</Text>
               <View style={styles.dividerLine} />
             </View>
 
             <TouchableOpacity
               activeOpacity={0.85}
-              disabled={!googleRequest || googleLoading}
-              style={[styles.googleBtn, (!googleRequest || googleLoading) && styles.disabled]}
+              disabled={!googleEnabled || googleLoading}
+              style={[styles.googleBtn, (!googleEnabled || googleLoading) && styles.disabled]}
               onPress={promptGoogleLogin}
             >
               {googleLoading ? (
@@ -308,7 +241,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               ) : (
                 <>
                   <GoogleIcon />
-                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                  <Text style={styles.googleBtnText}>{translateUi("Continue with Google")}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -317,29 +250,19 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               style={({ pressed }) => [styles.registerRow, pressed && styles.pressed]}
               onPress={() => navigation?.navigate('Register')}
             >
-              <Text style={styles.registerText}>New to VALO? </Text>
-              <Text style={[styles.registerText, styles.registerLink]}>Create account</Text>
+              <Text style={styles.registerText}>{translateUi("New to VALO?")}{" "}</Text>
+              <Text style={[styles.registerText, styles.registerLink]}>{translateUi("Create account")}</Text>
             </Pressable>
           </View>
 
-          <Text style={styles.footer}>2026 VALO Parking - All rights reserved</Text>
+          <Text style={styles.footer}>{translateUi("2026 VALO Parking - All rights reserved")}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const googleIconStyles = StyleSheet.create({
-  wrap: {
-    borderRadius: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    height: 20,
-    overflow: 'hidden',
-    width: 20,
-  },
-  quad: { height: 10, width: 10 },
-});
+
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#080808' },

@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -92,6 +93,7 @@ export const ParkingMap2D = ({
   inspectedSlotCode = null,
   onInspectSlot,
 }: ParkingMap2DProps) => {
+  const { t: translateUi } = useLanguage();
   const { width: windowWidth } = useWindowDimensions();
   const [viewportWidth, setViewportWidth] = useState(0);
 
@@ -350,7 +352,7 @@ export const ParkingMap2D = ({
     if (el.type === 'door' || el.type === 'entry') {
       return (
         <View key={el.id} style={[baseStyle, { backgroundColor: 'rgba(52,211,153,0.2)', borderColor: 'rgba(52,211,153,0.5)', borderWidth: 1, borderRadius: 2 }]} pointerEvents="none">
-          <Text style={{ color: '#34d399', fontSize: 8, fontWeight: 'bold', letterSpacing: 2 }}>ENTRANCE</Text>
+          <Text style={{ color: '#34d399', fontSize: 8, fontWeight: 'bold', letterSpacing: 2 }}>{translateUi("ENTRANCE")}</Text>
         </View>
       );
     }
@@ -358,7 +360,7 @@ export const ParkingMap2D = ({
     if (el.type === 'exit') {
       return (
         <View key={el.id} style={[baseStyle, { backgroundColor: 'rgba(248,113,113,0.2)', borderColor: 'rgba(248,113,113,0.5)', borderWidth: 1, borderRadius: 2 }]} pointerEvents="none">
-          <Text style={{ color: '#f87171', fontSize: 8, fontWeight: 'bold', letterSpacing: 2 }}>EXIT</Text>
+          <Text style={{ color: '#f87171', fontSize: 8, fontWeight: 'bold', letterSpacing: 2 }}>{translateUi("EXIT")}</Text>
         </View>
       );
     }
@@ -439,7 +441,7 @@ export const ParkingMap2D = ({
         ]}
       >
         {/* Background Grid Pattern (Simulated with absolute views or just plain background for simplicity) */}
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
           {/* React Native doesn't have a simple repeating linear gradient background like CSS.
               We'll stick to a solid color to maintain performance. */}
         </View>
@@ -455,13 +457,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   viewport: {
+    borderRadius: 12,
     alignSelf: 'stretch',
     overflow: 'hidden',
     width: '100%',
   },
   slotBox: {
-    borderRadius: 4,
-    borderWidth: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
   },
   slotBoxText: {
     fontWeight: '700',

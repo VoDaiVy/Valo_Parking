@@ -54,6 +54,22 @@ exports.startMaintenance = async (req, res) => {
         startTime: new Date()
       });
       logPromises.push(log.save());
+
+      // Write to unified SlotAuditLog
+      const SlotAuditLog = require('../models/SlotAuditLog');
+      logPromises.push(
+        SlotAuditLog.create({
+          slotId: slot._id,
+          slotCode: slot.slotNumber,
+          floorId: slot.floorID,
+          changeType: 'MAINTENANCE',
+          status: 'PENDING',
+          resolutionAction: 'UNDER_MAINTENANCE',
+          resolutionNote: `Bắt đầu bảo trì: ${reason}`,
+          resolvedBy: managerID,
+          createdAt: new Date(),
+        })
+      );
     }
 
     await Promise.all(logPromises);
@@ -112,6 +128,21 @@ exports.endMaintenance = async (req, res) => {
           { endTime: new Date() },
           { sort: { startTime: -1 } }
         );
+
+        // Write to unified SlotAuditLog
+        const SlotAuditLog = require('../models/SlotAuditLog');
+        await SlotAuditLog.create({
+          slotId: slot._id,
+          slotCode: slot.slotNumber,
+          floorId: slot.floorID,
+          changeType: 'MAINTENANCE',
+          status: 'RESOLVED',
+          resolutionAction: 'MAINTENANCE_COMPLETED',
+          resolutionNote: 'Hoàn thành bảo trì, mở lại ô đỗ cho khách',
+          resolvedBy: req.user?._id || null,
+          createdAt: new Date(),
+        });
+
         endedCount++;
       }
     }

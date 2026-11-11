@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,6 +22,7 @@ import { FadeInView, StaffHeader, StatusBadge } from '@/components/staff';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { formatCurrency } from '@/utils/formatters';
 import type { StaffSessionStackParamList } from './SessionListScreen';
+import { SessionActionsPanel } from '@/components/staff/SessionActionsPanel';
 
 type Props = NativeStackScreenProps<StaffSessionStackParamList, 'SessionDetail'>;
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -56,13 +58,14 @@ function DetailLine({
   value: string;
   valueColor?: string;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.detailLine}>
       <View style={styles.lineIcon}>
         <Ionicons name={icon} size={16} color={COLORS.textMuted} />
       </View>
       <View style={styles.lineCopy}>
-        <Text style={styles.lineLabel}>{label}</Text>
+        <Text style={styles.lineLabel}>{translateUi(label)}</Text>
         <Text numberOfLines={1} style={[styles.lineValue, valueColor ? { color: valueColor } : null]}>{value}</Text>
       </View>
     </View>
@@ -82,6 +85,7 @@ function EvidenceRow({
   onPreview: (url: string) => void;
   tone: string;
 }) {
+  const { t: translateUi } = useLanguage();
   const [loading, setLoading] = useState(Boolean(imageUrl));
   const [failed, setFailed] = useState(false);
   const hasImage = Boolean(imageUrl && !failed);
@@ -92,7 +96,7 @@ function EvidenceRow({
         <Ionicons name="camera-outline" size={18} color={tone} />
       </View>
       <View style={styles.evidenceCopy}>
-        <Text style={styles.evidenceTitle}>{label}</Text>
+        <Text style={styles.evidenceTitle}>{translateUi(label)}</Text>
         <Text numberOfLines={1} style={styles.evidenceMeta}>{meta}</Text>
       </View>
       {hasImage ? (
@@ -128,7 +132,8 @@ function EvidenceRow({
 }
 
 export const SessionDetailScreen = ({ navigation, route }: Props) => {
-  const { session } = route.params;
+  const { t: translateUi } = useLanguage();
+  const [session, setSession] = useState(route.params.session);
   const tabBarHeight = useBottomTabBarHeight();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -138,17 +143,17 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
     ? Math.floor((checkOut.getTime() - checkIn.getTime()) / 60000)
     : Math.floor((Date.now() - checkIn.getTime()) / 60000);
   const isActive = session.status === 'active';
-  const statusTone = isActive ? COLORS.success : COLORS.textMuted;
+  const statusTone = COLORS.success;
   const paymentStatus = session.paymentStatus ?? 'unpaid';
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Sessions"
-        title="Session details"
+        title={translateUi("Session details")}
         onBack={() => navigation.goBack()}
-        right={<StatusBadge label={isActive ? 'Active' : 'Done'} tone={isActive ? 'success' : 'muted'} />}
+        right={<StatusBadge label={isActive ? translateUi("Active") : translateUi("Done")} tone="success" />}
       />
 
       <ScrollView
@@ -161,7 +166,7 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
               <Text adjustsFontSizeToFit numberOfLines={1} style={styles.plate}>{session.licensePlate}</Text>
               <View style={[styles.inlineStatus, { borderColor: `${statusTone}44`, backgroundColor: `${statusTone}14` }]}>
                 <View style={[styles.statusDot, { backgroundColor: statusTone }]} />
-                <Text style={[styles.inlineStatusText, { color: statusTone }]}>{isActive ? 'Active' : 'Done'}</Text>
+                <Text style={[styles.inlineStatusText, { color: statusTone }]}>{isActive ? translateUi("Active") : translateUi("Done")}</Text>
               </View>
             </View>
             <View style={styles.spaceRow}>
@@ -170,7 +175,7 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
             </View>
             <View style={styles.timelineRow}>
               <View style={styles.timeCell}>
-                <Text style={styles.timeLabel}>Check-in</Text>
+                <Text style={styles.timeLabel}>{translateUi("Check-in")}</Text>
                 <Text style={styles.timeValue}>{format(checkIn, 'HH:mm')}</Text>
                 <Text style={styles.timeMeta}>{format(checkIn, 'dd/MM')}</Text>
               </View>
@@ -179,9 +184,9 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
                 <View style={styles.durationLine} />
               </View>
               <View style={[styles.timeCell, styles.timeCellRight]}>
-                <Text style={styles.timeLabel}>Check-out</Text>
+                <Text style={styles.timeLabel}>{translateUi("Check-out")}</Text>
                 <Text style={[styles.timeValue, !checkOut && styles.mutedValue]}>{checkOut ? format(checkOut, 'HH:mm') : '--:--'}</Text>
-                <Text style={styles.timeMeta}>{checkOut ? format(checkOut, 'dd/MM') : 'Pending'}</Text>
+                <Text style={styles.timeMeta}>{checkOut ? format(checkOut, 'dd/MM') : translateUi("Pending")}</Text>
               </View>
             </View>
           </View>
@@ -189,18 +194,17 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
 
         <FadeInView delay={60} style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Security records</Text>
+            <Text style={styles.sectionTitle}>{translateUi("Security records")}</Text>
             <View style={styles.evidenceBadge}>
               <Ionicons name="shield-checkmark-outline" size={13} color={COLORS.staffBlue} />
               <Text style={styles.evidenceBadgeText}>
-                {[session.entryImage_url, session.exitImage_url].filter(Boolean).length}/2 images
-              </Text>
+                {[session.entryImage_url, session.exitImage_url].filter(Boolean).length}{translateUi("/2 images")}{" "}</Text>
             </View>
           </View>
           <View style={styles.rowsPanel}>
             <EvidenceRow
               imageUrl={session.entryImage_url}
-              label="Entry"
+              label={translateUi("Entry")}
               meta={session.checkInTime ? format(checkIn, 'HH:mm:ss dd/MM/yyyy') : 'Not recorded'}
               onPreview={setPreviewImage}
               tone={COLORS.staffBlue}
@@ -208,7 +212,7 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
             <View style={styles.divider} />
             <EvidenceRow
               imageUrl={session.exitImage_url}
-              label="Exit"
+              label={translateUi("Exit")}
               meta={checkOut ? format(checkOut, 'HH:mm:ss dd/MM/yyyy') : 'Not recorded'}
               onPreview={setPreviewImage}
               tone={COLORS.success}
@@ -217,23 +221,23 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
         </FadeInView>
 
         <FadeInView delay={110} style={styles.section}>
-          <Text style={styles.sectionTitle}>Operations</Text>
+          <Text style={styles.sectionTitle}>{translateUi("Operations")}</Text>
           <View style={styles.rowsPanel}>
             <DetailLine
               icon="car-outline"
-              label="Vehicle type"
+              label={translateUi("Vehicle type")}
               value={VEHICLE_TYPE_LABELS[session.vehicleType ?? ''] ?? session.vehicleType ?? 'Unknown'}
             />
             <View style={styles.divider} />
             <DetailLine
               icon="git-branch-outline"
-              label="Entry source"
+              label={translateUi("Entry source")}
               value={SOURCE_LABELS[session.source ?? ''] ?? session.source ?? 'Unknown'}
             />
             {session.phone ? (
               <>
                 <View style={styles.divider} />
-                <DetailLine icon="call-outline" label="Phone" value={session.phone} />
+                <DetailLine icon="call-outline" label={translateUi("Phone")} value={session.phone} />
               </>
             ) : null}
           </View>
@@ -241,24 +245,25 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
 
         {session.totalPrice !== undefined ? (
           <FadeInView delay={160} style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment</Text>
+            <Text style={styles.sectionTitle}>{translateUi("Payment")}</Text>
             <View style={styles.rowsPanel}>
               <DetailLine
                 icon="wallet-outline"
-                label="Status"
+                label={translateUi("Status")}
                 value={paymentStatus}
                 valueColor={paymentStatus === 'paid' ? COLORS.success : undefined}
               />
               <View style={styles.divider} />
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={styles.totalLabel}>{translateUi("Total")}</Text>
                 <Text style={styles.totalValue}>{formatCurrency(session.totalPrice ?? 0)}</Text>
               </View>
             </View>
           </FadeInView>
         ) : null}
 
-        <Text style={styles.idRef}>ID: {session._id}</Text>
+        <SessionActionsPanel session={session} onUpdated={setSession} />
+        <Text style={styles.idRef}>{translateUi("ID:")}{" "}{session._id}</Text>
       </ScrollView>
 
       <Modal
@@ -270,13 +275,13 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
       >
         <View style={styles.previewModal}>
           <Pressable
-            accessibilityLabel="Close image preview"
+            accessibilityLabel={translateUi("Close image preview")}
             accessibilityRole="button"
             onPress={() => setPreviewImage(null)}
             style={StyleSheet.absoluteFill}
           />
           <TouchableOpacity
-            accessibilityLabel="Close image preview"
+            accessibilityLabel={translateUi("Close image preview")}
             accessibilityRole="button"
             onPress={() => setPreviewImage(null)}
             style={styles.previewClose}
@@ -285,7 +290,7 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
           </TouchableOpacity>
           {previewImage ? (
             <Image
-              accessibilityLabel="Security image preview"
+              accessibilityLabel={translateUi("Security image preview")}
               resizeMode="contain"
               source={{ uri: previewImage }}
               style={styles.previewImage}
@@ -313,7 +318,7 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     flex: 1,
     fontSize: FONT_SIZES.xl,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 2,
   },
   inlineStatus: {
@@ -326,7 +331,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
   },
   statusDot: { borderRadius: 3, height: 6, width: 6 },
-  inlineStatusText: { fontSize: FONT_SIZES.xs, fontWeight: '900' },
+  inlineStatusText: { fontSize: FONT_SIZES.xs, fontWeight: '700' },
   spaceRow: { alignItems: 'center', flexDirection: 'row', gap: 5 },
   spaceText: { color: COLORS.gold, flex: 1, fontSize: FONT_SIZES.md, fontWeight: '800' },
   timelineRow: {
@@ -339,18 +344,18 @@ const styles = StyleSheet.create({
   timeCell: { flex: 1 },
   timeCellRight: { alignItems: 'flex-end' },
   timeLabel: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs },
-  timeValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  timeValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   timeMeta: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs },
   mutedValue: { color: COLORS.textMuted },
   durationCell: { alignItems: 'center', flex: 0.7, paddingHorizontal: SPACING.sm },
-  duration: { color: COLORS.gold, fontSize: FONT_SIZES.xs, fontWeight: '900' },
+  duration: { color: COLORS.gold, fontSize: FONT_SIZES.xs, fontWeight: '700' },
   durationLine: { backgroundColor: COLORS.borderLight, height: 1, marginTop: 5, width: 44 },
   section: { gap: SPACING.sm },
   sectionHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   sectionTitle: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.7,
     textTransform: 'uppercase',
   },
@@ -363,7 +368,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
     paddingHorizontal: SPACING.sm,
   },
-  evidenceBadgeText: { color: COLORS.staffBlue, fontSize: 10, fontWeight: '800' },
+  evidenceBadgeText: { color: COLORS.staffBlue, fontSize: FONT_SIZES.xs, fontWeight: '800' },
   rowsPanel: {
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
@@ -386,7 +391,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   evidenceCopy: { flex: 1, minWidth: 0 },
-  evidenceTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  evidenceTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
   evidenceMeta: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 3 },
   thumb: {
     backgroundColor: COLORS.surfaceElevated,
@@ -410,7 +415,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs,
     width: 96,
   },
-  emptyThumbText: { color: COLORS.textMuted, fontSize: 9, fontWeight: '700', textAlign: 'center' },
+  emptyThumbText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '700', textAlign: 'center' },
   detailLine: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -438,8 +443,8 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: SPACING.md,
   },
-  totalLabel: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900' },
-  totalValue: { color: COLORS.gold, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  totalLabel: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
+  totalValue: { color: COLORS.gold, fontSize: FONT_SIZES.lg, lineHeight: 24, fontWeight: '700', fontVariant: ['tabular-nums'], flexShrink: 1 },
   idRef: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, textAlign: 'center' },
   previewModal: {
     alignItems: 'center',

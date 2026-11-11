@@ -252,8 +252,9 @@ export default function GateControl() {
       const scanData = await scanRes.json();
 
       let detectedPlate = '';
-      if (scanData.success && scanData.data?.licensePlate) {
-        detectedPlate = normalizeLicensePlate(scanData.data.licensePlate);
+      const plateVal = scanData.data?.licensePlate || scanData.data?.plate || scanData.plate || scanData.licensePlate;
+      if (scanData.success && plateVal) {
+        detectedPlate = normalizeLicensePlate(plateVal);
         setEntryPlate(detectedPlate);
         toast.success(`Detected license plate: ${detectedPlate}`);
       } else {
@@ -376,8 +377,9 @@ export default function GateControl() {
       const scanData = await scanRes.json();
 
       let detectedPlate = '';
-      if (scanData.success && scanData.data?.licensePlate) {
-        detectedPlate = normalizeLicensePlate(scanData.data.licensePlate);
+      const plateVal = scanData.data?.licensePlate || scanData.data?.plate || scanData.plate || scanData.licensePlate;
+      if (scanData.success && plateVal) {
+        detectedPlate = normalizeLicensePlate(plateVal);
         setExitPlate(detectedPlate);
         toast.success(`Detected exit license plate: ${detectedPlate}`);
       } else {

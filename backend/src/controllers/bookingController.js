@@ -34,6 +34,7 @@ const {
 } = require('../services/paidBookingPolicyService');
 const { isValidCarLicensePlate, normalizeLicensePlate } = require('../utils/licensePlateUtils');
 const { validateBookingTimeRange } = require('../utils/bookingTimeValidation');
+const { roundUpToBookingStep } = require('../utils/bookingTimePolicy');
 const {
   ACTIVE_BOOKING_STATUSES: BOOKING_STATUSES_THAT_BLOCK_SLOT,
   buildVehicleBookingOverlapQuery,
@@ -391,6 +392,18 @@ const getUnavailableSlotKeys = async (
     .select('floorID slotNumber')
     .lean();
 
+  const isImmediate = start <= new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const physicalOccupiedSlotsPromise = isImmediate
+    ? Slot.find({
+        $or: [
+          { status: 'occupied' },
+          { 'aiObservation.occupied': true }
+        ]
+      })
+        .select('floorID slotNumber status aiObservation')
+        .lean()
+    : Promise.resolve([]);
+
   const BookingHold = require('../models/BookingHold');
   const activeHoldsPromise = BookingHold.find({
     status: 'active',
@@ -405,12 +418,14 @@ const getUnavailableSlotKeys = async (
     overlappingBookings,
     activeSessions,
     maintenanceSlots,
+    physicalOccupiedSlots,
     activeHolds,
     dedicatedKeys
   ] = await Promise.all([
     overlappingBookingsPromise,
     activeSessionsPromise,
     maintenanceSlotsPromise,
+    physicalOccupiedSlotsPromise,
     activeHoldsPromise,
     includeOwnedDedicatedSlots
       ? getAiDedicatedSlotKeys(userId, start, end)
@@ -437,6 +452,24 @@ const getUnavailableSlotKeys = async (
   maintenanceSlots.forEach((slot) => {
     unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
   });
+
+  // Keep physical occupancy protection unless an active session has a reliable
+  // checkout before the requested range, matching the hold validation below.
+  if (isImmediate && Array.isArray(physicalOccupiedSlots)) {
+    const sessionsBySlot = new Map(activeSessions.map((item) => [
+      buildSlotKey(item.floorId, item.parkingSlot), item,
+    ]));
+    physicalOccupiedSlots.forEach((slot) => {
+      const parkingSession = sessionsBySlot.get(buildSlotKey(slot.floorID, slot.slotNumber));
+      const expectedCheckout = allowExpectedSessionCheckout && parkingSession
+        ? expectedSessionCheckout(parkingSession, now)
+        : null;
+      if ((slot.status === 'occupied' || slot.aiObservation?.occupied)
+        && (!expectedCheckout || expectedCheckout > start)) {
+        unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
+      }
+    });
+  }
 
   activeHolds.forEach((hold) => {
     unavailable.add(buildSlotKey(hold.floorId, hold.slotCode));
@@ -600,17 +633,18 @@ const findOwnedBooking = (bookingId, user) => {
 exports.getAvailableSlots = async (req, res, next) => {
   try {
     const { startTime, endTime } = req.query;
-    const { start, end } = validateBookingTimeRange(startTime, endTime);
+    // Mobile can browse without a range. Generated defaults must also follow
+    // the shared 15-minute policy; explicit inputs still receive validation.
+    const defaultStart = roundUpToBookingStep(new Date());
+    const effectiveStart = startTime || defaultStart.toISOString();
+    const effectiveEnd = endTime || new Date(new Date(effectiveStart).getTime() + 60 * 60 * 1000);
+    const { start, end } = validateBookingTimeRange(effectiveStart, effectiveEnd, {
+      requireFuture: false,
+      minMinutes: 0,
+    });
     const availability = await getAvailableSlotsForRange(start, end, req.user?._id, {
-      // Regular and AI booking must see identical inventory. A currently
-      // occupied slot may be offered only after a reliable expected checkout.
       allowExpectedSessionCheckout: true,
-      // VIP spaces are package entitlements, not hourly-booking inventory.
-      // Including them here made AI quotes waive the parking component and
-      // display only the selected service price.
       includeOwnedDedicatedSlots: false,
-      // Keep VIP spaces out of hourly inventory, but expose the reason so an
-      // explicitly requested VIP space receives a precise explanation.
       withRestrictions: true,
     });
 
@@ -2052,7 +2086,9 @@ exports.createBookingHold = async (req, res, next) => {
     let start;
     let end;
     try {
-      ({ start, end } = validateBookingTimeRange(startTime, endTime));
+      ({ start, end } = validateBookingTimeRange(startTime, endTime, {
+        requireFuture: false,
+      }));
     } catch (timeError) {
       return res.status(timeError.statusCode || 400).json({
         success: false,
@@ -2101,9 +2137,19 @@ exports.createBookingHold = async (req, res, next) => {
       status: 'active'
     });
 
+    const physicalSlotDoc = await Slot.findOne({
+      floorID: floorId,
+      slotNumber: slotCode,
+      $or: [{ status: 'occupied' }, { 'aiObservation.occupied': true }, { status: 'maintenance' }]
+    });
+
     const slotExpectedCheckout = slotOccupied ? expectedSessionCheckout(slotOccupied, now) : null;
     if (slotOccupied && (!slotExpectedCheckout || slotExpectedCheckout > start)) {
       return res.status(400).json({ success: false, message: 'This slot is currently occupied by another vehicle' });
+    }
+    if (physicalSlotDoc && (physicalSlotDoc.status === 'maintenance'
+      || (start <= new Date(now.getTime() + 2 * 60 * 60 * 1000) && !slotExpectedCheckout))) {
+      return res.status(400).json({ success: false, message: 'This slot is currently occupied or unavailable on the physical parking lot' });
     }
 
     const overlappingBooking = await Booking.findOne({

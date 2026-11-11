@@ -1,8 +1,10 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '../../constants/theme';
+import { COLORS, CONTROL, RADIUS, SPACE, SPACING } from '../../constants/theme';
+import { typography } from '@/theme';
 
 export function MenuItem({
   icon,
@@ -23,14 +25,15 @@ export function MenuItem({
   showArrow?: boolean;
   danger?: boolean;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.menuItem}>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={sublabel ? `${label}, ${sublabel}` : label} onPress={onPress} activeOpacity={0.8} style={styles.menuItem}>
       <View style={[styles.menuIconWrap, { backgroundColor: iconBg }]}>
-        <Ionicons name={icon} size={20} color={iconColor} />
+        <Ionicons name={icon} size={CONTROL.iconSize} color={iconColor} />
       </View>
       <View style={styles.menuTextWrap}>
-        <Text style={[styles.menuLabel, danger && { color: COLORS.error }]}>{label}</Text>
-        {sublabel && <Text style={styles.menuSublabel}>{sublabel}</Text>}
+        <Text style={[styles.menuLabel, danger && { color: COLORS.error }]}>{translateUi(label)}</Text>
+        {sublabel && <Text style={styles.menuSublabel}>{translateUi(sublabel)}</Text>}
       </View>
       {showArrow && (
         <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
@@ -45,15 +48,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: SPACING.md,
     gap: SPACING.md,
+    minHeight: CONTROL.minHeight,
   },
   menuIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  menuTextWrap: { flex: 1 },
-  menuLabel: { fontSize: FONT_SIZES.md, color: COLORS.textPrimary, fontWeight: '500' },
-  menuSublabel: { fontSize: FONT_SIZES.xs, color: COLORS.textMuted, marginTop: 2 },
+  menuTextWrap: { flex: 1, minWidth: 0 },
+  menuLabel: { ...typography.body1, color: COLORS.textPrimary, fontWeight: '500' },
+  menuSublabel: { ...typography.body2, color: COLORS.textSecondary, marginTop: SPACE[4] },
 });

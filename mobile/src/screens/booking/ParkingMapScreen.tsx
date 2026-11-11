@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -7,7 +8,7 @@ import { AppText, Card } from '@/components/common';
 import { Screen } from '@/components/layout/Screen';
 import { useBooking } from '@/hooks/useBooking';
 import type { BookingStackParamList } from '@/navigation/types';
-import { colors, spacing } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 import type { SlotStatus } from '@/types/booking.types';
 
 type Props = NativeStackScreenProps<BookingStackParamList, 'ParkingMap'>;
@@ -20,6 +21,7 @@ const legend: Array<{ label: string; status: SlotStatus; color: string }> = [
 ];
 
 export const ParkingMapScreen = ({ route }: Props) => {
+  const { t: translateUi } = useLanguage();
   const { availableSlots } = useBooking();
   const [selectedSlot, setSelectedSlot] = useState('');
   const floorId = route.params.floorId;
@@ -43,12 +45,12 @@ export const ParkingMapScreen = ({ route }: Props) => {
 
   return (
     <Screen>
-      <AppText variant="h1">Parking Map</AppText>
+      <AppText variant="h1">{translateUi("Parking Map")}</AppText>
       <View style={styles.legend}>
         {legend.map((item) => (
           <View key={item.status} style={styles.legendItem}>
             <View style={[styles.dot, { backgroundColor: item.color }]} />
-            <AppText variant="caption">{item.label}</AppText>
+            <AppText variant="caption">{translateUi(item.label)}</AppText>
           </View>
         ))}
       </View>
@@ -67,9 +69,9 @@ export const ParkingMapScreen = ({ route }: Props) => {
         </ScrollView>
       </ScrollView>
       {selectedSlot ? (
-        <Card>
-          <AppText variant="h3">Slot {selectedSlot}</AppText>
-          <AppText color={colors.light.text.secondary}>Tap another slot to inspect it.</AppText>
+        <Card style={styles.selection}>
+          <AppText variant="h3">{translateUi("Slot")}{" "}{selectedSlot}</AppText>
+          <AppText color={colors.light.text.secondary}>{translateUi("Tap another slot to inspect it.")}</AppText>
         </Card>
       ) : null}
     </Screen>
@@ -93,9 +95,11 @@ const styles = StyleSheet.create({
     width: 12,
   },
   canvas: {
+    borderRadius: borderRadius.lg,
     backgroundColor: colors.neutral[100],
     height: 520,
     position: 'relative',
     width: 360,
   },
+  selection: { gap: spacing.sm },
 });
