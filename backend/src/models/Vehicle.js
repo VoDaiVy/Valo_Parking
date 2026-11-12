@@ -3,6 +3,7 @@ const { normalizeLicensePlate, formatLicensePlateDisplay } = require('../utils/l
 
 const vehicleSchema = new mongoose.Schema(
   {
+    entitlementRevision: { type: Number, default: 0, select: false },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

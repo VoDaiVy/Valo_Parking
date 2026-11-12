@@ -22,7 +22,7 @@ export const calculateWalletBalanceFromTransactions = (transactions: WalletTrans
 export const calculateExpirationDate = (packageType: SubscriptionPackageType, fromDate = new Date()) => {
   const expireAt = new Date(fromDate);
   if (packageType === 'monthly') {
-    expireAt.setMonth(expireAt.getMonth() + 1);
+    expireAt.setTime(expireAt.getTime() + 30 * 24 * 60 * 60 * 1000);
   } else {
     expireAt.setFullYear(expireAt.getFullYear() + 1);
   }

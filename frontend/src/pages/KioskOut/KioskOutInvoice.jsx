@@ -1,3 +1,4 @@
+import PackageParkingBreakdown from '../../components/PackageParkingBreakdown';
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon } from 'lucide-react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
@@ -37,6 +38,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
       if (data.success) {
         if (data.requiresPayment) {
           setPaymentData(data.data);
+          if (typeof data.data.keepPaused === 'boolean') setKeepPausedChoice(data.data.keepPaused);
           setIsProcessing(false);
         } else {
           completedRef.current = true;
@@ -77,7 +79,11 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
         try {
           const res = await fetch(`${API_BASE}/sessions/check-payos/${paymentData.orderCode}?checkoutAttemptId=${encodeURIComponent(paymentData.checkoutAttemptId || '')}`, { credentials: 'include', headers: { 'X-Kiosk-Gate': 'EXIT_1' } });
           const data = await res.json();
-          if (data.success && data.isPaid) {
+          if (data.success && data.paymentStatus === 'cancelled') {
+            setPaymentData(null);
+            setCheckoutError('The bank payment was cancelled or expired. Generate a new QR to retry checkout.');
+            setIsProcessing(false);
+          } else if (data.success && data.isPaid) {
             handleCheckout('qr', keepPausedChoice, paymentData.checkoutAttemptId); // Call handleCheckout to complete the session
           }
         } catch (err) {
@@ -101,9 +107,10 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
   const { session, durationHours, expectedHours, totalPrice, walletBalance, canAutoPay, isEarlyExit, remainingHours, bookingEnd, isSubscriptionExpired } = sessionData;
 
   // If AutoPay AND NOT early exit, show a loading screen while it processes
-  if (canAutoPay && !isEarlyExit && !checkoutError) {
+  if (canAutoPay && !isEarlyExit && !checkoutError && !paymentData) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-black">
+        <div className="w-full max-w-md px-4"><PackageParkingBreakdown pricing={sessionData.pricingBreakdown} /></div>
         <div className="w-20 h-20 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mb-8" />
         <h2 className="text-3xl font-bold text-yellow-400 mb-2">
           {totalPrice > 0 ? 'Processing Auto-Pay (ETC)...' : 'Exit Authorized...'}
@@ -190,7 +197,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
                 </div>
               )}
 
-              {isSubscriptionExpired && (
+              {isSubscriptionExpired && !sessionData.pricingBreakdown?.appliedEntitlement && (
                 <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 mt-2 flex items-start gap-3">
                   <AlertTriangle className="text-orange-400 shrink-0 mt-0.5" size={16} />
                   <div>
@@ -201,9 +208,10 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
               )}
             </div>
 
+            <PackageParkingBreakdown pricing={paymentData?.pricingBreakdown || sessionData.pricingBreakdown} paymentStatus={paymentData ? 'pending' : 'unpaid'} />
             <div className="mt-6 pt-6 border-t border-white/5 flex justify-between items-end">
               <span className="text-gray-400 text-sm font-semibold">TOTAL AMOUNT</span>
-              <span className="text-4xl font-black text-yellow-400">{formatVND(totalPrice)}</span>
+              <span className="text-4xl font-black text-yellow-400">{formatVND(paymentData?.amountDue ?? sessionData.amountToPay ?? totalPrice)}</span>
             </div>
           </div>
 
@@ -248,16 +256,17 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           </button>
           {paymentData ? (
             <button 
-              disabled={true}
-              className="flex-1 bg-green-500/50 text-white font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-wait"
+              onClick={() => handleCheckout('vietqr', keepPausedChoice)}
+              disabled={isProcessing}
+              className="flex-1 bg-green-500/50 text-white font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:cursor-wait"
             >
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Waiting for payment...
+              Refresh expired QR
             </button>
           ) : (
             <button 
               onClick={() => handleCheckout('vietqr', keepPausedChoice)}
-              disabled={isProcessing || (sessionData?.canAutoPay && !isEarlyExit)}
+              disabled={isProcessing || (sessionData?.canAutoPay && !isEarlyExit && !checkoutError)}
               className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
             >
               {isProcessing ? 'Processing...' : 'GENERATE QR'} <ChevronRight />

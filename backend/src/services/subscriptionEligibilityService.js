@@ -1,3 +1,6 @@
+const { assertNoMembershipBookingConflict } = require('./membershipBookingConflictService');
+const { legacyConflict } = require('./legacyEntitlementCompatibilityService');
+const { snapshotPackage, addConfiguredDuration } = require('./ticketPackageTerms');
 const { renewalWindowDays: getRenewalWindowDays, isInRenewalWindow } = require('../utils/membershipRenewalWindow');
 const { validateMembershipSpace } = require('./membershipSpaceValidationService');
 const crypto = require('crypto');
@@ -8,7 +11,6 @@ const Vehicle = require('../models/Vehicle');
 const Slot = require('../models/Slot');
 const User = require('../models/User');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
-const { isEnabled } = require('../utils/featureFlags');
 const {
   getUnmigratedLegacySlots,
 } = require('./membershipProjectionService');
@@ -32,11 +34,8 @@ const addMonthsClamped = (date, months) => {
   return result;
 };
 
-const addPackageDuration = (fromDate, packageType) => {
-  if (packageType === 'monthly') return addMonthsClamped(fromDate, 1);
-  if (packageType === 'yearly') return addMonthsClamped(fromDate, 12);
-  throw businessError('This package type cannot be renewed.', 'PACKAGE_NOT_RENEWABLE');
-};
+// Renewal remains based on purchased terms, independent of current catalog sales.
+const addPackageDuration = (fromDate, pkg) => addConfiguredDuration(fromDate, typeof pkg === 'string' ? { type: pkg } : pkg);
 
 const normalizeSlotCode = (value) => String(value || '').trim().toUpperCase();
 const slotKey = (floorId, slotCode) => `${String(floorId)}:${normalizeSlotCode(slotCode)}`;
@@ -50,6 +49,7 @@ const normalizeRequestedSlots = (slots) => {
   }
 
   const normalizedSlots = slots.map((slot) => ({
+    vehicleId: slot?.vehicleId,
     floorId: slot?.floorId,
     slotCode: normalizeSlotCode(slot?.slotCode),
   }));
@@ -67,6 +67,38 @@ const normalizeRequestedSlots = (slots) => {
   return normalizedSlots;
 };
 
+// Capacity is based on vehicle identity, never the number of spaces already owned.
+// Unbound legacy spaces retain their rights without inventing a vehicle binding.
+const getPurchaseVehicleEligibility = async ({ userId, now = new Date(), session = null }) => {
+  const read = (query) => session ? query.session(session).lean() : query.lean();
+  const vehicles = await read(Vehicle.find({ owner: userId, status: 'approved' }).select('_id'));
+  const vehicleIds = vehicles.map((vehicle) => vehicle._id);
+  const [entitlements, subscriptions] = await Promise.all([
+    read(MembershipSlotEntitlement.find({ vehicleId: { $in: vehicleIds },
+      status: { $in: ['active', 'transfer_locked', 'pending'] }, expireAt: { $gt: now },
+    }).select('vehicleId')),
+    read(Subscription.find({ 'slots.vehicleId': { $in: vehicleIds }, $or: [
+      { status: 'pending', paymentStatus: 'pending' },
+      { status: 'active', paymentStatus: 'paid', expireAt: { $gt: now } },
+    ] }).select('slots')),
+  ]);
+  const blocked = new Set(entitlements.map((item) => String(item.vehicleId)));
+  // Migrated source slots must not keep blocking a vehicle after transfer/rebinding.
+  const migrated = subscriptions.length ? await read(MembershipSlotEntitlement.find({
+    sourceSubscriptionId: { $in: subscriptions.map((item) => item._id) },
+  }).select('sourceSubscriptionId floorId slotCode')) : [];
+  for (const { slot } of getUnmigratedLegacySlots(subscriptions, migrated)) {
+    if (slot.vehicleId) blocked.add(String(slot.vehicleId));
+  }
+  const legacy = await legacyConflict({ ownerId: userId, from: now, session });
+  const eligibleVehicleIds = legacy ? [] : vehicleIds.map(String).filter((id) => !blocked.has(id));
+  return { customerId: String(userId), approvedVehicleCount: vehicleIds.length,
+    eligibleVehicleIds, availableVehicleCapacity: eligibleVehicleIds.length,
+    legacyConflict: legacy,
+    reason: legacy ? legacy.reason : !vehicleIds.length ? 'Add an approved vehicle before purchasing.' :
+      !eligibleVehicleIds.length ? 'All approved vehicles already have an entitlement or pending purchase.' : null };
+};
+
 const validateNewSubscriptionEligibility = async ({
   userId,
   ticketPackage,
@@ -76,69 +108,15 @@ const validateNewSubscriptionEligibility = async ({
 }) => {
   const normalizedSlots = normalizeRequestedSlots(slots);
 
-  let vehicleQuery = Vehicle.countDocuments({ owner: userId, status: 'approved' });
-  const entitlementMode = isEnabled(
-    'MEMBERSHIP_ENTITLEMENTS_ENABLED',
-    true
-  );
-  let activeOwnershipQuery = entitlementMode
-    ? MembershipSlotEntitlement.countDocuments({
-        ownerId: userId,
-        status: { $in: ['active', 'transfer_locked'] },
-        expireAt: { $gt: now },
-      })
-    : Subscription.find({
-        user: userId,
-        status: 'active',
-        paymentStatus: 'paid',
-        expireAt: { $gt: now },
-      }).select('slots');
-  let legacySubscriptionsQuery = entitlementMode
-    ? Subscription.find({
-        user: userId,
-        status: 'active',
-        paymentStatus: 'paid',
-        expireAt: { $gt: now },
-      }).select('slots')
-    : null;
-  if (session) {
-    vehicleQuery = vehicleQuery.session(session);
-    activeOwnershipQuery = activeOwnershipQuery.session(session);
-    if (legacySubscriptionsQuery) {
-      legacySubscriptionsQuery = legacySubscriptionsQuery.session(session);
-    }
+  const eligibility = await getPurchaseVehicleEligibility({ userId, now, session });
+  if (eligibility.legacyConflict) throw businessError(eligibility.legacyConflict.reason, eligibility.legacyConflict.code, 409);
+  const eligibleVehicleCount = eligibility.approvedVehicleCount;
+  const activeSlotCount = eligibleVehicleCount - eligibility.availableVehicleCapacity;
+  const maxSlots = Number(ticketPackage.maxSlots ?? 3);
+  const availableSlots = Math.min(maxSlots, eligibility.availableVehicleCapacity);
+  if (normalizedSlots.some((slot) => !eligibility.eligibleVehicleIds.includes(String(slot.vehicleId)))) {
+    throw businessError('Select an approved owned vehicle without an effective entitlement or pending purchase.', 'VEHICLE_NOT_ELIGIBLE');
   }
-
-  const [eligibleVehicleCount, activeOwnership, legacySubscriptions] =
-    await Promise.all([
-      vehicleQuery,
-      activeOwnershipQuery,
-      legacySubscriptionsQuery || Promise.resolve([]),
-    ]);
-  let activeSlotCount = entitlementMode
-    ? Number(activeOwnership || 0)
-    : (activeOwnership || []).reduce(
-        (total, subscription) => total + (subscription.slots || []).length,
-        0
-      );
-  if (entitlementMode && legacySubscriptions.length) {
-    let sourceEntitlementsQuery = MembershipSlotEntitlement.find({
-      sourceSubscriptionId: {
-        $in: legacySubscriptions.map((subscription) => subscription._id),
-      },
-    }).select('sourceSubscriptionId floorId slotCode');
-    if (session) {
-      sourceEntitlementsQuery = sourceEntitlementsQuery.session(session);
-    }
-    const sourceEntitlements = await sourceEntitlementsQuery.lean();
-    activeSlotCount += getUnmigratedLegacySlots(
-      legacySubscriptions,
-      sourceEntitlements
-    ).length;
-  }
-
-  const maxSlots = Math.min(3, eligibleVehicleCount);
-  const availableSlots = Math.max(0, maxSlots - activeSlotCount);
   if (!eligibleVehicleCount || normalizedSlots.length > availableSlots) {
     throw businessError(
       `You can select up to ${availableSlots} additional slot(s) based on your approved vehicles.`,
@@ -185,6 +163,11 @@ const validateNewSubscriptionEligibility = async ({
     }
   }
 
+  const expireAt = addPackageDuration(now, ticketPackage);
+  for (const selected of normalizedSlots) {
+    await assertNoMembershipBookingConflict({ ...selected, validFrom: now, expireAt, session });
+  }
+
   return {
     normalizedSlots,
     eligibleVehicleCount,
@@ -199,6 +182,7 @@ const validateRenewalEligibility = async ({
   subscriptionId,
   now = new Date(),
   ignoreRenewalId = null,
+  quotedTerms = null,
   session = null,
 }) => {
   let subscriptionQuery = Subscription.findOne({
@@ -237,7 +221,7 @@ const validateRenewalEligibility = async ({
     );
   }
 
-  let ticketPackage = subscription.ticketPackage;
+  let ticketPackage = quotedTerms ? { ...quotedTerms, _id: quotedTerms.id, price: quotedTerms.unitPrice } : subscription.packageSnapshot ? { ...subscription.packageSnapshot, _id: subscription.packageSnapshot.id, price: subscription.packageSnapshot.unitPrice } : subscription.ticketPackage;
   if (!ticketPackage?._id) {
     let packageQuery = TicketPackage.findById(subscription.ticketPackage);
     if (session) packageQuery = packageQuery.session(session);
@@ -360,7 +344,7 @@ const validateRenewalEligibility = async ({
   }
 
   const renewalBase = currentExpireAt > now ? currentExpireAt : now;
-  const newExpireAt = addPackageDuration(renewalBase, ticketPackage.type);
+  const newExpireAt = addPackageDuration(renewalBase, ticketPackage);
   const unitPrice = Number(ticketPackage.price || 0);
   const amount = unitPrice * selectedSlots.length;
   const quotePayload = {
@@ -387,6 +371,7 @@ const validateRenewalEligibility = async ({
     unitPrice,
     amount,
     packageSnapshot: {
+      ...snapshotPackage(ticketPackage),
       id: ticketPackage._id,
       name: ticketPackage.name,
       type: ticketPackage.type,
@@ -417,6 +402,7 @@ const toPublicQuote = (quote) => ({
 });
 
 module.exports = {
+  getPurchaseVehicleEligibility,
   validateNewSubscriptionEligibility,
   validateRenewalEligibility,
   toPublicQuote,

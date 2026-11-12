@@ -1,3 +1,5 @@
+const { authorizeSlotReservation } = require('../services/slotReservationAuthorizationService');
+const packageParking = require('../services/packageParkingService');
 const axios = require('axios');
 const { assertCredentialCurrent, recordPassCommit } = require('../services/parkingTransitionService');
 const parkingPassService = require('../services/parkingPassService');
@@ -22,7 +24,7 @@ const aiNotificationEvents = require('../services/aiCopilot/notificationEvents')
 const walletService = require('../services/walletService');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
-const { parseAndVerifyAnyMembershipQr } = require('../services/membershipQrService');
+const { parseAndVerifyAnyMembershipQr, verifyCurrentMembershipQr } = require('../services/membershipQrService');
 const { parseAndVerifyBookingQr } = require('../services/bookingQrService');
 const { normalizeLicensePlate, arePlatesMatching } = require('../utils/licensePlateUtils');
 const { normalizePhone, getPhoneRegex, getPhoneVariants, getPhoneSearchConditions, claimUserSessionsByPhone } = require('../utils/phoneUtils');
@@ -32,21 +34,25 @@ const { triggerBarrierOpen } = require('../routes/iotRoutes');
 const normalizeSlotCode = (slotCode = '') => String(slotCode || '').trim().toUpperCase();
 const sameObjectId = (a, b) => String(a || '') === String(b || '');
 
-const findActiveMembershipAccess = async (userId, now = new Date()) => {
+const findActiveMembershipAccess = async (userId, now = new Date(), plate = null) => {
+  const vehicle = plate ? await Vehicle.findOne({ owner: userId, status: 'approved', licensePlate: normalizeLicensePlate(plate) }).select('_id') : null;
   const entitlements = await MembershipSlotEntitlement.find({
     ownerId: userId,
+    $or: [{ vehicleId: { $exists: false } }, { vehicleId: null }, ...(vehicle ? [{ vehicleId: vehicle._id }] : [])],
+    validFrom: { $lte: now },
     status: { $in: ['active', 'transfer_locked'] },
     expireAt: { $gt: now },
-  }).populate('floorId', 'name floorNumber');
-  if (entitlements.length) {
+  }).sort({ vehicleId: -1, expireAt: 1 }).populate('floorId', 'name floorNumber');
+  const matchingEntitlements = vehicle && entitlements.some((item) => item.vehicleId) ? entitlements.filter((item) => item.vehicleId) : entitlements;
+  if (matchingEntitlements.length) {
     return {
-      _id: entitlements[0].sourceSubscriptionId,
+      _id: matchingEntitlements[0].sourceSubscriptionId,
       user: userId,
-      expireAt: entitlements.reduce(
+      expireAt: matchingEntitlements.reduce(
         (latest, item) => (item.expireAt > latest ? item.expireAt : latest),
-        entitlements[0].expireAt
+        matchingEntitlements[0].expireAt
       ),
-      slots: entitlements.map((item) => ({
+      slots: matchingEntitlements.map((item) => ({
         floorId: item.floorId,
         slotCode: item.slotCode,
         entitlementId: item._id,
@@ -57,6 +63,8 @@ const findActiveMembershipAccess = async (userId, now = new Date()) => {
   }
   return mongoose.model('Subscription').findOne({
     user: userId,
+    bindingVersion: { $ne: 1 },
+    validFrom: { $lte: now },
     status: 'active',
     paymentStatus: 'paid',
     expireAt: { $gt: now },
@@ -114,7 +122,7 @@ exports.verifyPlate = async (req, res, next) => {
       }
 
       // Check Subscription (gói tháng/năm)
-      const activeSubscription = await findActiveMembershipAccess(userId);
+      const activeSubscription = await findActiveMembershipAccess(userId, new Date(), cleanPlate);
 
       if (activeSubscription && activeSubscription.slots && activeSubscription.slots.length > 0) {
         let availableSlot = null;
@@ -438,24 +446,19 @@ exports.kioskVerifyQr = async (req, res) => {
 
     // 2. Mã QR Thành viên VIP / Thuê bao có chữ ký (VALO_MEMBERSHIP:...)
     if (!resolved && trimmedPayload.startsWith('VALO_MEMBERSHIP')) {
-      const parsed = parseAndVerifyAnyMembershipQr(trimmedPayload);
-      let userId = parsed.userId;
-
-      if (parsed.credentialType === 'LEGACY_SUBSCRIPTION') {
-        const sub = await Subscription.findById(parsed.subscriptionId);
-        if (!sub) return res.status(404).json({ success: false, message: 'Subscription not found' });
-        userId = sub.user;
-      }
-      
+      const parsed = await verifyCurrentMembershipQr(trimmedPayload);
+      const userId = parsed.userId;
       const user = await User.findById(userId);
-      if (!user) return res.status(404).json({ success: false, message: 'VIP account not found' });
-
-      const vehicle = await Vehicle.findOne({ ownerId: userId, status: 'active' });
+      const plate = normalizeLicensePlate(req.body.licensePlate || '');
+      const vehicles = await Vehicle.find({ owner: userId, status: 'approved', ...(plate ? { licensePlate: plate } : {}) }).limit(2);
+      if (vehicles.length !== 1) return res.status(409).json({ success: false, message: 'Capture or select the vehicle matching this membership QR.' });
+      const vehicle = vehicles[0];
       const entitlement = await MembershipSlotEntitlement.findOne({
-        ownerId: userId,
-        status: { $in: ['active', 'transfer_locked'] },
-        expireAt: { $gt: new Date() },
-      });
+        ownerId: userId, validFrom: { $lte: new Date() },
+        ...(parsed.subscriptionId ? { sourceSubscriptionId: parsed.subscriptionId } : {}),
+        $or: [{ vehicleId: vehicle._id }, { vehicleId: null }],
+        status: { $in: ['active', 'transfer_locked'] }, expireAt: { $gt: new Date() },
+      }).sort({ vehicleId: -1 });
 
       resolved = {
         type: 'MEMBERSHIP',
@@ -730,6 +733,7 @@ exports.kioskVerifyQr = async (req, res) => {
  */
 exports.createKioskSession = async (req, res, next) => {
   try {
+    if (req.kioskDevice) req.body.entryGate = req.kioskDevice.gate;
     const { licensePlate, phone, vehicleType, parkingSlot, floorId, durationHours, entryImageBase64, entryCamera, entryGate, bookingHoldId } = req.body;
 
     if (!licensePlate) {
@@ -861,7 +865,7 @@ exports.createKioskSession = async (req, res, next) => {
     }
 
     if (isVehicleApprovedForVIP) {
-      const sub = await findActiveMembershipAccess(userId, now);
+      const sub = await findActiveMembershipAccess(userId, now, cleanPlate);
       if (sub && sub.slots && sub.slots.length > 0) {
         let availableSlot = null;
         let occupiedBySelfCount = 0;
@@ -1159,44 +1163,9 @@ exports.createKioskSession = async (req, res, next) => {
         });
       }
 
-      // Check if slot is reserved for someone else's VIP package
-      const isVIPReserved = await MembershipSlotEntitlement.findOne({
-        floorId: finalFloorId,
-        slotCode: normalizedFinalSlot,
-        status: { $in: ['active', 'transfer_locked'] },
-        expireAt: { $gt: now },
-      });
-      
-      const isSubReserved = await mongoose.model('Subscription').findOne({
-        status: 'active',
-        expireAt: { $gt: now },
-        slots: {
-          $elemMatch: {
-            floorId: finalFloorId,
-            slotCode: normalizedFinalSlot,
-          },
-        },
-      });
+      await authorizeSlotReservation({ floorId: finalFloorId, slotCode: normalizedFinalSlot,
+        userId, licensePlate: cleanPlate, at: new Date() });
 
-      if (isVIPReserved || isSubReserved) {
-        let isOwnVipSlot = false;
-        
-        if (userId) {
-           if (isVIPReserved && String(isVIPReserved.ownerId) === String(userId)) {
-             isOwnVipSlot = true;
-           } else if (isSubReserved && String(isSubReserved.user) === String(userId)) {
-             isOwnVipSlot = true;
-           }
-        }
-        
-        if (!isOwnVipSlot) {
-           return res.status(400).json({
-             success: false,
-             code: 'SLOT_VIP_RESERVED',
-             message: 'Ô đỗ này đã được đăng ký cố định cho khách hàng VIP. Vui lòng chọn ô khác.',
-           });
-        }
-      }
     }
 
     const entryTransaction = await mongoose.startSession();
@@ -1213,12 +1182,17 @@ exports.createKioskSession = async (req, res, next) => {
         if (occupied) throw Object.assign(new Error('Vehicle or slot is already occupied'), { statusCode: 409 });
 
         // Tạo phiên đỗ xe Session
+        const packageContext = await packageParking.checkInContext({ entitlementId: finalEntitlementId, subscriptionId: finalSubscriptionId,
+          userId, licensePlate: cleanPlate, floorId: finalFloorId, slotCode: normalizedFinalSlot,
+          now, session: entryTransaction });
         [newSession] = await Session.create([{
           licensePlate: cleanPlate,
           userId,
           bookingId,
           subscriptionId: finalSubscriptionId,
           entitlementId: finalEntitlementId,
+          packageContext,
+          vehicleId: packageContext?.vehicleId,
           type: sessionType,
           source: req.parkingPassAction && req.user ? 'staff_manual' : 'kiosk',
           phone: finalPhone || null,
@@ -1322,8 +1296,20 @@ exports.kioskExitScan = async (req, res, next) => {
 
     let session = credentialSession;
     const trimmedPayload = typeof qrPayload === 'string' ? qrPayload.trim() : '';
+    if (trimmedPayload.startsWith('VALO_MEMBERSHIP')) {
+      const credential = await verifyCurrentMembershipQr(trimmedPayload);
+      if (req.kioskDevice && !licensePlate) return res.status(400).json({ success: false, message: 'Capture the vehicle plate before membership checkout.' });
+      const matches = await Session.find({ userId: credential.userId, type: 'SUBSCRIPTION', status: 'active',
+        ...(credential.subscriptionId ? { subscriptionId: credential.subscriptionId } : {}),
+        ...(sessionId ? { _id: sessionId } : {}), ...(licensePlate ? { licensePlate: normalizeLicensePlate(licensePlate) } : {}),
+      }).limit(2);
+      if (matches.length !== 1) return res.status(409).json({ success: false, message: 'Select the parked vehicle matching this membership QR.' });
+      session = matches[0];
+      req.membershipQrCredential = credential;
+    }
 
-    if (sessionId && mongoose.Types.ObjectId.isValid(sessionId)) {
+
+    if (!session && sessionId && mongoose.Types.ObjectId.isValid(sessionId)) {
       session = await Session.findOne({ _id: sessionId, status: 'active' });
     }
 
@@ -1435,7 +1421,7 @@ exports.kioskExitScan = async (req, res, next) => {
     }
 
     const now = new Date();
-    let pricing = await pricingEngine.calculatePrice(session.checkInTime, now);
+    let pricing = session.type === 'SUBSCRIPTION' ? await packageParking.quoteParking(session, now) : await pricingEngine.calculatePrice(session.checkInTime, now);
 
     let walletBalance = 0;
     let isEarlyExit = false;
@@ -1476,38 +1462,17 @@ exports.kioskExitScan = async (req, res, next) => {
         }
       }
     } else if (session.type === 'SUBSCRIPTION') {
-      let isSubActive = false;
-      if (session.entitlementId) {
-        isSubActive = Boolean(
-          await MembershipSlotEntitlement.exists({
-            _id: session.entitlementId,
-            ownerId: session.userId,
-            status: { $in: ['active', 'transfer_locked'] },
-            expireAt: { $gt: now },
-          })
-        );
-      } else if (session.userId) {
-        isSubActive = Boolean(await findActiveMembershipAccess(session.userId, now));
-      }
-
-      if (isSubActive) {
-        amountToPay = 0;
-        refundAmount = 0;
-      } else {
-        // Gói đã hết hạn => Tính phí theo lượt (tính toàn bộ thời gian đỗ)
-        amountToPay = pricing.finalTotal;
-        refundAmount = 0;
-      }
+      amountToPay = pricing.amountToPay;
     }
 
-    const canAutoPay = session.type !== 'WALK_IN' && Boolean(session.userId) && walletBalance >= amountToPay;
+    const canAutoPay = session.type !== 'WALK_IN' && Boolean(session.userId) && walletBalance >= amountToPay && (amountToPay === 0 || amountToPay >= 1000);
 
     res.status(200).json({
       success: true,
       data: {
         session,
         checkOutTime: now,
-        durationHours: pricing.durationHours,
+        durationHours: pricing.sessionDurationHours ?? pricing.durationHours,
         totalPrice: pricing.finalTotal,
         amountToPay,
         refundAmount,
@@ -1518,7 +1483,7 @@ exports.kioskExitScan = async (req, res, next) => {
         remainingHours,
         bookingEnd,
         refundBreakdown,
-        isSubscriptionExpired: session.type === 'SUBSCRIPTION' && amountToPay > 0
+        isSubscriptionExpired: session.type === 'SUBSCRIPTION' && pricing.packageExpired === true
       }
     });
 
@@ -1569,12 +1534,15 @@ exports.verifyPhone = async (req, res, next) => {
  */
 exports.kioskCheckout = async (req, res, next) => {
   try {
+    if (req.kioskDevice) req.body.exitGate = req.kioskDevice.gate;
     const { sessionId, exitImageBase64, paymentMethod, keepPaused, exitCamera, exitGate } = req.body;
 
     const session = await Session.findById(sessionId);
     if (!session || session.status !== 'active') {
       return res.status(404).json({ success: false, message: 'Không tìm thấy phiên đỗ xe hoạt động' });
     }
+
+    if (req.kioskDevice && (!req.body.licensePlate || normalizeLicensePlate(req.body.licensePlate) !== normalizeLicensePlate(session.licensePlate))) return res.status(409).json({ success: false, message: 'The captured vehicle plate does not match this parking session.' });
 
     if (typeof req.body.qrPayload === 'string' && /^(VALO_PASS|VALO_BOOKING):/.test(req.body.qrPayload.trim())) {
       req.body.qrPayload = req.body.qrPayload.trim();
@@ -1584,12 +1552,32 @@ exports.kioskCheckout = async (req, res, next) => {
       req.parkingQrCredential = { passId: ticket.pass._id, expectedVersion: ticket.pass.legacy ? null : ticket.pass.qrVersion, bookingId: ticket.booking?._id, expectedBookingQrVersion: req.body.qrPayload.startsWith('VALO_BOOKING:') ? parseAndVerifyBookingQr(req.body.qrPayload).version : null };
     }
 
+    if (typeof req.body.qrPayload === 'string' && req.body.qrPayload.trim().startsWith('VALO_MEMBERSHIP')) {
+      const credential = await verifyCurrentMembershipQr(req.body.qrPayload.trim());
+      if (session.type !== 'SUBSCRIPTION' || String(credential.userId) !== String(session.userId)
+        || (credential.subscriptionId && String(credential.subscriptionId) !== String(session.subscriptionId))
+        || (req.kioskDevice && (!req.body.licensePlate || normalizeLicensePlate(req.body.licensePlate) !== normalizeLicensePlate(session.licensePlate)))) {
+        return res.status(409).json({ success: false, message: 'The membership QR or captured plate does not match this parking session.' });
+      }
+      req.membershipQrCredential = credential;
+    }
+
     if (paymentMethod === 'wallet' && session.type === 'WALK_IN') return res.status(403).json({ success: false, code: 'WALK_IN_WALLET_UNVERIFIED', message: 'Walk-in sessions require confirmed bank payment or staff cash payment' });
 
     let now = new Date();
     const verifiedAttempt = paymentMethod === 'qr' ? await checkoutAttempts.verifyAttempt({ attemptId: req.body.checkoutAttemptId, sessionId: session._id }) : null;
     if (verifiedAttempt) now = verifiedAttempt.quoteTime;
-    let pricing = await pricingEngine.calculatePrice(session.checkInTime, now);
+    if (session.type === 'SUBSCRIPTION' && verifiedAttempt && !verifiedAttempt.pricingBreakdown) {
+      return res.status(409).json({ success: false, message: 'The original package payment quote is unavailable. Contact staff for payment reconciliation.' });
+    }
+    let pricing;
+    if (verifiedAttempt?.pricingBreakdown) {
+      pricing = verifiedAttempt.pricingBreakdown;
+      if (String(pricing.sessionId) !== String(session._id) || new Date(pricing.quotedAt).getTime() !== now.getTime()
+        || new Date(pricing.sessionCheckInTime).getTime() !== new Date(session.checkInTime).getTime()
+        || (session.type === 'SUBSCRIPTION' && (pricing.amountToPay !== verifiedAttempt.amountDue || pricing.finalTotal !== verifiedAttempt.amountDue)))
+        return res.status(409).json({ success: false, message: 'The paid parking quote does not match this session. Contact staff for payment reconciliation.' });
+    } else pricing = session.type === 'SUBSCRIPTION' ? await packageParking.quoteParking(session, now) : await pricingEngine.calculatePrice(session.checkInTime, now);
 
     // Xử lý upload ảnh exit
     let exitImage_url = null;
@@ -1614,7 +1602,7 @@ exports.kioskCheckout = async (req, res, next) => {
     if (session.type === 'BOOKING' && session.bookingId) {
       booking = await Booking.findById(session.bookingId);
       if (booking) {
-        refundBreakdown = await bookingRefundService.quoteEarlyCheckout(
+        refundBreakdown = verifiedAttempt?.settlementQuote?.refundBreakdown || await bookingRefundService.quoteEarlyCheckout(
           booking,
           session,
           now
@@ -1630,28 +1618,19 @@ exports.kioskCheckout = async (req, res, next) => {
         pricing = refundBreakdown.pricingBreakdown;
       }
     } else if (session.type === 'SUBSCRIPTION') {
-      let isSubActive = false;
-      if (session.entitlementId) {
-        isSubActive = Boolean(
-          await MembershipSlotEntitlement.exists({
-            _id: session.entitlementId,
-            ownerId: session.userId,
-            status: { $in: ['active', 'transfer_locked'] },
-            expireAt: { $gt: now },
-          })
-        );
-      } else if (session.userId) {
-        isSubActive = Boolean(await findActiveMembershipAccess(session.userId, now));
-      }
-
-      if (isSubActive) {
-        amountToPay = 0;
-      } else {
-        // Gói đã hết hạn => Tính phí theo lượt
-        amountToPay = pricing.finalTotal;
-      }
+      amountToPay = pricing.amountToPay;
     }
 
+    if (verifiedAttempt?.settlementQuote && (verifiedAttempt.settlementQuote.amountToPay !== amountToPay
+      || verifiedAttempt.settlementQuote.refundAmount !== refundAmount
+      || (booking && verifiedAttempt.settlementQuote.keepPaused !== (keepPaused === true || keepPaused === 'true')))) {
+      return res.status(409).json({ success: false, message: 'The paid quote does not match this checkout choice. Use the original payment flow.' });
+    }
+    if (paymentMethod === 'qr' && verifiedAttempt.amountDue !== amountToPay) return res.status(402).json({ success: false, message: 'Payment amount does not match checkout' });
+    if (paymentMethod === 'wallet' && amountToPay > 0 && amountToPay < 1000) return res.status(400).json({ success: false, message: 'Wallet payments require at least 1,000 VND. Use bank payment or staff cash confirmation.' });
+    if (paymentMethod === 'cash' && req.body.expectedAmount !== undefined && req.body.expectedAmount !== amountToPay) {
+      return res.status(409).json({ success: false, message: 'The parking fee has changed. Refresh the invoice before confirming cash received.', data: { amountToPay, pricingBreakdown: pricing } });
+    }
     // 1. Kiểm tra tài khoản & trừ tiền
     if (amountToPay > 0) {
       if (paymentMethod === 'wallet') {
@@ -1668,7 +1647,7 @@ exports.kioskCheckout = async (req, res, next) => {
       } else if (paymentMethod === 'vietqr') {
         // Thanh toán qua VietQR tại Kiosk
         // Tạo PayOS Payment Link cho Kiosk checkout
-        const payment = await checkoutAttempts.createAttempt({ sessionId: session._id, amountDue: amountToPay, quoteTime: now });
+        const payment = await checkoutAttempts.createAttempt({ sessionId: session._id, amountDue: amountToPay, quoteTime: now, pricingBreakdown: { ...pricing, sessionId: session._id, quotedAt: now, sessionCheckInTime: session.checkInTime }, settlementQuote: { amountToPay, refundAmount, refundBreakdown, keepPaused: keepPaused === true || keepPaused === 'true' } });
         return res.status(200).json({ success: true, requiresPayment: true, data: payment });
       } else if (paymentMethod === 'qr' || paymentMethod === 'cash') {
         if (paymentMethod === 'cash' && !['staff', 'admin'].includes(req.user?.role)) return res.status(403).json({ success: false, message: 'Cash confirmation requires staff' });
@@ -1691,6 +1670,7 @@ exports.kioskCheckout = async (req, res, next) => {
           try {
             pauseSession.startTransaction();
             await assertCredentialCurrent(req, pauseSession);
+            if (!verifiedAttempt && await CheckoutAttempt.exists({ sessionId: session._id, status: { $in: ['pending', 'paid'] } }).session(pauseSession)) throw Object.assign(new Error('A bank payment is already in progress. Verify it before collecting another payment.'), { statusCode: 409 });
 
             if (amountToPay >= 1000 && paymentMethod === 'wallet') {
               await walletService.debitWallet(
@@ -1756,7 +1736,7 @@ exports.kioskCheckout = async (req, res, next) => {
 
             await recordPassCommit(req, completedSession, pauseSession);
             if (verifiedAttempt) {
-              const paid = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: pauseSession });
+              const paid = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, sessionId: session._id, orderCode: verifiedAttempt.orderCode, amountDue: amountToPay, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: pauseSession });
               if (!paid.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
             }
             await pauseSession.commitTransaction();
@@ -1791,6 +1771,7 @@ exports.kioskCheckout = async (req, res, next) => {
                 : refundAmount,
             applyState: async ({ booking: currentBooking, session: mongoSession }) => {
               await assertCredentialCurrent(req, mongoSession);
+              if (!verifiedAttempt && await CheckoutAttempt.exists({ sessionId: session._id, status: { $in: ['pending', 'paid'] } }).session(mongoSession)) throw Object.assign(new Error('A bank payment is already in progress. Verify it before collecting another payment.'), { statusCode: 409 });
               if (currentBooking.status !== 'ACTIVE') {
                 throw Object.assign(new Error('Booking is no longer active'), {
                   statusCode: 409,
@@ -1804,7 +1785,7 @@ exports.kioskCheckout = async (req, res, next) => {
                 });
               }
               if (verifiedAttempt) {
-                const paid = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: mongoSession });
+                const paid = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, sessionId: session._id, orderCode: verifiedAttempt.orderCode, amountDue: amountToPay, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: mongoSession });
                 if (!paid.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
               }
               const updatedSession = await Session.findOneAndUpdate(
@@ -1852,10 +1833,12 @@ exports.kioskCheckout = async (req, res, next) => {
         await assertCredentialCurrent(req, transaction);
         const updated = await Session.findOneAndUpdate({ _id: session._id, status: 'active' }, { $set: { status: 'completed', paymentStatus: 'paid', checkOutTime: now, totalPrice: session.totalPrice, settledPaidAmount: amountToPay, pricingBreakdown: pricing, exitImage_url, exitCamera, exitGate } }, { new: true, session: transaction });
         if (!updated) throw Object.assign(new Error('Session already completed'), { statusCode: 409 });
+        if (!verifiedAttempt && await CheckoutAttempt.exists({ sessionId: session._id, status: { $in: ['pending', 'paid'] } }).session(transaction)) throw Object.assign(new Error('A bank payment is already in progress. Verify that payment before completing checkout; do not collect payment again.'), { statusCode: 409 });
         await recordPassCommit(req, updated, transaction);
+        if (req.membershipCheckoutAction) await require('../models/StaffSubscriptionAction').create([{ ...req.membershipCheckoutAction, sessionId: session._id, evidenceImageUrl: exitImage_url }], { session: transaction });
         if (amountToPay > 0 && paymentMethod === 'wallet') await walletService.debitWallet(session.userId, amountToPay, `Parking checkout ${session._id}`, { refSource: 'parking', refSourceId: session._id, idempotencyKey: `session:${session._id}:checkout`, session: transaction });
         if (verifiedAttempt) {
-          const settled = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: transaction });
+          const settled = await CheckoutAttempt.updateOne({ _id: verifiedAttempt._id, sessionId: session._id, orderCode: verifiedAttempt.orderCode, amountDue: amountToPay, status: 'paid' }, { $set: { status: 'settled', settledAt: new Date() } }, { session: transaction });
           if (!settled.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
         }
       }); } finally { await transaction.endSession(); }
@@ -1906,17 +1889,10 @@ exports.kioskCheckout = async (req, res, next) => {
       const slotCode = normalizeSlotCode(session.parkingSlot);
       const floorId = session.floorId;
       try {
-        const slotDoc = await Slot.findOne({ floorID: floorId, slotNumber: slotCode });
-        if (slotDoc && slotDoc.status !== 'maintenance') {
-          const isPhysicallyStillThere = Boolean(slotDoc.aiObservation?.occupied);
-          if (!isPhysicallyStillThere) {
-            slotDoc.status = 'available';
-            if (slotDoc.aiObservation) {
-              slotDoc.aiObservation.sessionId = null;
-            }
-            await slotDoc.save();
-          }
-        }
+        await Slot.updateOne({ floorID: floorId, slotNumber: slotCode,
+          status: { $ne: 'maintenance' }, 'aiObservation.occupied': { $ne: true },
+          $or: [{ 'aiObservation.sessionId': session._id }, { 'aiObservation.sessionId': null }],
+        }, { $set: { status: 'available', 'aiObservation.sessionId': null } });
       } catch (err) {
         console.warn('Failed to release slot on checkout:', err.message);
       }
@@ -2042,6 +2018,12 @@ exports.checkPayosStatus = async (req, res, next) => {
     const attempt = await CheckoutAttempt.findOne({ orderCode: Number(orderCode), _id: req.query.checkoutAttemptId });
     if (!attempt) return res.status(404).json({ success: false, isPaid: false });
     const payosInfo = await payos.paymentRequests.get(Number(orderCode));
+    if (Number(payosInfo.orderCode) !== attempt.orderCode || Number(payosInfo.amount) !== attempt.amountDue) return res.status(409).json({ success: false, isPaid: false, message: 'Payment identity mismatch.' });
+    if (attempt.status === 'cancelled' || (['CANCELLED', 'EXPIRED', 'FAILED'].includes(payosInfo.status) && Number(payosInfo.amountPaid) === 0)) {
+      await CheckoutAttempt.updateOne({ _id: attempt._id, status: 'pending' }, { $set: { status: 'cancelled' } });
+      return res.json({ success: true, isPaid: false, paymentStatus: 'cancelled' });
+    }
+    if (payosInfo.status !== 'PAID') return res.json({ success: true, isPaid: false, paymentStatus: payosInfo.status.toLowerCase() });
     checkoutAttempts.verifyProviderPayment(attempt, payosInfo);
     
     if (payosInfo && payosInfo.status === 'PAID') {
@@ -2078,6 +2060,9 @@ exports.reassignSlot = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Chỉ có thể đổi ô cho phiên đỗ đang hoạt động (active)' });
     }
 
+    if (session.packageContext?.vehicleId && (normalizeSlotCode(newSlotCode) !== session.packageContext.slotCode || (floorId && String(floorId) !== String(session.packageContext.floorId)))) {
+      return res.status(409).json({ success: false, message: 'This purchased benefit applies only to the registered parking space. A space reassignment requires an approved entitlement change.' });
+    }
     const oldSlot = session.parkingSlot;
     session.parkingSlot = String(newSlotCode).trim().toUpperCase();
     if (floorId) {

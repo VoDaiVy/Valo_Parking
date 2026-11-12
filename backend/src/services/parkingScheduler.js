@@ -4,7 +4,6 @@ const Booking = require('../models/Booking');
 const notifTriggers = require('./notificationTriggers');
 const contractService = require('./contractService');
 const bookingRefundService = require('./bookingRefundService');
-const { isEnabled } = require('../utils/featureFlags');
 const { emitToUser } = require('../sockets/notificationSocket');
 const voucherService = require('./voucherService');
 
@@ -440,52 +439,37 @@ async function checkVIPSubscriptions(app) {
       status: { $in: ['active', 'transfer_locked'] },
       expireAt: { $lte: now },
     });
-    const affectedUsers = new Set();
-    const affectedSubscriptions = new Set();
     for (const entitlement of expiredEntitlements) {
-      const updated = await MembershipSlotEntitlement.findOneAndUpdate(
-        {
-          _id: entitlement._id,
-          status: { $in: ['active', 'transfer_locked'] },
-          expireAt: { $lte: now },
-        },
-        { $set: { status: 'expired', expiryNotificationPending: true } },
-        { new: true }
-      );
-      if (!updated) continue;
-      await Slot.updateOne(
-        {
-          _id: updated.slotId,
-          reservedByEntitlementId: updated._id,
-        },
-        {
-          $unset: {
-            reservedFor: '',
-            reservedBySubscriptionId: '',
-            reservedByEntitlementId: '',
-            reservedUntil: '',
-          },
-        }
-      );
-      affectedUsers.add(String(updated.ownerId));
-      affectedSubscriptions.add(String(updated.sourceSubscriptionId));
-
-    }
-    for (const userId of affectedUsers) {
-      await recomputeUserMembership(userId, { rotateQr: true, now });
-    }
-    for (const subscriptionId of affectedSubscriptions) {
-      const remaining = await MembershipSlotEntitlement.findOne({
-        sourceSubscriptionId: subscriptionId,
-        status: { $in: ['active', 'transfer_locked'] },
-        expireAt: { $gt: now },
-      }).select('_id expireAt');
-      if (!remaining) {
-        await Subscription.updateOne(
-          { _id: subscriptionId },
-          { $set: { status: 'expired' } }
-        );
-      }
+      const transaction = await mongoose.startSession();
+      try {
+        await transaction.withTransaction(async () => {
+          // Renewals and transfers acquire this same owner guard. Expiry and
+          // reservation cleanup must commit together, never from a stale read.
+          await require('./legacyEntitlementCompatibilityService').lockOwner(entitlement.ownerId, transaction);
+          const updated = await MembershipSlotEntitlement.findOneAndUpdate({
+            _id: entitlement._id, ownerId: entitlement.ownerId,
+            status: { $in: ['active', 'transfer_locked'] },
+            expireAt: { $eq: entitlement.expireAt, $lte: now },
+          }, { $set: { status: 'expired', expiryNotificationPending: true } }, { new: true, session: transaction });
+          if (!updated) return;
+          await Slot.updateOne({
+            _id: updated.slotId, reservedFor: updated.ownerId,
+            reservedByEntitlementId: updated._id,
+            reservedBySubscriptionId: updated.sourceSubscriptionId,
+            $or: [{ reservedUntil: { $lte: now } }, { reservedUntil: null }],
+          }, { $unset: { reservedFor: '', reservedBySubscriptionId: '', reservedByEntitlementId: '', reservedUntil: '' } }, { session: transaction });
+          const remaining = await MembershipSlotEntitlement.exists({
+            sourceSubscriptionId: updated.sourceSubscriptionId,
+            status: { $in: ['active', 'transfer_locked'] }, expireAt: { $gt: now },
+          }).session(transaction);
+          if (!remaining) {
+            await Subscription.updateOne({ _id: updated.sourceSubscriptionId,
+              status: 'active', expireAt: { $lte: now },
+            }, { $set: { status: 'expired' } }, { session: transaction });
+          }
+          await recomputeUserMembership(updated.ownerId, { session: transaction, rotateQr: true, now });
+        });
+      } finally { await transaction.endSession(); }
     }
 
     // Renewal-window catch-up: persisted flags alone do not prove delivery.
@@ -522,67 +506,58 @@ async function checkVIPSubscriptions(app) {
     });
 
     const User = require('../models/User');
-    const useOwnerGuard = isEnabled(
-      'SUBSCRIPTION_SLOT_OWNER_GUARD_ENABLED',
-      false
-    );
     for (const sub of expiredSubscriptions) {
-      const expiringSubscription = useOwnerGuard
-        ? await Subscription.findOneAndUpdate(
-          { _id: sub._id, status: 'active', expireAt: { $lte: now } },
-          { status: 'expired', expiryNotificationPending: true },
-          { new: true }
-        )
-        : sub;
+      const transaction = await mongoose.startSession();
+      let expiringSubscription;
+      try {
+        await transaction.withTransaction(async () => {
+          expiringSubscription = null;
+          await require('./legacyEntitlementCompatibilityService').lockOwner(sub.user, transaction);
+          // A subscription migrated since the scan is governed by its entitlements.
+          if (await MembershipSlotEntitlement.exists({ sourceSubscriptionId: sub._id }).session(transaction)) return;
+          expiringSubscription = await Subscription.findOneAndUpdate({
+            _id: sub._id, user: sub.user, status: 'active',
+            expireAt: { $eq: sub.expireAt, $lte: now },
+          }, { $set: { status: 'expired', expiryNotificationPending: true } }, { new: true, session: transaction });
+          if (!expiringSubscription) return;
 
-      if (!expiringSubscription) {
-        continue;
-      }
-      if (!useOwnerGuard) {
-        expiringSubscription.status = 'expired';
-        expiringSubscription.expiryNotificationPending = true;
-        await expiringSubscription.save();
-      }
-      
-      // Release slots
-      for (const slot of expiringSubscription.slots) {
-        const slotFilter = {
-          floorID: slot.floorId,
-          slotNumber: slot.slotCode,
-        };
-        if (useOwnerGuard) {
-          slotFilter.reservedBySubscriptionId = expiringSubscription._id;
-        }
-        await Slot.updateOne(slotFilter, {
-          $unset: {
-            reservedFor: '',
-            reservedBySubscriptionId: '',
-            reservedByEntitlementId: '',
-            reservedUntil: '',
-          },
+          for (const selected of expiringSubscription.slots) {
+            const slotCode = String(selected.slotCode).trim().toUpperCase();
+            const slot = await Slot.findOne({ floorID: selected.floorId, slotNumber: slotCode,
+              reservedFor: expiringSubscription.user, reservedByEntitlementId: null,
+              $or: [{ reservedBySubscriptionId: expiringSubscription._id }, { reservedBySubscriptionId: null }],
+            }).session(transaction);
+            if (!slot) continue;
+            if (!slot.reservedBySubscriptionId) {
+              // Historical shared slots may lack a subscription reference. Only
+              // infer ownership from this source's slot list when no live right
+              // claims it; never clear a newer same-owner reservation.
+              const entitlementClaim = await MembershipSlotEntitlement.exists({ floorId: selected.floorId, slotCode,
+                status: { $in: ['active', 'transfer_locked'] }, expireAt: { $gt: now },
+              }).session(transaction);
+              const subscriptionClaim = await Subscription.exists({ _id: { $ne: sub._id },
+                status: 'active', paymentStatus: 'paid', expireAt: { $gt: now },
+                slots: { $elemMatch: { floorId: selected.floorId, slotCode } },
+              }).session(transaction);
+              if (entitlementClaim || subscriptionClaim) continue;
+            }
+            await Slot.updateOne({ _id: slot._id, reservedFor: expiringSubscription.user,
+              reservedByEntitlementId: null,
+              reservedBySubscriptionId: slot.reservedBySubscriptionId || null,
+              $or: [{ reservedUntil: { $lte: now } }, { reservedUntil: null }],
+            }, { $unset: { reservedFor: '', reservedBySubscriptionId: '', reservedByEntitlementId: '', reservedUntil: '' } }, { session: transaction });
+          }
+          await User.updateOne({ _id: expiringSubscription.user, 'membership.expireAt': { $lte: now } }, {
+            $set: { 'membership.isVip': false, 'membership.expireAt': null, 'membership.packageId': null },
+          }, { session: transaction });
         });
+      } finally { await transaction.endSession(); }
+      if (!expiringSubscription) continue;
+      if (await membershipNotifications.notifyExpiry(app, expiringSubscription, true, 'subscription')) {
+        await Subscription.updateOne({ _id: expiringSubscription._id, status: 'expired', expireAt: expiringSubscription.expireAt },
+          { $set: { expiryNotificationPending: false } });
       }
-
-      await User.updateOne(
-        {
-          _id: expiringSubscription.user,
-          'membership.expireAt': { $lte: now },
-        },
-        {
-          $set: {
-            'membership.isVip': false,
-            'membership.expireAt': null,
-            'membership.packageId': null,
-          },
-        }
-      );
-      
-      if (expiringSubscription.user) {
-        if (await membershipNotifications.notifyExpiry(app, expiringSubscription, true, 'subscription')) {
-          await Subscription.updateOne({ _id: expiringSubscription._id, expireAt: expiringSubscription.expireAt }, { $set: { expiryNotificationPending: false } });
-        }
-      }
-      console.log(`[ParkingScheduler] Marked subscription ${expiringSubscription._id} as expired and released slots.`);
+      console.log(`[ParkingScheduler] Marked subscription ${expiringSubscription._id} as expired and released owned slots.`);
     }
 
   } catch (err) {

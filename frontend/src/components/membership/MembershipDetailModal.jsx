@@ -1,4 +1,5 @@
 import './MembershipHistoryDrawer.css';
+import PackageTermsSummary from './PackageTermsSummary';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { X } from 'lucide-react';
@@ -56,6 +57,7 @@ export default function MembershipDetailModal({ id, kind, refreshKey, onClose, o
         <div className="min-h-0 space-y-5 overflow-y-auto p-5">
           {loading ? <p role="status">Loading membership...</p> : error ? <div role="alert"><p>{error}</p><button type="button" className="type-button mt-3 underline" onClick={() => setAttempt(attempt + 1)}>Retry</button></div> : detail && <>
             <h3 className="type-card ">{detail.package?.name || 'Membership'}</h3>
+            <PackageTermsSummary terms={detail.purchasedTerms} purchased />
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div><dt className="text-slate-500">Status</dt><dd><span className={`membership-status membership-status--${membershipPresentation(detail).state.toLowerCase()}`}>{membershipPresentation(detail).statusLabel}</span></dd></div>
               <div><dt className="text-slate-500">Space / floor</dt><dd>{detail.slotCode ? `${detail.slotCode} / ${membershipFloorName(detail.floorName, detail.floorNumber != null ? `Floor ${detail.floorNumber}` : null)}` : (detail.slots || []).map((slot) => `${slot.slotCode} / ${membershipFloorName(slot.floorId?.name, slot.floorId?.floorNumber)}`).join(', ')}</dd></div>
@@ -65,7 +67,7 @@ export default function MembershipDetailModal({ id, kind, refreshKey, onClose, o
             <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{membershipPresentation(detail).state === 'EXPIRED' ? 'This membership has expired.' : membershipPresentation(detail).renewalMessage}</p>
             <section><h3 className="type-card ">Eligible vehicles</h3>
               {detail.eligibleVehicles?.length ? <ul className="mt-2 space-y-2">{detail.eligibleVehicles.map((vehicle) => <li key={vehicle._id} className="rounded-xl bg-slate-50 p-3 text-sm"><strong>{vehicle.licensePlate || 'Plate unavailable'}</strong><span className="mt-1 block text-slate-600">{[vehicle.brand, vehicle.model, vehicle.vehicleType].filter(Boolean).join(' / ') || 'Vehicle details unavailable'}</span></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No approved vehicles.</p>}
-              <p className="mt-3 text-sm leading-6 text-slate-600">{detail.vehicleUsageNote}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-600">{detail.licensePlate ? `Vehicle: ${detail.licensePlate}. ` : ''}{detail.purchasedTerms?.service ? (detail.purchasedTerms.service === 'RESERVED_PAID' ? 'Standard parking fees apply. ' : 'Base parking included while effective. ') : ''}{detail.vehicleUsageNote}</p>
             </section>
             <section aria-label="Renewal history"><h3 className="type-card ">Renewal history</h3>
               {historyLoading ? <p role="status">Loading history...</p> : historyError ? <div role="alert">{historyError} <button type="button" className="type-button underline" onClick={() => setAttempt(attempt + 1)}>Retry</button></div> : <>

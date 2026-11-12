@@ -30,6 +30,8 @@ const TOOLS: Array<{
 }> = [
   { screen: 'BookingScanner', icon: 'qr-code-outline', titleKey: 'staffScanner', descriptionKey: 'staffScannerDesc', metaKey: 'critical', tone: 'success' },
   { screen: 'Bookings', icon: 'calendar-outline', titleKey: 'staffBookings', descriptionKey: 'staffBookingsDesc', metaKey: 'operations', tone: 'brand' },
+  { screen: 'TicketPackages', icon: 'ticket-outline', titleKey: 'Ticket packages', descriptionKey: 'Review package duration, vehicle eligibility and parking services.', metaKey: 'Catalog', tone: 'info' },
+  { screen: 'Subscriptions', icon: 'ribbon-outline', titleKey: 'Membership subscriptions', descriptionKey: 'Review purchased memberships and payment status.', metaKey: 'Support', tone: 'info' },
   { screen: 'Customers', icon: 'people-outline', titleKey: 'staffCustomers', descriptionKey: 'staffCustomersDesc', metaKey: 'support', tone: 'info' },
   { screen: 'ParkingOperations', icon: 'construct-outline', titleKey: 'staffParkingOps', descriptionKey: 'staffParkingOpsDesc', metaKey: 'parking', tone: 'warning' },
   { screen: 'StaffNotifications', icon: 'megaphone-outline', titleKey: 'Customer notices', descriptionKey: 'Compose notifications and review delivery history', metaKey: 'notifications', tone: 'brand' },

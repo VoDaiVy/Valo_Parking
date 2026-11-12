@@ -35,7 +35,7 @@ function cleanPayload(type, input) {
       const startHour = block.startHour === undefined ? fallbackStart : Number(block.startHour);
       const price = block.price === undefined ? fallbackPrice : Number(block.price);
       if (!Number.isInteger(startHour) || startHour < 0 || startHour > 23
-        || !Number.isFinite(price) || price < 0 || typeof (block.isActive ?? false) !== 'boolean') {
+        || !Number.isSafeInteger(price) || price < 0 || typeof (block.isActive ?? false) !== 'boolean') {
         fail('Day/night pricing block is invalid.');
       }
       return { isActive: block.isActive === true, startHour, price };
@@ -116,7 +116,7 @@ function cleanPayload(type, input) {
     }
     return allowed;
   }
-  if (!['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'].includes(type)) fail('Thao tác này chưa được hỗ trợ.');
+  if (!['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'].includes(type)) fail('Invalid package fields. Check the name, type, price, slot limit, and active state.');
   const {
     name,
     type: packageType,
@@ -130,16 +130,22 @@ function cleanPayload(type, input) {
   if (
     typeof name !== 'string' || !name.trim() || name.length > 120 ||
     !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) ||
-    !Number.isFinite(price) || price < 0 ||
+    !Number.isSafeInteger(price) || price < 0 ||
     typeof description !== 'string' || description.length > 1000 ||
     !Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 10 ||
     typeof isActive !== 'boolean'
-  ) fail('Thông tin gói vé không hợp lệ.');
+  ) fail('Invalid package fields. Check the name, type, price, slot limit, and active state.');
   if (!Number.isInteger(renewalWindowDays) || renewalWindowDays < 1 || renewalWindowDays > 60)
-    fail('renewalWindowDays phải là số nguyên từ 1 đến 60.');
+    fail('Renewal window must be a whole number from 1 to 60 days.');
   if (typeof isRenewable !== 'boolean')
-    fail('isRenewable phải là boolean.');
+    fail('Allow renewal must be true or false.');
+  if (input.service !== undefined && !['RESERVED_FREE', 'RESERVED_PAID'].includes(input.service))
+    fail('Select a supported parking service: RESERVED_FREE or RESERVED_PAID.');
+  if (type === 'CREATE_TICKET_PACKAGE' && ['hourly', 'monthly', 'yearly'].includes(packageType) && !input.service)
+    fail('A parking service must be selected.');
   return {
+    ...require('../ticketPackageTerms').validatePackageConfiguration(input),
+    ...(input.service ? { service: input.service } : {}),
     name: name.trim(),
     type: packageType,
     price,
@@ -221,7 +227,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     fail('Hành động không được phép đối với Staff.', 403);
   }
   if (ACCOUNT_TYPES.has(type)) await authorizeAccountActor(adminUserId, actorRole, type, targetId);
-  let clean = cleanPayload(type, payload);
+  let clean = type === 'UPDATE_TICKET_PACKAGE' ? null : cleanPayload(type, payload);
   if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
   if (notificationId && !mongoose.isValidObjectId(notificationId)) fail('Cảnh báo không hợp lệ.');
   
@@ -230,6 +236,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     current = await PricingConfig.findOne({ isActive: true }).sort({ createdAt: -1 }).lean();
   } else if (type === 'UPDATE_TICKET_PACKAGE') {
     current = await TicketPackage.findById(targetId).lean();
+    if (current) clean = cleanPayload(type, { ...current, ...payload });
     if (!current) fail('Không tìm thấy gói vé.', 404);
   } else if (type === 'UPDATE_USER_STATUS' || type === 'CHANGE_USER_ROLE') {
     current = await User.findById(targetId).select('status username email role updatedAt').lean();
@@ -407,7 +414,7 @@ async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
     if (liveTarget.status !== draft.current?.status) fail('Trạng thái của người dùng đã thay đổi, vui lòng tạo đề xuất mới.', 409);
   }
 
-  const payload = cleanPayload(draft.type, draft.payload);
+  const payload = cleanPayload(draft.type, draft.type === 'UPDATE_TICKET_PACKAGE' ? { ...draft.current, ...draft.payload } : draft.payload);
   // A transaction is mandatory for multi-document pricing changes. A standalone
   // deployment still supports package writes below because each is one atomic document.
   const session = await mongoose.startSession();

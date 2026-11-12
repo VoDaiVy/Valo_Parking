@@ -1,6 +1,6 @@
 /* Neutral operations foundation with emerald accents. Role scope also covers Staff body portals. */
 body[data-valo-typography="staff"] {
-  --staff-bg: #080B0F;
+  --staff-bg: #000000;
   --staff-surface: #0D1117;
   --staff-surface-raised: #111820;
   --staff-hover-surface: #15212A;
@@ -223,3 +223,52 @@ body[data-valo-typography="staff"],
 body[data-valo-typography="staff"] * { scrollbar-width: none !important; }
 body[data-valo-typography="staff"]::-webkit-scrollbar,
 body[data-valo-typography="staff"] *::-webkit-scrollbar { display: none; }
+
+/* Shared page canvas and Customer Management's 24px / 16px content inset.
+   Keep padding on each page's existing content region to preserve fixed tables. */
+body[data-valo-typography="staff"] {
+  --staff-page-inset: 24px;
+  --staff-page-top: 16px;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content,
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > :is(.g3-management-page, .staff-booking-management, .staff-gate-control, .staff-ticket-packages, .staff-notification-management, .staff-operations-dashboard, .staff-live-grid, .dashboard-notification-inbox),
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content .g3-customer-main {
+  --staff-bg: #000000;
+  --g3-bg: #000000;
+  --sbm-bg: #000000;
+  background-color: #000000;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > :is(.g3-session-page, .g3-vip-page, .staff-booking-management, .staff-gate-control, .staff-ticket-packages, .staff-operations-dashboard) {
+  padding-inline: var(--staff-page-inset);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > .staff-operations-dashboard {
+  padding-top: var(--staff-page-top);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content .g3-customer-main > :is(.g3-header, .g3-toolbar, .g3-pagination),
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > .staff-notification-management .snm-content {
+  padding-inline: var(--staff-page-inset);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content .g3-customer-main > .g3-table-scroll {
+  margin-inline: var(--staff-page-inset);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > .g3-vip-page .g3-vip-main {
+  max-width: none;
+  margin-inline: 0;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > .staff-live-grid {
+  background-image: none !important;
+}
+body[data-valo-typography="staff"] .staff-live-grid > .staff-live-grid-toolbar {
+  left: var(--staff-page-inset);
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="staff"] { --staff-page-inset: 16px; }
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell main.dashboard-page-content > .dashboard-notification-inbox {
+  padding: var(--staff-page-top) var(--staff-page-inset);
+  min-height: 100%;
+}
+body[data-valo-typography="staff"] .dashboard-notification-inbox > div {
+  max-width: none;
+  margin-inline: 0;
+}

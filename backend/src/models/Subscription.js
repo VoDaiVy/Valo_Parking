@@ -14,6 +14,7 @@ const subscriptionSchema = new mongoose.Schema(
     },
     slots: [
       {
+        vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
         floorId: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'ParkingFloor',
@@ -29,6 +30,15 @@ const subscriptionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    packageSnapshot: { type: mongoose.Schema.Types.Mixed, immutable: true },
+    bindingVersion: Number,
+    paymentMethod: { type: String, enum: ['wallet', 'payos'] },
+    idempotencyKey: String,
+    payosCheckoutUrl: String,
+    payosPaymentLinkId: String,
+    activatedAt: Date,
+    activationFailureReason: String,
+    reconciliationRequired: { type: Boolean, default: false },
     paymentStatus: {
       type: String,
       enum: ['pending', 'paid', 'cancelled', 'failed'],
@@ -95,6 +105,8 @@ subscriptionSchema.pre('save', function recordRewardPayment(next) {
   }
   next();
 });
+subscriptionSchema.index({ idempotencyKey: 1, user: 1 }, { unique: true, name: 'unique_package_purchase_request', partialFilterExpression: { idempotencyKey: { $type: 'string' } } });
+subscriptionSchema.index({ orderCode: 1 }, { unique: true, name: 'unique_bound_purchase_order', partialFilterExpression: { bindingVersion: 1 } });
 subscriptionSchema.index({ 'rewardPayments.paidAt': 1 });
 subscriptionSchema.index({ user: 1, status: 1, expireAt: -1 });
 subscriptionSchema.index({ status: 1, paymentStatus: 1, expireAt: 1 });

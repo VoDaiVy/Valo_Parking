@@ -116,7 +116,7 @@ exports.adminReject = async (req, res, next) => {
 exports.settle = async (req, res, next) => {
   try {
     if (validate(req, res)) return;
-    const data = await service.settleTransfer(req.params.id, req.user._id);
+    const data = await service.settleTransfer(req.params.id, req.user._id, req.body.vehicleId);
     await notificationTriggers.notifyMembershipTransferCompleted(req.app, req.params.id);
     res.status(200).json({ success: true, data });
   } catch (error) {

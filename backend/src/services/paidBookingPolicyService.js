@@ -1,3 +1,4 @@
+const { authorizeSlotReservation } = require('./slotReservationAuthorizationService');
 const Booking = require('../models/Booking');
 const Policy = require('../models/Policy');
 const RefundRuleVersion = require('../models/RefundRuleVersion');
@@ -104,6 +105,25 @@ const attachPaidBookingSnapshots = async (booking, input = {}) => {
     return booking;
   }
 
+  if (booking.status === 'PAID') {
+    if (!input.session) {
+      const transaction = await require('mongoose').startSession();
+      try {
+        transaction.startTransaction();
+        const result = await attachPaidBookingSnapshots(booking, { ...input, session: transaction });
+        await transaction.commitTransaction();
+        return result;
+      } catch (error) {
+        if (transaction.inTransaction()) await transaction.abortTransaction();
+        if (error.hasErrorLabel?.('TransientTransactionError')) error.statusCode = 409;
+        throw error;
+      } finally { await transaction.endSession(); }
+    }
+    await authorizeSlotReservation({ floorId: booking.floorId, slotCode: booking.parkingSlot,
+      userId: booking.userId, vehicleId: booking.vehicleId, licensePlate: booking.licensePlate,
+      at: booking.scheduledStart, end: booking.scheduledEnd, purpose: 'booking', session: input.session });
+  }
+
   const snapshot =
     input.refundPolicySnapshot ||
     (await getEffectiveRefundPolicySnapshot({ session: input.session }));
@@ -119,7 +139,7 @@ const attachPaidBookingSnapshots = async (booking, input = {}) => {
 };
 
 const transitionPendingBookingToPaid = async (booking, input = {}) => {
-  if (!input.session && require('./parkingPassService').isPassIssuanceEnabled()) {
+  if (!input.session) {
     const transaction = await require('mongoose').startSession();
     let result;
     try {
@@ -130,6 +150,10 @@ const transitionPendingBookingToPaid = async (booking, input = {}) => {
   if (booking.status === 'PAID') {
     return { booking, transitioned: false };
   }
+
+  await authorizeSlotReservation({ floorId: booking.floorId, slotCode: booking.parkingSlot,
+    userId: booking.userId, vehicleId: booking.vehicleId, licensePlate: booking.licensePlate,
+    at: booking.scheduledStart, end: booking.scheduledEnd, purpose: 'booking', session: input.session });
 
   const refundPolicySnapshot =
     input.refundPolicySnapshot ||

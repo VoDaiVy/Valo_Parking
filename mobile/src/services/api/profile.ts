@@ -14,7 +14,7 @@ class ProfileService {
   }
 
   getProfile() {
-    return apiClient.get<APIResponse<UserProfile>>('/profile');
+    return apiClient.get<APIResponse<{ id: string; profile: UserProfile }>>('/profile');
   }
 
   updateProfile(data: UpdateProfileRequest) {

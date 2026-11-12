@@ -270,7 +270,7 @@ export default function Navbar() {
   return (
     <>
       {user?.role === 'customer' && <NotificationDetailModal notification={selectedNotification} contextRole="customer" onClose={() => { closeNotification(); notifRef.current?.querySelector('#nav-notifications')?.focus(); }} />}
-      <nav id="main-navbar" className="fixed top-0 left-0 right-0 z-50">
+      <nav id="main-navbar" className={location.pathname === "/membership" ? "relative z-40" : "fixed top-0 left-0 right-0 z-50"}>
         {/* ─── Outer wrapper: adds margin + pill shape when scrolled ─── */}
         <div
           className="transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]"

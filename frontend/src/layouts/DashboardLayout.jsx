@@ -439,7 +439,7 @@ export default function DashboardLayout() {
       {/* ══════════ MAIN AREA ══════════ */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="staff-dashboard-topbar h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
+        <header className="staff-dashboard-topbar relative z-[60] h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
           {/* Hamburger (mobile) */}
           <button
             className="lg:hidden text-gray-500 hover:text-gray-900 dark:hover:text-white"

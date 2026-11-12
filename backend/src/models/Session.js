@@ -24,6 +24,8 @@ const sessionSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
+    packageContext: mongoose.Schema.Types.Mixed,
     entitlementId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'MembershipSlotEntitlement',
@@ -124,6 +126,7 @@ const sessionSchema = new mongoose.Schema(
       default: 0,
     },
     settledPaidAmount: { type: Number, min: 0, default: null },
+    checkoutQuoteVersion: { type: Number, default: 0 },
     pricingBreakdown: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
@@ -140,6 +143,8 @@ sessionSchema.pre('validate', function normalizePlate(next) {
 });
 
 sessionSchema.index({ licensePlate: 1, status: 1, checkInTime: 1 });
+sessionSchema.index({ licensePlate: 1 }, { name: 'one_active_session_per_vehicle', unique: true, partialFilterExpression: { status: 'active' } });
+sessionSchema.index({ floorId: 1, parkingSlot: 1 }, { name: 'one_active_session_per_slot', unique: true, partialFilterExpression: { status: 'active', floorId: { $type: 'objectId' }, parkingSlot: { $type: 'string' } } });
 sessionSchema.index({ checkOutTime: 1, bookingId: 1, userId: 1 });
 
 module.exports = mongoose.model('Session', sessionSchema);

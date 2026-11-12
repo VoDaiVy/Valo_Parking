@@ -69,7 +69,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
   );
 
   return (
-    <div className="min-h-screen bg-[#0D0D0D] text-gray-100 px-4 py-6 lg:px-8">
+    <div className="dashboard-notification-inbox min-h-screen bg-[#0D0D0D] text-gray-100 px-4 py-6 lg:px-8">
       {contextRole === "customer" && <NotificationDetailModal notification={selectedNotification} onClose={closeNotification} />}
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between">

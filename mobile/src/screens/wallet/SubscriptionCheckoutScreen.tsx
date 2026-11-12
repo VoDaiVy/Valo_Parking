@@ -1,3 +1,7 @@
+import { useFocusEffect } from '@react-navigation/native';
+import { PackageText as Text } from '@/components/profile/PackageText';
+import { EntitlementVehiclePicker } from '@/components/profile/EntitlementVehiclePicker';
+import * as Crypto from 'expo-crypto';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import type { NavigationProp } from '@react-navigation/native';
@@ -9,7 +13,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -22,7 +25,7 @@ import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import type { WalletStackParamList } from '@/navigation/types';
 import parkingFloorService from '@/services/ParkingFloorService';
 import { subscriptionsService } from '@/services/api/subscriptions';
-import { vehiclesService } from '@/services/api/vehicles';
+import { profileService } from '@/services/api/profile';
 import { walletService } from '@/services/api/wallet';
 import type { ParkingFloor, Slot } from '@/types/booking.types';
 import type { Wallet } from '@/types/models';
@@ -44,8 +47,9 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
   const [selectedFloorId, setSelectedFloorId] = useState('');
   const [slots, setSlots] = useState<Slot[]>([]);
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
-  const [vehicleCount, setVehicleCount] = useState(0);
+  const [customerId, setCustomerId] = useState('');
   const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [purchaseKeys] = useState(() => new Map<string, string>());
   const [selectedSlots, setSelectedSlots] = useState<SubscriptionSlotSelection[]>([]);
   const [method, setMethod] = useState<SubscriptionPaymentMethod>('wallet');
   const [loading, setLoading] = useState(true);
@@ -60,27 +64,26 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
 
   const maxSlots = Math.max(
     0,
-    Math.min(3, vehicleCount) - (membership?.reservedSlots.length || 0),
+    membership?.purchaseEligibility?.customerId === customerId ? Math.min(pkg?.maxSlots ?? 3, membership.purchaseEligibility.availableVehicleCapacity) : 0,
   );
   const subscriptionTotal = calculateSubscriptionTotal(pkg?.price || 0, selectedSlots.length);
   const hasEnoughWallet = (wallet?.balance || 0) >= subscriptionTotal;
-  const packageRestriction = getSubscriptionPackageRestriction(membership, pkg);
+  const packageRestriction = getSubscriptionPackageRestriction(membership, pkg) || (maxSlots === 0 ? membership?.purchaseEligibility?.reason || 'Unable to verify purchase eligibility.' : null);
   const selectedFloor = floors.find((floor) => String(floor._id ?? floor.id) === selectedFloorId) || null;
 
   const loadData = useCallback(async () => {
     setError('');
     try {
-      const [packageResponse, vehicleResponse, walletResponse, floorResponse, membershipResponse] = await Promise.all([
+      const [packageResponse, profileResponse, walletResponse, floorResponse, membershipResponse] = await Promise.all([
         subscriptionsService.getPackages(),
-        vehiclesService.getMyVehicles(),
+        profileService.getProfile(),
         walletService.getWallet(),
         parkingFloorService.getParkingFloors(),
         subscriptionsService.getMembership(),
       ]);
       setPackages(packageResponse.data || []);
-      setVehicleCount(
-        (vehicleResponse.data || []).filter((vehicle) => vehicle.status === 'approved').length,
-      );
+      if (!profileResponse.data?.id || membershipResponse.data?.purchaseEligibility?.customerId !== String(profileResponse.data.id)) throw new Error('Unable to verify purchase eligibility.');
+      setCustomerId(String(profileResponse.data.id));
       setWallet(walletResponse.data || null);
       setMembership(membershipResponse.data || null);
       setFloors(floorResponse);
@@ -93,9 +96,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
     }
   }, []);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  useFocusEffect(useCallback(() => { void loadData(); }, [loadData]));
 
   useEffect(() => {
     let active = true;
@@ -142,20 +143,27 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
       setError(`Select 1-${maxSlots} spaces based on your registered vehicles.`);
       return;
     }
+    if (selectedSlots.some((slot) => !slot.vehicleId) || new Set(selectedSlots.map((slot) => slot.vehicleId)).size !== selectedSlots.length) {
+      setError('Choose a different approved vehicle for each reserved space.');
+      return;
+    }
     if (method === 'wallet' && !hasEnoughWallet) {
       setError('Insufficient wallet balance.');
       return;
     }
 
+    const context = JSON.stringify([pkg._id, method, selectedSlots]);
+    if (!purchaseKeys.has(context)) purchaseKeys.set(context, Crypto.randomUUID());
+    const idempotencyKey = purchaseKeys.get(context)!;
     setSubmitting(true);
     setError('');
     setPolicyRequired(false);
     try {
       if (method === 'wallet') {
-        await subscriptionsService.payWithWallet({ packageId: pkg._id, slots: selectedSlots });
+        await subscriptionsService.payWithWallet({ packageId: pkg._id, slots: selectedSlots, idempotencyKey });
         navigation.navigate('Membership');
       } else {
-        const response = await subscriptionsService.createPayment({ packageId: pkg._id, slots: selectedSlots });
+        const response = await subscriptionsService.createPayment({ packageId: pkg._id, slots: selectedSlots, idempotencyKey });
         navigation.navigate('SubscriptionPaymentStatus', {
           orderCode: response.data.orderCode,
           checkoutUrl: response.data.checkoutUrl,
@@ -164,6 +172,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
         });
       }
     } catch (purchaseError) {
+      if ((purchaseError as { code?: string }).code === 'PURCHASE_ATTEMPT_CLOSED') purchaseKeys.delete(context);
       if (isPolicyAcceptanceRequired(purchaseError)) {
         setPolicyRequired(true);
         setError('You must accept the latest policy before purchasing a plan.');
@@ -191,6 +200,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
           {pkg ? (
             <View style={styles.packageCard}>
               <Text style={styles.packageName}>{pkg.name}</Text>
+              <Text style={styles.packageMeta}>{pkg.type === 'monthly' ? '30 days (720 hours)' : '12 calendar months'} / {pkg.service === 'RESERVED_PAID' ? 'Standard parking fees' : 'Base parking included while effective'}</Text>
               <Text style={styles.packagePrice}>{formatCurrency(pkg.price)}</Text>
               <Text style={styles.packageMeta}>{translateUi("Total for selected spaces:")}{" "}{formatCurrency(subscriptionTotal)}</Text>
               <Text style={styles.packageMeta}>
@@ -274,6 +284,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
             </View>
           ) : null}
 
+          {selectedSlots.map((slot) => <EntitlementVehiclePicker key={`${slot.floorId}:${slot.slotCode}`} label={`Vehicle for space ${slot.slotCode}`} value={slot.vehicleId} eligible={membership?.purchaseEligibility?.eligibleVehicleIds || []} excluded={[...selectedSlots.filter((other) => other !== slot).map((other) => other.vehicleId || ''), ...(membership?.reservedSlots || []).map((item) => item.vehicleId || '')]} onChange={(vehicleId) => setSelectedSlots((current) => current.map((item) => item === slot ? { ...item, vehicleId } : item))} />)}
           {policyRequired ? (
             <TouchableOpacity
               activeOpacity={0.8}

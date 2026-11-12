@@ -1,3 +1,5 @@
+import PackageTermsSummary from '../membership/PackageTermsSummary';
+import { packageDurationLabel, packageSalesAvailability } from '../../utils/ticketPackageTerms';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -37,6 +39,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   // Flow states
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const purchaseKeys = useRef(new Map());
   const [selectedSlotCode, setSelectedSlotCode] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('payos');
   const [submitting, setSubmitting] = useState(false);
@@ -100,8 +103,9 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   }, [isOpen]);
 
   useEffect(() => {
-    finishPurchaseRef.current = () => {
+    finishPurchaseRef.current = (purchase) => {
       const successData = {
+        expireAt: purchase?.expireAt,
         package: selectedPackage,
         slotCode: selectedSlotCode,
         floorName: floors.find((floor) => floor._id === selectedFloorId)?.name || 'Selected floor',
@@ -129,7 +133,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
         if (response.ok && response.data?.success) {
           setPaymentStatus('paid');
           setPaymentData(null);
-          finishPurchaseRef.current();
+          finishPurchaseRef.current(response.data?.data);
           return;
         }
         const message = response.data?.message || '';
@@ -241,6 +245,8 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   if (!isOpen) return null;
 
   const handleSelectPackage = (pkg) => {
+    const availability = packageSalesAvailability(pkg);
+    if (!availability.available) { setErrorMsg(availability.message); return; }
     setSelectedPackage(pkg);
     setSelectedSlotCode('');
     setErrorMsg('');
@@ -269,13 +275,16 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
       setErrorMsg('');
       setErrorCode('');
 
-      const slots = [{ floorId: selectedFloorId, slotCode: selectedSlotCode }];
+      const slots = [{ floorId: selectedFloorId, slotCode: selectedSlotCode, vehicleId: selectedVehicleId }];
+      const context = JSON.stringify([selectedPackage._id, paymentMethod, slots]);
+      if (!purchaseKeys.current.has(context)) purchaseKeys.current.set(context, crypto.randomUUID());
+      const idempotencyKey = purchaseKeys.current.get(context);
 
       if (paymentMethod === 'wallet') {
-        const res = await paySubscriptionWithWallet(selectedPackage._id, slots, price);
+        const res = await paySubscriptionWithWallet(selectedPackage._id, slots, price, idempotencyKey);
         if (res.ok && res.data?.success) {
           setWalletBalance((current) => Math.max(0, current - price));
-          finishPurchaseRef.current();
+          finishPurchaseRef.current(res.data?.data);
         } else if (isPolicyAcceptanceRequired(res.data)) {
           setPolicyPrompt({
             open: true,
@@ -285,7 +294,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           setErrorMsg(res.data?.message || 'Unable to pay with the VALO Wallet. Please try again.');
         }
       } else {
-        const res = await createSubscriptionPayment(selectedPackage._id, slots, price);
+        const res = await createSubscriptionPayment(selectedPackage._id, slots, price, idempotencyKey);
         const createdPayment = res.data?.data;
         if (res.ok && createdPayment?.orderCode && (createdPayment.qrCode || createdPayment.checkoutUrl)) {
           setPaymentData(createdPayment);
@@ -296,6 +305,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
             missingPolicies: extractMissingPolicies(res.data),
           });
         } else {
+          if (res.data?.code === 'PURCHASE_ATTEMPT_CLOSED') purchaseKeys.current.delete(context);
           setErrorCode(res.data?.code || '');
           setErrorMsg(res.data?.message || 'Unable to create the PayOS payment.');
         }
@@ -331,7 +341,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
             </div>
             <div>
               <h2 className="text-xl font-black text-gray-900">VALO VIP & Monthly Packages</h2>
-              <p className="text-xs font-semibold text-gray-500">Dedicated space 24/7 · Unlimited entry and exit · Review each package for current savings</p>
+              <p className="text-xs font-semibold text-gray-500">Choose a vehicle, reserved space, and the parking service that fits your needs</p>
             </div>
           </div>
           <button
@@ -382,8 +392,8 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                   <strong className="font-mono">{successResult.vehicle?.licensePlate}</strong>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Term:</span>
-                  <strong>30 days (automatic renewal)</strong>
+                  <span className="text-gray-600">Expires:</span>
+                  <strong>{successResult.expireAt ? new Date(successResult.expireAt).toLocaleString('en-GB') : 'View the exact expiration in Membership'}</strong>
                 </div>
               </div>
 
@@ -495,7 +505,8 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                   </div>
                   <div>
                     <h4 className="font-black text-gray-900">{selectedPackage.name}</h4>
-                    <p className="text-xs text-gray-500">{selectedPackage.type === 'yearly' ? 'Yearly package (365 days)' : 'Monthly package (30 days)'}</p>
+                    <p className="text-xs text-gray-500">{packageDurationLabel(selectedPackage)}</p>
+                    <PackageTermsSummary terms={selectedPackage} />
                   </div>
                 </div>
                 <div className="text-right">
@@ -806,7 +817,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                                 </span>
                               ) : (
                                 <span className="inline-block bg-purple-100 text-purple-600 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                                  YEARLY
+                                  {pkg.type === 'hourly' ? 'HOURLY' : 'YEARLY'}
                                 </span>
                               )}
                             </div>
@@ -832,55 +843,14 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                                 {price.toLocaleString('en-US')} VND
                               </div>
                               <div className="text-xs text-gray-400 font-semibold mt-0.5">
-                                {isMonthly ? 'per month' : 'for 1 year'}
+                                {packageDurationLabel(pkg)}
                               </div>
                             </div>
 
+                            <PackageTermsSummary terms={pkg} showServices={false} />
                             {/* Benefits */}
                             <ul className="space-y-3 text-xs text-gray-600 mb-6 flex-1 px-1">
-                              {isMonthly ? (
-                                <>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>All Member benefits</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Own a fixed parking slot under your name</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Free 24/7 automatic check-in</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>No need to book before arrival</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Monthly subscription with priority</span>
-                                  </li>
-                                </>
-                              ) : (
-                                <>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-500 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>All Monthly VIP benefits</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-600 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span className="text-purple-700 font-bold">Includes 12 free washes / maintenance services</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-500 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Priority support</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-500 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>VIP yearly package</span>
-                                  </li>
-                                </>
-                              )}
+                              {(pkg.benefits || []).map((benefit) => <li key={benefit} className="flex items-start gap-2.5"><Check size={16} className="shrink-0 text-amber-500" /><span>{benefit}</span></li>)}
 
                               {Array.isArray(pkg.features) && pkg.features.map((feat, idx) => (
                                 <li key={idx} className="flex items-start gap-2.5">
@@ -899,6 +869,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                           {/* Bottom Action Button */}
                           <button
                             type="button"
+                            disabled={!packageSalesAvailability(pkg).available}
                             onClick={() => handleSelectPackage(pkg)}
                             className={`w-full rounded-2xl font-black py-3.5 px-4 shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm ${
                               isMonthly
@@ -906,7 +877,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                                 : 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-purple-500/25'
                             }`}
                           >
-                            <span>Choose this package</span>
+                            <span>{packageSalesAvailability(pkg).available ? 'Choose this package' : packageSalesAvailability(pkg).message}</span>
                             <ArrowRight size={16} />
                           </button>
                         </div>

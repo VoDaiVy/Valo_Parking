@@ -1,3 +1,4 @@
+const { authorizeSlotReservation } = require('../services/slotReservationAuthorizationService');
 const parkingPassService = require('../services/parkingPassService');
 const mongoose = require('mongoose');
 const cloudinary = require('../config/cloudinary');
@@ -713,7 +714,9 @@ exports.createBooking = async (req, res, next) => {
     }
 
     // 3.5. Kiểm tra ô đỗ có thuộc Subscription (Gói tháng/năm) không
-    const subscriptionInfo = await findActiveSlotOwnership({
+    await authorizeSlotReservation({ floorId, slotCode: parkingSlot, userId,
+        vehicleId: vehicle._id, licensePlate: vehicle.licensePlate, at: start, end, purpose: 'booking' });
+      const subscriptionInfo = await findActiveSlotOwnership({
       floorId,
       slotCode: parkingSlot,
       at: start,
@@ -740,10 +743,12 @@ exports.createBooking = async (req, res, next) => {
     }
 
     // 4. Tính toán phí trước dựa trên pricingEngine
+    if (subscriptionInfo?.vehicleId) return res.status(409).json({ success: false,
+      message: 'Use the vehicle-bound membership check-in for this reserved space; advance booking coverage is not supported.' });
     const pricing = await pricingEngine.calculatePrice(start, end);
     let prepaidAmount = pricing.finalTotal;
 
-    if (subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+    if (subscriptionInfo && !subscriptionInfo.vehicleId && subscriptionInfo.ownerId.toString() === userId.toString()) {
       prepaidAmount = 0;
     }
 
@@ -1020,6 +1025,7 @@ exports.checkVietQRStatus = async (req, res, next) => {
           return res.status(200).json({ success: true, status: 'CANCELLED', data: booking });
         }
       } catch (payosError) {
+        if ([403, 409].includes(payosError.statusCode)) throw payosError;
         console.error('Error checking PayOS status:', payosError.message);
       }
     }
@@ -1079,6 +1085,7 @@ exports.handleBookingWebhook = async (req, res, next) => {
     res.status(200).json({ message: 'OK' });
   } catch (error) {
     console.error('Webhook error:', error.message);
+    if ([403, 409].includes(error.statusCode)) return next(error);
     res.status(200).json({ message: 'OK' }); // Always acknowledge to prevent retries
   }
 };
@@ -1766,6 +1773,8 @@ exports.checkInBooking = async (req, res, next) => {
     const mongoSession = await mongoose.startSession();
     let session;
     try { await mongoSession.withTransaction(async () => {
+      await authorizeSlotReservation({ floorId: booking.floorId, slotCode: booking.parkingSlot,
+        userId: booking.userId, vehicleId: booking.vehicleId, licensePlate: cleanPlate, at: new Date(), session: mongoSession });
       const updated = await Booking.updateOne({ _id: booking._id, status: 'PAID' }, { $set: { status: 'ACTIVE' } }, { session: mongoSession });
       if (!updated.modifiedCount) throw Object.assign(new Error('Booking already checked in'), { statusCode: 409 });
       booking.status = 'ACTIVE';
@@ -2076,7 +2085,8 @@ exports.getActiveHolds = async (req, res, next) => {
  */
 exports.createBookingHold = async (req, res, next) => {
   try {
-    const { floorId, slotCode, licensePlate, startTime, endTime, replaceHoldId } = req.body;
+    const { floorId, slotCode: requestedSlotCode, licensePlate, startTime, endTime, replaceHoldId } = req.body;
+    const slotCode = normalizeSlotCode(requestedSlotCode);
     const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
     
     if (!floorId || !slotCode || !startTime || !endTime) {
@@ -2213,27 +2223,52 @@ exports.createBookingHold = async (req, res, next) => {
 
     // Tạo hold mới
     const holdDurationMs = 5 * 60 * 1000; // 5 phút
-    const newHold = await BookingHold.create({
-      userId: req.user ? req.user._id : undefined,
-      floorId,
-      slotCode,
-      licensePlate: normalizedPlate,
-      startTime: start,
-      endTime: end,
-      expiresAt: new Date(now.getTime() + holdDurationMs),
-      status: 'active'
-    });
+    const holdSession = await mongoose.startSession();
+    let newHold;
+    try {
+      await holdSession.withTransaction(async () => {
+        await authorizeSlotReservation({ floorId, slotCode, userId: req.user?._id,
+          licensePlate: normalizedPlate, at: start, end, purpose: 'booking', session: holdSession });
+        const booked = await Booking.exists({ floorId, parkingSlot: slotCode,
+          status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] },
+          scheduledStart: { $lt: end }, scheduledEnd: { $gt: start } }).session(holdSession);
+        if (booked) throw Object.assign(new Error('This slot is already booked.'), { statusCode: 409 });
+        const parked = await Session.findOne({ floorId, parkingSlot: slotCode, status: 'active' }).session(holdSession);
+        const expectedExit = parked ? expectedSessionCheckout(parked, new Date()) : null;
+        const physical = await Slot.findOne({ floorID: floorId, slotNumber: slotCode }).session(holdSession);
+        if ((parked && (!expectedExit || expectedExit > start)) || physical?.status === 'maintenance'
+          || ((physical?.status === 'occupied' || physical?.aiObservation?.occupied)
+            && start <= new Date(Date.now() + 2 * 60 * 60 * 1000) && !expectedExit)) {
+          throw Object.assign(new Error('This slot is currently occupied or unavailable.'), { statusCode: 409 });
+        }
+        const overlappingHold = await BookingHold.exists({ floorId, slotCode,
+          status: 'active', expiresAt: { $gt: new Date() }, startTime: { $lt: end }, endTime: { $gt: start },
+          ...(replacementHold ? { _id: { $ne: replacementHold._id } } : {}) }).session(holdSession);
+        if (overlappingHold) throw Object.assign(new Error('This slot is temporarily held.'), { statusCode: 409 });
+        [newHold] = await BookingHold.create([{
+          userId: req.user ? req.user._id : undefined,
+          floorId,
+          slotCode,
+          licensePlate: normalizedPlate,
+          startTime: start,
+          endTime: end,
+          expiresAt: new Date(now.getTime() + holdDurationMs),
+          status: 'active'
+        }], { session: holdSession });
 
-    if (replacementHold) {
-      const replacementResult = await BookingHold.updateOne(
-        { _id: replacementHold._id, status: 'active' },
-        { $set: { status: 'released' } },
-      );
-      if (replacementResult.modifiedCount !== 1) {
-        await BookingHold.updateOne({ _id: newHold._id }, { $set: { status: 'released' } });
-        return res.status(409).json({ success: false, message: 'The previous hold changed while this item was being updated. Please try again.' });
-      }
-    }
+        if (replacementHold) {
+          const replacementResult = await BookingHold.updateOne(
+            { _id: replacementHold._id, status: 'active' },
+            { $set: { status: 'released' } },
+            { session: holdSession },
+          );
+          if (replacementResult.modifiedCount !== 1) {
+            throw Object.assign(new Error('The previous hold changed. Please try again.'), { statusCode: 409 });
+          }
+        }
+
+      });
+    } finally { await holdSession.endSession(); }
 
     res.status(201).json({
       success: true,
@@ -2422,9 +2457,10 @@ exports.quoteBulkBooking = async (req, res, next) => {
         );
       }
 
+      if (subscriptionInfo?.vehicleId) throw Object.assign(new Error('Use membership check-in for this vehicle-bound reserved space.'), { statusCode: 409 });
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
-      if (!isAiQuickRequest && subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+      if (!isAiQuickRequest && subscriptionInfo && !subscriptionInfo.vehicleId && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
       const adjustedParkingTotal = pricing.finalTotal;
@@ -2662,6 +2698,9 @@ exports.createBulkBooking = async (req, res, next) => {
         }
       }
 
+      // A hold is not authorization: revalidate inside the payment transaction.
+      await authorizeSlotReservation({ floorId, slotCode: parkingSlot, userId,
+        vehicleId: vehicle._id, licensePlate: vehicle.licensePlate, at: start, end, purpose: 'booking', session });
       // Check subscription
       const subscriptionInfo = await findActiveSlotOwnership({
         floorId,
@@ -2699,9 +2738,10 @@ exports.createBulkBooking = async (req, res, next) => {
         throw new Error(`Phiên giữ chỗ của ô ${parkingSlot} không khớp với thời gian đã chọn.`);
       }
 
+      if (subscriptionInfo?.vehicleId) throw Object.assign(new Error('Use membership check-in for this vehicle-bound reserved space.'), { statusCode: 409 });
       // Pricing
       const pricing = await pricingEngine.calculatePrice(start, end);
-      if (!isAiQuickRequest && subscriptionInfo && subscriptionInfo.ownerId.toString() === userId.toString()) {
+      if (!isAiQuickRequest && subscriptionInfo && !subscriptionInfo.vehicleId && subscriptionInfo.ownerId.toString() === userId.toString()) {
         pricing.finalTotal = 0;
       }
       const adjustedParkingTotal = pricing.finalTotal;
@@ -2933,7 +2973,7 @@ exports.createBulkBooking = async (req, res, next) => {
     session.endSession();
     console.error('Error createBulkBooking:', error);
     const isAiQuickRequest = req.body?.bookingSource === 'AI_QUICK';
-    res.status(isAiQuickRequest ? (error.statusCode || 400) : 400).json({
+    res.status(error.statusCode || (error.hasErrorLabel?.('TransientTransactionError') ? 409 : 400)).json({
       success: false,
       message: error.message || 'Lỗi xử lý đặt chỗ',
       ...(typeof error.code === 'string' ? { code: error.code } : {}),

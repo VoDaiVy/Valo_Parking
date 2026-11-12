@@ -6,10 +6,13 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
   const [paymentMethod, setPaymentMethod] = useState('PAYOS');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [renewalKeys] = useState(() => new Map());
 
   if (!isOpen || !membership) return null;
 
   const handleRenew = async () => {
+    const context = `${membership.subscriptionId}:${membership.expireAt}:${paymentMethod}`;
+    if (!renewalKeys.has(context)) renewalKeys.set(context, crypto.randomUUID());
     setLoading(true);
     setErrorMsg('');
     try {
@@ -22,7 +25,8 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
         },
         body: JSON.stringify({ 
           subscriptionId: membership.subscriptionId, // We need to make sure this is available in profile.membership
-          paymentMethod 
+          paymentMethod,
+          idempotencyKey: renewalKeys.get(context)
         })
       });
       const data = await res.json();
