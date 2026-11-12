@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import StaffDropdown from './components/StaffDropdown.jsx';
@@ -24,6 +24,7 @@ export default function SessionManagement() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiInitialPlate, setAiInitialPlate] = useState('');
   const [aiInitialImage, setAiInitialImage] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionIdQuery = searchParams.get('sessionId');
   const location = useLocation();
@@ -490,9 +491,19 @@ export default function SessionManagement() {
                   <p className="mb-1 text-sm text-white/40">Check In Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkInTime)}</p>
                 </div>
-                <div className="g4-session-image group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.entryImage_url ? (
-                    <img src={selectedSession.entryImage_url} alt="Entry" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `Entry Photo — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title="Click to view full-size image"
+                    >
+                      <img src={selectedSession.entryImage_url} alt="Entry" className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> Full View
+                      </span>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
@@ -514,9 +525,19 @@ export default function SessionManagement() {
                   <p className="mb-1 text-sm text-white/40">Check Out Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkOutTime)}</p>
                 </div>
-                <div className="g4-session-image group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.exitImage_url ? (
-                    <img src={selectedSession.exitImage_url} alt="Exit" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `Exit Photo — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title="Click to view full-size image"
+                    >
+                      <img src={selectedSession.exitImage_url} alt="Exit" className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> Full View
+                      </span>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
@@ -550,6 +571,37 @@ export default function SessionManagement() {
           setCurrentPage(1);
         }}
       />
+
+      {/* Full-Size Image Lightbox */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative flex max-h-[92vh] max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0c0d10] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+              <span className="text-sm font-bold text-[#ffd555]">{previewImage.title}</span>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex items-center justify-center overflow-auto bg-black p-3">
+              <img
+                src={previewImage.url}
+                alt={previewImage.title}
+                className="max-h-[80vh] w-auto max-w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

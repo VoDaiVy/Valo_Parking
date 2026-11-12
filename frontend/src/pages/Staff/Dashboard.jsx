@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE } from '../../services/api';
+import { API_BASE, apiFetch } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
 import { getAllFloors, getFloorSlots } from '../../services/parkingFloorService';
 import { getAllBookings } from '../../services/bookingService';
@@ -23,6 +23,7 @@ const EMPTY_REVENUE_STATISTICS = Object.freeze({
   vip: { revenue: 0, transactionCount: 0 },
   booking: { revenue: 0, completedCount: 0 },
   service: { revenue: 0, completedBookingCount: 0 },
+  parking: { revenue: 0, transactionCount: 0 },
   totalRevenue: 0,
 });
 
@@ -40,6 +41,10 @@ const normalizeRevenueStatistics = (statistics) => ({
     completedBookingCount: Number(
       statistics?.service?.completedBookingCount || 0
     ),
+  },
+  parking: {
+    revenue: Number(statistics?.parking?.revenue || 0),
+    transactionCount: Number(statistics?.parking?.transactionCount || 0),
   },
   totalRevenue: Number(statistics?.totalRevenue || 0),
 });
@@ -87,7 +92,10 @@ export default function StaffDashboard() {
   useEffect(() => {
     const fetchBarrierStatus = async () => {
       try {
-        const res = await fetch(`${API_BASE}/iot/barrier-status`);
+        const token = localStorage.getItem('accessToken');
+        const res = await fetch(`${API_BASE}/iot/barrier-status`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         const data = await res.json();
         if (data.success && data.gates) {
           setGatesState(prev => ({
@@ -144,17 +152,17 @@ export default function StaffDashboard() {
     setIsTriggeringGate(true);
     try {
       const fallbackPlate = gateType === 'ENTRY_1' ? 'STAFF-IN' : 'STAFF-OUT';
-      const res = await fetch(`${API_BASE}/iot/open-barrier`, {
+      const token = localStorage.getItem('accessToken');
+      const res = await apiFetch('/iot/open-barrier', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken') || ''}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || sessionStorage.getItem('accessToken') || ''}` },
         body: JSON.stringify({
           gate: gateType,
           licensePlate: fallbackPlate,
           slotCode: 'STAFF'
         })
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.ok && res.data?.success) {
         setGatesState(prev => ({
           ...prev,
           [gateType]: {
@@ -168,7 +176,7 @@ export default function StaffDashboard() {
         const label = gateType === 'ENTRY_1' ? 'Entry Gate (IN)' : 'Exit Gate (OUT)';
         toast.success(`${label} opened successfully!`);
       } else {
-        toast.error('Failed to trigger gate open!');
+        toast.error(res.data?.message || 'Failed to trigger gate open!');
       }
     } catch {
       toast.error('IoT Barrier connection error!');
@@ -181,13 +189,13 @@ export default function StaffDashboard() {
   const handleCloseGate = async (gateType = selectedGate) => {
     setIsTriggeringGate(true);
     try {
-      const res = await fetch(`${API_BASE}/iot/close-barrier`, {
+      const token = localStorage.getItem('accessToken');
+      const res = await apiFetch('/iot/close-barrier', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken') || ''}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || sessionStorage.getItem('accessToken') || ''}` },
         body: JSON.stringify({ gate: gateType })
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.ok && res.data?.success) {
         setGatesState(prev => ({
           ...prev,
           [gateType]: {
@@ -199,7 +207,7 @@ export default function StaffDashboard() {
         const label = gateType === 'ENTRY_1' ? 'Entry Gate (IN)' : 'Exit Gate (OUT)';
         toast.success(`${label} closed successfully!`);
       } else {
-        toast.error('Failed to close gate!');
+        toast.error(res.data?.message || 'Failed to close gate!');
       }
     } catch {
       toast.error('IoT Barrier connection error!');
@@ -214,13 +222,13 @@ export default function StaffDashboard() {
     const targetGate = gatesState[gateType] || {};
     const newHold = !targetGate.holdOpen;
     try {
-      const res = await fetch(`${API_BASE}/iot/hold-barrier`, {
+      const token = localStorage.getItem('accessToken');
+      const res = await apiFetch('/iot/hold-barrier', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken') || ''}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || sessionStorage.getItem('accessToken') || ''}` },
         body: JSON.stringify({ hold: newHold, gate: gateType })
       });
-      const data = await res.json();
-      if (data.success) {
+      if (res.ok && res.data?.success) {
         setGatesState(prev => ({
           ...prev,
           [gateType]: {
@@ -234,6 +242,8 @@ export default function StaffDashboard() {
         } else {
           toast.success(`${label} Resumed: Normal operation active!`);
         }
+      } else {
+        toast.error(res.data?.message || 'Failed to toggle hold mode!');
       }
     } catch {
       toast.error('IoT Barrier connection error!');

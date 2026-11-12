@@ -100,16 +100,16 @@ export default function KioskLayout() {
         </div>
 
         {/* ─── RIGHT PANEL (Form Content) ─── */}
-        <div className="flex-1 flex flex-col h-full px-12 py-6 overflow-hidden z-30">
+        <div className="flex-1 flex flex-col h-full px-8 lg:px-10 py-4 overflow-hidden z-30">
 
           {/* Stepper Header */}
-          <div className="flex items-center justify-center max-w-[500px] mx-auto w-full mb-10">
+          <div className="flex items-start justify-center max-w-[460px] mx-auto w-full mb-4 shrink-0">
 
             <StepIndicator num={1} label="Information" isActive={currentStep >= 1} isCurrent={currentStep === 1} />
-            <div className={`flex-1 h-0.5 mx-4 ${currentStep >= 2 ? 'bg-[#FFDF00]' : 'bg-gray-200'}`}></div>
+            <div className={`flex-1 h-0.5 mx-3 mt-4 ${currentStep >= 2 ? 'bg-[#FFDF00]' : 'bg-gray-200'}`}></div>
 
             <StepIndicator num={2} label="Choose a place" isActive={currentStep >= 2} isCurrent={currentStep === 2} />
-            <div className={`flex-1 h-0.5 mx-4 ${currentStep >= 3 ? 'bg-[#FFDF00]' : 'bg-gray-200'}`}></div>
+            <div className={`flex-1 h-0.5 mx-3 mt-4 ${currentStep >= 3 ? 'bg-[#FFDF00]' : 'bg-gray-200'}`}></div>
 
             <StepIndicator num={3} label="Confirm" isActive={currentStep >= 3} isCurrent={currentStep === 3} />
 
@@ -129,15 +129,15 @@ export default function KioskLayout() {
 
 function StepIndicator({ num, label, isActive, isCurrent }) {
   return (
-    <div className="flex flex-col items-center gap-3 relative">
+    <div className="flex flex-col items-center gap-1.5 relative shrink-0">
       <div className={`
-        w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold transition-all z-10
-        ${isCurrent ? 'bg-[#FFDF00] text-[#0f172a] shadow-[0_4px_15px_rgba(255,223,0,0.4)]' :
+        w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all z-10
+        ${isCurrent ? 'bg-[#FFDF00] text-[#0f172a] shadow-[0_3px_10px_rgba(255,223,0,0.4)]' :
           isActive ? 'bg-[#0f172a] text-white' : 'bg-white border-2 border-gray-200 text-gray-300'}
       `}>
         {num}
       </div>
-      <span className={`absolute top-12 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap ${isCurrent ? 'text-[#0f172a]' : isActive ? 'text-gray-500' : 'text-gray-300'}`}>
+      <span className={`text-[9px] font-bold uppercase tracking-widest whitespace-nowrap ${isCurrent ? 'text-[#0f172a]' : isActive ? 'text-gray-500' : 'text-gray-300'}`}>
         {label}
       </span>
     </div>

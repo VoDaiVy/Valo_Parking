@@ -1,6 +1,25 @@
-import { useCallback, useEffect, useState, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Plus, Edit, Copy, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Plus,
+  Edit,
+  Copy,
+  Trash2,
+  X,
+  MonitorCheck,
+  Camera,
+  ShieldAlert,
+  History,
+  RefreshCw,
+  Clock,
+  CheckCircle2,
+  Phone,
+  RotateCw,
+  RotateCcw,
+  Maximize2,
+  Settings,
+  ChevronDown
+} from "lucide-react";
 import ParkingLotsBuilder from "./ParkingLotsBuilder/ParkingLotsBuilder";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import AdminSelect from "../../components/Admin/AdminSelect";
@@ -10,6 +29,12 @@ import { API_BASE } from "../../services/api";
 import { getAvailableBookingSlots, getActiveHolds, getActiveMapBookings, getAllBookings } from "../../services/bookingService";
 import StaffCheckoutModal from "../Staff/StaffCheckoutModal";
 import ConfirmModal from "../../components/Admin/ConfirmModal";
+import SlotCameraMonitorModal from "../Staff/components/SlotCameraMonitorModal.jsx";
+import ViolationResolutionModal from "../Staff/components/ViolationResolutionModal.jsx";
+import GlobalViolationHistoryModal from "../Staff/components/GlobalViolationHistoryModal.jsx";
+import { formatLicensePlateDisplay } from "../../utils/licensePlate";
+import { getSlotLogs, clearAllViolationsApi } from "../../services/aiSurveillanceService";
+import toast from "react-hot-toast";
 
 const LiveDuration = ({ checkInTime, expectedDurationHours }) => {
   const [now, setNow] = useState(() => Date.now());
@@ -39,6 +64,7 @@ const LiveDuration = ({ checkInTime, expectedDurationHours }) => {
 };
 
 export default function ParkingLots() {
+  const navigate = useNavigate();
   const [floors, setFloors] = useState([]);
   const [currentFloorId, setCurrentFloorId] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -56,11 +82,22 @@ export default function ParkingLots() {
   const [maintenanceModal, setMaintenanceModal] = useState({ isOpen: false, item: null, isZone: false });
   const [maintenanceReason, setMaintenanceReason] = useState("");
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [checkoutSessionData, setCheckoutSessionData] = useState(null);
   
   // activeSessions to track live cars
   const [activeSessions, setActiveSessions] = useState([]);
-
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, floorId: null, floorName: "" });
+
+  // AI Surveillance & Global History States
+  const [showSurveillanceModal, setShowSurveillanceModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [floorAiStatusesMap, setFloorAiStatusesMap] = useState({});
+  const [selectedViolation, setSelectedViolation] = useState(null);
+
+  // Slot Slideover Tabs & History
+  const [slotTab, setSlotTab] = useState('details'); // 'details' | 'history'
+  const [slotLogs, setSlotLogs] = useState([]);
+  const [loadingSlotLogs, setLoadingSlotLogs] = useState(false);
 
   const [searchParams] = useSearchParams();
   const bookingIdParam = searchParams.get("bookingId");
@@ -79,7 +116,14 @@ export default function ParkingLots() {
   const getSlotFloorId = (slot) => String(slot.floorID?._id || slot.floorID || "");
   const sameId = (a, b) => String(a || "") === String(b || "");
   const sameSlotCode = (a, b) => String(a || "").trim().toUpperCase() === String(b || "").trim().toUpperCase();
-  const getNextFloorNumber = () => Math.max(0, ...floors.map(f => Number(f.floorNumber) || 0)) + 1;
+  const getNextFloorNumber = () => {
+    const existingNumbers = new Set(floors.map(f => Number(f.floorNumber) || 0));
+    let n = 1;
+    while (existingNumbers.has(n)) {
+      n++;
+    }
+    return n;
+  };
 
   const getSlotPrefix = (slotName = "") => {
     const match = String(slotName).trim().match(/^([a-zA-Z]+)(?=\d|[-_\s]|$)/);
@@ -222,7 +266,7 @@ export default function ParkingLots() {
     return () => { active = false; clearTimeout(timer); };
   }, [floorIdParam, slotIdParam, bookingIdParam, floors]);
 
-  // Fetch Slots for current floor to know maintenance status
+  // Fetch Slots for current floor to know maintenance & AI status
   const fetchDbSlots = useCallback(async (floorId) => {
     try {
       if (floorId) {
@@ -251,7 +295,10 @@ export default function ParkingLots() {
 
   const fetchLiveData = useCallback(async () => {
     try {
-      const sessionRes = await fetch(`${API_BASE}/sessions/active-status`);
+      const token = localStorage.getItem('token') || localStorage.getItem('accessToken');
+      const sessionRes = await fetch(`${API_BASE}/sessions/active-status`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       const sessionData = await sessionRes.json();
       if (sessionData.success) {
         setActiveSessions(sessionData.data);
@@ -282,28 +329,132 @@ export default function ParkingLots() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLiveData();
-    const interval = setInterval(fetchLiveData, 15000); // refresh every 15s
+    const interval = setInterval(fetchLiveData, 5000); // 5s interval for live monitor
     return () => clearInterval(interval);
   }, [fetchLiveData]);
+
+  // Persistence: Merge DB-saved slot observations with fresh camera scans
+  const aiSlotStatuses = useMemo(() => {
+    const dbStatuses = (dbSlots || [])
+      .filter((s) => s.aiObservation && (s.aiObservation.occupied || s.aiObservation.isViolation))
+      .map((s) => ({
+        slotCode: s.slotNumber,
+        floorId: s.floorID?._id || s.floorID,
+        occupied: s.aiObservation.occupied,
+        plate: s.aiObservation.detectedPlate,
+        detectedPlate: s.aiObservation.detectedPlate,
+        isViolation: s.aiObservation.isViolation,
+        violationType: s.aiObservation.violationType,
+        status: s.aiObservation.isViolation
+          ? (s.aiObservation.violationType || 'WRONG_SLOT_VIOLATION')
+          : 'OCCUPIED_VALID',
+        expectedSlot: s.aiObservation.expectedSlot,
+        expectedPlate: s.aiObservation.expectedPlate,
+        evidenceSnapshot: s.aiObservation.evidenceSnapshot,
+        fullSnapshot: s.aiObservation.fullSnapshot,
+        violationMessage: s.aiObservation.violationMessage,
+        sessionId: s.aiObservation.sessionId,
+      }));
+
+    const freshScans = Object.values(floorAiStatusesMap).flat();
+    const map = new Map();
+    dbStatuses.forEach((s) => map.set(s.slotCode?.toUpperCase(), s));
+    freshScans.forEach((s) => map.set(s.slotCode?.toUpperCase(), s));
+
+    const seenPlates = new Set();
+    const seenSlots = new Set();
+    const result = [];
+
+    for (const slot of map.values()) {
+      const slotKey = `${slot.slotCode?.toUpperCase()}`;
+      const plate = (slot.plate || slot.detectedPlate || slot.session?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      
+      if (seenSlots.has(slotKey)) continue;
+      seenSlots.add(slotKey);
+
+      if (plate) {
+        if (seenPlates.has(plate)) continue;
+        seenPlates.add(plate);
+      }
+      result.push(slot);
+    }
+    return result;
+  }, [dbSlots, floorAiStatusesMap]);
+
+  // Violations list computed from AI surveillance
+  const violations = useMemo(() => {
+    if (!Array.isArray(aiSlotStatuses)) return [];
+    return aiSlotStatuses.filter((s) => {
+      const isWrongSlot = s.status === 'WRONG_SLOT_VIOLATION' || s.violationType === 'WRONG_SLOT_VIOLATION';
+      const isUnauth = s.status === 'UNAUTHORIZED_PARKING' || s.violationType === 'UNAUTHORIZED_PARKING' || s.status === 'UNAUTHORIZED_OCCUPANCY';
+      if (isWrongSlot && s.expectedSlot && s.slotCode && s.expectedSlot.toUpperCase() === s.slotCode.toUpperCase()) {
+        return false;
+      }
+      return (isWrongSlot || isUnauth) && s.isViolation;
+    });
+  }, [aiSlotStatuses]);
+
+  const handleResetAlerts = async () => {
+    try {
+      const res = await clearAllViolationsApi(currentFloorId || null);
+      if (res.success || res.ok) {
+        toast.success(res.message || res.data?.message || 'Violations reset and cleared successfully!');
+        setFloorAiStatusesMap({});
+        fetchDbSlots(currentFloorId);
+        fetchLiveData();
+      } else {
+        toast.error(res.message || res.data?.message || 'Failed to reset violations');
+      }
+    } catch (err) {
+      toast.error('Error connecting to reset violations');
+    }
+  };
+
+  // When selectedItem changes, load its individual history logs
+  useEffect(() => {
+    if (selectedItem?.id && selectedItem.type !== 'zone') {
+      setSlotTab('details');
+      setLoadingSlotLogs(true);
+      getSlotLogs(selectedItem.id, selectedItem.floorId)
+        .then((res) => {
+          if (res?.success) setSlotLogs(res.data || []);
+          else if (res?.ok && res.data?.data) setSlotLogs(res.data.data || []);
+          else setSlotLogs([]);
+        })
+        .catch(() => setSlotLogs([]))
+        .finally(() => setLoadingSlotLogs(false));
+    } else {
+      setSlotLogs([]);
+    }
+  }, [selectedItem?.id, selectedItem?.floorId, selectedItem?.type]);
+
+  const handleTriggerCheckout = (sessionOrSlot) => {
+    const session = sessionOrSlot.session || sessionOrSlot;
+    const slotId = sessionOrSlot.parkingSlot || sessionOrSlot.id || session.parkingSlot;
+    setCheckoutSessionData({ ...session, parkingSlot: slotId });
+    setShowCheckoutModal(true);
+  };
 
   const handleCreateFloor = async () => {
     const floorNumber = getNextFloorNumber();
     const name = `Floor ${floorNumber}`;
-    const res = await createFloor({ floorNumber, name });
-    if (res.ok && res.data.data) {
+    const code = `F${floorNumber}`;
+    const res = await createFloor({ floorNumber, name, code });
+    if (res.ok && res.data?.data) {
       setFloors([...floors, res.data.data]);
       setCurrentFloorId(res.data.data._id);
+      toast.success(`Created ${name}`);
+    } else {
+      toast.error(res.data?.message || "Không thể tạo tầng mới");
     }
   };
 
-  const handleDuplicateFloor = async () => {
-    if (!currentFloorId) return;
-    const currentFloor = floors.find(f => f._id === currentFloorId);
-    if (!currentFloor) return;
+  const handleDuplicateFloor = async (targetFloor = null) => {
+    const floorToDuplicate = targetFloor || (currentFloorId ? floors.find(f => f._id === currentFloorId) : null);
+    if (!floorToDuplicate) return;
+    const currentFloor = floorToDuplicate;
 
-    // 1. Find the highest slot prefix used across all floors.
     let maxPrefixIndex = 0;
     floors.forEach(f => {
       f.layoutData?.elements?.forEach(el => {
@@ -316,7 +467,6 @@ export default function ParkingLots() {
       });
     });
 
-    // 2. Find unique prefixes used in CURRENT floor
     const sourcePrefixes = new Set();
     currentFloor.layoutData?.elements?.forEach(el => {
       if (el.type.startsWith('slot') && el.name) {
@@ -328,7 +478,6 @@ export default function ParkingLots() {
     });
     const sortedSourcePrefixes = Array.from(sourcePrefixes).sort((a, b) => prefixToIndex(a) - prefixToIndex(b));
 
-    // 3. Create mapping from old prefix to new prefix
     const prefixMapping = {};
     let nextPrefixIndex = maxPrefixIndex + 1;
     sortedSourcePrefixes.forEach(prefix => {
@@ -336,7 +485,10 @@ export default function ParkingLots() {
       nextPrefixIndex++;
     });
 
-    // 4. Duplicate elements with renamed prefixes and new unique IDs
+    const floorNumber = getNextFloorNumber();
+    const name = `Floor ${floorNumber}`;
+    const code = `F${floorNumber}`;
+
     const idMapping = {};
     const renamedElements = (currentFloor.layoutData?.elements || []).map(el => {
       const newId = `${el.type}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -350,10 +502,13 @@ export default function ParkingLots() {
           newName = renameZoneName(newName, prefixMapping);
         }
       }
-      return { ...el, id: newId, name: newName };
+      let newText = el.text;
+      if (el.type === 'text' && typeof el.text === 'string') {
+        newText = el.text.replace(/FLOOR \d+/gi, `FLOOR ${floorNumber}`);
+      }
+      return { ...el, id: newId, name: newName, ...(newText ? { text: newText } : {}) };
     });
 
-    // 5. Update parentIds to maintain group structures
     const finalElements = renamedElements.map(el => {
       if (el.parentId && idMapping[el.parentId]) {
         return { ...el, parentId: idMapping[el.parentId] };
@@ -366,21 +521,20 @@ export default function ParkingLots() {
       elements: finalElements
     };
 
-    const floorNumber = getNextFloorNumber();
-    const name = `Floor ${floorNumber}`;
-    const res = await createFloor({ floorNumber, name, layoutData: newLayoutData });
-    if (res.ok && res.data.data) {
+    const res = await createFloor({ floorNumber, name, code, layoutData: newLayoutData });
+    if (res.ok && res.data?.data) {
       const newFloor = res.data.data;
       const syncRes = await updateFloorLayout(newFloor._id, newLayoutData);
       if (!syncRes.ok) {
-        alert("Duplicated the floor layout, but failed to create its slots/zones: " + (syncRes.data?.message || "Unknown error"));
+        toast.error("Duplicated layout, but failed to sync slots: " + (syncRes.data?.message || "Unknown error"));
       }
       const syncedFloor = syncRes.ok && syncRes.data?.data ? syncRes.data.data : newFloor;
       setFloors([...floors, syncedFloor]);
       setCurrentFloorId(syncedFloor._id);
       await fetchDbSlots(syncedFloor._id);
+      toast.success(`Đã nhân bản thành công sang ${name}`);
     } else {
-      alert("Failed to duplicate floor: " + (res.data?.message || "Unknown error"));
+      toast.error("Không thể nhân bản tầng: " + (res.data?.message || "Lỗi hệ thống"));
     }
   };
 
@@ -396,19 +550,20 @@ export default function ParkingLots() {
     if (!floorId) return;
     const currentIndex = floors.findIndex(f => f._id === floorId);
     const res = await deleteFloor(floorId);
-       if (res.ok) {
-          const updatedFloors = floors.filter(f => f._id !== floorId);
-          setFloors(updatedFloors);
-          if (updatedFloors.length > 0) {
-             const nextIndex = Math.max(0, currentIndex - 1);
-             setCurrentFloorId(updatedFloors[nextIndex]._id);
-          } else {
-             setCurrentFloorId(null);
-          }
-       } else {
-          alert("Failed to delete floor: " + (res.data?.message || "Forbidden or Network error"));
-       }
-       setDeleteModal({ isOpen: false, floorId: null, floorName: "" });
+    if (res.ok) {
+      const updatedFloors = floors.filter(f => f._id !== floorId);
+      setFloors(updatedFloors);
+      if (updatedFloors.length > 0) {
+        const nextIndex = Math.max(0, currentIndex - 1);
+        setCurrentFloorId(updatedFloors[nextIndex]._id);
+      } else {
+        setCurrentFloorId(null);
+      }
+      toast.success("Đã xoá tầng thành công");
+    } else {
+      toast.error(res.data?.message || "Không thể xoá tầng: Có ràng buộc dữ liệu hoặc lỗi mạng");
+    }
+    setDeleteModal({ isOpen: false, floorId: null, floorName: "" });
   };
 
   const handleSaveLayout = async (layoutData) => {
@@ -418,6 +573,7 @@ export default function ParkingLots() {
         setIsEditMode(false);
         fetchFloors();
         fetchDbSlots(currentFloorId);
+        toast.success("Layout saved successfully!");
       } else {
         alert("Failed to save map. Backend returned an error: " + (res.data?.message || "Unknown error"));
         console.error("Save Map Error:", res);
@@ -444,43 +600,155 @@ export default function ParkingLots() {
          style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
       {deepLinkError && <p role="alert" className="m-4 rounded-lg bg-red-950 p-3 text-red-200">{deepLinkError}</p>}
       
-      {/* Top Toolbar */}
-      <div className="absolute top-4 left-8 z-50 flex items-center gap-4 bg-[#171717]/80 backdrop-blur border border-white/10 p-2 rounded-xl shadow-lg">
-        <AdminSelect
-          value={currentFloorId || ""}
-          onChange={(nextFloorId) => setCurrentFloorId(nextFloorId === "" ? null : nextFloorId)}
-          options={
-            floors.length > 0
-              ? [
-                  { value: "", label: "Overview (All Floors)" },
-                  ...floors.map((floor) => ({ value: floor._id, label: floor.name })),
-                ]
-              : [{ value: "", label: "No floors available" }]
-          }
-          className="min-w-[190px]"
-          ariaLabel="Select parking floor"
-        />
+      {/* Top Floating Control Bar: Responsive, Two-Cluster Layout */}
+      <div className="absolute top-4 left-6 right-6 z-40 flex items-center justify-between gap-3 pointer-events-none flex-wrap">
         
-        {isAdmin && (
-          <button onClick={handleCreateFloor} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/10" title="Add new floor">
-            <Plus size={18} className="text-cyan-400" />
-          </button>
-        )}
+        {/* Left Cluster: Floor Selection & Layout Management */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-[#111111]/95 backdrop-blur-md border border-white/10 p-2 rounded-xl shadow-[0_18px_45px_rgba(0,0,0,0.4)] shrink-0">
+          {/* Title Badge */}
+          <div className="flex items-center gap-1.5 px-2 border-r border-white/10 shrink-0">
+            <MonitorCheck size={16} className="text-cyan-400" />
+            <span className="text-xs font-black uppercase tracking-wider text-cyan-400 hidden sm:inline">LIVE MONITOR</span>
+          </div>
 
-        {(currentFloor && isAdmin) && (
-          <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-4">
-            <button onClick={() => setIsEditMode(true)} className="flex items-center gap-2 bg-cyan-500/20 text-cyan-400 px-4 py-2 rounded-lg font-bold hover:bg-cyan-500/30 transition border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-              <Edit size={16} /> Edit Layout ({currentFloor.name})
+          {/* Floor Selector Dropdown */}
+          <AdminSelect
+            value={currentFloorId || ""}
+            onChange={(nextFloorId) => setCurrentFloorId(nextFloorId === "" ? null : nextFloorId)}
+            options={
+              floors.length > 0
+                ? [
+                    { value: "", label: "Overview (All Floors)" },
+                    ...floors.map((floor) => ({ value: floor._id, label: floor.name })),
+                  ]
+                : [{ value: "", label: "No floors available" }]
+            }
+            className="min-w-[150px] max-w-[190px]"
+            ariaLabel="Select parking floor"
+          />
+
+          {/* Admin Quick Action: [+] Add New Floor */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleCreateFloor}
+              className="p-2 bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/10 text-cyan-400 active:scale-95 shrink-0"
+              title="Thêm tầng mới"
+            >
+              <Plus size={16} />
             </button>
-            <button onClick={handleDuplicateFloor} className="p-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg transition border border-white/10" title="Duplicate this floor">
-              <Copy size={16} />
+          )}
+
+          {/* Admin Quick Action: [Edit Layout], [Duplicate], [Delete] */}
+          {(currentFloor && isAdmin) && (
+            <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsEditMode(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-400/40 text-xs font-bold transition shadow-sm active:scale-95 shrink-0"
+                title={`Edit visual layout for ${currentFloor.name}`}
+              >
+                <Edit size={13} className="text-cyan-400" />
+                <span>Edit Layout</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDuplicateFloor(currentFloor)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition active:scale-95 shrink-0"
+                title="Duplicate this floor"
+              >
+                <Copy size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteFloor}
+                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition active:scale-95 shrink-0"
+                title="Delete this floor"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right Cluster: Live Surveillance & Action Tools */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-[#111111]/95 backdrop-blur-md border border-white/10 p-2 rounded-xl shadow-[0_18px_45px_rgba(0,0,0,0.4)] shrink-0">
+          {/* Live Update Pulse */}
+          <div className="flex items-center gap-1.5 px-2 shrink-0">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider hidden md:inline">
+              LIVE UPDATE
+            </span>
+          </div>
+
+          {/* Action 1: Camera AI */}
+          <button
+            type="button"
+            onClick={() => setShowSurveillanceModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95 shrink-0"
+            title="Open Camera AI Slot Surveillance"
+          >
+            <Camera size={14} className="text-cyan-400" />
+            <span>Camera AI</span>
+            {violations.length > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
+                {violations.length}
+              </span>
+            )}
+          </button>
+
+          {/* Action 2: Violation History */}
+          <button
+            type="button"
+            onClick={() => setShowHistoryModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-sm active:scale-95 shrink-0"
+            title="View violation history and audit logs"
+          >
+            <History size={14} className="text-amber-400" />
+            <span>Violation History</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Real-Time Violation Alert Banner */}
+      {violations.length > 0 && (
+        <div className="absolute top-20 left-8 right-8 z-40 bg-gradient-to-r from-red-950/95 via-red-900/90 to-red-950/95 border border-red-500/60 backdrop-blur-md px-5 py-3 rounded-2xl shadow-[0_10px_35px_rgba(239,68,68,0.3)] flex items-center justify-between text-white animate-in slide-in-from-top-4 duration-300 flex-wrap gap-3">
+          <div className="flex items-center gap-3.5 flex-1 min-w-[320px]">
+            <div className="p-2.5 rounded-xl bg-red-500/30 text-red-400 border border-red-500/50 shadow-inner shrink-0">
+              <ShieldAlert size={22} className="animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-xs text-red-300 uppercase tracking-wider">
+                  Real-Time Violation Alert
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-500 text-white">
+                  {violations.length} wrongly parked {violations.length === 1 ? 'car' : 'cars'}
+                </span>
+              </div>
+              <p className="text-xs text-red-100/90 mt-0.5">
+                Camera AI detected violation: {violations.map((v) => `${v.detectedPlate || v.plate || 'Vehicle'} at slot ${v.slotCode || v.actualSlot}`).join(', ')}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedViolation(violations[0])}
+              className="px-3.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-400 text-white text-xs font-black uppercase tracking-wider transition shadow"
+            >
+              Resolve Violation
             </button>
-            <button onClick={handleDeleteFloor} className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition border border-red-500/30" title="Delete this floor">
-              <Trash2 size={16} />
+            <button
+              type="button"
+              onClick={handleResetAlerts}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold transition"
+            >
+              Dismiss & Reset
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Main Map Container using reusable component */}
       <div className="flex-1 overflow-hidden relative">
@@ -495,99 +763,193 @@ export default function ParkingLots() {
           availableSlots={availableSlots}
           activeHolds={activeHolds}
           activeBookings={activeBookings}
+          aiSlotStatuses={aiSlotStatuses}
           loading={loading}
           isEditMode={isEditMode}
         />
       </div>
 
-      {/* Slide-over panel for slots */}
-      <div className={`absolute inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${selectedItem ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setSelectedItem(null)}></div>
-      <div className={`absolute top-0 right-0 bottom-0 w-[420px] bg-[#111111]/95 backdrop-blur-2xl border-l border-white/10 p-8 flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.5)] text-slate-200 z-50 transform transition-transform duration-300 ease-in-out ${selectedItem ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* Slide-over panel for slots & zones */}
+      <div 
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${selectedItem ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
+        onClick={() => setSelectedItem(null)}
+      />
+      
+      <div className={`absolute top-0 right-0 bottom-0 w-[420px] bg-[#111111]/95 backdrop-blur-2xl border-l border-white/10 p-6 flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.5)] text-slate-200 z-50 transform transition-transform duration-300 ease-in-out ${selectedItem ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedItem && (() => {
-           const isZone = selectedItem.type === 'zone';
-           const dbSlotInfo = !isZone
-             ? dbSlots.find(s => sameSlotCode(s.slotNumber, selectedItem.id) && sameId(getSlotFloorId(s), selectedItem.floorId))
-             : null;
-           const zoneSlots = isZone
-             ? dbSlots.filter(s => sameId(getSlotFloorId(s), selectedItem.floorId) && s.zoneID?.zoneName === selectedItem.name)
-             : [];
-           const zoneId = zoneSlots[0]?.zoneID?._id || zoneSlots[0]?.zoneID || null;
-           const isMaintenance = isZone
-             ? zoneSlots.length > 0 && zoneSlots.every(s => s.status === 'maintenance')
-             : dbSlotInfo?.status === 'maintenance';
+          const isZone = selectedItem.type === 'zone';
+          const currentSession = selectedItem.session || activeSessions.find(s => 
+            sameSlotCode(s.parkingSlot, selectedItem.id) && (!selectedItem.floorId || sameId(s.floorId, selectedItem.floorId))
+          );
+          const dbSlotInfo = !isZone
+            ? dbSlots.find(s => sameSlotCode(s.slotNumber, selectedItem.id) && sameId(getSlotFloorId(s), selectedItem.floorId))
+            : null;
+          const zoneSlots = isZone
+            ? dbSlots.filter(s => sameId(getSlotFloorId(s), selectedItem.floorId) && s.zoneID?.zoneName === selectedItem.name)
+            : [];
+          const zoneId = zoneSlots[0]?.zoneID?._id || zoneSlots[0]?.zoneID || null;
+          const isMaintenance = isZone
+            ? zoneSlots.length > 0 && zoneSlots.every(s => s.status === 'maintenance')
+            : dbSlotInfo?.status === 'maintenance';
 
-           const handleToggleMaintenance = async () => {
-             try {
-               if (isMaintenance) {
-                 const res = await endMaintenance(isZone ? { zoneID: zoneId } : { slotID: dbSlotInfo._id });
-                 if (res.ok) fetchDbSlots(currentFloorId);
-                 else alert("Failed to end maintenance: " + (res.data?.message || "Unknown error"));
-               } else {
-                 setMaintenanceModal({ isOpen: true, item: isZone ? zoneId : dbSlotInfo._id, isZone });
-               }
-             } catch (e) {
-               console.error("Maintenance toggle failed", e);
-               alert("Network error while trying to toggle maintenance.");
-             }
-           };
+          const aiObs = dbSlotInfo?.aiObservation;
+          const isViolation = aiObs?.isViolation || selectedItem.isWrongSlot;
 
-           return (
-           <>
-              <div className="flex justify-between items-start mb-6 flex-shrink-0">
+          const handleToggleMaintenance = async () => {
+            try {
+              if (isMaintenance) {
+                const res = await endMaintenance(isZone ? { zoneID: zoneId } : { slotID: dbSlotInfo._id });
+                if (res.ok) fetchDbSlots(currentFloorId);
+                else alert("Failed to end maintenance: " + (res.data?.message || "Unknown error"));
+              } else {
+                setMaintenanceModal({ isOpen: true, item: isZone ? zoneId : dbSlotInfo._id, isZone });
+              }
+            } catch (e) {
+              console.error("Maintenance toggle failed", e);
+              alert("Network error while trying to toggle maintenance.");
+            }
+          };
+
+          return (
+            <>
+              {/* Drawer Header */}
+              <div className="flex justify-between items-start mb-4 flex-shrink-0">
                 <div>
-                    <span className="text-cyan-400 text-xs font-bold uppercase tracking-[0.2em] mb-1 block">{isZone ? "Maintenance Zone" : `${selectedItem.type} Ticket`}</span>
-                    <h2 className="text-4xl font-extrabold text-white flex items-center gap-2">
-                        {isZone ? "ZONE" : "SLOT"} <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">{isZone ? selectedItem.name : selectedItem.id}</span>
-                    </h2>
+                  <span className="text-cyan-400 text-xs font-bold uppercase tracking-[0.2em] mb-1 block">
+                    {isZone ? "Maintenance Zone" : `${selectedItem.type || 'Parking'} Slot`}
+                  </span>
+                  <h2 className="text-3xl font-extrabold text-white flex items-center gap-2">
+                    {isZone ? "ZONE" : "SLOT"} <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">{isZone ? selectedItem.name : selectedItem.id}</span>
+                  </h2>
                 </div>
-                <button onClick={() => setSelectedItem(null)} className="text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 w-8 h-8 rounded-full flex items-center justify-center transition-all border border-white/5 flex-shrink-0">
-                    <X size={16} strokeWidth={2} />
+                <button 
+                  onClick={() => setSelectedItem(null)} 
+                  className="text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 w-8 h-8 rounded-full flex items-center justify-center transition-all border border-white/5 flex-shrink-0"
+                >
+                  <X size={16} strokeWidth={2} />
                 </button>
-            </div>
-            <div className="mb-4 flex-1 overflow-y-auto pr-2">
-                <h3 className="text-slate-500 text-[11px] font-bold uppercase tracking-[0.15em] mb-4">{isZone ? "Zone Details" : "Slot Details"}</h3>
-                
-                {(dbSlotInfo || (isZone && zoneId)) && (!selectedItem.session) && (
-                  <div className="mb-4">
-                    <button 
-                      onClick={handleToggleMaintenance}
-                      className={`w-full py-2 rounded font-bold transition-all ${isMaintenance ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'}`}
-                    >
-                      {isMaintenance ? "End Maintenance" : "Start Maintenance"}
-                    </button>
-                  </div>
-                )}
+              </div>
 
-                {isZone && (
-                  <div className="mb-4 rounded-xl border border-white/10 bg-slate-900/60 p-4 text-sm">
-                    <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-slate-400">Total slots</span><span className="font-bold text-white">{zoneSlots.length}</span></div>
-                    <div className="flex justify-between pt-2"><span className="text-slate-400">Maintenance slots</span><span className="font-bold text-red-400">{zoneSlots.filter(s => s.status === 'maintenance').length}</span></div>
-                  </div>
-                )}
+              {/* Tabs for Individual Slot */}
+              {!isZone && (
+                <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-3 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSlotTab('details')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase tracking-wider transition ${
+                      slotTab === 'details'
+                        ? 'bg-cyan-500 text-black shadow'
+                        : 'text-slate-400 hover:text-white bg-white/5'
+                    }`}
+                  >
+                    Details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSlotTab('history')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase tracking-wider transition flex items-center gap-1.5 ${
+                      slotTab === 'history'
+                        ? 'bg-amber-400 text-black shadow'
+                        : 'text-slate-400 hover:text-white bg-white/5'
+                    }`}
+                  >
+                    <History size={13} />
+                    <span>Slot History ({slotLogs.length})</span>
+                  </button>
+                </div>
+              )}
 
-                {((!isZone && !dbSlotInfo) || (isZone && !zoneId)) && (
-                  <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
-                    <p className="text-xs text-amber-200 mb-3">
-                      This {isZone ? "zone" : "slot"} exists in the layout but is not synced to the database yet.
-                    </p>
-                    <button
-                      onClick={() => syncFloorSlotsFromLayout(selectedItem.floorId)}
-                      className="w-full rounded-lg border border-amber-500/30 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-500/30 transition"
-                    >
-                      Sync slots from layout
-                    </button>
-                  </div>
-                )}
+              {/* Tab 1: Current Slot / Zone Details */}
+              {(isZone || slotTab === 'details') && (
+                <div className="mb-4 flex-1 overflow-y-auto pr-2 space-y-4">
+                  {/* Violation Alert Box inside Slot Drawer */}
+                  {!isZone && isViolation && (
+                    <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-500/50 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-red-300">
+                        <span className="flex items-center gap-1.5">
+                          <ShieldAlert size={15} className="text-red-400 animate-pulse" />
+                          WRONG-SLOT VIOLATION DETECTED!
+                        </span>
+                      </div>
 
-                {isMaintenance ? (
-                  <div className="flex flex-col gap-3 h-full items-center justify-center text-center py-10 opacity-90">
+                      {aiObs?.evidenceSnapshot && (
+                        <div className="rounded-lg overflow-hidden border border-red-500/30 max-h-[140px] bg-black/60 flex items-center justify-center">
+                          <img src={aiObs.evidenceSnapshot} alt="Evidence" className="w-full h-auto max-h-[140px] object-contain" />
+                        </div>
+                      )}
+
+                      <div className="text-xs text-red-200">
+                        {aiObs?.violationMessage || 'Vehicle parked in an unassigned or prohibited slot.'}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedViolation({
+                            ...(aiObs || {}),
+                            slotCode: selectedItem.id,
+                            actualSlot: selectedItem.id,
+                            detectedPlate: aiObs?.detectedPlate,
+                          });
+                        }}
+                        className="w-full py-2 rounded-lg bg-red-500 hover:bg-red-400 text-white font-extrabold text-xs uppercase tracking-wider transition shadow"
+                      >
+                        Resolve This Violation
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Maintenance Toggle Button */}
+                  {(dbSlotInfo || (isZone && zoneId)) && (!selectedItem.session) && (
+                    <div className="mb-2">
+                      <button 
+                        onClick={handleToggleMaintenance}
+                        className={`w-full py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${isMaintenance ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'}`}
+                      >
+                        {isMaintenance ? "End Maintenance" : "Start Maintenance"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Zone Overview */}
+                  {isZone && (
+                    <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4 text-sm space-y-2">
+                      <div className="flex justify-between border-b border-white/5 pb-2">
+                        <span className="text-slate-400">Total Slots</span>
+                        <span className="font-bold text-white">{zoneSlots.length}</span>
+                      </div>
+                      <div className="flex justify-between pt-1">
+                        <span className="text-slate-400">Maintenance Slots</span>
+                        <span className="font-bold text-red-400">{zoneSlots.filter(s => s.status === 'maintenance').length}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Unsynced slot/zone notice */}
+                  {((!isZone && !dbSlotInfo) || (isZone && !zoneId)) && (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+                      <p className="text-xs text-amber-200 mb-3">
+                        This {isZone ? "zone" : "slot"} exists on the layout canvas but has not been synchronized to the database.
+                      </p>
+                      <button
+                        onClick={() => syncFloorSlotsFromLayout(selectedItem.floorId)}
+                        className="w-full rounded-lg border border-amber-500/30 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-500/30 transition"
+                      >
+                        Sync Slots from Layout
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Slot Status Body */}
+                  {isMaintenance ? (
+                    <div className="flex flex-col gap-3 h-full items-center justify-center text-center py-8 opacity-90">
                       <div className="w-16 h-16 rounded-full bg-red-900/40 flex items-center justify-center border border-red-500/60 mb-2 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
-                          <span className="text-red-500 font-bold text-2xl">⚠</span>
+                        <span className="text-red-500 font-bold text-2xl">⚠</span>
                       </div>
                       
                       {(!isZone && dbSlotInfo?.maintenanceReason) ? (
                         <>
-                          <h3 className="text-xl font-bold text-white max-w-[280px] break-words leading-relaxed">
+                          <h3 className="text-lg font-bold text-white max-w-[280px] break-words leading-relaxed">
                             {dbSlotInfo.maintenanceReason}
                           </h3>
                           <span className="bg-red-500/20 text-red-400 text-[10px] px-3 py-1 rounded-full border border-red-500/30 font-bold uppercase tracking-widest mt-1">
@@ -596,108 +958,275 @@ export default function ParkingLots() {
                         </>
                       ) : (
                         <>
-                          <h3 className="text-xl font-bold text-white max-w-[280px] break-words leading-relaxed">
+                          <h3 className="text-lg font-bold text-white max-w-[280px] break-words leading-relaxed">
                             System Maintenance
                           </h3>
                           <span className="bg-red-500/20 text-red-400 text-[10px] px-3 py-1 rounded-full border border-red-500/30 font-bold uppercase tracking-widest mt-1">
                             Under Maintenance
                           </span>
                           <p className="text-xs text-slate-400 max-w-[250px] mt-2">
-                            This {isZone ? "zone" : "slot"} is currently locked for maintenance.
+                            This {isZone ? "zone" : "slot"} is temporarily locked for maintenance.
                           </p>
                         </>
                       )}
-                  </div>
-                ) : !isZone && selectedItem.session ? (
-                  <div className="flex flex-col gap-4">
-                      <div className="bg-rose-900/20 border border-rose-500/30 rounded-xl p-4 flex flex-col items-center justify-center mb-2">
-                          <span className="text-xs text-rose-400 uppercase tracking-widest font-bold mb-1">Status</span>
-                          <span className="text-lg text-white font-black uppercase">Occupied</span>
+                    </div>
+                  ) : !isZone && currentSession ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
+                        <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                        <span className="text-base text-white font-black uppercase">Occupied</span>
                       </div>
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">License Plate</span><span className="font-mono text-base font-semibold text-white bg-slate-800/80 px-3 py-1 rounded border border-slate-700/50">{selectedItem.session.licensePlate}</span></div>
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Phone</span><span className="font-medium text-white">{selectedItem.session.phone || <span className="text-slate-500 italic">Guest</span>}</span></div>
-                      {selectedItem.session.userId?.email && (
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Email</span><span className="font-medium text-cyan-400">{selectedItem.session.userId.email}</span></div>
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                        <span className="text-slate-400 text-xs">License Plate</span>
+                        <span className="font-mono text-sm font-bold text-white bg-slate-800/90 px-2.5 py-1 rounded border border-slate-700/60 tracking-wider">
+                          {currentSession.licensePlate || 'Chưa nhận diện biển số'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                        <span className="text-slate-400 text-xs">Phone Number</span>
+                        {currentSession.phone || currentSession.userId?.phone ? (
+                          <a
+                            href={`tel:${currentSession.phone || currentSession.userId?.phone}`}
+                            className="font-bold text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1.5 text-xs bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 active:scale-95 transition"
+                            title="Bấm để gọi trực tiếp"
+                          >
+                            <Phone size={12} className="text-emerald-400" />
+                            <span>{currentSession.phone || currentSession.userId?.phone}</span>
+                          </a>
+                        ) : (
+                          <span className="text-slate-500 italic text-xs">Khách vãng lai (Chưa có SĐT)</span>
+                        )}
+                      </div>
+                      {currentSession.userId?.email && (
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-slate-400 text-xs">Email</span>
+                          <span className="font-medium text-cyan-400">{currentSession.userId.email}</span>
+                        </div>
                       )}
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Vehicle Type</span><span className="font-medium text-white uppercase">{selectedItem.session.vehicleType || 'Unknown'}</span></div>
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Check-in Time</span><span className="font-medium text-white">{new Date(selectedItem.session.checkInTime).toLocaleString('vi-VN')}</span></div>
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Expected Duration</span><span className="font-medium text-white">{selectedItem.session.expectedDurationHours} hr(s)</span></div>
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Expiration Time</span><span className="font-bold text-rose-400">{new Date(new Date(selectedItem.session.checkInTime).getTime() + (selectedItem.session.expectedDurationHours || 0) * 3600000).toLocaleString('vi-VN')}</span></div>
-                      <div className="flex justify-between items-center mt-2 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
-                          <span className="text-cyan-400 text-sm font-bold tracking-wide uppercase">Parked For</span>
-                          <LiveDuration checkInTime={selectedItem.session.checkInTime} expectedDurationHours={selectedItem.session.expectedDurationHours} />
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                        <span className="text-slate-400 text-xs">Vehicle Type</span>
+                        <span className="font-medium text-white uppercase">{currentSession.vehicleType || 'Car'}</span>
                       </div>
-                  </div>
-                ) : !isZone && selectedItem.isReserved ? (
-                  <div className="flex flex-col gap-4">
-                      <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4 flex flex-col items-center justify-center mb-2">
-                          <span className="text-xs text-purple-400 uppercase tracking-widest font-bold mb-1">Status</span>
-                          <span className="text-lg text-white font-black uppercase">Reserved / VIP</span>
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                        <span className="text-slate-400 text-xs">Check-in Time</span>
+                        <span className="font-medium text-white">{new Date(currentSession.checkInTime).toLocaleString('en-US')}</span>
+                      </div>
+                      <div className="flex justify-between items-center mt-2 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                        <span className="text-cyan-400 text-xs font-bold tracking-wide uppercase">Parked Duration</span>
+                        <LiveDuration checkInTime={currentSession.checkInTime} expectedDurationHours={currentSession.expectedDurationHours} />
+                      </div>
+                    </div>
+                  ) : !isZone && (aiObs?.occupied || dbSlotInfo?.status === 'occupied' || selectedItem.isOccupied) ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="bg-rose-900/20 border border-rose-500/40 rounded-xl p-3 flex flex-col items-center justify-center text-center">
+                        <span className="text-[10px] text-rose-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                        <span className="text-base text-white font-black uppercase">Occupied (AI Safe Lock)</span>
+                        <span className="text-[11px] text-amber-300 font-semibold mt-1 flex items-center gap-1">
+                          🛡️ Automatic anti-collision occupancy lock
+                        </span>
+                      </div>
+
+                      {(aiObs?.detectedPlate || selectedItem.aiStatus?.detectedPlate || selectedItem.aiStatus?.plate) && (
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-slate-400 text-xs">Detected Plate</span>
+                          <span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">
+                            {aiObs?.detectedPlate || selectedItem.aiStatus?.detectedPlate || selectedItem.aiStatus?.plate}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                        <span className="text-slate-400 text-xs">Reported By</span>
+                        <span className="font-medium text-cyan-400 text-xs">AI Camera Surveillance</span>
+                      </div>
+
+                      {(aiObs?.lastSeenAt || aiObs?.detectedAt) && (
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-slate-400 text-xs">Detection Timestamp</span>
+                          <span className="font-medium text-slate-300 text-xs">
+                            {new Date(aiObs.lastSeenAt || aiObs.detectedAt).toLocaleString('en-US')}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200/90 leading-relaxed">
+                        💡 <strong>Safety Lock:</strong> Even if violation alerts are dismissed or unregistered vehicles occupy the slot, the system locks actual occupancy to prevent Kiosk or App from assigning this slot to others.
+                      </div>
+                    </div>
+                  ) : !isZone && selectedItem.isReserved ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
+                        <span className="text-[10px] text-purple-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                        <span className="text-base text-white font-black uppercase">Reserved / VIP</span>
                       </div>
                       {dbSlotInfo?.subscriptionDetail ? (
                         <>
                           {dbSlotInfo.subscriptionDetail.user && (
                             <>
-                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Customer Name</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.username || 'N/A'}</span></div>
-                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Phone</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.phone || 'N/A'}</span></div>
-                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Email</span><span className="font-medium text-cyan-400">{dbSlotInfo.subscriptionDetail.user.email || 'N/A'}</span></div>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.username || 'N/A'}</span></div>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                                <span className="text-slate-400 text-xs">Phone</span>
+                                {dbSlotInfo.subscriptionDetail.user.phone ? (
+                                  <a href={`tel:${dbSlotInfo.subscriptionDetail.user.phone}`} className="font-bold text-emerald-400 hover:underline flex items-center gap-1 text-xs">
+                                    <Phone size={11} />
+                                    <span>{dbSlotInfo.subscriptionDetail.user.phone}</span>
+                                  </a>
+                                ) : (
+                                  <span className="font-medium text-slate-500">Chưa có SĐT</span>
+                                )}
+                              </div>
                             </>
                           )}
-                          {dbSlotInfo.subscriptionDetail.ticketPackage && (
-                            <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Package</span><span className="font-medium text-purple-400 uppercase">{dbSlotInfo.subscriptionDetail.ticketPackage.name || dbSlotInfo.subscriptionDetail.ticketPackage.type}</span></div>
-                          )}
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Valid Until</span><span className="font-bold text-purple-400">{new Date(dbSlotInfo.subscriptionDetail.expireAt).toLocaleString('vi-VN')}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Valid Until</span><span className="font-bold text-purple-400">{new Date(dbSlotInfo.subscriptionDetail.expireAt).toLocaleString('en-US')}</span></div>
                         </>
                       ) : (
-                        <p className="text-xs text-purple-300 text-center mt-4">This slot is currently reserved for a VIP subscription package or an upcoming booking.</p>
+                        <p className="text-xs text-purple-300 text-center mt-4">This slot is reserved for VIP subscriptions or scheduled bookings.</p>
                       )}
-                  </div>
-                ) : !isZone && selectedItem.isHeld ? (
-                  <div className="flex flex-col gap-4">
-                      <div className={`border rounded-xl p-4 flex flex-col items-center justify-center mb-2 ${selectedItem.booking?.status === 'CANCELLED' ? 'bg-red-900/20 border-red-500/30' : 'bg-orange-900/20 border-orange-500/30'}`}>
-                          <span className={`text-xs uppercase tracking-widest font-bold mb-1 ${selectedItem.booking?.status === 'CANCELLED' ? 'text-red-400' : 'text-orange-400'}`}>Status</span>
-                          <span className="text-lg text-white font-black uppercase">{selectedItem.booking?.status === 'CANCELLED' ? 'Cancelled / Historical' : 'Holding / Booked'}</span>
+                    </div>
+                  ) : !isZone && selectedItem.isHeld ? (
+                    <div className="flex flex-col gap-3">
+                      <div className={`border rounded-xl p-3 flex flex-col items-center justify-center ${selectedItem.booking?.status === 'CANCELLED' ? 'bg-red-900/20 border-red-500/30' : 'bg-orange-900/20 border-orange-500/30'}`}>
+                        <span className={`text-[10px] uppercase tracking-widest font-bold mb-0.5 ${selectedItem.booking?.status === 'CANCELLED' ? 'text-red-400' : 'text-orange-400'}`}>Status</span>
+                        <span className="text-base text-white font-black uppercase">{selectedItem.booking?.status === 'CANCELLED' ? 'Cancelled / Historical' : 'Holding / Booked'}</span>
                       </div>
-                      {selectedItem.booking ? (
+                      {selectedItem.booking && (
                         <>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Customer Name</span><span className="font-medium text-white">{selectedItem.booking.userId?.username || 'N/A'}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Phone</span><span className="font-medium text-white">{selectedItem.booking.userId?.phone || 'N/A'}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Email</span><span className="font-medium text-cyan-400">{selectedItem.booking.userId?.email || 'N/A'}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">License Plate</span><span className="font-mono text-base font-semibold text-white bg-slate-800/80 px-3 py-1 rounded border border-slate-700/50">{selectedItem.booking.licensePlate || 'N/A'}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Start Time</span><span className="font-medium text-white">{new Date(selectedItem.booking.scheduledStart).toLocaleString('vi-VN')}</span></div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">End Time</span><span className="font-medium text-white">{new Date(selectedItem.booking.scheduledEnd).toLocaleString('vi-VN')}</span></div>
-                          {selectedItem.booking.status === 'CANCELLED' && (
-                            <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Booking Status</span><span className="font-bold text-red-400">CANCELLED</span></div>
-                          )}
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{selectedItem.booking.userId?.username || 'N/A'}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                            <span className="text-slate-400 text-xs">Phone</span>
+                            {selectedItem.booking.userId?.phone ? (
+                              <a href={`tel:${selectedItem.booking.userId.phone}`} className="font-bold text-emerald-400 hover:underline flex items-center gap-1 text-xs">
+                                <Phone size={11} />
+                                <span>{selectedItem.booking.userId.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="font-medium text-slate-500">Chưa có SĐT</span>
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white">{selectedItem.booking.licensePlate || 'N/A'}</span></div>
                         </>
-                      ) : (
-                        <p className="text-xs text-orange-400 text-center mt-4">This slot is currently held for an upcoming booking or checkout process.</p>
                       )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4 h-full items-center justify-center text-center py-10 opacity-70">
+                    </div>
+                  ) : !isZone ? (
+                    <div className="flex flex-col gap-4 h-full items-center justify-center text-center py-8 opacity-70">
                       <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 mb-2">
-                          <span className="text-slate-500 font-bold text-2xl">P</span>
+                        <MonitorCheck size={24} className="text-slate-500" />
                       </div>
-                      <p className="text-slate-400 font-bold uppercase tracking-widest">Slot is Empty</p>
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Slot is Empty</p>
                       <p className="text-xs text-slate-500 max-w-[200px]">Ready for next incoming vehicle assignment.</p>
-                  </div>
-                )}
-            </div>
-            
-            {!isZone && selectedItem.session && (
-              <div className="mt-auto flex-shrink-0 pt-4 pb-2">
-                 <button 
-                    onClick={() => setShowCheckoutModal(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]">
-                    <X size={18} />
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Tab 2: Specific Slot History Timeline */}
+              {!isZone && slotTab === 'history' && (
+                <div className="mb-4 flex-1 overflow-y-auto pr-2 divide-y divide-white/5">
+                  {loadingSlotLogs ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">
+                      <RefreshCw size={18} className="animate-spin mx-auto mb-2 text-amber-400" />
+                      Loading slot logs...
+                    </div>
+                  ) : slotLogs.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">
+                      No activity logs recorded for this slot yet.
+                    </div>
+                  ) : (
+                    slotLogs.map((log) => {
+                      const isViol = log.changeType === 'VIOLATION_DETECTED';
+                      const isReassigned = log.changeType === 'SLOT_REASSIGNED';
+                      const isMaintenance = log.changeType === 'MAINTENANCE' || log.changeType === 'MAINTENANCE_LOCKED' || log.changeType === 'MAINTENANCE_UNLOCKED';
+                      const isCheckout = log.resolutionAction === 'CHECKOUT_RELEASED';
+                      const isVehicleLeft = log.resolutionAction === 'VEHICLE_LEFT';
+                      const isVehicleParked = log.resolutionAction === 'VEHICLE_PARKED';
+
+                      let badgeText = 'Slot Activity';
+                      let badgeClass = 'bg-slate-700/40 text-slate-300';
+                      if (isViol) {
+                        badgeText = 'Violation Detected';
+                        badgeClass = 'bg-red-500/20 text-red-400 border border-red-500/30';
+                      } else if (isMaintenance) {
+                        badgeText = 'Maintenance';
+                        badgeClass = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                      } else if (isCheckout) {
+                        badgeText = 'Checkout - Released';
+                        badgeClass = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+                      } else if (isVehicleLeft) {
+                        badgeText = 'Vehicle Left - Empty';
+                        badgeClass = 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
+                      } else if (isVehicleParked) {
+                        badgeText = 'Vehicle Parked';
+                        badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                      } else if (isReassigned) {
+                        badgeText = 'Slot Reassigned';
+                        badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                      }
+
+                      return (
+                        <div key={log._id} className="py-3 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${badgeClass}`}>
+                              {badgeText}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {new Date(log.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                            </span>
+                          </div>
+
+                          {log.detectedPlate && (
+                            <div className="flex items-center justify-between text-slate-200 font-mono font-bold">
+                              <span>Biển số: {formatLicensePlateDisplay(log.detectedPlate)}</span>
+                              {log.phone && (
+                                <a
+                                  href={`tel:${log.phone}`}
+                                  className="text-emerald-400 font-sans text-[11px] font-normal hover:underline flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20"
+                                  title="Gọi cho khách"
+                                >
+                                  <Phone size={10} />
+                                  <span>{log.phone}</span>
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          {log.customerName && (
+                            <div className="text-[11px] text-slate-400">
+                              Khách hàng: <span className="text-slate-200 font-medium">{log.customerName}</span>
+                            </div>
+                          )}
+
+                          {log.evidenceSnapshot && (
+                            <div className="rounded-lg overflow-hidden border border-white/10 max-h-[100px] bg-black/60 my-1">
+                              <img src={log.evidenceSnapshot} alt="Evidence Crop" className="w-full h-auto max-h-[100px] object-contain" />
+                            </div>
+                          )}
+
+                          {log.resolutionNote && (
+                            <div className="text-[11px] text-emerald-400 italic">
+                              {log.resolutionNote}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* Action: Checkout vehicle button */}
+              {!isZone && currentSession && (
+                <div className="mt-auto flex-shrink-0 pt-4 pb-2">
+                  <button 
+                    onClick={() => handleTriggerCheckout(currentSession)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-3.5 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98] text-xs"
+                  >
+                    <X size={16} />
                     Process Check-out
-                 </button>
-              </div>
-            )}
-            
-           </>
-        )})()}
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* Maintenance Reason Modal */}
@@ -720,7 +1249,7 @@ export default function ParkingLots() {
                 <textarea
                   autoFocus
                   className="w-full h-24 bg-black/50 border border-white/10 rounded-xl p-4 text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 resize-none transition-all"
-                  placeholder="E.g., Cleaning, Repairing broken sensor..."
+                  placeholder="E.g., Slot cleaning, sensor repair, surface painting..."
                   value={maintenanceReason}
                   onChange={(e) => setMaintenanceReason(e.target.value)}
                 />
@@ -732,7 +1261,7 @@ export default function ParkingLots() {
                   setMaintenanceModal({ isOpen: false, item: null, isZone: false });
                   setMaintenanceReason("");
                 }}
-                className="px-5 py-2.5 rounded-xl font-bold text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                className="px-5 py-2.5 rounded-xl font-bold text-slate-300 hover:text-white hover:bg-white/5 transition-colors text-xs"
               >
                 Cancel
               </button>
@@ -748,6 +1277,7 @@ export default function ParkingLots() {
                       fetchDbSlots(currentFloorId);
                       setMaintenanceModal({ isOpen: false, item: null, isZone: false });
                       setMaintenanceReason("");
+                      toast.success("Maintenance activated successfully!");
                     } else {
                       alert("Failed to start maintenance: " + (res.data?.message || "Unknown error"));
                     }
@@ -756,22 +1286,27 @@ export default function ParkingLots() {
                     alert("Network error while trying to start maintenance.");
                   }
                 }}
-                className="px-5 py-2.5 rounded-xl font-bold bg-red-500 hover:bg-red-600 text-white transition-colors shadow-[0_0_20px_rgba(239,68,68,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-5 py-2.5 rounded-xl font-bold bg-red-500 hover:bg-red-600 text-white transition-colors shadow-[0_0_20px_rgba(239,68,68,0.3)] disabled:opacity-50 disabled:cursor-not-allowed text-xs"
               >
-                Confirm
+                Confirm Maintenance
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {showCheckoutModal && selectedItem?.session && (
+      {/* Staff Checkout Modal */}
+      {showCheckoutModal && (checkoutSessionData || selectedItem?.session) && (
         <StaffCheckoutModal 
           isOpen={showCheckoutModal}
-          onClose={() => setShowCheckoutModal(false)}
-          session={{...selectedItem.session, parkingSlot: selectedItem.id}}
+          onClose={() => {
+            setShowCheckoutModal(false);
+            setCheckoutSessionData(null);
+          }}
+          session={checkoutSessionData || { ...selectedItem.session, parkingSlot: selectedItem.id }}
           onSuccess={() => {
             setShowCheckoutModal(false);
+            setCheckoutSessionData(null);
             setSelectedItem(null);
             if (currentFloorId) {
               fetchLiveData();
@@ -781,17 +1316,98 @@ export default function ParkingLots() {
         />
       )}
 
-
+      {/* Confirm Delete Floor Modal */}
       <ConfirmModal 
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, floorId: null, floorName: "" })}
         onConfirm={executeDeleteFloor}
         title="Delete Floor"
         message={`Are you sure you want to delete ${deleteModal.floorName}? This action cannot be undone.`}
-        confirmText="Delete"
+        confirmText="Confirm Delete"
         cancelText="Cancel"
         isDestructive={true}
       />
+
+      {/* AI Overhead Camera Surveillance Modal */}
+      {showSurveillanceModal && (
+        <SlotCameraMonitorModal
+          isOpen={showSurveillanceModal}
+          onClose={() => setShowSurveillanceModal(false)}
+          floors={floors}
+          currentFloorId={currentFloorId}
+          activeSessions={activeSessions}
+          onSlotStatusUpdate={(results, floorId) => {
+            if (!floorId) return;
+            setFloorAiStatusesMap((prev) => {
+              const currentPlates = new Set(
+                results
+                  .filter((r) => r.occupied && (r.plate || r.detectedPlate))
+                  .map((r) => (r.plate || r.detectedPlate).replace(/[^A-Z0-9]/gi, '').toUpperCase())
+              );
+
+              const updated = {};
+              Object.entries(prev).forEach(([fId, fSlots]) => {
+                if (fId === floorId) return;
+                updated[fId] = fSlots.filter((s) => {
+                  const p = (s.plate || s.detectedPlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                  return !p || !currentPlates.has(p);
+                });
+              });
+              updated[floorId] = results;
+              return updated;
+            });
+          }}
+          onCheckoutSlot={(sessionOrSlot) => {
+            handleTriggerCheckout(sessionOrSlot);
+          }}
+        />
+      )}
+
+      {/* Wrong-Slot Violation Resolution Modal */}
+      {selectedViolation && (
+        <ViolationResolutionModal
+          isOpen={Boolean(selectedViolation)}
+          onClose={() => setSelectedViolation(null)}
+          violation={selectedViolation}
+          onReassignSuccess={(sessionId, newSlotCode) => {
+            fetchLiveData();
+            fetchDbSlots(currentFloorId);
+            setFloorAiStatusesMap((prev) => {
+              const updated = {};
+              Object.entries(prev).forEach(([fId, slots]) => {
+                updated[fId] = slots.filter((s) => s.slotCode !== selectedViolation.slotCode);
+              });
+              return updated;
+            });
+          }}
+          onCheckout={(session) => {
+            handleTriggerCheckout(session);
+          }}
+        />
+      )}
+
+      {/* Global Violation History Modal */}
+      <GlobalViolationHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        floors={floors}
+        currentFloorId={currentFloorId}
+        onViolationResolved={(slotCode) => {
+          fetchLiveData();
+          fetchDbSlots(currentFloorId);
+          if (slotCode) {
+            setFloorAiStatusesMap((prev) => {
+              const updated = {};
+              Object.entries(prev).forEach(([fId, slots]) => {
+                updated[fId] = slots.filter((s) => s.slotCode !== slotCode);
+              });
+              return updated;
+            });
+          }
+        }}
+      />
+
+
 
     </div>
   );

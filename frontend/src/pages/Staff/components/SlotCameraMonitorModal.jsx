@@ -33,7 +33,9 @@ import {
   Zap,
   Check,
   Focus,
-  ChevronDown
+  ChevronDown,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { API_BASE } from '../../../services/api';
 import toast from 'react-hot-toast';
@@ -73,25 +75,37 @@ const ROBOFLOW_CALIBRATED_SLOTS = [
 const formatViolationEnglish = (res, slotCode) => {
   if (!res) return '';
   const rawPlate = res.plate || res.detectedPlate || res.expectedPlate || res.session?.licensePlate;
-  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : 'Vehicle';
+  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : '';
+  const subj = plateDisp ? `Vehicle ${plateDisp}` : 'Unidentified vehicle';
   const isWrong = res.status === 'WRONG_SLOT_VIOLATION' || res.violationType === 'WRONG_SLOT_VIOLATION';
+  const isDoubleParking = res.status === 'DOUBLE_PARKING_VIOLATION' || res.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(res.occupiedByOverlap);
   const isUnauth = res.status === 'UNAUTHORIZED_PARKING' || res.violationType === 'UNAUTHORIZED_PARKING';
   const isPending = res.status === 'CHECKED_IN_PENDING_PARK' || res.violationType === 'CHECKED_IN_PENDING_PARK';
+  const isExiting = res.status === 'EXITING_TO_GATE' || res.violationType === 'EXITING_TO_GATE';
 
+  if (isDoubleParking) {
+    if (res.primarySlot) {
+      return `${subj} parked at ${res.primarySlot} is occupying too much of adjacent slot ${slotCode}!`;
+    }
+    return `${subj} is straddling across two parking slots (encroaching ${slotCode})!`;
+  }
   if (isWrong) {
     if (res.expectedSlot) {
-      return `Vehicle ${plateDisp} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
+      return `${subj} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
     }
-    return `Vehicle ${plateDisp} parked in wrong slot (assigned elsewhere)!`;
+    return `${subj} parked in wrong slot (assigned elsewhere)!`;
   }
   if (isUnauth) {
-    return `Vehicle ${plateDisp} parked at slot ${slotCode} without an active check-in or reservation!`;
+    return `${subj} parked at slot ${slotCode} without an active check-in or reservation!`;
   }
   if (isPending) {
     const timeStr = res.session?.checkInTime
       ? new Date(res.session.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
       : '';
-    return `Vehicle ${plateDisp} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+    return `${subj} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+  }
+  if (isExiting) {
+    return `${subj} left slot ${slotCode} and is heading toward exit gate (pending checkout).`;
   }
   if (res.violationMessage && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(res.violationMessage)) {
     return res.violationMessage;
@@ -150,19 +164,68 @@ export default function SlotCameraMonitorModal({
   }, [activeFloor]);
 
   const DEFAULT_BOARD_CORNERS = useMemo(() => [
-    [0.100, 0.415], // 0: Top-Left (TL)
-    [0.635, 0.415], // 1: Top-Right (TR)
-    [0.635, 0.885], // 2: Bottom-Right (BR)
-    [0.100, 0.885], // 3: Bottom-Left (BL)
+    [0.120, 0.270], // 0: Top-Left (TL)  — UGREEN Camera 4K centered diorama
+    [0.870, 0.270], // 1: Top-Right (TR)
+    [0.940, 0.840], // 2: Bottom-Right (BR)
+    [0.090, 0.840], // 3: Bottom-Left (BL)
   ], []);
 
   const [boardCorners, setBoardCorners] = useState(DEFAULT_BOARD_CORNERS);
   const [activeCornerIndex, setActiveCornerIndex] = useState(null);
+  const [isLayoutLocked, setIsLayoutLocked] = useState(false);
 
   const [slotScale, setSlotScale] = useState({ x: 1.0, y: 1.0 });
 
-  // Bilinear interpolation from 4 corners for (u, v) in [0, 1]
-  const bilinearPoint = useCallback((u, v, corners) => {
+  // Compute 3x3 Projective Homography matrix mapping unit square [0..1]x[0..1] -> [TL, TR, BR, BL]
+  const computeHomography = useCallback((corners) => {
+    const [TL, TR, BR, BL] = corners || DEFAULT_BOARD_CORNERS;
+    const src = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const dst = [TL, TR, BR, BL];
+    const A = [];
+    const b = [];
+    for (let i = 0; i < 4; i++) {
+      const [u, v] = src[i];
+      const [x, y] = dst[i];
+      A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]);
+      b.push(x);
+      A.push([0, 0, 0, u, v, 1, -u * y, -v * y]);
+      b.push(y);
+    }
+    // Gaussian elimination with partial pivoting (8x8)
+    const n = 8;
+    const aug = A.map((row, idx) => [...row, b[idx]]);
+    for (let col = 0; col < n; col++) {
+      let maxRow = col;
+      for (let r = col + 1; r < n; r++) {
+        if (Math.abs(aug[r][col]) > Math.abs(aug[maxRow][col])) maxRow = r;
+      }
+      if (Math.abs(aug[maxRow][col]) < 1e-10) return null;
+      [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+      const pivot = aug[col][col];
+      for (let c = col; c <= n; c++) aug[col][c] /= pivot;
+      for (let r = 0; r < n; r++) {
+        if (r === col) continue;
+        const factor = aug[r][col];
+        for (let c = col; c <= n; c++) aug[r][c] -= factor * aug[col][c];
+      }
+    }
+    return [
+      aug[0][n], aug[1][n], aug[2][n],
+      aug[3][n], aug[4][n], aug[5][n],
+      aug[6][n], aug[7][n], 1.0,
+    ];
+  }, [DEFAULT_BOARD_CORNERS]);
+
+  // Project normalized (u, v) via 3x3 Homography (fallback to bilinear if degenerate)
+  const projectPoint = useCallback((u, v, corners, H = null) => {
+    if (H) {
+      const w = H[6] * u + H[7] * v + H[8];
+      if (Math.abs(w) > 1e-7) {
+        const x = (H[0] * u + H[1] * v + H[2]) / w;
+        const y = (H[3] * u + H[4] * v + H[5]) / w;
+        return [Number(x.toFixed(4)), Number(y.toFixed(4))];
+      }
+    }
     const [TL, TR, BR, BL] = corners || DEFAULT_BOARD_CORNERS;
     const x = (1 - u) * (1 - v) * TL[0] + u * (1 - v) * TR[0] + u * v * BR[0] + (1 - u) * v * BL[0];
     const y = (1 - u) * (1 - v) * TL[1] + u * (1 - v) * TR[1] + u * v * BR[1] + (1 - u) * v * BL[1];
@@ -199,35 +262,55 @@ export default function SlotCameraMonitorModal({
     const sx = scale.x || 1.0;
     const sy = scale.y || 1.0;
 
-    const getSlotPoly = (colIdx, rowIdx, isRightZone) => {
-      const baseUStart = isRightZone ? 0.540 : 0.00;
-      const colWidth = 0.090;
-      const slotWidth = 0.080 * sx;
-      const uCenter = baseUStart + colIdx * colWidth + (slotWidth / 2);
-      const u1 = uCenter - slotWidth / 2;
-      const u2 = uCenter + slotWidth / 2;
+    const maxSlotsInZone = Math.max(...Object.values(zonesMap).map((arr) => arr.length), 5);
+    const isTwoRowLayout = maxSlotsInZone <= 5 && slotEls.length <= 20;
 
-      let v1, v2;
-      if (rowIdx === 0) {
-        // Hàng 1 (Trên): E1..E5 / F1..F5
-        v1 = 0.00;
-        v2 = 0.26 * sy;
-      } else if (rowIdx === 1) {
-        // Hàng 2 (Giữa): E6..E10 / F6..F7
-        v1 = 0.29;
-        v2 = (0.29 + 0.25) * sy;
+    const H = computeHomography(corners);
+
+    const getSlotPoly = (colIdx, rowIdx, isRightZone) => {
+      let u1, u2;
+      if (isTwoRowLayout) {
+        const slotWidth = 0.085 * sx;
+        const baseU = isRightZone ? 0.575 : 0.000;
+        u1 = baseU + colIdx * 0.085;
+        u2 = u1 + slotWidth;
       } else {
-        // Hàng 3 (Dưới): G1..G5 / H1..H5
-        v1 = 0.73;
-        v2 = (0.73 + 0.25) * sy;
+        const baseUStart = isRightZone ? 0.540 : 0.00;
+        const cWidth = 0.090;
+        const sWidth = 0.080 * sx;
+        const uCenter = baseUStart + colIdx * cWidth + (sWidth / 2);
+        u1 = uCenter - sWidth / 2;
+        u2 = uCenter + sWidth / 2;
       }
 
-      // Mỗi ô đỗ tự động tạo thành một hình tứ giác phối cảnh (perspective quadrilateral)
+      let v1, v2;
+      if (isTwoRowLayout) {
+        if (rowIdx === 0) {
+          v1 = 0.000;
+          v2 = 0.365 * sy;
+        } else {
+          v1 = 0.510;
+          v2 = 1.000 * sy;
+        }
+      } else {
+        if (rowIdx === 0) {
+          v1 = 0.00;
+          v2 = 0.26 * sy;
+        } else if (rowIdx === 1) {
+          v1 = 0.29;
+          v2 = (0.29 + 0.25) * sy;
+        } else {
+          v1 = 0.73;
+          v2 = (0.73 + 0.25) * sy;
+        }
+      }
+
+      // Mỗi ô đỗ được chiếu qua Homography 3D từ 4 chốt sa bàn
       return [
-        bilinearPoint(u1, Math.max(0, v1), corners),
-        bilinearPoint(u2, Math.max(0, v1), corners),
-        bilinearPoint(u2, Math.min(1, v2), corners),
-        bilinearPoint(u1, Math.min(1, v2), corners),
+        projectPoint(u1, Math.max(0, v1), corners, H),
+        projectPoint(u2, Math.max(0, v1), corners, H),
+        projectPoint(u2, Math.min(1, v2), corners, H),
+        projectPoint(u1, Math.min(1, v2), corners, H),
       ];
     };
 
@@ -259,28 +342,28 @@ export default function SlotCameraMonitorModal({
       });
     });
 
-    // Zone 3 (Bottom-Left: Row 2 = 1..5)
+    // Zone 3 (Bottom-Left: Row 1 cho sa bàn 20 ô, hoặc Row 2 cho sa bàn 27 ô)
     const zoneC = zonesMap[zC] || [];
     zoneC.forEach((el, idx) => {
       const c = idx % 5;
       result.push({
         slotCode: el.name,
-        polygon: getSlotPoly(c, 2, false),
+        polygon: getSlotPoly(c, isTwoRowLayout ? 1 : 2, false),
       });
     });
 
-    // Zone 4 (Bottom-Right: Row 2 = 1..5)
+    // Zone 4 (Bottom-Right: Row 1 cho sa bàn 20 ô, hoặc Row 2 cho sa bàn 27 ô)
     const zoneD = zonesMap[zD] || [];
     zoneD.forEach((el, idx) => {
       const c = idx % 5;
       result.push({
         slotCode: el.name,
-        polygon: getSlotPoly(c, 2, true),
+        polygon: getSlotPoly(c, isTwoRowLayout ? 1 : 2, true),
       });
     });
 
     return result;
-  }, [bilinearPoint]);
+  }, [computeHomography, projectPoint]);
 
   // Generate Floor Grid default
   const generateFloorLayoutGrid = useCallback((floor) => {
@@ -367,7 +450,7 @@ export default function SlotCameraMonitorModal({
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   const [autoScanEnabled, setAutoScanEnabled] = useState(false); // Mặc định tắt để không tự quét khi chưa sẵn sàng
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [showGridOverlay, setShowGridOverlay] = useState(false); // Mặc định ẩn 27 khung xanh, chỉ hiện khi phát hiện có xe/vi phạm
+  const [showGridOverlay, setShowGridOverlay] = useState(true); // Mặc định hiển thị lưới ô đỗ để người dùng luôn thấy khung viền ô đỗ
   const [cameraMisalignedWarning, setCameraMisalignedWarning] = useState(null);
   const [floorMismatch, setFloorMismatch] = useState(null);
   const [isAiDropdownOpen, setIsAiDropdownOpen] = useState(false);
@@ -399,12 +482,20 @@ export default function SlotCameraMonitorModal({
     setFloorMismatch(null);
   }, [selectedFloorId]);
 
-  // When active floor changes, restore its scan results if any
+  // When active floor ACTUALLY changes, restore its scan results if any (never wipe on 5s parent polling)
+  const prevRestoredFloorKeyRef = useRef(null);
+  const floorScanResultsMapRef = useRef(floorScanResultsMap);
+  floorScanResultsMapRef.current = floorScanResultsMap;
+
   useEffect(() => {
     if (!activeFloor) return;
     const floorId = activeFloor._id || activeFloor.name || 'default';
-    setScanResults(floorScanResultsMap[floorId] || []);
-  }, [activeFloor, floorScanResultsMap]);
+    if (prevRestoredFloorKeyRef.current === floorId) {
+      return;
+    }
+    prevRestoredFloorKeyRef.current = floorId;
+    setScanResults(floorScanResultsMapRef.current[floorId] || []);
+  }, [activeFloor]);
 
   const lastLoadedFloorIdRef = useRef(null);
 
@@ -418,7 +509,7 @@ export default function SlotCameraMonitorModal({
     }
     lastLoadedFloorIdRef.current = floorId;
 
-    const storageKey = `valo_slot_roi_floor_${floorId}`;
+    const storageKey = `valo_slot_roi_floor_v7_${floorId}`;
     let loaded = false;
     try {
       const saved = localStorage.getItem(storageKey);
@@ -429,12 +520,33 @@ export default function SlotCameraMonitorModal({
           Array.isArray(parsed) &&
           parsed.length === floorData.allSlots.length &&
           parsed.length > 0 &&
-          parsed.every((s) => s.slotCode && expectedSlotNames.has(s.slotCode.toUpperCase()));
+          parsed.every((s) => {
+            if (!s.slotCode || !expectedSlotNames.has(s.slotCode.toUpperCase())) return false;
+            if (!Array.isArray(s.polygon) || s.polygon.length < 4) return false;
+            const xs = s.polygon.map((p) => p[0]);
+            const w = Math.max(...xs) - Math.min(...xs);
+            return w >= 0.04;
+          });
 
         if (isValidForThisFloor) {
-          setSlotRois(parsed);
-          setSelectedSlotIndex(-1);
-          loaded = true;
+          // Check if parsed coordinates are from old camera position (pre-UGREEN 4K)
+          // With UGREEN 4K: A1 top-y should be >= 0.18, D1 left-x should be >= 0.40
+          const a1 = parsed.find((s) => s.slotCode === 'A1');
+          const d1 = parsed.find((s) => s.slotCode === 'D1');
+          const c1 = parsed.find((s) => s.slotCode === 'C1');
+          // Stale if A1 is at y<0.15 (too high - old close-up camera)
+          const isStaleWallCoords = a1 && a1.polygon && Math.min(...a1.polygon.map((p) => p[1])) < 0.15;
+          // Stale if D1 x < 0.35 (too far left - old coordinate system)
+          const isStaleShiftedCoords = d1 && d1.polygon && Math.min(...d1.polygon.map((p) => p[0])) < 0.35;
+          // Stale if C1 and D1 overlap vertically with A1 (all in same row - bad calibration)
+          const a1MinY = a1 && a1.polygon ? Math.min(...a1.polygon.map((p) => p[1])) : 0;
+          const c1MinY = c1 && c1.polygon ? Math.min(...c1.polygon.map((p) => p[1])) : 0;
+          const isRowsMerged = c1 && a1 && Math.abs(c1MinY - a1MinY) < 0.08; // C/D row too close to A/B row
+          if (!isStaleWallCoords && !isStaleShiftedCoords && !isRowsMerged) {
+            setSlotRois(parsed);
+            setSelectedSlotIndex(-1);
+            loaded = true;
+          }
         }
       }
     } catch (e) { }
@@ -444,6 +556,20 @@ export default function SlotCameraMonitorModal({
       setSlotRois(layoutGrid);
       setSelectedSlotIndex(-1);
     }
+
+    // Also restore saved board corners & manual lock state for this floor
+    try {
+      const cStorageKey = `valo_board_corners_v7_${floorId}`;
+      const savedCorners = localStorage.getItem(cStorageKey);
+      if (savedCorners) {
+        const parsedCorners = JSON.parse(savedCorners);
+        if (Array.isArray(parsedCorners) && parsedCorners.length === 4) {
+          setBoardCorners(parsedCorners);
+        }
+      }
+      const lockKey = `valo_layout_locked_v8_${floorId}`;
+      setIsLayoutLocked(localStorage.getItem(lockKey) === 'true');
+    } catch (e) { }
   }, [activeFloor, floorData.allSlots, generateFloorLayoutGrid]);
 
   // Load cameras with persistent memory (Tự động nhớ camera USB/C270 đã chọn)
@@ -584,25 +710,41 @@ export default function SlotCameraMonitorModal({
     }
   };
 
-  // Save Calibration to LocalStorage
+  // Save Calibration to LocalStorage & lock so Scan Parking Lot won't overwrite manual layout
   const handleSaveCalibration = () => {
     if (!activeFloor) return;
-    const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
-    localStorage.setItem(storageKey, JSON.stringify(slotRois));
+    const fKey = activeFloor._id || activeFloor.name || 'default';
+    localStorage.setItem(`valo_slot_roi_floor_v7_${fKey}`, JSON.stringify(slotRois));
+    localStorage.setItem(`valo_board_corners_v7_${fKey}`, JSON.stringify(boardCorners));
+    localStorage.setItem(`valo_layout_locked_v8_${fKey}`, 'true');
+    setIsLayoutLocked(true);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
+  const handleToggleLayoutLock = () => {
+    if (!activeFloor) return;
+    const fKey = activeFloor._id || activeFloor.name || 'default';
+    const nextLocked = !isLayoutLocked;
+    setIsLayoutLocked(nextLocked);
+    localStorage.setItem(`valo_layout_locked_v8_${fKey}`, String(nextLocked));
+    toast.success(nextLocked ? 'Layout locked: scans will preserve your calibrated grid.' : 'Auto-align unlocked: next scan will automatically detect perspective & slot grid.');
+  };
+
   const handleResetToDiorama = () => {
     if (!activeFloor) return;
-    const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
+    const fKey = activeFloor._id || activeFloor.name || 'default';
+    const storageKey = `valo_slot_roi_floor_v7_${fKey}`;
     localStorage.removeItem(storageKey);
+    localStorage.removeItem(`valo_board_corners_v7_${fKey}`);
+    localStorage.setItem(`valo_layout_locked_v8_${fKey}`, 'false');
+    setIsLayoutLocked(false);
     setBoardCorners(DEFAULT_BOARD_CORNERS);
     setSlotScale({ x: 1.0, y: 1.0 });
     const layout = generateSlotsFromCorners(DEFAULT_BOARD_CORNERS, activeFloor, { x: 1.0, y: 1.0 });
     setSlotRois(layout);
     localStorage.setItem(storageKey, JSON.stringify(layout));
-    setSelectedSlotIndex(0);
+    setSelectedSlotIndex(-1);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };
@@ -615,12 +757,16 @@ export default function SlotCameraMonitorModal({
     setIsAutoDetecting(true);
     try {
       const video = videoRef.current;
+      // Cap resolution at 1920×1080 to reduce payload size (~4× faster than 4K)
+      const MAX_W = 1920;
+      const MAX_H = 1080;
+      const scale = Math.min(1, MAX_W / video.videoWidth, MAX_H / video.videoHeight);
       const offscreen = document.createElement('canvas');
-      offscreen.width = video.videoWidth;
-      offscreen.height = video.videoHeight;
+      offscreen.width = Math.round(video.videoWidth * scale);
+      offscreen.height = Math.round(video.videoHeight * scale);
       const ctx = offscreen.getContext('2d');
       ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
-      const base64Image = offscreen.toDataURL('image/jpeg', 0.95);
+      const base64Image = offscreen.toDataURL('image/jpeg', 0.88); // 0.88 quality saves ~30% size vs 0.95
 
       const token = localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
       const headers = { 'Content-Type': 'application/json' };
@@ -637,33 +783,34 @@ export default function SlotCameraMonitorModal({
 
       const data = await response.json();
       if (data.success) {
+        const fKey = activeFloor ? (activeFloor._id || activeFloor.name || 'default') : 'default';
+        let didCalibrate = false;
         if (Array.isArray(data.slots) && data.slots.length > 0) {
           setSlotRois(data.slots);
-          setSelectedSlotIndex(0);
+          setSelectedSlotIndex(-1);
           if (Array.isArray(data.corners) && data.corners.length === 4) {
             setBoardCorners(data.corners);
+            localStorage.setItem(`valo_board_corners_v7_${fKey}`, JSON.stringify(data.corners));
           }
           if (activeFloor) {
-            const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
-            localStorage.setItem(storageKey, JSON.stringify(data.slots));
+            localStorage.setItem(`valo_slot_roi_floor_v7_${fKey}`, JSON.stringify(data.slots));
           }
-          setTimeout(() => {
-            captureAndScanSlots(data.slots);
-          }, 80);
+          didCalibrate = true;
         } else if (Array.isArray(data.corners) && data.corners.length === 4) {
           setBoardCorners(data.corners);
+          localStorage.setItem(`valo_board_corners_v7_${fKey}`, JSON.stringify(data.corners));
           const alignedSlots = generateSlotsFromCorners(data.corners, activeFloor, slotScale);
           if (alignedSlots.length > 0) {
             setSlotRois(alignedSlots);
-            setSelectedSlotIndex(0);
+            setSelectedSlotIndex(-1);
             if (activeFloor) {
-              const storageKey = `valo_slot_roi_floor_${activeFloor._id || activeFloor.name || 'default'}`;
-              localStorage.setItem(storageKey, JSON.stringify(alignedSlots));
+              localStorage.setItem(`valo_slot_roi_floor_v7_${fKey}`, JSON.stringify(alignedSlots));
             }
-            setTimeout(() => {
-              captureAndScanSlots(alignedSlots);
-            }, 80);
+            didCalibrate = true;
           }
+        }
+        if (didCalibrate) {
+          toast.success('Calibrated! Auto-Align stays active; click Save Layout only if you want to lock manually.');
         }
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 2000);
@@ -685,15 +832,22 @@ export default function SlotCameraMonitorModal({
     const scanStartTime = Date.now();
     try {
       const video = videoRef.current;
+      // Cap resolution at 1600×900 (keeps far-row plates sharp while cutting payload & decode ~40%)
+      const MAX_W = 1600;
+      const MAX_H = 900;
+      const scale = Math.min(1, MAX_W / video.videoWidth, MAX_H / video.videoHeight);
       const offscreen = document.createElement('canvas');
-      offscreen.width = video.videoWidth;
-      offscreen.height = video.videoHeight;
+      offscreen.width = Math.round(video.videoWidth * scale);
+      offscreen.height = Math.round(video.videoHeight * scale);
       const ctx = offscreen.getContext('2d');
       ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
-      const base64Image = offscreen.toDataURL('image/jpeg', 0.95);
+      const base64Image = offscreen.toDataURL('image/jpeg', 0.85);
 
-      // Smart Cropping for each slot to provide focused evidence
+      // Lightweight evidence crops (320px for Gemini Deep Vision, 160px for fast Edge ALPR audit logs)
       const cropsMap = {};
+      const useLargeCrops = forceDeep || aiMode === 'gemini';
+      const cropTargetW = useLargeCrops ? 320 : 160;
+      const cropQuality = useLargeCrops ? 0.85 : 0.72;
       try {
         for (const s of slotsToScan) {
           if (s.polygon && s.polygon.length >= 3) {
@@ -704,8 +858,8 @@ export default function SlotCameraMonitorModal({
             let minY = Math.min(...ys);
             let maxY = Math.max(...ys);
 
-            const padX = (maxX - minX) * 0.15;
-            const padY = (maxY - minY) * 0.15;
+            const padX = (maxX - minX) * 0.20;
+            const padY = (maxY - minY) * 0.20;
             minX = Math.max(0, minX - padX);
             maxX = Math.min(1, maxX + padX);
             minY = Math.max(0, minY - padY);
@@ -718,11 +872,11 @@ export default function SlotCameraMonitorModal({
 
             if (sWidth > 10 && sHeight > 10) {
               const cropCanvas = document.createElement('canvas');
-              cropCanvas.width = 320;
-              cropCanvas.height = Math.round(320 * (sHeight / sWidth)) || 240;
+              cropCanvas.width = cropTargetW;
+              cropCanvas.height = Math.round(cropTargetW * (sHeight / sWidth)) || 120;
               const cctx = cropCanvas.getContext('2d');
               cctx.drawImage(offscreen, sx, sy, sWidth, sHeight, 0, 0, cropCanvas.width, cropCanvas.height);
-              cropsMap[s.slotCode] = cropCanvas.toDataURL('image/jpeg', 0.85);
+              cropsMap[s.slotCode] = cropCanvas.toDataURL('image/jpeg', cropQuality);
             }
           }
         }
@@ -743,6 +897,7 @@ export default function SlotCameraMonitorModal({
           crops: cropsMap,
           aiMode: forceDeep ? 'gemini' : aiMode,
           forceDeepScan: forceDeep,
+          skipAutoCalibrate: isLayoutLocked,
           currentFloor: activeFloor ? {
             id: activeFloor._id,
             name: activeFloor.name,
@@ -791,23 +946,94 @@ export default function SlotCameraMonitorModal({
         const currentFloorKey = activeFloor?._id || activeFloor?.name || 'default';
         const freshSlots = data.slots;
 
-        // Tự động định hình và bắt dính khung theo các ô đỗ vật lý AI vừa phát hiện từ camera
-        if (Array.isArray(data.calibratedSlots) && data.calibratedSlots.length > 0) {
-          setSlotRois(data.calibratedSlots);
-          const storageKey = `valo_slot_roi_floor_${currentFloorKey}`;
-          localStorage.setItem(storageKey, JSON.stringify(data.calibratedSlots));
-        }
-        if (Array.isArray(data.corners) && data.corners.length === 4) {
-          setBoardCorners(data.corners);
+        // Only update slot boundaries from scan when layout is NOT manually locked
+        if (!isLayoutLocked) {
+          if (Array.isArray(data.calibratedSlots) && data.calibratedSlots.length > 0) {
+            setSlotRois(data.calibratedSlots);
+            const storageKey = `valo_slot_roi_floor_v7_${currentFloorKey}`;
+            localStorage.setItem(storageKey, JSON.stringify(data.calibratedSlots));
+          }
+          if (Array.isArray(data.corners) && data.corners.length === 4) {
+            setBoardCorners(data.corners);
+            const cStorageKey = `valo_board_corners_v7_${currentFloorKey}`;
+            localStorage.setItem(cStorageKey, JSON.stringify(data.corners));
+          }
         }
 
-        const currentPlates = new Set(
-          freshSlots
-            .filter((r) => r.occupied && (r.plate || r.detectedPlate))
-            .map((r) => (r.plate || r.detectedPlate).replace(/[^A-Z0-9]/gi, '').toUpperCase())
-        );
+        // Build map of freshly confirmed plates -> list of slotCodes (prevents ghost green card when vehicle moves/re-aligns)
+        const freshPlateSlots = new Map();
+        freshSlots.forEach((r) => {
+          if (r.occupied && (r.plate || r.detectedPlate)) {
+            const np = (r.plate || r.detectedPlate).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            if (np) {
+              if (!freshPlateSlots.has(np)) freshPlateSlots.set(np, []);
+              freshPlateSlots.get(np).push(r.slotCode?.toUpperCase());
+            }
+          }
+        });
 
-        setScanResults(freshSlots);
+        // --- Temporal Smoothing: stabilize results across scans ---
+        // Update occupancy memory with current scan
+        freshSlots.forEach((s) => {
+          const key = s.slotCode?.toUpperCase();
+          if (!key) return;
+          const prev = occupancyMemoryRef.current.get(key) || { occupiedCount: 0, emptyCount: 0, lastPlate: null };
+          if (s.occupied && s.plate) {
+            prev.occupiedCount = Math.min((prev.occupiedCount || 0) + 1, 3);
+            prev.emptyCount = 0;
+            prev.lastPlate = s.plate;
+            prev.lastStatus = s.status;
+            prev.lastViolationType = s.violationType;
+            prev.lastIsViolation = s.isViolation;
+            prev.lastExpectedSlot = s.expectedSlot;
+            prev.lastViolationMessage = s.violationMessage;
+            prev.lastSession = s.session;
+            prev.lastOccupiedByOverlap = s.occupiedByOverlap;
+            prev.lastPrimarySlot = s.primarySlot;
+          } else {
+            const normPrevPlate = prev.lastPlate ? prev.lastPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+            const movedElsewhere = normPrevPlate && freshPlateSlots.has(normPrevPlate) && !freshPlateSlots.get(normPrevPlate).includes(key);
+            if (movedElsewhere) {
+              prev.occupiedCount = 0;
+              prev.emptyCount = 3;
+              prev.lastPlate = null;
+            } else {
+              prev.emptyCount = Math.min((prev.emptyCount || 0) + 1, 3);
+              // Only clear occupied if consistently empty 2+ scans
+              if (prev.emptyCount >= 2) {
+                prev.occupiedCount = 0;
+                prev.lastPlate = null;
+              }
+            }
+          }
+          occupancyMemoryRef.current.set(key, prev);
+        });
+        // Apply memory ONLY if the plate isn't already accounted for at another slot in freshSlots
+        const smoothedSlots = freshSlots.map((s) => {
+          const key = s.slotCode?.toUpperCase();
+          const mem = occupancyMemoryRef.current.get(key);
+          const normMemPlate = mem?.lastPlate ? mem.lastPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+          const alreadyActiveElsewhere = normMemPlate && freshPlateSlots.has(normMemPlate) && !freshPlateSlots.get(normMemPlate).includes(key);
+          if (!s.occupied && mem && mem.occupiedCount >= 1 && mem.lastPlate && !alreadyActiveElsewhere) {
+            return {
+              ...s,
+              occupied: true,
+              plate: mem.lastPlate,
+              status: mem.lastStatus || s.status,
+              violationType: mem.lastViolationType || s.violationType,
+              isViolation: Boolean(mem.lastIsViolation),
+              expectedSlot: mem.lastExpectedSlot || s.expectedSlot,
+              violationMessage: mem.lastViolationMessage || s.violationMessage,
+              session: mem.lastSession || s.session,
+              occupiedByOverlap: Boolean(mem.lastOccupiedByOverlap),
+              primarySlot: mem.lastPrimarySlot || s.primarySlot,
+              _fromMemory: true,
+            };
+          }
+          return s;
+        });
+
+        setScanResults(smoothedSlots);
         setFloorScanResultsMap((prev) => {
           const updated = {};
           Object.entries(prev).forEach(([fId, fSlots]) => {
@@ -817,16 +1043,16 @@ export default function SlotCameraMonitorModal({
               return !p || !currentPlates.has(p);
             });
           });
-          updated[currentFloorKey] = freshSlots;
+          updated[currentFloorKey] = smoothedSlots;
           return updated;
         });
 
         if (onSlotStatusUpdate) {
-          onSlotStatusUpdate(freshSlots, currentFloorKey);
+          onSlotStatusUpdate(smoothedSlots, currentFloorKey);
         }
 
         // Smart Audio Alert: trigger distinct cyber alert if violations are detected
-        const activeViolations = freshSlots.filter((s) => s.status === 'WRONG_SLOT_VIOLATION' || s.status === 'UNAUTHORIZED_PARKING');
+        const activeViolations = smoothedSlots.filter((s) => s.status === 'WRONG_SLOT_VIOLATION' || s.status === 'UNAUTHORIZED_PARKING');
         const vKey = activeViolations.map((v) => `${v.slotCode}:${v.plate || v.detectedPlate || ''}:${v.status}`).sort().join('|');
         if (activeViolations.length > 0 && vKey !== lastAlertedViolationsRef.current) {
           lastAlertedViolationsRef.current = vKey;
@@ -840,7 +1066,7 @@ export default function SlotCameraMonitorModal({
     } finally {
       setIsScanning(false);
     }
-  }, [activeFloor, isScanning, slotRois, aiMode, onSlotStatusUpdate, playAlertSound]);
+  }, [activeFloor, isScanning, slotRois, aiMode, isLayoutLocked, onSlotStatusUpdate, playAlertSound]);
 
   // Auto-switch floor when AI detects camera is pointing at another floor
   const handleAutoSwitchFloor = useCallback((targetFloorNumber, targetFloorName) => {
@@ -969,19 +1195,34 @@ export default function SlotCameraMonitorModal({
   }, [slotRois, resolveSlotStatus, hasScanned]);
 
   const totalSlots = slotRois.length;
+  const isTransitRes = (r) => {
+    const vt = r?.violationType || r?.status;
+    return vt === 'CHECKED_IN_PENDING_PARK' || vt === 'EXITING_TO_GATE';
+  };
   const occupiedSlots = hasScanned
-    ? allResolvedSlots.filter((r) => r.occupied || r.status === 'OCCUPIED_VALID' || (r.isViolation && r.status !== 'CHECKED_IN_PENDING_PARK' && r.violationType !== 'CHECKED_IN_PENDING_PARK')).length
+    ? allResolvedSlots.filter((r) => r.occupied || r.status === 'OCCUPIED_VALID' || (r.isViolation && !isTransitRes(r))).length
     : 0;
 
   const violations = useMemo(() => {
     if (!hasScanned) return [];
-    const list = allResolvedSlots.filter((r) => r.status === 'WRONG_SLOT_VIOLATION' || r.status === 'UNAUTHORIZED_PARKING' || r.status === 'CHECKED_IN_PENDING_PARK' || r.isViolation);
-    const seenPlates = new Set();
+    const list = allResolvedSlots.filter((r) => {
+      if (isTransitRes(r)) return false;
+      return (
+        r.status === 'WRONG_SLOT_VIOLATION' ||
+        r.status === 'DOUBLE_PARKING_VIOLATION' ||
+        r.violationType === 'DOUBLE_PARKING_VIOLATION' ||
+        r.status === 'UNAUTHORIZED_PARKING' ||
+        Boolean(r.isViolation)
+      );
+    });
+    const seenKeys = new Set();
     return list.filter((v) => {
       const p = (v.plate || v.detectedPlate || v.expectedPlate || v.session?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (p) {
-        if (seenPlates.has(p)) return false;
-        seenPlates.add(p);
+      const vKind = v.violationType || v.status || 'ALERT';
+      const dedupKey = p ? `${p}_${vKind}` : v.slotCode;
+      if (dedupKey) {
+        if (seenKeys.has(dedupKey)) return false;
+        seenKeys.add(dedupKey);
       }
       return true;
     });
@@ -989,11 +1230,12 @@ export default function SlotCameraMonitorModal({
 
   const wrongSlotCount = useMemo(() => violations.filter((v) => v.status === 'WRONG_SLOT_VIOLATION' || v.violationType === 'WRONG_SLOT_VIOLATION').length, [violations]);
   const unauthCount = useMemo(() => violations.filter((v) => v.status === 'UNAUTHORIZED_PARKING' || v.violationType === 'UNAUTHORIZED_PARKING').length, [violations]);
-  const pendingCount = useMemo(() => violations.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length, [violations]);
+  const pendingCount = useMemo(() => hasScanned ? allResolvedSlots.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length : 0, [allResolvedSlots, hasScanned]);
+  const exitingCount = useMemo(() => hasScanned ? allResolvedSlots.filter((v) => v.status === 'EXITING_TO_GATE' || v.violationType === 'EXITING_TO_GATE').length : 0, [allResolvedSlots, hasScanned]);
   const validCount = useMemo(() => hasScanned ? allResolvedSlots.filter((s) => s.status === 'OCCUPIED_VALID' || (s.occupied && !s.isViolation)).length : 0, [allResolvedSlots, hasScanned]);
-  const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots) : 0;
+  const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots - pendingCount - exitingCount) : 0;
 
-  // Smart sorted & filtered slot list: Pinned alerts on top, followed by parked, then available
+  // Smart sorted & filtered slot list: Pinned alerts on top, followed by transit/parked, then available
   const sortedAndFilteredSlots = useMemo(() => {
     return slotRois
       .filter((s) => {
@@ -1004,11 +1246,14 @@ export default function SlotCameraMonitorModal({
         // Status filter
         const res = resolveSlotStatus(s.slotCode);
         const isWrong = res?.status === 'WRONG_SLOT_VIOLATION' || res?.violationType === 'WRONG_SLOT_VIOLATION';
+        const isDouble = res?.status === 'DOUBLE_PARKING_VIOLATION' || res?.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(res?.occupiedByOverlap);
         const isUnauth = res?.status === 'UNAUTHORIZED_PARKING' || res?.violationType === 'UNAUTHORIZED_PARKING';
         const isPending = res?.status === 'CHECKED_IN_PENDING_PARK' || res?.violationType === 'CHECKED_IN_PENDING_PARK';
-        const isAlert = isWrong || isUnauth || isPending || Boolean(res?.isViolation);
-        const isValid = res?.status === 'OCCUPIED_VALID' || (res?.occupied && !isWrong && !isUnauth);
-        const isEmpty = !res?.occupied && !isWrong && !isUnauth && !isPending;
+        const isExiting = res?.status === 'EXITING_TO_GATE' || res?.violationType === 'EXITING_TO_GATE';
+        const isTransit = isPending || isExiting;
+        const isAlert = isWrong || isDouble || isUnauth || (Boolean(res?.isViolation) && !isTransit);
+        const isValid = res?.status === 'OCCUPIED_VALID' || (res?.occupied && !isWrong && !isDouble && !isUnauth);
+        const isEmpty = !res?.occupied && !isWrong && !isDouble && !isUnauth && !isTransit;
 
         if (activeStatusFilter === 'ALERTS') return isAlert;
         if (activeStatusFilter === 'VALID') return isValid;
@@ -1018,12 +1263,16 @@ export default function SlotCameraMonitorModal({
       .sort((a, b) => {
         const resA = resolveSlotStatus(a.slotCode);
         const resB = resolveSlotStatus(b.slotCode);
-        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resA?.isViolation);
-        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resB?.isViolation);
+        const isTransitA = resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || resA?.status === 'EXITING_TO_GATE' || resA?.violationType === 'EXITING_TO_GATE';
+        const isTransitB = resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || resB?.status === 'EXITING_TO_GATE' || resB?.violationType === 'EXITING_TO_GATE';
+        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || (Boolean(resA?.isViolation) && !isTransitA);
+        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || (Boolean(resB?.isViolation) && !isTransitB);
 
-        // Pin active alerts to the top
+        // Pin active alerts to the top, followed by transit vehicles (arriving/exiting)
         if (isAlertA && !isAlertB) return -1;
         if (!isAlertA && isAlertB) return 1;
+        if (isTransitA && !isTransitB) return -1;
+        if (!isTransitA && isTransitB) return 1;
 
         // Occupied cars next
         const occA = resA?.occupied ? 1 : 0;
@@ -1140,21 +1389,36 @@ export default function SlotCameraMonitorModal({
     // 2. Draw Slot Polygons
     slotRois.forEach((slot, sIdx) => {
       const result = resolveSlotStatus(slot.slotCode);
-      const activePoly = (result?.polygon && Array.isArray(result.polygon) && result.polygon.length >= 3) ? result.polygon : slot.polygon;
+      const activePoly = slot.polygon;
+      if (!activePoly || activePoly.length < 3) return;
       const pts = activePoly.map(([nx, ny]) => toScreenCoords(nx, ny));
       if (pts.length < 3) return;
 
+      const isDoubleParking = result?.status === 'DOUBLE_PARKING_VIOLATION' || result?.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(result?.occupiedByOverlap);
       const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
       const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
       const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
-      const isViolation = isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
-      const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
+      const isExiting = result?.status === 'EXITING_TO_GATE' || result?.violationType === 'EXITING_TO_GATE';
+      const isTransit = isPendingPark || isExiting;
+      const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || (Boolean(result?.isViolation) && !isTransit);
+      const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || isViolation;
       const isSelected = sIdx === selectedSlotIndex;
 
+      // Giữ khung bám sát vạch sơn thực tế (hệ số 1.01), tránh phình sang ô bên cạnh khi nhìn góc nghiêng
+      let drawPts = pts;
+      if (isOccupied && mode !== 'calibrate') {
+        const cx = pts.reduce((sum, p) => sum + p[0], 0) / pts.length;
+        const cy = pts.reduce((sum, p) => sum + p[1], 0) / pts.length;
+        drawPts = pts.map(([px, py]) => [
+          cx + (px - cx) * 1.01,
+          cy + (py - cy) * 1.01,
+        ]);
+      }
+
       ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.moveTo(drawPts[0][0], drawPts[0][1]);
+      for (let i = 1; i < drawPts.length; i++) {
+        ctx.lineTo(drawPts[i][0], drawPts[i][1]);
       }
       ctx.closePath();
 
@@ -1178,7 +1442,13 @@ export default function SlotCameraMonitorModal({
         }
       } else {
         // Chế độ Live Monitor: Hiển thị với phong cách Neon Cyber sắc nét
-        if (isWrongSlot) {
+        if (isDoubleParking) {
+          ctx.strokeStyle = '#f97316';
+          ctx.lineWidth = 3.5;
+          ctx.fillStyle = 'rgba(249, 115, 22, 0.28)';
+          ctx.fill();
+          ctx.stroke();
+        } else if (isWrongSlot) {
           ctx.strokeStyle = '#f43f5e';
           ctx.lineWidth = 3.5;
           ctx.fillStyle = 'rgba(244, 63, 94, 0.28)';
@@ -1195,6 +1465,14 @@ export default function SlotCameraMonitorModal({
           ctx.lineWidth = 3.0;
           ctx.setLineDash([6, 4]);
           ctx.fillStyle = 'rgba(168, 85, 247, 0.22)';
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else if (isExiting) {
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 3.0;
+          ctx.setLineDash([6, 4]);
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.22)';
           ctx.fill();
           ctx.stroke();
           ctx.setLineDash([]);
@@ -1216,46 +1494,37 @@ export default function SlotCameraMonitorModal({
         }
       }
 
-      // Vẽ HUD Brackets ngắm bắn công nghệ cao nếu ô đang được chọn
-      if (isSelected && mode === 'monitor' && selectedSlotIndex >= 0) {
-        const minX = Math.min(...pts.map((p) => p[0]));
-        const maxX = Math.max(...pts.map((p) => p[0]));
-        const minY = Math.min(...pts.map((p) => p[1]));
-        const maxY = Math.max(...pts.map((p) => p[1]));
-        const bPad = 6;
-        const bLen = 14;
+      // Vẽ HUD Brackets ngắm bắn theo đúng 4 cạnh phối cảnh nếu người dùng click chọn ô
+      if (isSelected && mode === 'monitor' && selectedSlotIndex >= 0 && drawPts.length === 4) {
+        const cxS = drawPts.reduce((sum, p) => sum + p[0], 0) / 4;
+        const cyS = drawPts.reduce((sum, p) => sum + p[1], 0) / 4;
+        const padPts = drawPts.map(([px, py]) => {
+          const dx = px - cxS;
+          const dy = py - cyS;
+          const len = Math.hypot(dx, dy) || 1;
+          return [px + (dx / len) * 5, py + (dy / len) * 5];
+        });
+        const bLen = 12;
 
         ctx.save();
-        ctx.strokeStyle = isWrongSlot ? '#f43f5e' : isUnauthorized ? '#f59e0b' : isPendingPark ? '#c084fc' : isOccupied ? '#10b981' : '#38bdf8';
+        ctx.strokeStyle = isDoubleParking ? '#f97316' : isWrongSlot ? '#f43f5e' : isUnauthorized ? '#f59e0b' : isPendingPark ? '#c084fc' : isExiting ? '#22d3ee' : isOccupied ? '#10b981' : '#38bdf8';
         ctx.lineWidth = 2.5;
 
-        // Top-Left bracket
-        ctx.beginPath();
-        ctx.moveTo(minX - bPad, minY - bPad + bLen);
-        ctx.lineTo(minX - bPad, minY - bPad);
-        ctx.lineTo(minX - bPad + bLen, minY - bPad);
-        ctx.stroke();
+        for (let ci = 0; ci < 4; ci++) {
+          const curr = padPts[ci];
+          const prev = padPts[(ci + 3) % 4];
+          const next = padPts[(ci + 1) % 4];
+          const prevLen = Math.hypot(prev[0] - curr[0], prev[1] - curr[1]) || 1;
+          const nextLen = Math.hypot(next[0] - curr[0], next[1] - curr[1]) || 1;
+          const arm1 = Math.min(bLen, prevLen * 0.35);
+          const arm2 = Math.min(bLen, nextLen * 0.35);
 
-        // Top-Right bracket
-        ctx.beginPath();
-        ctx.moveTo(maxX + bPad - bLen, minY - bPad);
-        ctx.lineTo(maxX + bPad, minY - bPad);
-        ctx.lineTo(maxX + bPad, minY - bPad + bLen);
-        ctx.stroke();
-
-        // Bottom-Right bracket
-        ctx.beginPath();
-        ctx.moveTo(maxX + bPad, maxY + bPad - bLen);
-        ctx.lineTo(maxX + bPad, maxY + bPad);
-        ctx.lineTo(maxX + bPad - bLen, maxY + bPad);
-        ctx.stroke();
-
-        // Bottom-Left bracket
-        ctx.beginPath();
-        ctx.moveTo(minX - bPad + bLen, maxY + bPad);
-        ctx.lineTo(minX - bPad, maxY + bPad);
-        ctx.lineTo(minX - bPad, maxY + bPad - bLen);
-        ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(curr[0] + ((prev[0] - curr[0]) / prevLen) * arm1, curr[1] + ((prev[1] - curr[1]) / prevLen) * arm1);
+          ctx.lineTo(curr[0], curr[1]);
+          ctx.lineTo(curr[0] + ((next[0] - curr[0]) / nextLen) * arm2, curr[1] + ((next[1] - curr[1]) / nextLen) * arm2);
+          ctx.stroke();
+        }
 
         ctx.restore();
       }
@@ -1265,15 +1534,19 @@ export default function SlotCameraMonitorModal({
       ctx.font = 'bold 9.5px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
       const plateText = result?.plate || result?.detectedPlate;
       const pendingPlate = result?.expectedPlate || result?.session?.licensePlate;
-      const slotText = isWrongSlot
-        ? `🚨 ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
+      const slotText = isDoubleParking
+        ? `⛔ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ' • 2 SLOTS'}`
+        : isWrongSlot
+          ? `🚨 ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
         : isUnauthorized
           ? `⚠️ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
           : isPendingPark
             ? `⏳ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
-            : isOccupied
-              ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
-              : slot.slotCode;
+            : isExiting
+              ? `↗ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
+              : isOccupied
+                ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
+                : slot.slotCode;
       
       const textMetrics = ctx.measureText(slotText);
       const pillW = textMetrics.width + 10;
@@ -1292,26 +1565,32 @@ export default function SlotCameraMonitorModal({
       ctx.shadowBlur = 5;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 2;
-      ctx.fillStyle = isWrongSlot
-        ? 'rgba(225, 29, 72, 0.95)'
+      ctx.fillStyle = isDoubleParking
+        ? 'rgba(234, 88, 12, 0.95)'
+        : isWrongSlot
+          ? 'rgba(225, 29, 72, 0.95)'
         : isUnauthorized
           ? 'rgba(217, 119, 6, 0.95)'
           : isPendingPark
             ? 'rgba(124, 58, 237, 0.95)'
-            : isOccupied
-              ? 'rgba(5, 150, 105, 0.95)'
-              : 'rgba(15, 23, 42, 0.88)';
+            : isExiting
+              ? 'rgba(8, 145, 178, 0.95)'
+              : isOccupied
+                ? 'rgba(5, 150, 105, 0.95)'
+                : 'rgba(15, 23, 42, 0.88)';
       ctx.beginPath();
       ctx.roundRect(pillX, pillY, pillW, pillH, 4);
       ctx.fill();
 
       // Pill border
       ctx.shadowColor = 'transparent';
-      ctx.strokeStyle = isWrongSlot
-        ? 'rgba(255, 255, 255, 0.45)'
+      ctx.strokeStyle = isDoubleParking
+        ? 'rgba(255, 255, 255, 0.5)'
+        : isWrongSlot
+          ? 'rgba(255, 255, 255, 0.45)'
         : isUnauthorized
           ? 'rgba(255, 255, 255, 0.4)'
-          : isPendingPark
+          : isTransit
             ? 'rgba(255, 255, 255, 0.45)'
             : isOccupied
               ? 'rgba(255, 255, 255, 0.35)'
@@ -1379,10 +1658,11 @@ export default function SlotCameraMonitorModal({
         if (intersect) inside = !inside;
       }
       if (inside) {
-        setSelectedSlotIndex(sIdx);
+        setSelectedSlotIndex((prev) => (mode === 'monitor' && prev === sIdx ? -1 : sIdx));
         return;
       }
     }
+    setSelectedSlotIndex(-1);
   };
 
   const handleMouseMove = (e) => {
@@ -1578,10 +1858,24 @@ export default function SlotCameraMonitorModal({
                   onClick={handleAutoDetectFloor}
                   disabled={isAutoDetecting}
                   className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-indigo-500/20 border border-purple-400/50 text-purple-300 hover:bg-purple-500 hover:text-white font-extrabold text-xs transition flex items-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
-                  title="Auto-align 27 slots using AI vision"
+                  title="Auto-align slots using YOLOv8-Seg & Homography perspective"
                 >
                   <Wand2 size={13} className={isAutoDetecting ? 'animate-spin' : 'text-purple-400'} />
                   <span>{isAutoDetecting ? 'Calibrating...' : 'AI Auto Calibration'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleLayoutLock}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold text-xs transition border flex items-center gap-1 ${
+                    isLayoutLocked
+                      ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/30'
+                      : 'bg-white/5 border-white/15 text-gray-300 hover:bg-white/10'
+                  }`}
+                  title={isLayoutLocked ? 'Locked: Scan preserves manual layout' : 'Unlocked: Scan auto-aligns perspective & slot grid via AI'}
+                >
+                  {isLayoutLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                  <span>{isLayoutLocked ? 'Locked' : 'Auto-Align'}</span>
                 </button>
 
                 {/* Global Scale & Shift Controls */}
@@ -2114,11 +2408,14 @@ export default function SlotCameraMonitorModal({
                 sortedAndFilteredSlots.map((slot) => {
                   const originalIndex = slotRois.findIndex((s) => s.slotCode === slot.slotCode);
                   const result = resolveSlotStatus(slot.slotCode);
+                  const isDoubleParking = result?.status === 'DOUBLE_PARKING_VIOLATION' || result?.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(result?.occupiedByOverlap);
                   const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
                   const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
                   const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
-                  const isViolation = isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
-                  const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
+                  const isExiting = result?.status === 'EXITING_TO_GATE' || result?.violationType === 'EXITING_TO_GATE';
+                  const isTransit = isPendingPark || isExiting;
+                  const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || (Boolean(result?.isViolation) && !isTransit);
+                  const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || isViolation;
                   const isSelected = originalIndex === selectedSlotIndex;
                   const cardPlate = result?.plate || result?.detectedPlate || result?.expectedPlate || result?.session?.licensePlate;
 
@@ -2127,17 +2424,21 @@ export default function SlotCameraMonitorModal({
                       key={slot.slotCode}
                       onClick={() => setSelectedSlotIndex(originalIndex !== -1 ? originalIndex : 0)}
                       className={`p-3 rounded-xl border transition cursor-pointer flex flex-col gap-2 ${
-                        isWrongSlot
-                          ? 'bg-rose-950/30 border-rose-500/50 hover:bg-rose-950/45 shadow-[0_0_12px_rgba(244,63,94,0.12)]'
-                          : isUnauthorized
-                            ? 'bg-amber-950/30 border-amber-500/50 hover:bg-amber-950/45'
-                            : isPendingPark
-                              ? 'bg-purple-950/30 border-purple-500/50 hover:bg-purple-950/45'
-                              : isOccupied
-                                ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
-                                : isSelected
-                                  ? 'bg-amber-400/10 border-amber-400/50'
-                                  : 'bg-white/5 border-white/5 hover:bg-white/10'
+                        isDoubleParking
+                          ? 'bg-orange-950/35 border-orange-500/55 hover:bg-orange-950/50 shadow-[0_0_12px_rgba(249,115,22,0.14)]'
+                          : isWrongSlot
+                            ? 'bg-rose-950/30 border-rose-500/50 hover:bg-rose-950/45 shadow-[0_0_12px_rgba(244,63,94,0.12)]'
+                            : isUnauthorized
+                              ? 'bg-amber-950/30 border-amber-500/50 hover:bg-amber-950/45'
+                              : isPendingPark
+                                ? 'bg-purple-950/30 border-purple-500/50 hover:bg-purple-950/45'
+                                : isExiting
+                                  ? 'bg-cyan-950/30 border-cyan-500/50 hover:bg-cyan-950/45'
+                                  : isOccupied
+                                    ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
+                                    : isSelected
+                                      ? 'bg-amber-400/10 border-amber-400/50'
+                                      : 'bg-white/5 border-white/5 hover:bg-white/10'
                       }`}
                     >
                       {/* Card Header */}
@@ -2146,26 +2447,34 @@ export default function SlotCameraMonitorModal({
                           <span className="font-mono text-sm font-black text-white">{slot.slotCode}</span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                              isWrongSlot
-                                ? 'bg-rose-500 text-white shadow-sm'
-                                : isUnauthorized
-                                  ? 'bg-amber-500 text-black font-black'
-                                  : isPendingPark
-                                    ? 'bg-purple-500 text-white font-black animate-pulse'
-                                    : isOccupied
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
-                                      : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
+                              isDoubleParking
+                                ? 'bg-orange-500 text-white shadow-sm'
+                                : isWrongSlot
+                                  ? 'bg-rose-500 text-white shadow-sm'
+                                  : isUnauthorized
+                                    ? 'bg-amber-500 text-black font-black'
+                                    : isPendingPark
+                                      ? 'bg-purple-500 text-white font-black animate-pulse'
+                                      : isExiting
+                                        ? 'bg-cyan-500 text-black font-black animate-pulse'
+                                        : isOccupied
+                                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
+                                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
                             }`}
                           >
-                            {isWrongSlot
-                              ? 'Wrong Slot'
-                              : isUnauthorized
-                                ? 'Unregistered'
-                                : isPendingPark
-                                  ? 'In Transit'
-                                  : isOccupied
-                                    ? 'Parked'
-                                    : 'Available'}
+                            {isDoubleParking
+                              ? 'Double Parked'
+                              : isWrongSlot
+                                ? 'Wrong Slot'
+                                : isUnauthorized
+                                  ? 'Unregistered'
+                                  : isPendingPark
+                                    ? 'In Transit'
+                                    : isExiting
+                                      ? 'Exiting Gate'
+                                      : isOccupied
+                                        ? 'Parked'
+                                        : 'Available'}
                           </span>
                         </div>
 
@@ -2174,11 +2483,15 @@ export default function SlotCameraMonitorModal({
                             className={`font-mono font-black text-xs px-2 py-0.5 rounded border ${
                               isPendingPark
                                 ? 'bg-purple-950/60 border-purple-400/40 text-purple-200'
-                                : isWrongSlot
-                                  ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
-                                  : isUnauthorized
-                                    ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
-                                    : 'bg-black/60 border-white/20 text-white'
+                                : isExiting
+                                  ? 'bg-cyan-950/60 border-cyan-400/40 text-cyan-200'
+                                  : isDoubleParking
+                                    ? 'bg-orange-950/60 border-orange-400/40 text-orange-200'
+                                    : isWrongSlot
+                                      ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
+                                      : isUnauthorized
+                                        ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
+                                        : 'bg-black/60 border-white/20 text-white'
                             }`}
                           >
                             {formatLicensePlateDisplay(cardPlate)}
@@ -2205,7 +2518,14 @@ export default function SlotCameraMonitorModal({
                       )}
 
                       {/* Card Alerts & Action Buttons */}
-                      {isWrongSlot ? (
+                      {isDoubleParking ? (
+                        <div className="mt-1 pt-1.5 border-t border-orange-500/25">
+                          <div className="text-[11px] font-bold text-orange-300 flex items-start gap-1.5 leading-snug">
+                            <AlertTriangle size={13} className="text-orange-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
+                        </div>
+                      ) : isWrongSlot ? (
                         <div className="mt-1 pt-1.5 border-t border-rose-500/20 space-y-2">
                           <div className="text-[11px] font-bold text-rose-300 flex items-start gap-1.5 leading-snug">
                             <ShieldAlert size={13} className="text-rose-400 shrink-0 mt-0.5 animate-pulse" />
@@ -2243,6 +2563,26 @@ export default function SlotCameraMonitorModal({
                             <Clock size={13} className="text-purple-400 shrink-0 mt-0.5 animate-pulse" />
                             <span>{formatViolationEnglish(result, slot.slotCode)}</span>
                           </div>
+                        </div>
+                      ) : isExiting ? (
+                        <div className="mt-1 pt-1.5 border-t border-cyan-500/30 space-y-2">
+                          <div className="text-[11px] font-bold text-cyan-300 flex items-start gap-1.5 leading-snug">
+                            <ArrowRight size={13} className="text-cyan-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
+                          {result?.session && onCheckoutSlot && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCheckoutSlot(result.session);
+                              }}
+                              className="w-full py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <LogOut size={13} className="text-cyan-300" />
+                              <span>Complete Gate Checkout</span>
+                            </button>
+                          )}
                         </div>
                       ) : isOccupied && result?.session && onCheckoutSlot ? (
                         <button

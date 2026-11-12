@@ -84,10 +84,13 @@ export default function ViolationResolutionModal({
   } = violation;
 
   const isPendingPark = violation.status === 'CHECKED_IN_PENDING_PARK' || violation.violationType === 'CHECKED_IN_PENDING_PARK';
+  const isExitingGate = violation.status === 'EXITING_TO_GATE' || violation.violationType === 'EXITING_TO_GATE';
+  const isTransit = isPendingPark || isExitingGate;
+  const isDoubleParking = violation.status === 'DOUBLE_PARKING_VIOLATION' || violation.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(violation.occupiedByOverlap);
   const isVipSlot = Boolean(contactData?.isVipSlot);
   const activePhone = contactData?.driverContact?.phone || session?.userId?.phone || '';
   const activeEmail = contactData?.driverContact?.email || session?.userId?.email || '';
-  const customerName = contactData?.driverContact?.fullName || session?.userId?.fullName || session?.userId?.username || 'Khách vãng lai';
+  const customerName = contactData?.driverContact?.fullName || session?.userId?.fullName || session?.userId?.username || 'Walk-in Customer';
 
   const handleReassign = async () => {
     setLoading(true);
@@ -99,12 +102,12 @@ export default function ViolationResolutionModal({
         action: 'REASSIGN_SLOT',
         newSlotCode: currentActualSlot,
         sessionId: session?._id || null,
-        note: `Nhân viên chấp nhận đổi ô đỗ sang ${currentActualSlot}`,
+        note: `Staff approved slot reassignment to ${currentActualSlot}`,
       });
 
       if (res.success) {
-        setSuccessMsg(`Đã cập nhật đổi ô thành công sang ${currentActualSlot}!`);
-        toast.success(`Đã đổi ô cho xe ${formatLicensePlateDisplay(plate)}`);
+        setSuccessMsg(`Slot successfully reassigned to ${currentActualSlot}!`);
+        toast.success(`Slot reassigned for ${formatLicensePlateDisplay(plate)}`);
         if (onReassignSuccess) {
           onReassignSuccess(session?._id, currentActualSlot);
         }
@@ -112,10 +115,10 @@ export default function ViolationResolutionModal({
           onClose();
         }, 1200);
       } else {
-        setErrorMsg(res.message || 'Không thể cập nhật ô đỗ.');
+        setErrorMsg(res.message || 'Unable to update parking slot.');
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Lỗi kết nối khi cập nhật ô đỗ.');
+      setErrorMsg(err.message || 'Connection error while updating slot.');
     } finally {
       setLoading(false);
     }
@@ -130,20 +133,23 @@ export default function ViolationResolutionModal({
         floorId: violation.floorId,
         action: 'ISSUE_WARNING',
         sessionId: session?._id || null,
-        note: `Nhân viên đã nhắc nhở / lập biên bản đối với tài xế xe ${plate}`,
+        note: `Staff issued a warning / citation for vehicle ${plate}`,
       });
 
       if (res.success) {
-        setSuccessMsg('Đã ghi nhận nhắc nhở thành công vào lịch sử!');
-        toast.success('Đã ghi nhận nhắc nhở tài xế');
+        setSuccessMsg('Warning recorded in violation history!');
+        toast.success('Driver warning recorded');
+        if (onReassignSuccess) {
+          onReassignSuccess(session?._id, currentActualSlot, 'ISSUE_WARNING');
+        }
         setTimeout(() => {
           onClose();
         }, 1200);
       } else {
-        setErrorMsg(res.message || 'Không thể lưu ghi nhận.');
+        setErrorMsg(res.message || 'Unable to save warning record.');
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Lỗi kết nối.');
+      setErrorMsg(err.message || 'Connection error.');
     } finally {
       setLoading(false);
     }
@@ -162,7 +168,7 @@ export default function ViolationResolutionModal({
         onEnd: () => setIsSpeaking(false),
         onError: (err) => {
           setIsSpeaking(false);
-          toast.error(err.message || 'Không thể phát loa');
+          toast.error(err.message || 'Unable to play PA announcement');
         },
       });
     }
@@ -170,7 +176,7 @@ export default function ViolationResolutionModal({
 
   const handleSendWarningEmail = async () => {
     if (!activeEmail) {
-      toast.error('Phương tiện này chưa có địa chỉ email trong hệ thống.');
+      toast.error('No email address is registered for this vehicle.');
       return;
     }
 
@@ -184,12 +190,12 @@ export default function ViolationResolutionModal({
       });
 
       if (res?.success) {
-        toast.success(res.message || 'Đã gửi email cảnh báo thành công!');
+        toast.success(res.message || 'Warning email sent successfully!');
       } else {
-        toast.error(res?.message || 'Không thể gửi email cảnh báo');
+        toast.error(res?.message || 'Unable to send warning email');
       }
     } catch (err) {
-      toast.error('Lỗi khi gửi email cảnh báo');
+      toast.error('Error sending warning email');
     } finally {
       setSendingEmail(false);
     }
@@ -197,41 +203,49 @@ export default function ViolationResolutionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className={`w-full max-w-lg bg-[#121622] border ${isVipSlot ? 'border-amber-500/70 shadow-[0_0_35px_rgba(245,158,11,0.25)]' : isPendingPark ? 'border-purple-500/50' : 'border-red-500/50'} rounded-2xl shadow-2xl overflow-hidden text-gray-100 font-sans`}>
+      <div className={`w-full max-w-lg bg-[#121622] border ${isVipSlot ? 'border-amber-500/70 shadow-[0_0_35px_rgba(245,158,11,0.25)]' : isExitingGate ? 'border-cyan-500/50' : isPendingPark ? 'border-purple-500/50' : 'border-red-500/50'} rounded-2xl shadow-2xl overflow-hidden text-gray-100 font-sans`}>
         
         {/* Modal Header */}
         <div className={`flex items-center justify-between px-6 py-4 ${
           isVipSlot 
             ? 'bg-gradient-to-r from-amber-950/90 via-red-950/80 to-amber-900/50 border-b border-amber-500/40' 
-            : isPendingPark 
-              ? 'bg-gradient-to-r from-purple-950/90 to-indigo-900/50 border-b border-purple-500/30' 
-              : 'bg-gradient-to-r from-red-950/90 to-red-900/50 border-b border-red-500/30'
+            : isExitingGate
+              ? 'bg-gradient-to-r from-cyan-950/90 to-sky-900/50 border-b border-cyan-500/30'
+              : isPendingPark 
+                ? 'bg-gradient-to-r from-purple-950/90 to-indigo-900/50 border-b border-purple-500/30' 
+                : 'bg-gradient-to-r from-red-950/90 to-red-900/50 border-b border-red-500/30'
         }`}>
           <div className="flex items-center gap-3">
             <div className={`p-2.5 rounded-xl border shadow-inner ${
               isVipSlot 
                 ? 'bg-amber-500/20 text-amber-400 border-amber-400/50' 
-                : isPendingPark 
-                  ? 'bg-purple-500/20 text-purple-300 border-purple-400/40' 
-                  : 'bg-red-500/20 text-red-400 border-red-500/40'
+                : isExitingGate
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40'
+                  : isPendingPark 
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-400/40' 
+                    : 'bg-red-500/20 text-red-400 border-red-500/40'
             }`}>
-              {isVipSlot ? <Crown size={22} className="animate-bounce" /> : isPendingPark ? <Clock size={22} className="animate-pulse" /> : <ShieldAlert size={22} className="animate-pulse" />}
+              {isVipSlot ? <Crown size={22} className="animate-bounce" /> : isTransit ? <Clock size={22} className="animate-pulse" /> : <ShieldAlert size={22} className="animate-pulse" />}
             </div>
             <div>
               <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
                 {isVipSlot ? (
                   <>
-                    <span className="text-amber-400">🚨 VI PHẠM Ô VIP:</span>
+                    <span className="text-amber-400">🚨 VIP SLOT VIOLATION:</span>
                     <span>{currentActualSlot}</span>
                   </>
+                ) : isExitingGate ? (
+                  'Exiting to Checkout Gate'
                 ) : isPendingPark ? (
-                  'Xe Đã Check-in (Chưa Vào Ô)'
+                  'Checked In (Not Parked Yet)'
+                ) : isDoubleParking ? (
+                  `Double-Parking Alert: ${currentActualSlot}`
                 ) : (
-                  `Cảnh Báo Đỗ Sai Ô: ${currentActualSlot}`
+                  `Wrong-Slot Alert: ${currentActualSlot}`
                 )}
               </h3>
-              <p className={`text-xs ${isVipSlot ? 'text-amber-300 font-semibold' : isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
-                {isVipSlot ? 'Chiếm dụng trái phép ô đỗ VIP của thành viên!' : isPendingPark ? 'Xe đã qua cổng nhưng chưa đỗ vào vị trí' : 'Phát hiện bởi Camera AI Giám Sát'}
+              <p className={`text-xs ${isVipSlot ? 'text-amber-300 font-semibold' : isExitingGate ? 'text-cyan-300' : isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
+                {isVipSlot ? 'Unauthorized occupancy of a member VIP slot!' : isExitingGate ? 'Vehicle left slot and is driving to exit gate for checkout' : isPendingPark ? 'Vehicle passed the gate but has not parked yet' : 'Detected by AI Surveillance Camera'}
               </p>
             </div>
           </div>
@@ -254,21 +268,21 @@ export default function ViolationResolutionModal({
               <div className="flex items-center justify-between font-bold text-amber-300">
                 <span className="flex items-center gap-1.5 uppercase tracking-wide">
                   <Crown size={14} className="text-amber-400" />
-                  Chủ Sở Hữu Hợp Pháp Của Ô VIP {currentActualSlot}
+                  Authorized VIP Owner of Slot {currentActualSlot}
                 </span>
                 <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[10px] font-black border border-amber-500/30">
-                  {contactData.vipOwner.packageName || 'GÓI VIP'}
+                  {contactData.vipOwner.packageName || 'VIP PLAN'}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300 pt-1 border-t border-amber-500/20">
-                <div>Khách hàng: <strong className="text-white">{contactData.vipOwner.fullName || contactData.vipOwner.username}</strong></div>
-                <div>Hạn quyền: <strong className="text-amber-300">{new Date(contactData.vipOwner.expireAt).toLocaleDateString('vi-VN')}</strong></div>
+                <div>Member: <strong className="text-white">{contactData.vipOwner.fullName || contactData.vipOwner.username}</strong></div>
+                <div>Expires: <strong className="text-amber-300">{new Date(contactData.vipOwner.expireAt).toLocaleDateString('en-US')}</strong></div>
                 {contactData.vipOwner.email && (
                   <div className="col-span-2 truncate">Email: <span className="text-cyan-300">{contactData.vipOwner.email}</span></div>
                 )}
                 {contactData.vipOwner.phone && (
                   <div className="col-span-2 flex items-center gap-1.5">
-                    SĐT Chủ VIP: 
+                    VIP Owner Phone: 
                     <a href={`tel:${contactData.vipOwner.phone}`} className="font-mono text-cyan-300 hover:underline font-bold">
                       {contactData.vipOwner.phone}
                     </a>
@@ -283,7 +297,7 @@ export default function ViolationResolutionModal({
             <div className="space-y-1.5">
               <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera size={13} className="text-amber-400" />
-                Ảnh Bằng Chứng Từ Camera:
+                Camera Evidence Snapshot:
               </span>
               <div className="rounded-xl overflow-hidden border border-white/10 bg-black/60 max-h-[160px] flex items-center justify-center">
                 <img
@@ -298,7 +312,7 @@ export default function ViolationResolutionModal({
           {/* License Plate & Slot Comparison Box */}
           <div className={`p-4 rounded-xl border space-y-3 ${isVipSlot ? 'bg-amber-950/20 border-amber-500/40' : isPendingPark ? 'bg-purple-500/10 border-purple-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Biển số phát hiện:</span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Detected Plate:</span>
               <span className="font-mono text-base font-black px-3 py-1 rounded-lg bg-black border border-white/20 text-amber-300 shadow-inner flex items-center gap-1.5">
                 {isVipSlot && <span className="text-xs text-amber-400">⚠️</span>}
                 {formatLicensePlateDisplay(plate)}
@@ -307,31 +321,31 @@ export default function ViolationResolutionModal({
 
             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/10 text-center">
               <div className="p-2.5 rounded-lg bg-black/40 border border-white/10">
-                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Ô cấp phép ban đầu</span>
+                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Assigned Slot</span>
                 <span className="text-lg font-black text-emerald-400 font-mono">
-                  {expectedSlot || (isVipSlot ? 'Không có (Chiếm VIP)' : 'Chưa đăng ký')}
+                  {expectedSlot || (isVipSlot ? 'None (VIP Taken)' : 'Unregistered')}
                 </span>
               </div>
               <div className={`p-2.5 rounded-lg border ${isVipSlot ? 'bg-amber-950/60 border-amber-500/50' : isPendingPark ? 'bg-purple-950/60 border-purple-500/40' : 'bg-red-950/60 border-red-500/40'}`}>
                 <span className={`text-[10px] uppercase font-bold block mb-1 ${isVipSlot ? 'text-amber-300' : isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
-                  {isPendingPark ? 'Trạng thái ô' : 'Ô đang đỗ thực tế'}
+                  {isPendingPark ? 'Slot Status' : 'Actual Occupied Slot'}
                 </span>
                 <span className={`text-base font-black font-mono flex items-center justify-center gap-1 ${isVipSlot ? 'text-amber-300 text-lg' : isPendingPark ? 'text-purple-300' : 'text-red-400 text-lg'}`}>
-                  {isPendingPark ? 'Trống (Chưa vào)' : `Ô ${currentActualSlot}`}
+                  {isPendingPark ? 'Empty (In Transit)' : `Slot ${currentActualSlot}`}
                   {isVipSlot ? <Crown size={15} className="text-amber-400" /> : isPendingPark ? <Clock size={14} className="text-purple-400" /> : <AlertTriangle size={14} className="text-red-400" />}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Voice PA Broadcast (Phát Loa Thông Báo Bãi Đỗ) */}
+          {/* Voice PA Broadcast */}
           <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-red-500/10 border border-amber-500/30 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-extrabold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Volume2 size={15} className="text-amber-400" />
-                Hệ Thống Phát Loa Bãi Đỗ (Giọng Nói AI)
+                Parking Lot PA Voice System (AI Voice)
               </span>
-              <span className="text-[10px] text-slate-400 font-mono">Tiếng Việt • PA Chime</span>
+              <span className="text-[10px] text-slate-400 font-mono">PA Broadcast • Chime</span>
             </div>
 
             <button
@@ -346,12 +360,12 @@ export default function ViolationResolutionModal({
               {isSpeaking ? (
                 <>
                   <VolumeX size={16} />
-                  <span>⏹️ Dừng Phát Loa Ngay</span>
+                  <span>⏹️ Stop PA Broadcast</span>
                 </>
               ) : (
                 <>
                   <Volume2 size={16} />
-                  <span>📢 Phát Loa Nhắc Nhở Biển Số {formatLicensePlateDisplay(plate)}</span>
+                  <span>📢 Broadcast Alert for {formatLicensePlateDisplay(plate)}</span>
                 </>
               )}
             </button>
@@ -359,7 +373,7 @@ export default function ViolationResolutionModal({
 
           {/* Offending Vehicle Contact Details */}
           <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2.5 text-xs">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Thông tin liên hệ tài xế:</span>
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">Driver Contact Info:</span>
             <div className="grid grid-cols-2 gap-2 text-gray-300">
               <div className="flex items-center gap-1.5">
                 <User size={13} className="text-gray-400" />
@@ -374,7 +388,7 @@ export default function ViolationResolutionModal({
                   </a>
                 </div>
               ) : (
-                <div className="text-gray-500 italic">Chưa có SĐT (Xe vãng lai)</div>
+                <div className="text-gray-500 italic">No Phone (Walk-in)</div>
               )}
 
               {activeEmail && (
@@ -418,7 +432,7 @@ export default function ViolationResolutionModal({
                   className="py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-extrabold text-xs transition flex items-center justify-center gap-1.5 border border-emerald-500/40 shadow-sm"
                 >
                   <PhoneCall size={14} className="text-emerald-400" />
-                  <span>Gọi Ngay ({activePhone})</span>
+                  <span>Call Now ({activePhone})</span>
                 </a>
               ) : (
                 <button
@@ -427,7 +441,7 @@ export default function ViolationResolutionModal({
                   className="py-2.5 rounded-xl bg-white/5 text-gray-500 text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/5 cursor-not-allowed"
                 >
                   <Phone size={14} />
-                  <span>Không có SĐT</span>
+                  <span>No Phone Number</span>
                 </button>
               )}
 
@@ -440,14 +454,14 @@ export default function ViolationResolutionModal({
                     ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border-cyan-500/40 active:scale-[0.98]'
                     : 'bg-white/5 text-gray-500 border-white/5 cursor-not-allowed'
                 }`}
-                title={activeEmail ? `Gửi email cảnh báo tới ${activeEmail}` : 'Không có địa chỉ email'}
+                title={activeEmail ? `Send warning email to ${activeEmail}` : 'No email address available'}
               >
                 {sendingEmail ? (
                   <Loader2 size={14} className="animate-spin text-cyan-400" />
                 ) : (
                   <Send size={14} className={activeEmail ? 'text-cyan-400' : 'text-gray-500'} />
                 )}
-                <span>Gửi Email Cảnh Báo</span>
+                <span>Send Warning Email</span>
               </button>
             </div>
 
@@ -459,7 +473,7 @@ export default function ViolationResolutionModal({
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 active:scale-[0.98]"
             >
               <RotateCw size={15} className={loading ? 'animate-spin' : ''} />
-              <span>Chấp Nhận Cho Đỗ Ô {currentActualSlot} (Đổi Ô)</span>
+              <span>Approve Slot {currentActualSlot} (Reassign Slot)</span>
             </button>
 
             {/* Issue Warning Button */}
@@ -470,7 +484,7 @@ export default function ViolationResolutionModal({
               className="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-extrabold text-xs transition flex items-center justify-center gap-1.5 border border-amber-500/30 active:scale-[0.98]"
             >
               <BellRing size={14} />
-              <span>Lập Biên Bản Nhắc Nhở / Khóa Bánh</span>
+              <span>Issue Citation / Wheel Clamp Warning</span>
             </button>
           </div>
         </div>

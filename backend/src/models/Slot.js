@@ -17,6 +17,8 @@ const slotSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    layoutElementId: { type: String },
+    retired: { type: Boolean, default: false },
     slotType: {
       type: String,
       default: "hourly",

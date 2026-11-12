@@ -15,6 +15,8 @@
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
     "test:ai-booking": "node --test src/tests/assistantLanguageEdges.cjs ../frontend/src/utils/assistantLanguageEdges.mjs ../frontend/src/utils/aiBookingRouting.unit.test.js",
     "test:notification": "node src/tests/notificationService.test.js",
+    "test:parking": "node --test src/tests/parkingLayout.unit.test.js src/tests/parkingFloorManagement.integration.test.js",
+    "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js",
     "telegram:webhook": "node src/scripts/telegramWebhook.js",
     "audit:parking-passes": "node src/scripts/auditParkingPasses.js",
     "audit:telegram-phones": "node src/scripts/auditTelegramPhoneRecipients.js",

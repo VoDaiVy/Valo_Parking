@@ -27,6 +27,7 @@ export interface GetAvailableSlotsResponse extends APIResponse<AvailableSlot[] |
 }
 
 export interface CreateBookingRequest {
+  idempotencyKey?: string;
   startTime: string;
   endTime: string;
   floorId: string;
