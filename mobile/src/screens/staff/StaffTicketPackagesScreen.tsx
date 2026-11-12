@@ -94,7 +94,7 @@ export function StaffTicketPackagesScreen({ navigation }: Props) {
                     <OperationalRow
                       icon="ticket-outline"
                       meta={item.isActive ? 'Active' : 'Inactive'}
-                      subtitle={`${item.type.toUpperCase()} · ${item.price.toLocaleString('vi-VN')} VND${item.description ? ` · ${item.description}` : ''}`}
+                      subtitle={`${item.type === 'monthly' ? '30 days (720 hours)' : item.type === 'yearly' ? '12 calendar months' : item.type.toUpperCase()} · ${item.price.toLocaleString('vi-VN')} VND / ${item.service === 'RESERVED_PAID' ? 'Reserved space; standard parking fees' : item.service === 'RESERVED_FREE' ? 'Base parking included while effective' : 'Legacy purchased terms'}${item.description ? ` · ${item.description}` : ''}`}
                       title={item.name}
                       tone={tone}
                       right={<StatusBadge label={item.type} tone={tone} />}

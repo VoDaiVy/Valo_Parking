@@ -58,6 +58,7 @@ app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/policies", policyRoutes);
 app.use('/api', serviceRoutes);
 app.use('/api/ticket-packages', ticketPackageRoutes);
+app.post('/api/payments/payos/webhook', require('./controllers/subscriptionController').handlePaymentWebhook);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/loyalty', require('./routes/loyaltyRoutes'));
 app.use("/api/staff", require("./routes/staffRoutes"));

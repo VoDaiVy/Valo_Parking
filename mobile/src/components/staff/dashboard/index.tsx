@@ -202,7 +202,7 @@ export function StaffCommandHeader({
       <View style={styles.headerMetaRow}>
         <View style={styles.metaSpacer} />
         <View style={[styles.livePill, styles.staffPill]}>
-          <StatusPulse color={COLORS.gold} />
+          <StatusPulse tone="brand" />
           <Text style={[styles.liveText, styles.staffText]}>STAFF</Text>
         </View>
         <View style={styles.livePill}>

@@ -1,3 +1,5 @@
+import PackageParkingBreakdown from '../../components/PackageParkingBreakdown';
+import { QRCodeSVG } from 'qrcode.react';
 import { useState, useEffect, useRef } from 'react';
 import { Camera, X, Check, ArrowRight, Loader2, AlertCircle, ShieldAlert, Clock, AlertTriangle } from 'lucide-react';
 import { API_BASE } from '../../services/api';
@@ -7,14 +9,23 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
   const [step, setStep] = useState('camera'); // 'camera', 'scanning', 'invoice', 'submitting', 'success'
   const [exitImageBase64, setExitImageBase64] = useState(null);
   const [invoiceData, setInvoiceData] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [cashReceivedAmount, setCashReceivedAmount] = useState('');
   const [completedCheckout, setCompletedCheckout] = useState(null);
+  const [bankPayment, setBankPayment] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
-  
+
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    const reset = window.setTimeout(() => {
+      setStep('camera'); setInvoiceData(null); setBankPayment(null);
+      setExitImageBase64(null); setErrorMsg(''); setPaymentMethod('cash');
+    }, 0);
+    return () => window.clearTimeout(reset);
+  }, [isOpen, session?._id]);
 
   async function startCamera() {
     try {
@@ -69,17 +80,18 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
       const token = localStorage.getItem("accessToken");
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          sessionId: session._id,
           licensePlate: session.licensePlate,
           exitImageBase64: imageOverride || exitImageBase64,
         })
       });
       const data = await res.json();
-      
+
       if (!data.success) {
         setErrorMsg(data.message || 'Failed to scan exit');
         setStep('camera');
@@ -102,37 +114,40 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
     }
   };
 
-  const handleConfirmCheckout = async () => {
+  const handleConfirmCheckout = async (method = paymentMethod, attemptId = null) => {
     setStep('submitting');
     setErrorMsg('');
     try {
       const token = localStorage.getItem("accessToken");
-      const idempotencyKey = `staff-checkout:${session._id}:${paymentMethod}:${cashReceivedAmount || 'vietqr'}`;
+      const idempotencyKey = `staff-checkout:${session._id}:${method}:${attemptId || cashReceivedAmount || 'vietqr'}`;
       const res = await fetch(`${API_BASE}/sessions/kiosk-checkout`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
           'Idempotency-Key': idempotencyKey,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           sessionId: session._id,
           exitImageBase64,
-          paymentMethod: paymentMethod === 'CASH' ? 'cash' : 'vietqr',
-          cashReceivedAmount: paymentMethod === 'CASH' ? Number(cashReceivedAmount) : null,
+          paymentMethod: method,
+          expectedAmount: invoiceData?.amountToPay,
+          checkoutAttemptId: attemptId,
+          cashReceivedAmount: method === 'cash' ? Number(cashReceivedAmount) : null,
           checkoutToken: invoiceData?.checkoutToken || null,
         })
       });
       const data = await res.json();
-      
+
       if (!data.success) {
+        if (data.data?.pricingBreakdown) setInvoiceData((current) => ({ ...current, ...data.data, totalAmount: Number(data.data.amountToPay ?? current.totalAmount) }));
         setErrorMsg(data.message || 'Failed to check out');
         setStep('invoice');
         return;
       }
 
       if (data.requiresPayment) {
-        setErrorMsg('Bank payment is required. Complete checkout at the exit kiosk or use the staff mobile QR scanner.');
+        setBankPayment(data.data);
         setStep('invoice');
         return;
       }
@@ -153,13 +168,13 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
-      <div className="flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] shadow-2xl">
-        
+      <div className="max-h-[95dvh] overflow-y-auto font-['Montserrat',sans-serif] flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-[#60a5fa]/15 bg-[#0f172a] shadow-2xl">
+
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd555]/30 bg-[#ffd555]/15">
-              <Check size={16} className="text-[#ffd555]" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#60a5fa]/30 bg-[#60a5fa]/15">
+              <Check size={16} className="text-[#60a5fa]" />
             </div>
             <div>
               <h3 className="text-white font-bold tracking-wide uppercase text-sm">Process Check-out</h3>
@@ -173,7 +188,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
         {/* Content */}
         <div className="p-6 relative min-h-[400px] flex flex-col">
-          
+
           {errorMsg && (
             <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-3 rounded-lg flex items-center gap-2">
               <AlertCircle size={16} />
@@ -185,16 +200,16 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
             <div className="flex flex-col flex-1">
               <div className="relative flex-1 bg-black rounded-xl overflow-hidden border border-white/10 flex items-center justify-center min-h-[300px]">
                 <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
-                <div className="pointer-events-none absolute inset-0 m-8 rounded-xl border-2 border-dashed border-[#ffd555]/50" />
+                <div className="pointer-events-none absolute inset-0 m-8 rounded-xl border-2 border-dashed border-[#60a5fa]/50" />
                 <div className="absolute bottom-4 left-0 right-0 text-center">
                   <span className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-white tracking-wider border border-white/10">
                     ALIGN VEHICLE & CAPTURE
                   </span>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={capturePhoto}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#60a5fa] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#93c5fd] active:scale-[0.98]"
               >
                 <Camera size={20} />
                 Capture Photo
@@ -204,7 +219,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'scanning' && (
             <div className="flex flex-col items-center justify-center flex-1 py-12">
-              <Loader2 size={48} className="mb-4 animate-spin text-[#ffd555]" />
+              <Loader2 size={48} className="mb-4 animate-spin text-[#60a5fa]" />
               <h3 className="text-xl font-bold text-white mb-2">Calculating Price</h3>
               <p className="text-sm text-gray-400">Verifying session duration and pricing...</p>
             </div>
@@ -269,40 +284,25 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                   <span className="text-gray-400 text-sm">Duration</span>
                   <span className="text-white font-medium">{invoiceData.remainingHours || invoiceData.durationHours || 0} hours</span>
                 </div>
-                
-                {invoiceData.isSubActive ? (
-                   <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 my-2 text-center">
-                     <p className="text-purple-400 font-bold uppercase text-sm tracking-wider">VIP Subscription Active</p>
-                     <p className="text-xs text-purple-300 mt-1">This checkout is fully covered by VIP membership.</p>
-                   </div>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
-                      <span className="text-gray-400 text-sm">Base Price</span>
-                      <span className="text-white font-medium">{(invoiceData.amountToPay || 0).toLocaleString()} VND</span>
-                    </div>
-                    {invoiceData.refundAmount > 0 && (
-                      <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
-                        <span className="text-emerald-400 text-sm font-bold">Refund Due</span>
-                        <span className="text-emerald-400 font-bold">+{invoiceData.refundAmount.toLocaleString()} VND</span>
-                      </div>
-                    )}
-                  </>
-                )}
+
+                <PackageParkingBreakdown pricing={bankPayment?.pricingBreakdown || invoiceData.pricingBreakdown} paymentStatus={bankPayment ? 'pending' : 'unpaid'} />
+                {invoiceData.refundAmount > 0 && <p className="text-sm text-emerald-300">Refund due: {invoiceData.refundAmount.toLocaleString()} VND</p>}
 
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-gray-300 font-bold uppercase tracking-wide">Final Amount</span>
-                  <span className="text-3xl font-black text-[#ffd555]">{(invoiceData.amountToPay || 0).toLocaleString()} VND</span>
+                  <span className="text-3xl font-black text-[#60a5fa]">{(bankPayment?.amountDue ?? invoiceData.amountToPay ?? 0).toLocaleString()} VND</span>
                 </div>
               </div>
 
-              <div className="mb-4">
+              {!bankPayment && <div className="mb-4">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Payment Method</label>
                 <StaffDropdown
                   value={paymentMethod}
                   onChange={setPaymentMethod}
                   options={[
-                    ['CASH', 'Cash'],
+                    ['cash', 'Cash received'],
+                    ['wallet', 'Customer wallet'],
+                    ['vietqr', 'Verified bank payment (QR)'],
                   ]}
                   ariaLabel="Select payment method"
                   placement="top"
@@ -310,9 +310,9 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                   buttonClassName="bg-black/50 font-bold uppercase tracking-wide"
                   menuClassName="w-full"
                 />
-              </div>
+              </div>}
 
-              {paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && (
+              {!bankPayment && paymentMethod === 'cash' && invoiceData.totalAmount > 0 && (
                 <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
                   <label className="block text-xs font-bold uppercase tracking-widest text-yellow-300">
                     Cash received from customer
@@ -334,22 +334,28 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                 </div>
               )}
 
-              <button 
-                onClick={handleConfirmCheckout}
-                disabled={paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
+                            {bankPayment && <div className="mb-4 rounded-xl bg-white p-4 text-center text-gray-900">
+                <QRCodeSVG value={bankPayment.qrCode || bankPayment.checkoutUrl} size={160} className="mx-auto" />
+                <p className="my-3 text-sm">Ask the customer to complete bank payment, then verify before checkout.</p>
+                <button type="button" onClick={() => handleConfirmCheckout('vietqr')} className="mb-3 min-h-11 rounded-lg border border-blue-700 px-4 text-sm text-blue-700">Refresh expired QR</button>
+                <button type="button" onClick={() => handleConfirmCheckout('qr', bankPayment.checkoutAttemptId)} className="min-h-11 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white">Verify payment and complete checkout</button>
+              </div>}
+              {!bankPayment && <button
+                onClick={() => handleConfirmCheckout()}
+                disabled={paymentMethod === 'cash' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#60a5fa] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#93c5fd] active:scale-[0.98]"
               >
                 Confirm Payment & Checkout
                 <ArrowRight size={18} />
-              </button>
+              </button>}
             </div>
           )}
 
           {step === 'submitting' && (
             <div className="flex flex-col items-center justify-center flex-1 py-12">
-              <Loader2 size={48} className="mb-4 animate-spin text-[#ffd555]" />
+              <Loader2 size={48} className="mb-4 animate-spin text-[#60a5fa]" />
               <h3 className="text-xl font-bold text-white mb-2">Processing</h3>
-              <p className="text-sm text-gray-400">Finalizing checkout and opening gate...</p>
+              <p className="text-sm text-gray-400">Finalizing payment and authorizing vehicle exit...</p>
             </div>
           )}
 

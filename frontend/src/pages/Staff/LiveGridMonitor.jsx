@@ -290,11 +290,11 @@ export default function LiveGridMonitor() {
   };
 
   return (
-    <div className={`${STAFF_THEME.page} relative flex h-[calc(100vh-70px)] flex-col overflow-hidden font-sans`}
+    <div className={`${STAFF_THEME.page} staff-live-grid relative flex h-[calc(100vh-70px)] flex-col overflow-hidden font-sans`}
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
 
       {/* Top Toolbar: Minimal, Clean, Focused */}
-      <div className="absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
+      <div className="staff-live-grid-toolbar absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
         <div className="flex items-center gap-2 px-3 border-r border-white/10">
           <MonitorCheck size={18} className="text-[#ffd555]" />
           <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">Live Monitor</span>

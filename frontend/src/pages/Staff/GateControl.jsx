@@ -1,3 +1,5 @@
+import { QRCodeSVG } from 'qrcode.react';
+import PackageParkingBreakdown from '../../components/PackageParkingBreakdown';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Camera, Car, ShieldCheck, Sparkles, RefreshCw, CheckCircle2,
@@ -48,6 +50,7 @@ export default function GateControl() {
   const [isExitCheckingOut, setIsExitCheckingOut] = useState(false);
   const [exitCameraActive, setExitCameraActive] = useState(true);
   const [cashReceivedAmount, setCashReceivedAmount] = useState('');
+  const [exitBankPayment, setExitBankPayment] = useState(null);
 
   // ─── AI RESOLUTION MODAL STATE ───
   const [showAiModal, setShowAiModal] = useState(false);
@@ -443,6 +446,7 @@ export default function GateControl() {
           parkingFee: Number(invoice.totalPrice || 0),
         });
         setCashReceivedAmount('');
+        setExitBankPayment(null);
         toast.success(`Đã tìm thấy phiên gửi xe của ${cleanPlate}`);
 
         // Nếu là VIP miễn phí hoặc tổng tiền = 0 và đang bật Auto-Pilot
@@ -459,7 +463,7 @@ export default function GateControl() {
     }
   };
 
-  const handleExitCheckOut = async (overrideInvoice = null) => {
+  const handleExitCheckOut = async (overrideInvoice = null, refreshQr = false) => {
     const inv = overrideInvoice || exitInvoiceData;
     if (!inv || !inv.session) {
       toast.error('Chưa có thông tin phiên đỗ để Check-out');
@@ -479,7 +483,9 @@ export default function GateControl() {
         body: JSON.stringify({
           sessionId: inv.session._id,
           exitImageBase64: exitSnapshot || null,
-          paymentMethod: cashReceivedAmount ? 'CASH' : 'PAYOS',
+          checkoutAttemptId: exitBankPayment?.checkoutAttemptId,
+          expectedAmount: inv.totalAmount,
+          paymentMethod: refreshQr ? 'vietqr' : exitBankPayment ? 'qr' : cashReceivedAmount ? 'cash' : (inv.totalAmount === 0 ? 'cash' : 'vietqr'),
           cashReceivedAmount: cashReceivedAmount ? Number(cashReceivedAmount) : null,
           checkoutToken: inv.checkoutToken || null,
           exitCamera: 'CAM_GATE_EXIT_01',
@@ -487,6 +493,11 @@ export default function GateControl() {
         })
       });
       const data = await res.json();
+      if (data.requiresPayment) {
+        setExitBankPayment(data.data);
+        setExitInvoiceData((current) => ({ ...current, totalAmount: data.data.amountDue, pricingBreakdown: data.data.pricingBreakdown || current.pricingBreakdown }));
+        return;
+      }
       if (data.success) {
         const changeMessage = data.data?.changeAmount != null
           ? ` Tiền thừa: ${formatCurrency(data.data.changeAmount)}.`
@@ -497,11 +508,13 @@ export default function GateControl() {
         // Reset form
         setExitPlate('');
         setExitInvoiceData(null);
+        setExitBankPayment(null);
         setExitSnapshot(null);
         setCashReceivedAmount('');
         fetchFloorsAndSessions();
       } else {
-        toast.error(data.message || 'Check-out thất bại');
+        if (data.data?.pricingBreakdown) setExitInvoiceData((current) => ({ ...current, totalAmount: data.data.amountToPay, pricingBreakdown: data.data.pricingBreakdown }));
+        toast.error(data.message || 'Check-out failed.');
       }
     } catch (err) {
       console.error('Check-out error:', err);
@@ -1225,8 +1238,8 @@ export default function GateControl() {
               {/* Invoice Breakdown */}
               <div className="rounded-lg bg-black/60 p-3 text-xs space-y-1.5 border border-white/5">
                 <div className="flex justify-between text-white/60">
-                  <span>Thời lượng đỗ:</span>
-                  <span className="font-bold text-white">{exitInvoiceData.durationFormatted || '2 giờ'}</span>
+                  <span>Parking Duration:</span>
+                  <span className="font-bold text-white">{exitInvoiceData.durationFormatted || `${exitInvoiceData.durationHours ?? 0} hours`}</span>
                 </div>
                 <div className="flex justify-between text-white/60">
                   <span>Loại hình:</span>
@@ -1244,8 +1257,10 @@ export default function GateControl() {
                 </div>
               </div>
 
-              {/* Cash Collection */}
-              {exitInvoiceData.totalAmount > 0 && (
+<PackageParkingBreakdown pricing={exitInvoiceData.pricingBreakdown} paymentStatus={exitBankPayment ? 'pending' : 'unpaid'} />
+              {exitBankPayment && <div className="rounded-xl bg-white p-4 text-center text-slate-900"><QRCodeSVG value={exitBankPayment.qrCode || exitBankPayment.checkoutUrl} size={160} className="mx-auto" /><p className="mt-3 text-xs">Complete bank payment, then verify payment to open the gate.</p><button type="button" disabled={isExitCheckingOut} onClick={() => handleExitCheckOut(null, true)} className="mt-3 min-h-11 rounded-lg border border-blue-700 px-4 text-sm text-blue-700">Refresh expired QR</button></div>}
+                            {/* Cash Collection */}
+              {exitInvoiceData.totalAmount > 0 && !exitBankPayment && (
                 <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
                   <label className="font-bold">💵 Khách đưa tiền mặt</label>
                   <input
@@ -1296,7 +1311,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-xs font-black text-black hover:bg-sky-400 disabled:opacity-50 transition shadow-lg shadow-sky-500/20"
               >
                 {isExitCheckingOut ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                <span>Check-out & Mở Cổng</span>
+                <span>{exitBankPayment ? 'Verify Payment & Open Gate' : 'Check Out & Open Gate'}</span>
               </button>
             </div>
 

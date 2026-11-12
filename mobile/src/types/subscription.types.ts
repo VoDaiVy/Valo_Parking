@@ -15,10 +15,16 @@ export interface SubscriptionPackage {
   description?: string;
   isActive: boolean;
   durationMonths?: number;
+  duration?: { unit: 'hours' | 'calendarMonths'; value: number };
+  service?: 'RESERVED_FREE' | 'RESERVED_PAID';
+  maxSlots?: number;
   benefits?: string[];
 }
 
 export interface ReservedSlot {
+  vehicleId?: string | null;
+  licensePlate?: string | null;
+  purchasedTerms?: { name?: string; service?: string; duration?: { unit: string; value: number } } | null;
   entitlementId?: string | null;
   sourceSubscriptionId?: string;
   floorId: string;
@@ -33,8 +39,16 @@ export interface ReservedSlot {
   canTransfer?: boolean;
 }
 
+export interface MembershipPaymentRecovery {
+  reconciliationRequired?: boolean; activationFailureReason?: string;
+  kind: 'purchase' | 'entitlement' | 'subscription'; targetId: string; packageId?: string; orderCode: number; amount: number; checkoutUrl?: string; idempotencyKey: string; slots?: SubscriptionSlotSelection[]; name: string; status: string;
+}
+
 export interface MembershipStatus {
+  purchaseEligibility?: { customerId: string; approvedVehicleCount: number; eligibleVehicleIds: string[]; availableVehicleCapacity: number; legacyConflict?: { code: string; reason: string; blockedUntil: string } | null; reason: string | null };
+  pendingPayments?: MembershipPaymentRecovery[];
   isVip: boolean;
+  hasActiveParkingSession?: boolean;
   status: 'active' | 'expired';
   subscriptionId?: string | null;
   expireAt: string | null;
@@ -97,11 +111,13 @@ export interface SubscriptionRenewalResult {
 }
 
 export interface SubscriptionSlotSelection {
+  vehicleId?: string;
   floorId: string;
   slotCode: string;
 }
 
 export interface CreateSubscriptionPaymentRequest {
+  idempotencyKey: string;
   packageId: string;
   slots: SubscriptionSlotSelection[];
 }

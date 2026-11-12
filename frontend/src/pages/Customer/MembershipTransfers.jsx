@@ -1,3 +1,4 @@
+import TransferVehiclePicker from '../../components/membership/TransferVehiclePicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -84,6 +85,7 @@ export default function MembershipTransfers({ embedded = false }) {
   const [membershipError, setMembershipError] = useState('');
   const loadSequence = useRef(0);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [receivingVehicleId, setReceivingVehicleId] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeAction, setActiveAction] = useState("");
@@ -224,7 +226,7 @@ export default function MembershipTransfers({ embedded = false }) {
         action === "accept"
           ? await acceptEntitlementTransfer(transfer._id)
           : action === "settle"
-            ? await settleEntitlementTransfer(transfer._id)
+            ? await settleEntitlementTransfer(transfer._id, receivingVehicleId)
             : action === "cancel"
               ? await cancelEntitlementTransfer(transfer._id)
             : await rejectEntitlementTransfer(
@@ -472,6 +474,7 @@ export default function MembershipTransfers({ embedded = false }) {
                         )}
                         {isRecipient && transfer.status === "AWAITING_PAYMENT" && (
                           <>
+                            <TransferVehiclePicker value={receivingVehicleId} onChange={setReceivingVehicleId} />
                             <div className="mr-2 text-right text-xs">
                               <p className="text-white/35">Total due</p>
                               <p className="mt-1 font-black text-[#E8B63E]">
@@ -481,7 +484,7 @@ export default function MembershipTransfers({ embedded = false }) {
                             {walletBalance >= totalDue ? (
                               <button
                                 type="button"
-                                disabled={processing}
+                                disabled={processing || !receivingVehicleId}
                                 onClick={() => handleAction(transfer, "settle")}
                                 className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#DCA11D] px-4 text-xs font-black text-[#16130B] disabled:opacity-40"
                               >

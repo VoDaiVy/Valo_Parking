@@ -1,3 +1,6 @@
+import { PackageText as Text } from '@/components/profile/PackageText';
+import type { MembershipPaymentRecovery } from '@/types/subscription.types';
+import { EntitlementVehiclePicker } from '@/components/profile/EntitlementVehiclePicker';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,7 +16,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   View,
@@ -323,7 +325,7 @@ function ReservedSpacesBlock({ membership }: { membership: MembershipStatus }) {
               <View style={styles.slotRow}>
                 <Ionicons name="location-outline" size={18} color={COLORS.gold} />
                 <Text numberOfLines={1} style={styles.slotText}>
-                  {slot.slotCode} - {slot.floorName || `Floor ${slot.floorNumber || ''}`}
+                  {slot.slotCode}{slot.licensePlate ? ` / ${slot.licensePlate}` : ''} - {slot.floorName || `Floor ${slot.floorNumber || ''}`}
                 </Text>
               </View>
               {index < membership.reservedSlots.length - 1 ? <View style={styles.inlineDivider} /> : null}
@@ -546,6 +548,7 @@ function StickyMembershipCTA({ onPress }: { onPress: () => void }) {
 }
 
 export const MembershipScreen = ({ navigation }: Props) => {
+  const [receivingVehicleId, setReceivingVehicleId] = useState('');
   const { t: translateUi } = useLanguage();
   const { user } = useAuth();
   const [membership, setMembership] = useState<MembershipStatus | null>(null);
@@ -580,7 +583,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
       setMembership(membershipData);
       setWalletBalance(walletResponse.data?.balance || 0);
       setTransfers(transferResponse.data || []);
-      if (membershipData?.status === 'active' && membershipData.subscriptionId) {
+      if ((membershipData?.status === 'active' || membershipData?.hasActiveParkingSession) && membershipData.subscriptionId) {
         try {
           const qrResponse = await subscriptionsService.getMembershipQr(
             membershipData.subscriptionId,
@@ -613,6 +616,34 @@ export const MembershipScreen = ({ navigation }: Props) => {
     }, [loadMembership]),
   );
 
+  const resumePayment = async (payment: MembershipPaymentRecovery) => {
+    if (payment.reconciliationRequired) { setRenewalError('Payment received; activation requires reconciliation. Do not pay again. Contact support with the order reference.'); return; }
+    setRenewalLoading(true); setRenewalError('');
+    try {
+      try {
+        if (payment.kind === 'purchase') await subscriptionsService.verifyPayment({ orderCode: payment.orderCode });
+        else if (payment.kind === 'entitlement') await subscriptionsService.verifyEntitlementRenewalPayment(payment.orderCode);
+        else await subscriptionsService.verifyRenewalPayment(payment.orderCode);
+        await loadMembership(); return;
+      } catch (failure) {
+        const code = (failure as { code?: string }).code;
+        if (code === 'PAYMENT_ORDER_CLOSED') await loadMembership();
+        if (code !== 'PAYMENT_NOT_COMPLETED') throw failure;
+      }
+      let checkoutUrl = payment.checkoutUrl;
+      if (!checkoutUrl) {
+        const recovered = payment.kind === 'purchase'
+          ? await subscriptionsService.createPayment({ packageId: payment.packageId!, slots: payment.slots!, idempotencyKey: payment.idempotencyKey })
+          : payment.kind === 'entitlement'
+            ? await subscriptionsService.createEntitlementRenewalPayment(payment.targetId, payment.idempotencyKey)
+            : await subscriptionsService.createRenewalPayment(payment.targetId, payment.idempotencyKey);
+        checkoutUrl = recovered.data?.checkoutUrl;
+      }
+      navigation.navigate('SubscriptionPaymentStatus', { orderCode: payment.orderCode, checkoutUrl, amount: payment.amount, renewal: payment.kind !== 'purchase', entitlementRenewal: payment.kind === 'entitlement' });
+    } catch (failure) { setRenewalError(failure instanceof Error ? failure.message : 'Unable to resume payment. Keep the order reference.'); }
+    finally { setRenewalLoading(false); }
+  };
+
   const active = membership?.status === 'active';
 
   const openRenewal = async (entitlementId?: string | null) => {
@@ -643,11 +674,11 @@ export const MembershipScreen = ({ navigation }: Props) => {
         const response = renewalEntitlementId
           ? await subscriptionsService.renewEntitlementWithWallet(
               renewalEntitlementId,
-              renewalKey,
+              `${renewalKey}:${renewalMethod}`,
             )
           : await subscriptionsService.renewWithWallet(
               membership!.subscriptionId!,
-              renewalKey,
+              `${renewalKey}:${renewalMethod}`,
             );
         setWalletBalance(response.data?.walletBalance ?? Math.max(0, walletBalance - renewalQuote.amount));
         setRenewalQuote(null);
@@ -656,11 +687,11 @@ export const MembershipScreen = ({ navigation }: Props) => {
         const response = renewalEntitlementId
           ? await subscriptionsService.createEntitlementRenewalPayment(
               renewalEntitlementId,
-              renewalKey,
+              `${renewalKey}:${renewalMethod}`,
             )
           : await subscriptionsService.createRenewalPayment(
               membership!.subscriptionId!,
-              renewalKey,
+              `${renewalKey}:${renewalMethod}`,
             );
         navigation.navigate('SubscriptionPaymentStatus', {
           orderCode: response.data?.orderCode || 0,
@@ -732,7 +763,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
       } else if (action === 'cancel') {
         await subscriptionsService.cancelEntitlementTransfer(transfer._id);
       } else {
-        await subscriptionsService.settleEntitlementTransfer(transfer._id);
+        await subscriptionsService.settleEntitlementTransfer(transfer._id, receivingVehicleId);
         await loadMembership();
       }
       await refreshTransfers();
@@ -822,7 +853,13 @@ export const MembershipScreen = ({ navigation }: Props) => {
             ) : null}
           </View>
 
-          {active ? (
+          {membership.pendingPayments?.length ? <View style={styles.section}>
+            <SectionTitle>Pending membership payments</SectionTitle>
+            {membership.pendingPayments.map((payment) => <TouchableOpacity key={`${payment.kind}:${payment.orderCode}`} disabled={renewalLoading} style={styles.slotRow} onPress={() => void resumePayment(payment)}><View style={{ flex: 1 }}><Text style={styles.slotText}>{payment.name}</Text><Text style={styles.renewalMeta}>Order {payment.orderCode} / {formatCurrency(payment.amount)}</Text></View><Text style={styles.slotActionText}>{payment.reconciliationRequired ? 'Paid; contact support; do not pay again' : 'Resume / verify'}</Text></TouchableOpacity>)}
+            {renewalError ? <Text style={styles.renewalError}>{renewalError}</Text> : null}
+          </View> : null}
+
+          {active || membership.hasActiveParkingSession ? (
             <View style={styles.section}>
               <SectionTitle>{translateUi("Membership QR")}</SectionTitle>
               {qrPayload ? (
@@ -835,7 +872,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                     showBrightnessControl
                   />
                   <Text style={styles.qrHint}>
-                    {" "}{translateUi("Use this pass for every membership visit. It expires with your plan.")}{" "}</Text>
+                    {" "}{translateUi(active ? 'Use this pass for membership check-in and checkout.' : 'Exit only: your package expired while the vehicle was parked. Standard fees apply after expiry.')}{" "}</Text>
                 </>
               ) : (
                 <View style={styles.softState}>
@@ -896,8 +933,9 @@ export const MembershipScreen = ({ navigation }: Props) => {
                   <Ionicons name="location-outline" size={18} color={COLORS.gold} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.slotText}>
-                      {slot.slotCode} - {slot.floorName || `Floor ${slot.floorNumber || ''}`}
+                      {slot.slotCode}{slot.licensePlate ? ` / ${slot.licensePlate}` : ''} - {slot.floorName || `Floor ${slot.floorNumber || ''}`}
                     </Text>
+                    {slot.purchasedTerms?.service && <Text style={styles.renewalMeta}>{slot.purchasedTerms.service === 'RESERVED_PAID' ? 'Reserved space; standard parking fees apply.' : 'Base parking included while effective.'}</Text>}
                     {slot.expireAt ? (
                       <Text style={styles.renewalMeta}>{translateUi("Expires")}{" "}{formatDate(slot.expireAt)}</Text>
                     ) : null}
@@ -1004,6 +1042,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
           {transfers.length ? (
             <View style={styles.section}>
               <SectionTitle>{translateUi("Transfer requests")}</SectionTitle>
+              {transfers.some((transfer) => transfer.status === 'AWAITING_PAYMENT' && (typeof transfer.toUserId === 'string' ? transfer.toUserId : transfer.toUserId?._id) === (user?._id || user?.id)) && <EntitlementVehiclePicker value={receivingVehicleId} onChange={setReceivingVehicleId} />}
               {transfers.map((transfer) => {
                 const recipientId =
                   !transfer.toUserId
@@ -1048,6 +1087,7 @@ export const MembershipScreen = ({ navigation }: Props) => {
                     ) : null}
                     {isRecipient && transfer.status === 'AWAITING_PAYMENT' ? (
                       <TouchableOpacity
+                        disabled={transferLoading || !receivingVehicleId}
                         onPress={() => void updateTransfer(transfer, 'settle')}
                         style={styles.slotAction}
                       >

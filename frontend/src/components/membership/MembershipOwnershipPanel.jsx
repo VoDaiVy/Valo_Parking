@@ -1,3 +1,5 @@
+import MembershipPaymentRecovery from './MembershipPaymentRecovery';
+import PackageTermsSummary from './PackageTermsSummary';
 import { membershipTarget, createMembershipHighlightController } from '../../utils/membershipDeepLink';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { membershipRenewalTarget } from "../../utils/membershipRenewalLink";
@@ -106,6 +108,7 @@ export default function MembershipOwnershipPanel({
     params.delete('entitlementId'); params.delete('subscriptionId');
     setSearchParams(params, { replace: true });
   };
+  const renewalRequests = useRef(new Map());
   const [membershipQr, setMembershipQr] = useState("");
   const openedRenewalLink = useRef("");
   const [membershipQrError, setMembershipQrError] = useState("");
@@ -148,7 +151,7 @@ export default function MembershipOwnershipPanel({
     const timerId = window.setTimeout(async () => {
       setMembershipQr("");
       setMembershipQrError("");
-      if (membership?.status !== "active" || !membership?.subscriptionId) return;
+      if ((membership?.status !== "active" && !membership?.hasActiveParkingSession) || !membership?.subscriptionId) return;
 
       try {
         const response = await getMembershipQr();
@@ -171,7 +174,7 @@ export default function MembershipOwnershipPanel({
       cancelled = true;
       window.clearTimeout(timerId);
     };
-  }, [membership?.status, membership?.subscriptionId]);
+  }, [membership?.status, membership?.subscriptionId, membership?.hasActiveParkingSession]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -180,6 +183,7 @@ export default function MembershipOwnershipPanel({
     if (!renewalOrderCode && !entitlementOrderCode) return undefined;
 
     if (params.get("cancel") === "true") {
+      void (entitlementOrderCode ? verifyEntitlementRenewalPayment(entitlementOrderCode) : verifyRenewalPayment(renewalOrderCode)).catch(() => {});
       toast.error("Renewal payment was cancelled.");
       ['renewOrderCode', 'entitlementRenewOrderCode', 'cancel', 'status', 'code', 'id', 'orderCode'].forEach((key) => params.delete(key));
       setSearchParams(params, { replace: true });
@@ -275,7 +279,9 @@ export default function MembershipOwnershipPanel({
 
     setRenewLoading(true);
     try {
-      const idempotencyKey = makeIdempotencyKey();
+      const requestContext = JSON.stringify([renewEntitlementId || renewSubscriptionId, renewQuote.currentExpireAt, renewMethod]);
+      if (!renewalRequests.current.has(requestContext)) renewalRequests.current.set(requestContext, makeIdempotencyKey());
+      const idempotencyKey = renewalRequests.current.get(requestContext);
       const response =
         renewMethod === "wallet"
           ? renewEntitlementId
@@ -323,6 +329,7 @@ export default function MembershipOwnershipPanel({
 
   return (
     <>
+      <MembershipPaymentRecovery payments={membership?.pendingPayments} onRefresh={onRefresh} />
       {target?.invalid && <div role="alert" className="mt-4 text-sm text-amber-200">This membership link is invalid. <button type="button" onClick={closeDetail} className="min-h-11 underline">Dismiss</button></div>}
       {detailId && !membershipLoading && !renewOpen && <MembershipDetailModal key={`${detailKind}-${detailId}`} id={detailId} kind={detailKind} refreshKey={membership} onClose={closeDetail} onRenew={openRenewal} renewLoading={renewLoading} />}
       {verifying && (
@@ -334,7 +341,7 @@ export default function MembershipOwnershipPanel({
         </div>
       )}
 
-      {membership?.package && (
+      {membership && (membership.package || membership.hasActiveParkingSession) && (
         <section className="mt-6 overflow-hidden rounded-3xl border border-[#DCA11D]/20 bg-[#111318] shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
           <div className="grid lg:grid-cols-[1.25fr_0.75fr]">
             <div className="relative p-6 sm:p-8">
@@ -350,7 +357,7 @@ export default function MembershipOwnershipPanel({
                         Current membership
                       </p>
                       <h2 className="mt-1 text-2xl font-black tracking-tight">
-                        {membership.package.name}
+                        {membership.package?.name || 'Parking checkout'}
                       </h2>
                     </div>
                   </div>
@@ -366,7 +373,7 @@ export default function MembershipOwnershipPanel({
                       {membership.reservedSlots?.length || 0} reserved spaces
                     </span>
                   </div>
-                  {membership.status === "active" && (
+                  {(membership.status === "active" || membership.hasActiveParkingSession) && (
                     <button
                       type="button"
                       onClick={() => setMembershipQrOpen(true)}
@@ -374,7 +381,7 @@ export default function MembershipOwnershipPanel({
                       className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#DCA11D]/35 bg-[#DCA11D]/10 px-4 text-sm font-black text-[#E8B63E] transition hover:bg-[#DCA11D]/15 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <QrCode size={17} />
-                      {membershipQr ? "Show membership QR" : "QR unavailable"}
+                      {membershipQr ? (membership.status === "active" ? "Show membership QR" : "Show exit-only QR") : "QR unavailable"}
                     </button>
                   )}
                   {membershipQrError && (
@@ -453,6 +460,9 @@ export default function MembershipOwnershipPanel({
                   <div>
                     <p className="text-xs font-semibold text-white/65">{slot.package?.name || packageNames[String(slot.sourceSubscriptionId)] || "Package unavailable"}</p>
                     <p className="mt-1 text-lg font-black">Space {slot.slotCode}</p>
+                    <p className="mt-1 text-xs text-white/70">{slot.licensePlate || (slot.vehicleId ? 'Vehicle assigned' : 'Existing shared-space membership')}</p>
+                    <PackageTermsSummary terms={slot.purchasedTerms} purchased />
+                    {slot.purchasedTerms?.service && <p className="mt-1 text-xs text-white/60">{slot.purchasedTerms.service === 'RESERVED_PAID' ? 'Standard parking fees apply' : 'Base parking included at this space'}. Additional services charged separately</p>}
                     <p className="mt-1 text-xs text-white/40">
                       {slot.floorName || (slot.floorNumber != null ? `Floor ${slot.floorNumber}` : "Floor unavailable")}
                     </p>
@@ -542,6 +552,8 @@ export default function MembershipOwnershipPanel({
                   </p>
                 </div>
               </div>
+              <PackageTermsSummary terms={renewQuote.package || renewQuote.packageSnapshot} purchased />
+              <p className="text-xs text-white/60">Renewals keep purchased terms and remain eligible after catalog sales end or deactivation. Existing renewal eligibility rules still apply.</p>
               <div>
                 <p className="mb-3 text-xs font-bold text-white/45">
                   Payment method

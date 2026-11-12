@@ -12,14 +12,17 @@ const findActiveSlotOwnership = async ({
   const entitlementQuery = MembershipSlotEntitlement.findOne({
     floorId,
     slotCode: normalizeSlotCode(slotCode),
+    validFrom: { $lte: at },
     status: { $in: ['active', 'transfer_locked'] },
     expireAt: { $gt: at },
-  }).select('ownerId sourceSubscriptionId slotId expireAt status');
+  }).select('ownerId sourceSubscriptionId slotId expireAt status vehicleId packageSnapshot');
   if (session) entitlementQuery.session(session);
   const entitlement = await entitlementQuery.lean();
   if (entitlement) {
     return {
       ownerId: entitlement.ownerId,
+      vehicleId: entitlement.vehicleId,
+      service: entitlement.packageSnapshot?.service || 'LEGACY_RESERVED',
       entitlementId: entitlement._id,
       subscriptionId: entitlement.sourceSubscriptionId,
       expireAt: entitlement.expireAt,
@@ -34,6 +37,7 @@ const findActiveSlotOwnership = async ({
         slotCode: normalizeSlotCode(slotCode),
       },
     },
+    bindingVersion: { $ne: 1 },
     status: 'active',
     paymentStatus: 'paid',
     expireAt: { $gt: at },

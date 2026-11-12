@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 
 const membershipSlotEntitlementSchema = new mongoose.Schema(
   {
+    vehicleBindingFrom: Date,
+    usageRevision: { type: Number, default: 0 },
+    vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle', index: true },
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -64,6 +67,7 @@ const membershipSlotEntitlementSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    packageSnapshot: { type: mongoose.Schema.Types.Mixed, immutable: true },
     lineageRootId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'MembershipSlotEntitlement',
@@ -102,6 +106,8 @@ membershipSlotEntitlementSchema.index(
     },
   }
 );
+
+membershipSlotEntitlementSchema.index({ slotId: 1 }, { name: 'one_effective_entitlement_per_slot', unique: true, partialFilterExpression: { status: { $in: ['active', 'transfer_locked'] } } });
 
 membershipSlotEntitlementSchema.pre('validate', function normalizeSlotCode(next) {
   if (this.slotCode) this.slotCode = this.slotCode.trim().toUpperCase();

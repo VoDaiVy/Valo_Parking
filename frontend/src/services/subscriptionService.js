@@ -18,17 +18,17 @@ export const getMembershipRenewalHistory = (kind, id, page = 1) =>
   apiFetch(`${detailPath(kind, id)}/renewals?page=${page}&limit=10`, { headers: authHeader() });
 
 export const getTicketPackages = async () => {
-  return apiFetch('/ticket-packages/active', {
+  return apiFetch('/ticket-packages/active?includeHourly=true&includeUnavailable=true', {
     method: 'GET',
     headers: authHeader(),
   });
 };
 
-export const createSubscriptionPayment = async (packageId, slots, adjustedPrice) => {
+export const createSubscriptionPayment = async (packageId, slots, adjustedPrice, idempotencyKey) => {
   return apiFetch('/subscriptions/create-payment', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ packageId, slots, adjustedPrice }),
+    body: JSON.stringify({ packageId, slots, adjustedPrice, idempotencyKey }),
   });
 };
 
@@ -40,11 +40,11 @@ export const verifySubscriptionPayment = async (orderCode) => {
   });
 };
 
-export const paySubscriptionWithWallet = async (packageId, slots, adjustedPrice) => {
+export const paySubscriptionWithWallet = async (packageId, slots, adjustedPrice, idempotencyKey) => {
   return apiFetch('/subscriptions/pay-with-wallet', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ packageId, slots, adjustedPrice }),
+    body: JSON.stringify({ packageId, slots, adjustedPrice, idempotencyKey }),
   });
 };
 
@@ -188,8 +188,9 @@ export const cancelEntitlementTransfer = async (transferId) =>
     headers: authHeader(),
   });
 
-export const settleEntitlementTransfer = async (transferId) =>
+export const settleEntitlementTransfer = async (transferId, vehicleId) =>
   apiFetch(`/customer/membership-entitlement-transfers/${transferId}/settle-wallet`, {
     method: 'POST',
+    body: JSON.stringify({ vehicleId }),
     headers: authHeader(),
   });

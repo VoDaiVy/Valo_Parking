@@ -4,11 +4,11 @@ body[data-valo-typography="staff"] .staff-ticket-packages > .pointer-events-none
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-content { display: flex; flex-direction: column; height: 100%; width: 100%; max-width: none; min-width: 0; min-height: 0; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-header { padding: 16px 0 0; margin-bottom: 12px; border: 0; animation: none; position: relative; flex: 0 0 auto; flex-direction: row; align-items: flex-start; gap: 12px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-header::after { display: none; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-eyebrow { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #54E3B0; margin-bottom: 10px; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-eyebrow { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #60a5fa; margin-bottom: 10px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-legacy-label { display: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-header h1 { font-size: 28px; line-height: 36px; font-weight: 700; letter-spacing: -.03em; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-header p:not(.stp-eyebrow) { margin-top: 2px; color: #9AADC0; font-size: 13px; line-height: 20px; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics { flex: 0 0 auto; grid-template-columns: repeat(3,minmax(0,1fr)); background: #0B1716; border: 1px solid #222D36; border-radius: 10px; box-shadow: none; margin-bottom: 0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics { flex: 0 0 auto; grid-template-columns: repeat(3,minmax(0,1fr)); background: #0b1527; border: 1px solid #222D36; border-radius: 10px; box-shadow: none; margin-bottom: 0; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div { min-height: 76px; padding: 10px 16px; gap: 10px; border-color: #222D36; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div:first-child { padding-left: 16px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-metrics > div > div:first-child { width: 24px; height: 24px; border: 0; border-radius: 0; background: transparent; }
@@ -20,9 +20,9 @@ body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar > .relati
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar input, body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar button[aria-haspopup] { height: 44px; border-radius: 10px; background: #111820; border-color: #222D36; color: #F5F7FA; font-size: 13px; font-weight: 500; box-shadow: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] { background: #111820; border-color: #222D36; backdrop-filter: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] button { font-size: 14px; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] svg { color: #54E3B0; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar [role="menu"] svg { color: #60a5fa; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar input::placeholder { color: #9AADC0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar :is(input, button):focus-visible { outline: 2px solid #54E3B0; outline-offset: 2px; box-shadow: 0 0 0 3px #10B98114; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-toolbar :is(input, button):focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; box-shadow: 0 0 0 3px #3B82F614; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-catalog { flex: 1 1 0%; min-height: 0; margin-bottom: 0; border: 0; border-radius: 0; background: transparent; overflow: auto; scrollbar-width: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns { position: sticky; top: 0; z-index: 10; min-height: 46px; align-items: center; padding: 14px 20px; background: #14212A; color: #A9C8D8; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: none; border: 1px solid #28414A; border-radius: 12px; gap: 16px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-rows { margin-top: 10px; }
@@ -69,7 +69,7 @@ body[data-valo-typography="staff"] .staff-ticket-packages.stp-skeleton { padding
 /* Compact Staff catalog viewport; all existing Admin selectors remain untouched. */
 body[data-valo-typography="staff"] .staff-ticket-packages { height: calc(100dvh - 70px); min-height: 0; overflow: hidden; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-header > div:first-child { flex: 1 1 auto; min-width: 0; }
-body[data-valo-typography="staff"] .staff-ticket-packages .stp-header p:not(.stp-eyebrow)::after { content: ""; display: block; height: 1px; margin-top: 14px; background: linear-gradient(to right, #29B98C, rgb(41 185 140 / 35%) 60%, transparent); box-shadow: 0 2px 5px -2px rgb(41 185 140 / 28%); pointer-events: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-header p:not(.stp-eyebrow)::after { content: ""; display: block; height: 1px; margin-top: 14px; background: linear-gradient(to right, #60a5fa, rgb(96 165 250 / 35%) 60%, transparent); box-shadow: 0 2px 5px -2px rgb(96 165 250 / 28%); pointer-events: none; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; width: auto; height: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; border: 1px solid #256C55; border-radius: 10px; background: #102A25; color: #B9F7DE; cursor: pointer; transition: background-color 150ms, border-color 150ms; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh:hover:not(:disabled) { background: #153B30; border-color: #54CFA2; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-refresh:focus-visible { outline: 2px solid #54CFA2; outline-offset: 2px; }

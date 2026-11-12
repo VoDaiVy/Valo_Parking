@@ -76,7 +76,11 @@ export default function ParkingLots() {
   const [activeHolds, setActiveHolds] = useState([]);
   const [activeBookings, setActiveBookings] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [dbSlots, setDbSlots] = useState([]);
+  const [slotLoads, setSlotLoads] = useState({});
+  const slotRequests = useRef({});
+  const pendingSlotRequests = useRef({});
+  const dbSlots = useMemo(() => floors.flatMap(floor => slotLoads[floor._id]?.slots || []), [floors, slotLoads]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
 
   // Custom Modal State for Maintenance
   const [maintenanceModal, setMaintenanceModal] = useState({ isOpen: false, item: null, isZone: false });
@@ -114,16 +118,13 @@ export default function ParkingLots() {
   const currentFloor = floors.find(f => f._id === currentFloorId);
 
   const getSlotFloorId = (slot) => String(slot.floorID?._id || slot.floorID || "");
-  const sameId = (a, b) => String(a || "") === String(b || "");
+  const sameId = (a, b) => String(a?._id || a || "") === String(b?._id || b || "");
   const sameSlotCode = (a, b) => String(a || "").trim().toUpperCase() === String(b || "").trim().toUpperCase();
-  const getNextFloorNumber = () => {
-    const existingNumbers = new Set(floors.map(f => Number(f.floorNumber) || 0));
-    let n = 1;
-    while (existingNumbers.has(n)) {
-      n++;
-    }
-    return n;
-  };
+  const selectedSession = activeSessions.find(session => selectedItem
+    && sameId(session.floorId, selectedItem.floorId)
+    && sameSlotCode(session.parkingSlot, selectedItem.id)) || (!sessionsLoaded ? selectedItem?.session : null);
+
+  const getNextFloorNumber = () => Math.max(0, ...floors.map(f => Number(f.floorNumber) || 0)) + 1;
 
   const getSlotPrefix = (slotName = "") => {
     const match = String(slotName).trim().match(/^([a-zA-Z]+)(?=\d|[-_\s]|$)/);
@@ -266,32 +267,44 @@ export default function ParkingLots() {
     return () => { active = false; clearTimeout(timer); };
   }, [floorIdParam, slotIdParam, bookingIdParam, floors]);
 
-  // Fetch Slots for current floor to know maintenance & AI status
+  // Each floor retains its own slots and request state. A late response must
+  // never replace a newer response or evict slots from the all-floor overview.
   const fetchDbSlots = useCallback(async (floorId) => {
-    try {
-      if (floorId) {
-        const res = await getFloorSlots(floorId);
-        if (res.ok && res.data.success) {
-          setDbSlots(res.data.data);
+    const ids = floorId ? [String(floorId)] : floors.map(floor => floor._id);
+    await Promise.all(ids.map(async id => {
+      // Slow requests must finish instead of being superseded by each poll.
+      if (pendingSlotRequests.current[id]) return;
+      pendingSlotRequests.current[id] = true;
+      const request = (slotRequests.current[id] || 0) + 1;
+      slotRequests.current[id] = request;
+      setSlotLoads(previous => ({ ...previous, [id]: { ...previous[id], status: 'loading', error: '' } }));
+      try {
+        const res = await getFloorSlots(id);
+        if (!res.ok || !res.data?.success || !Array.isArray(res.data.data)) {
+          throw new Error(res.data?.message || `Unable to load slots${res.status ? ` (HTTP ${res.status})` : ''}.`);
         }
-      } else {
-        if (floors.length === 0) {
-          setDbSlots([]);
-          return;
-        }
-        const promises = floors.map(f => getFloorSlots(f._id));
-        const results = await Promise.all(promises);
-        const allSlots = results.flatMap(r => (r.ok && r.data.success) ? r.data.data : []);
-        setDbSlots(allSlots);
+        if (slotRequests.current[id] !== request) return;
+        setSlotLoads(previous => ({ ...previous, [id]: { status: 'success', slots: res.data.data, error: '' } }));
+      } catch (error) {
+        if (slotRequests.current[id] !== request) return;
+        setSlotLoads(previous => ({ ...previous, [id]: { ...previous[id], status: 'error', error: error.message } }));
+      } finally {
+        pendingSlotRequests.current[id] = false;
       }
-    } catch (e) {
-      console.error("Failed to fetch slots", e);
-    }
+    }));
   }, [floors]);
 
   useEffect(() => {
-    fetchDbSlots(currentFloorId);
-  }, [currentFloorId, fetchDbSlots]);
+    const requests = slotRequests.current;
+    const refresh = () => { void fetchDbSlots(); };
+    const timer = setTimeout(refresh, 0);
+    const interval = setInterval(refresh, 15000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      Object.keys(requests).forEach(id => { requests[id] += 1; });
+    };
+  }, [fetchDbSlots]);
 
   const fetchLiveData = useCallback(async () => {
     try {
@@ -302,6 +315,7 @@ export default function ParkingLots() {
       const sessionData = await sessionRes.json();
       if (sessionData.success) {
         setActiveSessions(sessionData.data);
+        setSessionsLoaded(true);
       }
 
       const startTimeStr = new Date().toISOString();
@@ -777,20 +791,26 @@ export default function ParkingLots() {
       
       <div className={`absolute top-0 right-0 bottom-0 w-[420px] bg-[#111111]/95 backdrop-blur-2xl border-l border-white/10 p-6 flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.5)] text-slate-200 z-50 transform transition-transform duration-300 ease-in-out ${selectedItem ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedItem && (() => {
-          const isZone = selectedItem.type === 'zone';
-          const currentSession = selectedItem.session || activeSessions.find(s => 
-            sameSlotCode(s.parkingSlot, selectedItem.id) && (!selectedItem.floorId || sameId(s.floorId, selectedItem.floorId))
-          );
-          const dbSlotInfo = !isZone
-            ? dbSlots.find(s => sameSlotCode(s.slotNumber, selectedItem.id) && sameId(getSlotFloorId(s), selectedItem.floorId))
-            : null;
-          const zoneSlots = isZone
-            ? dbSlots.filter(s => sameId(getSlotFloorId(s), selectedItem.floorId) && s.zoneID?.zoneName === selectedItem.name)
-            : [];
-          const zoneId = zoneSlots[0]?.zoneID?._id || zoneSlots[0]?.zoneID || null;
-          const isMaintenance = isZone
-            ? zoneSlots.length > 0 && zoneSlots.every(s => s.status === 'maintenance')
-            : dbSlotInfo?.status === 'maintenance';
+           const isZone = selectedItem.type === 'zone';
+           const slotLoad = slotLoads[selectedItem.floorId];
+           const slotLoadStatus = slotLoad?.status || 'loading';
+           const selectedBooking = activeBookings.find(booking => sameId(booking.floorId, selectedItem.floorId)
+             && sameSlotCode(booking.parkingSlot, selectedItem.id)) || selectedItem.booking;
+           const isHeld = activeHolds.some(hold => sameId(hold.floorId, selectedItem.floorId)
+             && sameSlotCode(hold.slotCode, selectedItem.id) && new Date(hold.expiresAt) > new Date())
+             || Boolean(selectedBooking);
+
+           const dbSlotInfo = !isZone
+             ? dbSlots.find(s => sameSlotCode(s.slotNumber, selectedItem.id) && sameId(getSlotFloorId(s), selectedItem.floorId))
+             : null;
+           const zoneSlots = isZone
+             ? dbSlots.filter(s => sameId(getSlotFloorId(s), selectedItem.floorId) && s.zoneID?.zoneName === selectedItem.name)
+             : [];
+           const zoneId = zoneSlots[0]?.zoneID?._id || zoneSlots[0]?.zoneID || null;
+           const isMaintenance = isZone
+             ? zoneSlots.length > 0 && zoneSlots.every(s => s.status === 'maintenance')
+             : dbSlotInfo?.status === 'maintenance';
+           const currentSession = selectedSession;
 
           const aiObs = dbSlotInfo?.aiObservation;
           const isViolation = aiObs?.isViolation || selectedItem.isWrongSlot;
@@ -925,23 +945,60 @@ export default function ParkingLots() {
                     </div>
                   )}
 
-                  {/* Unsynced slot/zone notice */}
-                  {((!isZone && !dbSlotInfo) || (isZone && !zoneId)) && (
-                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
-                      <p className="text-xs text-amber-200 mb-3">
-                        This {isZone ? "zone" : "slot"} exists on the layout canvas but has not been synchronized to the database.
-                      </p>
-                      <button
-                        onClick={() => syncFloorSlotsFromLayout(selectedItem.floorId)}
-                        className="w-full rounded-lg border border-amber-500/30 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-500/30 transition"
-                      >
-                        Sync Slots from Layout
-                      </button>
-                    </div>
-                  )}
+                {slotLoadStatus !== 'success' && (
+                  <div role={slotLoadStatus === 'error' ? 'alert' : 'status'} className="mb-4 rounded-xl border border-white/10 bg-slate-900/60 p-4">
+                    <p className="text-xs text-slate-300 mb-3">
+                      {slotLoadStatus === 'error' ? `Unable to load slot details: ${slotLoad.error}` : 'Loading slot details...'}
+                      {dbSlotInfo && ' Showing the last loaded details.'}
+                    </p>
+                    {slotLoadStatus === 'error' && <button onClick={() => fetchDbSlots(selectedItem.floorId)} className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/20 px-3 py-2 text-xs font-bold text-cyan-100 hover:bg-cyan-500/30 transition">Retry loading slots</button>}
+                  </div>
+                )}
+
+                {slotLoadStatus === 'success' && ((!isZone && !dbSlotInfo) || (isZone && !zoneId)) && (
+                  <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+                    <p className="text-xs text-amber-200 mb-3">
+                      This {isZone ? "zone" : "slot"} exists in the layout but is not synced to the database yet.
+                    </p>
+                    <button
+                      onClick={() => syncFloorSlotsFromLayout(selectedItem.floorId)}
+                      className="w-full rounded-lg border border-amber-500/30 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-500/30 transition"
+                    >
+                      Sync slots from layout
+                    </button>
+                  </div>
+                )}
+
+                {!isZone && dbSlotInfo?.subscriptionDetail && (
+
+                  <div className="flex flex-col gap-4">
+                      <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4 flex flex-col items-center justify-center mb-2">
+                          <span className="text-xs text-purple-400 uppercase tracking-widest font-bold mb-1">Membership reservation</span>
+                          <span className="text-lg text-white font-black uppercase">Reserved / VIP</span>
+                      </div>
+                      {dbSlotInfo?.subscriptionDetail ? (
+                        <>
+                          {dbSlotInfo.subscriptionDetail.user && (
+                            <>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Customer Name</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.username || 'N/A'}</span></div>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Phone</span><span className="font-medium text-white">{dbSlotInfo.subscriptionDetail.user.phone || 'N/A'}</span></div>
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Email</span><span className="font-medium text-cyan-400">{dbSlotInfo.subscriptionDetail.user.email || 'N/A'}</span></div>
+                            </>
+                          )}
+                          {dbSlotInfo.subscriptionDetail.ticketPackage && (
+                            <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Package</span><span className="font-medium text-purple-400 uppercase">{dbSlotInfo.subscriptionDetail.ticketPackage.name || dbSlotInfo.subscriptionDetail.ticketPackage.type}</span></div>
+                          )}
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-sm">Valid Until</span><span className="font-bold text-purple-400">{new Date(dbSlotInfo.subscriptionDetail.expireAt).toLocaleString('vi-VN')}</span></div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-purple-300 text-center mt-4">This slot is currently reserved for a VIP subscription package or an upcoming booking.</p>
+                      )}
+                  </div>
+                )}
+
 
                   {/* Slot Status Body */}
-                  {isMaintenance ? (
+                  {!isZone && !dbSlotInfo ? null : isMaintenance ? (
                     <div className="flex flex-col gap-3 h-full items-center justify-center text-center py-8 opacity-90">
                       <div className="w-16 h-16 rounded-full bg-red-900/40 flex items-center justify-center border border-red-500/60 mb-2 shadow-[0_0_20px_rgba(239,68,68,0.3)]">
                         <span className="text-red-500 font-bold text-2xl">⚠</span>
@@ -1083,27 +1140,27 @@ export default function ParkingLots() {
                         <p className="text-xs text-purple-300 text-center mt-4">This slot is reserved for VIP subscriptions or scheduled bookings.</p>
                       )}
                     </div>
-                  ) : !isZone && selectedItem.isHeld ? (
+                  ) : !isZone && isHeld ? (
                     <div className="flex flex-col gap-3">
-                      <div className={`border rounded-xl p-3 flex flex-col items-center justify-center ${selectedItem.booking?.status === 'CANCELLED' ? 'bg-red-900/20 border-red-500/30' : 'bg-orange-900/20 border-orange-500/30'}`}>
-                        <span className={`text-[10px] uppercase tracking-widest font-bold mb-0.5 ${selectedItem.booking?.status === 'CANCELLED' ? 'text-red-400' : 'text-orange-400'}`}>Status</span>
-                        <span className="text-base text-white font-black uppercase">{selectedItem.booking?.status === 'CANCELLED' ? 'Cancelled / Historical' : 'Holding / Booked'}</span>
+                      <div className={`border rounded-xl p-3 flex flex-col items-center justify-center ${selectedBooking?.status === 'CANCELLED' ? 'bg-red-900/20 border-red-500/30' : 'bg-orange-900/20 border-orange-500/30'}`}>
+                        <span className={`text-[10px] uppercase tracking-widest font-bold mb-0.5 ${selectedBooking?.status === 'CANCELLED' ? 'text-red-400' : 'text-orange-400'}`}>Status</span>
+                        <span className="text-base text-white font-black uppercase">{selectedBooking?.status === 'CANCELLED' ? 'Cancelled / Historical' : 'Holding / Booked'}</span>
                       </div>
-                      {selectedItem.booking && (
+                      {selectedBooking && (
                         <>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{selectedItem.booking.userId?.username || 'N/A'}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Customer</span><span className="font-medium text-white">{selectedBooking.userId?.username || 'N/A'}</span></div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5">
                             <span className="text-slate-400 text-xs">Phone</span>
-                            {selectedItem.booking.userId?.phone ? (
-                              <a href={`tel:${selectedItem.booking.userId.phone}`} className="font-bold text-emerald-400 hover:underline flex items-center gap-1 text-xs">
+                            {selectedBooking.userId?.phone ? (
+                              <a href={`tel:${selectedBooking.userId.phone}`} className="font-bold text-emerald-400 hover:underline flex items-center gap-1 text-xs">
                                 <Phone size={11} />
-                                <span>{selectedItem.booking.userId.phone}</span>
+                                <span>{selectedBooking.userId.phone}</span>
                               </a>
                             ) : (
                               <span className="font-medium text-slate-500">Chưa có SĐT</span>
                             )}
                           </div>
-                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white">{selectedItem.booking.licensePlate || 'N/A'}</span></div>
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white">{selectedBooking.licensePlate || 'N/A'}</span></div>
                         </>
                       )}
                     </div>
@@ -1112,8 +1169,8 @@ export default function ParkingLots() {
                       <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 mb-2">
                         <MonitorCheck size={24} className="text-slate-500" />
                       </div>
-                      <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Slot is Empty</p>
-                      <p className="text-xs text-slate-500 max-w-[200px]">Ready for next incoming vehicle assignment.</p>
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">Physically Empty</p>
+                      <p className="text-xs text-slate-500 max-w-[200px]">{dbSlotInfo?.subscriptionDetail ? 'Physically empty. Membership reservation remains active.' : 'Ready for next incoming vehicle assignment.'}</p>
                     </div>
                   ) : null}
                 </div>
