@@ -22,6 +22,7 @@ const Slot = require('../models/Slot');
 const BookingHold = require('../models/BookingHold');
 const SlotAuditLog = require('../models/SlotAuditLog');
 const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
+const Revenue = require('../models/Revenue');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
 const walletService = require('../services/walletService');
@@ -415,6 +416,192 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
 
       assert.equal(res.state.statusCode, 201);
       assert.equal(String(capturedOverlapQuery?._id?.$ne), String(reallocateBookingId));
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskExitScan scopes SlotAuditLog violation lookup to current sessionId or createdAt >= checkInTime', async () => {
+    const checkInTime = new Date(Date.now() - 30 * 60 * 1000);
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439081'),
+      licensePlate: '43B20408',
+      type: 'WALK_IN',
+      checkInTime,
+      parkingSlot: 'A3',
+      status: 'active',
+      expectedDurationHours: 2,
+    };
+    let capturedAuditFilter = null;
+
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(activeSession)],
+      [SlotAuditLog, 'find', (filter) => {
+        capturedAuditFilter = filter;
+        return queryable([]);
+      }],
+      [pricingEngine, 'calculatePrice', async () => ({ durationHours: 1, finalTotal: 10000 })],
+    ]);
+
+    try {
+      const req = {
+        body: {
+          licensePlate: '43B20408',
+          exitImageBase64: 'data:image/jpeg;base64,ZmFrZQ==',
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskExitScan(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.violationDetails, null);
+      assert.ok(Array.isArray(capturedAuditFilter?.$or));
+      assert.equal(String(capturedAuditFilter.$or[0]?.sessionId), String(activeSession._id));
+      assert.equal(
+        new Date(capturedAuditFilter.$or[1]?.createdAt?.$gte).getTime(),
+        checkInTime.getTime()
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskExitScan enables canAutoPay and walletBalance for WALK_IN session matching an approved registered Vehicle', async () => {
+    const ownerId = oid('507f1f77bcf86cd799439091');
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439092'),
+      licensePlate: '43B20408',
+      userId: ownerId,
+      type: 'WALK_IN',
+      checkInTime: new Date(Date.now() - 45 * 60 * 1000),
+      parkingSlot: 'A3',
+      status: 'active',
+      expectedDurationHours: 2,
+    };
+
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable({ owner: ownerId })],
+      [walletService, 'getOrCreateWallet', async () => ({ userId: ownerId, balance: 120000 })],
+      [SlotAuditLog, 'find', () => queryable([])],
+      [pricingEngine, 'calculatePrice', async () => ({ durationHours: 1, finalTotal: 10000 })],
+    ]);
+
+    try {
+      const req = {
+        body: {
+          licensePlate: '43B20408',
+          exitImageBase64: 'data:image/jpeg;base64,ZmFrZQ==',
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskExitScan(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.walletBalance, 120000);
+      assert.equal(res.state.body.data.hasWallet, true);
+      assert.equal(res.state.body.data.canAutoPay, true);
+      assert.ok(res.state.body.data.checkoutToken);
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskCheckout auto-debits owner wallet for approved registered WALK_IN vehicle with valid checkoutToken', async () => {
+    const ownerId = oid('507f1f77bcf86cd799439093');
+    const sessionId = oid('507f1f77bcf86cd799439094');
+    const floorId = oid('507f1f77bcf86cd799439095');
+
+    const activeSession = {
+      _id: sessionId,
+      licensePlate: '43B20408',
+      userId: ownerId,
+      type: 'WALK_IN',
+      parkingSlot: 'A3',
+      floorId,
+      checkInTime: new Date(Date.now() - 3600000),
+      status: 'active',
+      toObject() { return { ...this }; },
+    };
+    const fakeMongoSession = {
+      startTransaction() { },
+      async withTransaction(fn) { return fn(); },
+      async commitTransaction() { },
+      async abortTransaction() { },
+      endSession() { },
+    };
+    let debitedArgs = null;
+
+    const restore = stubMany([
+      [mongoose, 'startSession', async () => fakeMongoSession],
+      [Session, 'findById', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable({ owner: ownerId })],
+      [pricingEngine, 'calculatePrice', async () => ({ durationHours: 1, finalTotal: 10000 })],
+      [walletService, 'getOrCreateWallet', async () => ({ userId: ownerId, balance: 50000 })],
+      [walletService, 'debitWallet', async (...args) => {
+        debitedArgs = args;
+        return { balance: 40000 };
+      }],
+      [Session, 'findOneAndUpdate', async () => ({ ...activeSession, status: 'completed', totalPrice: 10000 })],
+      [Revenue, 'findOneAndUpdate', async () => ({ _id: oid('507f1f77bcf86cd799439099') })],
+      [Slot, 'find', async () => []],
+      [SlotMaintenanceLog, 'find', () => queryable([])],
+      [SlotAuditLog, 'updateMany', async () => ({ modifiedCount: 0 })],
+      [User, 'findById', () => queryable({ _id: ownerId, email: 'owner@example.com' })],
+    ]);
+
+    try {
+      const req = {
+        app: { get: () => null },
+        body: {
+          sessionId: String(sessionId),
+          paymentMethod: 'wallet',
+          checkoutToken: buildCheckoutChallenge(activeSession),
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskCheckout(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.success, true);
+      assert.ok(debitedArgs);
+      assert.equal(String(debitedArgs[0]), String(ownerId));
+      assert.equal(debitedArgs[1], 10000);
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskCheckout rejects wallet payment with 403 WALK_IN_WALLET_UNVERIFIED when WALK_IN vehicle is unregistered', async () => {
+    const sessionId = oid('507f1f77bcf86cd799439096');
+    const activeSession = {
+      _id: sessionId,
+      licensePlate: '99A99999',
+      type: 'WALK_IN',
+      parkingSlot: 'B1',
+      checkInTime: new Date(Date.now() - 3600000),
+      status: 'active',
+    };
+
+    const restore = stubMany([
+      [Session, 'findById', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable(null)],
+    ]);
+
+    try {
+      const req = {
+        app: { get: () => null },
+        body: {
+          sessionId: String(sessionId),
+          paymentMethod: 'wallet',
+          checkoutToken: buildCheckoutChallenge(activeSession),
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskCheckout(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 403);
+      assert.equal(res.state.body.code, 'WALK_IN_WALLET_UNVERIFIED');
     } finally {
       restore();
     }

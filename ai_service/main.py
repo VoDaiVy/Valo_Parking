@@ -107,6 +107,7 @@ else:
 # ---------------------------------------------------------
 _scan_cache = {}
 _scan_cache_lock = threading.Lock()
+_alpr_infer_lock = threading.Lock()
 CACHE_TTL_SECONDS = 3
 CACHE_HASH_SIMILARITY = 0.92
 
@@ -156,117 +157,105 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
         return ""
 
     # =========================================================================
-    # 1. NHẬN DIỆN CHÍNH XÁC CÁC THẺ XE SA BÀN (TẦNG 1 & TẦNG 2)
+    # 1. KIỂM TRA BIỂN SỐ ĐẦY ĐỦ CHUẨN TRƯỚC (TRÁNH ÉP NHẦM 77C-143.99 -> 99C-643.99)
     # =========================================================================
+    digit_map = {'Z': '2', 'B': '8', 'O': '0', 'D': '0', 'I': '1', 'L': '1', 'S': '5', 'G': '6'}
 
-    # Thẻ Floor 2: 12B - 223.47 (Ô E1) - Ưu tiên nhận diện trước
-    if any(s in raw_combined for s in ['22347', '2234', '2347', '22317', '22341', '12B223', 'I2B223', '128223', '12823', '12804', '12824', '1281147', '223', '347']) or \
-       (any(p in raw_combined for p in ['12B', 'IZB', '128', 'IZ8', '125', '12D', '126', 'I2B', '08B', '18B', '42B']) and any(s in raw_combined for s in ['223', '347', '234', '2234', '1147', '47', '24', '67', '22', '23'])) or \
-       (('12B' in raw_combined or 'IZB' in raw_combined or 'I2B' in raw_combined or '128' in raw_combined) and any(s in raw_combined for s in ['223', '47', '67', '24', '347', '22'])):
-        return "12B-223.47"
-
-    # Thẻ Floor 2: 55H - 443.23 (Ô E4)
-    if any(s in raw_combined for s in ['44323', '4323', '4432', '4412', '4413', '44312', '55H443', 'SSH443', 'SS14412', 'SSM4413', '55H', 'SSH', '55H44', '44323']) or \
-       (any(p in raw_combined for p in ['55H', 'SSH', 'S5H', '5SH', '551', 'SS1', 'SSM', 'S11', '55N', '55M', '99H', '88M', 'SOH', '55', 'SS']) and any(s in raw_combined for s in ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44', '23', '43'])):
-        return "55H-443.23"
-
-    # Thẻ Floor 2: 99C - 643.99 (Ô E9)
-    if any(s in raw_combined for s in ['64399', '43199', '6439', '64309', '99C643', '19C643', '6440', '644']) or \
-       (any(p in raw_combined for p in ['99C', '19C', 'EIC', 'I9C', '89C', '99G', '9JC', '99']) and any(s in raw_combined for s in ['643', '4399', '6439', '439', '64399', '6440', '644', '399'])):
-        return "99C-643.99"
-
-    # Thẻ Floor 2: 99A - 280.96 (Ô F4) hoặc 90A - 280.96
-    if (any(p in raw_combined for p in ['99A', '99F', '99', '9OA', '90A'])) and (
-        any(s in raw_combined for s in ['280', '8096', '2809', '28096', '200', '20096', '20039', '28039', '0039', '8039', '96', '39', '096'])
-    ):
-        if '90' in raw_combined:
-            return "90A-280.96"
-        return "99A-280.96"
-    if any(s in raw_combined for s in ['90A280', 'SOA280', '90A28096', '99F200', '99F20039', '99A20039', '99A20096']) or \
-       (any(p in raw_combined for p in ['90A', '9OA', '80B', '80A', '9DA', '90', '904', '9QA', 'SOA', 'SO', '99A', '99F']) and any(s in raw_combined for s in ['280', '8096', '2809', '22096', '096', '28096', '96', '200', '0039', '20039', '39'])):
-        if '90' in raw_combined:
-            return "90A-280.96"
-        return "99A-280.96"
-    if any(k in raw_combined for k in ['28096', '280196', '20039', '20096', '28039']):
-        if '90' in raw_combined:
-            return "90A-280.96"
-        return "99A-280.96"
-
-    # Thẻ Floor 1: 11A - 123.45 (Xe đen, Ô C4)
-    if any(p in raw_combined for p in ['11A', 'IIA', '114', 'I1A', '11']) and any(s in raw_combined for s in ['123', '2345', '12345', '1234', '345', '45']):
-        return "11A-123.45"
-    if any(s in raw_combined for s in ['11A123', '11A12345', 'IIA12345', '11A1234']):
-        return "11A-123.45"
-
-    # Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3) - Chỉ nhận nếu có tiền tố 22B/22/ZZB rõ ràng
-    if (any(p in raw_combined for p in ['22B', '228', 'ZZB']) and any(s in raw_combined for s in ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145'])) or \
-       any(s in raw_combined for s in ['22B123', '22B12345', '22813345']):
-        return "22B-123.45"
-
-    # Thẻ Floor 1: 43B - 204.08 (Xe xanh dương, Ô C2)
-    if any(p in raw_combined for p in ['43B', '438', '43D', '43']) and any(s in raw_combined for s in ['204', '20408', '0408', '2048', '08', '408', '04']):
-        return "43B-204.08"
-    if any(s in raw_combined for s in ['43B20408', '43B204', '43820408', '438204']):
-        return "43B-204.08"
-
-    # Thẻ Floor 1: 78A - 987.31 (Xe cam)
-    if (any(p in raw_combined for p in ['78A', '784', '78']) and any(s in raw_combined for s in ['987', '8731', '98731', '731', '31'])) or \
-       any(s in raw_combined for s in ['78A987', '78A98731']):
-        return "78A-987.31"
-
-    # Thẻ Floor 1: 77C - 143.99 (Xe xanh lá)
-    if (any(p in raw_combined for p in ['77C', '77', '77G']) and any(s in raw_combined for s in ['143', '4399', '14399', '399', '99'])) or \
-       any(s in raw_combined for s in ['77C143', '77C14399']):
-        return "77C-143.99"
-
-    # Thẻ Floor 2: 93A - 289.87 (Ô E2)
-    if any(s in raw_combined for s in ['28987', '289.87', '289', '8987', '93A289', '934289', '93A']) and \
-       any(s in raw_combined for s in ['93A', '934', '93D', '289', '8987', '987', '2898']):
-        return "93A-289.87"
-
-    # Thẻ Floor 1: 13C - 343.21 (Ô A3)
-    if (any(p in raw_combined for p in ['13C', 'I3C', '13G']) and any(s in raw_combined for s in ['343', '321', '34321', '3432'])) or \
-       any(s in raw_combined for s in ['34321', '13C343', 'I3C343', '13C34']):
-        return "13C-343.21"
-
-    # Thẻ Floor 1: 19H - 438.99 (Ô C4)
-    if (any(p in raw_combined for p in ['19H', 'I9H', '191', '19']) and any(s in raw_combined for s in ['438', '498', '3899', '899', '43899'])) or \
-       any(s in raw_combined for s in ['43899', '19H438', 'I9H438']):
-        return "19H-438.99"
-
-
-    # =========================================================================
-    # 2. XỬ LÝ TỔNG QUÁT BIỂN SỐ XE THẬT (YÊU CẦU TỐI THIỂU 7 KÝ TỰ HỢP LỆ)
-    # =========================================================================
-    if len(raw_combined) >= 7:
-        clean = raw_combined
-        # Chuẩn hóa OCR nếu có nhầm lẫn số tỉnh (VD: 1ZA -> 12A, O -> 0, B -> 8)
-        p1 = clean[0]
-        p2 = clean[1]
-        digit_map = {'Z': '2', 'B': '8', 'O': '0', 'I': '1', 'L': '1', 'S': '5', 'G': '6'}
-        if p1 in digit_map: p1 = digit_map[p1]
-        if p2 in digit_map: p2 = digit_map[p2]
-        clean = p1 + p2 + clean[2:]
-
-        # Cấu trúc Ô tô 5 số có dấu chấm bị đọc nhầm thành 1 ký tự nhiễu (VD: 345.67 -> 345467 hoặc 345167)
-        m6 = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{3})[0-9A-Z]([0-9]{2})$', clean)
+    def _try_exact_plate(s: str) -> str:
+        if len(s) < 7:
+            return ""
+        c = digit_map.get(s[0], s[0]) + digit_map.get(s[1], s[1]) + s[2:]
+        # Sửa lỗi OCR hay nhầm B <-> 8 ở vị trí seri nếu tạo thành biển 8 ký tự hợp lệ (vd 43820408 -> 43B-204.08)
+        if re.match(r'^43[8D]20408$', c):
+            return "43B-204.08"
+        m6 = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{3})[0-9A-Z]([0-9]{2})$', c)
         if m6:
             prov, ser, d1, d2 = m6.groups()
             return f"{prov}{ser}-{d1}.{d2}"
-
-        # Cấu trúc Ô tô: [2 số Tỉnh] + [1 hoặc 2 chữ cái Seri] + [4 hoặc 5 số đuôi]
-        match = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{4,5})$', clean)
-        if match:
-            prov, ser, suf = match.groups()
+        m_car = re.match(r'^([0-9]{2})([A-Z]{1,2})([0-9]{4,5})$', c)
+        if m_car:
+            prov, ser, suf = m_car.groups()
             s_fmt = f"{suf[:3]}.{suf[3:]}" if len(suf) == 5 else suf
             return f"{prov}{ser}-{s_fmt}"
-
-        # Cấu trúc Xe máy: [2 số Tỉnh] + [1 chữ cái Seri] + [1 số] + [4 hoặc 5 số đuôi] (VD: 43D1-89750)
-        match_bike = re.match(r'^([0-9]{2})([A-Z])([0-9])([0-9]{4,5})$', clean)
-        if match_bike:
-            prov, ser, num, suf = match_bike.groups()
+        m_bike = re.match(r'^([0-9]{2})([A-Z])([0-9])([0-9]{4,5})$', c)
+        if m_bike:
+            prov, ser, num, suf = m_bike.groups()
             s_fmt = f"{suf[:3]}.{suf[3:]}" if len(suf) == 5 else suf
             return f"{prov}{ser}{num}-{s_fmt}"
+        return ""
+
+    exact_hit = _try_exact_plate(raw_combined)
+    if exact_hit:
+        return exact_hit
+
+    # =========================================================================
+    # 2. NHẬN DIỆN DỰ PHÒNG CÁC THẺ XE SA BÀN KHI OCR BỊ KHUYẾT 1-2 KÝ TỰ
+    #    (Kiểm tra tiền tố neo đầu chuỗi để không bao giờ match nhầm đuôi '99', '43'...)
+    # =========================================================================
+    def _has_pfx(prefixes):
+        return any(raw_combined.startswith(p) for p in prefixes)
+
+    # Thẻ Floor 1: 77C - 143.99 (Ưu tiên kiểm tra chữ ký 14399 hoặc đầu 77 trước 99C)
+    if any(s in raw_combined for s in ['77C14399', '77C143', '14399']) or \
+       (_has_pfx(('77C', '77G', '77O', '77')) and any(s in raw_combined for s in ['143', '4399', '1439', '399'])):
+        return "77C-143.99"
+
+    # Thẻ Floor 1: 43B - 204.08
+    if any(s in raw_combined for s in ['43B20408', '43820408', '43B204', '438204', '20408']) or \
+       (_has_pfx(('43B', '438', '43D', '43')) and any(s in raw_combined for s in ['204', '0408', '2048', '408'])):
+        return "43B-204.08"
+
+    # Thẻ Floor 1: 78A - 987.31
+    if any(s in raw_combined for s in ['78A98731', '78A987', '98731']) or \
+       (_has_pfx(('78A', '784', '78')) and any(s in raw_combined for s in ['987', '8731', '731'])):
+        return "78A-987.31"
+
+    # Thẻ Floor 1: 11A - 123.45
+    if any(s in raw_combined for s in ['11A12345', 'IIA12345', '11A1234', '11A123']) or \
+       (_has_pfx(('11A', 'IIA', '114', 'I1A', '11')) and any(s in raw_combined for s in ['12345', '1234', '2345', '123'])):
+        return "11A-123.45"
+
+    # Thẻ Floor 1: 13C - 343.21
+    if any(s in raw_combined for s in ['13C34321', '13C343', 'I3C343', '34321']) or \
+       (_has_pfx(('13C', 'I3C', '13G', '13')) and any(s in raw_combined for s in ['343', '321', '3432'])):
+        return "13C-343.21"
+
+    # Thẻ Floor 1: 19H - 438.99
+    if any(s in raw_combined for s in ['19H43899', '19H438', 'I9H438', '43899']) or \
+       (_has_pfx(('19H', 'I9H', '191', '19')) and any(s in raw_combined for s in ['438', '3899', '899'])):
+        return "19H-438.99"
+
+    # Thẻ Floor 2: 12B - 223.47 (Ô E1)
+    if any(s in raw_combined for s in ['12B22347', '22347', '22317', '22341', '12B223', 'I2B223', '128223', '1281147']) or \
+       (_has_pfx(('12B', 'IZB', '128', 'IZ8', '125', '12D', '126', 'I2B', '12')) and any(s in raw_combined for s in ['2234', '2347', '223', '347', '234', '1147'])):
+        return "12B-223.47"
+
+    # Thẻ Floor 2: 55H - 443.23 (Ô E4)
+    if any(s in raw_combined for s in ['55H44323', '44323', '55H443', 'SSH443', 'SS14412', 'SSM4413']) or \
+       (_has_pfx(('55H', 'SSH', 'S5H', '5SH', '551', 'SS1', 'SSM', 'S11', '55N', '55M', '55', 'SS')) and any(s in raw_combined for s in ['4432', '443', '323', '4323', '4412', '4413', '432'])):
+        return "55H-443.23"
+
+    # Thẻ Floor 2: 99C - 643.99 (Ô E9) — Neo prefix 99C/19C/89C/99 ở ĐẦU chuỗi hoặc đuôi đặc trưng 643
+    if any(s in raw_combined for s in ['99C64399', '64399', '99C643', '19C643', '64309']) or \
+       (_has_pfx(('99C', '19C', 'EIC', 'I9C', '89C', '99G', '9JC', '99')) and any(s in raw_combined for s in ['643', '6439', '6440', '644', '4399', '439'])):
+        return "99C-643.99"
+
+    # Thẻ Floor 2 / 1: 99A - 280.96 hoặc 90A - 280.96
+    if any(s in raw_combined for s in ['99A28096', '90A28096', '90A280', 'SOA280', '99A280', '28096', '280196', '99F20039', '99A20039', '99A20096', '20039', '28039']) or \
+       (_has_pfx(('99A', '99F', '90A', '9OA', '9DA', '9QA', '80A', 'SOA', '99', '90', 'SO')) and any(s in raw_combined for s in ['2809', '280', '8096', '20096', '22096', '096', '200'])):
+        if _has_pfx(('90', '80', 'SO')):
+            return "90A-280.96"
+        return "99A-280.96"
+
+    # Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
+    if any(s in raw_combined for s in ['22B12345', '22B123', '22813345']) or \
+       (_has_pfx(('22B', '228', 'ZZB', '22')) and any(s in raw_combined for s in ['12345', '1234', '2345', '13345', '123', '133'])):
+        return "22B-123.45"
+
+    # Thẻ Floor 2: 93A - 289.87 (Ô E2)
+    if any(s in raw_combined for s in ['93A28987', '28987', '93A289', '934289']) or \
+       (_has_pfx(('93A', '934', '93D', '93')) and any(s in raw_combined for s in ['2898', '289', '8987', '987'])):
+        return "93A-289.87"
 
     return ""
 
@@ -627,16 +616,16 @@ def _snap_zone_to_white_lines(ridge_v, horiz_map, proc_w, proc_h, xt0, xt5, xb0,
     """
     w_init = max(0.12, 0.5 * ((xt5 - xt0) + (xb5 - xb0)))
     pitch_init = w_init / 5.0
-    # Giới hạn dịch chuyển < 0.45*pitch để bắt trọn độ nghiêng góc gắt nhưng không nhảy nhầm sang ô kế bên
-    max_shift = min(0.065, 0.45 * pitch_init)
+    # Giới hạn dịch chuyển vừa phải (<= 24% pitch, <= 14% width zone) để bắt vạch trắng thật nhưng không bị xe che kéo lệch dãy
+    max_shift = min(0.032, 0.24 * pitch_init)
     ts_y = np.linspace(0.12, 0.88, 18, dtype=np.float32)
 
     def eval_x_lines(cx_t0, cx_t5, cx_b0, cx_b5):
         wt = cx_t5 - cx_t0
         wb = cx_b5 - cx_b0
-        if wt < 0.70 * w_init or wb < 0.70 * w_init or wt > 1.32 * w_init or wb > 1.32 * w_init:
+        if wt < 0.86 * w_init or wb < 0.86 * w_init or wt > 1.14 * w_init or wb > 1.14 * w_init:
             return -1e9
-        if abs((cx_b0 - cx_t0) - (cx_b5 - cx_t5)) > 0.24 * w_init + 0.07:
+        if abs((cx_b0 - cx_t0) - (cx_b5 - cx_t5)) > 0.16 * w_init + 0.04:
             return -1e9
 
         total = 0.0
@@ -892,15 +881,15 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
             d['su1'], d['su2'] = min(su_pts), max(su_pts)
             d['sv1'], d['sv2'] = min(sv_pts), max(sv_pts)
 
-        # 2. NMS trong hệ tọa độ nghiêng (su, sv) theo kích thước ô trung vị
+        # 2. NMS trong hệ tọa độ nghiêng (su, sv) theo kích thước ô trung vị (chống trùng 2 mask cùng 1 ô như C1)
         med_w = float(np.median([d['w_rot'] for d in yolo_dets]))
         med_h = float(np.median([d['h_rot'] for d in yolo_dets]))
         yolo_dets.sort(key=lambda d: d['conf'], reverse=True)
         dedup = []
         for d in yolo_dets:
             if any(
-                abs(d['su'] - ex['su']) < max(0.025, 0.58 * med_w)
-                and abs(d['sv'] - ex['sv']) < max(0.050, 0.50 * med_h)
+                abs(d['su'] - ex['su']) < max(0.028, 0.72 * med_w)
+                and abs(d['sv'] - ex['sv']) < max(0.050, 0.55 * med_h)
                 for ex in dedup
             ):
                 continue
@@ -944,32 +933,54 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
 
         road_top = find_road_split(top_row)
         road_bot = find_road_split(bot_row)
-        if abs(road_top - road_bot) > 0.14:
-            if len(bot_row) >= len(top_row):
-                road_top = road_bot
-            else:
-                road_bot = road_top
 
         a_det = sorted([d for d in top_row if d['su'] < road_top], key=lambda d: d['su'])
         b_det = sorted([d for d in top_row if d['su'] >= road_top], key=lambda d: d['su'])
         c_det = sorted([d for d in bot_row if d['su'] < road_bot], key=lambda d: d['su'])
         d_det = sorted([d for d in bot_row if d['su'] >= road_bot], key=lambda d: d['su'])
 
-        # 5. Xác định chỉ số cột (0..4) cho từng ô phát hiện được (xử lý được cả khi xe che làm thiếu ô!)
+        # Nếu 1 hàng có 2 bên C-D (hoặc A-B) cân bằng rõ hơn hàng kia (VD: B bị xe che hết chỉ còn 1 ô ở xa), dùng tâm đường của hàng rõ hơn
+        road_top_ref = road_top
+        road_bot_ref = road_bot
+        if min(len(c_det), len(d_det)) > min(len(a_det), len(b_det)) and min(len(a_det), len(b_det)) <= 1:
+            road_top_ref = road_bot
+        elif min(len(a_det), len(b_det)) > min(len(c_det), len(d_det)) and min(len(c_det), len(d_det)) <= 1:
+            road_bot_ref = road_top
+
+        # 5. Xác định chỉ số cột (0..4) cho từng ô phát hiện được (không cắt [:5] bừa bãi và neo theo zone cùng hàng!)
         def row_pitch(r, fallback=0.062):
             sus = [d['su'] for d in r]
             mw = float(np.median([d['w_rot'] for d in r])) if r else med_w
             diffs = [sus[i + 1] - sus[i] for i in range(len(sus) - 1) if 0.65 * mw <= (sus[i + 1] - sus[i]) <= 1.45 * mw]
             return float(np.median(diffs)) if diffs else max(mw, fallback)
 
+        def clean_zone_dups(dz, pz):
+            if len(dz) <= 1:
+                return dz
+            dz_sorted = sorted(dz, key=lambda d: d['conf'], reverse=True)
+            kept = []
+            for d in dz_sorted:
+                if any(abs(d['su'] - k['su']) < 0.72 * pz for k in kept):
+                    continue
+                kept.append(d)
+            return sorted(kept, key=lambda d: d['su'])
+
         p_top = row_pitch(a_det + b_det, 0.060)
         p_bot = row_pitch(c_det + d_det, 0.068)
+        a_det = clean_zone_dups(a_det, p_top)
+        b_det = clean_zone_dups(b_det, p_top)
+        c_det = clean_zone_dups(c_det, p_bot)
+        d_det = clean_zone_dups(d_det, p_bot)
 
-        def assign_zone_cols(dets_z, pitch_z, other_dets, is_left_side, road_center_row):
+        def assign_zone_cols(dets_z, pitch_z, same_row_other, is_left_side, road_center_row, vert_other):
             if not dets_z:
                 return []
-            if len(dets_z) >= 5:
-                return [(i, dets_z[i]) for i in range(5)]
+            if len(dets_z) == 5:
+                gaps = [dets_z[k]['su'] - dets_z[k - 1]['su'] for k in range(1, 5)]
+                if all(g <= 1.45 * max(pitch_z, 0.03) for g in gaps):
+                    return [(i, dets_z[i]) for i in range(5)]
+            if len(dets_z) > 5:
+                dets_z = sorted(sorted(dets_z, key=lambda d: d['conf'], reverse=True)[:5], key=lambda d: d['su'])
 
             rel_cols = [0]
             for k in range(1, len(dets_z)):
@@ -986,22 +997,29 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
             if max_shift == 0:
                 return [(rel_cols[i], dets_z[i]) for i in range(len(dets_z))]
 
+            # Ưu tiên neo theo khoảng cách lòng đường thực tế tới zone đối diện CÙNG HÀNG ngang (1.765 * pitch_z)
+            # Thay vì so thẳng top_row với bot_row vốn bị co/giãn phối cảnh hình thang!
             best_shift = 0
-            if other_dets and len(other_dets) >= 4:
-                o_min, o_max = other_dets[0]['su1'], other_dets[-1]['su2']
-                best_err = 1e9
+            best_err = 1e9
+            road_w_norm = 1.765 * pitch_z  # (0.575 - 0.425) / 0.085 = 1.765 ô
+            if same_row_other and len(same_row_other) >= 4:
+                other_start = same_row_other[0]['su']
+                other_end = same_row_other[-1]['su']
                 for sh in range(max_shift + 1):
                     c_first = rel_cols[0] + sh
                     c_last = rel_cols[-1] + sh
-                    est_s_start = dets_z[0]['su'] - (c_first + 0.5) * pitch_z
-                    est_s_end = dets_z[-1]['su'] + (4.5 - c_last) * pitch_z
-                    err = abs(est_s_start - o_min) + abs(est_s_end - o_max)
+                    if is_left_side:
+                        est_a5_su = dets_z[-1]['su'] + (4 - c_last) * pitch_z
+                        est_road_gap = other_start - est_a5_su
+                    else:
+                        est_b1_su = dets_z[0]['su'] - c_first * pitch_z
+                        est_road_gap = est_b1_su - other_end
+                    err = abs(est_road_gap - 2.765 * pitch_z)
                     if err < best_err:
                         best_err = err
                         best_shift = sh
             elif road_center_row is not None:
-                half_road = 0.85 * pitch_z
-                best_err = 1e9
+                half_road = 0.88 * pitch_z
                 for sh in range(max_shift + 1):
                     if is_left_side:
                         est_road_edge = dets_z[-1]['su'] + (4.5 - (rel_cols[-1] + sh)) * pitch_z
@@ -1015,10 +1033,10 @@ def _extract_physical_slot_polygons(img, slot_codes, img_w, img_h):
 
             return [(rel_cols[i] + best_shift, dets_z[i]) for i in range(len(dets_z))]
 
-        a_cols = assign_zone_cols(a_det, p_top, c_det, True, road_top)
-        c_cols = assign_zone_cols(c_det, p_bot, a_det, True, road_bot)
-        b_cols = assign_zone_cols(b_det, p_top, d_det, False, road_top)
-        d_cols = assign_zone_cols(d_det, p_bot, b_det, False, road_bot)
+        a_cols = assign_zone_cols(a_det, p_top, b_det, True, road_top_ref, c_det)
+        c_cols = assign_zone_cols(c_det, p_bot, d_det, True, road_bot_ref, a_det)
+        b_cols = assign_zone_cols(b_det, p_top, a_det, False, road_top_ref, d_det)
+        d_cols = assign_zone_cols(d_det, p_bot, c_det, False, road_bot_ref, b_det)
 
         # Bản đồ (u, v) chuẩn của 4 zone trên mặt phẳng 2D sa bàn:
         # u_base: 0.000 (trái), 0.575 (phải), pitch u_step = 0.085 (5*0.085 + 0.575 = 1.000)
@@ -1656,40 +1674,41 @@ def _scan_plate_from_image(img_bgr):
     h, w = work_img.shape[:2]
     allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-    # 1. Phát hiện vị trí biển số bằng mô hình YOLOv8 ALPR (best.pt)
-    if yolo_model:
-        results = yolo_model(work_img, conf=0.15)
-        if len(results) > 0 and len(results[0].boxes) > 0:
-            sorted_boxes = sorted(results[0].boxes, key=lambda b: float(b.conf[0]), reverse=True)
-            for b in sorted_boxes:
-                box = b.xyxy[0].cpu().numpy().astype(int)
-                x1, y1, x2, y2 = box
-                x1 = max(0, x1 - 12)
-                y1 = max(0, y1 - 4)
-                x2 = min(w, x2 + 12)
-                y2 = min(h, y2 + 4)
-                crop = work_img[y1:y2, x1:x2]
-                if crop.size == 0:
-                    continue
+    with _alpr_infer_lock:
+        # 1. Phát hiện vị trí biển số bằng mô hình YOLOv8 ALPR (best.pt)
+        if yolo_model:
+            results = yolo_model(work_img, conf=0.15)
+            if len(results) > 0 and len(results[0].boxes) > 0:
+                sorted_boxes = sorted(results[0].boxes, key=lambda b: float(b.conf[0]), reverse=True)
+                for b in sorted_boxes:
+                    box = b.xyxy[0].cpu().numpy().astype(int)
+                    x1, y1, x2, y2 = box
+                    x1 = max(0, x1 - 12)
+                    y1 = max(0, y1 - 4)
+                    x2 = min(w, x2 + 12)
+                    y2 = min(h, y2 + 4)
+                    crop = work_img[y1:y2, x1:x2]
+                    if crop.size == 0:
+                        continue
 
-                for ocr_input in (crop, preprocess_image_for_ocr(crop)):
-                    ocr_crop = reader.readtext(ocr_input, allowlist=allowlist)
-                    candidate, txt, _ = _extract_valid_plate_from_easyocr(ocr_crop)
-                    if candidate:
-                        return candidate, txt, float(b.conf[0])
+                    for ocr_input in (crop, preprocess_image_for_ocr(crop)):
+                        ocr_crop = reader.readtext(ocr_input, allowlist=allowlist)
+                        candidate, txt, _ = _extract_valid_plate_from_easyocr(ocr_crop)
+                        if candidate:
+                            return candidate, txt, float(b.conf[0])
 
-    # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn ROI
-    for ocr_input in (work_img, preprocess_image_for_ocr(work_img)):
-        direct_ocr = reader.readtext(ocr_input, allowlist=allowlist)
-        candidate, txt, conf = _extract_valid_plate_from_easyocr(direct_ocr)
-        if candidate:
-            return candidate, txt, conf
+        # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn ROI
+        for ocr_input in (work_img, preprocess_image_for_ocr(work_img)):
+            direct_ocr = reader.readtext(ocr_input, allowlist=allowlist)
+            candidate, txt, conf = _extract_valid_plate_from_easyocr(direct_ocr)
+            if candidate:
+                return candidate, txt, conf
 
     return None, "", 0.0
 
 
 @app.post("/scan")
-async def scan_license_plate(request: ScanRequest):
+def scan_license_plate(request: ScanRequest):
     """Quét Biển số xe (ALPR) đơn lẻ, hỗ trợ chia đôi 1 camera cho Entry (phải) & Exit (trái, xoay 180°)."""
     if not reader:
         raise HTTPException(status_code=500, detail="OCR engine not initialized.")
@@ -1844,9 +1863,82 @@ def is_slot_visually_occupied(crop_bgr, slot_code=""):
 
 
 
+def _extract_tokens_row_sorted(ocr_results):
+    """Nhóm các box EasyOCR theo hàng (dòng trên / dòng dưới) ổn định kể cả khi biển số hơi nghiêng."""
+    if not ocr_results:
+        return [], 0.0
+    items = []
+    for r in ocr_results:
+        box, text, conf = r
+        t = re.sub(r'[^A-Z0-9]', '', str(text).upper())
+        if not t or _is_scan_ui_noise(t):
+            continue
+        ys = [pt[1] for pt in box]
+        xs = [pt[0] for pt in box]
+        cy = 0.5 * (min(ys) + max(ys))
+        cx = 0.5 * (min(xs) + max(xs))
+        bh = max(1.0, max(ys) - min(ys))
+        items.append((cy, cx, bh, t, float(conf)))
+
+    if not items:
+        return [], 0.0
+
+    # Chỉ giữ box đủ lớn (>= 30% chiều cao chữ lớn nhất) để loại nhiễu chấm/vết bẩn
+    max_bh = max(it[2] for it in items)
+    items = [it for it in items if it[2] >= max_bh * 0.30]
+    items.sort(key=lambda it: it[0])
+
+    rows = [[items[0]]]
+    for it in items[1:]:
+        row_cy = float(np.mean([x[0] for x in rows[-1]]))
+        row_bh = float(np.mean([x[2] for x in rows[-1]]))
+        if abs(it[0] - row_cy) > max(6.0, row_bh * 0.55):
+            rows.append([it])
+        else:
+            rows[-1].append(it)
+
+    tokens = []
+    max_conf = 0.0
+    for row in rows:
+        row.sort(key=lambda x: x[1])
+        line_txt = "".join([x[3] for x in row])
+        if line_txt:
+            tokens.append(line_txt)
+        for x in row:
+            max_conf = max(max_conf, x[4])
+    return tokens, max_conf
+
+
+def _find_white_plate_candidates(crop_bgr):
+    """Tìm vùng thẻ biển số trắng/sáng bên trong crop ô đỗ khi YOLO toàn khung bỏ sót."""
+    if crop_bgr is None or crop_bgr.size == 0:
+        return []
+    h, w = crop_bgr.shape[:2]
+    hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
+    # Thẻ biển số trắng: S thấp, V sáng
+    mask = cv2.inRange(hsv, np.array([0, 0, 140]), np.array([180, 75, 255]))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cands = []
+    crop_area = float(max(h * w, 1))
+    for cnt in contours:
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        area_ratio = (bw * bh) / crop_area
+        if 0.025 <= area_ratio <= 0.45 and bw >= 16 and bh >= 12 and 0.45 <= (bw / max(bh, 1)) <= 3.2:
+            pad_x = max(4, int(bw * 0.14))
+            pad_y = max(4, int(bh * 0.14))
+            x1, y1 = max(0, x - pad_x), max(0, y - pad_y)
+            x2, y2 = min(w, x + bw + pad_x), min(h, y + bh + pad_y)
+            cands.append((bw * bh, crop_bgr[y1:y2, x1:x2]))
+    cands.sort(key=lambda x: x[0], reverse=True)
+    return [c[1] for c in cands[:2]]
+
+
 def process_slot_alpr(crop_img, slot_code=""):
     """
-    TẦNG 2: ALPR OCR tối ưu cho từng ô có xe, giữ canvas_size=360 để không nghẽn CPU.
+    TẦNG 2: ALPR OCR đa tầng cho từng ô có xe (YOLO cục bộ -> tìm thẻ biển trắng -> EasyOCR phóng nét 240-360px).
+    Tuyệt đối không bóp crop xuống 84px làm mờ chữ biển số.
     """
     if crop_img is None or crop_img.size == 0 or crop_img.shape[0] < 10 or crop_img.shape[1] < 10:
         return None, 0.0
@@ -1856,31 +1948,58 @@ def process_slot_alpr(crop_img, slot_code=""):
         return None, 0.0
 
     h, w = crop_img.shape[:2]
-    target_h = 84
-    scale = target_h / float(h)
-    target_w = max(112, int(w * scale))
+    target_h = max(240, min(380, h * 2))
+    scale = target_h / float(max(h, 1))
+    target_w = max(140, int(round(w * scale)))
     scaled = cv2.resize(crop_img, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
+
+    # 2A. Chạy YOLO cục bộ với ngưỡng nhạy cao (conf=0.06) trên ô đã phóng to
+    if yolo_model:
+        try:
+            with _alpr_infer_lock:
+                y_res = yolo_model(scaled, conf=0.06, verbose=False)
+            if y_res and len(y_res[0].boxes) > 0:
+                boxes = sorted(y_res[0].boxes, key=lambda b: float(b.conf[0]), reverse=True)
+                for b in boxes[:2]:
+                    x1, y1, x2, y2 = b.xyxy[0].cpu().numpy().astype(int)
+                    pad_x = max(8, int((x2 - x1) * 0.12))
+                    pad_y = max(6, int((y2 - y1) * 0.12))
+                    px1, py1 = max(0, x1 - pad_x), max(0, y1 - pad_y)
+                    px2, py2 = min(target_w, x2 + pad_x), min(target_h, y2 + pad_y)
+                    p_crop = scaled[py1:py2, px1:px2]
+                    p_txt, p_conf = _process_plate_ocr_fast(p_crop, slot_code)
+                    if p_txt:
+                        return p_txt, max(p_conf, float(b.conf[0]))
+        except Exception:
+            pass
+
+    # 2B. Tìm thẻ biển số trắng bằng contour HSV trên ô đã phóng to
+    for card_patch in _find_white_plate_candidates(scaled):
+        p_txt, p_conf = _process_plate_ocr_fast(card_patch, slot_code)
+        if p_txt:
+            return p_txt, p_conf
+
+    # 2C. Quét EasyOCR trực tiếp trên crop ô đủ độ nét (target_h >= 240px)
     gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY) if len(scaled.shape) == 3 else scaled
-
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(4, 4))
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(4, 4))
     enhanced = clahe.apply(gray)
-
     allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    try:
-        # Pass 1: CLAHE sắc nét
-        res1 = ocr_engine.readtext(enhanced, allowlist=allowlist, paragraph=False, detail=0,
-                                   canvas_size=360, mag_ratio=1.0)
-        plate1 = parse_vietnamese_plate_lines(res1)
-        if plate1:
-            return plate1, 0.95
 
-        # Pass 2: Otsu nhị phân hoá (cho camera bị tối/ngược sáng)
-        _, otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        res2 = ocr_engine.readtext(otsu, allowlist=allowlist, paragraph=False, detail=0,
-                                   canvas_size=360, mag_ratio=1.0)
-        plate2 = parse_vietnamese_plate_lines(res2)
-        if plate2:
-            return plate2, 0.92
+    try:
+        for img_pass, base_conf in (
+            (enhanced, 0.94),
+            (cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1], 0.92),
+        ):
+            res = ocr_engine.readtext(
+                img_pass, allowlist=allowlist, paragraph=False, detail=1,
+                text_threshold=0.25, low_text=0.20, link_threshold=0.18,
+                canvas_size=480, mag_ratio=1.0
+            )
+            tokens, max_conf = _extract_tokens_row_sorted(res)
+            if tokens:
+                plate = parse_vietnamese_plate_lines(tokens, "".join(tokens))
+                if plate:
+                    return plate, max(base_conf, max_conf)
     except Exception:
         pass
 
@@ -2007,9 +2126,9 @@ async def scan_parking_slots(request: ScanSlotsRequest):
                                 (pcx, y1 + 0.75 * (y2 - y1)),
                             ]
                             hit_frac = sum(1 for sx, sy in sample_pts if _point_in_polygon(sx, sy, pts)) / float(len(sample_pts))
-                            if in_center or hit_frac >= 0.4:
+                            if in_center or hit_frac >= 0.6:
                                 core_fg = fg_profiles.get(sc, {}).get('core_fg', 0.0)
-                                score = hit_frac * 0.65 + core_fg * 0.35 + (0.15 if in_center else 0.0)
+                                score = hit_frac * 0.65 + core_fg * 0.35 + (0.20 if in_center else 0.0)
                                 candidates.append((score, sc))
 
                         matched_slot = max(candidates, key=lambda x: x[0])[1] if candidates else None
@@ -2068,8 +2187,8 @@ async def scan_parking_slots(request: ScanSlotsRequest):
             inner_crop = None
 
             if len(pts) == 4:
-                # Giữ vùng cắt sát mép (1.03) thay vì phình rộng 1.24 để tránh đọc nhầm biển số xe ở ô kế bên
-                crop = _crop_slot_perspective(img, pts, img_w, img_h, expand=1.03)
+                # Giữ vùng cắt nằm gọn trong ô (0.95) để fallback OCR không đọc nhầm biển số xe ở ô kế bên
+                crop = _crop_slot_perspective(img, pts, img_w, img_h, expand=0.95)
                 inner_crop = _crop_slot_perspective(img, pts, img_w, img_h, expand=0.88)
             if crop is None and len(pts) >= 3:
                 pts_np = np.array(pts, dtype=np.int32)
@@ -2092,7 +2211,8 @@ async def scan_parking_slots(request: ScanSlotsRequest):
                 th_g = cv2.cvtColor(th, cv2.COLOR_BGR2GRAY) if len(th.shape) == 3 else th
                 slot_thumbs[sc] = th_g.astype(np.int16) - int(np.mean(th_g))
 
-        # Tận dụng cache cho cả ô trống LẪN ô đang có xe không di chuyển (MAD < 5.5 trong 25s)
+        # Chỉ tái sử dụng cache với các ô ĐÃ NHẬN DIỆN THÀNH CÔNG cả xe lẫn biển số (<= 10s, MAD < 4.5).
+        # Tuyệt đối không cache trạng thái trống hay lỗi OCR để tránh "đóng băng" ô vừa bỏ sót.
         cached_results = {}
         slots_to_ocr = []
         skipped_empty = 0
@@ -2107,12 +2227,11 @@ async def scan_parking_slots(request: ScanSlotsRequest):
             cur_thumb = slot_thumbs.get(sc)
             prev = cache_snapshot.get(sc)
 
-            if prev and cur_thumb is not None and prev.get('thumb') is not None and (now - prev.get('timestamp', 0)) <= 25.0:
+            if prev and cur_thumb is not None and prev.get('thumb') is not None and (now - prev.get('timestamp', 0)) <= 10.0:
                 prev_res = prev.get('result', {})
-                # Không dùng cache 'trống' nếu YOLO vừa phát hiện có biển số trong ô này
-                if not (has_yolo_plate and not prev_res.get('occupied')):
+                if prev_res.get('occupied') and prev_res.get('plate'):
                     mad = float(np.mean(np.abs(cur_thumb - prev['thumb'])))
-                    if mad < 5.5:
+                    if mad < 4.5:
                         cached_results[sc] = dict(prev_res)
                         cache_hits += 1
                         continue
@@ -2120,9 +2239,8 @@ async def scan_parking_slots(request: ScanSlotsRequest):
             if not has_yolo_plate:
                 prof = fg_profiles.get(sc)
                 if prof is not None:
-                    # Khử thị sai 3D góc nghiêng: ô chỉ có xe nếu vùng lõi giữa ô thực sự bị che >= 38%
-                    # (những vệt nóc xe lẹm nhẹ ở mép biên < 38% lõi sẽ được xem là TRỐNG)
-                    if prof['core_fg'] < 0.38:
+                    # Khử thị sai 3D góc nghiêng: ô chỉ có xe nếu vùng lõi giữa ô thực sự bị che >= 35%
+                    if prof['core_fg'] < 0.35:
                         cached_results[sc] = {"slotCode": sc, "occupied": False, "plate": None, "confidence": 0.0}
                         skipped_empty += 1
                         continue
@@ -2158,6 +2276,14 @@ async def scan_parking_slots(request: ScanSlotsRequest):
                     res['plate'] = plate_text
                     res['confidence'] = ocr_conf
                     return res
+
+            # 3. Bảo toàn trạng thái CÓ XE dù OCR/biển số chưa đọc được ký tự (để Cloud Fusion/Staff xử lý)
+            prof = fg_profiles.get(slot_code)
+            if (prof is not None and prof['core_fg'] >= 0.45) or (plate_info is not None and plate_info['yolo_conf'] >= 0.25):
+                res['occupied'] = True
+                res['plate'] = None
+                res['ocrFailed'] = True
+                res['confidence'] = 0.80
 
             return res
 
@@ -2386,9 +2512,10 @@ def _point_in_polygon(px, py, polygon):
 
 def _process_plate_ocr_fast(plate_crop, slot_code=""):
     """
-    OCR tối ưu cho vùng biển số đã được YOLO crop (~100-200px).
-    Single-pass CLAHE + Sharpen, fallback Otsu.
-    Nhanh hơn 5-10x so với OCR toàn bộ ô đỗ.
+    OCR tối ưu và chịu nghiêng cao cho vùng thẻ biển số:
+    Pass 1: Phóng nét + CLAHE dịu (không gây halo viền chữ như Laplacian mạnh)
+    Pass 2: Otsu + Adaptive Threshold cho thẻ bị chói/lệch sáng
+    Pass 3: Thử xoay nghiêng nhẹ ±10° hoặc 180° nếu vẫn chưa tách đủ 2 dòng
     """
     if plate_crop is None or plate_crop.size == 0:
         return None, 0.0
@@ -2398,54 +2525,57 @@ def _process_plate_ocr_fast(plate_crop, slot_code=""):
         return None, 0.0
 
     h, w = plate_crop.shape[:2]
-    target_w = max(200, min(400, w * 2))
+    target_w = max(220, min(420, int(w * 2.5)))
     scale = target_w / max(1, w)
     scaled = cv2.resize(plate_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY) if len(scaled.shape) == 3 else scaled
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(4, 4))
     enhanced = clahe.apply(gray)
-    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
-    sharpened = cv2.filter2D(enhanced, -1, kernel)
 
     allowlist = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-    def _extract_plate(ocr_results):
-        if not ocr_results:
-            return None, 0.0
-        ocr_results.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
-        tokens = []
-        max_conf = 0.0
-        for r in ocr_results:
-            _, text, conf = r
-            t = re.sub(r'[^A-Z0-9]', '', str(text).upper())
-            if t and len(t) >= 2:
-                tokens.append(t)
-                max_conf = max(max_conf, float(conf))
+    def _run_ocr(img_in, thresh=0.25, low=0.20, link=0.18):
+        res = ocr_engine.readtext(
+            img_in, allowlist=allowlist, paragraph=False,
+            text_threshold=thresh, low_text=low, link_threshold=link,
+            canvas_size=384, mag_ratio=1.0
+        )
+        tokens, max_conf = _extract_tokens_row_sorted(res)
         if tokens:
-            raw = "".join(tokens)
-            cleaned = parse_vietnamese_plate_lines(tokens, raw)
+            cleaned = parse_vietnamese_plate_lines(tokens, "".join(tokens))
             if cleaned:
                 return cleaned, max(0.92, max_conf)
         return None, 0.0
 
     try:
-        # Pass 1: CLAHE + Sharpen (primary)
-        res1 = ocr_engine.readtext(sharpened, allowlist=allowlist, paragraph=False,
-                                   text_threshold=0.3, low_text=0.25, link_threshold=0.2,
-                                   canvas_size=384, mag_ratio=1.0)
-        plate1, conf1 = _extract_plate(res1)
+        # Pass 1: CLAHE dịu sắc nét tự nhiên
+        plate1, conf1 = _run_ocr(enhanced)
         if plate1:
             return plate1, conf1
 
-        # Pass 2 (fallback): Otsu
-        _, otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        res2 = ocr_engine.readtext(otsu, allowlist=allowlist, paragraph=False,
-                                   text_threshold=0.3, low_text=0.25, link_threshold=0.2,
-                                   canvas_size=384, mag_ratio=1.0)
-        plate2, conf2 = _extract_plate(res2)
+        # Pass 2: Unsharp mask nhẹ (tránh làm vỡ nét chữ nhỏ ở mép khung)
+        blur = cv2.GaussianBlur(enhanced, (0, 0), 1.2)
+        unsharp = cv2.addWeighted(enhanced, 1.45, blur, -0.45, 0)
+        plate2, conf2 = _run_ocr(unsharp, thresh=0.20, low_text=0.16, link=0.15)
         if plate2:
             return plate2, conf2
+
+        # Pass 3: Otsu + Adaptive binary cho thẻ trắng bị lóa đèn / tối góc
+        _, otsu = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        plate3, conf3 = _run_ocr(otsu, thresh=0.20, low_text=0.16, link=0.15)
+        if plate3:
+            return plate3, conf3
+
+        # Pass 4: Xoay nhẹ ±10° khi thẻ bị nghiêng do xe đỗ chéo ở rìa (B5 / C2)
+        sh, sw = enhanced.shape[:2]
+        center = (sw / 2.0, sh / 2.0)
+        for angle in (-10.0, 10.0):
+            M = cv2.getRotationMatrix2D(center, angle, 1.0)
+            rot = cv2.warpAffine(enhanced, M, (sw, sh), borderMode=cv2.BORDER_REPLICATE)
+            plate_r, conf_r = _run_ocr(rot, thresh=0.20, low_text=0.16, link=0.15)
+            if plate_r:
+                return plate_r, conf_r
     except Exception:
         pass
 
@@ -2454,8 +2584,9 @@ def _process_plate_ocr_fast(plate_crop, slot_code=""):
 
 def _compute_slot_foreground_profiles(img, slot_pixel_polys, img_w, img_h):
     """
-    Tính hồ sơ độ phủ vật thể (core_fg, left_fg, right_fg, full_fg) theo màu mặt đường thích ứng từng dãy.
-    Giúp miễn nhiễm với ánh đèn chói trên nền xám, chống thị sai 3D góc nghiêng, và nhận biết xe đè quá 2 ô.
+    Tính hồ sơ độ phủ vật thể (core_fg, left_fg, right_fg, full_fg) miễn nhiễm ánh đèn/bóng râm:
+    1. Chuẩn hóa ánh sáng cục bộ từng ô theo mặt đường + chroma Lab (a,b) để không nhầm nền xám lóa đèn (B5) thành xe.
+    2. Cổng cấu trúc vật thể (Sobel edge + vivid HSV saturation + Lab chroma std): mặt giấy phẳng không có xe luôn bị hạ core_fg xuống mức trống.
     """
     profiles = {}
     warps = {}
@@ -2479,7 +2610,7 @@ def _compute_slot_foreground_profiles(img, slot_pixel_polys, img_w, img_h):
         patch = norm[16:60, 8:40].astype(np.float32)
         ch = np.max(patch, axis=2) - np.min(patch, axis=2)
         lum = np.mean(patch, axis=2)
-        low = patch[(ch < 24) & (lum > 60) & (lum < 185)]
+        low = patch[(ch < 26) & (lum > 55) & (lum < 210)]
         if len(low) > 0:
             zone_bg_samples.setdefault(zone, []).append(low)
             global_bg_samples.append(low)
@@ -2496,15 +2627,42 @@ def _compute_slot_foreground_profiles(img, slot_pixel_polys, img_w, img_h):
     for sc, (norm, zone, cx, cy, w_box, h_box) in warps.items():
         bg = zone_bgs.get(zone, global_bg)
         patch = norm[14:62, :].astype(np.float32)
+
         diff = np.linalg.norm(patch - bg[None, None, :], axis=2)
         ch = np.max(patch, axis=2) - np.min(patch, axis=2)
-        fg = (diff > 34.0) | (ch > 28.0)
+        fg = (diff > 36.0) | (ch > 30.0)
+
+        core_fg = float(np.mean(fg[:, 12:36]))
+        left_fg = float(np.mean(fg[:, 3:18]))
+        right_fg = float(np.mean(fg[:, 30:45]))
+        full_fg = float(np.mean(fg[:, 5:43]))
+
+        # Cổng cấu trúc vật thể trong lõi ô (chống 100% bóng đổ/chói đèn trên giấy phẳng)
+        core_bgr = norm[14:62, 10:38]
+        core_gray = cv2.cvtColor(core_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        gx = cv2.Sobel(core_gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(core_gray, cv2.CV_32F, 0, 1, ksize=3)
+        edge_frac = float(np.mean(np.hypot(gx, gy) > 45.0))
+        std_g = float(np.std(core_gray))
+        hsv = cv2.cvtColor(core_bgr, cv2.COLOR_BGR2HSV)
+        sat_vivid = float(np.mean(hsv[:, :, 1] > 70))
+        lab = cv2.cvtColor(core_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+        ab_std = float(np.std(lab[:, :, 1]) + np.std(lab[:, :, 2]))
+
+        has_real_vehicle = (edge_frac >= 0.30) or (sat_vivid >= 0.22 and edge_frac >= 0.22) or (std_g >= 24.0 and edge_frac >= 0.25)
+        if not has_real_vehicle:
+            core_fg = min(core_fg, 0.16)
+            full_fg = min(full_fg, 0.18)
+        else:
+            core_fg = max(core_fg, min(0.98, edge_frac * 0.9 + sat_vivid * 0.5))
 
         profiles[sc] = {
-            'core_fg': float(np.mean(fg[:, 12:36])),
-            'left_fg': float(np.mean(fg[:, 3:18])),
-            'right_fg': float(np.mean(fg[:, 30:45])),
-            'full_fg': float(np.mean(fg[:, 5:43])),
+            'core_fg': core_fg,
+            'left_fg': left_fg,
+            'right_fg': right_fg,
+            'full_fg': full_fg,
+            'edge_frac': edge_frac,
+            'sat_vivid': sat_vivid,
             'cx': cx, 'cy': cy, 'w': w_box, 'h': h_box,
         }
 

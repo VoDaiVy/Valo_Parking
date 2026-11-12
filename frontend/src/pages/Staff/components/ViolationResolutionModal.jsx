@@ -84,6 +84,8 @@ export default function ViolationResolutionModal({
   } = violation;
 
   const isPendingPark = violation.status === 'CHECKED_IN_PENDING_PARK' || violation.violationType === 'CHECKED_IN_PENDING_PARK';
+  const isExitingGate = violation.status === 'EXITING_TO_GATE' || violation.violationType === 'EXITING_TO_GATE';
+  const isTransit = isPendingPark || isExitingGate;
   const isDoubleParking = violation.status === 'DOUBLE_PARKING_VIOLATION' || violation.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(violation.occupiedByOverlap);
   const isVipSlot = Boolean(contactData?.isVipSlot);
   const activePhone = contactData?.driverContact?.phone || session?.userId?.phone || '';
@@ -201,25 +203,29 @@ export default function ViolationResolutionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className={`w-full max-w-lg bg-[#121622] border ${isVipSlot ? 'border-amber-500/70 shadow-[0_0_35px_rgba(245,158,11,0.25)]' : isPendingPark ? 'border-purple-500/50' : 'border-red-500/50'} rounded-2xl shadow-2xl overflow-hidden text-gray-100 font-sans`}>
+      <div className={`w-full max-w-lg bg-[#121622] border ${isVipSlot ? 'border-amber-500/70 shadow-[0_0_35px_rgba(245,158,11,0.25)]' : isExitingGate ? 'border-cyan-500/50' : isPendingPark ? 'border-purple-500/50' : 'border-red-500/50'} rounded-2xl shadow-2xl overflow-hidden text-gray-100 font-sans`}>
         
         {/* Modal Header */}
         <div className={`flex items-center justify-between px-6 py-4 ${
           isVipSlot 
             ? 'bg-gradient-to-r from-amber-950/90 via-red-950/80 to-amber-900/50 border-b border-amber-500/40' 
-            : isPendingPark 
-              ? 'bg-gradient-to-r from-purple-950/90 to-indigo-900/50 border-b border-purple-500/30' 
-              : 'bg-gradient-to-r from-red-950/90 to-red-900/50 border-b border-red-500/30'
+            : isExitingGate
+              ? 'bg-gradient-to-r from-cyan-950/90 to-sky-900/50 border-b border-cyan-500/30'
+              : isPendingPark 
+                ? 'bg-gradient-to-r from-purple-950/90 to-indigo-900/50 border-b border-purple-500/30' 
+                : 'bg-gradient-to-r from-red-950/90 to-red-900/50 border-b border-red-500/30'
         }`}>
           <div className="flex items-center gap-3">
             <div className={`p-2.5 rounded-xl border shadow-inner ${
               isVipSlot 
                 ? 'bg-amber-500/20 text-amber-400 border-amber-400/50' 
-                : isPendingPark 
-                  ? 'bg-purple-500/20 text-purple-300 border-purple-400/40' 
-                  : 'bg-red-500/20 text-red-400 border-red-500/40'
+                : isExitingGate
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40'
+                  : isPendingPark 
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-400/40' 
+                    : 'bg-red-500/20 text-red-400 border-red-500/40'
             }`}>
-              {isVipSlot ? <Crown size={22} className="animate-bounce" /> : isPendingPark ? <Clock size={22} className="animate-pulse" /> : <ShieldAlert size={22} className="animate-pulse" />}
+              {isVipSlot ? <Crown size={22} className="animate-bounce" /> : isTransit ? <Clock size={22} className="animate-pulse" /> : <ShieldAlert size={22} className="animate-pulse" />}
             </div>
             <div>
               <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
@@ -228,6 +234,8 @@ export default function ViolationResolutionModal({
                     <span className="text-amber-400">🚨 VIP SLOT VIOLATION:</span>
                     <span>{currentActualSlot}</span>
                   </>
+                ) : isExitingGate ? (
+                  'Exiting to Checkout Gate'
                 ) : isPendingPark ? (
                   'Checked In (Not Parked Yet)'
                 ) : isDoubleParking ? (
@@ -236,8 +244,8 @@ export default function ViolationResolutionModal({
                   `Wrong-Slot Alert: ${currentActualSlot}`
                 )}
               </h3>
-              <p className={`text-xs ${isVipSlot ? 'text-amber-300 font-semibold' : isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
-                {isVipSlot ? 'Unauthorized occupancy of a member VIP slot!' : isPendingPark ? 'Vehicle passed the gate but has not parked yet' : 'Detected by AI Surveillance Camera'}
+              <p className={`text-xs ${isVipSlot ? 'text-amber-300 font-semibold' : isExitingGate ? 'text-cyan-300' : isPendingPark ? 'text-purple-300' : 'text-red-300'}`}>
+                {isVipSlot ? 'Unauthorized occupancy of a member VIP slot!' : isExitingGate ? 'Vehicle left slot and is driving to exit gate for checkout' : isPendingPark ? 'Vehicle passed the gate but has not parked yet' : 'Detected by AI Surveillance Camera'}
               </p>
             </div>
           </div>

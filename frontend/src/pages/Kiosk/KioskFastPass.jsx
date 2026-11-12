@@ -60,6 +60,32 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   // Màn hình tự động quay trở lại màn hình chính (Click to start) khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
   useEffect(() => {
     mountTimeRef.current = Date.now();
+    let returnTimerId = null;
+
+    const scheduleReturn = () => {
+      if (returnTimerId || isRedirectingRef.current) return;
+      const elapsed = Date.now() - mountTimeRef.current;
+      const delay = Math.max(0, 1500 - elapsed);
+      if (delay === 0) {
+        returnToStart();
+      } else {
+        returnTimerId = setTimeout(returnToStart, delay);
+      }
+    };
+
+    const processGateState = (gateData) => {
+      if (!gateData || (gateData.gate && gateData.gate !== 'ENTRY_1')) return;
+      if (gateData.open) {
+        hasSeenOpenRef.current = true;
+        return;
+      }
+      const closedAfterMount = Boolean(gateData.forceClose)
+        && Number(gateData.timestamp || 0) >= mountTimeRef.current;
+      if (hasSeenOpenRef.current || closedAfterMount) {
+        scheduleReturn();
+      }
+    };
+
     // 1. Kiểm tra trạng thái đóng của Barrier ENTRY_1 qua Polling
     const checkBarrier = async () => {
       try {
@@ -68,18 +94,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         });
         const data = await res.json();
         if (data.success && data.data) {
-          const isOpen = Boolean(data.data.open);
-          if (isOpen) {
-            hasSeenOpenRef.current = true;
-          } else if (hasSeenOpenRef.current) {
-            // Cổng ENTRY_1 đã đóng sau khi xe qua cảm biến -> đợi đủ 1.5s rồi mới quay về màn hình chính
-            const elapsed = Date.now() - mountTimeRef.current;
-            if (elapsed >= 1500) {
-              returnToStart();
-            } else {
-              setTimeout(returnToStart, 1500 - elapsed);
-            }
-          }
+          processGateState(data.data);
         }
       } catch {
         // ignore
@@ -97,19 +112,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
 
     // 2. Lắng nghe real-time qua Socket.IO
     const handleBarrierControl = (data) => {
-      if (data && (data.gate === 'ENTRY_1' || !data.gate)) {
-        if (data.open) {
-          hasSeenOpenRef.current = true;
-        } else if (!data.open && hasSeenOpenRef.current) {
-          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ sau tối thiểu 1.5s
-          const elapsed = Date.now() - mountTimeRef.current;
-          if (elapsed >= 1500) {
-            returnToStart();
-          } else {
-            setTimeout(returnToStart, 1500 - elapsed);
-          }
-        }
-      }
+      processGateState(data);
     };
 
     if (socket) {
@@ -119,6 +122,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     return () => {
       clearInterval(interval);
       clearTimeout(maxTimeoutTimer);
+      if (returnTimerId) clearTimeout(returnTimerId);
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }
@@ -215,68 +219,108 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   const floorLabel = floorRecord?.name || formData.bookingFloorName || (isSubscriptionFlow ? 'Member floor' : 'Reserved floor');
   const ticketSession = successSession || issuedSession;
   const qrCodeValue = ticketSession?.pass?.payload || ticketSession?.exitQrPayload || null;
+  const displayPlate = formatLicensePlateDisplay(ticketSession?.licensePlate || formData.licensePlate) || '--';
+  const sessionTypeLabel = ticketSession?.type === 'SUBSCRIPTION' || isSubscriptionFlow
+    ? 'VIP Member'
+    : ticketSession?.type === 'BOOKING'
+      ? 'Pre-Booked'
+      : 'Walk-in Pass';
+  const checkInTimeLabel = ticketSession?.checkInTime
+    ? new Date(ticketSession.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 items-center overflow-hidden">
-      <div className="w-full max-w-[980px] flex flex-col gap-4 flex-1 min-h-0">
+      <div className="w-full max-w-[1040px] flex flex-col gap-3 flex-1 min-h-0">
         {vipRedirectInfo && (
-          <div className="bg-amber-50 border-2 border-amber-400 text-amber-900 rounded-[20px] shadow-sm px-5 py-4 flex items-center gap-4 animate-fade-in">
-            <div className="w-12 h-12 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <div className="bg-amber-50 border-2 border-amber-400 text-amber-900 rounded-[18px] shadow-sm px-4 py-2.5 flex items-center gap-3 animate-fade-in shrink-0">
+            <div className="w-9 h-9 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
             <div>
-              <h3 className="font-black text-lg uppercase tracking-tight text-amber-800 mb-0.5">Sự cố ô đỗ VIP</h3>
-              <p className="font-semibold text-sm leading-tight text-amber-700">{vipRedirectInfo.message}</p>
+              <h3 className="font-black text-sm uppercase tracking-tight text-amber-800">Sự cố ô đỗ VIP</h3>
+              <p className="font-semibold text-xs leading-tight text-amber-700">{vipRedirectInfo.message}</p>
             </div>
           </div>
         )}
 
-        <div className="bg-white rounded-[26px] border border-gray-100 shadow-[0_20px_40px_rgba(15,23,42,0.08)] px-5 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-col gap-3 min-w-0 flex-1">
-              <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-600">
-                Parking Access
-              </div>
+        <div className="bg-white rounded-[22px] border border-gray-100 shadow-[0_14px_30px_rgba(15,23,42,0.07)] px-4 py-3 shrink-0">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="text-[10px] font-bold uppercase tracking-[0.26em] text-cyan-600">
+              Parking Access
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {checkInTimeLabel && (
+                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-bold text-gray-600">
+                  In at {checkInTimeLabel}
+                </span>
+              )}
+              <span
+                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                  status === 'ready'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : status === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-700'
+                      : 'bg-cyan-50 border-cyan-200 text-cyan-700'
+                }`}
+              >
+                {status === 'ready' ? `${sessionTypeLabel} · Ready` : status === 'error' ? 'Check-in Error' : 'Checking in...'}
+              </span>
+            </div>
+          </div>
 
-              <div className="grid min-w-0 grid-cols-[minmax(0,1.45fr)_minmax(88px,0.58fr)_minmax(112px,0.74fr)_minmax(112px,0.74fr)] gap-3">
-                <SummaryItem
-                  label="License Plate"
-                  value={formatLicensePlateDisplay(successSession?.licensePlate || formData.licensePlate) || '--'}
-                  valueClassName="text-[18px] md:text-[20px]"
-                />
-                <SummaryItem label="Slot" value={currentSlot || '--'} />
-                <SummaryItem label="Zone" value={zoneLabel} />
-                <SummaryItem label="Floor" value={floorLabel} />
-              </div>
+          <div className="flex items-stretch justify-between gap-3 min-w-0">
+            <div className="grid min-w-0 flex-1 grid-cols-2 2xl:grid-cols-4 gap-2">
+              <SummaryItem
+                label="License Plate"
+                value={displayPlate}
+                valueClassName="text-[15px] md:text-[16px]"
+              />
+              <SummaryItem label="Slot" value={currentSlot || '--'} valueClassName="text-[15px] md:text-[16px]" />
+              <SummaryItem label="Zone" value={zoneLabel} valueClassName="text-[14px] md:text-[15px]" />
+              <SummaryItem label="Floor" value={floorLabel} valueClassName="text-[14px] md:text-[15px]" />
             </div>
 
-            {/* Mã QR dành cho khách vãng lai chụp lại để check-out */}
-            {status === 'ready' && qrCodeValue && <div className="shrink-0 rounded-2xl border border-slate-200 bg-white p-3 text-center">
-              <QRCodeSVG value={qrCodeValue} size={128} level="M" title="Parking ticket for checkout" />
-              <p className="mt-2 text-xs font-bold text-slate-800">Save your parking ticket</p>
-              <p className="mt-1 text-xs text-slate-600">Use this QR at checkout.</p>
-            </div>}
+            {/* Mã QR dành cho khách chụp lại để check-out */}
+            {status === 'ready' && qrCodeValue && (
+              <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-[16px] px-3 py-2 shrink-0">
+                <div className="bg-white p-1 rounded-lg border border-gray-100 shadow-xs shrink-0">
+                  <QRCodeSVG value={qrCodeValue} size={64} level="M" title="Parking ticket for checkout" />
+                </div>
+                <div className="flex flex-col justify-center min-w-[84px]">
+                  <span className="text-[9px] font-extrabold uppercase tracking-wider text-cyan-700">
+                    Exit QR Code
+                  </span>
+                  <span className="text-[11px] font-bold text-[#0f172a] leading-tight mt-0.5">
+                    Scan at exit
+                  </span>
+                  <span className="text-[9px] font-medium text-gray-500 leading-snug mt-0.5">
+                    Save or snap
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {status === 'error' ? (
-          <div className="w-full max-w-[980px] bg-red-50 border border-red-200 rounded-[28px] px-8 py-7 text-center text-red-600 font-semibold">
+          <div className="w-full max-w-[1040px] bg-red-50 border border-red-200 rounded-[24px] px-8 py-7 text-center text-red-600 font-semibold">
             {errorMessage}
           </div>
         ) : (
-          <div className="w-full bg-white rounded-[28px] border border-gray-100 shadow-[0_20px_40px_rgba(15,23,42,0.08)] p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-4 mb-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-600">
+          <div className="w-full bg-white rounded-[24px] border border-gray-100 shadow-[0_16px_36px_rgba(15,23,42,0.08)] p-3.5 flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex items-center justify-between gap-4 mb-2 shrink-0">
+              <div className="text-[10px] font-bold uppercase tracking-[0.26em] text-cyan-600">
                 Parking Layout
               </div>
-              <div className="rounded-full bg-gray-50 border border-gray-200 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-gray-600 shrink-0">
-                {zoneLabel} · {currentSlot || formData.selectedSlot || '--'}
+              <div className="rounded-full bg-gray-50 border border-gray-200 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-gray-700 shrink-0">
+                {floorLabel} · {zoneLabel} · Slot {currentSlot || formData.selectedSlot || '--'}
               </div>
             </div>
 
-            <div className="rounded-[24px] overflow-hidden border border-[#0b0e16] shadow-sm bg-[#0b0e16] flex-1 min-h-0 relative">
+            <div className="rounded-[20px] overflow-hidden border border-[#0b0e16] shadow-sm bg-[#0b0e16] flex-1 min-h-0 relative">
               <ParkingMapViewer
                 floors={floors.filter((floor) => floor._id === formData.floorId)}
                 currentFloorId={formData.floorId}
@@ -301,11 +345,11 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   );
 }
 
-function SummaryItem({ label, value, valueClassName = 'text-[18px] md:text-[19px]' }) {
+function SummaryItem({ label, value, valueClassName = 'text-[15px] md:text-[16px]' }) {
   return (
-    <div className="rounded-[18px] border border-gray-200 bg-gray-50 px-4 py-3 min-w-0 overflow-hidden">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">{label}</div>
-      <div className={`${valueClassName} font-black text-[#0f172a] leading-tight truncate`}>{value}</div>
+    <div className="rounded-[14px] border border-gray-200 bg-gray-50 px-3 py-1.5 min-w-0 flex flex-col justify-center">
+      <div className="text-[9px] font-bold uppercase tracking-widest text-gray-400 leading-none mb-0.5">{label}</div>
+      <div className={`${valueClassName} font-black text-[#0f172a] leading-tight whitespace-nowrap`}>{value}</div>
     </div>
   );
 }

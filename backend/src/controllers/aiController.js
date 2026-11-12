@@ -419,86 +419,88 @@ function cleanAndNormalizePlate(rawPlate, slotCode = '') {
   // Repeated slot label strings like E10E10, E5E5, F2F2
   if (/^([A-H][0-9]{1,2}){2,}$/.test(rawClean)) return null;
 
-  // 2. DIORAMA TEST CARD NORMALIZATION (Chống 100% nhận diện nhầm mã ô trống A4, D1, B1 thành thẻ xe)
-  // Thẻ Floor 2: 12B - 223.47 (Ô E1) - Ưu tiên nhận diện trước
-  if (['22347', '2234', '2347', '22317', '22341', '12B223', 'I2B223', '128223', '12823', '12804', '12824', '1281147'].some((s) => rawClean.includes(s)) ||
-    ((/^(12B|IZB|128|IZ8|125|12D|126|08B|18B|42B|I2B)/.test(rawClean) || ['12B', 'IZB', '128', 'IZ8', 'I2B'].some((p) => rawClean.includes(p))) && ['223', '347', '234', '2234', '1147', '24', '04', '47', '67'].some((s) => rawClean.includes(s))) ||
-    ((rawClean.includes('12B') || rawClean.includes('IZB') || rawClean.includes('128') || rawClean.includes('I2B')) && ['223', '47', '67', '24', '347'].some((s) => rawClean.includes(s)))) {
-    return '12B-223.47';
+  // 1.5. EXACT CLEAN PLATE PRIORITY: Nếu biển số đã đủ 7-9 ký tự chuẩn (VD: 77C-143.99), trả về luôn để rule mờ bên dưới không đè nhầm
+  const exact5 = rawClean.match(/^([0-9]{2}[A-Z]{1,2})([0-9]{3})([0-9]{2})$/);
+  if (exact5) {
+    return `${exact5[1]}-${exact5[2]}.${exact5[3]}`;
+  }
+  const exact4 = rawClean.match(/^([0-9]{2}[A-Z]{1,2})([0-9]{4})$/);
+  if (exact4) {
+    return `${exact4[1]}-${exact4[2]}`;
   }
 
-  // Thẻ Floor 2: 55H - 443.23 (Ô E4)
-  if (['44323', '4323', '4432', '4412', '4413', '44312', '55H443', 'SSH443', 'SS14412', 'SSM4413', '55H', 'SSH'].some((s) => rawClean.includes(s)) &&
-    (['55H', 'SSH', 'S5H', '5SH', '551', 'SS1', 'SSM', 'S11', '55N', '55M', '99H', '88M', 'SOH', '55', 'SS'].some((p) => rawClean.includes(p)) || ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44', '23'].some((s) => rawClean.includes(s)))) {
-    return '55H-443.23';
-  }
+  // 2. DIORAMA TEST CARD NORMALIZATION (Neo đầu chuỗi prefix để tránh nhận diện nhầm giữa các biển số đuôi giống nhau)
+  const hasPrefix = (prefixes) => prefixes.some((p) => rawClean.startsWith(p));
 
-  // Thẻ Floor 2: 99C - 643.99 (Ô E9)
-  if (['64399', '43199', '6439', '64309', '99C643', '19C643', '6440', '644'].some((s) => rawClean.includes(s)) ||
-    ((/^(99C|19C|EIC|I9C|89C|99G|9JC|99)/.test(rawClean) || ['99C', '19C', 'EIC', '9JC', '99'].some((p) => rawClean.includes(p))) && ['643', '4399', '6439', '439', '64399', '6440', '644', '399'].some((s) => rawClean.includes(s)))) {
-    return '99C-643.99';
-  }
-
-  // Thẻ Floor 2: 99A - 280.96 (Ô F4) hoặc 90A - 280.96
-  if ((rawClean.includes('99A') || rawClean.includes('99F') || rawClean.startsWith('99')) &&
-    ['280', '8096', '2809', '28096', '200', '20096', '20039', '28039', '0039', '8039', '96', '39', '096'].some((s) => rawClean.includes(s))) {
-    if (rawClean.includes('90')) return '90A-280.96';
-    return '99A-280.96';
-  }
-  if (['28096', '280196', '2809', '28098', '22096', '90A280', 'SOA280', '90A28096', '99F20039', '99A20039', '99A20096'].some((s) => rawClean.includes(s)) ||
-    ((/^(90A|9OA|80B|80A|9DA|90|904|9QA|SOA|SO|99A|99F)/.test(rawClean) || ['90A', '9OA', '80A', 'SOA', 'SO', '99A', '99F'].some((p) => rawClean.includes(p))) && ['280', '8096', '2809', '22096', '096', '28096', '96', '200', '0039', '20039', '39'].some((s) => rawClean.includes(s)))) {
-    if (rawClean.includes('90')) return '90A-280.96';
-    return '99A-280.96';
-  }
-
-  // Thẻ Floor 1: 11A - 123.45 (Xe đen, Ô C4)
-  if (['11A', 'IIA', '114', 'I1A', '11'].some((p) => rawClean.includes(p)) && ['123', '2345', '12345', '1234', '345', '45'].some((s) => rawClean.includes(s))) {
-    return '11A-123.45';
-  }
-  if (['11A123', '11A12345', 'IIA12345', '11A1234'].some((s) => rawClean.includes(s))) {
-    return '11A-123.45';
-  }
-
-  // Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3) - Chỉ nhận diện nếu có '22' hoặc '22B'
-  if ((['22B', '228', 'ZZB'].some((p) => rawClean.includes(p)) && ['123', '2345', '1234', '345', '13345', '133', '45', '4I14S', '41145'].some((s) => rawClean.includes(s))) ||
-    ['22B123', '22B12345', '22813345'].some((s) => rawClean.includes(s))) {
-    return '22B-123.45';
-  }
-
-  // Thẻ Floor 1: 43B - 204.08 (Xe xanh dương, Ô C2)
-  if (['43B', '438', '43D', '43'].some((p) => rawClean.includes(p)) && ['204', '20408', '0408', '2048', '08', '408', '04'].some((s) => rawClean.includes(s))) {
-    return '43B-204.08';
-  }
-  if (['43B20408', '43B204', '43820408', '438204'].some((s) => rawClean.includes(s))) {
-    return '43B-204.08';
-  }
-
-  // Thẻ Floor 1: 78A - 987.31 (Xe cam)
-  if ((['78A', '784', '78'].some((p) => rawClean.includes(p)) && ['987', '8731', '98731', '731', '31'].some((s) => rawClean.includes(s))) ||
-    ['78A987', '78A98731'].some((s) => rawClean.includes(s))) {
-    return '78A-987.31';
-  }
-
-  // Thẻ Floor 1: 77C - 143.99 (Xe xanh lá)
-  if ((['77C', '77', '77G'].some((p) => rawClean.includes(p)) && ['143', '4399', '14399', '399', '99'].some((s) => rawClean.includes(s))) ||
+  // Thẻ Floor 1: 77C - 143.99 (Xe xanh lá - kiểm tra trước 99C-643.99 vì có đuôi .99 giống nhau)
+  if ((hasPrefix(['77C', '77G', '77O', '77']) && ['143', '14399', '1439', '4399', '439'].some((s) => rawClean.includes(s))) ||
     ['77C143', '77C14399'].some((s) => rawClean.includes(s))) {
     return '77C-143.99';
   }
 
+  // Thẻ Floor 2: 12B - 223.47 (Ô E1)
+  if (['22347', '2234', '2347', '22317', '22341', '12B223', 'I2B223', '128223', '12823', '12804', '12824', '1281147'].some((s) => rawClean.includes(s)) ||
+    (hasPrefix(['12B', 'IZB', '128', 'IZ8', '125', '12D', '126', '08B', '18B', '42B', 'I2B']) && ['223', '347', '234', '2234', '1147', '24', '04', '47', '67'].some((s) => rawClean.includes(s)))) {
+    return '12B-223.47';
+  }
+
+  // Thẻ Floor 2: 55H - 443.23 (Ô E4)
+  if (hasPrefix(['55H', 'SSH', 'S5H', '5SH', '551', 'SS1', 'SSM', 'S11', '55N', '55M', '99H', '88M', 'SOH', '55', 'SS']) &&
+    ['443', '323', '4432', '4412', '4413', '4437', '432', '441', '44323', '4323'].some((s) => rawClean.includes(s))) {
+    return '55H-443.23';
+  }
+
+  // Thẻ Floor 2: 99C - 643.99 (Ô E9) — Neo prefix đầu chuỗi + bắt buộc có 643/644/6439 thay vì 4399 chung
+  if (['64399', '43199', '6439', '64309', '99C643', '19C643', '6440'].some((s) => rawClean.includes(s)) ||
+    (hasPrefix(['99C', '19C', 'EIC', 'I9C', '89C', '99G', '9JC', '99']) && ['643', '6439', '64399', '6440', '644'].some((s) => rawClean.includes(s)))) {
+    return '99C-643.99';
+  }
+
+  // Thẻ Floor 2/1: 99A - 280.96 hoặc 90A - 280.96
+  if ((hasPrefix(['99A', '99F', '99']) && ['280', '8096', '2809', '28096', '20096', '20039', '28039', '0039', '8039', '096'].some((s) => rawClean.includes(s))) ||
+    ['28096', '280196', '90A280', 'SOA280', '90A28096', '99F20039', '99A20039', '99A20096'].some((s) => rawClean.includes(s)) ||
+    (hasPrefix(['90A', '9OA', '80B', '80A', '9DA', '90', '904', '9QA', 'SOA', 'SO']) && ['280', '8096', '2809', '22096', '096', '28096', '20039'].some((s) => rawClean.includes(s)))) {
+    if (hasPrefix(['90', '9O', '9D', '9Q', 'SO'])) return '90A-280.96';
+    return '99A-280.96';
+  }
+
+  // Thẻ Floor 1: 11A - 123.45 (Xe đen)
+  if ((hasPrefix(['11A', 'IIA', '114', 'I1A', '11']) && ['123', '2345', '12345', '1234', '345'].some((s) => rawClean.includes(s))) ||
+    ['11A123', '11A12345', 'IIA12345', '11A1234'].some((s) => rawClean.includes(s))) {
+    return '11A-123.45';
+  }
+
+  // Thẻ Floor 2: 22B - 123.45 (Ô H2 / H3)
+  if ((hasPrefix(['22B', '228', 'ZZB', '22']) && ['123', '2345', '1234', '345', '13345', '133', '4I14S', '41145'].some((s) => rawClean.includes(s))) ||
+    ['22B123', '22B12345', '22813345'].some((s) => rawClean.includes(s))) {
+    return '22B-123.45';
+  }
+
+  // Thẻ Floor 1: 43B - 204.08 (Xe xanh dương)
+  if ((hasPrefix(['43B', '438', '43D', '43']) && ['204', '20408', '0408', '2048', '408'].some((s) => rawClean.includes(s))) ||
+    ['43B20408', '43B204', '43820408', '438204'].some((s) => rawClean.includes(s))) {
+    return '43B-204.08';
+  }
+
+  // Thẻ Floor 1: 78A - 987.31 (Xe cam)
+  if ((hasPrefix(['78A', '784', '78']) && ['987', '8731', '98731', '731'].some((s) => rawClean.includes(s))) ||
+    ['78A987', '78A98731'].some((s) => rawClean.includes(s))) {
+    return '78A-987.31';
+  }
+
   // Thẻ Floor 2: 93A - 289.87 (Ô E2)
-  if (['28987', '289', '8987', '93A289', '934289', '93A'].some((s) => rawClean.includes(s)) &&
-    ['93A', '934', '93D', '289', '8987', '987', '2898'].some((s) => rawClean.includes(s))) {
+  if (hasPrefix(['93A', '934', '93D', '93']) && ['28987', '289', '8987', '2898'].some((s) => rawClean.includes(s))) {
     return '93A-289.87';
   }
 
   // Thẻ Floor 1: 13C - 343.21 (Ô A3)
-  if ((['13C', 'I3C', '13G'].some((p) => rawClean.includes(p)) && ['343', '321', '34321', '3432'].some((s) => rawClean.includes(s))) ||
-    ['34321', '13C343', 'I3C343', '13C34'].some((s) => rawClean.includes(s))) {
+  if ((hasPrefix(['13C', 'I3C', '13G', '13']) && ['343', '321', '34321', '3432'].some((s) => rawClean.includes(s))) ||
+    ['13C343', 'I3C343', '13C34'].some((s) => rawClean.includes(s))) {
     return '13C-343.21';
   }
 
   // Thẻ Floor 1: 19H - 438.99 (Ô C4)
-  if ((['19H', 'I9H', '191', '19'].some((p) => rawClean.includes(p)) && ['438', '498', '3899', '899', '43899'].some((s) => rawClean.includes(s))) ||
+  if ((hasPrefix(['19H', 'I9H', '191', '19']) && ['438', '498', '3899', '43899'].some((s) => rawClean.includes(s))) ||
     ['43899', '19H438', 'I9H438'].some((s) => rawClean.includes(s))) {
     return '19H-438.99';
   }
@@ -742,14 +744,14 @@ If isParkingLotScene is false:
       }
     }
 
-    // Mode 3: Intelligent Hybrid Fusion (Bổ sung Gemini Vision khi Local AI không trả về slots nào)
+    // Mode 3: Intelligent Hybrid Fusion (Bổ sung Gemini Vision khi Local AI thất bại hoặc phát hiện ô có xe nhưng chưa đọc được biển số)
     if (aiMode === 'hybrid' && process.env.GEMINI_API_KEY && !isSceneInvalid) {
-      // Only call Gemini if local AI completely failed (returned 0 slots)
-      // Do NOT escalate just because no plates found — empty parking lots are valid!
-      const needsCloudFusion = scannedSlots.length === 0;
+      const unreadableOccupiedSlots = scannedSlots.filter((s) => s.occupied && !s.plate);
+      const needsCloudFusion = scannedSlots.length === 0 || unreadableOccupiedSlots.length > 0;
 
       if (needsCloudFusion) {
-        console.log(`[AI Slot Scan] 🚀 Hybrid Auto-Backup: Local AI detected ${occupiedWithPlate.length}/${minExpectedPlates} plates. Fusing with Gemini 2.5 Flash Vision for 100% full coverage...`);
+        const readableCount = scannedSlots.filter((s) => s.occupied && s.plate).length;
+        console.log(`[AI Slot Scan] 🚀 Hybrid Auto-Backup: Local AI read ${readableCount} plates (${unreadableOccupiedSlots.length} occupied slot(s) unreadable). Fusing with Gemini Vision...`);
         const geminiSlots = await runGeminiVision();
         if (isSceneInvalid) {
           return res.json({
@@ -770,7 +772,7 @@ If isParkingLotScene is false:
             const lSlot = scannedSlots.find((s) => s.slotCode?.toUpperCase() === scUpper);
             const slotPoly = lSlot?.polygon || def.polygon;
 
-            // Ưu tiên kết quả biển số chuẩn xác từ cả 2 engine
+            // Ưu tiên kết quả biển số chuẩn xác từ Local ALPR; nếu Local chỉ mờ chưa đọc chữ, nhận Gemini ở đúng ô đó
             if (lSlot && lSlot.occupied && lSlot.plate) {
               return {
                 ...def,
@@ -789,6 +791,7 @@ If isParkingLotScene is false:
                 engine: 'gemini_vision',
               };
             }
+            // Nếu Gemini đã kiểm tra toàn ảnh và thấy ô này TRỐNG, không giữ cờ ocrFailed giả do chói đèn
             return {
               ...def,
               polygon: slotPoly,
@@ -797,6 +800,28 @@ If isParkingLotScene is false:
               confidence: 0.99,
               engine: 'verified_empty',
             };
+          });
+
+          // De-duplicate biển số sau khi gộp Hybrid: không bao giờ để 1 xe xuất hiện ở 2 ô (VD: A2 + A3, B1 + B2)
+          const plateWinner = new Map();
+          for (const s of scannedSlots) {
+            if (!s.occupied || !s.plate || s.occupiedByOverlap) continue;
+            const normP = String(s.plate).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            if (!normP) continue;
+            const score = (s.engine === 'local_alpr' ? 2.0 : 1.0) + Number(s.confidence || 0);
+            const prev = plateWinner.get(normP);
+            if (!prev || score > prev.score) {
+              plateWinner.set(normP, { slotCode: s.slotCode?.toUpperCase(), score });
+            }
+          }
+          scannedSlots = scannedSlots.map((s) => {
+            if (!s.occupied || !s.plate || s.occupiedByOverlap) return s;
+            const normP = String(s.plate).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const win = plateWinner.get(normP);
+            if (win && win.slotCode !== s.slotCode?.toUpperCase()) {
+              return { ...s, occupied: false, plate: null, confidence: 0.99, engine: 'deduplicated_empty' };
+            }
+            return s;
           });
           usedModel = 'hybrid_edge_and_gemini_vision';
         }
@@ -845,6 +870,7 @@ If isParkingLotScene is false:
     }
 
     // Sanitize and clean all scanned slots through cleanAndNormalizePlate
+    // Giữ nguyên occupied: true khi vật lý có xe nhưng chưa đọc được biển số
     scannedSlots = scannedSlots.map((s) => {
       const normPlate = cleanAndNormalizePlate(s.plate, s.slotCode);
       if (normPlate) {
@@ -853,6 +879,15 @@ If isParkingLotScene is false:
           occupied: true,
           plate: normPlate,
           confidence: s.confidence || 0.95,
+        };
+      }
+      if (s.occupied) {
+        return {
+          ...s,
+          occupied: true,
+          plate: null,
+          ocrFailed: true,
+          confidence: s.confidence || 0.80,
         };
       }
       return {
@@ -923,8 +958,23 @@ If isParkingLotScene is false:
       const Vehicle = require('../models/Vehicle');
       const Booking = require('../models/Booking');
       const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
+      const Slot = require('../models/Slot');
+      const SlotAuditLog = require('../models/SlotAuditLog');
+      const ParkingFloor = require('../models/ParkingFloor');
+      const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
 
-      const [activeSessions, allVehicles, allBookings, activeVipEntitlements] = await Promise.all([
+      let targetFloorId = currentFloor?.id;
+      if (!targetFloorId && selectedFloorNumber) {
+        const fDoc = await ParkingFloor.findOne({
+          $or: [
+            { floorNumber: selectedFloorNumber },
+            { name: new RegExp(`Floor ${selectedFloorNumber}|Tầng ${selectedFloorNumber}`, 'i') }
+          ]
+        }).lean();
+        if (fDoc) targetFloorId = fDoc._id;
+      }
+
+      const [activeSessions, allVehicles, allBookings, activeVipEntitlements, existingSlots] = await Promise.all([
         Session.find({ status: 'active' }).select('licensePlate parkingSlot userId checkInTime').populate('userId', 'fullName phone').lean().catch(() => []),
         Vehicle.find().select('licensePlate brand color owner userId').lean().catch(() => []),
         Booking.find().select('licensePlate parkingSlot status').lean().catch(() => []),
@@ -936,7 +986,14 @@ If isParkingLotScene is false:
           .populate('ownerId', 'username email fullName phone')
           .lean()
           .catch(() => []),
+        targetFloorId
+          ? Slot.find({ floorID: targetFloorId })
+              .select('slotNumber status floorID aiObservation.occupied aiObservation.detectedPlate aiObservation.isViolation aiObservation.violationType aiObservation.sessionId aiObservation.expectedSlot aiObservation.expectedPlate')
+              .lean()
+              .catch(() => [])
+          : Promise.resolve([]),
       ]);
+      const existingSlotMap = new Map(existingSlots.map(s => [s.slotNumber?.toUpperCase(), s]));
 
       const sessionBySlot = new Map();
       const sessionByPlate = new Map();
@@ -1014,9 +1071,17 @@ If isParkingLotScene is false:
         // Tách cấu trúc Biển số quét được: Mã tỉnh (2 số đầu), Seri (chữ cái), Đuôi số
         const rawMatch = normRaw.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3,5})$/);
 
-        // Nếu biển số quét được đã ĐẦY ĐỦ VÀ HỢP LỆ (VD: 90A28096), giữ nguyên biển số thực tế, KHÔNG tự ý đổi sang xe khác
+        // Nếu biển số quét được đã ĐẦY ĐỦ (7-8 ký tự), chỉ sửa nhẹ nếu khớp duy nhất 1 xe trong DB
+        // theo đúng mã tỉnh + seri + 2 số cuối và LCS >= 0.86 (VD: 99A-801.96 -> 99A-280.96, tuyệt đối không đổi .08 sang .04)
         if (rawMatch && normRaw.length >= 7) {
-          return null;
+          const tail2 = normRaw.slice(-2);
+          const sameTailMatches = knownPlates.filter((kp) => {
+            const normKp = kp.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const kpMatch = normKp.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3,5})$/);
+            return kpMatch && kpMatch[1] === rawMatch[1] && kpMatch[2] === rawMatch[2] && normKp.endsWith(tail2) &&
+              (getLCSLength(normRaw, normKp) / Math.max(normRaw.length, normKp.length)) >= 0.86;
+          });
+          return sameTailMatches.length === 1 ? sameTailMatches[0] : null;
         }
 
         let bestMatch = null;
@@ -1053,7 +1118,24 @@ If isParkingLotScene is false:
         return bestMatch;
       };
 
-      const enrichedSlots = scannedSlots.map((slot) => {
+      const normalizedScannedSlots = scannedSlots.map((slot) => {
+        if (slot.occupied && slot.plate) {
+          const inferred = inferClosestPlate(slot.plate);
+          if (inferred) {
+            console.log(`[AI Smart Inference] Auto-corrected blurry plate '${slot.plate}' -> '${inferred}'`);
+            return { ...slot, plate: inferred };
+          }
+        }
+        return slot;
+      });
+
+      const physicallyDetectedPlates = new Set(
+        normalizedScannedSlots
+          .filter((s) => s.occupied && s.plate)
+          .map((s) => s.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase())
+      );
+
+      const enrichedSlots = normalizedScannedSlots.map((slot) => {
         const slotCodeUpper = slot.slotCode?.toUpperCase();
         const expectedSession = sessionBySlot.get(slotCodeUpper) || null;
         const expectedPlate = expectedSession?.licensePlate || null;
@@ -1065,13 +1147,6 @@ If isParkingLotScene is false:
         let violationMessage = null;
 
         if (slot.occupied && slot.plate) {
-          // Tự động suy luận biển số xe thực tế từ Database nếu ảnh bị mờ
-          const inferred = inferClosestPlate(slot.plate);
-          if (inferred) {
-            console.log(`[AI Smart Inference] Auto-corrected blurry plate '${slot.plate}' -> '${inferred}'`);
-            slot.plate = inferred;
-          }
-
           const normDetected = slot.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const actualSession = sessionByPlate.get(normDetected);
           const actualBooking = allBookings.find(b => b.licensePlate && b.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === normDetected);
@@ -1140,25 +1215,60 @@ If isParkingLotScene is false:
               violationMessage = `Slot ${slot.slotCode} is registered for ${expectedPlate}, but ${slot.plate} was detected!`;
             }
           }
-        } else if (!slot.occupied) {
-          // Gate check-in pending arrival:
+        } else if (slot.occupied && !slot.plate) {
+          // Physical vehicle detected in slot even though OCR/plate text could not be decoded
           if (expectedSession) {
+            matchedSession = expectedSession;
+            isViolation = false;
+          } else {
             isViolation = true;
-            violationType = 'CHECKED_IN_PENDING_PARK';
+            violationType = 'UNAUTHORIZED_PARKING';
+            violationMessage = `Vehicle detected at slot ${slot.slotCode} (license plate unreadable) without an active gate check-in session for this slot!`;
+          }
+        } else if (!slot.occupied) {
+          // Empty slot with active session: distinguish newly checked-in arrival vs exiting vehicle
+          if (expectedSession) {
+            const normExpectedPlate = expectedSession.licensePlate
+              ? expectedSession.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+              : '';
+            const spottedElsewhere = Boolean(normExpectedPlate && physicallyDetectedPlates.has(normExpectedPlate));
+            const prevSlotDoc = existingSlotMap.get(slotCodeUpper);
+            const prevObs = prevSlotDoc?.aiObservation || {};
+            const sameSessionPrev = Boolean(prevObs.sessionId && String(prevObs.sessionId) === String(expectedSession._id));
+            const prevDetectedNorm = prevObs.detectedPlate
+              ? prevObs.detectedPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+              : '';
+            const wasPreviouslyParked = Boolean(
+              (prevObs.occupied || prevObs.violationType === 'EXITING_TO_GATE') &&
+              (!prevObs.sessionId || sameSessionPrev || !prevDetectedNorm || prevDetectedNorm === normExpectedPlate)
+            );
+
             expectedSlot = expectedSession.parkingSlot;
             matchedSession = expectedSession;
-            const checkInTimeStr = expectedSession.checkInTime
-              ? new Date(expectedSession.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-              : '';
-            violationMessage = `Vehicle ${expectedSession.licensePlate} checked in at gate${checkInTimeStr ? ` at ${checkInTimeStr}` : ''} but has not parked at slot ${slot.slotCode} yet!`;
+            // Transit states are informational live statuses, NOT violation alerts
+            isViolation = false;
+
+            if (wasPreviouslyParked && !spottedElsewhere) {
+              violationType = 'EXITING_TO_GATE';
+              violationMessage = `Vehicle ${expectedSession.licensePlate} left slot ${slot.slotCode} and is exiting toward checkout gate.`;
+            } else {
+              violationType = 'CHECKED_IN_PENDING_PARK';
+              const checkInTimeStr = expectedSession.checkInTime
+                ? new Date(expectedSession.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                : '';
+              violationMessage = `Vehicle ${expectedSession.licensePlate} checked in at gate${checkInTimeStr ? ` at ${checkInTimeStr}` : ''}; currently in transit to slot ${slot.slotCode}.`;
+            }
           }
         }
 
+        const isTransitStatus = violationType === 'CHECKED_IN_PENDING_PARK' || violationType === 'EXITING_TO_GATE';
         const status = isViolation
           ? (violationType || 'WRONG_SLOT_VIOLATION')
-          : slot.occupied
-            ? 'OCCUPIED_VALID'
-            : 'AVAILABLE';
+          : isTransitStatus
+            ? violationType
+            : slot.occupied
+              ? 'OCCUPIED_VALID'
+              : 'AVAILABLE';
 
         return {
           ...slot,
@@ -1176,28 +1286,9 @@ If isParkingLotScene is false:
       // Smart Diffing & Persistence into MongoDB (Slot & SlotAuditLog)
       // -------------------------------------------------------------
       try {
-        const Slot = require('../models/Slot');
-        const SlotAuditLog = require('../models/SlotAuditLog');
-        const ParkingFloor = require('../models/ParkingFloor');
-
-        let targetFloorId = currentFloor?.id;
-        if (!targetFloorId && selectedFloorNumber) {
-          const fDoc = await ParkingFloor.findOne({
-            $or: [
-              { floorNumber: selectedFloorNumber },
-              { name: new RegExp(`Floor ${selectedFloorNumber}|Tầng ${selectedFloorNumber}`, 'i') }
-            ]
-          }).lean();
-          if (fDoc) targetFloorId = fDoc._id;
-        }
-
         if (targetFloorId) {
           const persistStartMs = Date.now();
-          const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
-          const existingSlots = await Slot.find({ floorID: targetFloorId })
-            .select('slotNumber status floorID aiObservation.occupied aiObservation.detectedPlate aiObservation.isViolation aiObservation.violationType')
-            .lean();
-          const slotMap = new Map(existingSlots.map(s => [s.slotNumber?.toUpperCase(), s]));
+          const slotMap = existingSlotMap;
 
           const existingSlotIds = existingSlots.map(s => s._id);
           const activeMaintLogs = existingSlotIds.length > 0
@@ -1220,13 +1311,15 @@ If isParkingLotScene is false:
             const newOccupied = Boolean(scanned.occupied);
             const newPlate = scanned.plate || null;
             const newViolationType = scanned.violationType || null;
-            // CHECKED_IN_PENDING_PARK (in transit from gate) is informational, not a stored violation alert
-            const newIsViolation = Boolean(scanned.isViolation && newViolationType !== 'CHECKED_IN_PENDING_PARK');
+            // Transit states (CHECKED_IN_PENDING_PARK, EXITING_TO_GATE) are informational, not stored violation alerts
+            const isTransitState = newViolationType === 'CHECKED_IN_PENDING_PARK' || newViolationType === 'EXITING_TO_GATE';
+            const newIsViolation = Boolean(scanned.isViolation && !isTransitState);
 
             const isUnderMaintenance = Boolean(maintenanceSlotSet.has(String(slotDoc._id)) || slotDoc.status === 'maintenance');
+            const holdsActiveReservation = Boolean(isTransitState || scanned.session);
             const nextStatus = isUnderMaintenance
               ? 'maintenance'
-              : (newOccupied ? 'occupied' : (slotDoc.status === 'booked' ? 'booked' : 'available'));
+              : ((newOccupied || holdsActiveReservation) ? 'occupied' : (slotDoc.status === 'booked' ? 'booked' : 'available'));
 
             // Smart Diffing: Persist whenever occupancy, plate, violation state/type, expected slot, or DB status drifts
             const occChanged = Boolean(currObs.occupied) !== newOccupied;
@@ -1328,7 +1421,9 @@ If isParkingLotScene is false:
                   resolutionAction: newOccupied ? 'VEHICLE_PARKED' : 'VEHICLE_LEFT',
                   resolutionNote: newOccupied
                     ? (newPlate ? `Xe ${newPlate} đã vào đỗ tại ô` : 'Ghi nhận có xe vào đỗ tại ô')
-                    : (currObs.detectedPlate ? `Xe ${currObs.detectedPlate} đã rời khỏi ô, ô hiện đang trống` : 'Xe đã rời khỏi ô, ô hiện đang trống'),
+                    : (newViolationType === 'EXITING_TO_GATE'
+                        ? `Xe ${currObs.detectedPlate || scanned.expectedPlate || ''} đã rời ô, đang di chuyển ra cổng checkout`
+                        : (currObs.detectedPlate ? `Xe ${currObs.detectedPlate} đã rời khỏi ô, ô hiện đang trống` : 'Xe đã rời khỏi ô, ô hiện đang trống')),
                   resolvedAt: new Date(),
                 }));
               }

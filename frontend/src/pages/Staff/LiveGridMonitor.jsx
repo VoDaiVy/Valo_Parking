@@ -84,23 +84,28 @@ export default function LiveGridMonitor() {
         s.aiObservation && (
           s.aiObservation.occupied ||
           s.aiObservation.isViolation ||
-          s.aiObservation.violationType === 'CHECKED_IN_PENDING_PARK'
+          s.aiObservation.violationType === 'CHECKED_IN_PENDING_PARK' ||
+          s.aiObservation.violationType === 'EXITING_TO_GATE'
         )
       ))
       .map((s) => {
         const vType = s.aiObservation.violationType || null;
         const isPending = vType === 'CHECKED_IN_PENDING_PARK';
+        const isExiting = vType === 'EXITING_TO_GATE';
+        const isTransit = isPending || isExiting;
         return {
           slotCode: s.slotNumber,
           floorId: String(s.floorID?._id || s.floorID || ''),
           occupied: Boolean(s.aiObservation.occupied),
           plate: s.aiObservation.detectedPlate,
           detectedPlate: s.aiObservation.detectedPlate,
-          isViolation: Boolean(s.aiObservation.isViolation && !isPending),
+          isViolation: Boolean(s.aiObservation.isViolation && !isTransit),
           violationType: vType,
           status: isPending
             ? 'CHECKED_IN_PENDING_PARK'
-            : (s.aiObservation.isViolation ? (vType || 'WRONG_SLOT_VIOLATION') : 'OCCUPIED_VALID'),
+            : isExiting
+              ? 'EXITING_TO_GATE'
+              : (s.aiObservation.isViolation ? (vType || 'WRONG_SLOT_VIOLATION') : 'OCCUPIED_VALID'),
           expectedSlot: s.aiObservation.expectedSlot,
           expectedPlate: s.aiObservation.expectedPlate,
           evidenceSnapshot: s.aiObservation.evidenceSnapshot,
@@ -221,7 +226,7 @@ export default function LiveGridMonitor() {
     if (!Array.isArray(aiSlotStatuses)) return [];
     return aiSlotStatuses.filter((s) => {
       const vType = s.violationType || s.status;
-      if (vType === 'CHECKED_IN_PENDING_PARK') return false;
+      if (vType === 'CHECKED_IN_PENDING_PARK' || vType === 'EXITING_TO_GATE') return false;
       const isWrongSlot = vType === 'WRONG_SLOT_VIOLATION';
       const isUnauth = vType === 'UNAUTHORIZED_PARKING' || vType === 'UNAUTHORIZED_OCCUPANCY';
       const isDoubleParking = vType === 'DOUBLE_PARKING_VIOLATION' || Boolean(s.occupiedByOverlap);
@@ -522,19 +527,26 @@ export default function LiveGridMonitor() {
                   const dbSlotInfo = dbSlots.find(s => s.slotNumber === selectedSlot.id && (s.floorID === selectedSlot.floorId || s.floorID?._id === selectedSlot.floorId));
                   const isMaintenance = dbSlotInfo?.status === 'maintenance';
                   const aiObs = dbSlotInfo?.aiObservation;
+                  const obsVType = aiObs?.violationType || selectedSlot.aiStatus?.violationType || null;
+                  const isExitingSlot = Boolean(
+                    selectedSlot.isExiting ||
+                    obsVType === 'EXITING_TO_GATE'
+                  );
                   const isPendingSlot = Boolean(
-                    selectedSlot.isPendingPark ||
-                    aiObs?.violationType === 'CHECKED_IN_PENDING_PARK' ||
-                    selectedSlot.aiStatus?.violationType === 'CHECKED_IN_PENDING_PARK'
+                    !isExitingSlot && (
+                      selectedSlot.isPendingPark ||
+                      obsVType === 'CHECKED_IN_PENDING_PARK' ||
+                      (!aiObs?.occupied && !selectedSlot.aiStatus?.occupied && selectedSlot.session)
+                    )
                   );
                   const isViolation = Boolean(
-                    (aiObs?.isViolation && aiObs?.violationType !== 'CHECKED_IN_PENDING_PARK') ||
+                    (aiObs?.isViolation && obsVType !== 'CHECKED_IN_PENDING_PARK' && obsVType !== 'EXITING_TO_GATE') ||
                     selectedSlot.isWrongSlot
                   );
 
                   return (
                     <div className="space-y-4">
-                      {/* In-Transit Info Box */}
+                      {/* In-Transit Info Box (Arriving from Gate) */}
                       {isPendingSlot && !isViolation && !aiObs?.occupied && (
                         <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-500/50 space-y-2">
                           <div className="flex items-center justify-between text-xs font-bold text-purple-300">
@@ -542,6 +554,18 @@ export default function LiveGridMonitor() {
                           </div>
                           <div className="text-xs text-purple-200">
                             {aiObs?.violationMessage || selectedSlot.aiStatus?.violationMessage || 'Vehicle has checked in at the gate and is moving toward its assigned slot.'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Exiting Info Box (Left Slot, Heading to Gate) */}
+                      {isExitingSlot && !isViolation && !aiObs?.occupied && (
+                        <div className="p-3.5 rounded-xl bg-cyan-950/60 border border-cyan-500/50 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-cyan-300">
+                            <span>↗ VEHICLE EXITING TO GATE (PENDING CHECKOUT)</span>
+                          </div>
+                          <div className="text-xs text-cyan-200">
+                            {aiObs?.violationMessage || selectedSlot.aiStatus?.violationMessage || 'Vehicle left this parking slot and is moving toward the exit gate for checkout.'}
                           </div>
                         </div>
                       )}
@@ -593,10 +617,22 @@ export default function LiveGridMonitor() {
                         </div>
                       ) : selectedSlot.session ? (
                         <div className="flex flex-col gap-3">
-                          <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
-                            <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
-                            <span className="text-base text-white font-black uppercase">Occupied</span>
-                          </div>
+                          {isExitingSlot && !aiObs?.occupied ? (
+                            <div className="bg-cyan-900/25 border border-cyan-500/40 rounded-xl p-3 flex flex-col items-center justify-center">
+                              <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                              <span className="text-base text-white font-black uppercase">Exiting (Pending Checkout)</span>
+                            </div>
+                          ) : isPendingSlot && !aiObs?.occupied ? (
+                            <div className="bg-purple-900/25 border border-purple-500/40 rounded-xl p-3 flex flex-col items-center justify-center">
+                              <span className="text-[10px] text-purple-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                              <span className="text-base text-white font-black uppercase">In Transit (Checked In)</span>
+                            </div>
+                          ) : (
+                            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
+                              <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                              <span className="text-base text-white font-black uppercase">Occupied (Parked)</span>
+                            </div>
+                          )}
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">{selectedSlot.session.licensePlate}</span></div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Phone</span><span className="font-medium text-white">{selectedSlot.session.phone || <span className="text-slate-500 italic">Walk-in</span>}</span></div>
                           {selectedSlot.session.userId?.email && (

@@ -75,32 +75,37 @@ const ROBOFLOW_CALIBRATED_SLOTS = [
 const formatViolationEnglish = (res, slotCode) => {
   if (!res) return '';
   const rawPlate = res.plate || res.detectedPlate || res.expectedPlate || res.session?.licensePlate;
-  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : 'Vehicle';
+  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : '';
+  const subj = plateDisp ? `Vehicle ${plateDisp}` : 'Unidentified vehicle';
   const isWrong = res.status === 'WRONG_SLOT_VIOLATION' || res.violationType === 'WRONG_SLOT_VIOLATION';
   const isDoubleParking = res.status === 'DOUBLE_PARKING_VIOLATION' || res.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(res.occupiedByOverlap);
   const isUnauth = res.status === 'UNAUTHORIZED_PARKING' || res.violationType === 'UNAUTHORIZED_PARKING';
   const isPending = res.status === 'CHECKED_IN_PENDING_PARK' || res.violationType === 'CHECKED_IN_PENDING_PARK';
+  const isExiting = res.status === 'EXITING_TO_GATE' || res.violationType === 'EXITING_TO_GATE';
 
   if (isDoubleParking) {
     if (res.primarySlot) {
-      return `Vehicle ${plateDisp} parked at ${res.primarySlot} is occupying too much of adjacent slot ${slotCode}!`;
+      return `${subj} parked at ${res.primarySlot} is occupying too much of adjacent slot ${slotCode}!`;
     }
-    return `Vehicle ${plateDisp} is straddling across two parking slots (encroaching ${slotCode})!`;
+    return `${subj} is straddling across two parking slots (encroaching ${slotCode})!`;
   }
   if (isWrong) {
     if (res.expectedSlot) {
-      return `Vehicle ${plateDisp} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
+      return `${subj} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
     }
-    return `Vehicle ${plateDisp} parked in wrong slot (assigned elsewhere)!`;
+    return `${subj} parked in wrong slot (assigned elsewhere)!`;
   }
   if (isUnauth) {
-    return `Vehicle ${plateDisp} parked at slot ${slotCode} without an active check-in or reservation!`;
+    return `${subj} parked at slot ${slotCode} without an active check-in or reservation!`;
   }
   if (isPending) {
     const timeStr = res.session?.checkInTime
       ? new Date(res.session.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
       : '';
-    return `Vehicle ${plateDisp} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+    return `${subj} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+  }
+  if (isExiting) {
+    return `${subj} left slot ${slotCode} and is heading toward exit gate (pending checkout).`;
   }
   if (res.violationMessage && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(res.violationMessage)) {
     return res.violationMessage;
@@ -1190,20 +1195,26 @@ export default function SlotCameraMonitorModal({
   }, [slotRois, resolveSlotStatus, hasScanned]);
 
   const totalSlots = slotRois.length;
+  const isTransitRes = (r) => {
+    const vt = r?.violationType || r?.status;
+    return vt === 'CHECKED_IN_PENDING_PARK' || vt === 'EXITING_TO_GATE';
+  };
   const occupiedSlots = hasScanned
-    ? allResolvedSlots.filter((r) => r.occupied || r.status === 'OCCUPIED_VALID' || (r.isViolation && r.status !== 'CHECKED_IN_PENDING_PARK' && r.violationType !== 'CHECKED_IN_PENDING_PARK')).length
+    ? allResolvedSlots.filter((r) => r.occupied || r.status === 'OCCUPIED_VALID' || (r.isViolation && !isTransitRes(r))).length
     : 0;
 
   const violations = useMemo(() => {
     if (!hasScanned) return [];
-    const list = allResolvedSlots.filter((r) =>
-      r.status === 'WRONG_SLOT_VIOLATION' ||
-      r.status === 'DOUBLE_PARKING_VIOLATION' ||
-      r.violationType === 'DOUBLE_PARKING_VIOLATION' ||
-      r.status === 'UNAUTHORIZED_PARKING' ||
-      r.status === 'CHECKED_IN_PENDING_PARK' ||
-      r.isViolation
-    );
+    const list = allResolvedSlots.filter((r) => {
+      if (isTransitRes(r)) return false;
+      return (
+        r.status === 'WRONG_SLOT_VIOLATION' ||
+        r.status === 'DOUBLE_PARKING_VIOLATION' ||
+        r.violationType === 'DOUBLE_PARKING_VIOLATION' ||
+        r.status === 'UNAUTHORIZED_PARKING' ||
+        Boolean(r.isViolation)
+      );
+    });
     const seenKeys = new Set();
     return list.filter((v) => {
       const p = (v.plate || v.detectedPlate || v.expectedPlate || v.session?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -1219,11 +1230,12 @@ export default function SlotCameraMonitorModal({
 
   const wrongSlotCount = useMemo(() => violations.filter((v) => v.status === 'WRONG_SLOT_VIOLATION' || v.violationType === 'WRONG_SLOT_VIOLATION').length, [violations]);
   const unauthCount = useMemo(() => violations.filter((v) => v.status === 'UNAUTHORIZED_PARKING' || v.violationType === 'UNAUTHORIZED_PARKING').length, [violations]);
-  const pendingCount = useMemo(() => violations.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length, [violations]);
+  const pendingCount = useMemo(() => hasScanned ? allResolvedSlots.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length : 0, [allResolvedSlots, hasScanned]);
+  const exitingCount = useMemo(() => hasScanned ? allResolvedSlots.filter((v) => v.status === 'EXITING_TO_GATE' || v.violationType === 'EXITING_TO_GATE').length : 0, [allResolvedSlots, hasScanned]);
   const validCount = useMemo(() => hasScanned ? allResolvedSlots.filter((s) => s.status === 'OCCUPIED_VALID' || (s.occupied && !s.isViolation)).length : 0, [allResolvedSlots, hasScanned]);
-  const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots) : 0;
+  const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots - pendingCount - exitingCount) : 0;
 
-  // Smart sorted & filtered slot list: Pinned alerts on top, followed by parked, then available
+  // Smart sorted & filtered slot list: Pinned alerts on top, followed by transit/parked, then available
   const sortedAndFilteredSlots = useMemo(() => {
     return slotRois
       .filter((s) => {
@@ -1237,9 +1249,11 @@ export default function SlotCameraMonitorModal({
         const isDouble = res?.status === 'DOUBLE_PARKING_VIOLATION' || res?.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(res?.occupiedByOverlap);
         const isUnauth = res?.status === 'UNAUTHORIZED_PARKING' || res?.violationType === 'UNAUTHORIZED_PARKING';
         const isPending = res?.status === 'CHECKED_IN_PENDING_PARK' || res?.violationType === 'CHECKED_IN_PENDING_PARK';
-        const isAlert = isWrong || isDouble || isUnauth || isPending || Boolean(res?.isViolation);
+        const isExiting = res?.status === 'EXITING_TO_GATE' || res?.violationType === 'EXITING_TO_GATE';
+        const isTransit = isPending || isExiting;
+        const isAlert = isWrong || isDouble || isUnauth || (Boolean(res?.isViolation) && !isTransit);
         const isValid = res?.status === 'OCCUPIED_VALID' || (res?.occupied && !isWrong && !isDouble && !isUnauth);
-        const isEmpty = !res?.occupied && !isWrong && !isDouble && !isUnauth && !isPending;
+        const isEmpty = !res?.occupied && !isWrong && !isDouble && !isUnauth && !isTransit;
 
         if (activeStatusFilter === 'ALERTS') return isAlert;
         if (activeStatusFilter === 'VALID') return isValid;
@@ -1249,12 +1263,16 @@ export default function SlotCameraMonitorModal({
       .sort((a, b) => {
         const resA = resolveSlotStatus(a.slotCode);
         const resB = resolveSlotStatus(b.slotCode);
-        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resA?.isViolation);
-        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resB?.isViolation);
+        const isTransitA = resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || resA?.status === 'EXITING_TO_GATE' || resA?.violationType === 'EXITING_TO_GATE';
+        const isTransitB = resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || resB?.status === 'EXITING_TO_GATE' || resB?.violationType === 'EXITING_TO_GATE';
+        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || (Boolean(resA?.isViolation) && !isTransitA);
+        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || (Boolean(resB?.isViolation) && !isTransitB);
 
-        // Pin active alerts to the top
+        // Pin active alerts to the top, followed by transit vehicles (arriving/exiting)
         if (isAlertA && !isAlertB) return -1;
         if (!isAlertA && isAlertB) return 1;
+        if (isTransitA && !isTransitB) return -1;
+        if (!isTransitA && isTransitB) return 1;
 
         // Occupied cars next
         const occA = resA?.occupied ? 1 : 0;
@@ -1380,8 +1398,10 @@ export default function SlotCameraMonitorModal({
       const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
       const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
       const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
-      const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
-      const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
+      const isExiting = result?.status === 'EXITING_TO_GATE' || result?.violationType === 'EXITING_TO_GATE';
+      const isTransit = isPendingPark || isExiting;
+      const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || (Boolean(result?.isViolation) && !isTransit);
+      const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || isViolation;
       const isSelected = sIdx === selectedSlotIndex;
 
       // Giữ khung bám sát vạch sơn thực tế (hệ số 1.01), tránh phình sang ô bên cạnh khi nhìn góc nghiêng
@@ -1448,6 +1468,14 @@ export default function SlotCameraMonitorModal({
           ctx.fill();
           ctx.stroke();
           ctx.setLineDash([]);
+        } else if (isExiting) {
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 3.0;
+          ctx.setLineDash([6, 4]);
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.22)';
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
         } else if (isOccupied) {
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2.5;
@@ -1479,7 +1507,7 @@ export default function SlotCameraMonitorModal({
         const bLen = 12;
 
         ctx.save();
-        ctx.strokeStyle = isDoubleParking ? '#f97316' : isWrongSlot ? '#f43f5e' : isUnauthorized ? '#f59e0b' : isPendingPark ? '#c084fc' : isOccupied ? '#10b981' : '#38bdf8';
+        ctx.strokeStyle = isDoubleParking ? '#f97316' : isWrongSlot ? '#f43f5e' : isUnauthorized ? '#f59e0b' : isPendingPark ? '#c084fc' : isExiting ? '#22d3ee' : isOccupied ? '#10b981' : '#38bdf8';
         ctx.lineWidth = 2.5;
 
         for (let ci = 0; ci < 4; ci++) {
@@ -1514,9 +1542,11 @@ export default function SlotCameraMonitorModal({
           ? `⚠️ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
           : isPendingPark
             ? `⏳ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
-            : isOccupied
-              ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
-              : slot.slotCode;
+            : isExiting
+              ? `↗ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
+              : isOccupied
+                ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
+                : slot.slotCode;
       
       const textMetrics = ctx.measureText(slotText);
       const pillW = textMetrics.width + 10;
@@ -1543,9 +1573,11 @@ export default function SlotCameraMonitorModal({
           ? 'rgba(217, 119, 6, 0.95)'
           : isPendingPark
             ? 'rgba(124, 58, 237, 0.95)'
-            : isOccupied
-              ? 'rgba(5, 150, 105, 0.95)'
-              : 'rgba(15, 23, 42, 0.88)';
+            : isExiting
+              ? 'rgba(8, 145, 178, 0.95)'
+              : isOccupied
+                ? 'rgba(5, 150, 105, 0.95)'
+                : 'rgba(15, 23, 42, 0.88)';
       ctx.beginPath();
       ctx.roundRect(pillX, pillY, pillW, pillH, 4);
       ctx.fill();
@@ -1558,7 +1590,7 @@ export default function SlotCameraMonitorModal({
           ? 'rgba(255, 255, 255, 0.45)'
         : isUnauthorized
           ? 'rgba(255, 255, 255, 0.4)'
-          : isPendingPark
+          : isTransit
             ? 'rgba(255, 255, 255, 0.45)'
             : isOccupied
               ? 'rgba(255, 255, 255, 0.35)'
@@ -2380,8 +2412,10 @@ export default function SlotCameraMonitorModal({
                   const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
                   const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
                   const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
-                  const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
-                  const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
+                  const isExiting = result?.status === 'EXITING_TO_GATE' || result?.violationType === 'EXITING_TO_GATE';
+                  const isTransit = isPendingPark || isExiting;
+                  const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || (Boolean(result?.isViolation) && !isTransit);
+                  const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || isViolation;
                   const isSelected = originalIndex === selectedSlotIndex;
                   const cardPlate = result?.plate || result?.detectedPlate || result?.expectedPlate || result?.session?.licensePlate;
 
@@ -2398,11 +2432,13 @@ export default function SlotCameraMonitorModal({
                               ? 'bg-amber-950/30 border-amber-500/50 hover:bg-amber-950/45'
                               : isPendingPark
                                 ? 'bg-purple-950/30 border-purple-500/50 hover:bg-purple-950/45'
-                                : isOccupied
-                                  ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
-                                  : isSelected
-                                    ? 'bg-amber-400/10 border-amber-400/50'
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10'
+                                : isExiting
+                                  ? 'bg-cyan-950/30 border-cyan-500/50 hover:bg-cyan-950/45'
+                                  : isOccupied
+                                    ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
+                                    : isSelected
+                                      ? 'bg-amber-400/10 border-amber-400/50'
+                                      : 'bg-white/5 border-white/5 hover:bg-white/10'
                       }`}
                     >
                       {/* Card Header */}
@@ -2419,9 +2455,11 @@ export default function SlotCameraMonitorModal({
                                     ? 'bg-amber-500 text-black font-black'
                                     : isPendingPark
                                       ? 'bg-purple-500 text-white font-black animate-pulse'
-                                      : isOccupied
-                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
-                                        : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
+                                      : isExiting
+                                        ? 'bg-cyan-500 text-black font-black animate-pulse'
+                                        : isOccupied
+                                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
+                                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
                             }`}
                           >
                             {isDoubleParking
@@ -2432,9 +2470,11 @@ export default function SlotCameraMonitorModal({
                                   ? 'Unregistered'
                                   : isPendingPark
                                     ? 'In Transit'
-                                    : isOccupied
-                                      ? 'Parked'
-                                      : 'Available'}
+                                    : isExiting
+                                      ? 'Exiting Gate'
+                                      : isOccupied
+                                        ? 'Parked'
+                                        : 'Available'}
                           </span>
                         </div>
 
@@ -2443,13 +2483,15 @@ export default function SlotCameraMonitorModal({
                             className={`font-mono font-black text-xs px-2 py-0.5 rounded border ${
                               isPendingPark
                                 ? 'bg-purple-950/60 border-purple-400/40 text-purple-200'
-                                : isDoubleParking
-                                  ? 'bg-orange-950/60 border-orange-400/40 text-orange-200'
-                                  : isWrongSlot
-                                    ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
-                                    : isUnauthorized
-                                      ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
-                                      : 'bg-black/60 border-white/20 text-white'
+                                : isExiting
+                                  ? 'bg-cyan-950/60 border-cyan-400/40 text-cyan-200'
+                                  : isDoubleParking
+                                    ? 'bg-orange-950/60 border-orange-400/40 text-orange-200'
+                                    : isWrongSlot
+                                      ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
+                                      : isUnauthorized
+                                        ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
+                                        : 'bg-black/60 border-white/20 text-white'
                             }`}
                           >
                             {formatLicensePlateDisplay(cardPlate)}
@@ -2521,6 +2563,26 @@ export default function SlotCameraMonitorModal({
                             <Clock size={13} className="text-purple-400 shrink-0 mt-0.5 animate-pulse" />
                             <span>{formatViolationEnglish(result, slot.slotCode)}</span>
                           </div>
+                        </div>
+                      ) : isExiting ? (
+                        <div className="mt-1 pt-1.5 border-t border-cyan-500/30 space-y-2">
+                          <div className="text-[11px] font-bold text-cyan-300 flex items-start gap-1.5 leading-snug">
+                            <ArrowRight size={13} className="text-cyan-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
+                          {result?.session && onCheckoutSlot && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCheckoutSlot(result.session);
+                              }}
+                              className="w-full py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <LogOut size={13} className="text-cyan-300" />
+                              <span>Complete Gate Checkout</span>
+                            </button>
+                          )}
                         </div>
                       ) : isOccupied && result?.session && onCheckoutSlot ? (
                         <button

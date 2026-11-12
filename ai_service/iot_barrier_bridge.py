@@ -176,8 +176,17 @@ def main():
                     except Exception as e_virt_close:
                         print(f"⚠️ Lỗi đóng cổng ảo {g_name}: {e_virt_close}")
 
-            # 3. ĐỒNG BỘ TRẠNG THÁI 2 CỔNG TỪ BACKEND
-            res = requests.get(BACKEND_STATUS_URL, timeout=5)
+            # 3. ĐỒNG BỘ TRẠNG THÁI 2 CỔNG & HEARTBEAT PHẦN CỨNG TỪ BACKEND
+            esp_ready = bool(ser and ser.is_open)
+            res = requests.get(
+                BACKEND_STATUS_URL,
+                params={
+                    'esp': '1' if esp_ready else '0',
+                    'port': getattr(ser, 'port', '') if esp_ready else ''
+                },
+                headers={'x-bridge-token': BRIDGE_TOKEN},
+                timeout=5
+            )
             if res.status_code == 200:
                 data = res.json()
                 if data.get('success'):

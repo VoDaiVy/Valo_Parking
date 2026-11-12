@@ -6,31 +6,38 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
   const slotTransition = 'all 0.2s ease-in-out';
   const hasName = !!el.name && el.name.trim() !== '';
 
+  const hasAiStatus = aiStatus !== undefined && aiStatus !== null;
   const vType = aiStatus?.violationType || aiStatus?.status || dbSlot?.aiObservation?.violationType || null;
-  const isPendingPark = Boolean(vType === 'CHECKED_IN_PENDING_PARK');
+  const isExiting = Boolean(vType === 'EXITING_TO_GATE');
+  const isPendingPark = Boolean(
+    vType === 'CHECKED_IN_PENDING_PARK' ||
+    (!hasAiStatus && session && !dbSlot?.aiObservation?.occupied && !isExiting)
+  );
+  const isTransit = isPendingPark || isExiting;
   const isDoubleParking = Boolean(vType === 'DOUBLE_PARKING_VIOLATION' || aiStatus?.occupiedByOverlap);
   const hasRealDbViolation = Boolean(
-    dbSlot?.aiObservation?.isViolation && dbSlot?.aiObservation?.violationType !== 'CHECKED_IN_PENDING_PARK'
+    dbSlot?.aiObservation?.isViolation &&
+    dbSlot?.aiObservation?.violationType !== 'CHECKED_IN_PENDING_PARK' &&
+    dbSlot?.aiObservation?.violationType !== 'EXITING_TO_GATE'
   );
   const isWrongSlot = Boolean(
     vType === 'WRONG_SLOT_VIOLATION' ||
     vType === 'UNAUTHORIZED_PARKING' ||
     vType === 'UNAUTHORIZED_OCCUPANCY' ||
     isDoubleParking ||
-    (aiStatus?.isViolation && !isPendingPark) ||
+    (aiStatus?.isViolation && !isTransit) ||
     hasRealDbViolation
   );
 
-  const hasAiStatus = aiStatus !== undefined && aiStatus !== null;
   const physicalOccupied = hasAiStatus
     ? Boolean(aiStatus.occupied)
-    : Boolean(dbSlot?.aiObservation?.occupied || dbSlot?.status === 'occupied');
-  const isOccupied = Boolean(physicalOccupied || (!isPendingPark && session) || isWrongSlot);
+    : Boolean(dbSlot?.aiObservation?.occupied || (dbSlot?.status === 'occupied' && !session && !isTransit));
+  const isOccupied = Boolean(physicalOccupied || (!isTransit && session) || isWrongSlot);
 
   const detectedPlate =
     aiStatus?.plate ||
     aiStatus?.detectedPlate ||
-    (isPendingPark ? (aiStatus?.expectedPlate || dbSlot?.aiObservation?.expectedPlate || session?.licensePlate) : null) ||
+    (isTransit ? (aiStatus?.expectedPlate || dbSlot?.aiObservation?.expectedPlate || session?.licensePlate) : null) ||
     session?.licensePlate ||
     dbSlot?.aiObservation?.detectedPlate ||
     null;
@@ -51,6 +58,7 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
         isWrongSlot,
         isDoubleParking,
         isPendingPark,
+        isExiting,
         isOccupied,
         booking: el.booking,
       });
@@ -108,6 +116,7 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
   if (isDoubleParking) { bgColor = '#fff7ed'; borderColor = '#ea580c'; }
   else if (isWrongSlot) { bgColor = '#fef2f2'; borderColor = '#ef4444'; }
   else if (isPendingPark) { bgColor = '#f5f3ff'; borderColor = '#a855f7'; }
+  else if (isExiting) { bgColor = '#ecfeff'; borderColor = '#06b6d4'; }
   else if (isMaintenance) { bgColor = '#fee2e2'; borderColor = '#ef4444'; }
   else if (isOccupied) {
     bgColor = '#fecdd3';
@@ -123,7 +132,9 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
       ? 'animate-pulse ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.7)]'
       : isPendingPark
         ? 'animate-pulse ring-2 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.7)]'
-        : '';
+        : isExiting
+          ? 'animate-pulse ring-2 ring-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.65)]'
+          : '';
 
   const labelColorClass = isDoubleParking
     ? 'text-orange-700'
@@ -131,15 +142,17 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
       ? 'text-red-700'
       : isPendingPark
         ? 'text-purple-700'
-        : isMaintenance
-          ? 'text-red-700'
-          : isOccupied
-            ? 'text-rose-700'
-            : isReserved
-              ? 'text-purple-700'
-              : isHeld
-                ? 'text-orange-700'
-                : cfg.defaultLabelClass;
+        : isExiting
+          ? 'text-cyan-700'
+          : isMaintenance
+            ? 'text-red-700'
+            : isOccupied
+              ? 'text-rose-700'
+              : isReserved
+                ? 'text-purple-700'
+                : isHeld
+                  ? 'text-orange-700'
+                  : cfg.defaultLabelClass;
 
   const badgeClass = isDoubleParking
     ? 'bg-orange-600 text-white border border-orange-700'
@@ -147,9 +160,11 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
       ? 'bg-red-600 text-white border border-red-700'
       : isPendingPark
         ? 'bg-purple-600 text-white border border-purple-700'
-        : isReserved
-          ? 'bg-amber-400 text-black border border-amber-500 font-extrabold'
-          : 'bg-white border border-gray-400 text-black';
+        : isExiting
+          ? 'bg-cyan-600 text-white border border-cyan-700'
+          : isReserved
+            ? 'bg-amber-400 text-black border border-amber-500 font-extrabold'
+            : 'bg-white border border-gray-400 text-black';
 
   const badgeLabel = isDoubleParking
     ? `⚠️ LẤN ${detectedPlate}`
@@ -157,9 +172,11 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
       ? `⚠️ ${detectedPlate}`
       : isPendingPark
         ? `⏳ ${detectedPlate}`
-        : isReserved
-          ? `⭐ ${detectedPlate}`
-          : detectedPlate;
+        : isExiting
+          ? `↗ ${detectedPlate}`
+          : isReserved
+            ? `⭐ ${detectedPlate}`
+            : detectedPlate;
 
   const iconClass = isDoubleParking
     ? 'text-orange-600 animate-bounce'
@@ -167,15 +184,17 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
       ? 'text-red-600 animate-bounce'
       : isPendingPark
         ? 'text-purple-600 animate-bounce'
-        : isMaintenance
-          ? 'text-red-500'
-          : isOccupied
-            ? 'text-rose-500'
-            : isReserved
-              ? 'text-purple-500'
-              : isHeld
-                ? 'text-orange-500'
-                : cfg.defaultIconClass;
+        : isExiting
+          ? 'text-cyan-600 animate-pulse'
+          : isMaintenance
+            ? 'text-red-500'
+            : isOccupied
+              ? 'text-rose-500'
+              : isReserved
+                ? 'text-purple-500'
+                : isHeld
+                  ? 'text-orange-500'
+                  : cfg.defaultIconClass;
 
   const IconComp = cfg.Icon;
 
@@ -187,15 +206,15 @@ const SlotElement = React.memo(({ el, floorId, style, isHovered, session, isMain
       onMouseLeave={onMouseLeave}
       onClick={(e) => handleClick(e, cfg.clickType)}
     >
-      <span className={`text-[10px] font-bold ${isOccupied || isPendingPark ? 'mb-0.5' : 'mb-1'} ${labelColorClass}`} style={{ transform: 'translateZ(2px)' }}>
+      <span className={`text-[10px] font-bold ${isOccupied || isTransit ? 'mb-0.5' : 'mb-1'} ${labelColorClass}`} style={{ transform: 'translateZ(2px)' }}>
         {hasName ? el.name : ''}
       </span>
-      {(isOccupied || isPendingPark) && canViewLicensePlate && detectedPlate && (
+      {(isOccupied || isTransit) && canViewLicensePlate && detectedPlate && (
         <div className={`px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap ${badgeClass}`} style={{ transform: 'translateZ(3px)' }}>
           {badgeLabel}
         </div>
       )}
-      <IconComp size={(isOccupied || isPendingPark) && canViewLicensePlate ? 16 : 20} className={iconClass} style={{ transform: 'translateZ(5px)' }} />
+      <IconComp size={(isOccupied || isTransit) && canViewLicensePlate ? 16 : 20} className={iconClass} style={{ transform: 'translateZ(5px)' }} />
     </div>
   );
 });

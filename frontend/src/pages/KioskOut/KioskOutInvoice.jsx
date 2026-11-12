@@ -318,8 +318,8 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
             </div>
           )}
 
-          {/* Wallet Status Box (Only when user wallet is visible to owner) */}
-          {session.userId && session.type !== 'WALK_IN' && (canAutoPay || walletBalance > 0) && (
+          {/* Wallet Status Box (Visible when vehicle owner has an authorized wallet) */}
+          {(sessionData?.hasWallet || canAutoPay || walletBalance > 0) && (
             <div className="bg-blue-900/20 border border-blue-500/20 rounded-2xl p-5 mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Wallet className="text-blue-400" />

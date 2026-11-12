@@ -204,8 +204,8 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       const containerHeight = containerRef.current.clientHeight;
       if (containerWidth < 50 || containerHeight < 50) return; // Wait for layout
 
-      const paddingX = 24;
-      const paddingY = 48; // Clear margins for top floor tabs and bottom status legend
+      const paddingX = hideUI ? 6 : 24;
+      const paddingY = hideUI ? 6 : 48; // Reserve vertical margin only when floor/legend bars are shown
       const safeWidth = Math.max(10, containerWidth - paddingX * 2);
       const safeHeight = Math.max(10, containerHeight - paddingY * 2);
       const scaleX = safeWidth / Math.max(1, mapWidth);
@@ -234,7 +234,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
     observer.observe(containerRef.current);
 
     return () => observer.disconnect();
-  }, [currentFloorId, floors, is2DMode, staticFit]);
+  }, [currentFloorId, floors, is2DMode, staticFit, hideUI]);
 
   // --- MOUSE CONTROLS ---
   const handleMouseDown = (e) => {
