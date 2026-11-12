@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 
 import { borderRadius, colors, spacing, typography } from '@/theme';
+import { CONTROL, MOTION } from '@/constants/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 import { AppText } from './AppText';
 
@@ -58,12 +60,13 @@ export const Button = ({
   accessibilityLabel,
   ...props
 }: ButtonProps) => {
+  const { t } = useLanguage();
   const variantStyle = getVariantStyle(variant);
   const isDisabled = disabled || loading;
 
   return (
     <Pressable
-      accessibilityLabel={accessibilityLabel || title}
+      accessibilityLabel={accessibilityLabel || t(title)}
       accessibilityRole="button"
       accessibilityState={{ disabled: isDisabled, busy: loading }}
       disabled={isDisabled}
@@ -77,9 +80,9 @@ export const Button = ({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? colors.light.text.inverse : colors.primary[600]} />
+        <ActivityIndicator color={variant === 'primary' || variant === 'secondary' ? colors.light.text.inverse : colors.primary[600]} />
       ) : (
-        <AppText style={[styles.text, variantStyle.text, textStyle]}>{title}</AppText>
+        <AppText style={[styles.text, variantStyle.text, textStyle]}>{t(title)}</AppText>
       )}
     </Pressable>
   );
@@ -90,12 +93,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: borderRadius.md,
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: CONTROL.minHeight,
+    minWidth: CONTROL.minTouchSize,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
   text: {
     ...typography.button,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   primary: {
     backgroundColor: colors.primary[500],
@@ -127,7 +133,7 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   pressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.88,
+    transform: [{ scale: MOTION.pressedScale }],
   },
 });

@@ -35,6 +35,17 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    const connected = () => setIsConnected(true);
+    const disconnected = () => setIsConnected(false);
+    socketClient.on('connect', connected);
+    socketClient.on('disconnect', disconnected);
+    return () => {
+      socketClient.off('connect', connected);
+      socketClient.off('disconnect', disconnected);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isAuthenticated) {
       void connect();
     } else {

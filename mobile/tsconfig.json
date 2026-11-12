@@ -7,11 +7,9 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
-    "ignoreDeprecations": "5.0",
-    "baseUrl": ".",
     "types": ["jest"],
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*", "App.tsx", "index.ts"],

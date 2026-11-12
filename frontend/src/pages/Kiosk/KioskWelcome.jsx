@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, Pointer } from 'lucide-react';
 import backgroundImage from '../../assets/images/Kiosk/BackgroundWelcomeKiosk.png';
 import logoImage from '../../assets/images/Kiosk/LogoKiosk.png';
-import KioskDeviceSetup from './KioskDeviceSetup';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
+import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 const SCAN_ATTEMPTS = 20;
@@ -38,10 +38,22 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   const [, setScanMessage] = useState('Scanning Plate...');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showAlreadyInsideModal, setShowAlreadyInsideModal] = useState(false);
+  const [inlineNotice, setInlineNotice] = useState(null);
   const [mismatchData, setMismatchData] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const fastPassKeyRef = useRef({ plate: '', key: '' });
+
+  const getFastPassKey = (plate) => {
+    if (fastPassKeyRef.current.plate !== plate) {
+      const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      fastPassKeyRef.current = { plate, key: `kiosk-entry:${plate}:${randomPart}` };
+    }
+    return fastPassKeyRef.current.key;
+  };
 
 
   const stopCamera = () => {
@@ -50,8 +62,6 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       streamRef.current = null;
     }
   };
-
-  // Khởi động Camera ngầm để luôn sẵn sàng chụp ảnh tức thì khi quét QR từ GM65
   const openCameraStream = async () => {
     const cameraOptions = [
       {
@@ -170,19 +180,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   };
 
   const buildScanImageBase64 = async () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !video.videoWidth || !video.videoHeight) return null;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    return canvas.toDataURL('image/jpeg', 0.82);
+    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'entry');
   };
 
   const formatVietnamesePlate = (plate) => {
@@ -233,7 +231,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           message: data.message || 'AI plate scanning is temporarily unavailable.',
         };
       }
-      const normalizedPlate = normalizeLicensePlate(data.plate || '');
+      const plateVal = data.plate || data.licensePlate || data.data?.licensePlate || data.data?.plate || '';
+      const normalizedPlate = normalizeLicensePlate(plateVal);
       if (response.ok && data.success && isLikelyVietnamesePlate(normalizedPlate)) {
         return { plate: normalizedPlate, imageBase64 };
       }
@@ -275,16 +274,21 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     }
 
     if (verifyData.isMonthly || verifyData.hasPreBooking) {
+      const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
+      const canFastPassNow = Boolean(verifyData.assignedSlot && !needsReallocation);
       updateFormData({
-        step3Mode: verifyData.requiresSlotReallocation ? 'policy' : 'fastpass',
-        isMonthly: verifyData.isMonthly,
+        step3Mode: canFastPassNow ? 'fastpass' : 'policy',
+        isMonthly: Boolean(verifyData.isMonthly),
         membershipType: verifyData.membershipType || null,
-        hasPreBooking: verifyData.hasPreBooking,
-        isVipReallocation: !!verifyData.requiresSlotReallocation,
-        selectedSlot: verifyData.assignedSlot,
-        floorId: verifyData.assignedFloorId,
-        bookingId: verifyData.bookingId,
-        bookingFloorName: verifyData.assignedFloorName,
+        hasPreBooking: Boolean(verifyData.hasPreBooking),
+        isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
+        isBookingReallocation: Boolean(verifyData.isBookingReallocation),
+        quotaExhausted: Boolean(verifyData.quotaExhausted),
+        originalSlot: verifyData.originalSlot || null,
+        selectedSlot: needsReallocation ? null : (verifyData.assignedSlot || null),
+        floorId: needsReallocation ? null : (verifyData.assignedFloorId || null),
+        bookingId: verifyData.bookingId || null,
+        bookingFloorName: verifyData.assignedFloorName || null,
         durationHours: verifyData.bookingDurationHours || 1,
         licensePlate: formatted,
         phone: verifyData.phone || '',
@@ -293,7 +297,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         bookingMode: verifyData.bookingMode || 'hourly',
       });
 
-      if (verifyData.assignedSlot && !verifyData.requiresSlotReallocation) {
+      if (canFastPassNow) {
         setScanMessage('Opening Barrier & Assigning Slot...');
         try {
           const entryPayload = {
@@ -311,8 +315,10 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
           const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
             method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': getFastPassKey(formatted),
+            },
             body: JSON.stringify(entryPayload),
           });
           const entryData = await entryRes.json();
@@ -335,34 +341,39 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
       }
 
-      onStart(verifyData.assignedSlot ? 3 : 2);
+      onStart(2);
       return true;
     }
 
-    if (isParkingFullRef.current) {
+    if (isParkingFullRef.current || verifyData.isFull) {
       setShowFullModal(true);
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
       return true;
     }
 
-    if (verifyData.isRegisteredVehicle || verifyData.isVIP) {
+    if (verifyData.isRegisteredVehicle || verifyData.isVIP || verifyData.quotaExhausted) {
       updateFormData({
-        step3Mode: verifyData.assignedSlot ? 'fastpass' : 'policy',
+        step3Mode: 'policy',
         licensePlate: formatted,
         entryImageBase64: imageBase64,
         phone: verifyData.phone || '',
         isVIP: !!verifyData.isVIP,
-        isRegisteredVehicle: true,
+        isRegisteredVehicle: !!verifyData.isRegisteredVehicle,
+        quotaExhausted: !!verifyData.quotaExhausted,
+        upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+        suggestedSlot: verifyData.suggestedSlot || null,
+        suggestedFloorId: verifyData.suggestedFloorId || null,
+        suggestedFloorName: verifyData.suggestedFloorName || null,
         membershipType: verifyData.membershipType || null,
         pricingPackage: verifyData.pricingPackage || null,
         pricingSource: verifyData.pricingSource || 'default',
         ticketPackageId: verifyData.pricingPackage?._id || null,
         bookingMode: 'hourly',
-        selectedSlot: verifyData.assignedSlot || null,
-        floorId: verifyData.assignedFloorId || null,
-        bookingFloorName: verifyData.assignedFloorName || null,
+        selectedSlot: null,
+        floorId: null,
+        bookingFloorName: null,
       });
-      onStart(verifyData.assignedSlot ? 3 : 2);
+      onStart(2);
       return true;
     }
 
@@ -371,6 +382,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       licensePlate: formatted,
       entryImageBase64: imageBase64,
       phone: verifyData.phone || '',
+      upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
       pricingPackage: verifyData.pricingPackage || null,
       pricingSource: verifyData.pricingSource || 'default',
       ticketPackageId: verifyData.pricingPackage?._id || null,
@@ -384,18 +396,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     setIsScanning(true);
     setScanMessage('Scanning Plate...');
 
-    try {
-      const fullRes = await fetch(`${API_BASE}/sessions/check-full`);
-      const fullData = await fullRes.json();
-      if (fullData.success && fullData.data && fullData.data.isFull) {
-        isParkingFullRef.current = true;
-      } else {
+    const checkFullPromise = fetch(`${API_BASE}/sessions/check-full`)
+      .then((res) => res.json())
+      .then((fullData) => {
+        isParkingFullRef.current = Boolean(fullData.success && fullData.data && fullData.data.isFull);
+      })
+      .catch((e) => {
+        console.error('Failed to check full status', e);
         isParkingFullRef.current = false;
-      }
-    } catch (e) {
-      console.error('Failed to check full status', e);
-      isParkingFullRef.current = false;
-    }
+      });
 
     try {
       if (!streamRef.current) {
@@ -403,7 +412,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
+          await videoRef.current.play().catch(() => { });
           await configureCameraTrack(stream);
         }
       }
@@ -415,7 +424,12 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
       }
 
-      await wait(CAMERA_WARMUP_MS);
+      const isCamAlreadyWarm = videoRef.current && videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      if (!isCamAlreadyWarm) {
+        await wait(CAMERA_WARMUP_MS);
+      }
+
+      await checkFullPromise;
 
       const detectedPlates = new Map();
       for (let i = 0; i < SCAN_ATTEMPTS; i++) {
@@ -427,8 +441,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               stopCamera();
               setIsScanning(false);
               setScanMessage(rawResult.message);
-              alert(rawResult.message);
-              onStart(1);
+              setInlineNotice({ title: 'Please Wait', message: rawResult.message });
               return;
             }
             const normalizedPlate = normalizeLicensePlate(rawResult.plate);
@@ -439,7 +452,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               : { ...rawResult, plate: normalizedPlate, count: 1, fingerprint };
             detectedPlates.set(fingerprint, nextCandidate);
 
-            if (nextCandidate.count >= 2 || i >= 3) {
+            // Tối ưu hóa: Biển số chuẩn Việt Nam hợp lệ được kích hoạt xác thực ngay từ lần đầu
+            if (isLikelyVietnamesePlate(normalizedPlate) || nextCandidate.count >= 2 || i >= 2) {
               const handled = await verifyScannedPlate(nextCandidate);
               stopCamera();
               setIsScanning(false);
@@ -482,7 +496,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           streamRef.current = stream;
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(() => {});
+            await videoRef.current.play().catch(() => { });
           }
           await wait(300);
         }
@@ -494,12 +508,9 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       }
 
       // 2. Xác thực mã QR và đối chiếu biển số xe thực tế qua API Backend
-      if (!entryImage) throw new Error('Unable to capture the vehicle. Please position it in the camera area and retry.');
-
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ qrPayload, entryImageBase64: entryImage }),
       });
       const qrData = await response.json();
@@ -507,7 +518,10 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       if (!qrData.success) {
         setIsScanning(false);
         setScanMessage('Scanning Plate...');
-        alert(qrData.message || 'Mã QR không hợp lệ!');
+        setInlineNotice({
+          title: 'QR Verification Failed',
+          message: qrData.message || 'Mã QR không hợp lệ!',
+        });
         return;
       }
 
@@ -544,7 +558,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       }
 
       // 5. Nếu là Khách VIP hoặc Đặt trước -> Tự động tạo phiên check-in & Mở barrier & Chuyển thẳng đến màn hình chỉ ô đỗ
-      if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation) {
+      if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation && verifyData.assignedSlot) {
         setScanMessage('Opening Barrier & Assigning Slot...');
         const entryPayload = {
           qrPayload,
@@ -552,18 +566,20 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           phone: phone || verifyData.phone || '',
           parkingSlot: verifyData.assignedSlot,
           floorId: verifyData.assignedFloorId,
-          durationHours: 1,
+          durationHours: verifyData.bookingDurationHours || 1,
           entryImageBase64: entryImage,
           ticketPackageId: verifyData.pricingPackage?._id || null,
-          bookingMode: 'hourly',
+          bookingMode: verifyData.bookingMode || 'hourly',
           bookingId: verifyData.bookingId || null,
           bookingHoldId: null,
         };
 
         const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
           method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': getFastPassKey(cleanPlate),
+          },
           body: JSON.stringify(entryPayload),
         });
         const entryData = await entryRes.json();
@@ -586,28 +602,45 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
       }
 
-      // 6. Nếu xe cần chọn ô đỗ hoặc cần duyệt lại
+      if (!verifyData?.isMonthly && !verifyData?.hasPreBooking && (isParkingFullRef.current || verifyData?.isFull)) {
+        stopCamera();
+        setIsScanning(false);
+        setShowFullModal(true);
+        return;
+      }
+
+      // 6. Nếu xe cần chọn ô đỗ mới hoặc cần duyệt lại
+      const needsReallocation = Boolean(verifyData?.requiresSlotReallocation);
       updateFormData({
         qrPayload,
         licensePlate: cleanPlate,
         phone: phone || verifyData?.phone || '',
         entryImageBase64: entryImage,
-        step3Mode: verifyData?.requiresSlotReallocation ? 'policy' : (verifyData?.hasPreBooking || verifyData?.isMonthly ? 'fastpass' : 'policy'),
+        step3Mode: 'policy',
         isMonthly: verifyData?.isMonthly || false,
         hasPreBooking: verifyData?.hasPreBooking || false,
-        selectedSlot: verifyData?.assignedSlot || null,
-        floorId: verifyData?.assignedFloorId || null,
+        isVipReallocation: Boolean(verifyData?.vipSlotOccupiedByOther),
+        isBookingReallocation: Boolean(verifyData?.isBookingReallocation),
+        quotaExhausted: Boolean(verifyData?.quotaExhausted),
+        originalSlot: verifyData?.originalSlot || null,
+        upcomingBookingTooEarly: verifyData?.upcomingBookingTooEarly || null,
+        selectedSlot: needsReallocation ? null : (verifyData?.assignedSlot || null),
+        floorId: needsReallocation ? null : (verifyData?.assignedFloorId || null),
         bookingId: verifyData?.bookingId || null,
+        durationHours: verifyData?.bookingDurationHours || 1,
       });
 
       stopCamera();
       setIsScanning(false);
-      onStart(verifyData?.assignedSlot ? 3 : 2);
+      onStart(2);
 
     } catch (err) {
       console.error('Error during QR hardware scan:', err);
       setIsScanning(false);
-      alert('Lỗi khi xử lý mã QR từ máy quét!');
+      setInlineNotice({
+        title: 'Scanner Error',
+        message: 'Lỗi khi xử lý mã QR từ máy quét!',
+      });
     }
   };
 
@@ -615,7 +648,6 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-gray-900 overflow-hidden font-sans">
-      <div className="absolute top-4 right-4 z-40 max-w-sm"><KioskDeviceSetup gate="ENTRY_1" /></div>
       {/* Background Image */}
       <div
         className="absolute inset-0 z-0 bg-cover bg-center blur-sm scale-105 opacity-90"
@@ -685,6 +717,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         onClose={() => {
           setShowAlreadyInsideModal(false);
           window.location.replace('/kiosk');
+        }}
+      />
+
+      <ParkingFullModal
+        isOpen={!!inlineNotice}
+        title={inlineNotice?.title || 'NOTICE'}
+        message={inlineNotice?.message || ''}
+        onClose={() => {
+          setInlineNotice(null);
         }}
       />
 

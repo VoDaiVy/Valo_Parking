@@ -38,15 +38,15 @@ const runtimeDevelopmentUrls = expoDevHost
   : undefined;
 
 const apiBaseUrl =
-  (selectedEnv === 'development' ? runtimeDevelopmentUrls?.apiBaseUrl : undefined) ||
   process.env.EXPO_PUBLIC_API_URL ||
   Constants.expoConfig?.extra?.apiBaseUrl ||
+  (selectedEnv === 'development' ? runtimeDevelopmentUrls?.apiBaseUrl : undefined) ||
   defaults[selectedEnv].apiBaseUrl;
 
 const socketUrl =
-  (selectedEnv === 'development' ? runtimeDevelopmentUrls?.socketUrl : undefined) ||
   process.env.EXPO_PUBLIC_SOCKET_URL ||
   Constants.expoConfig?.extra?.socketUrl ||
+  (selectedEnv === 'development' ? runtimeDevelopmentUrls?.socketUrl : undefined) ||
   defaults[selectedEnv].socketUrl;
 
 export const config = {

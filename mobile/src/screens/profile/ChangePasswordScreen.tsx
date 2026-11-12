@@ -1,5 +1,7 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ErrorState } from '@/components/common';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -26,20 +28,39 @@ import { profileService } from '@/services/api/profile';
 import { calculatePasswordStrength } from '@/utils/profileValidation';
 
 export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () => void } }) => {
+  const { t: translateUi } = useLanguage();
   const toast = useToast();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isFirstPassword, setIsFirstPassword] = useState<boolean | null>(null);
+  const [statusError, setStatusError] = useState('');
+  const loadPasswordStatus = useCallback(async () => {
+    setStatusError('');
+    try {
+      const response = await profileService.getPasswordStatus();
+      if (typeof response.data?.isGoogleUser !== 'boolean') throw new Error('Unable to verify password status.');
+      setIsFirstPassword(response.data.isGoogleUser);
+    } catch (statusFailure) {
+      setStatusError(statusFailure instanceof Error ? statusFailure.message : 'Unable to verify password status.');
+    }
+  }, []);
+  useEffect(() => { void loadPasswordStatus(); }, [loadPasswordStatus]);
 
   const handleSubmit = async () => {
+    if (loading || isFirstPassword === null) return;
+    if (!isFirstPassword && !currentPassword) {
+      setError('Current password is required.');
+      return;
+    }
     if (newPassword.length < 6) {
       setError('The new password must be at least 6 characters.');
       return;
     }
 
-    if (newPassword === currentPassword) {
+    if (!isFirstPassword && newPassword === currentPassword) {
       setError('The new password must differ from your current password.');
       return;
     }
@@ -52,8 +73,8 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
     setLoading(true);
     setError('');
     try {
-      await profileService.changePassword({ currentPassword, newPassword, confirmPassword });
-      toast.showSuccess('Password changed successfully');
+      await profileService.changePassword({ ...(isFirstPassword ? {} : { currentPassword }), newPassword, confirmNewPassword: confirmPassword });
+      toast.showSuccess(isFirstPassword ? 'Password set successfully' : 'Password changed successfully');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -82,41 +103,47 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
 
   const fieldErrors = {
     confirm: error === 'The password confirmation does not match.' ? error : undefined,
-    current: error === 'The new password must differ from your current password.' ? error : undefined,
+    current: error === 'The new password must differ from your current password.' || error === 'Current password is required.' ? error : undefined,
     next: error === 'The new password must be at least 6 characters.' ? error : undefined,
   };
 
+  if (isFirstPassword === null) return <SafeAreaView edges={['top']} style={styles.safe}>
+    <ProfileScreenHeader title={translateUi('Password settings')} onBack={() => navigation.goBack()} />
+    {statusError ? <ErrorState message={translateUi(statusError)} onRetry={loadPasswordStatus} /> : <ActivityIndicator color={COLORS.gold} style={{ marginTop: 40 }} />}
+  </SafeAreaView>;
+
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
         style={styles.keyboard}
       >
-        <ProfileScreenHeader title="Change password" subtitle="Secure your VALO account" onBack={() => navigation.goBack()} />
+        <ProfileScreenHeader title={translateUi(isFirstPassword ? "Set password" : "Change password")} subtitle={translateUi("Secure your VALO account")} onBack={() => navigation.goBack()} />
 
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
           <StaggeredView delay={90} style={styles.formSection}>
-            <SectionHeader title="Credentials" />
-            <PasswordField
+            <SectionHeader title={translateUi("Credentials")} />
+            {isFirstPassword ? <View style={styles.firstPasswordNotice}><Ionicons name="shield-checkmark-outline" size={22} color={COLORS.gold} /><Text style={styles.firstPasswordText}>{translateUi("You signed up with Google. Set a password to also sign in with your email. Your Google password will not change.")}</Text></View> : <PasswordField
               error={fieldErrors.current}
-              label="Current password"
-              placeholder="Enter current password"
+              label={translateUi("Current password")}
+              placeholder={translateUi("Enter current password")}
               value={currentPassword}
               onChangeText={(value) => {
                 setCurrentPassword(value);
                 if (error) setError('');
               }}
-            />
+            />}
             <PasswordField
               error={fieldErrors.next}
-              label="New password"
-              placeholder="Enter new password"
+              label={translateUi("New password")}
+              placeholder={translateUi("Enter new password")}
               value={newPassword}
               onChangeText={(value) => {
                 setNewPassword(value);
@@ -125,8 +152,8 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
             />
             <PasswordField
               error={fieldErrors.confirm}
-              label="Confirm password"
-              placeholder="Re-enter new password"
+              label={translateUi("Confirm password")}
+              placeholder={translateUi("Re-enter new password")}
               value={confirmPassword}
               onChangeText={(value) => {
                 setConfirmPassword(value);
@@ -137,8 +164,8 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
 
           <StaggeredView delay={220} style={styles.requirements}>
             <View style={styles.requirementHeader}>
-              <Text style={styles.requirementTitle}>Password strength</Text>
-              <Text style={[styles.strengthText, { color: strengthMeta.color }]}>{strengthMeta.label}</Text>
+              <Text style={styles.requirementTitle}>{translateUi("Password strength")}</Text>
+              <Text style={[styles.strengthText, { color: strengthMeta.color }]}>{translateUi(strengthMeta.label)}</Text>
             </View>
             <View style={styles.strengthTrack}>
               <View style={[styles.strengthFill, { backgroundColor: strengthMeta.color, width: strengthMeta.width }]} />
@@ -149,21 +176,21 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
                 size={16}
                 color={newPassword.length >= 6 ? COLORS.success : COLORS.textMuted}
               />
-              <Text style={styles.requirementText}>At least 6 characters</Text>
+              <Text style={styles.requirementText}>{translateUi("At least 6 characters")}</Text>
             </View>
           </StaggeredView>
 
           {error && !fieldErrors.current && !fieldErrors.next && !fieldErrors.confirm ? (
             <StaggeredView delay={260} style={styles.errorBanner}>
               <Ionicons name="alert-circle-outline" size={17} color={COLORS.error} />
-              <Text style={styles.errorBannerText}>{error}</Text>
+              <Text style={styles.errorBannerText}>{translateUi(error)}</Text>
             </StaggeredView>
           ) : null}
 
           <StaggeredView delay={320} style={styles.cta}>
             <PrimaryCTA
               disabled={loading}
-              label="Change password"
+              label={translateUi(isFirstPassword ? "Set password" : "Change password")}
               loading={loading ? <ActivityIndicator color={COLORS.textInverse} size="small" /> : undefined}
               onPress={handleSubmit}
             />
@@ -175,6 +202,8 @@ export const ChangePasswordScreen = ({ navigation }: { navigation: { goBack: () 
 };
 
 const styles = StyleSheet.create({
+  firstPasswordNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, borderRadius: RADIUS.md, backgroundColor: COLORS.goldTint },
+  firstPasswordText: { flex: 1, color: COLORS.textSecondary, fontSize: 14, lineHeight: 22 },
   safe: {
     backgroundColor: COLORS.background,
     flex: 1,
@@ -203,11 +232,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
   },
   requirementTitle: {
     color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: FONT_SIZES.md,
+    lineHeight: 24,
+    fontWeight: '600',
   },
   strengthText: {
     fontSize: FONT_SIZES.xs,
@@ -230,13 +262,15 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   requirementText: {
-    color: COLORS.textMuted,
+    color: COLORS.textSecondary,
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
+    lineHeight: 20,
+    flexShrink: 1,
   },
   errorBanner: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,77,77,0.08)',
+    backgroundColor: COLORS.errorTint,
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,

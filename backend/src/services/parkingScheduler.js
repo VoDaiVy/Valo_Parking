@@ -543,7 +543,7 @@ async function checkVIPSubscriptions(app) {
         expiringSubscription.expiryNotificationPending = true;
         await expiringSubscription.save();
       }
-      
+
       // Release slots
       for (const slot of expiringSubscription.slots) {
         const slotFilter = {
@@ -576,7 +576,7 @@ async function checkVIPSubscriptions(app) {
           },
         }
       );
-      
+
       if (expiringSubscription.user) {
         if (await membershipNotifications.notifyExpiry(app, expiringSubscription, true, 'subscription')) {
           await Subscription.updateOne({ _id: expiringSubscription._id, expireAt: expiringSubscription.expireAt }, { $set: { expiryNotificationPending: false } });
@@ -594,7 +594,7 @@ async function checkPendingSubscriptions() {
   try {
     const Subscription = require('../models/Subscription');
     const now = new Date();
-    
+
     // Tự động hủy các subscription PENDING quá 30 phút chưa thanh toán
     const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
     const pendingCancelResult = await Subscription.updateMany(
@@ -602,7 +602,7 @@ async function checkPendingSubscriptions() {
         status: 'pending',
         createdAt: { $lt: thirtyMinsAgo }
       },
-      { 
+      {
         $set: {
           status: 'cancelled',
           paymentStatus: 'cancelled'
@@ -668,6 +668,9 @@ function startScheduler(app) {
     );
     checkPendingSubscriptions().catch((err) =>
       console.error('[ParkingScheduler] Pending subscriptions interval error:', err.message)
+    );
+    checkVIPSubscriptions(app).catch((err) =>
+      console.error('[ParkingScheduler] VIP subscription interval error:', err.message)
     );
   }, CHECK_INTERVAL_MS);
 

@@ -15,6 +15,7 @@ import {
 
 import { SkeletonBlock } from '@/components/staff';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 type Tone = 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
@@ -168,6 +169,8 @@ export function StaffCommandHeader({
   displayName: string;
   onAvatarPress?: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
+  const { t } = useLanguage();
   const { width } = useWindowDimensions();
   const titleSize = useMemo(() => {
     if (width < 360) return 26;
@@ -178,7 +181,7 @@ export function StaffCommandHeader({
 
   return (
     <DashboardEntry style={styles.header}>
-      <Text style={styles.eyebrow}>COMMAND CENTER</Text>
+      <Text style={styles.eyebrow}>{t('commandCenter').toUpperCase()}</Text>
       <View style={styles.commandRow}>
         <View style={styles.headerCopy}>
           <Text
@@ -186,11 +189,11 @@ export function StaffCommandHeader({
             numberOfLines={1}
             style={[styles.headerTitle, { fontSize: titleSize, lineHeight: titleSize + 5 }]}
           >
-            {`Ready for your shift, ${displayName}`}
+            {`${t('readyForShift')}, ${displayName}`}
           </Text>
           <Text numberOfLines={1} style={styles.dateText}>{dateLabel}</Text>
         </View>
-        <DashboardPressable accessibilityLabel="Open staff profile" onPress={onAvatarPress} style={styles.avatarPress}>
+        <DashboardPressable accessibilityLabel={translateUi("Open staff profile")} onPress={onAvatarPress} style={styles.avatarPress}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initial}</Text>
           </View>
@@ -198,9 +201,13 @@ export function StaffCommandHeader({
       </View>
       <View style={styles.headerMetaRow}>
         <View style={styles.metaSpacer} />
+        <View style={[styles.livePill, styles.staffPill]}>
+          <StatusPulse color={COLORS.gold} />
+          <Text style={[styles.liveText, styles.staffText]}>STAFF</Text>
+        </View>
         <View style={styles.livePill}>
           <StatusPulse />
-          <Text style={styles.liveText}>LIVE</Text>
+          <Text style={styles.liveText}>{t('liveLabel').toUpperCase()}</Text>
         </View>
       </View>
     </DashboardEntry>
@@ -218,12 +225,13 @@ function MetricCell({
   tone?: Tone;
   value: string | number;
 }) {
+  const { t: translateUi } = useLanguage();
   const color = colorForTone(tone);
   return (
     <View style={styles.metricCell}>
       <View style={styles.metricLabelRow}>
         <Ionicons name={icon} size={15} color={color} />
-        <Text numberOfLines={1} style={styles.metricLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.metricLabel}>{translateUi(label)}</Text>
       </View>
       <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.metricValue, { color }]}>{value}</Text>
     </View>
@@ -241,13 +249,14 @@ export function StaffMetricsStrip({
   capacityTone: Tone;
   vehicles: number;
 }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.metricsStrip}>
-      <MetricCell icon="car-sport-outline" label="Vehicles" value={vehicles} />
+      <MetricCell icon="car-sport-outline" label={t('vehicles')} value={vehicles} />
       <View style={styles.metricDivider} />
-      <MetricCell icon="pulse-outline" label="Active" tone="success" value={active} />
+      <MetricCell icon="pulse-outline" label={t('active')} tone="success" value={active} />
       <View style={styles.metricDivider} />
-      <MetricCell icon="speedometer-outline" label="Capacity" tone={capacityTone} value={capacity} />
+      <MetricCell icon="speedometer-outline" label={t('capacity')} tone={capacityTone} value={capacity} />
     </View>
   );
 }
@@ -263,12 +272,13 @@ function PrimaryButton({
   onPress: () => void;
   secondary?: boolean;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
-    <DashboardPressable accessibilityLabel={label} onPress={onPress} style={secondary ? styles.secondaryActionWrap : styles.scanActionWrap}>
+    <DashboardPressable accessibilityLabel={translateUi(label)} onPress={onPress} style={secondary ? styles.secondaryActionWrap : styles.scanActionWrap}>
       <View style={secondary ? styles.secondaryAction : styles.scanAction}>
         <Ionicons name={icon} size={secondary ? 19 : 22} color={secondary ? COLORS.gold : COLORS.textInverse} />
         <Text adjustsFontSizeToFit minimumFontScale={0.86} numberOfLines={1} style={secondary ? styles.secondaryActionText : styles.scanActionText}>
-          {label}
+          {translateUi(label)}
         </Text>
       </View>
     </DashboardPressable>
@@ -284,15 +294,16 @@ export function StaffPrimaryActions({
   onScanQr: () => void;
   onSessions: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <DashboardEntry delay={240} style={styles.actionsBlock}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Primary actions</Text>
+        <Text style={styles.sectionTitle}>{t('primaryActions')}</Text>
       </View>
-      <PrimaryButton icon="qr-code-outline" label="Scan QR" onPress={onScanQr} />
+      <PrimaryButton icon="qr-code-outline" label={t('scanQr')} onPress={onScanQr} />
       <View style={styles.secondaryActionRow}>
-        <PrimaryButton icon="map-outline" label="Live Parking" onPress={onLiveParking} secondary />
-        <PrimaryButton icon="car-sport-outline" label="Sessions" onPress={onSessions} secondary />
+        <PrimaryButton icon="map-outline" label={t('liveParking')} onPress={onLiveParking} secondary />
+        <PrimaryButton icon="car-sport-outline" label={t('sessions')} onPress={onSessions} secondary />
       </View>
     </DashboardEntry>
   );
@@ -309,6 +320,7 @@ function UtilityStat({
   tone: Tone;
   value: number;
 }) {
+  const { t: translateUi } = useLanguage();
   const color = colorForTone(tone);
   return (
     <View style={styles.utilityStat}>
@@ -316,7 +328,7 @@ function UtilityStat({
         <Ionicons name={icon} size={18} color={color} />
       </View>
       <View style={styles.headerCopy}>
-        <Text style={styles.utilityLabel}>{label}</Text>
+        <Text style={styles.utilityLabel}>{translateUi(label)}</Text>
         <Text style={styles.utilityValue}>{value}</Text>
       </View>
     </View>
@@ -338,39 +350,42 @@ export function StaffLiveStatus({
   reserved: number;
   tone: Tone;
 }) {
+  const { t } = useLanguage();
   const color = colorForTone(tone);
   return (
     <DashboardEntry delay={380} style={styles.liveBlock}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Live status</Text>
-        <Text style={styles.sectionMeta}>{capacity} spaces</Text>
+        <Text style={styles.sectionTitle}>{t('liveStatus')}</Text>
+        <Text style={styles.sectionMeta}>{capacity} {t('spaces')}</Text>
       </View>
       <View style={[styles.capacityStrip, { borderLeftColor: color }]}>
         <StatusPulse tone={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'success'} />
         <View style={styles.headerCopy}>
           <Text style={[styles.capacityLabel, { color }]}>{capacityLabel}</Text>
-          <Text numberOfLines={1} style={styles.capacityValue}>{available} available</Text>
+          <Text numberOfLines={1} style={styles.capacityValue}>{available} {t('availableSpaces')}</Text>
         </View>
       </View>
       <View style={styles.utilityRow}>
-        <UtilityStat icon="bookmark-outline" label="Reserved" tone="warning" value={reserved} />
-        <UtilityStat icon="construct-outline" label="Maintenance" tone={maintenance > 0 ? 'danger' : 'muted'} value={maintenance} />
+        <UtilityStat icon="bookmark-outline" label={t('reserved')} tone="warning" value={reserved} />
+        <UtilityStat icon="construct-outline" label={t('maintenance')} tone={maintenance > 0 ? 'danger' : 'muted'} value={maintenance} />
       </View>
     </DashboardEntry>
   );
 }
 
 export function StaffAlertRow({ count, onPress }: { count: number; onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
+  const { t } = useLanguage();
   return (
     <DashboardEntry delay={520}>
-      <DashboardPressable accessibilityLabel="Review blocked bookings" onPress={onPress}>
+      <DashboardPressable accessibilityLabel={translateUi("Review blocked bookings")} onPress={onPress}>
         <View style={styles.alertRow}>
           <View style={styles.alertIcon}>
             <Ionicons name="alert-circle-outline" size={20} color={COLORS.error} />
           </View>
           <View style={styles.headerCopy}>
-            <Text numberOfLines={1} style={styles.alertTitle}>{count} blocked bookings</Text>
-            <Text numberOfLines={1} style={styles.alertMeta}>Review required</Text>
+            <Text numberOfLines={1} style={styles.alertTitle}>{count} {t('blockedBookings')}</Text>
+            <Text numberOfLines={1} style={styles.alertMeta}>{t('reviewRequired')}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={COLORS.error} />
         </View>
@@ -433,12 +448,13 @@ export function StaffRecentActivityRow({
 }
 
 export function EmptyRecentActivity() {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.emptyRecent}>
       <Ionicons name="calendar-outline" size={20} color={COLORS.textMuted} />
       <View style={styles.headerCopy}>
-        <Text style={styles.emptyTitle}>No booking activity yet</Text>
-        <Text style={styles.emptySubtitle}>New reservations and operational changes will appear here.</Text>
+        <Text style={styles.emptyTitle}>{translateUi("No booking activity yet")}</Text>
+        <Text style={styles.emptySubtitle}>{translateUi("New reservations and operational changes will appear here.")}</Text>
       </View>
     </View>
   );
@@ -468,8 +484,8 @@ const styles = StyleSheet.create({
     minHeight: 64,
     paddingHorizontal: SPACING.md,
   },
-  alertTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900' },
-  capacityLabel: { fontSize: FONT_SIZES.xs, fontWeight: '900', letterSpacing: 0, textTransform: 'uppercase' },
+  alertTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700' },
+  capacityLabel: { fontSize: FONT_SIZES.xs, fontWeight: '700', letterSpacing: 0, textTransform: 'uppercase' },
   capacityStrip: {
     alignItems: 'center',
     backgroundColor: COLORS.surface,
@@ -482,7 +498,7 @@ const styles = StyleSheet.create({
     minHeight: 68,
     paddingHorizontal: SPACING.md,
   },
-  capacityValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900', marginTop: 2 },
+  capacityValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700', marginTop: 2 },
   avatar: {
     alignItems: 'center',
     backgroundColor: COLORS.gold,
@@ -494,7 +510,7 @@ const styles = StyleSheet.create({
     width: 48,
   },
   avatarPress: { borderRadius: RADIUS.round, flexShrink: 0 },
-  avatarText: { color: COLORS.textInverse, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  avatarText: { color: COLORS.textInverse, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   commandRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -511,11 +527,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
   },
   emptySubtitle: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, lineHeight: 17, marginTop: 2 },
-  emptyTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '900' },
+  emptyTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.sm, fontWeight: '700' },
   eyebrow: {
     color: COLORS.gold,
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.9,
     marginBottom: 4,
   },
@@ -534,7 +550,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: COLORS.textPrimary,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0,
   },
   headerTop: { alignItems: 'center', flexDirection: 'row' },
@@ -550,7 +566,9 @@ const styles = StyleSheet.create({
     minHeight: 42,
     paddingHorizontal: SPACING.md,
   },
-  liveText: { color: COLORS.success, fontSize: FONT_SIZES.xs, fontWeight: '900' },
+  liveText: { color: COLORS.success, fontSize: FONT_SIZES.xs, fontWeight: '700' },
+  staffPill: { backgroundColor: COLORS.goldTint, borderColor: `${COLORS.gold}55` },
+  staffText: { color: COLORS.gold },
   metaSpacer: { flex: 1 },
   metricCell: {
     flex: 1,
@@ -581,7 +599,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
   },
-  metricValue: { fontSize: 25, fontWeight: '900', letterSpacing: 0, marginTop: 7 },
+  metricValue: { fontSize: 25, fontWeight: '700', letterSpacing: 0, marginTop: 7 },
   pulseDot: { borderRadius: 4, height: 8, width: 8 },
   pulseHalo: {
     borderRadius: 10,
@@ -608,7 +626,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
   },
   recentSubtitle: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 3 },
-  recentTitle: { color: COLORS.textPrimary, flex: 1, fontSize: FONT_SIZES.sm, fontWeight: '900' },
+  recentTitle: { color: COLORS.textPrimary, flex: 1, fontSize: FONT_SIZES.sm, fontWeight: '700' },
   recentTop: { alignItems: 'center', flexDirection: 'row' },
   scanAction: {
     alignItems: 'center',
@@ -620,7 +638,7 @@ const styles = StyleSheet.create({
     minHeight: 66,
     paddingHorizontal: SPACING.md,
   },
-  scanActionText: { color: COLORS.textInverse, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  scanActionText: { color: COLORS.textInverse, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   scanActionWrap: { borderRadius: RADIUS.md },
   secondaryAction: {
     alignItems: 'center',
@@ -635,7 +653,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
   },
   secondaryActionRow: { flexDirection: 'row', gap: SPACING.sm },
-  secondaryActionText: { color: COLORS.gold, flexShrink: 1, fontSize: FONT_SIZES.md, fontWeight: '900' },
+  secondaryActionText: { color: COLORS.gold, flexShrink: 1, fontSize: FONT_SIZES.md, fontWeight: '700' },
   secondaryActionWrap: { borderRadius: RADIUS.md, flex: 1, minWidth: 0 },
   sectionHeader: {
     alignItems: 'center',
@@ -644,7 +662,7 @@ const styles = StyleSheet.create({
     minHeight: 26,
   },
   sectionMeta: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '800' },
-  sectionTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  sectionTitle: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   skeletonHalf: { flex: 1 },
   skeletonMetric: { flex: 1, gap: SPACING.sm, minHeight: 82, padding: SPACING.md },
   skeletonWrap: { gap: SPACING.md },
@@ -669,5 +687,5 @@ const styles = StyleSheet.create({
     minWidth: 0,
     paddingVertical: SPACING.sm,
   },
-  utilityValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900', marginTop: 1 },
+  utilityValue: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700', marginTop: 1 },
 });

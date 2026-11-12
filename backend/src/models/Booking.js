@@ -131,6 +131,16 @@ const bookingSchema = new mongoose.Schema(
       enum: ['wallet', 'vietqr'],
       required: true,
     },
+    idempotencyKey: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+    idempotencyRequestHash: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
     status: {
       type: String,
       enum: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED', 'EXPIRED', 'COMPLETED', 'CANCELLED'],
@@ -179,6 +189,13 @@ const bookingSchema = new mongoose.Schema(
 bookingSchema.index({ vehicleId: 1, scheduledStart: 1, scheduledEnd: 1 });
 bookingSchema.index({ status: 1 });
   bookingSchema.index({ completedAt: 1, userId: 1 });
+bookingSchema.index(
+  { userId: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+  }
+);
 
 const lifecycleTimestampForStatus = (status) => {
   if (status === 'PAID') return 'paidAt';

@@ -13,11 +13,6 @@ const sessionSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
-    bookingId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Booking',
-      default: null,
-    },
     subscriptionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Subscription',
@@ -44,6 +39,11 @@ const sessionSchema = new mongoose.Schema(
       type: String,
       enum: ['kiosk', 'app_booking', 'booking', 'walk_in', 'staff_manual'],
       default: 'kiosk',
+    },
+    entryIdempotencyKey: {
+      type: String,
+      trim: true,
+      default: undefined,
     },
     bookingId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -141,5 +141,20 @@ sessionSchema.pre('validate', function normalizePlate(next) {
 
 sessionSchema.index({ licensePlate: 1, status: 1, checkInTime: 1 });
 sessionSchema.index({ checkOutTime: 1, bookingId: 1, userId: 1 });
+sessionSchema.index(
+  { licensePlate: 1, status: 1 },
+  { unique: true, partialFilterExpression: { status: 'active' } }
+);
+sessionSchema.index(
+  { floorId: 1, parkingSlot: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'active', parkingSlot: { $type: 'string' } },
+  }
+);
+sessionSchema.index(
+  { entryIdempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { entryIdempotencyKey: { $type: 'string' } } }
+);
 
 module.exports = mongoose.model('Session', sessionSchema);

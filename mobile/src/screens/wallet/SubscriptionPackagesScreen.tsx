@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
@@ -21,7 +22,20 @@ import { formatCurrency } from '@/utils/formatters';
 
 type Props = NativeStackScreenProps<WalletStackParamList, 'SubscriptionPackages'>;
 
+export const PriceBadge = ({ changePercent, priceLabel }: { changePercent: number; priceLabel?: string }) => {
+  const decrease = changePercent < 0;
+  return (
+    <View style={[styles.priceBadge, decrease ? styles.priceBadgeDiscount : styles.priceBadgePeak]}>
+      <Ionicons name={decrease ? 'trending-down' : 'trending-up'} size={14} color={decrease ? COLORS.success : COLORS.warning} />
+      <Text style={[styles.priceBadgeText, { color: decrease ? COLORS.success : COLORS.warning }]}>
+        {decrease ? '▼' : '▲'} {Math.abs(changePercent)}% · {priceLabel || (decrease ? 'Discounted price' : 'Peak price')}
+      </Text>
+    </View>
+  );
+};
+
 export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [packages, setPackages] = useState<SubscriptionPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,6 +59,10 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
 
   const renderPackage = ({ item }: { item: SubscriptionPackage }) => {
     const yearly = item.type === 'yearly';
+    const changePercent = Number(item.changePercent ?? 0);
+    const basePrice = Number(item.price || 0);
+    const adjustedPrice = Number.isFinite(Number(item.adjustedPrice)) ? Number(item.adjustedPrice) : basePrice;
+    const dynamicPricing = changePercent !== 0 && adjustedPrice !== basePrice;
 
     return (
       <Pressable
@@ -55,7 +73,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
         {yearly ? (
           <View style={styles.featuredBadge}>
             <Ionicons name="star" size={12} color={COLORS.textInverse} />
-            <Text style={styles.featuredText}>Best value</Text>
+            <Text style={styles.featuredText}>{translateUi("Best value")}</Text>
           </View>
         ) : null}
         <View style={styles.packageTop}>
@@ -67,7 +85,9 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
             <Text style={styles.packageDuration}>{yearly ? '12 months' : '1 month'}</Text>
           </View>
         </View>
-        <Text style={styles.price}>{formatCurrency(item.price)}</Text>
+        {dynamicPricing ? <PriceBadge changePercent={changePercent} priceLabel={item.priceLabel} /> : null}
+        {dynamicPricing ? <Text style={styles.basePrice}>{formatCurrency(basePrice)}</Text> : null}
+        <Text style={styles.price}>{formatCurrency(dynamicPricing ? adjustedPrice : basePrice)}</Text>
         {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
         {(item.benefits ?? []).slice(0, 4).map((benefit) => (
           <View key={benefit} style={styles.benefitRow}>
@@ -77,11 +97,11 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
         ))}
         {yearly ? (
           <View style={styles.yearlyNote}>
-            <Text style={styles.yearlyNoteText}>Includes 12 complimentary services</Text>
+            <Text style={styles.yearlyNoteText}>{translateUi("Includes 12 complimentary services")}</Text>
           </View>
         ) : null}
         <View style={styles.selectRow}>
-          <Text style={styles.selectText}>Choose plan</Text>
+          <Text style={styles.selectText}>{translateUi("Choose plan")}</Text>
           <Ionicons name="chevron-forward" size={18} color={COLORS.gold} />
         </View>
       </Pressable>
@@ -90,15 +110,15 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Membership plans" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Membership plans")} onBack={() => navigation.goBack()} />
 
       {loading ? (
         <View style={styles.stateWrap}>
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={loadPackages} />
+        <ErrorState message={translateUi(error)} onRetry={loadPackages} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
@@ -107,8 +127,8 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
           ListEmptyComponent={
             <EmptyState
               icon="cube-outline"
-              title="No plans available"
-              message="New membership plans will appear here."
+              title={translateUi("No plans available")}
+              message={translateUi("New membership plans will appear here.")}
             />
           }
           renderItem={renderPackage}
@@ -176,6 +196,7 @@ const styles = StyleSheet.create({
     width: 52,
   },
   packageTitleWrap: {
+    minWidth: 0,
     flex: 1,
   },
   packageName: {
@@ -189,9 +210,36 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   price: {
+    fontVariant: ['tabular-nums'],
+    lineHeight: 36,
     color: COLORS.gold,
     fontSize: 28,
     fontWeight: '900',
+  },
+  basePrice: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZES.sm,
+    textDecorationLine: 'line-through',
+    marginBottom: -8,
+  },
+  priceBadge: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: RADIUS.round,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  priceBadgeDiscount: {
+    backgroundColor: 'rgba(76,175,80,0.15)',
+  },
+  priceBadgePeak: {
+    backgroundColor: 'rgba(255,159,67,0.16)',
+  },
+  priceBadgeText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '800',
   },
   description: {
     color: COLORS.textSecondary,
@@ -204,12 +252,13 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   benefitText: {
+    lineHeight: 20,
     color: COLORS.textSecondary,
     flex: 1,
     fontSize: FONT_SIZES.sm,
   },
   yearlyNote: {
-    backgroundColor: 'rgba(126,232,162,0.1)',
+    backgroundColor: COLORS.successTint,
     borderColor: 'rgba(126,232,162,0.22)',
     borderRadius: RADIUS.md,
     borderWidth: 1,

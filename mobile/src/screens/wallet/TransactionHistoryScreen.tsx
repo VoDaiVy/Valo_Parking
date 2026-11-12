@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
@@ -54,6 +55,7 @@ const STATUS_COLORS: Record<StatusFilter, string> = {
 };
 
 export const TransactionHistoryScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -133,8 +135,8 @@ export const TransactionHistoryScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
-      <ScreenHeader title="Wallet history" onBack={() => navigation.goBack()} />
+      <StatusBar barStyle="light-content" />
+      <ScreenHeader title={translateUi("Wallet history")} onBack={() => navigation.goBack()} />
 
       <View style={styles.filtersBlock}>
         <FlatList
@@ -166,7 +168,7 @@ export const TransactionHistoryScreen = ({ navigation }: Props) => {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={loadTransactions} />
+        <ErrorState message={translateUi(error)} onRetry={loadTransactions} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
@@ -175,8 +177,8 @@ export const TransactionHistoryScreen = ({ navigation }: Props) => {
           ListEmptyComponent={
             <EmptyState
               icon="receipt-outline"
-              title="No transactions yet"
-              message="Top-ups, payments, and refunds will appear here."
+              title={translateUi("No transactions yet")}
+              message={translateUi("Top-ups, payments, and refunds will appear here.")}
             />
           }
           refreshControl={
@@ -207,7 +209,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     marginRight: SPACING.sm,
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: SPACING.md,
   },
   chipActive: {
@@ -249,10 +251,12 @@ const styles = StyleSheet.create({
     width: 44,
   },
   transactionBody: {
+    minWidth: 0,
     flex: 1,
     gap: 5,
   },
   transactionTop: {
+    flexWrap: 'wrap',
     alignItems: 'center',
     flexDirection: 'row',
     gap: SPACING.sm,
@@ -264,10 +268,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   amount: {
+    fontVariant: ['tabular-nums'],
+    flexShrink: 1,
+    lineHeight: 20,
     fontSize: FONT_SIZES.sm,
     fontWeight: '900',
   },
   metaRow: {
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',

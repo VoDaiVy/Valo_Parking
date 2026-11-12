@@ -1,6 +1,8 @@
 import { StyleProp, StyleSheet, Text, TextStyle } from 'react-native';
 
-import { COLORS, FONT_SIZES } from '@/constants/theme';
+import { COLORS } from '@/constants/theme';
+import { typography } from '@/theme';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export interface SectionTitleProps {
   children: string;
@@ -8,15 +10,14 @@ export interface SectionTitleProps {
   style?: StyleProp<TextStyle>;
 }
 
-export function SectionTitle({ children, color = COLORS.textMuted, style }: SectionTitleProps) {
-  return <Text style={[styles.title, { color }, style]}>{children}</Text>;
+export function SectionTitle({ children, color = COLORS.textSecondary, style }: SectionTitleProps) {
+  const { t } = useLanguage();
+  return <Text accessibilityRole="header" style={[styles.title, { color }, style]}>{t(children)}</Text>;
 }
 
 const styles = StyleSheet.create({
   title: {
-    fontSize: FONT_SIZES.sm,
+    ...typography.body2,
     fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
   },
 });

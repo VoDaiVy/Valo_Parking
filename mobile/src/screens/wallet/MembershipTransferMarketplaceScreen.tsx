@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -33,6 +34,7 @@ const getListings = (
 };
 
 export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const [listings, setListings] = useState<MembershipTransferMarketplaceListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -77,8 +79,8 @@ export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <ScreenHeader
-        title="Transfer Marketplace"
-        subtitle="Admin-approved membership spaces"
+        title={translateUi("Transfer Marketplace")}
+        subtitle={translateUi("Admin-approved membership spaces")}
         onBack={() => navigation.goBack()}
       />
 
@@ -94,7 +96,7 @@ export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
             onPress={() => setSort(value)}
             style={[styles.sortButton, sort === value && styles.sortButtonActive]}
           >
-            <Text style={[styles.sortText, sort === value && styles.sortTextActive]}>{label}</Text>
+            <Text style={[styles.sortText, sort === value && styles.sortTextActive]}>{translateUi(label)}</Text>
           </Pressable>
         ))}
       </View>
@@ -104,7 +106,7 @@ export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={() => void loadListings(1)} />
+        <ErrorState message={translateUi(error)} onRetry={() => void loadListings(1)} />
       ) : (
         <FlatList
           contentContainerStyle={styles.list}
@@ -113,8 +115,8 @@ export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
           ListEmptyComponent={
             <EmptyState
               icon="storefront-outline"
-              title="No listings available"
-              message="Approved membership transfers will appear here."
+              title={translateUi("No listings available")}
+              message={translateUi("Approved membership transfers will appear here.")}
             />
           }
           refreshControl={
@@ -127,7 +129,7 @@ export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
           }
           ListFooterComponent={loadingMore ? (
             <ActivityIndicator color={COLORS.gold} style={styles.footerLoader} />
-          ) : null}
+          ) : undefined}
           renderItem={({ item }) => {
             const transferId = item.transferId || item._id;
             return (
@@ -154,11 +156,11 @@ export const MembershipTransferMarketplaceScreen = ({ navigation }: Props) => {
                 <View style={styles.divider} />
                 <View style={styles.priceRow}>
                   <View>
-                    <Text style={styles.label}>Total due</Text>
+                    <Text style={styles.label}>{translateUi("Total due")}</Text>
                     <Text style={styles.price}>{formatCurrency(item.totalDue)}</Text>
                   </View>
                   <View style={styles.expires}>
-                    <Text style={styles.label}>Listing expires</Text>
+                    <Text style={styles.label}>{translateUi("Listing expires")}</Text>
                     <Text style={styles.expiry}>{formatDate(item.listingExpiresAt)}</Text>
                   </View>
                 </View>
@@ -186,6 +188,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
   },
   sortButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
     borderRadius: RADIUS.round,
@@ -216,12 +220,12 @@ const styles = StyleSheet.create({
     width: 46,
   },
   cardTitle: { flex: 1 },
-  slotCode: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '900' },
+  slotCode: { color: COLORS.textPrimary, fontSize: FONT_SIZES.lg, fontWeight: '700' },
   location: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 3 },
   divider: { backgroundColor: COLORS.border, height: StyleSheet.hairlineWidth, marginVertical: SPACING.md },
-  priceRow: { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'space-between' },
+  priceRow: { alignItems: 'flex-end', flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, justifyContent: 'space-between' },
   label: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs },
-  price: { color: COLORS.gold, fontSize: FONT_SIZES.md, fontWeight: '900', marginTop: 3 },
+  price: { color: COLORS.gold, fontSize: FONT_SIZES.md, fontWeight: '700', marginTop: 3 },
   expires: { alignItems: 'flex-end' },
   expiry: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '700', marginTop: 3 },
 });

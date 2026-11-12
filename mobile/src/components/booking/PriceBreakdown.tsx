@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card } from '@/components/common';
@@ -16,41 +17,46 @@ export const PriceBreakdown = ({
   serviceCost,
   refundAmount = 0,
   finalTotal,
-}: PriceBreakdownProps) => (
+}: PriceBreakdownProps) => { const { t: translateUi } = useLanguage(); return (
   <Card style={styles.card}>
-    <AppText variant="h3">Price breakdown</AppText>
+    <AppText variant="h3">{translateUi("Price breakdown")}</AppText>
     <View style={styles.row}>
-      <AppText>Parking</AppText>
-      <AppText>{formatCurrency(parkingCost)}</AppText>
+      <AppText color={colors.light.text.secondary} style={styles.label} variant="body2">{translateUi("Parking")}</AppText>
+      <AppText style={styles.amount} variant="body2">{formatCurrency(parkingCost)}</AppText>
     </View>
     <View style={styles.row}>
-      <AppText>Services</AppText>
-      <AppText>{formatCurrency(serviceCost)}</AppText>
+      <AppText color={colors.light.text.secondary} style={styles.label} variant="body2">{translateUi("Services")}</AppText>
+      <AppText style={styles.amount} variant="body2">{formatCurrency(serviceCost)}</AppText>
     </View>
     {refundAmount > 0 ? (
       <View style={styles.row}>
-        <AppText color={colors.success.main}>Refund</AppText>
-        <AppText color={colors.success.main}>{formatCurrency(refundAmount)}</AppText>
+        <AppText color={colors.success.main} style={styles.label} variant="body2">{translateUi("Refund")}</AppText>
+        <AppText color={colors.success.main} style={styles.amount} variant="body2">{formatCurrency(refundAmount)}</AppText>
       </View>
     ) : null}
     <View style={[styles.row, styles.total]}>
-      <AppText variant="h3">Total</AppText>
-      <AppText variant="h3">{formatCurrency(finalTotal)}</AppText>
+      <AppText style={styles.label} variant="h3">{translateUi("Total")}</AppText>
+      <AppText color={colors.primary[500]} style={styles.amount} variant="h3">{formatCurrency(finalTotal)}</AppText>
     </View>
   </Card>
-);
+); };
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   total: {
     borderTopColor: colors.light.border,
-    borderTopWidth: 1,
-    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.lg,
   },
+  label: { flexGrow: 1, flexBasis: 80 },
+  amount: { flexShrink: 1, maxWidth: '100%', textAlign: 'right', fontVariant: ['tabular-nums'] },
 });

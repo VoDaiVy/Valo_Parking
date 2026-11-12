@@ -28,7 +28,9 @@ export const Screen = ({ children, scrollable = false, style, contentStyle, onSc
   const content = scrollable ? (
     <ScrollView
       contentContainerStyle={[styles.content, contentStyle]}
+      style={styles.flex}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       refreshControl={refreshControl}
       scrollEventThrottle={16}
       onScroll={onScroll}
@@ -60,7 +62,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    gap: spacing.lg,
-    padding: spacing.lg,
+    flexGrow: 1,
+    gap: spacing.xl,
+    padding: spacing.xl,
   },
 });

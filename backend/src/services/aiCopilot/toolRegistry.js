@@ -114,18 +114,20 @@ const tools = [
         });
 
         const summary = stats.summary || {};
-        const recordedSales = summary.totalRevenue ?? 0;
+        const totalRevenue = summary.totalRevenue ?? stats.totalRevenue ?? 0;
+        const recordedSales = totalRevenue;
         return {
           period: stats.period,
           scope: 'platform',
-          totalRevenue: summary.totalRevenue ?? 0,
+          totalRevenue,
           recordedSales,
-          bookingRevenue: summary.bookingRevenue ?? 0,
-          serviceRevenue: summary.serviceRevenue ?? 0,
-          packageRevenue: summary.packageRevenue ?? 0,
-          membershipTransferFees: summary.membershipTransferFees ?? 0,
+          bookingRevenue: summary.bookingRevenue ?? stats.booking?.revenue ?? 0,
+          serviceRevenue: summary.serviceRevenue ?? stats.service?.revenue ?? 0,
+          packageRevenue: summary.packageRevenue ?? stats.vip?.revenue ?? 0,
+          membershipTransferFees: summary.membershipTransferFees ?? stats.membershipTransferFeesDetail?.revenue ?? 0,
+          parkingRevenue: summary.parkingRevenue ?? stats.parking?.revenue ?? 0,
           refunds: summary.refunds ?? 0,
-          sourceCompositionTotal: summary.sourceCompositionTotal ?? 0,
+          sourceCompositionTotal: summary.sourceCompositionTotal ?? totalRevenue,
           timeline: (stats.trend || []).map((pt) => ({
             date: pt.period,
             totalRevenue: pt.totalRevenue ?? 0,
@@ -134,6 +136,7 @@ const tools = [
             serviceRevenue: pt.serviceRevenue ?? 0,
             packageRevenue: pt.packageRevenue ?? 0,
             membershipTransferFees: pt.membershipTransferFees ?? 0,
+            parkingRevenue: pt.parkingRevenue ?? 0,
           })),
         };
       }

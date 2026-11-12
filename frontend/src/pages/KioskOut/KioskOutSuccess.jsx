@@ -33,10 +33,13 @@ export default function KioskOutSuccess({ onFinish }) {
           const isOpen = Boolean(data.data.open);
           if (isOpen) {
             hasSeenOpenRef.current = true;
-          } else {
+          } else if (hasSeenOpenRef.current) {
+            // Cổng EXIT_1 đã đóng sau khi xe qua cảm biến -> đợi đủ 1.5s rồi mới quay về màn hình chính
             const elapsed = Date.now() - mountTimeRef.current;
-            if (hasSeenOpenRef.current || data.data.forceClose || elapsed >= 2500) {
+            if (elapsed >= 1500) {
               handleDone();
+            } else {
+              setTimeout(handleDone, 1500 - elapsed);
             }
           }
         }
@@ -45,17 +48,22 @@ export default function KioskOutSuccess({ onFinish }) {
       }
     };
 
+    // Initial check immediately
+    checkBarrier();
     const interval = setInterval(checkBarrier, 300);
 
-    // Safety timeout
-    const safetyTimer = setTimeout(handleDone, 12000);
+    // Bộ đếm an toàn 35s chỉ kích hoạt nếu ESP32 mất kết nối hoàn toàn
+    const safetyTimer = setTimeout(() => {
+      handleDone();
+    }, 35000);
 
     // 2. Lắng nghe qua Socket.IO (chỉ nhận sự kiện của cổng EXIT_1)
     const handleBarrierControl = (data) => {
       if (data && (data.gate === 'EXIT_1' || !data.gate)) {
         if (data.open) {
           hasSeenOpenRef.current = true;
-        } else if (!data.open) {
+        } else if (!data.open && hasSeenOpenRef.current) {
+          // Xe đã qua cổng EXIT_1 và barrier đã đóng -> tự động quay về trang chủ sau tối thiểu 1.5s
           const elapsed = Date.now() - mountTimeRef.current;
           if (elapsed >= 1500) {
             handleDone();

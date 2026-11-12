@@ -32,13 +32,17 @@ htmlcov/
 venv/
 env/
 
-# Local caches and generated reports
-.npm-cache/
-.mongodb-binaries/
-reports/
+# Local mobile environment
+/mobile/.env
 
+# Temporary EAS archives and downloaded network tools
+/outputs/eas-*/
+/outputs/network-tools/
 
-.tunnel
-.tunnel.*
-*.tunnel
-/.tools/cloudflared/
+# Firebase client config is supplied locally or through an EAS File variable
+/mobile/google-services.json
+
+# Mobile unit tests (keep local only)
+/mobile/**/__tests__/
+/mobile/**/*.test.*
+/mobile/**/*.spec.*

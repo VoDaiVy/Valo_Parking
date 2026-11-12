@@ -1,10 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Delete, AlertCircle, ScanLine } from 'lucide-react';
 import KioskQrScannerModal from './KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
-import { captureKioskPlate } from '../../services/kioskCamera';
 import { isValidLicensePlate } from '../../utils/licensePlate';
-import KioskDeviceSetup from './KioskDeviceSetup';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
@@ -14,11 +12,19 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
   const [isVerifying, setIsVerifying] = useState(false);
   const [showFullModal, setShowFullModal] = useState(false);
   const [showReallocationModal, setShowReallocationModal] = useState(false);
+  const [reallocationTitle, setReallocationTitle] = useState('Slot Reallocation');
   const [reallocationMessage, setReallocationMessage] = useState('');
+  const [stepAlert, setStepAlert] = useState(null);
+  const [verifiedPhone, setVerifiedPhone] = useState('');
   const [modalTitle, setModalTitle] = useState(undefined);
   const [modalMessage, setModalMessage] = useState(undefined);
   const [showQrModal, setShowQrModal] = useState(false);
   const [mismatchData, setMismatchData] = useState(null);
+  const [userTypedPlate, setUserTypedPlate] = useState(false);
+  const lastCheckedPlateRef = useRef(
+    formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : ''
+  );
+  const pastGuestVerified = Boolean(verifiedPhone && verifiedPhone === (formData.phone || '').trim());
 
   const handleQrScan = async (qrPayload) => {
     setShowQrModal(false);
@@ -26,8 +32,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
     try {
       const response = await fetch(`${API_BASE}/sessions/kiosk-verify-qr`, {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Kiosk-Gate': 'ENTRY_1' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           qrPayload,
           entryImageBase64: formData.entryImageBase64 || null,
@@ -37,7 +42,10 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
 
       if (!data.success) {
         setIsVerifying(false);
-        alert(data.message || 'Mã QR không hợp lệ');
+        setStepAlert({
+          title: 'QR Verification Failed',
+          message: data.message || 'Mã QR không hợp lệ',
+        });
         return;
       }
 
@@ -53,36 +61,177 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         return;
       }
 
-      const vehicle = await captureKioskPlate(data.licensePlate);
+      lastCheckedPlateRef.current = '';
+      setUserTypedPlate(true);
       updateFormData({
         qrPayload,
-        licensePlate: vehicle.licensePlate,
-        entryImageBase64: vehicle.imageBase64,
-        phone: data.phone,
+        licensePlate: data.licensePlate,
+        entryImageBase64: formData.entryImageBase64 || null,
+        phone: data.phone || formData.phone || '',
       });
       setIsVerifying(false);
-      // Trigger auto-verify with new plate
-      setTimeout(() => {
-        setActiveField('plate');
-      }, 100);
+      setActiveField('plate');
     } catch (err) {
       console.error(err);
       setIsVerifying(false);
-      alert(err.message || 'Unable to verify QR and vehicle plate.');
+      setStepAlert({
+        title: 'Connection Error',
+        message: err.message || 'Lỗi kết nối khi xác thực mã QR.',
+      });
     }
   };
 
   useQrScannerListener(handleQrScan, !isVerifying);
 
+  const routeFromVerifyData = (verifyData, { phoneFallback = '', requirePhone = false } = {}) => {
+    if (verifyData.isActive) {
+      setModalTitle('VEHICLE ALREADY INSIDE');
+      setModalMessage('This license plate is currently parked in the lot. Please check again.');
+      setShowFullModal(true);
+      return true;
+    }
+
+    if (verifyData.hasPreBooking || verifyData.isMonthly) {
+      const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
+      const canFastPass = Boolean(!needsReallocation && verifyData.assignedSlot);
+      updateFormData({
+        step3Mode: canFastPass ? 'fastpass' : 'policy',
+        isMonthly: Boolean(verifyData.isMonthly),
+        membershipType: verifyData.membershipType || null,
+        hasPreBooking: Boolean(verifyData.hasPreBooking),
+        isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
+        isBookingReallocation: Boolean(verifyData.isBookingReallocation),
+        quotaExhausted: Boolean(verifyData.quotaExhausted),
+        originalSlot: verifyData.originalSlot || null,
+        selectedSlot: needsReallocation ? null : (verifyData.assignedSlot || null),
+        floorId: needsReallocation ? null : (verifyData.assignedFloorId || null),
+        bookingId: verifyData.bookingId || null,
+        bookingFloorName: verifyData.assignedFloorName || null,
+        durationHours: verifyData.bookingDurationHours || formData.durationHours || 1,
+        licensePlate: formData.licensePlate,
+        phone: verifyData.phone || phoneFallback || formData.phone || '',
+        ticketPackageId: verifyData.bookingTicketPackageId || formData.ticketPackageId || null,
+        bookingMode: verifyData.bookingMode || formData.bookingMode || 'hourly',
+      });
+
+      if (needsReallocation) {
+        setReallocationTitle('Slot Reallocation');
+        setReallocationMessage(
+          verifyData.vipSlotOccupiedByOther
+            ? 'Your VIP slot is currently occupied. Please choose an available replacement slot on the map (0 VND/hr).'
+            : 'Your reserved booking slot is currently unavailable. Please choose another available slot on the map (No extra charge).'
+        );
+        setShowReallocationModal(true);
+      } else {
+        onNext(canFastPass ? '3' : '2');
+      }
+      return true;
+    }
+
+    if (verifyData.isVIP || verifyData.isRegisteredVehicle || verifyData.quotaExhausted) {
+      if (formData.isParkingFull || verifyData.isFull) {
+        setModalTitle(undefined);
+        setModalMessage(undefined);
+        setShowFullModal(true);
+        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
+        return true;
+      }
+
+      updateFormData({
+        step3Mode: 'policy',
+        isVIP: Boolean(verifyData.isVIP),
+        isRegisteredVehicle: Boolean(verifyData.isRegisteredVehicle),
+        quotaExhausted: Boolean(verifyData.quotaExhausted),
+        isVipReallocation: false,
+        isBookingReallocation: false,
+        upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+        suggestedSlot: verifyData.suggestedSlot || null,
+        suggestedFloorId: verifyData.suggestedFloorId || null,
+        suggestedFloorName: verifyData.suggestedFloorName || null,
+        membershipType: verifyData.membershipType || null,
+        phone: verifyData.phone || phoneFallback || formData.phone || '',
+        licensePlate: formData.licensePlate,
+        pricingPackage: verifyData.pricingPackage || formData.pricingPackage || null,
+        pricingSource: verifyData.pricingSource || formData.pricingSource || 'default',
+        ticketPackageId: verifyData.pricingPackage?._id || formData.ticketPackageId || null,
+        bookingMode: 'hourly',
+        selectedSlot: null,
+        floorId: null,
+        bookingFloorName: null,
+      });
+
+      if (verifyData.quotaExhausted) {
+        setReallocationTitle('VIP Slot Limit Reached');
+        setReallocationMessage('Your VIP quota has been reached (maximum number of slots in use). Please select another slot on the map; standard hourly rates apply.');
+        setShowReallocationModal(true);
+      } else {
+        onNext('2');
+      }
+      return true;
+    }
+
+    if (formData.isParkingFull || verifyData.isFull) {
+      setModalTitle(undefined);
+      setModalMessage(undefined);
+      setShowFullModal(true);
+      updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
+      return true;
+    }
+
+    const resolvedPhone = verifyData.phone && verifyData.phone.length >= 10
+      ? verifyData.phone
+      : phoneFallback;
+    const hasValidPhone = /^0[35789]\d{8}$/.test(String(resolvedPhone || '').trim());
+
+    updateFormData({
+      step3Mode: 'policy',
+      isVIP: false,
+      isRegisteredVehicle: false,
+      isVipReallocation: false,
+      isBookingReallocation: false,
+      quotaExhausted: false,
+      upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+      membershipType: verifyData.membershipType || null,
+      phone: resolvedPhone || '',
+      licensePlate: formData.licensePlate,
+      pricingPackage: verifyData.pricingPackage || formData.pricingPackage || null,
+      pricingSource: verifyData.pricingSource || formData.pricingSource || 'default',
+      ticketPackageId: verifyData.pricingPackage?._id || formData.ticketPackageId || null,
+      bookingMode: 'hourly',
+    });
+
+    if (hasValidPhone) {
+      onNext('2');
+      return true;
+    }
+
+    setActiveField('phone');
+    if (requirePhone) {
+      setStepAlert({
+        title: 'Phone Number Required',
+        message: 'Please enter a valid 10-digit Vietnamese phone number to continue.',
+      });
+    }
+    return false;
+  };
 
   // Auto-verify logic
   useEffect(() => {
     const plate = formData.licensePlate || '';
-    // Trigger auto-verify if plate is valid and we are actively typing it
-    if (isValidLicensePlate(plate) && activeField === 'plate') {
+    const cleanPlate = plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+    // Trigger auto-verify if plate is valid, actively typed by user, and not yet verified
+    if (
+      activeField === 'plate' &&
+      userTypedPlate &&
+      isValidLicensePlate(plate) &&
+      cleanPlate !== lastCheckedPlateRef.current
+    ) {
       const timerId = setTimeout(async () => {
         try {
-          const cleanPlate = plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          lastCheckedPlateRef.current = cleanPlate;
+          setUserTypedPlate(false);
+
           const response = await fetch(`${API_BASE}/sessions/verify-plate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -90,121 +239,26 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
           });
           const data = await response.json();
           if (data.success && data.data) {
-            const verifyData = data.data;
-
-            if (verifyData.isActive) {
-              setModalTitle('VEHICLE ALREADY INSIDE');
-              setModalMessage('This license plate is currently parked in the lot. Please check again.');
-              setShowFullModal(true);
-              return;
-            }
-
-            // 1. Auto-fill phone if available and currently empty
-            if (verifyData.phone && !formData.phone) {
-              updateFormData({ phone: verifyData.phone });
-            }
-
-            // 2. Auto-next for Bookings or Subscriptions
-            if (verifyData.hasPreBooking || verifyData.isMonthly) {
-              updateFormData({
-                step3Mode: verifyData.requiresSlotReallocation ? 'policy' : 'fastpass',
-                isMonthly: verifyData.isMonthly,
-                membershipType: verifyData.membershipType || null,
-                hasPreBooking: verifyData.hasPreBooking,
-                isVipReallocation: !!verifyData.requiresSlotReallocation,
-                selectedSlot: verifyData.assignedSlot,
-                floorId: verifyData.assignedFloorId || null,
-                bookingId: verifyData.bookingId || null,
-                bookingFloorName: verifyData.assignedFloorName || null,
-                durationHours: verifyData.bookingDurationHours || formData.durationHours || 1,
-                licensePlate: formData.licensePlate,
-                phone: verifyData.phone || formData.phone || '',
-                ticketPackageId: verifyData.bookingTicketPackageId || formData.ticketPackageId || null,
-                bookingMode: verifyData.bookingMode || formData.bookingMode || 'hourly',
-              });
-
-              if (verifyData.requiresSlotReallocation) {
-                setReallocationMessage('Your previous slot is currently occupied. Please select another available slot on the map (No extra charge).');
-                setShowReallocationModal(true);
-              } else {
-                onNext('3');
-              }
-            } else if (verifyData.isVIP || verifyData.isRegisteredVehicle) {
-              // VIPs and Registered Vehicles ALWAYS bypass the full check
-              updateFormData({
-                step3Mode: verifyData.assignedSlot ? 'fastpass' : 'policy',
-                isVIP: !!verifyData.isVIP,
-                isRegisteredVehicle: !!verifyData.isRegisteredVehicle,
-                membershipType: verifyData.membershipType || null,
-                phone: verifyData.phone || formData.phone || '',
-                licensePlate: formData.licensePlate,
-                pricingPackage: verifyData.pricingPackage || null,
-                pricingSource: verifyData.pricingSource || 'default',
-                ticketPackageId: verifyData.pricingPackage?._id || null,
-                bookingMode: 'hourly',
-                selectedSlot: verifyData.assignedSlot || null,
-                floorId: verifyData.assignedFloorId || null,
-                bookingFloorName: verifyData.assignedFloorName || null,
-              });
-              if (verifyData.quotaExhausted) {
-                setReallocationMessage('Your VIP quota has been reached (maximum number of slots in use). Please select another slot on the map and pay the standard hourly rate to continue.');
-                setShowReallocationModal(true);
-              } else {
-                onNext(verifyData.assignedSlot ? '3' : '2');
-              }
-            } else if (verifyData.phone && verifyData.phone.length >= 10) {
-              // Returning guests with phone number, subject to full check
-              if (formData.isParkingFull || verifyData.isFull) {
-                setModalTitle(undefined);
-                setModalMessage(undefined);
-                setShowFullModal(true);
-                updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
-                return;
-              }
-              updateFormData({
-                step3Mode: 'policy',
-                isVIP: false,
-                isRegisteredVehicle: false,
-                membershipType: verifyData.membershipType || null,
-                phone: verifyData.phone,
-                licensePlate: formData.licensePlate,
-                pricingPackage: verifyData.pricingPackage || null,
-                pricingSource: verifyData.pricingSource || 'default',
-                ticketPackageId: verifyData.pricingPackage?._id || null,
-                bookingMode: 'hourly',
-              });
-              onNext('2');
-            } else {
-              if (formData.isParkingFull || verifyData.isFull) {
-                setModalTitle(undefined);
-                setModalMessage(undefined);
-                setShowFullModal(true);
-                updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
-                return;
-              }
-              // It's a guest and parking is not full. Automatically switch to phone input.
-              setActiveField('phone');
-            }
-          } else {
-            if (formData.isParkingFull) {
-              setModalTitle(undefined);
-              setModalMessage(undefined);
-              setShowFullModal(true);
-              updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
-            }
+            routeFromVerifyData(data.data, { phoneFallback: formData.phone || '', requirePhone: false });
+          } else if (formData.isParkingFull) {
+            setModalTitle(undefined);
+            setModalMessage(undefined);
+            setShowFullModal(true);
+            updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
           }
         } catch (e) {
           console.error("Auto verify failed", e);
         }
-      }, 800); // 0.8s debounce to allow user to finish typing
+      }, 900); // Ngưng gõ khoảng 0.9s (giữa nửa giây và 1 giây) mới bắt đầu kiểm tra biển số
       return () => clearTimeout(timerId);
     }
-  }, [formData.licensePlate, activeField]);
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.licensePlate, activeField, userTypedPlate]);
 
-  // Auto-verify phone
+  // Verify phone (privacy-preserving check)
   useEffect(() => {
     const phone = formData.phone || '';
-    // Only auto-verify if they are typing phone and have entered at least 10 digits
     if (activeField === 'phone' && phone.length >= 10) {
       const timerId = setTimeout(async () => {
         try {
@@ -214,16 +268,19 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
             body: JSON.stringify({ phone: phone.trim() })
           });
           const data = await response.json();
-          if (data.success && data.data && data.data.licensePlate) {
-            // Auto-fill the license plate if found
-            updateFormData({ licensePlate: data.data.licensePlate });
+          if (data.success && data.data?.hasPastSession) {
+            setVerifiedPhone(phone.trim());
+          } else {
+            setVerifiedPhone('');
           }
         } catch (e) {
+          setVerifiedPhone('');
           console.error("Phone verify failed", e);
         }
       }, 800);
       return () => clearTimeout(timerId);
     }
+    return undefined;
   }, [formData.phone, activeField]);
 
   const formatVietnamesePlate = (plate) => {
@@ -262,6 +319,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         updateFormData({ phone: currentPhone + key });
       }
     } else if (activeField === 'plate') {
+      setUserTypedPlate(true);
       if ((formData.licensePlate || '').length < 15) {
         const currentRaw = (formData.licensePlate || '') + key;
         const clean = currentRaw.replace(/[^A-Z0-9]/g, '');
@@ -280,12 +338,14 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
     if (activeField === 'phone' && (formData.phone || '').length > 0) {
       updateFormData({ phone: (formData.phone || '').slice(0, -1) });
     } else if (activeField === 'plate' && (formData.licensePlate || '').length > 0) {
+      setUserTypedPlate(true);
       updateFormData({ licensePlate: (formData.licensePlate || '').slice(0, -1) });
     }
   };
 
   const handleSpace = () => {
     if (activeField === 'plate') {
+      setUserTypedPlate(true);
       updateFormData({ licensePlate: (formData.licensePlate || '') + ' ' });
     }
   };
@@ -371,7 +431,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       const plate = (formData.licensePlate || '').trim();
       const cleanPlate = plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
       const phone = (formData.phone || '').trim();
-      const hasValidPhone = /^0[35789]\d{8}$/.test(phone);
       const response = await fetch(`${API_BASE}/sessions/verify-plate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -379,116 +438,23 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       });
       const data = await response.json();
       const verifyData = data.data || {};
+      setIsVerifying(false);
 
-      if (data.success && verifyData.isActive) {
-        setModalTitle('VEHICLE ALREADY INSIDE');
-        setModalMessage('This license plate is currently parked in the lot. Please check again.');
-        setShowFullModal(true);
-        setIsVerifying(false);
-        return;
-      }
-      else if (data.success && (verifyData.isMonthly || verifyData.hasPreBooking)) {
-        updateFormData({
-          step3Mode: verifyData.requiresSlotReallocation ? 'policy' : 'fastpass',
-          isMonthly: verifyData.isMonthly,
-          membershipType: verifyData.membershipType || null,
-          hasPreBooking: verifyData.hasPreBooking,
-          selectedSlot: verifyData.assignedSlot,
-          floorId: verifyData.assignedFloorId || null,
-          bookingId: verifyData.bookingId || null,
-          bookingFloorName: verifyData.assignedFloorName || null,
-          durationHours: verifyData.bookingDurationHours || formData.durationHours || 1,
-          licensePlate: formData.licensePlate,
-          phone: verifyData.phone || phone,
-          ticketPackageId: verifyData.bookingTicketPackageId || formData.ticketPackageId || null,
-          bookingMode: verifyData.bookingMode || formData.bookingMode || 'hourly',
+      if (data.success) {
+        routeFromVerifyData(verifyData, { phoneFallback: phone, requirePhone: true });
+      } else {
+        setStepAlert({
+          title: 'Verification Failed',
+          message: data.message || 'Could not verify the license plate. Please try again.',
         });
-
-        if (verifyData.requiresSlotReallocation) {
-          setReallocationMessage('Your previous slot is currently occupied. Please select another available slot on the map (No extra charge).');
-          setShowReallocationModal(true);
-        } else {
-          onNext('3'); // Fast-pass
-        }
-      }
-      else if (data.success && (verifyData.isVIP || verifyData.isRegisteredVehicle)) {
-        // VIPs and Registered Vehicles bypass the full check
-        updateFormData({
-          step3Mode: 'policy',
-          isVIP: !!verifyData.isVIP,
-          isRegisteredVehicle: true,
-          membershipType: verifyData.membershipType || null,
-          phone: verifyData.phone || phone,
-          licensePlate: formData.licensePlate,
-          pricingPackage: verifyData.pricingPackage || formData.pricingPackage || null,
-          pricingSource: verifyData.pricingSource || formData.pricingSource || 'default',
-          ticketPackageId: verifyData.pricingPackage?._id || formData.ticketPackageId || null,
-          bookingMode: formData.bookingMode || 'hourly',
-        });
-        setIsVerifying(false);
-        if (verifyData.quotaExhausted) {
-          setReallocationMessage('Your VIP quota has been reached (maximum number of slots in use). Please select another slot on the map and pay the standard hourly rate to continue.');
-          setShowReallocationModal(true);
-        } else {
-          onNext('2');
-        }
-      }
-      else if (data.success && verifyData.phone && verifyData.phone.length >= 10) {
-        if (formData.isParkingFull || verifyData.isFull) {
-          setModalTitle(undefined);
-          setModalMessage(undefined);
-          setShowFullModal(true);
-          updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
-          setIsVerifying(false);
-          return;
-        }
-        updateFormData({
-          step3Mode: 'policy',
-          phone: verifyData.phone,
-          licensePlate: formData.licensePlate,
-          pricingPackage: verifyData.pricingPackage || formData.pricingPackage || null,
-          pricingSource: verifyData.pricingSource || formData.pricingSource || 'default',
-          ticketPackageId: verifyData.pricingPackage?._id || formData.ticketPackageId || null,
-          bookingMode: formData.bookingMode || 'hourly',
-          membershipType: verifyData.membershipType || null,
-        });
-        setIsVerifying(false);
-        onNext('2');
-      }
-      else {
-        if (formData.isParkingFull || (data.data && data.data.isFull)) {
-          setModalTitle(undefined);
-          setModalMessage(undefined);
-          setShowFullModal(true);
-          updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
-          setIsVerifying(false);
-          return;
-        }
-
-        setIsVerifying(false);
-        updateFormData({
-          step3Mode: 'policy',
-          licensePlate: formData.licensePlate,
-          phone,
-          isVIP: false,
-          isRegisteredVehicle: false,
-          pricingPackage: verifyData.pricingPackage || formData.pricingPackage || null,
-          pricingSource: verifyData.pricingSource || formData.pricingSource || 'default',
-          ticketPackageId: verifyData.pricingPackage?._id || formData.ticketPackageId || null,
-          bookingMode: formData.bookingMode || 'hourly',
-          membershipType: verifyData.membershipType || null,
-        });
-        if (hasValidPhone) {
-          onNext('2');
-          return;
-        }
-        setActiveField('phone');
-        alert('Please enter a valid phone number to continue.');
       }
     } catch (e) {
       console.error("verify-plate backend error", e);
       setIsVerifying(false);
-      alert('Could not verify the license plate. Please try again.');
+      setStepAlert({
+        title: 'Connection Error',
+        message: 'Could not verify the license plate. Please try again.',
+      });
     }
   };
   return (
@@ -547,7 +513,10 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
 
         {/* Phone Number Field */}
         <div className="w-full text-center mb-3 animate-in fade-in slide-in-from-top-4 duration-500">
-          <label className="block text-[10px] font-bold text-[#0f172a] tracking-widest mb-1 uppercase">Enter Phone</label>
+          <label className="block text-[10px] font-bold text-[#0f172a] tracking-widest mb-1 uppercase">
+            Enter Phone
+            {pastGuestVerified && <span className="ml-2 text-emerald-700 normal-case font-semibold">• Returning guest recognized</span>}
+          </label>
           <div
             className={`relative bg-white rounded-2xl h-[52px] flex items-center justify-center px-6 w-[90%] mx-auto transition-all border-2 cursor-pointer ${activeField === 'phone' ? 'border-[#0f172a] shadow-[0_4px_15px_rgba(0,0,0,0.05)]' : 'border-transparent'}`}
             onClick={() => setActiveField('phone')}
@@ -593,7 +562,6 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         </button>
       </div>
 
-      <KioskDeviceSetup gate="ENTRY_1" />
       <KioskQrScannerModal
         isOpen={showQrModal}
         onClose={() => setShowQrModal(false)}
@@ -615,7 +583,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
               <AlertCircle size={40} strokeWidth={2.5} />
             </div>
             <h3 className="text-xl font-black text-slate-800 uppercase tracking-wide mb-3">
-              {reallocationMessage.includes('hết chỗ') ? 'Slot Limit Reached' : 'Slot Reallocation'}
+              {reallocationTitle}
             </h3>
             <p className="text-sm font-medium text-slate-600 mb-8 leading-relaxed">
               {reallocationMessage}
@@ -632,6 +600,13 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
           </div>
         </div>
       )}
+
+      <ParkingFullModal
+        isOpen={!!stepAlert}
+        title={stepAlert?.title || 'NOTICE'}
+        message={stepAlert?.message || ''}
+        onClose={() => setStepAlert(null)}
+      />
 
       {/* Plate Mismatch & Anti-Fraud Alert Modal */}
       <PlateMismatchModal

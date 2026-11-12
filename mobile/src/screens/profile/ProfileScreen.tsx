@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, LoadingSpinner } from '@/components/common';
@@ -14,6 +15,7 @@ type ProfileNavigation = {
 };
 
 export const ProfileScreen = ({ navigation }: { navigation: ProfileNavigation }) => {
+  const { t: translateUi } = useLanguage();
   const { user, logout, refreshUser } = useAuth();
   const { profile, loading, fetchProfile } = useProfileData();
 
@@ -39,8 +41,8 @@ export const ProfileScreen = ({ navigation }: { navigation: ProfileNavigation })
           <View style={styles.identity}>
             <AppText variant="h2">{displayName}</AppText>
             <AppText color={colors.light.text.secondary}>{user?.email}</AppText>
-            <AppText color={user?.isEmailVerified ? colors.success.main : colors.warning.dark}>
-              {user?.isEmailVerified ? 'Email verified' : 'Email not verified'}
+            <AppText color={user?.isEmailVerified ? colors.success.main : colors.warning.main} variant="body2">
+              {user?.isEmailVerified ? translateUi("Email verified") : 'Email not verified'}
             </AppText>
           </View>
         </View>
@@ -57,13 +59,13 @@ export const ProfileScreen = ({ navigation }: { navigation: ProfileNavigation })
           { label: 'Created', value: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN') : '' },
         ]}
       />
-      <Button title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
+      <Button title={translateUi("Edit Profile")} onPress={() => navigation.navigate('EditProfile')} />
       {!user?.googleId ? (
-        <Button title="Change Password" variant="outline" onPress={() => navigation.navigate('ChangePassword')} />
+        <Button title={translateUi("Change Password")} variant="outline" onPress={() => navigation.navigate('ChangePassword')} />
       ) : null}
-      <Button title="Vehicles" variant="outline" onPress={() => navigation.navigate('VehicleList')} />
-      <Button title="Policies" variant="outline" onPress={() => navigation.navigate('Policies')} />
-      <Button title="Logout" variant="ghost" onPress={logout} />
+      <Button title={translateUi("Vehicles")} variant="outline" onPress={() => navigation.navigate('VehicleList')} />
+      <Button title={translateUi("Policies")} variant="outline" onPress={() => navigation.navigate('Policies')} />
+      <Button title={translateUi("Logout")} variant="ghost" onPress={logout} />
     </Screen>
   );
 };
@@ -80,6 +82,7 @@ const styles = StyleSheet.create({
   },
   identity: {
     flex: 1,
+    minWidth: 0,
     gap: spacing.xs,
   },
 });

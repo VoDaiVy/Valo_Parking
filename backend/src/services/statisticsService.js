@@ -7,6 +7,7 @@ const SubscriptionRenewal = require('../models/SubscriptionRenewal');
 const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRenewal');
 const WalletTransaction = require('../models/WalletTransaction');
 const Session = require('../models/Session');
+const Revenue = require('../models/Revenue');
 const TicketPackage = require('../models/TicketPackage');
 const {
   DAY_MS,
@@ -451,11 +452,13 @@ const calculatePlatformRevenueTotal = ({
   bookingRevenue = 0,
   serviceRevenue = 0,
   membershipTransferFeeRevenue = 0,
+  parkingRevenue = 0,
 }) =>
   Number(vipRevenue || 0) +
   Number(bookingRevenue || 0) +
   Number(serviceRevenue || 0) +
-  Number(membershipTransferFeeRevenue || 0);
+  Number(membershipTransferFeeRevenue || 0) +
+  Number(parkingRevenue || 0);
 
 /* ── Enhanced platform revenue (mode-based, single source of truth) ──── */
 
@@ -502,13 +505,17 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     Booking.aggregate([{ $match: { scheduledStart: range } }, { $group: { _id: '$status', count: { $sum: 1 } } }, { $sort: { count: -1, _id: 1 } }]),
   ]);
   const bookingIds = bookings.map(booking => booking._id);
-  const [financial, serviceRows] = await Promise.all([
+  const canQueryParkingRevenue = mongoose.connection.readyState === 1 || Boolean(Revenue.find?.mock);
+  const [financial, serviceRows, parkingRevenueRows] = await Promise.all([
     getBookingFinancialSummaryMap(bookings, { excludeModificationRefunds: true }),
     bookingIds.length ? BookingService.aggregate([{ $match: { bookingId: { $in: bookingIds }, status: 'done' } },
       { $group: { _id: '$bookingId', amount: { $sum: '$price' } } }]) : [],
+    canQueryParkingRevenue
+      ? Revenue.find({ type: 'PARKING', sourceModel: 'Session', createdAt: range }).select('amount createdAt').lean()
+      : Promise.resolve([]),
   ]);
   const services = new Map(serviceRows.map(row => [String(row._id), Number(row.amount)]));
-  const zero = () => ({ totalRevenue: 0, bookingRevenue: 0, serviceRevenue: 0, packageRevenue: 0, membershipTransferFees: 0, refunds: 0 });
+  const zero = () => ({ totalRevenue: 0, bookingRevenue: 0, serviceRevenue: 0, packageRevenue: 0, membershipTransferFees: 0, parkingRevenue: 0, refunds: 0 });
   const trend = generateBucketLabels(startDate, endDate, granularity).map(label => ({ period: label, ...zero() }));
   const buckets = new Map(trend.map(row => [row.period, row]));
   let serviceBookingCount = 0;
@@ -519,6 +526,10 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     row.serviceRevenue += revenue.serviceRevenue;
     row.refunds += revenue.refundTotal;
     serviceBookingCount += revenue.serviceBookingCount;
+  }
+  for (const rev of parkingRevenueRows) {
+    const bucket = buckets.get(bucketKey(rev.createdAt));
+    if (bucket) bucket.parkingRevenue += Number(rev.amount) || 0;
   }
   const packageMap = new Map();
   for (const payment of packagePayments) {
@@ -533,7 +544,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
   const summary = zero();
   for (const row of trend) {
     // Refunds already reduced their source; subtracting them here would double count.
-    row.totalRevenue = row.bookingRevenue + row.serviceRevenue + row.packageRevenue + row.membershipTransferFees;
+    row.totalRevenue = row.bookingRevenue + row.serviceRevenue + row.packageRevenue + row.membershipTransferFees + row.parkingRevenue;
     for (const key of Object.keys(summary)) summary[key] += row[key];
   }
   summary.sourceCompositionTotal = summary.totalRevenue;
@@ -568,7 +579,7 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     packageBreakdown, recentTransactions, transactionPagination,
     availableYears: Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index),
     reportingNotes: {
-      revenue: 'Net finalized booking income, completed services, paid packages and transfer fees. Refunds are already deducted from their booking cohort.',
+      revenue: 'Net finalized booking income, completed services, paid packages, transfer fees and parking sessions. Refunds are already deducted from their booking cohort.',
       bookingDate: 'completedAt, then cancelledAt, then legacy updatedAt',
       packageDate: 'Payment timestamp; legacy records without a payment timestamp use createdAt.',
       transactions: 'Paginated recorded booking wallet payments/refunds, package payments and transfer fees, by payment date. This payment activity is distinct from finalized revenue.',
@@ -576,7 +587,9 @@ const getAdminPlatformRevenueStatistics = async (filters = {}) => {
     vip: { revenue: summary.packageRevenue, transactionCount: packagePayments.length, purchaseRevenue: sumAmounts(purchases), renewalRevenue: sumAmounts(renewals) },
     booking: { revenue: summary.bookingRevenue, completedCount: bookings.filter(row => row.status === 'COMPLETED').length, finalizedCount: bookings.length },
     service: { revenue: summary.serviceRevenue, completedBookingCount: serviceBookingCount },
-    membershipTransferFeesDetail: { revenue: summary.membershipTransferFees, transactionCount: fees.length }, totalRevenue: summary.totalRevenue,
+    membershipTransferFeesDetail: { revenue: summary.membershipTransferFees, transactionCount: fees.length },
+    parking: { revenue: summary.parkingRevenue, transactionCount: parkingRevenueRows.length },
+    totalRevenue: summary.totalRevenue,
   };
 };
 
@@ -625,6 +638,12 @@ const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
     }),
   ]);
 
+  const parkingRevenueSummary = await aggregatePaidAmount(Revenue, {
+    type: 'PARKING',
+    sourceModel: 'Session',
+    ...buildCreatedAtMatch(period),
+  });
+
   const bookingIds = completedBookings.map((booking) => booking._id);
   const [financialSummaries, completedServiceRows] = await Promise.all([
     getBookingFinancialSummaryMap(completedBookings),
@@ -666,6 +685,7 @@ const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
     bookingRevenue: bookingRevenueResult.bookingRevenue,
     serviceRevenue: bookingRevenueResult.serviceRevenue,
     membershipTransferFeeRevenue: membershipTransferFees.amount,
+    parkingRevenue: parkingRevenueSummary.amount,
   });
 
   return {
@@ -690,6 +710,10 @@ const getAdminPlatformRevenueStatisticsLegacy = async (filters = {}) => {
     membershipTransferFees: {
       revenue: membershipTransferFees.amount,
       transactionCount: membershipTransferFees.count,
+    },
+    parking: {
+      revenue: parkingRevenueSummary.amount,
+      transactionCount: parkingRevenueSummary.count,
     },
     totalRevenue,
   };

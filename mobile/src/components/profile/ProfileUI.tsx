@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
@@ -17,7 +18,8 @@ import {
   View,
 } from 'react-native';
 
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, CONTROL, FONT_SIZES, MOTION, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -25,13 +27,15 @@ export function useProfileEntrance(delay = 0) {
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(progress, {
+    const animation = Animated.timing(progress, {
       delay,
-      duration: 430,
+      duration: MOTION.normal,
       easing: Easing.out(Easing.cubic),
       toValue: 1,
       useNativeDriver: true,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [delay, progress]);
 
   return progress;
@@ -40,7 +44,7 @@ export function useProfileEntrance(delay = 0) {
 export function StaggeredView({
   children,
   delay = 0,
-  distance = 16,
+  distance = 8,
   style,
 }: {
   children: ReactNode;
@@ -126,6 +130,7 @@ export function AnimatedPressable({
         <Pressable
           accessibilityLabel={accessibilityLabel}
           accessibilityRole="button"
+          accessibilityState={{ disabled: Boolean(disabled) }}
           disabled={disabled}
           onPress={onPress}
           onPressIn={() => {
@@ -155,6 +160,7 @@ export function ProfileScreenHeader({
   subtitle?: string;
   title: string;
 }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useProfileEntrance(20);
   const press = useRef(new Animated.Value(0)).current;
 
@@ -189,7 +195,7 @@ export function ProfileScreenHeader({
       {onBack ? (
         <Animated.View style={{ transform: [{ scale }] }}>
           <Pressable
-            accessibilityLabel="Go back"
+            accessibilityLabel={translateUi("Go back")}
             accessibilityRole="button"
             hitSlop={{ bottom: 10, left: 10, right: 10, top: 10 }}
             style={styles.backButton}
@@ -202,8 +208,8 @@ export function ProfileScreenHeader({
         </Animated.View>
       ) : null}
       <View style={styles.headerCopy}>
-        <Text numberOfLines={1} style={styles.headerTitle}>{title}</Text>
-        {subtitle ? <Text numberOfLines={2} style={styles.headerSubtitle}>{subtitle}</Text> : null}
+        <Text numberOfLines={1} style={styles.headerTitle}>{translateUi(title)}</Text>
+        {subtitle ? <Text numberOfLines={2} style={styles.headerSubtitle}>{translateUi(subtitle)}</Text> : null}
       </View>
       {right ? <View style={styles.headerRight}>{right}</View> : null}
     </Animated.View>
@@ -211,9 +217,10 @@ export function ProfileScreenHeader({
 }
 
 export function SectionHeader({ title }: { title: string }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionTitle}>{translateUi(title)}</Text>
       <View style={styles.sectionRule} />
     </View>
   );
@@ -228,13 +235,14 @@ export function ProfileDetailRow({
   label: string;
   value?: string | null;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.detailRow}>
       <View style={styles.detailLabelWrap}>
         {icon ? <Ionicons name={icon} size={15} color={COLORS.textMuted} /> : null}
-        <Text style={styles.detailLabel}>{label}</Text>
+        <Text style={styles.detailLabel}>{translateUi(label)}</Text>
       </View>
-      <Text numberOfLines={2} style={styles.detailValue}>{value || 'Not provided'}</Text>
+      <Text style={styles.detailValue}>{value || translateUi("Not provided")}</Text>
     </View>
   );
 }
@@ -246,10 +254,11 @@ export function StatusChip({
   color: string;
   label: string;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={[styles.statusChip, { backgroundColor: `${color}18` }]}>
       <View style={[styles.statusDot, { backgroundColor: color }]} />
-      <Text numberOfLines={1} style={[styles.statusChipText, { color }]}>{label}</Text>
+      <Text numberOfLines={1} style={[styles.statusChipText, { color }]}>{translateUi(label)}</Text>
     </View>
   );
 }
@@ -265,12 +274,13 @@ export function PrimaryCTA({
   loading?: ReactNode;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const arrow = useRef(new Animated.Value(0)).current;
   const translateX = arrow.interpolate({ inputRange: [0, 1], outputRange: [0, 5] });
 
   return (
     <AnimatedPressable
-      accessibilityLabel={label}
+      accessibilityLabel={translateUi(label)}
       disabled={disabled}
       onPress={onPress}
       onPressIn={() => {
@@ -300,7 +310,7 @@ export function PrimaryCTA({
       >
         {loading || (
           <>
-            <Text style={styles.ctaText}>{label}</Text>
+            <Text style={styles.ctaText}>{translateUi(label)}</Text>
             <Animated.View style={{ transform: [{ translateX }] }}>
               <Ionicons name="arrow-forward" size={18} color={COLORS.textInverse} />
             </Animated.View>
@@ -331,6 +341,7 @@ export function ProfileFormField({
   returnKeyType?: ReturnKeyTypeOptions;
   value: string;
 }) {
+  const { t: translateUi } = useLanguage();
   const [focused, setFocused] = useState(false);
   const focus = useRef(new Animated.Value(0)).current;
 
@@ -353,7 +364,7 @@ export function ProfileFormField({
       <View style={styles.fieldLabelRow}>
         {icon ? <Ionicons name={icon} size={15} color={focused ? COLORS.gold : COLORS.textMuted} /> : null}
         <Text style={[styles.fieldLabel, focused && styles.fieldLabelFocused, error && styles.fieldLabelError]}>
-          {label}
+          {translateUi(label)}
         </Text>
       </View>
       <Animated.View style={[styles.fieldWrap, { borderColor }]}>
@@ -363,7 +374,7 @@ export function ProfileFormField({
           placeholder={placeholder}
           placeholderTextColor={COLORS.textMuted}
           returnKeyType={returnKeyType}
-          style={styles.fieldInput}
+          style={[styles.fieldInput, inputProps.style]}
           value={value}
           onBlur={(event) => {
             setFocused(false);
@@ -376,7 +387,7 @@ export function ProfileFormField({
           }}
         />
       </Animated.View>
-      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      {error ? <Text style={styles.fieldError}>{translateUi(error)}</Text> : null}
     </View>
   );
 }
@@ -394,6 +405,7 @@ export function PasswordField({
   placeholder: string;
   value: string;
 }) {
+  const { t: translateUi } = useLanguage();
   const [visible, setVisible] = useState(false);
 
   return (
@@ -402,9 +414,10 @@ export function PasswordField({
         autoCapitalize="none"
         autoCorrect={false}
         error={error}
-        label={label}
+        label={translateUi(label)}
         placeholder={placeholder}
         secureTextEntry={!visible}
+        style={styles.passwordInput}
         value={value}
         onChangeText={onChangeText}
       />
@@ -437,30 +450,23 @@ const styles = StyleSheet.create({
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.055)',
-    borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: RADIUS.round,
-    borderWidth: 1,
-    height: 50,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.md,
+    height: CONTROL.minTouchSize,
     justifyContent: 'center',
-    width: 50,
+    width: CONTROL.minTouchSize,
   },
   headerCopy: {
     flex: 1,
     minWidth: 0,
   },
   headerTitle: {
+    ...typography.h2,
     color: COLORS.textPrimary,
-    fontSize: 30,
-    fontWeight: '900',
-    letterSpacing: 0,
-    lineHeight: 36,
   },
   headerSubtitle: {
+    ...typography.body2,
     color: COLORS.textMuted,
-    fontSize: 15,
-    fontWeight: '500',
-    lineHeight: 21,
     marginTop: 2,
   },
   headerRight: {
@@ -498,20 +504,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 7,
-    width: 124,
+    flex: 1,
+    minWidth: 0,
   },
   detailLabel: {
+    ...typography.body2,
     color: COLORS.textMuted,
     flexShrink: 1,
-    fontSize: 13,
-    fontWeight: '700',
   },
   detailValue: {
+    ...typography.body2,
     color: COLORS.textPrimary,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 21,
+    flex: 1.4,
+    minWidth: 0,
+    fontWeight: '500',
     textAlign: 'right',
   },
   statusChip: {
@@ -541,13 +547,16 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     flexDirection: 'row',
     gap: SPACING.sm,
-    height: 54,
+    minHeight: CONTROL.minHeight,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 12,
     justifyContent: 'center',
   },
   ctaText: {
+    ...typography.button,
     color: COLORS.textInverse,
-    fontSize: 16,
-    fontWeight: '900',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   disabled: {
     opacity: 0.62,
@@ -561,9 +570,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   fieldLabel: {
+    ...typography.body2,
     color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   fieldLabelFocused: {
     color: COLORS.gold,
@@ -572,17 +581,19 @@ const styles = StyleSheet.create({
     color: COLORS.error,
   },
   fieldWrap: {
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: COLORS.surfaceElevated,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     minHeight: 52,
     paddingHorizontal: SPACING.md,
   },
   fieldInput: {
+    ...typography.body1,
     color: COLORS.textPrimary,
     flex: 1,
     fontSize: FONT_SIZES.md,
     minHeight: 50,
+    paddingVertical: 12,
   },
   fieldError: {
     color: COLORS.error,
@@ -594,11 +605,12 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     alignItems: 'center',
-    bottom: 0,
+    top: 24,
     height: 52,
     justifyContent: 'center',
     position: 'absolute',
     right: 0,
     width: 52,
   },
+  passwordInput: { paddingRight: 40 },
 });

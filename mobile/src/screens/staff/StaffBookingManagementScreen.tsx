@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -74,7 +75,7 @@ const statusColor = (status: string) => {
   if (normalizedStatus === 'PAUSED') return COLORS.warning;
   if (normalizedStatus === 'PAID') return COLORS.staffBlue;
   if (normalizedStatus === 'CANCELLED' || normalizedStatus === 'EXPIRED') return COLORS.error;
-  if (normalizedStatus === 'COMPLETED') return COLORS.textMuted;
+  if (normalizedStatus === 'COMPLETED') return COLORS.success;
   return COLORS.warning;
 };
 
@@ -89,6 +90,7 @@ const getDurationProgress = (start: string, end: string) => {
 };
 
 export function StaffBookingManagementScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const tabBarHeight = useBottomTabBarHeight();
   const [date, setDate] = useState(new Date());
   const [bookings, setBookings] = useState<StaffBooking[]>([]);
@@ -156,13 +158,13 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Verification"
-        title="Booking Management"
+        title={translateUi("Booking Management")}
         onBack={() => navigation.navigate('ManagementHome')}
         right={<TouchableOpacity
-          accessibilityLabel="Scan booking QR"
+          accessibilityLabel={translateUi("Scan booking QR")}
           accessibilityRole="button"
           onPress={() => navigation.navigate('BookingScanner')}
           style={styles.scanButton}
@@ -177,7 +179,7 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
 
       <View style={styles.dateBar}>
         <TouchableOpacity
-          accessibilityLabel="Previous day"
+          accessibilityLabel={translateUi("Previous day")}
           onPress={() => setDate((current) => subDays(current, 1))}
           style={styles.dateButton}
         >
@@ -188,7 +190,7 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
           <Text style={styles.dateValue}>{format(date, 'dd MMM yyyy')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          accessibilityLabel="Next day"
+          accessibilityLabel={translateUi("Next day")}
           onPress={() => setDate((current) => addDays(current, 1))}
           style={styles.dateButton}
         >
@@ -197,11 +199,11 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.summary}>
-        <SummaryMetric label="Active" value={allCounts.ACTIVE.length} color={COLORS.success} />
+        <SummaryMetric label={translateUi("Active")} value={allCounts.ACTIVE.length} color={COLORS.success} />
         <View style={styles.summaryDivider} />
-        <SummaryMetric label="Upcoming" value={allCounts.UPCOMING.length} color={COLORS.warning} />
+        <SummaryMetric label={translateUi("Upcoming")} value={allCounts.UPCOMING.length} color={COLORS.warning} />
         <View style={styles.summaryDivider} />
-        <SummaryMetric label="Total" value={bookings.length} color={COLORS.textPrimary} />
+        <SummaryMetric label={translateUi("Total")} value={bookings.length} color={COLORS.textPrimary} />
       </View>
 
       <View style={styles.searchWrap}>
@@ -209,13 +211,13 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Plate, space, or customer"
+          placeholder={translateUi("Plate, space, or customer")}
           placeholderTextColor={COLORS.textMuted}
           style={styles.searchInput}
         />
         {query ? (
           <TouchableOpacity
-            accessibilityLabel="Clear search"
+            accessibilityLabel={translateUi("Clear search")}
             onPress={() => setQuery('')}
             style={styles.clearSearch}
           >
@@ -259,7 +261,7 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
           <ActivityIndicator color={COLORS.staffBlue} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : (
         <SectionList
           key={filter}
@@ -301,7 +303,7 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
           ListEmptyComponent={
             <EmptyState
               icon="calendar-outline"
-              title="No bookings found"
+              title={translateUi("No bookings found")}
               message={query ? 'Try a different search or filter.' : 'Try another date or filter.'}
               accentColor={COLORS.staffBlue}
             />
@@ -320,10 +322,10 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
             <View style={styles.sheetHeader}>
               <View>
                 <Text style={styles.sheetTitle}>{selected?.licensePlate}</Text>
-                <Text style={styles.sheetSub}>Booking details</Text>
+                <Text style={styles.sheetSub}>{translateUi("Booking details")}</Text>
               </View>
               <TouchableOpacity
-                accessibilityLabel="Close booking details"
+                accessibilityLabel={translateUi("Close booking details")}
                 onPress={() => setSelected(null)}
                 style={styles.close}
               >
@@ -331,15 +333,15 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             <Detail
-              label="Customer"
+              label={translateUi("Customer")}
               value={selected?.userId?.fullName || selected?.userId?.email || 'Guest'}
             />
             <Detail
-              label="Parking space"
+              label={translateUi("Parking space")}
               value={`${typeof selected?.floorId === 'object' ? selected.floorId?.name || 'Floor' : 'Floor'} / ${selected?.parkingSlot || '--'}`}
             />
             <Detail
-              label="Schedule"
+              label={translateUi("Schedule")}
               value={
                 selected
                   ? `${format(new Date(selected.scheduledStart), 'dd MMM, HH:mm')} - ${format(new Date(selected.scheduledEnd), 'dd MMM, HH:mm')}`
@@ -347,10 +349,10 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
               }
             />
             <Detail
-              label="Payment"
+              label={translateUi("Payment")}
               value={`${selected?.paymentMethod || 'Wallet'} / ${formatCurrency(selected?.prepaidAmount ?? 0)}`}
             />
-            <Detail label="Status" value={selected?.status || '--'} />
+            <Detail label={translateUi("Status")} value={selected?.status || '--'} />
           </View>
         </View>
       </Modal>
@@ -359,15 +361,17 @@ export function StaffBookingManagementScreen({ navigation }: Props) {
 }
 
 function SummaryMetric({ label, value, color }: { label: string; value: number; color: string }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.summaryMetric}>
-      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryLabel}>{translateUi(label)}</Text>
       <Text style={[styles.summaryValue, { color }]}>{value}</Text>
     </View>
   );
 }
 
 function BookingCard({ booking, onPress }: { booking: StaffBooking; onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   const color = statusColor(booking.status);
   const group = getStaffBookingGroup(booking.status);
   const floor =
@@ -422,7 +426,7 @@ function BookingCard({ booking, onPress }: { booking: StaffBooking; onPress: () 
           <View style={styles.progressCopy}>
             <View style={styles.liveLabel}>
               <View style={styles.liveDot} />
-              <Text style={styles.progressLabel}>Duration progress</Text>
+              <Text style={styles.progressLabel}>{translateUi("Duration progress")}</Text>
             </View>
             <Text style={styles.progressValue}>{progress}%</Text>
           </View>
@@ -436,9 +440,10 @@ function BookingCard({ booking, onPress }: { booking: StaffBooking; onPress: () 
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.detail}>
-      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailLabel}>{translateUi(label)}</Text>
       <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
@@ -521,7 +526,7 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     fontSize: FONT_SIZES.xl,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   summaryDivider: {
     backgroundColor: COLORS.border,
@@ -600,7 +605,7 @@ const styles = StyleSheet.create({
   },
   filterCountText: {
     color: COLORS.textMuted,
-    fontSize: 10,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '800',
   },
   filterCountTextActive: {
@@ -703,7 +708,7 @@ const styles = StyleSheet.create({
   plate: {
     color: COLORS.textPrimary,
     fontSize: FONT_SIZES.md,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 1,
   },
   customer: {
@@ -717,7 +722,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   statusText: {
-    fontSize: 9,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '800',
   },
   routeRow: {

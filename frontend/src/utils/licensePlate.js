@@ -30,5 +30,5 @@ export const formatLicensePlateDisplay = (plate = '') => {
 
 export const isValidLicensePlate = (plate = '') => {
   const clean = normalizeLicensePlate(plate);
-  return /^[1-9]\d[A-Z]{1,2}\d{4,5}$/.test(clean);
+  return /^[1-9]\d[A-Z0-9]{1,3}\d{4,5}$/.test(clean) && clean.length >= 7 && clean.length <= 9;
 };
