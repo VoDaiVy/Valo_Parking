@@ -1,10 +1,10 @@
 const { validateBookingInput } = require('../services/aiBookingInputValidation');
 const { interpretBookingMessage, normalizeInterpretation } = require('../services/aiBookingInterpreter');
-const { detectBookingLanguage } = require('../services/aiBookingLanguage');
+const { detectBookingLanguage, detectRequestedConversationLanguage } = require('../services/aiBookingLanguage');
 const { localizeBookingReply } = require('../services/aiBookingLocalization');
 const mongoose = require('mongoose');
 const aiBookingSessionService = require('../services/aiBookingSessionService');
-const { transcribeBookingAudio } = require('../services/aiBookingSpeech');
+const { transcribeBookingAudio, speechFailureResponse } = require('../services/aiBookingSpeech');
 const {
   QUERY_INTENTS,
   executeAssistantRequest,
@@ -45,8 +45,8 @@ exports.transcribeVoice = async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     const language = req.body?.previousLanguage === 'vi' ? 'vi' : 'en';
-    return res.status(error.statusCode || 502).json({ success: false,
-      message: language === 'vi' ? 'Chưa nhận được giọng nói rõ ràng. Vui lòng thử lại hoặc nhập bằng bàn phím.' : 'Unable to recognize the recording. Please try again or type your request.' });
+    const failure = speechFailureResponse(error, language);
+    return res.status(failure.status).json({ success: false, code: failure.code, message: failure.message });
   }
 };
 const sendMutationResult = (res, result) => {
@@ -79,6 +79,8 @@ const vietnamBookingClock = (now = new Date()) => {
 
 exports.interpret = async (req, res) => {
   const languageInfo = detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const requestedLanguage = detectRequestedConversationLanguage(req.body?.prompt);
+  if (requestedLanguage) Object.assign(languageInfo, { language: requestedLanguage, confidence: 0.99 });
   const responseMessage = (value) => localizeBookingReply(value, languageInfo.language);
   try {
     const referenceClock = vietnamBookingClock();
@@ -151,6 +153,7 @@ exports.interpret = async (req, res) => {
             message: await responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
             showVipModal: assistantResult.showVipModal === true,
+            ...(assistantResult.voucherOptions ? { voucherOptions: assistantResult.voucherOptions } : {}),
           },
         },
       });
@@ -160,6 +163,7 @@ exports.interpret = async (req, res) => {
       draft: req.body?.draft,
       today: referenceClock.today,
       currentTime: referenceClock.currentTime,
+      conversationHistory: req.body?.conversationHistory,
     });
     if (result.clarification) result.clarification = await responseMessage(result.clarification);
     result.language = languageInfo.language;
@@ -194,6 +198,7 @@ exports.interpret = async (req, res) => {
             message: await responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
             showVipModal: assistantResult.showVipModal === true,
+            ...(assistantResult.voucherOptions ? { voucherOptions: assistantResult.voucherOptions } : {}),
           },
         },
       });

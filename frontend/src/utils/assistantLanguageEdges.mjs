@@ -1,11 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { resolveBookingTurnLanguage } from './aiBookingLanguage.js';
+const { detectBookingLanguage, detectRequestedConversationLanguage: backendRequestedLanguage } = createRequire(import.meta.url)('../../../backend/src/services/aiBookingLanguage.js');
 import { createBookingTurnQueue, mayConfirmQueuedBooking } from './aiBookingTurnQueue.js';
 import { detectBookingInputLanguage, detectRequestedConversationLanguage, isLanguageOnlyRequest } from './aiBookingLanguage.js';
 import { createSpeechBoundary, createAutoLanguageVoiceSession } from './aiBookingAutoVoice.js';
 import { createAiBookingRecognition, createAiBookingSpeaker, formatAiBookingSpeech, createConciseAiBookingSpeech } from './aiBookingVoice.js';
 import { createAiBookingSnapshot, normalizeAiBookingSession } from './aiBookingSession.js';
 import { prepareAiBooking, confirmAiBooking } from './aiBookingFlow.js';
+
+test('frontend and backend agree on language switches, mixed sentences, short replies and neutral facts', () => {
+  const cases = [
+    ['Tôi muốn book a parking space tomorrow', 'vi'],
+    ['toi muon book a parking space tomorrow', 'vi'],
+    ['I want to book xe ngày mai', 'en'],
+    ['please đặt xe ngày mai', 'vi'],
+    ['book Café Wash tomorrow', 'en'],
+    ['dạ', 'vi'], ['da', 'vi'], ['vang', 'vi'], ['co', 'vi'], ['được', 'vi'],
+    ['yes', 'en'], ['no thanks', 'en'], ['thank you', 'en'], ['hello', 'en'],
+  ];
+  for (const previous of ['vi', 'en']) {
+    for (const [text, expected] of cases) {
+      const actual = detectBookingInputLanguage(text, previous);
+      assert.equal(actual.language, expected, `${previous}: ${text}`);
+      assert.deepEqual(detectBookingLanguage(text, previous), actual);
+    }
+    for (const text of ['43A11111, 43B22222.', 'A 1.', '20/11/2027 08:00', '100.000 VND.', 'OK!', 'can', 'The MM.', 'book xe']) {
+      const actual = detectBookingInputLanguage(text, previous);
+      assert.equal(actual.language, previous, text);
+      assert.ok(actual.confidence <= 0.55, text);
+      assert.deepEqual(detectBookingLanguage(text, previous), actual);
+    }
+  }
+});
+
+test('explicit reply language is separate from the language actually spoken', () => {
+  for (const [text, expected] of [
+    ['reply in English', 'en'], ['respond in Vietnamese', 'vi'],
+    ['nói tiếng Anh', 'en'], ['trả lời bằng tiếng Việt', 'vi'],
+    ['nói tiếng Anh, không dùng voucher', 'en'],
+    ['do not speak English', ''], ['đừng nói tiếng Anh', ''],
+    ['speak English, then reply in Vietnamese', 'vi'],
+  ]) {
+    assert.equal(detectRequestedConversationLanguage(text), expected, text);
+    assert.equal(backendRequestedLanguage(text), expected, text);
+  }
+  assert.equal(detectBookingInputLanguage('nói tiếng Anh', 'vi').language, 'vi');
+  assert.equal(resolveBookingTurnLanguage('nói tiếng Anh', 'vi', 'vi'), 'en');
+  assert.equal(resolveBookingTurnLanguage('đặt xe ngày mai', 'en', 'en'), 'vi');
+  assert.equal(resolveBookingTurnLanguage('book a car tomorrow', 'vi', 'vi'), 'en');
+  assert.equal(resolveBookingTurnLanguage('book xe', 'en', 'vi'), 'vi');
+  assert.equal(resolveBookingTurnLanguage('43A11111.', 'vi', 'en'), 'vi');
+});
 
 test('1–3. rapid and mixed inputs use new evidence, neutral answers preserve previous language', () => {
   let language = 'vi';

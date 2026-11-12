@@ -1,9 +1,22 @@
 .valo-assistant-page { display: flex; flex-direction: column; gap: 24px; padding-bottom: 32px; }
-.valo-assistant-shell { display: grid; grid-template-columns: 230px minmax(0,1.12fr) minmax(0,1fr); height: min(800px,calc(100dvh - 134px)); min-height: 620px; overflow: hidden; border: 1px solid #e7e8f0; border-radius: 26px; background: #fff; box-shadow: 0 12px 50px -30px #9298b4; }
-.valo-assistant-shell.is-history-collapsed { grid-template-columns: 68px minmax(0,1.12fr) minmax(0,1fr); }
+.valo-assistant-resizable { width: 100%; min-width: 0; container-type: inline-size; }
+.valo-assistant-shell { display: grid; grid-template-columns: var(--valo-history-width,230px) var(--valo-history-handle,8px) minmax(0,var(--valo-chat-fr,1.12fr)) 8px minmax(0,var(--valo-preview-fr,1fr)); height: min(800px,calc(100dvh - 134px)); min-height: 620px; overflow: hidden; border: 1px solid #e7e8f0; border-radius: 26px; background: #fff; box-shadow: 0 12px 50px -30px #9298b4; }
+.valo-assistant-shell.is-history-collapsed { --valo-history-width: 68px; --valo-history-handle: 0px; }
+.valo-assistant-shell > .valo-history { grid-column: 1; grid-row: 1; }
+.valo-assistant-shell > .valo-assistant-chat { grid-column: 3; grid-row: 1; }
+.valo-assistant-shell > .valo-assistant-preview { grid-column: 5; grid-row: 1; }
+.valo-assistant-splitter { position: relative; z-index: 2; min-width: 0; grid-row: 1; cursor: col-resize; touch-action: none; outline: none; background: #fcfcff; transition: background .15s; }
+.valo-assistant-splitter.is-history { grid-column: 2; }
+.valo-assistant-splitter.is-preview { grid-column: 4; }
+.valo-assistant-splitter::after { content: ''; position: absolute; top: 50%; left: 50%; width: 2px; height: 36px; border-radius: 4px; background: #d8dbe9; transform: translate(-50%,-50%); transition: background .15s,height .15s; }
+.valo-assistant-splitter:hover,.valo-assistant-splitter:focus-visible,.valo-assistant-splitter.is-dragging { background: #fff7da; }
+.valo-assistant-splitter:hover::after,.valo-assistant-splitter:focus-visible::after,.valo-assistant-splitter.is-dragging::after { height: 52px; background: #eab308; }
+.valo-assistant-splitter:focus-visible { box-shadow: inset 0 0 0 2px #eab308; }
+.is-history-collapsed > .valo-assistant-splitter.is-history { display: none; }
+body.valo-assistant-resizing,body.valo-assistant-resizing * { cursor: col-resize !important; user-select: none !important; }
 .valo-assistant-shell .valo-history { min-height: 0; min-width: 0; display: flex; flex-direction: column; background: linear-gradient(160deg,#fafbff,#fff 65%); border-right: 1px solid #ececf4; }
 .valo-history-heading { display: flex; align-items: center; gap: 9px; padding: 20px 16px 14px; color: #172138; }
-.valo-history-heading h2 { flex: 1; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.valo-history-heading h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 800; white-space: nowrap; }
 .valo-history-collapse { display: grid; place-items: center; width: 27px; height: 27px; flex-shrink: 0; border: 1px solid #e9eaf2; border-radius: 9px; background: #f5f6fb; }
 .valo-history-tools { padding: 0 14px 16px; }
 .valo-history-new { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 9px 10px; border-radius: 12px; color: #172138; background: linear-gradient(110deg,#ffcb26,#ffda4c); font-size: 12px; font-weight: 800; }
@@ -49,6 +62,25 @@
 .valo-assistant-avatar { flex-shrink: 0; width: 33px; height: 33px; padding: 3px; margin-top: 5px; border-radius: 50%; background: #fff0bc; object-fit: contain; }
 .valo-assistant-bubble { max-width: calc(100% - 43px); min-width: 0; padding: 12px 15px; border-radius: 18px 18px 18px 5px; background: linear-gradient(110deg,#fff9e9,#fff8e1); color: #35405a; white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.65; }
 .is-user .valo-assistant-bubble { max-width: 86%; border-radius: 17px 17px 5px 17px; background: linear-gradient(150deg,#172035,#101523); box-shadow: 0 4px 10px #1720350a; color: white; }
+.valo-assistant-bubble.has-services { width: calc(100% - 43px); }
+.valo-assistant-service-list { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f3dfa7; white-space: normal; container-type: inline-size; }
+.valo-assistant-service-option { display: grid; grid-template-columns: 16px minmax(0,1fr) max-content 64px; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 48px; padding: 10px 12px; border: 1px solid #f0d49c; border-radius: 12px; background: #fff; color: #85400f; text-align: left; line-height: 1.45; box-shadow: 0 1px 2px #8c600008; transition: background .15s,border-color .15s; }
+.valo-assistant-service-option:hover:not(:disabled) { border-color: #e6b650; background: #fffcf2; }
+.valo-assistant-service-option:focus-visible { outline: 2px solid #d6a024; outline-offset: 2px; }
+.valo-assistant-service-option:disabled { opacity: .55; cursor: default; }
+.valo-assistant-service-option.is-selected { border-color: #e9b638; background: #fff3cc; }
+.valo-assistant-service-icon { color: #e6a600; }
+.valo-assistant-service-name { min-width: 0; font-size: 11px; font-weight: 700; }
+.valo-assistant-service-price { font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; color: #ad510d; }
+.valo-assistant-service-action { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; padding: 4px 6px; border-radius: 7px; background: #fff0bd; color: #91430b; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.is-selected .valo-assistant-service-action { background: #f6d46d; color: #713608; }
+@container(max-width:440px) {
+  .valo-assistant-service-option { grid-template-columns: 16px minmax(0,1fr) 64px; column-gap: 9px; row-gap: 3px; }
+  .valo-assistant-service-icon { grid-column: 1; grid-row: 1/3; }
+  .valo-assistant-service-name { grid-column: 2; grid-row: 1; }
+  .valo-assistant-service-price { grid-column: 2; grid-row: 2; text-align: left; }
+  .valo-assistant-service-action { grid-column: 3; grid-row: 1/3; }
+}
 .valo-assistant-typing { display: inline-flex; gap: 5px; align-items: center; padding: 4px; }
 .valo-assistant-typing i { width: 5px; height: 5px; border-radius: 50%; background: #a3aac8; animation: valo-assistant-pulse 1.1s ease-in-out infinite; }
 .valo-assistant-typing i:nth-child(2) { animation-delay: .15s; }.valo-assistant-typing i:nth-child(3) { animation-delay: .3s; }
@@ -66,3 +98,35 @@
 @media(max-width:1100px) { .valo-assistant-shell { grid-template-columns: 195px minmax(0,1fr); height: auto; min-height: 0; }.valo-assistant-shell.is-history-collapsed { grid-template-columns: 68px minmax(0,1fr); }.valo-assistant-chat { min-height: 620px; height: min(740px,calc(100dvh - 110px)); }.valo-assistant-preview { grid-column: 1/-1; max-height: 650px; border-left: 0; border-top: 1px solid #ececf4; }.valo-history-help img { width: 62px; height: 62px; }.valo-history-help p { max-width: 105px; } }
 @media(max-width:640px) { .valo-assistant-shell,.valo-assistant-shell.is-history-collapsed { display: flex; flex-direction: column; border-radius: 20px; }.valo-history { border-right: 0!important; border-bottom: 1px solid #ececf4; }.valo-history-heading { padding: 13px 15px 9px; }.valo-history-tools { padding-bottom: 12px; }.valo-history-list { max-height: 180px; }.valo-history-help { display: none; }.valo-assistant-chat { min-height: 500px; height: 68dvh; }.valo-assistant-header { padding: 15px; }.valo-assistant-header h2 { font-size: 14px; }.valo-assistant-preview { padding: 17px; max-height: none; }.is-history-collapsed .valo-history-heading h2,.is-history-collapsed .valo-history-heading > svg { display: block; }.is-history-collapsed .valo-history-heading { justify-content: initial; padding: 13px 15px; }.is-history-collapsed .valo-history-tools { display: none; } }
 @media(prefers-reduced-motion:reduce) { .valo-assistant-typing i { animation: none; } }
+/* Keep viewport fallbacks and container-based layouts in sync. */
+@media(max-width:1100px) {
+  .valo-assistant-shell,.valo-assistant-shell.is-history-collapsed { grid-template-columns: var(--valo-history-width,195px) var(--valo-history-handle,8px) minmax(0,1fr); }
+  .valo-assistant-shell > .valo-assistant-preview { grid-column: 1/-1; grid-row: 2; }
+  .valo-assistant-splitter.is-preview { display: none; }
+}
+@container(max-width:1100px) {
+  .valo-assistant-shell,.valo-assistant-shell.is-history-collapsed { grid-template-columns: var(--valo-history-width,195px) var(--valo-history-handle,8px) minmax(0,1fr); height: auto; min-height: 0; }
+  .valo-assistant-chat { min-height: 620px; height: min(740px,calc(100dvh - 110px)); }
+  .valo-assistant-shell > .valo-assistant-preview { grid-column: 1/-1; grid-row: 2; max-height: 650px; border-left: 0; border-top: 1px solid #ececf4; }
+  .valo-assistant-splitter.is-preview { display: none; }
+  .valo-history-help img { width: 62px; height: 62px; }
+  .valo-history-help p { max-width: 105px; }
+}
+@media(max-width:640px) { .valo-assistant-splitter { display: none; } }
+@container(max-width:640px) {
+  .valo-assistant-shell,.valo-assistant-shell.is-history-collapsed { display: flex; flex-direction: column; border-radius: 20px; }
+  .valo-assistant-splitter { display: none; }
+  .valo-history { border-right: 0!important; border-bottom: 1px solid #ececf4; }
+  .valo-history-heading { padding: 13px 15px 9px; }
+  .valo-history-tools { padding-bottom: 12px; }
+  .valo-history-list { max-height: 180px; }
+  .valo-history-help { display: none; }
+  .valo-assistant-chat { min-height: 500px; height: 68dvh; }
+  .valo-assistant-header { padding: 15px; }
+  .valo-assistant-header h2 { font-size: 14px; }
+  .valo-assistant-shell > .valo-assistant-preview { padding: 17px; max-height: none; }
+  .is-history-collapsed .valo-history-heading h2,.is-history-collapsed .valo-history-heading > svg { display: block; }
+  .is-history-collapsed .valo-history-heading { justify-content: initial; padding: 13px 15px; }
+  .is-history-collapsed .valo-history-tools { display: none; }
+}
+@media(prefers-reduced-motion:reduce) { .valo-assistant-splitter,.valo-assistant-splitter::after { transition: none; } }

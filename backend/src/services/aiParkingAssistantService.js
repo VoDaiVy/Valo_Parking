@@ -98,7 +98,7 @@ function detectIntents(text) {
     /\b(show|list|check|view)\s+(my\s+)?(available\s+)?(vouchers?|discounts?)\b/,
     /\b(?:co|con|kiem tra|xem|nhung|cac)\s+(?:(?:ma|the|phieu)\s+)?giam gia\b/,
     /\b(?:ma|the|phieu)\s+giam gia\s+(?:nao|gi|khong|con|kha dung)\b/,
-    /\b(?:do i have|have i got|any|my|available)\s+(?:any\s+)?(?:vouchers?|coupons?|discount(?:\s+codes?)?)\b/,
+    /\b(?:do i have|have i got|any|my|available)\s+(?:(?:any|a|an)\s+)?(?:vouchers?|coupons?|discount(?:\s+codes?)?)\b/,
   ]);
   add('USE_VOUCHER', [
     /\b(dung|ap dung|chon|them|bo|xoa|huy)\s+(voucher|ma giam gia|uu dai)\b/,
@@ -210,9 +210,16 @@ function detectIntents(text) {
   ]);
 
   let unique = [...new Set(intents)];
+  if (unique.includes('USE_VOUCHER') && /\b(?:can i|could i|may i|co the dung|co the ap dung|dung.*duoc khong|ap dung.*duoc khong)\b/.test(text)) {
+    unique = [...new Set([...unique.filter((intent) => intent !== 'USE_VOUCHER'), 'CHECK_VOUCHERS'])];
+  }
   // "Giúp tôi đặt..." là lệnh đặt chỗ/dịch vụ, không phải câu hỏi về chức năng trợ lý.
   if (unique.includes('HELP')
     && /\b(giup toi|ho tro toi)?\s*(muon|can)?\s*dat\s+(cho|bai do|o do|xe|dich vu|rua xe|sac xe)\b/.test(text)) {
+    unique = unique.filter((intent) => intent !== 'HELP');
+  }
+  if (unique.includes('HELP') && /\b(?:doi|sua|chuyen|thay|change|update|correct)\b/.test(text)
+    && /\b(?:gio|ngay|bien|xe|o|tang|dich vu|ma|time|date|plate|car|vehicle|slot|floor|service|voucher)\b/.test(text)) {
     unique = unique.filter((intent) => intent !== 'HELP');
   }
   // Câu hỏi giá dịch vụ như "rửa xe giá bao nhiêu" không phải phí gửi xe.
@@ -240,6 +247,20 @@ function extractSlot(text) {
   return match ? match[1].replace(/[_. ]/g, '-').toUpperCase() : '';
 }
 
+function isBookingScheduleAnswer(prompt, draft = {}) {
+  const text = fold(prompt);
+  const active = draft.__intent === 'CREATE_BOOKING' || Number(draft.requestedVehicleCount || 0) > 0
+    || Boolean(draft.startDate || draft.reservationItems?.length);
+  const hasTime = /\b\d{1,2}\s*(?:gio|h|:\d{2}|am|pm)\b/.test(text);
+  const question = /\b(?:kiem tra|xem|tra cuu|bao nhieu|may gio|luc nao|khi nao|o dau|chua|khong|where|when|what|how|check|show|list)\b/.test(text);
+  return active && hasTime && !question;
+}
+
+function hasAssistantIntentEvidence(intent, prompt, draft, today, currentTime = '') {
+  const request = parseAssistantRequest({ prompt, draft, today, currentTime });
+  return Boolean(request?.intents.includes(intent));
+}
+
 function extractVehicleChanges(prompt, normalized) {
   const changes = {};
   const type = normalized.match(/\b(xe dien|o to dien|dien)\b/) ? 'electric_car'
@@ -259,7 +280,27 @@ function extractVehicleChanges(prompt, normalized) {
 }
 
 function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) {
-  const raw = String(prompt || '').trim();
+  let raw = String(prompt || '').trim();
+  if (draft.assistantContext?.pendingVoucherSelection
+    && /^(?:su dung|sua dung|dung|ap dung|use|apply)(?:\s+(?:di|luon|nhe|please|it))?[.!?]*$/.test(fold(raw))) {
+    raw = 'dùng mã giảm giá';
+  }
+  const pendingService = draft.assistantContext?.pendingServiceSelection;
+  if (pendingService?.serviceNames?.length) {
+    const reply = fold(raw).replace(/[.!?]+$/g, '').trim();
+    if (/^(?:bo qua|thoi|khong them nua|skip service|cancel service)$/.test(reply)) return {
+      intent: 'BOOK_SERVICE', intents: ['BOOK_SERVICE'], entities: {}, rawText: raw, draft, cancelPendingServiceSelection: true,
+    };
+    const plates = extractLicensePlates(raw.toLowerCase());
+    const plateReply = plates.length === 1 && reply.replace(/\b(?:xe|bien so|car|vehicle|plate)\b/g, '').replace(/[^a-z0-9]/g, '') === compactPlate(plates[0]).toLowerCase();
+    const ordinal = reply.match(/^(?:xe|car|vehicle)\s+(?:(?:thu|number)\s+)?(\d+|nhat|mot|hai|ba|tu|bon|nam)$/);
+    const ordinals = { nhat: 1, mot: 1, hai: 2, ba: 3, tu: 4, bon: 4, nam: 5 };
+    const index = ordinal ? Number(ordinals[ordinal[1]] || ordinal[1]) - 1 : -1;
+    const targetPlate = ordinal ? draft.reservationItems?.[index]?.licensePlate || draft.licensePlates?.[index] : plates[0];
+    const allVehicles = /^(?:ca hai|ca hai xe|ca 2 xe|tat ca|tat ca xe|tat ca cac xe|both|both cars|all cars|all vehicles)$/.test(reply);
+    const ambiguousReply = /^(?:ok|oke|okay|dong y|duoc|yes|xe do|xe o tren|that car|the same car)$/.test(reply);
+    if (plateReply || ordinal || allVehicles || ambiguousReply) raw = `${pendingService.isRemoving ? 'bỏ' : 'thêm'} dịch vụ ${pendingService.serviceNames.join(', ')}${ambiguousReply ? '' : ` cho xe ${allVehicles ? 'tất cả xe' : targetPlate || raw}`}`;
+  }
   const text = fold(raw);
   if (!raw) return null;
   let intents = detectIntents(text);
@@ -271,6 +312,10 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
       && (Number(draft.requestedVehicleCount || 0) > 0
       || Boolean(draft.startDate || draft.endDate || draft.startTime || draft.endTime)
       || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > 0)));
+  if (isBookingScheduleAnswer(raw, draft)) {
+    intents = intents.filter((intent) => !['CHECK_VEHICLE_ENTRY_TIME', 'CHECK_VEHICLE_EXIT_TIME',
+      'CHECK_VEHICLE_DURATION', 'CHECK_BOOKING_STATUS', 'CHECK_UPCOMING_BOOKING'].includes(intent));
+  }
   if (!intents.length && hasActiveBookingDraft
     && /^(?:them|chon|bo|xoa|huy|add|select|remove|delete|cancel)\s+(?!(?:xe|bien|ngay|gio|tang|o\b|slot\b|booking\b|dat cho\b)).+/i.test(text)) {
     // Service names are administrator-defined. Resolve the name against the
@@ -280,8 +325,9 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   const context = draft.assistantContext && typeof draft.assistantContext === 'object'
     ? draft.assistantContext : {};
   const suppliedPlates = extractLicensePlates(text);
-  const plateOnly = suppliedPlates.length === 1 && compactPlate(raw) === compactPlate(suppliedPlates[0]);
-  const lookupIntents = ['CHECK_BOOKING_STATUS', 'CHECK_VEHICLE_PARKING_STATUS'];
+  const plateOnly = suppliedPlates.length === 1 && compactPlate(text.replace(/\b(?:xe|bien so|car|vehicle|license plate|plate number|plate)\b/g, '')) === compactPlate(suppliedPlates[0]);
+  const lookupIntents = ['CHECK_BOOKING_STATUS', 'CHECK_VEHICLE_PARKING_STATUS', 'CHECK_VEHICLE_ENTRY_TIME',
+    'CHECK_VEHICLE_EXIT_TIME', 'CHECK_VEHICLE_LOCATION', 'CHECK_VEHICLE_DURATION', 'CHECK_PARKING_FEE'];
   if (!intents.length && plateOnly && lookupIntents.includes(context.pendingLookupIntent)) {
     intents = [context.pendingLookupIntent];
   }
@@ -297,7 +343,8 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   const editsBookingItem = Array.isArray(bookingEntities.reservationItems)
     || bookingInterpretation?.pendingReservationEditField !== undefined
     || bookingInterpretation?.pendingReservationEditIndex !== undefined;
-  const explicitlyEditsVehicleProfile = Object.keys(vehicleChanges).length > 0;
+  const explicitlyEditsVehicleProfile = Object.keys(vehicleChanges).length > 0
+    || /\b(?:tai khoan|ho so|dang ky|register|account|vehicle profile)\b/.test(text);
 
   // "Đổi xe 44B11122 thành từ 8 giờ đến 9 giờ" is an edit to the
   // in-progress booking, not a request to mutate the registered vehicle.
@@ -307,7 +354,7 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
     intents = intents.filter((intent) => intent !== 'UPDATE_VEHICLE');
     if (!intents.length) return null;
   }
-  if (hasActiveBookingDraft && bookingInterpretation
+  if (hasActiveBookingDraft && !explicitlyEditsVehicleProfile && bookingInterpretation
     && (bookingEntities.licensePlate || bookingEntities.requestedVehicleCount)) {
     const bookingVehicleIntents = bookingInterpretation.replaceVehicle || bookingInterpretation.clearVehicle
       ? ['ADD_VEHICLE', 'UPDATE_VEHICLE', 'REMOVE_VEHICLE']
@@ -323,9 +370,9 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   const draftPlates = [...new Set([draft.licensePlate, ...(draft.licensePlates || []),
     ...(Array.isArray(draft.reservationItems) ? draft.reservationItems.map((item) => item.licensePlate) : [])].map(compactPlate).filter(Boolean))];
   const contextualBookingPlate = intents.includes('CHECK_BOOKING_STATUS')
-    ? context.lastBookingConflict?.licensePlate || (draftPlates.length === 1 ? draftPlates[0] : '') : '';
-  const licensePlate = compactPlate(directPlates[0] || context.licensePlate || contextualBookingPlate || bookingEntities.licensePlate);
-  const changedPlate = Boolean(directPlates[0] && context.licensePlate && compactPlate(directPlates[0]) !== compactPlate(context.licensePlate));
+    ? context.lastBookingConflict?.licensePlate || context.licensePlate || (draftPlates.length === 1 ? draftPlates[0] : '') : '';
+  const licensePlate = compactPlate(suppliedPlates[0] || contextualBookingPlate || context.licensePlate || bookingEntities.licensePlate);
+  const changedPlate = Boolean(suppliedPlates[0] && context.licensePlate && compactPlate(suppliedPlates[0]) !== compactPlate(context.licensePlate));
   const zone = raw.match(/\b(?:zone|khu)\s*([a-z0-9-]{1,12})\b/i)?.[1]?.toUpperCase() || '';
   const floorName = bookingEntities.floorName || raw.match(/\b(?:tầng|tang|floor)\s*([a-z0-9-]{1,12})\b/i)?.[1] || '';
   const serviceName = raw.match(/\b(?:dịch vụ|dich vu|service)\s+([^,.;:?]{2,80})/i)?.[1]?.trim()
@@ -398,7 +445,7 @@ function resolvePlate(requested, data) {
 function choosePlateMessage(data) {
   const plates = accessiblePlates(data);
   if (!plates.length) return 'Tài khoản chưa có xe hoặc booking nào để kiểm tra.';
-  return `Bạn muốn kiểm tra xe nào? ${plates.join(', ')}.`;
+  return 'Bạn muốn kiểm tra xe nào? Vui lòng nói hoặc nhập biển số xe cần tra cứu.';
 }
 
 async function findOwnedSession(userId, plate, data, activeOnly = false) {
@@ -437,7 +484,7 @@ async function handleVehicleSessionIntent(intent, parsed, userId, now) {
   if (parsed.entities.licensePlate && !plate) {
     return { message: `Xe ${parsed.entities.licensePlate} không thuộc tài khoản của bạn.`, context: {} };
   }
-  if (!plate) return { message: choosePlateMessage(data), context: {} };
+  if (!plate) return { message: choosePlateMessage(data), context: { pendingLookupIntent: intent } };
   const session = await findOwnedSession(userId, plate, data, false);
   if (!session) return { message: `Chưa có lượt đỗ nào của xe ${plate}.`, context: { licensePlate: plate } };
   const context = sessionContext(session, plate);
@@ -680,6 +727,10 @@ async function handleVehicles(intent, parsed, userId) {
 }
 
 async function handleServices(intent, parsed) {
+  if (parsed.cancelPendingServiceSelection) return {
+    message: 'Đã bỏ qua yêu cầu dịch vụ đang chờ. Mình vẫn giữ các xe, ngày giờ và dịch vụ đã chọn trước đó.',
+    context: { pendingServiceSelection: null }, transition: { intent: 'CREATE_BOOKING', draftPatch: {} },
+  };
   const services = await Service.find({ isActive: true }).sort({ name: 1 }).lean();
   if (!services.length) return { message: 'Hiện chưa có dịch vụ đang hoạt động.', context: {} };
   if (intent === 'CHECK_SERVICES') {
@@ -749,13 +800,18 @@ async function handleServices(intent, parsed) {
   const selectedIds = selected.map((item) => idOf(item._id));
   const selectedNames = selected.map((item) => item.name);
   const selectedLabel = selected.map((item) => `${item.name} (${money(item.price)})`).join(', ');
-  const reservationItems = Array.isArray(priorDraft.reservationItems) ? priorDraft.reservationItems : [];
-  const directlyNamedPlate = extractLicensePlates(parsed.rawText).map(compactPlate).find(Boolean) || '';
+  const reservationItems = priorDraft.reservationItems?.length ? priorDraft.reservationItems
+    : (bookingPatch.licensePlates?.length > 1 ? bookingPatch.licensePlates.map((licensePlate) => ({
+      ...bookingPatch, licensePlate, serviceIds: [...existingServiceIds], serviceNames: [...existingServiceNames],
+    })) : []);
+  if (reservationItems.length > 1) bookingPatch.reservationItems = reservationItems;
+  const directlyNamedPlate = extractLicensePlates(String(parsed.rawText).toLowerCase()).map(compactPlate).find(Boolean) || '';
+  const allVehicles = /\b(?:tat ca(?: cac)? xe|ca hai xe|ca 2 xe|both cars|all cars|all vehicles)\b/.test(fold(parsed.rawText));
 
-  if (reservationItems.length > 1 && !directlyNamedPlate) {
+  if (reservationItems.length > 1 && !directlyNamedPlate && !allVehicles) {
     return {
       message: `Booking có nhiều xe. Bạn muốn ${isRemoving ? 'bỏ' : 'thêm'} dịch vụ ${selectedNames.join(', ')} cho xe nào? ${reservationItems.map((item) => item.licensePlate).filter(Boolean).join(', ')}.`,
-      context: {},
+      context: { pendingServiceSelection: { serviceNames: selectedNames, isRemoving } },
       transition: {
         intent: 'CREATE_BOOKING',
         draftPatch: { ...bookingPatch, serviceIds: existingServiceIds, serviceNames: existingServiceNames },
@@ -763,17 +819,17 @@ async function handleServices(intent, parsed) {
     };
   }
 
-  if (reservationItems.length > 1 && directlyNamedPlate) {
-    const hasTarget = reservationItems.some((item) => compactPlate(item.licensePlate) === directlyNamedPlate);
+  if (reservationItems.length > 1 && (directlyNamedPlate || allVehicles)) {
+    const hasTarget = allVehicles || reservationItems.some((item) => compactPlate(item.licensePlate) === directlyNamedPlate);
     if (!hasTarget) return {
       message: `Biển số ${directlyNamedPlate} không nằm trong booking đang tạo. Các xe hiện có: ${reservationItems.map((item) => item.licensePlate).filter(Boolean).join(', ')}.`,
-      context: {},
-      transition: { intent: 'CREATE_BOOKING', draftPatch: bookingPatch },
+      context: { pendingServiceSelection: { serviceNames: selectedNames, isRemoving } },
+      transition: { intent: 'CREATE_BOOKING', draftPatch: priorDraft },
     };
     const nextReservationItems = reservationItems.map((item) => {
       const baseIds = Array.isArray(item.serviceIds) ? item.serviceIds.map(String) : existingServiceIds.map(String);
       const baseNames = Array.isArray(item.serviceNames) ? item.serviceNames : existingServiceNames;
-      if (compactPlate(item.licensePlate) !== directlyNamedPlate) {
+      if (!allVehicles && compactPlate(item.licensePlate) !== directlyNamedPlate) {
         return { ...item, serviceIds: baseIds, serviceNames: baseNames };
       }
       return {
@@ -787,8 +843,8 @@ async function handleServices(intent, parsed) {
       };
     });
     return {
-      message: `Đã ${isRemoving ? 'bỏ' : 'thêm'} dịch vụ ${selectedLabel} ${isRemoving ? 'khỏi' : 'cho'} xe ${directlyNamedPlate}.`,
-      context: {},
+      message: `Đã ${isRemoving ? 'bỏ' : 'thêm'} dịch vụ ${selectedLabel} ${isRemoving ? 'khỏi' : 'cho'} ${allVehicles ? 'tất cả xe trong booking' : `xe ${directlyNamedPlate}`}.`,
+      context: { pendingServiceSelection: null },
       transition: {
         intent: 'CREATE_BOOKING',
         draftPatch: {
@@ -835,47 +891,73 @@ const voucherBenefitText = (voucher) => {
   return 'ưu đãi booking';
 };
 
+const voucherTarget = (draft, raw) => {
+  const plates = draft.licensePlates?.length ? draft.licensePlates : draft.licensePlate ? [draft.licensePlate] : [];
+  const requestedCount = Math.max(1, Number(draft.requestedVehicleCount || 0), draft.reservationItems?.length || 0, plates.length);
+  const validCount = Number.isInteger(requestedCount) && requestedCount >= 1 && requestedCount <= 5;
+  const count = validCount ? requestedCount : 1;
+  const ordinal = { nhat: 1, mot: 1, hai: 2, ba: 3, tu: 4, bon: 4, nam: 5 };
+  const match = raw.match(/\b(?:xe|car|vehicle)\s+(?:thu\s+|number\s+)?(\d+|nhat|mot|hai|ba|tu|bon|nam)\b/);
+  const namedPlate = extractLicensePlates(raw)[0];
+  const rows = Array.from({ length: count }, (_, index) => ({
+    startDate: draft.startDate || '', endDate: draft.endDate || draft.startDate || '',
+    startTime: draft.startTime || '', endTime: draft.endTime || '',
+    floorName: draft.floorName || '', zoneName: draft.zoneName || '', slotCode: '',
+    serviceIds: draft.serviceIds || [], serviceNames: draft.serviceNames || [],
+    licensePlate: plates[index] || '', ...(draft.reservationItems?.[index] || {}),
+  }));
+  const index = match ? Number(ordinal[match[1]] || match[1]) - 1
+    : namedPlate ? rows.findIndex((row) => compactPlate(row.licensePlate) === compactPlate(namedPlate)) : 0;
+  return { index, count, rows, explicit: Boolean(match || namedPlate), invalid: !validCount || index < 0 || index >= count };
+};
+
 async function handleVouchers(intent, parsed, userId, now) {
+  const raw = fold(parsed.rawText).replace(/[.!?]+$/g, '').trim();
+  const priorDraft = parsed.draft || {};
+  const target = voucherTarget(priorDraft, raw);
+  if (intent === 'USE_VOUCHER' && target.invalid) return {
+    message: 'Xe được chỉ định chưa nằm trong booking hiện tại. Vui lòng kiểm tra lại số thứ tự hoặc biển số xe trước khi chọn mã giảm giá.', context: {},
+  };
+  if (intent === 'USE_VOUCHER' && /\b(?:bo|xoa|huy|remove|clear|khong dung|khong ap dung|do not use|dont use)\b/.test(raw)) return {
+    message: 'Đã bỏ mã giảm giá khỏi booking đang tạo.', context: {},
+    transition: { intent: 'CREATE_BOOKING', draftPatch: {
+      ...(!target.explicit || target.index === 0 ? { voucherId: '', voucherName: '' } : {}),
+      ...(target.count > 1 || priorDraft.reservationItems?.length ? { reservationItems: target.rows.map((item, index) => !target.explicit || index === target.index
+        ? { ...item, voucherId: '', voucherName: '' } : item) } : {}),
+    } },
+  };
   const vouchers = await UserVoucher.find({
     userId,
     status: 'available',
     bookingId: null,
     expiresAt: { $gt: now },
   }).populate('benefitSnapshot.serviceId', 'name').sort({ expiresAt: 1, createdAt: 1 }).lean();
-  if (!vouchers.length) return { message: 'Bạn hiện không có voucher khả dụng.', context: {} };
-  const lines = vouchers.map((voucher) => `- ${voucher.benefitSnapshot?.name || 'Voucher'}: ${voucherBenefitText(voucher)}, hết hạn ${formatDate(voucher.expiresAt, { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
+  if (!vouchers.length) return { message: 'Bạn hiện không có mã giảm giá khả dụng.', context: {}, voucherOptions: [] };
+  const lines = vouchers.map((voucher) => `- ${voucher.benefitSnapshot?.name || 'Voucher'}: ${voucherBenefitText(voucher)}${Number(voucher.benefitSnapshot?.minimumAmount) > 0 ? `, booking tối thiểu ${money(voucher.benefitSnapshot.minimumAmount)}` : ''}, hết hạn ${formatDate(voucher.expiresAt, { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
   if (intent === 'CHECK_VOUCHERS') {
-    return { message: `Voucher khả dụng của bạn:\n${lines.join('\n')}\nBạn có thể nói “Dùng voucher <tên>” cho booking đang tạo.`, context: {} };
+    return { message: `Mã giảm giá khả dụng của bạn:\n${lines.join('\n')}\nMã chỉ được áp dụng khi booking đáp ứng điều kiện.`, context: { pendingVoucherSelection: true }, voucherOptions: vouchers };
   }
 
-  const removing = /\b(bo|xoa|huy|remove|clear)\b/.test(fold(parsed.rawText));
-  const priorDraft = parsed.draft || {};
-  if (removing) return {
-    message: 'Đã bỏ voucher khỏi booking đang tạo.',
-    context: {},
-    transition: { intent: 'CREATE_BOOKING', draftPatch: { voucherId: '', voucherName: '' } },
-  };
-
-  const raw = fold(parsed.rawText);
-  const matchesByName = vouchers.filter((voucher) => raw.includes(fold(voucher.benefitSnapshot?.name || '')));
-  const selected = matchesByName.length === 1 ? matchesByName[0] : vouchers.length === 1 ? vouchers[0] : null;
+  const matchesByName = vouchers.filter((voucher) => voucher.benefitSnapshot?.name && raw.includes(fold(voucher.benefitSnapshot.name)));
+  const genericSelection = /^(?:(?:toi|minh)\s+)?(?:su dung|dung|ap dung|chon|them|use|apply|select|add)\s+(?:(?:a|my|the)\s+)?(?:voucher|ma giam gia|the giam gia|phieu giam gia|discount|discount code|coupon)(?:\s+(?:di|nhe|nha))?$/.test(raw);
+  const selected = matchesByName.length === 1 ? matchesByName[0] : genericSelection && vouchers.length === 1 ? vouchers[0] : null;
   if (!selected) return {
     message: `Bạn muốn dùng voucher nào?\n${lines.join('\n')}`,
-    context: {},
+    context: { pendingVoucherSelection: true },
   };
-  const vehicleCount = Math.max(
-    Number(priorDraft.requestedVehicleCount || 0),
-    Array.isArray(priorDraft.reservationItems) ? priorDraft.reservationItems.length : 0,
-    Array.isArray(priorDraft.licensePlates) ? priorDraft.licensePlates.length : 0,
-  );
+  if (target.rows.some((row, index) => index !== target.index
+    && idOf(row.voucherId || (index === 0 ? priorDraft.voucherId : '')) === idOf(selected._id))) return {
+    message: 'Mỗi mã giảm giá chỉ dùng cho một lượt đặt xe. Mã này đã được chọn cho xe khác trong booking; vui lòng chọn mã khác.', context: {},
+  };
   return {
-    message: `Đã chọn voucher ${selected.benefitSnapshot?.name || 'ưu đãi'} (${voucherBenefitText(selected)})${vehicleCount > 1 ? ' cho xe đầu tiên; mỗi voucher chỉ dùng cho một booking xe.' : ''}.`,
-    context: {},
+    message: `Đã chọn voucher ${selected.benefitSnapshot?.name || 'ưu đãi'} (${voucherBenefitText(selected)})${target.count > 1 ? ` cho xe ${target.index + 1}; mỗi mã chỉ dùng cho một lượt đặt xe` : ''}.`,
+    context: { pendingVoucherSelection: false },
     transition: {
       intent: 'CREATE_BOOKING',
       draftPatch: {
-        voucherId: idOf(selected._id),
-        voucherName: selected.benefitSnapshot?.name || 'Voucher',
+        ...(target.index === 0 ? { voucherId: idOf(selected._id), voucherName: selected.benefitSnapshot?.name || 'Voucher' } : {}),
+        ...(target.count > 1 || priorDraft.reservationItems?.length ? { reservationItems: target.rows.map((item, index) => index === target.index
+          ? { ...item, voucherId: idOf(selected._id), voucherName: selected.benefitSnapshot?.name || 'Voucher' } : item) } : {}),
       },
     },
   };
@@ -981,6 +1063,7 @@ async function executeAssistantRequest(parsed, userId, now = new Date()) {
   let pendingActionDraft = null;
   let transition = null;
   let showVipModal = false;
+  let voucherOptions;
   for (const intent of parsed.intents.filter((item) => QUERY_INTENTS.has(item))) {
     const result = await executeOne(intent, parsed, userId, now);
     if (result.message && !outputs.includes(result.message)) outputs.push(result.message);
@@ -989,6 +1072,7 @@ async function executeAssistantRequest(parsed, userId, now = new Date()) {
     pendingActionDraft = result.pendingActionDraft || pendingActionDraft;
     transition = result.transition || transition;
     showVipModal = result.showVipModal === true || showVipModal;
+    if (result.voucherOptions) voucherOptions = result.voucherOptions;
   }
   return {
     message: outputs.join('\n'),
@@ -997,10 +1081,12 @@ async function executeAssistantRequest(parsed, userId, now = new Date()) {
     pendingActionDraft,
     transition,
     showVipModal,
+    ...(voucherOptions ? { voucherOptions } : {}),
   };
 }
 
 module.exports = {
+  hasAssistantIntentEvidence,
   QUERY_INTENTS,
   detectIntents,
   executeAssistantRequest,

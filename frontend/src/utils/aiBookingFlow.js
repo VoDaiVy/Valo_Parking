@@ -89,6 +89,13 @@ export function getMissingBookingFields(draft, vehicles = [], now = Date.now()) 
   const invalidPlates = suppliedPlates.filter((plate) => !isValidLicensePlate(plate));
   const requestedCount = Number(draft.requestedVehicleCount || 0);
   const reservationItems = draftReservationItems(draft);
+  if (requestedCount > MAX_AI_BOOKING_ITEMS || suppliedPlates.length > MAX_AI_BOOKING_ITEMS
+    || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > MAX_AI_BOOKING_ITEMS)) {
+    return [`Mỗi lần đặt tối đa ${MAX_AI_BOOKING_ITEMS} xe. Vui lòng giảm số xe rồi thử lại.`];
+  }
+  if (requestedCount > 0 && (plates.length > requestedCount || reservationItems.length > requestedCount)) {
+    return [`Bạn yêu cầu ${requestedCount} xe nhưng đã cung cấp nhiều hơn số xe đó. Vui lòng xác nhận lại số xe và danh sách biển số; mình chưa bỏ xe nào khỏi yêu cầu.`];
+  }
   const approved = vehicles.filter((vehicle) => vehicle.status === 'approved'
     && (!draft.vehicleType || vehicle.vehicleType === draft.vehicleType));
   const today = vietnamDate(now);
@@ -341,6 +348,10 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
   if (requestSpecs.length > MAX_AI_BOOKING_ITEMS) {
     throw new Error(`Mỗi lần xác nhận tối đa ${MAX_AI_BOOKING_ITEMS} chỗ. Vui lòng giảm số xe rồi thử lại.`);
   }
+  const voucherIds = requestSpecs.map((request, index) => String(request.voucherId || (index === 0 ? draft.voucherId || '' : ''))).filter(Boolean);
+  if (new Set(voucherIds).size !== voucherIds.length) return {
+    conflicts: ['Mỗi mã giảm giá chỉ dùng cho một lượt đặt xe. Vui lòng chọn mã khác nhau cho từng xe hoặc bỏ mã bị trùng.'],
+  };
   const days = [...new Set(requestSpecs.map((request) => request.date))].sort();
   for (const request of requestSpecs) {
     if (!validDate(request.date) || !validDate(request.endDate)

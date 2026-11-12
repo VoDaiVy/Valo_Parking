@@ -13,7 +13,7 @@
     "audit:membership-entitlements": "node src/scripts/auditMembershipEntitlements.js",
     "audit:refunds": "node src/scripts/auditRefundPolicyRollout.js",
     "test": "node --test src/tests/*.unit.test.js src/tests/refund*.test.js src/tests/statisticsService.test.js",
-    "test:ai-booking": "node --test src/tests/assistantLanguageEdges.cjs ../frontend/src/utils/assistantLanguageEdges.mjs ../frontend/src/utils/aiBookingRouting.unit.test.js",
+    "test:ai-booking": "node --test ../frontend/src/utils/assistantVoiceRecording.mjs src/tests/aiBookingSpeech.unit.test.js src/tests/assistantConversationContext.cjs ../frontend/src/utils/assistantConversationContext.mjs ../frontend/src/utils/assistantSplitLayout.unit.test.mjs src/tests/assistantBookingFollowups.cjs src/tests/assistantAppendVehicles.cjs ../frontend/src/utils/assistantBookingFollowups.mjs ../frontend/src/utils/assistantSpeechPlayback.mjs src/tests/assistantLanguageEdges.cjs ../frontend/src/utils/assistantLanguageEdges.mjs ../frontend/src/utils/aiBookingRouting.unit.test.js",
     "test:notification": "node src/tests/notificationService.test.js",
     "telegram:webhook": "node src/scripts/telegramWebhook.js",
     "test:telegram": "node --test --test-concurrency=1 src/tests/telegram.unit.test.js src/tests/telegram.integration.test.js src/tests/telegramPhoneReceipts.integration.test.js src/tests/telegramMembershipReminders.integration.test.js src/tests/telegramBookingReminders.integration.test.js",

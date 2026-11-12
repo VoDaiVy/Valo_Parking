@@ -1,3 +1,4 @@
+import { bookingClarification } from '../../utils/aiBookingClarification';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Bot, CalendarDays, CheckCircle2, Loader2, MapPin, Mic, MicOff, RefreshCw, Send, Sparkles, Volume2, VolumeX } from 'lucide-react';
@@ -5,7 +6,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import ParkingMapViewer from '../ParkingMapViewer';
 import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
 import AiChatHistorySidebar from './AiChatHistorySidebar';
+import ResizableAssistantShell from './ResizableAssistantShell';
 import './AiBookingAssistant.css';
+import { bookingSlotSuggestions, bookingContextSummary, bookingHistoryBeforeTurn, isInformationalAssistantTurn } from '../../utils/aiBookingContext';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import {
   completeAiBookingSession,
@@ -26,18 +29,19 @@ import { createTopUpUrl, getTopUpStatus, getWalletInfo } from '../../services/wa
 import { getMyParkingHistory } from '../../services/sessionService';
 import { getLiveMapData } from '../../services/parkingFloorService';
 import { getServices } from '../../services/extraServiceApi';
+import { getMyVouchers } from '../../services/loyaltyService';
+import { findAiBookingVoucherOffer, aiVoucherOfferMessage, aiVoucherEligibilityMessage, applyAiVoucherToDraft, routeAiVoucherOfferReply, isAiVoucherOfferCurrent, clarifyAiVoucherOffer } from '../../utils/aiBookingVouchers';
 import { addVehicle, deleteVehicle, updateVehicle } from '../../services/vehicleService';
 import { checkAiAvailability, confirmAiBooking, confirmAiExistingAction, findAiActionBookings, isVipBookingRestriction, prepareAiBooking, prepareAiExistingAction } from '../../utils/aiBookingFlow';
 import {
   createAiBookingSpeaker,
-  createConciseAiBookingSpeech,
 } from '../../utils/aiBookingVoice';
 import { createAutoLanguageVoiceSession } from '../../utils/aiBookingAutoVoice';
 import { createBookingTurnQueue, mayConfirmQueuedBooking } from '../../utils/aiBookingTurnQueue';
 import { applyBookingDraftField, applyMapSlotSelectionToDraft, applySingleVehicleSelectionToDraft, applySlotSuggestionToDraft, bookingPreviewSummary, bookingSuccessSummary, isUnchangedBookingContinuation, isUnclearAiFailure, resolveContextualVehicleReply, routeAssistantActionReply, routeBookingReply, vipPlatePrompt, isVipDecline } from '../../utils/aiBookingConversation';
 import VipPackageModal from './VipPackageModal';
 import { localizeAiBookingMessage, needsBookingReplyTranslation } from '../../utils/aiBookingMessages';
-import { detectRequestedConversationLanguage, detectBookingInputLanguage, isLanguageOnlyRequest } from '../../utils/aiBookingLanguage';
+import { detectRequestedConversationLanguage, resolveBookingTurnLanguage, isLanguageOnlyRequest } from '../../utils/aiBookingLanguage';
 import { clearPendingBookingPayment, readPendingBookingPayment, writePendingBookingPayment } from '../../utils/pendingBookingPayment';
 import {
   BOOKING_TIME_STEP_MINUTES,
@@ -57,14 +61,13 @@ import {
 } from '../../utils/aiBookingSession';
 
 const gateway = {
+  getMyVouchers,
   cancelBooking, createBookingHold, createBulkBooking, extendBooking: modifyAiBookingTime,
   getAvailableBookingSlots, getBookingCancellationQuote, getMyBookings,
   getWalletInfo, quoteBookingTimeModification, quoteBulkBooking, releaseBookingHold,
 };
 const money = (amount) => `${Number(amount || 0).toLocaleString('en-US')} VND`;
-const unclearRequestReply = (language) => language === 'en'
-  ? 'I could not understand your request. Please say or enter it again more clearly so I can help.'
-  : 'Mình chưa hiểu yêu cầu của bạn. Vui lòng nói hoặc nhập lại rõ hơn để mình hỗ trợ.';
+const unclearRequestReply = (language, prompt, draft) => bookingClarification(prompt, draft, language);
 const durationText = (minutes) => {
   const value = Number(minutes || 0);
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -74,7 +77,6 @@ const durationText = (minutes) => {
   return [days ? `${days} day${days === 1 ? '' : 's'}` : '', hours ? `${hours} hour${hours === 1 ? '' : 's'}` : '', rest ? `${rest} minute${rest === 1 ? '' : 's'}` : ''].filter(Boolean).join(' ');
 };
 const dayText = (day) => day?.split('-').reverse().join('/') || '';
-const compactLicensePlate = (value) => String(value || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 const locationLabel = (value) => String(value || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
   .replace(/\b(?:floor|tang)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -118,6 +120,7 @@ const labelBooking = (booking) => {
   return `${dayText(time.date)} · ${time.time} · ${booking.licensePlate} · ${booking.parkingSlot || booking.slotCode}`;
 };
 const vehicleSelectionPrompt = (draft, vehicles, fallback, language = 'vi') => {
+  if (draft.pendingLicensePlate || draft.pendingReservationEditField === 'biển số') return fallback;
   const count = Number(draft.requestedVehicleCount || 0);
   const plates = [...new Set([
     ...(Array.isArray(draft.licensePlates) ? draft.licensePlates : []),
@@ -145,12 +148,6 @@ const englishPhaseLabels = {
   WAITING_PAYMENT: 'WAITING FOR PAYMENT', BOOKING: 'Creating booking...',
   SUCCESS: 'Booking completed', ERROR: 'Something went wrong. Please try again',
 };
-const vietnamesePhaseLabels = {
-  IDLE: 'Sẵn sàng', LISTENING: 'Đang nghe...', PROCESSING: 'Đang xử lý...',
-  WAITING_CONFIRMATION: 'CHỜ XÁC NHẬN', CONFIRMING: 'Đang kiểm tra lại...',
-  WAITING_PAYMENT: 'CHỜ THANH TOÁN', BOOKING: 'Đang tạo booking...',
-  SUCCESS: 'Đặt chỗ thành công', ERROR: 'Có lỗi xảy ra. Vui lòng thử lại',
-};
 const englishAssistantIntentLabels = {
   CHECK_VEHICLE_PARKING_STATUS: 'Vehicle status', CHECK_VEHICLE_ENTRY_TIME: 'Entry time',
   CHECK_VEHICLE_EXIT_TIME: 'Exit time', CHECK_VEHICLE_LOCATION: 'Vehicle location',
@@ -165,17 +162,13 @@ const englishAssistantIntentLabels = {
 };
 const welcomeMessage = {
   role: 'assistant',
-  text: 'Chào bạn! Mình có thể đặt chỗ hoặc kiểm tra vị trí xe, phí đỗ, booking, ví và chỗ trống.',
-  content: 'Chào bạn! Mình có thể đặt chỗ hoặc kiểm tra vị trí xe, phí đỗ, booking, ví và chỗ trống.',
+  text: 'Hello! I can book a parking space or check your vehicle location, parking fee, bookings, wallet, and availability.',
+  content: 'Hello! I can book a parking space or check your vehicle location, parking fee, bookings, wallet, and availability.',
+  language: 'en',
   speak: false,
   intent: 'UNKNOWN',
   state: 'IDLE',
   createdAt: new Date().toISOString(),
-};
-const englishWelcomeMessage = {
-  ...welcomeMessage,
-  text: 'Hello! I can book a parking space or check your vehicle location, parking fee, bookings, wallet, and availability.',
-  content: 'Hello! I can book a parking space or check your vehicle location, parking fee, bookings, wallet, and availability.',
 };
 const newClientSessionId = () => globalThis.crypto?.randomUUID?.()
   || `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -192,6 +185,7 @@ const isReadyAssistantAction = (action) => Boolean(action && (
 const withoutPendingSlotSuggestion = (value = {}) => {
   const next = { ...value };
   delete next.pendingSlotSuggestion;
+  delete next.pendingSlotSuggestions;
   return next;
 };
 
@@ -205,7 +199,7 @@ export default function AiBookingPanel({
   const [language, setLanguage] = useState(initialLanguage);
   const [draft, setDraft] = useState({ __language: initialLanguage, __languageLocked: false });
   const [intent, setIntent] = useState('UNKNOWN');
-  const [messages, setMessages] = useState([{ ...(initialLanguage === 'vi' ? welcomeMessage : englishWelcomeMessage) }]);
+  const [messages, setMessages] = useState([{ ...welcomeMessage }]);
   const [preview, setPreview] = useState(null);
   const [conflicts, setConflicts] = useState([]);
   const [availability, setAvailability] = useState(null);
@@ -217,6 +211,7 @@ export default function AiBookingPanel({
   const [listening, setListening] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscribing, setVoiceTranscribing] = useState(false);
+  const [voicePreparing, setVoicePreparing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(null);
   const [policyItems, setPolicyItems] = useState([]);
@@ -226,6 +221,7 @@ export default function AiBookingPanel({
   const [phase, setPhase] = useState('IDLE');
   const [speaking, setSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voicePlaybackError, setVoicePlaybackError] = useState('');
   const [hasStarted, setHasStarted] = useState(false);
   const [resumeCandidate, setResumeCandidate] = useState(null);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -270,7 +266,7 @@ export default function AiBookingPanel({
   const confirmationKeyRef = useRef(null);
   const busyRef = useRef(false);
   const conversationRef = useRef(null);
-  const messagesRef = useRef([{ ...(initialLanguage === 'vi' ? welcomeMessage : englishWelcomeMessage) }]);
+  const messagesRef = useRef([{ ...welcomeMessage }]);
   const sessionIdRef = useRef('');
   const clientSessionIdRef = useRef('');
   const hasStartedRef = useRef(false);
@@ -402,11 +398,6 @@ export default function AiBookingPanel({
     }
     voiceSessionRef.current?.setLanguage(next);
     voiceSessionRef.current?.setExpectLicensePlate(expectsLicensePlateInput());
-    if (!hasStartedRef.current && messagesRef.current.length === 1
-      && messagesRef.current[0]?.role === 'assistant') {
-      const welcome = next === 'en' ? englishWelcomeMessage : welcomeMessage;
-      replaceMessages([{ ...welcome, createdAt: new Date().toISOString() }]);
-    }
   };
   const updateDraft = (value) => {
     const next = typeof value === 'function' ? value(draftRef.current) : value;
@@ -422,10 +413,10 @@ export default function AiBookingPanel({
   });
   const updatePreview = (value) => { previewRef.current = value; setPreview(value); };
   const rememberSlotSuggestion = (result) => {
-    const suggestion = result?.suggestions?.[0] || null;
+    const suggestions = result?.suggestions || [];
     updateDraft((current) => {
       const rest = withoutPendingSlotSuggestion(current);
-      return suggestion ? { ...rest, pendingSlotSuggestion: suggestion } : rest;
+      return suggestions.length ? { ...rest, pendingSlotSuggestion: suggestions[0], pendingSlotSuggestions: suggestions } : rest;
     });
   };
   const rememberBookingConflict = (result) => {
@@ -540,10 +531,9 @@ export default function AiBookingPanel({
       return;
     }
     speechPendingRef.current = true;
-    speakerRef.current.speak(
-      createConciseAiBookingSpeech(fullText, replyLanguage),
-      replyLanguage,
-    );
+    voiceSessionRef.current?.pause();
+    setVoicePlaybackError('');
+    speakerRef.current.speak(fullText, replyLanguage);
   };
 
   useEffect(() => {
@@ -557,21 +547,26 @@ export default function AiBookingPanel({
         speakingRef.current = false; speechPendingRef.current = pendingRepliesRef.current > 0;
         setSpeaking(false); resumeVoiceIfReady();
       },
-      onError: () => {
+      onError: (_error, replyLanguage) => {
         speakingRef.current = false; speechPendingRef.current = pendingRepliesRef.current > 0;
-        setSpeaking(false); resumeVoiceIfReady();
+        setSpeaking(false);
+        setVoicePlaybackError(replyLanguage === 'vi'
+          ? 'Chưa phát được giọng đọc. Vui lòng kiểm tra âm thanh của trình duyệt.'
+          : 'Speech playback failed. Please check your browser audio settings.');
+        resumeVoiceIfReady();
       },
     });
     voiceSessionRef.current = createAutoLanguageVoiceSession(window, {
       transcribe: transcribeAiBookingVoice,
+      onPreparingChange: setVoicePreparing,
       onTranscribingChange: setVoiceTranscribing,
       onTranscript: (text, recognizedLanguage) => {
         voiceHandlersRef.current.submitMessage?.(text, recognizedLanguage);
       },
-      onClarification: () => voiceHandlersRef.current.clarifySpeech?.(),
+      onClarification: (recognizedLanguage) => voiceHandlersRef.current.clarifySpeech?.(recognizedLanguage),
       onError: (message) => {
         setVoiceActive(voiceSessionRef.current?.isActive() || false);
-        voiceHandlersRef.current.reportError?.(message);
+        voiceHandlersRef.current.reportError?.(message, { inline: false });
       },
       onListeningChange: (value) => {
         setListening(value);
@@ -727,15 +722,57 @@ export default function AiBookingPanel({
     replyQueueRef.current = replyQueueRef.current.catch(() => null).then(task);
     return replyQueueRef.current;
   };
-  const reportError = (message) => {
+  const reportError = (message, { inline = true } = {}) => {
     const text = localizeAiBookingMessage(message || 'Đã xảy ra lỗi. Vui lòng thử lại.', languageRef.current);
     const epoch = conversationEpochRef.current;
-    setError(needsBookingReplyTranslation(text, languageRef.current)
+    setError(!inline ? '' : needsBookingReplyTranslation(text, languageRef.current)
       ? (languageRef.current === 'vi' ? 'Không thể hoàn tất yêu cầu. Vui lòng thử lại.' : 'Unable to complete this request. Please try again.') : text);
     setConversationPhase('ERROR');
-    say(text).then((translated) => { if (epoch === conversationEpochRef.current) setError(translated); });
+    say(text).then((translated) => { if (inline && epoch === conversationEpochRef.current) setError(translated); });
+  };
+  const presentBookingPreview = async (checked, currentDraft, { prefix = '', services, vouchers, offer = true, includeSummary = true } = {}) => {
+    const request = requestRef.current;
+    const epoch = conversationEpochRef.current;
+    if (pendingAssistantActionRef.current?.type === 'APPLY_VOUCHER') {
+      pendingAssistantActionRef.current = null; setPendingAssistantAction(null); setAssistantInfo(null);
+      updateDraft((current) => ({ ...current, assistantContext: { ...(current.assistantContext || {}), pendingAction: null } }));
+    }
+    updatePreview(checked);
+    confirmationKeyRef.current = crypto.randomUUID();
+    confirmationPendingRef.current = true;
+    setConversationPhase('WAITING_CONFIRMATION');
+    let suggestion = null;
+    let eligibilityMessage = '';
+    if (offer) {
+      try {
+        if (!vouchers) {
+          const inventory = await gateway.getMyVouchers('available');
+          if (inventory.ok && Array.isArray(inventory.data?.data)) vouchers = inventory.data.data;
+        }
+        if (vouchers) {
+          suggestion = await findAiBookingVoucherOffer(checked, currentDraft, gateway, { vouchers });
+          if (!suggestion && !currentDraft.voucherId && !currentDraft.reservationItems?.some((item) => item.voucherId)) {
+            eligibilityMessage = aiVoucherEligibilityMessage(checked, vouchers, languageRef.current);
+          }
+        }
+      }
+      catch { /* Voucher lookup must not block an otherwise valid booking. */ }
+    }
+    if (request !== requestRef.current || epoch !== conversationEpochRef.current || previewRef.current !== checked) return;
+    if (suggestion) {
+      const action = { ...suggestion, previewKey: confirmationKeyRef.current };
+      pendingAssistantActionRef.current = action; setPendingAssistantAction(action);
+      updateDraft((current) => ({ ...current, assistantContext: { ...(current.assistantContext || {}), pendingAction: action } }));
+      setAssistantInfo({ intent: 'CHECK_VOUCHERS', intents: ['CHECK_VOUCHERS'], message: aiVoucherOfferMessage(action, languageRef.current, checked.items.length) });
+    }
+    const summary = includeSummary ? bookingPreviewSummary(checked, currentDraft, languageRef.current, { askConfirmation: !suggestion }) : '';
+    await say([prefix, summary, suggestion ? aiVoucherOfferMessage(suggestion, languageRef.current, checked.items.length) : eligibilityMessage].filter(Boolean).join('\n'), { services });
   };
   const cancelPreview = () => {
+    if (pendingAssistantActionRef.current?.type === 'APPLY_VOUCHER') {
+      pendingAssistantActionRef.current = null; setPendingAssistantAction(null); setAssistantInfo(null);
+      updateDraft((current) => ({ ...current, assistantContext: { ...(current.assistantContext || {}), pendingAction: null } }));
+    }
     updatePreview(null); setConflicts([]); setError('');
     updateDraft((current) => withoutPendingSlotSuggestion(current));
     confirmationPendingRef.current = false;
@@ -759,6 +796,7 @@ export default function AiBookingPanel({
     confirmationKeyRef.current = null;
   };
   const resetConversation = ({ keepMessages = false, keepLocal = false } = {}) => {
+    setVoicePlaybackError('');
     if (!keepMessages) { turnQueueRef.current?.clear(); submittedLanguageRef.current = null; }
     conversationEpochRef.current++; pendingRepliesRef.current = 0; setReplyPending(false);
     requestRef.current += 1;
@@ -769,7 +807,7 @@ export default function AiBookingPanel({
     setIntent('UNKNOWN');
     updatePreview(null);
     setConversationPhase('IDLE');
-    if (!keepMessages) replaceMessages([{ ...(languageRef.current === 'vi' ? welcomeMessage : englishWelcomeMessage), createdAt: new Date().toISOString() }]);
+    if (!keepMessages) replaceMessages([{ ...welcomeMessage, createdAt: new Date().toISOString() }]);
     sessionIdRef.current = '';
     clientSessionIdRef.current = '';
     hasStartedRef.current = false;
@@ -892,7 +930,7 @@ export default function AiBookingPanel({
     const restoredLanguage = restored.bookingDraft?.__language === 'vi' ? 'vi' : 'en';
     const restoredMessages = restored.messages?.length
       ? restored.messages
-      : [{ ...(restoredLanguage === 'en' ? englishWelcomeMessage : welcomeMessage), createdAt: new Date().toISOString() }];
+      : [{ ...welcomeMessage, createdAt: new Date().toISOString() }];
     replaceMessages(restoredMessages);
     updateDraft(restored.bookingDraft || {});
     updateLanguage(restoredLanguage);
@@ -934,6 +972,7 @@ export default function AiBookingPanel({
         confirmationKeyRef.current = restored.bookingDraft?.__confirmationKey || newClientSessionId();
         confirmationPendingRef.current = true;
         setConversationPhase('WAITING_CONFIRMATION');
+        if (restoredAction?.type === 'APPLY_VOUCHER') await presentBookingPreview(checked, restored.bookingDraft);
       } else {
         rememberSlotSuggestion(checked);
         setConflicts(checked.conflicts || []);
@@ -977,15 +1016,22 @@ export default function AiBookingPanel({
   };
 
   const cancelAssistantAction = () => {
+    const voucherAction = pendingAssistantActionRef.current?.type === 'APPLY_VOUCHER' ? pendingAssistantActionRef.current : null;
     pendingAssistantActionRef.current = null;
     setPendingAssistantAction(null);
-    confirmationPendingRef.current = false;
+    confirmationPendingRef.current = Boolean(voucherAction && previewRef.current);
     updateDraft((current) => ({
       ...current,
-      assistantContext: { ...(current.assistantContext || {}), pendingAction: null },
+      assistantContext: { ...(current.assistantContext || {}), pendingAction: null,
+        ...(voucherAction ? { declinedVoucherIds: [...new Set([...(current.assistantContext?.declinedVoucherIds || []), voucherAction.voucherId])] } : {}),
+      },
     }));
-    setConversationPhase('IDLE');
-    say('Đã hủy thao tác. Chưa có dữ liệu nào được thay đổi.');
+    setConversationPhase(voucherAction && previewRef.current ? 'WAITING_CONFIRMATION' : 'IDLE');
+    if (voucherAction) {
+      setAssistantInfo(null);
+      say((languageRef.current === 'en' ? 'Okay, I will keep this booking without applying the voucher. ' : 'Được, mình giữ booking và không áp dụng mã giảm giá. ')
+        + bookingPreviewSummary(previewRef.current, draftRef.current, languageRef.current));
+    } else say('Đã hủy thao tác. Chưa có dữ liệu nào được thay đổi.');
   };
 
   const vehicleActionError = (response, fallback) => {
@@ -1003,6 +1049,33 @@ export default function AiBookingPanel({
   const confirmAssistantAction = async () => {
     const action = pendingAssistantActionRef.current;
     if (!action || busyRef.current) return;
+    if (action.type === 'APPLY_VOUCHER') {
+      pendingAssistantActionRef.current = null; setPendingAssistantAction(null); setAssistantInfo(null);
+      updateDraft((current) => ({ ...current, assistantContext: { ...(current.assistantContext || {}), pendingAction: null } }));
+      if (!isAiVoucherOfferCurrent(action, previewRef.current, confirmationKeyRef.current)) {
+        await say(languageRef.current === 'en' ? 'Please check the latest booking price before selecting a voucher.' : 'Vui lòng kiểm tra lại giá booking mới nhất trước khi chọn mã giảm giá.');
+        return;
+      }
+      const withoutVoucher = draftRef.current;
+      const withVoucher = applyAiVoucherToDraft(withoutVoucher, action);
+      // Revalidate the actual quote. No hold, payment or voucher consumption.
+      busyRef.current = true; setBusy(true);
+      try {
+        const checked = await prepareAiBooking(withVoucher, gateway, vehiclesRef.current);
+        if (!checked.items) {
+          await say(languageRef.current === 'en' ? 'This voucher can no longer be applied. Please check the booking again.' : 'Mã giảm giá hiện không thể áp dụng. Vui lòng kiểm tra lại booking.');
+          return;
+        }
+        updateDraft(withVoucher);
+        await presentBookingPreview(checked, withVoucher, { offer: false, prefix: languageRef.current === 'en'
+          ? `Selected voucher ${action.voucherName}. The booking has not been created.`
+          : `Đã chọn mã ${action.voucherName}. Chưa tạo booking.` });
+      } catch (caught) {
+        updateDraft(withoutVoucher);
+        reportError(caught.message);
+      } finally { busyRef.current = false; setBusy(false); resumeVoiceIfReady(); }
+      return;
+    }
     busyRef.current = true;
     setBusy(true);
     setConversationPhase('CONFIRMING');
@@ -1100,9 +1173,7 @@ export default function AiBookingPanel({
   const submitMessage = (spokenText, spokenLanguage) => {
     const displayedText = String(spokenText ?? prompt).trim();
     if (!displayedText || sessionLoading || historyReadOnly || navigatingRef.current) return;
-    const detected = detectBookingInputLanguage(displayedText, submittedLanguageRef.current || languageRef.current);
-    const requestedLanguage = detectRequestedConversationLanguage(displayedText);
-    const turnLanguage = requestedLanguage || (detected.confidence > 0.55 && ['en', 'vi'].includes(spokenLanguage) ? spokenLanguage : detected.language);
+    const turnLanguage = resolveBookingTurnLanguage(displayedText, submittedLanguageRef.current || languageRef.current, spokenLanguage);
     submittedLanguageRef.current = turnLanguage;
     const id = newClientSessionId();
     appendMessage({ id, role: 'user', text: displayedText, language: turnLanguage });
@@ -1133,13 +1204,16 @@ export default function AiBookingPanel({
     handlingInputRef.current = true;
     voiceSessionRef.current?.pause();
     speakerRef.current?.cancel();
-    const route = pendingAssistantActionRef.current
+    const contextRoute = routeBookingReply(confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : phaseRef.current, text, {
+      hasSlotSuggestion: bookingSlotSuggestions(draftRef.current).length > 0,
+      hasPendingServiceSelection: Boolean(draftRef.current.assistantContext?.pendingServiceSelection),
+      hasBookingContext: Boolean(draftRef.current.startDate || draftRef.current.licensePlate || draftRef.current.licensePlates?.length || draftRef.current.reservationItems?.length),
+    });
+    const voucherReply = pendingAssistantActionRef.current?.type === 'APPLY_VOUCHER' ? routeAiVoucherOfferReply(text) : null;
+    const route = contextRoute === 'recall_context' ? contextRoute : voucherReply === 'accept' ? 'confirm' : voucherReply === 'decline' ? 'cancel'
+      : voucherReply === 'other' && routeAssistantActionReply(text) === 'confirm' ? 'clarify_voucher' : pendingAssistantActionRef.current
       ? routeAssistantActionReply(text)
-      : routeBookingReply(
-        confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : phaseRef.current,
-        text,
-        { hasSlotSuggestion: Boolean(draftRef.current.pendingSlotSuggestion) },
-      );
+      : contextRoute;
     if (route !== 'interpret') {
       if (phaseRef.current === 'LISTENING') setConversationPhase(confirmationPendingRef.current ? 'WAITING_CONFIRMATION' : 'IDLE');
       if (route === 'confirm') {
@@ -1153,13 +1227,24 @@ export default function AiBookingPanel({
         else if (target && ['CANCEL_BOOKING', 'MODIFY_BOOKING'].includes(intentRef.current)) await confirmExistingAction();
         else await confirmCreation();
       }
+      else if (route === 'clarify_voucher') {
+        say(clarifyAiVoucherOffer(languageRef.current));
+      }
+      else if (route === 'recall_context') {
+        handlingInputRef.current = false;
+        await say(bookingContextSummary(draftRef.current, languageRef.current));
+      }
+      else if (route === 'continue_context') {
+        handlingInputRef.current = false;
+        await refreshPreview();
+      }
       else if (route === 'accept_suggestion') {
-        const suggestion = draftRef.current.pendingSlotSuggestion;
-        updateDraft((current) => applySlotSuggestionToDraft(current, suggestion));
+        const suggestions = bookingSlotSuggestions(draftRef.current);
+        updateDraft((current) => applySlotSuggestionToDraft(current, suggestions));
         handlingInputRef.current = false;
         say(languageRef.current === 'en'
-          ? `Okay, I will check suggested slot ${suggestion?.slotCode}.`
-          : `Được, mình sẽ kiểm tra ô gợi ý ${suggestion?.slotCode}.`);
+          ? `Okay, I will recheck the suggested spaces: ${suggestions.map((item) => item.slotCode).join(', ')}. Your vehicles, schedules and services are kept.`
+          : `Được, mình sẽ kiểm tra lại các ô gợi ý: ${suggestions.map((item) => item.slotCode).join(', ')}. Mình giữ nguyên các xe, ngày giờ và dịch vụ.`);
         await refreshPreview();
       }
       else if (route === 'top_up') {
@@ -1261,11 +1346,11 @@ export default function AiBookingPanel({
       }
       else if (route === 'out_of_scope') {
         handlingInputRef.current = false;
-        say(unclearRequestReply(languageRef.current));
+        say(unclearRequestReply(languageRef.current, text, draftRef.current));
       }
       else if (route === 'unrecognized') {
         handlingInputRef.current = false;
-        say(unclearRequestReply(languageRef.current));
+        say(unclearRequestReply(languageRef.current, text, draftRef.current));
       }
       else if (route === 'cancel') {
         if (pendingAssistantActionRef.current) cancelAssistantAction();
@@ -1367,6 +1452,7 @@ export default function AiBookingPanel({
         },
         current.today,
         current.currentTime,
+        bookingHistoryBeforeTurn(messagesRef.current, turn.id),
       );
       if (!result.ok) {
         if (result.status === 404 && /Route .* not found/i.test(result.data?.message || '')) {
@@ -1383,7 +1469,7 @@ export default function AiBookingPanel({
           confirmationKeyRef.current = null;
           setConversationPhase('IDLE');
         }
-        say(result.data.data.clarification || unclearRequestReply(languageRef.current));
+        say(result.data.data.clarification || unclearRequestReply(languageRef.current, text, draftRef.current));
         return;
       }
       const nextIntent = result.data?.data?.intent || 'UNKNOWN';
@@ -1418,9 +1504,9 @@ export default function AiBookingPanel({
         setManualSuggestion(clarification.includes('Đặt chỗ thủ công'));
         return;
       }
-      if (isUnchangedBookingContinuation(previousIntent, nextIntent, previousDraft, nextDraft)) {
+      if (!assistantResult && isUnchangedBookingContinuation(previousIntent, nextIntent, previousDraft, nextDraft)) {
         restorePreviousConversationState();
-        say(unclearRequestReply(languageRef.current));
+        say(unclearRequestReply(languageRef.current, text, draftRef.current));
         return;
       }
       let localizedAssistantMessage = '';
@@ -1446,14 +1532,31 @@ export default function AiBookingPanel({
         const isServiceRelated = ['CHECK_SERVICES', 'BOOK_SERVICE'].includes(result.data?.data?.canonicalIntent)
           || /dịch vụ/i.test(localizedAssistantMessage);
         attachedServices = isServiceRelated && servicesRef.current?.length ? servicesRef.current : undefined;
+        if (nextDraft.assistantContext?.pendingServiceSelection) {
+          // Asking which car a service belongs to must not restart booking
+          // collection or replace that question with another booking preview.
+          updatePreview(previousPreview);
+          setConflicts(previousConflicts);
+          confirmationPendingRef.current = false;
+          confirmationKeyRef.current = null;
+          setConversationPhase('IDLE');
+          await say(localizedAssistantMessage, { services: attachedServices });
+          return;
+        }
         if (nextIntent !== 'CREATE_BOOKING') {
-          const informational = /^(?:CHECK_|GET_|VIEW_|LIST_)/.test(nextIntent);
+          const informational = isInformationalAssistantTurn(nextIntent);
           if (informational) {
             restorePreviousConversationState();
             updateDraft((currentDraft) => ({ ...currentDraft, assistantContext: {
               ...(currentDraft.assistantContext || {}), ...(nextDraft.assistantContext || {}),
               pendingAction: previousPendingAction || null,
             } }));
+            setAssistantInfo({ intent: result.data?.data?.canonicalIntent || nextIntent,
+              intents: result.data?.data?.intents || [nextIntent], message: localizedAssistantMessage });
+          }
+          if ((result.data?.data?.canonicalIntent || nextIntent) === 'CHECK_VOUCHERS' && previousPreview?.items) {
+            await presentBookingPreview(previousPreview, draftRef.current, { prefix: localizedAssistantMessage, vouchers: assistantResult.voucherOptions, includeSummary: false });
+            return;
           }
           say(localizedAssistantMessage, { services: attachedServices });
           if (!informational) setConversationPhase('IDLE');
@@ -1488,12 +1591,7 @@ export default function AiBookingPanel({
             delete assistantContext.lastBookingConflict;
             return { ...rest, assistantContext, vehicleId: nextPreview.items[0]?.vehicleId || '', licensePlate: nextPreview.items[0]?.licensePlate || current.licensePlate };
           });
-          updatePreview(nextPreview);
-          confirmationKeyRef.current = crypto.randomUUID();
-          confirmationPendingRef.current = true;
-          setConversationPhase('WAITING_CONFIRMATION');
-          const summaryText = bookingPreviewSummary(nextPreview, nextDraft, languageRef.current);
-          say(summaryText, { services: attachedServices });
+          await presentBookingPreview(nextPreview, draftRef.current, { services: attachedServices });
         }
       } else if (nextIntent === 'CHECK_AVAILABILITY') {
         const checked = await checkAiAvailability(nextDraft, gateway);
@@ -1506,7 +1604,7 @@ export default function AiBookingPanel({
         if (request !== requestRef.current) return;
       } else {
         setConversationPhase('IDLE');
-        say(unclearRequestReply(languageRef.current));
+        say(unclearRequestReply(languageRef.current, text, draftRef.current));
       }
     } catch (caught) {
       if (request !== requestRef.current) return;
@@ -1514,7 +1612,7 @@ export default function AiBookingPanel({
       else if (isUnclearAiFailure(caught.message)) {
         restorePreviousConversationState();
         setError('');
-        say(unclearRequestReply(languageRef.current));
+        say(unclearRequestReply(languageRef.current, text, draftRef.current));
       }
       else { reportError(caught.message); restorePreviousConversationState(); setPrompt((current) => current || text); }
     } finally {
@@ -1550,10 +1648,7 @@ export default function AiBookingPanel({
           delete assistantContext.lastBookingConflict;
           return { ...rest, assistantContext, vehicleId: checked.items[0]?.vehicleId || '', licensePlate: checked.items[0]?.licensePlate || current.licensePlate };
         });
-        updatePreview(checked); confirmationKeyRef.current = crypto.randomUUID();
-        confirmationPendingRef.current = true;
-        setConversationPhase('WAITING_CONFIRMATION');
-        say(bookingPreviewSummary(checked, draftRef.current, languageRef.current));
+        await presentBookingPreview(checked, draftRef.current);
       }
     } catch (caught) {
       if (request === requestRef.current) {
@@ -1671,6 +1766,10 @@ export default function AiBookingPanel({
   const confirmCreation = async ({ skipWalletCheck = false } = {}) => {
     const currentPreview = previewRef.current;
     if (!currentPreview || busyRef.current || !confirmationPendingRef.current) return;
+    if (pendingAssistantActionRef.current?.type === 'APPLY_VOUCHER') {
+      await say(aiVoucherOfferMessage(pendingAssistantActionRef.current, languageRef.current, currentPreview.items.length));
+      return;
+    }
     const shortfall = Math.max(Number(currentPreview.total || 0) - Number(currentPreview.walletBalance || 0), 0);
     if (!skipWalletCheck && shortfall > 0) {
       await startTopUpForShortfall(shortfall);
@@ -1887,9 +1986,12 @@ export default function AiBookingPanel({
   useEffect(() => {
     voiceHandlersRef.current = {
       submitMessage, reportError, processMessage,
-      clarifySpeech: () => say(languageRef.current === 'vi'
-        ? 'Mình chưa nghe rõ. Vui lòng nói lại chậm hơn ở nơi ít tiếng ồn, đọc rõ từng chữ và số của biển số, ngày giờ; hoặc nhập bằng bàn phím.'
-        : 'I could not hear clearly. Please repeat slowly in a quieter place, spelling out the plate, date and time, or type your request.'),
+      clarifySpeech: (recognizedLanguage) => {
+        if (['vi', 'en'].includes(recognizedLanguage)) updateLanguage(recognizedLanguage);
+        return say(languageRef.current === 'vi'
+        ? 'Mình chưa nghe rõ câu vừa rồi. Bạn vui lòng nói lại rõ hơn hoặc nhập bằng bàn phím nhé.'
+        : 'I could not hear that clearly. Please repeat more clearly or type your request.');
+      },
       resumeVoiceIfReady,
     };
   });
@@ -1945,7 +2047,7 @@ export default function AiBookingPanel({
     : null;
   const mapRangeStart = mapStartTime ? vnParts(mapStartTime) : null;
   const mapRangeEnd = mapEndTime ? vnParts(mapEndTime) : null;
-  const selectedPhaseLabels = language === 'vi' ? vietnamesePhaseLabels : englishPhaseLabels;
+  const selectedPhaseLabels = englishPhaseLabels;
   const selectedAssistantIntentLabels = englishAssistantIntentLabels;
   const serviceVehicleCount = Math.max(
     Number(preview?.items?.length || 0),
@@ -1959,25 +2061,12 @@ export default function AiBookingPanel({
     const service = services.find((item) => String(item._id) === String(id));
     return sum + Number(service?.price || 0);
   }, 0);
-  const conversationUi = language === 'vi' ? {
-    title: 'Trợ lý đỗ xe VALO', subtitle: 'Đặt chỗ và tra cứu bằng giọng nói hoặc văn bản',
-    speaking: 'Đang trả lời... Nhấn micrô để ngắt lời.',
-    listening: 'Đang nghe... Bạn có thể tiếp tục nói.', microphone: 'Micrô đang bật...',
-    processing: 'Đang xử lý...', placeholder: 'Đặt chỗ hoặc hỏi về xe, ví hay chỗ trống...',
-    inputLabel: 'Yêu cầu cho trợ lý đỗ xe AI', stopVoice: 'Dừng hội thoại bằng giọng nói',
-    startVoice: 'Bắt đầu hội thoại bằng giọng nói', stopTitle: 'Micrô đang bật; nhấn để dừng',
-    startTitle: 'Bật micrô', interruptVoice: 'Ngắt lời và nói',
-    interruptTitle: 'Dừng giọng AI và bắt đầu nghe', send: 'Gửi yêu cầu', confirm: 'Xác nhận', cancel: 'Hủy',
-    insufficient: 'Số dư không đủ', topUpPrefix: 'Bạn cần nạp thêm', topUpSuffix: 'để hoàn tất thanh toán.',
-    noQr: 'Không có mã QR', scanQr: 'Quét bằng ứng dụng ngân hàng hoặc ví điện tử.', alternatively: 'Hoặc',
-    checkout: 'nhấn vào đây để thanh toán', received: 'Đã nhận thanh toán! Đang xử lý...',
-    waitingPayment: 'Đang chờ thanh toán...', cancelling: 'Đang hủy...',
-    sessionLoading: 'Đang kiểm tra phiên đặt chỗ đã lưu...',
-  } : {
+  const conversationUi = {
     title: 'VALO Parking Assistant', subtitle: 'Book and search by voice or text',
     speaking: 'Speaking a short reply... Press the microphone to interrupt.',
     listening: 'Listening... You can continue speaking.', microphone: 'Microphone is on...',
     processing: 'Processing...', placeholder: 'Book a space or ask about vehicles, wallet, or availability...',
+    preparing: 'Preparing microphone... You can speak when “Listening” appears.',
     inputLabel: 'Request for the AI parking assistant', stopVoice: 'Stop voice conversation',
     startVoice: 'Start voice conversation', stopTitle: 'Microphone is on; click to stop',
     startTitle: 'Start voice microphone', interruptVoice: 'Interrupt and speak',
@@ -1991,8 +2080,8 @@ export default function AiBookingPanel({
 
   return (
     <div className="valo-assistant-page">
-      <div className={`valo-assistant-shell ${historyCollapsed ? 'is-history-collapsed' : ''}`}>
-      <AiChatHistorySidebar language={language} items={historyItems} loading={historyLoading} error={historyError}
+      <ResizableAssistantShell historyCollapsed={historyCollapsed} language="en">
+      <AiChatHistorySidebar language="en" items={historyItems} loading={historyLoading} error={historyError}
         search={historySearch} onSearch={(value) => { setHistorySearch(value); setHistoryPage(1); setHistoryItems([]); }}
         onNew={handleNewBooking} onOpen={openHistoryChat} onRename={renameHistoryChat} onDelete={deleteHistoryChat}
         selectedId={selectedHistoryId} disabled={sessionLoading || busy || turnProcessing || queuedTurns > 0 || replyPending || topUpLoading || showTopUpModal}
@@ -2004,12 +2093,12 @@ export default function AiBookingPanel({
           <button type="button" onClick={() => {
             voiceEnabledRef.current = !voiceEnabledRef.current;
             setVoiceEnabled(voiceEnabledRef.current);
-            if (!voiceEnabledRef.current) speakerRef.current?.cancel();
+            if (!voiceEnabledRef.current) { speakerRef.current?.cancel(); setVoicePlaybackError(''); }
           }} className="valo-assistant-audio" aria-label={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'} title={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'}>{voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
         </div>
         <div role="status" aria-live="polite" className="valo-assistant-status">
-          {speaking ? conversationUi.speaking : voiceTranscribing || turnProcessing ? conversationUi.processing : busy ? selectedPhaseLabels[phase] : listening ? conversationUi.listening : voiceActive ? conversationUi.microphone : selectedPhaseLabels[phase]}
-          {queuedTurns > 0 && <span> · {language === 'vi' ? `Đang chờ xử lý: ${queuedTurns}` : `Queued messages: ${queuedTurns}`}</span>}
+          {speaking ? conversationUi.speaking : voicePreparing ? conversationUi.preparing : voiceTranscribing || turnProcessing ? conversationUi.processing : busy ? selectedPhaseLabels[phase] : listening ? conversationUi.listening : voiceActive ? conversationUi.microphone : selectedPhaseLabels[phase]}
+          {queuedTurns > 0 && <span> · {`Queued messages: ${queuedTurns}`}</span>}
         </div>
         {sessionLoading && <div className="mx-5 mt-4 flex items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"><Loader2 size={16} className="animate-spin" /> {conversationUi.sessionLoading}</div>}
         {!sessionLoading && resumeCandidate && (
@@ -2049,10 +2138,10 @@ export default function AiBookingPanel({
           {messages.map((message, index) => (
             <div key={message.id || `${message.role}-${index}`} className={`valo-assistant-message-row ${message.role === 'user' ? 'is-user' : ''}`}>
               {message.role === 'assistant' && <img className="valo-assistant-avatar" src="/assets/notification-mascots/success.png" alt="VALO AI" />}
-              <div className="valo-assistant-bubble" lang={message.language === 'vi' ? 'vi' : message.language === 'en' ? 'en' : undefined}>
+              <div className={`valo-assistant-bubble ${message.services?.length ? 'has-services' : ''}`} lang={message.language === 'vi' ? 'vi' : message.language === 'en' ? 'en' : undefined}>
               <div>{message.pending ? <span className="valo-assistant-typing" role="status" aria-label={conversationUi.processing}><i /><i /><i /></span> : message.text ?? message.content}</div>
               {message.services && Array.isArray(message.services) && message.services.length > 0 && (
-                <div className="mt-3 pt-2.5 border-t border-amber-200/60 flex flex-wrap gap-2">
+                <div className="valo-assistant-service-list">
                   {message.services.map((service) => {
                     const isSelected = Array.isArray(draft.serviceIds) && draft.serviceIds.includes(service._id);
                     return (
@@ -2061,19 +2150,14 @@ export default function AiBookingPanel({
                         type="button"
                         disabled={busy || historyReadOnly}
                         onClick={() => toggleDraftService(service)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm ${
-                          isSelected
-                            ? 'bg-amber-500 text-white shadow-amber-200 ring-2 ring-amber-400'
-                            : 'bg-white border border-amber-300 text-amber-900 hover:bg-amber-100/60'
-                        }`}
+                        aria-pressed={isSelected}
+                        className={`valo-assistant-service-option ${isSelected ? 'is-selected' : ''}`}
                       >
-                        {isSelected ? <CheckCircle2 size={13} strokeWidth={3} /> : <Sparkles size={13} className="text-amber-500" />}
-                        <span>{service.name}</span>
-                        <span className={`text-[11px] font-black ${isSelected ? 'text-amber-100' : 'text-amber-700'}`}>
-                          ({money(service.price)})
-                        </span>
-                        <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded ${isSelected ? 'bg-amber-600 text-white font-black' : 'bg-amber-100 text-amber-800'}`}>
-                          {isSelected ? 'Selected' : '+ Add'}
+                        {isSelected ? <CheckCircle2 size={16} strokeWidth={2.5} className="valo-assistant-service-icon" /> : <Sparkles size={16} className="valo-assistant-service-icon" />}
+                        <span className="valo-assistant-service-name">{service.name}</span>
+                        <span className="valo-assistant-service-price">{money(service.price)}</span>
+                        <span className="valo-assistant-service-action">
+                          {isSelected ? ('Selected') : ('+ Add')}
                         </span>
                       </button>
                     );
@@ -2086,9 +2170,10 @@ export default function AiBookingPanel({
           {(busy || turnProcessing || voiceTranscribing) && !replyPending && <div className="valo-assistant-message-row"><img className="valo-assistant-avatar" src="/assets/notification-mascots/success.png" alt="VALO AI" /><div className="valo-assistant-bubble"><span className="valo-assistant-typing" role="status" aria-label={conversationUi.processing}><i /><i /><i /></span></div></div>}
         </div>
         {error && <div role="alert" className="mx-5 mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
+        {voicePlaybackError && <div role="status" className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{voicePlaybackError}</div>}
         {historyReadOnly && <div className="mx-5 mb-3 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-          <span>{language === 'vi' ? 'Bạn đang xem lịch sử. Tạo cuộc trò chuyện mới để tiếp tục.' : 'You are viewing chat history. Start a new chat to continue.'}</span>
-          <button type="button" disabled={sessionLoading} onClick={handleNewBooking} className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 font-bold text-gray-900">{language === 'vi' ? 'Chat mới' : 'New chat'}</button>
+          <span>{'You are viewing chat history. Start a new chat to continue.'}</span>
+          <button type="button" disabled={sessionLoading} onClick={handleNewBooking} className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 font-bold text-gray-900">{'New chat'}</button>
         </div>}
         {sessionSaving === 'offline' && hasStarted && <div className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">This conversation is safely stored on this device and will sync automatically.</div>}
         {manualSuggestion && onSwitchToManual && <button type="button" onClick={onSwitchToManual} className="mx-5 mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-2 text-sm font-bold text-yellow-900">Switch to manual booking</button>}
@@ -2105,7 +2190,7 @@ export default function AiBookingPanel({
 
         {success && <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800"><div className="flex items-center gap-2 font-black"><CheckCircle2 size={20} /> Action completed</div><Link to="/customer/booking" className="mt-2 inline-block text-sm font-bold underline">View My Bookings</Link></div>}
 
-        {assistantInfo && <div className="mb-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-5 text-sm leading-6 text-gray-800 whitespace-pre-line"><div className="mb-2 text-xs font-black uppercase tracking-wide text-yellow-800">{assistantInfo.intents.map((item) => selectedAssistantIntentLabels[item] || item).join(' · ')}</div>{localizeAiBookingMessage(assistantInfo.message, language)}{pendingAssistantAction && <div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmAssistantAction} className="rounded-xl bg-gray-900 px-4 py-2.5 font-black text-white">{conversationUi.confirm}</button><button type="button" disabled={busy || replyPending} onClick={cancelAssistantAction} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 font-bold">{conversationUi.cancel}</button></div>}</div>}
+        {assistantInfo && <div className="mb-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-5 text-sm leading-6 text-gray-800 whitespace-pre-line"><div className="mb-2 text-xs font-black uppercase tracking-wide text-yellow-800">{assistantInfo.intents.map((item) => selectedAssistantIntentLabels[item] || item).join(' · ')}</div>{localizeAiBookingMessage(assistantInfo.message, language)}{pendingAssistantAction && <div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmAssistantAction} className="rounded-xl bg-gray-900 px-4 py-2.5 font-black text-white">{pendingAssistantAction.type === 'APPLY_VOUCHER' ? ('Apply voucher') : conversationUi.confirm}</button><button type="button" disabled={busy || replyPending} onClick={cancelAssistantAction} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 font-bold">{pendingAssistantAction.type === 'APPLY_VOUCHER' ? ('Skip') : conversationUi.cancel}</button></div>}</div>}
 
         {!historyReadOnly && !success && !assistantInfo && !target && (
           <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2156,20 +2241,20 @@ export default function AiBookingPanel({
                         : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
                       <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                         isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'border-gray-300 bg-white'
                       }`}>
                         {isSelected && <CheckCircle2 size={12} strokeWidth={3} />}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="font-bold text-xs text-gray-900 leading-tight">{service.name}</div>
                         <div className="text-[10px] text-gray-400 leading-tight">
                           {service.timeCost || 30} minutes {service.description ? `· ${service.description}` : ''}
                         </div>
                       </div>
                     </div>
-                    <div className="text-xs font-black text-gray-900">{money(service.price)}</div>
+                    <div className="ml-3 shrink-0 whitespace-nowrap text-right text-xs font-black text-gray-900">{money(service.price)}</div>
                   </button>
                 );
               })}
@@ -2203,20 +2288,22 @@ export default function AiBookingPanel({
           {preview.items.map((item, index) => {
             const start = vnParts(item.startTime);
             const end = vnParts(item.endTime);
+            const serviceNames = draft.reservationItems?.[index]?.serviceNames || draft.serviceNames || [];
+            const voucherName = draft.reservationItems?.[index]?.voucherName || (index === 0 ? draft.voucherName : '');
             return (
               <div key={item.clientItemId} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="font-black text-gray-900">{dayText(start.date)} {start.time} → {dayText(end.date)} {end.time}</div>
                   <div className="text-sm text-gray-500">{item.licensePlate} · Continuous reservation · {item.floorName} · {item.slotCode}</div>
-                  {Array.isArray(draft.serviceNames) && draft.serviceNames.length > 0 && (
+                  {serviceNames.length > 0 && (
                     <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
                       <Sparkles size={12} className="text-amber-600" />
-                      Services: {draft.serviceNames.join(', ')}
+                      Services: {serviceNames.join(', ')}
                     </div>
                   )}
-                  {index === 0 && draft.voucherName && (
+                  {voucherName && (
                     <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800">
-                      Voucher: {draft.voucherName}
+                      Voucher: {voucherName}
                     </div>
                   )}
                 </div>
@@ -2236,7 +2323,7 @@ export default function AiBookingPanel({
             <strong className="text-xl text-yellow-300">{money(preview.total)}</strong>
           </div>
           {preview.walletBalance < preview.total && <p className="text-sm text-rose-600">Your wallet balance is {money(preview.walletBalance)}. You can scan a QR code to pay the remaining {money(preview.total - preview.walletBalance)} when you confirm.</p>}
-          <div className="flex gap-3"><button type="button" onClick={() => confirmCreation()} disabled={busy || topUpLoading} className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-gray-900 disabled:opacity-50">{preview.walletBalance < preview.total ? 'Confirm & pay by QR' : 'Confirm booking'}</button><button type="button" onClick={cancelPreview} disabled={busy || topUpLoading} className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 disabled:opacity-50">Cancel</button></div>
+          <div className="flex gap-3"><button type="button" onClick={() => confirmCreation()} disabled={busy || replyPending || topUpLoading || pendingAssistantAction?.type === 'APPLY_VOUCHER'} className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-gray-900 disabled:opacity-50">{preview.walletBalance < preview.total ? 'Confirm & pay by QR' : 'Confirm booking'}</button><button type="button" onClick={cancelPreview} disabled={busy || topUpLoading} className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 disabled:opacity-50">Cancel</button></div>
         </div>}
 
         {availability && <div className="space-y-3">{availability.map((day) => <div key={`${day.date}-${day.endDate}`} className="rounded-2xl border border-gray-200 p-4"><strong>{dayText(day.date)} → {dayText(day.endDate)}: {day.count} continuous spaces available</strong><p className="text-sm text-gray-500">{day.suggestions.map((slot) => `${slot.floorName} · ${slot.slotCode}`).join(', ') || 'Try another time or floor.'}</p></div>)}</div>}
@@ -2247,9 +2334,9 @@ export default function AiBookingPanel({
         {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">Estimated refund: {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">Confirm cancellation</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Keep booking</button></div></div>}
         {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">Arrival date<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startDate: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Arrival time<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startTime: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Departure date<input type="date" value={edit.endDate} onChange={(event) => { setEdit((current) => ({ ...current, endDate: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label><label className="text-xs font-bold">Departure time<input type="time" value={edit.endTime} onChange={(event) => { setEdit((current) => ({ ...current, endTime: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? 'The system will check availability and show the price difference before applying the change.' : 'The vehicle has entered the parking lot, so only the departure time can be changed. The price difference will be shown before the change is applied.'}</p>{actionQuote?.editKey && <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><div className="flex justify-between"><span>New total</span><strong>{money(actionQuote.newPrice)}</strong></div><div className="mt-1 flex justify-between"><span>{actionQuote.extraAmount > 0 ? 'Additional payment' : 'Refund'}</span><strong>{money(actionQuote.extraAmount || actionQuote.refundAmount || 0)}</strong></div></div>}<div className="flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">{actionQuote?.editKey ? 'Confirm changes' : 'Check price difference'}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Cancel</button></div></div>}
 
-        {historyReadOnly && !preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">{language === 'vi' ? 'Lịch sử trò chuyện được hiển thị bên cạnh.' : 'Your saved conversation is displayed alongside.'}</p></div>}
+        {historyReadOnly && !preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">{'Your saved conversation is displayed alongside.'}</p></div>}
       </section>
-      </div>
+      </ResizableAssistantShell>
 
       <section className="xl:col-span-12 rounded-3xl border border-gray-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 px-2 pb-3 pt-2">
