@@ -1,3 +1,6 @@
+import NotificationDropdownItem from './notifications/NotificationDropdownItem';
+import NotificationDetailModal from './notifications/NotificationDetailModal';
+import { useNotificationDetails } from '../hooks/useNotificationDetails';
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { apiFetch } from "../services/api";
@@ -104,12 +107,16 @@ export default function Navbar() {
     notifications,
     unreadCount,
     loading: notificationsLoading,
+    error: notificationsError,
+    refresh: refreshNotifications,
     hasMore,
     fetchMore,
     markAsRead,
     markAllAsRead,
   } =
     useNotifications({ contextRole: 'customer', limit: 5 });
+
+  const { selectedNotification, openNotification, closeNotification } = useNotificationDetails(markAsRead);
 
   const toggleNotificationDetails = useCallback((notificationId) => {
     const id = String(notificationId);
@@ -262,6 +269,7 @@ export default function Navbar() {
 
   return (
     <>
+      {user?.role === 'customer' && <NotificationDetailModal notification={selectedNotification} contextRole="customer" onClose={() => { closeNotification(); notifRef.current?.querySelector('#nav-notifications')?.focus(); }} />}
       <nav id="main-navbar" className="fixed top-0 left-0 right-0 z-50">
         {/* ─── Outer wrapper: adds margin + pill shape when scrolled ─── */}
         <div
@@ -361,9 +369,13 @@ export default function Navbar() {
               {user ? (
                 <>
                   {/* Notification */}
-                  <div className="relative" ref={notifRef}>
+                  <div className="relative" ref={notifRef} onKeyDown={(event) => {
+                    if (user?.role === 'customer' && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('#nav-notifications')?.focus(); }
+                  }}>
                     <button
                       id="nav-notifications"
+                      aria-label={user?.role === 'customer' ? 'Notifications' : undefined}
+                      aria-expanded={user?.role === 'customer' ? notifOpen : undefined}
                       onClick={() => setNotifOpen((o) => !o)}
                       className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 nav-btn-hover ${notifOpen ? "bg-black/[0.06] text-gray-900" : "text-gray-400 hover:text-gray-700 hover:bg-black/[0.04]"}`}
                       title="Notifications"
@@ -378,7 +390,7 @@ export default function Navbar() {
 
                     {/* ─── NOTIFICATIONS DROPDOWN ─── */}
                     {notifOpen && (
-                      <div className="absolute right-0 top-[calc(100%+8px)] w-96 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_16px_64px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.06)] border border-white/60 overflow-hidden nav-dropdown-enter z-50 flex flex-col max-h-[460px]">
+                      <div className={`${user?.role === "customer" ? "customer-notification-dropdown" : ""} absolute right-0 top-[calc(100%+8px)] w-96 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_16px_64px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.06)] border border-white/60 overflow-hidden nav-dropdown-enter z-50 flex flex-col max-h-[460px]`}>
                         <div className="px-4 py-3 flex justify-between items-center bg-gradient-to-r from-white to-gray-50 border-b border-gray-100">
                           <div className="flex items-center gap-3">
                             <p className="text-gray-900 font-bold text-sm">
@@ -409,7 +421,9 @@ export default function Navbar() {
                         </div>
 
                         <div className="scrollbar-hidden overflow-y-auto overscroll-contain flex-1 text-left p-2 space-y-2">
-                          {notificationsLoading && notifications.length === 0 ? (
+                          {user?.role === 'customer' && notificationsError ? (
+                            <div className="customer-notification-state" role="alert">Unable to load notifications.<button type="button" onClick={refreshNotifications}>Try again</button></div>
+                          ) : notificationsLoading && notifications.length === 0 ? (
                             <div className="p-6 text-center text-gray-500 text-sm">
                               Loading notifications...
                             </div>
@@ -419,6 +433,7 @@ export default function Navbar() {
                             </div>
                           ) : (
                             notifications.map((n) => {
+                              if (user?.role === 'customer') return <NotificationDropdownItem key={n.notificationId || n._id} notification={n} onRead={markAsRead} onOpen={() => { setNotifOpen(false); openNotification(n); }} />;
                               const notificationId = n.notificationId || n._id;
                               const isExpanded = expandedNotificationIds.has(
                                 String(notificationId),

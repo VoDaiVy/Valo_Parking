@@ -17,6 +17,8 @@ const slotSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    layoutElementId: { type: String },
+    retired: { type: Boolean, default: false },
     slotType: {
       type: String,
       default: "hourly",
@@ -56,6 +58,20 @@ const slotSchema = new mongoose.Schema(
     reservedUntil: {
       type: Date,
       default: null,
+    },
+    aiObservation: {
+      occupied: { type: Boolean, default: false },
+      detectedPlate: { type: String, default: null },
+      confidence: { type: Number, default: 0 },
+      isViolation: { type: Boolean, default: false },
+      violationType: { type: String, default: null },
+      expectedSlot: { type: String, default: null },
+      expectedPlate: { type: String, default: null },
+      evidenceSnapshot: { type: String, default: null },
+      fullSnapshot: { type: String, default: null },
+      violationMessage: { type: String, default: null },
+      sessionId: { type: mongoose.Schema.Types.ObjectId, ref: "Session", default: null },
+      lastScannedAt: { type: Date, default: null },
     },
   },
   {

@@ -1,9 +1,11 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { format } from 'date-fns';
 
 import { AppText, Card } from '@/components/common';
 import { colors, spacing } from '@/theme';
+import { MOTION, RADIUS } from '@/constants/theme';
 import type { Booking, ParkingFloor } from '@/types/booking.types';
 import { formatCurrency } from '@/utils/formatters';
 
@@ -22,7 +24,7 @@ const floorName = (floorId: Booking['floorId']) => {
   return (floorId as ParkingFloor).name;
 };
 
-export const BookingCard = ({ booking, onPress }: BookingCardProps) => (
+export const BookingCard = ({ booking, onPress }: BookingCardProps) => { const { t: translateUi } = useLanguage(); return (
   <Pressable
     accessibilityLabel={`Booking ${booking.slotCode}, license plate ${booking.licensePlate}`}
     accessibilityRole="button"
@@ -46,7 +48,7 @@ export const BookingCard = ({ booking, onPress }: BookingCardProps) => (
       </View>
       <View style={styles.detailRow}>
         <Ionicons name="time-outline" size={16} color={colors.light.text.secondary} />
-        <AppText color={colors.light.text.secondary} variant="body2">
+        <AppText color={colors.light.text.secondary} style={styles.timeText} variant="body2">
           {format(new Date(booking.startTime), 'dd/MM/yyyy HH:mm')} -{' '}
           {format(new Date(booking.endTime), 'HH:mm')}
         </AppText>
@@ -54,29 +56,30 @@ export const BookingCard = ({ booking, onPress }: BookingCardProps) => (
       <View style={styles.footerRow}>
         <View style={[styles.detailRow, styles.footerDetail]}>
           <Ionicons name="car-outline" size={16} color={colors.light.text.secondary} />
-          <AppText color={colors.light.text.secondary} numberOfLines={1} variant="body2">
+          <AppText color={colors.light.text.secondary} style={styles.plate} numberOfLines={1} variant="body2">
             {booking.licensePlate}
           </AppText>
         </View>
         <View style={styles.amountWrap}>
-          <AppText color={colors.light.text.secondary} variant="caption">Total</AppText>
-          <AppText color={colors.primary[500]} numberOfLines={1} variant="h3">
+          <AppText color={colors.light.text.secondary} variant="caption">{translateUi("Total")}</AppText>
+          <AppText color={colors.primary[500]} style={styles.amount} variant="h3">
             {formatCurrency(booking.finalAmount || booking.totalAmount || 0)}
           </AppText>
         </View>
       </View>
     </Card>
   </Pressable>
-);
+); };
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.md,
-    marginBottom: spacing.md,
+    gap: spacing.lg,
+    marginBottom: spacing.lg,
   },
   amountWrap: {
     alignItems: 'flex-end',
-    flexShrink: 0,
+    flexShrink: 1,
+    maxWidth: '100%',
   },
   detailRow: {
     alignItems: 'center',
@@ -90,34 +93,40 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.md,
     paddingTop: spacing.md,
   },
   footerDetail: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 100,
     flexShrink: 1,
     marginRight: spacing.sm,
   },
   iconWrap: {
     alignItems: 'center',
     backgroundColor: colors.primary[50],
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     height: 42,
     justifyContent: 'center',
     width: 42,
   },
   pressed: {
     opacity: 0.92,
-    transform: [{ scale: 0.99 }],
+    transform: [{ scale: MOTION.pressedScale }],
   },
   row: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   slotIdentity: {
     alignItems: 'center',
     flexDirection: 'row',
     flex: 1,
+    flexBasis: 140,
     gap: spacing.md,
     minWidth: 0,
   },
@@ -125,4 +134,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  timeText: { flex: 1, minWidth: 0, fontVariant: ['tabular-nums'] },
+  plate: { flexShrink: 1, fontVariant: ['tabular-nums'] },
+  amount: { textAlign: 'right', fontVariant: ['tabular-nums'] },
 });

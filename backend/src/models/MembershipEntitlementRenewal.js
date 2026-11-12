@@ -49,6 +49,8 @@ const membershipEntitlementRenewalSchema = new mongoose.Schema(
     payosPaymentLinkId: { type: String, default: null },
     payosCheckoutUrl: { type: String, default: null },
     paidAt: { type: Date, default: null },
+    notificationPending: { type: Boolean, default: false },
+    notificationProcessedAt: { type: Date, default: null },
     failureReason: { type: String, default: '' },
   },
   { timestamps: true }

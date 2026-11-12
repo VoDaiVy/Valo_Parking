@@ -27,6 +27,7 @@ export interface GetAvailableSlotsResponse extends APIResponse<AvailableSlot[] |
 }
 
 export interface CreateBookingRequest {
+  idempotencyKey?: string;
   startTime: string;
   endTime: string;
   floorId: string;
@@ -47,6 +48,7 @@ export interface BulkBookingItem {
   endTime: string;
   serviceIds?: string[];
   holdId?: string;
+  voucherId?: string;
 }
 
 export interface BulkBookingQuoteResponse extends APIResponse<{
@@ -57,6 +59,8 @@ export interface BulkBookingQuoteResponse extends APIResponse<{
     vehicleId?: string;
     totalAmount: number;
     servicesTotal: number;
+    voucherDiscount?: number;
+    earlyBookingDiscount?: number;
   }>;
 }> {}
 

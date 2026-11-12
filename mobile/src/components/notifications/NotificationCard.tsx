@@ -1,7 +1,9 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 import type { NotificationPriority, NotificationType, UserNotification } from '@/types/models';
 import { formatNotificationTimestamp } from '@/utils/notifications';
 
@@ -34,17 +36,18 @@ const PRIORITY_COLOR: Record<NotificationPriority, string> = {
 };
 
 export const NotificationCard = ({ notification, onPress, onDelete }: Props) => {
+  const { t: translateUi, language } = useLanguage();
   const accentColor = PRIORITY_COLOR[notification.priority] ?? COLORS.gold;
 
   return (
     <View style={[styles.card, !notification.isRead && { borderColor: `${accentColor}55` }]}>
-      <Pressable accessibilityRole="button" style={styles.content} onPress={onPress}>
+      <Pressable accessibilityRole="button" accessibilityLabel={notification.title} style={({ pressed }) => [styles.content, pressed && styles.pressed]} onPress={onPress}>
         <View style={[styles.icon, { backgroundColor: `${accentColor}18` }]}>
           <Ionicons name={TYPE_ICON[notification.type] ?? 'notifications-outline'} size={22} color={accentColor} />
         </View>
         <View style={styles.body}>
           <View style={styles.titleRow}>
-            <Text style={[styles.title, !notification.isRead && styles.titleUnread]} numberOfLines={2}>
+            <Text style={[styles.title, !notification.isRead && styles.titleUnread, !notification.isRead && { color: accentColor }]} numberOfLines={2}>
               {notification.title}
             </Text>
             {!notification.isRead ? <View style={[styles.unreadDot, { backgroundColor: accentColor }]} /> : null}
@@ -52,12 +55,12 @@ export const NotificationCard = ({ notification, onPress, onDelete }: Props) => 
           <Text style={styles.contentText} numberOfLines={2}>
             {notification.content}
           </Text>
-          <Text style={styles.timestamp}>{formatNotificationTimestamp(notification.createdAt)}</Text>
+          <Text style={styles.timestamp}>{formatNotificationTimestamp(notification.createdAt, undefined, language)}</Text>
         </View>
       </Pressable>
 
       <TouchableOpacity
-        accessibilityLabel="Delete notification"
+        accessibilityLabel={translateUi("Delete notification")}
         accessibilityRole="button"
         activeOpacity={0.75}
         style={styles.deleteButton}
@@ -74,16 +77,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
     borderRadius: RADIUS.lg,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: SPACING.sm,
+    gap: SPACING.xs,
     marginBottom: SPACING.md,
     padding: SPACING.md,
   },
   content: {
     flex: 1,
     flexDirection: 'row',
-    gap: SPACING.md,
+    gap: SPACING.sm,
+    minHeight: 44,
   },
   icon: {
     alignItems: 'center',
@@ -94,6 +98,7 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    minWidth: 0,
     gap: 4,
   },
   titleRow: {
@@ -102,6 +107,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   title: {
+    ...typography.body2,
     color: COLORS.textPrimary,
     flex: 1,
     fontSize: FONT_SIZES.sm,
@@ -109,8 +115,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   titleUnread: {
-    color: COLORS.gold,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   unreadDot: {
     borderRadius: 4,
@@ -119,11 +124,11 @@ const styles = StyleSheet.create({
     width: 8,
   },
   contentText: {
+    ...typography.body2,
     color: COLORS.textSecondary,
-    fontSize: FONT_SIZES.xs,
-    lineHeight: 18,
   },
   timestamp: {
+    ...typography.caption,
     color: COLORS.textMuted,
     fontSize: FONT_SIZES.xs,
   },
@@ -134,4 +139,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 44,
   },
+  pressed: { opacity: 0.8 },
 });

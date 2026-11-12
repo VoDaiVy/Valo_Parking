@@ -5,11 +5,14 @@ import { API_BASE } from '../../services/api';
 
 export default function KioskOutSuccess({ onFinish }) {
   const socket = useSocket();
-  const mountTimeRef = useRef(Date.now());
+  const mountTimeRef = useRef(0);
   const hasSeenOpenRef = useRef(false);
   const isRedirectingRef = useRef(false);
+  const returnTimerRef = useRef(null);
 
   useEffect(() => {
+    mountTimeRef.current = Date.now();
+
     const handleDone = () => {
       if (isRedirectingRef.current) return;
       isRedirectingRef.current = true;
@@ -22,6 +25,31 @@ export default function KioskOutSuccess({ onFinish }) {
       }
     };
 
+    const scheduleReturn = () => {
+      if (returnTimerRef.current || isRedirectingRef.current) return;
+      const elapsed = Date.now() - mountTimeRef.current;
+      const delay = Math.max(0, 1500 - elapsed);
+      if (delay === 0) {
+        handleDone();
+      } else {
+        returnTimerRef.current = window.setTimeout(handleDone, delay);
+      }
+    };
+
+    const processGateState = (gateData) => {
+      if (!gateData || (gateData.gate && gateData.gate !== 'EXIT_1')) return;
+      if (gateData.open) {
+        hasSeenOpenRef.current = true;
+        return;
+      }
+      const closedAfterMount = Boolean(gateData.forceClose)
+        && Number(gateData.timestamp || 0) >= mountTimeRef.current;
+      if (hasSeenOpenRef.current || closedAfterMount) {
+        // Cổng EXIT_1 đã đóng (sau khi xe qua cảm biến hoặc staff bấm Close) -> quay về màn hình chính
+        scheduleReturn();
+      }
+    };
+
     // 1. Polling trạng thái đóng của Barrier EXIT_1
     const checkBarrier = async () => {
       try {
@@ -30,40 +58,25 @@ export default function KioskOutSuccess({ onFinish }) {
         });
         const data = await res.json();
         if (data.success && data.data) {
-          const isOpen = Boolean(data.data.open);
-          if (isOpen) {
-            hasSeenOpenRef.current = true;
-          } else {
-            const elapsed = Date.now() - mountTimeRef.current;
-            if (hasSeenOpenRef.current || data.data.forceClose || elapsed >= 2500) {
-              handleDone();
-            }
-          }
+          processGateState(data.data);
         }
       } catch {
         // ignore
       }
     };
 
+    // Initial check immediately
+    checkBarrier();
     const interval = setInterval(checkBarrier, 300);
 
-    // Safety timeout
-    const safetyTimer = setTimeout(handleDone, 12000);
+    // Bộ đếm an toàn 35s chỉ kích hoạt nếu ESP32 mất kết nối hoàn toàn
+    const safetyTimer = setTimeout(() => {
+      handleDone();
+    }, 35000);
 
     // 2. Lắng nghe qua Socket.IO (chỉ nhận sự kiện của cổng EXIT_1)
     const handleBarrierControl = (data) => {
-      if (data && (data.gate === 'EXIT_1' || !data.gate)) {
-        if (data.open) {
-          hasSeenOpenRef.current = true;
-        } else if (!data.open) {
-          const elapsed = Date.now() - mountTimeRef.current;
-          if (elapsed >= 1500) {
-            handleDone();
-          } else {
-            setTimeout(handleDone, 1500 - elapsed);
-          }
-        }
-      }
+      processGateState(data);
     };
 
     if (socket) {
@@ -73,6 +86,10 @@ export default function KioskOutSuccess({ onFinish }) {
     return () => {
       clearInterval(interval);
       clearTimeout(safetyTimer);
+      if (returnTimerRef.current) {
+        clearTimeout(returnTimerRef.current);
+        returnTimerRef.current = null;
+      }
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }

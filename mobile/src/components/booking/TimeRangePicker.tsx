@@ -1,7 +1,8 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Input } from '@/components/common';
-import { colors, spacing } from '@/theme';
+import { borderRadius, colors, spacing } from '@/theme';
 import { formatDuration, validateTimeRange } from '@/utils/bookingValidation';
 
 interface TimeRangePickerProps {
@@ -26,13 +27,14 @@ export const TimeRangePicker = ({
   onEndTimeChange,
   errorMessage,
 }: TimeRangePickerProps) => {
+  const { t: translateUi } = useLanguage();
   const validation = validateTimeRange(startTime, endTime);
   const error = errorMessage || validation.error;
 
   return (
     <View style={styles.container}>
       <Input
-        label="Start time"
+        label={translateUi("Start time")}
         onChangeText={(value) => {
           const parsed = parseInputValue(value);
           if (parsed) {
@@ -43,7 +45,7 @@ export const TimeRangePicker = ({
         value={toInputValue(startTime)}
       />
       <Input
-        label="End time"
+        label={translateUi("End time")}
         onChangeText={(value) => {
           const parsed = parseInputValue(value);
           if (parsed) {
@@ -53,12 +55,14 @@ export const TimeRangePicker = ({
         placeholder="YYYY-MM-DDTHH:mm"
         value={toInputValue(endTime)}
       />
-      <AppText color={colors.light.text.secondary} variant="body2">
-        Duration: {formatDuration(startTime, endTime)}
-      </AppText>
+      <View style={styles.duration}>
+        <AppText color={colors.light.text.secondary} style={styles.durationText} variant="body2">
+          {" "}{translateUi("Duration:")}{" "}{formatDuration(startTime, endTime)}
+        </AppText>
+      </View>
       {error ? (
-        <AppText color={colors.error.main} variant="caption">
-          {error}
+        <AppText accessibilityLiveRegion="polite" color={colors.error.main} style={styles.error} variant="body2">
+          {translateUi(error)}
         </AppText>
       ) : null}
     </View>
@@ -67,6 +71,9 @@ export const TimeRangePicker = ({
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.md,
+    gap: spacing.lg,
   },
+  duration: { backgroundColor: colors.light.surfaceElevated, borderRadius: borderRadius.md, padding: spacing.md },
+  durationText: { fontWeight: '500', fontVariant: ['tabular-nums'] },
+  error: { backgroundColor: colors.error.light, borderRadius: borderRadius.md, padding: spacing.md },
 });

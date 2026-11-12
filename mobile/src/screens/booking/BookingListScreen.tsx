@@ -19,11 +19,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedPressable, StatusChip, StaggeredView } from '@/components/profile/ProfileUI';
 import { ErrorState } from '@/components/common';
+import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbientBackground';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useBooking } from '@/hooks/useBooking';
+import { useBookingCart } from '@/contexts/BookingCartContext';
+import { WorkflowChip, workflowStyles } from '@/components/common/WorkflowUI';
+import { useFocusEffect } from '@react-navigation/native';
 import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import type { Booking, BookingStatus, ParkingFloor } from '@/types/booking.types';
 import { formatCurrency } from '@/utils/formatters';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type Props = { navigation: any };
 type FilterType = BookingStatus | 'all';
@@ -34,7 +39,7 @@ const STATUS_CONFIG: Record<BookingStatus | 'all', { label: string; color: strin
   confirmed: { label: 'Confirmed', color: COLORS.staffBlue, bg: 'rgba(96,180,255,0.11)' },
   active: { label: 'Parked', color: COLORS.success, bg: 'rgba(76,175,80,0.11)' },
   paused: { label: 'Paused', color: COLORS.warning, bg: 'rgba(255,159,67,0.11)' },
-  completed: { label: 'Completed', color: COLORS.textMuted, bg: 'rgba(255,255,255,0.04)' },
+  completed: { label: 'Completed', color: COLORS.success, bg: COLORS.successTint },
   cancelled: { label: 'Cancelled', color: COLORS.error, bg: 'rgba(255,77,77,0.1)' },
   expired: { label: 'Expired', color: COLORS.warning, bg: 'rgba(255,159,67,0.11)' },
 };
@@ -63,8 +68,9 @@ function getFloorLabel(floorId: Booking['floorId']) {
 }
 
 function NewBookingButton({ compact, onPress }: { compact?: boolean; onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   return (
-    <AnimatedPressable accessibilityLabel="Create a new booking" onPress={onPress} style={styles.newBtn} tint="rgba(226,186,75,0.08)">
+    <AnimatedPressable accessibilityLabel={translateUi("Create a new booking")} onPress={onPress} style={styles.newBtn} tint="rgba(226,186,75,0.08)">
       <LinearGradient
         colors={[COLORS.goldLight, COLORS.gold]}
         end={{ x: 1, y: 0 }}
@@ -72,7 +78,7 @@ function NewBookingButton({ compact, onPress }: { compact?: boolean; onPress: ()
         style={[styles.newBtnGrad, compact && styles.newBtnCompact]}
       >
         <Ionicons name="add" size={18} color={COLORS.textInverse} />
-        <Text numberOfLines={1} style={styles.newBtnText}>New booking</Text>
+        <Text numberOfLines={1} style={styles.newBtnText}>{translateUi("New booking")}</Text>
       </LinearGradient>
     </AnimatedPressable>
   );
@@ -89,6 +95,7 @@ function FilterChip({
   filterType: FilterType;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const config = STATUS_CONFIG[filterType];
 
   return (
@@ -101,7 +108,7 @@ function FilterChip({
             : { backgroundColor: 'rgba(255,255,255,0.025)', borderColor: 'rgba(255,255,255,0.08)' },
         ]}
       >
-        <Text style={[styles.filterText, { color: active ? config.color : COLORS.textMuted }]}>{config.label}</Text>
+        <Text style={[styles.filterText, { color: active ? config.color : COLORS.textMuted }]}>{translateUi(config.label)}</Text>
         <View style={[styles.filterBadge, { backgroundColor: active ? config.color : 'rgba(255,255,255,0.08)' }]}>
           <Text style={[styles.filterBadgeText, { color: active ? COLORS.background : COLORS.textMuted }]}>{count}</Text>
         </View>
@@ -111,6 +118,7 @@ function FilterChip({
 }
 
 function EmptyBookings({ filter, onCreate }: { filter: FilterType; onCreate: () => void }) {
+  const { t: translateUi } = useLanguage();
   const title = filter === 'all' ? 'No bookings yet' : `No ${STATUS_CONFIG[filter].label.toLowerCase()} bookings`;
 
   return (
@@ -119,7 +127,7 @@ function EmptyBookings({ filter, onCreate }: { filter: FilterType; onCreate: () 
         <Ionicons name="calendar-outline" size={34} color={COLORS.gold} />
       </View>
       <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyText}>Create a booking to reserve your space before arrival.</Text>
+      <Text style={styles.emptyText}>{translateUi("Create a booking to reserve your space before arrival.")}</Text>
       <View style={styles.emptyButton}>
         <NewBookingButton compact onPress={onCreate} />
       </View>
@@ -136,6 +144,7 @@ function BookingRow({
   index: number;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useRef(new Animated.Value(0)).current;
   const arrow = useRef(new Animated.Value(0)).current;
   const statusConfig = getStatusConfig(booking.status);
@@ -210,11 +219,11 @@ function BookingRow({
               </Animated.View>
             </View>
 
-            <Text numberOfLines={1} style={styles.slotCode}>Space {booking.slotCode}</Text>
+            <Text numberOfLines={1} style={styles.slotCode}>{translateUi("Space")}{" "}{booking.slotCode}</Text>
             <Text numberOfLines={1} style={styles.floorLabel}>{getFloorLabel(booking.floorId)}</Text>
 
             <View style={styles.bookingFooter}>
-              <StatusChip color={statusConfig.color} label={statusConfig.label} />
+              <StatusChip color={statusConfig.color} label={translateUi(statusConfig.label)} />
               <View style={styles.platePill}>
                 <Ionicons name="car-outline" size={13} color={COLORS.textMuted} />
                 <Text numberOfLines={1} style={styles.plateText}>{booking.licensePlate}</Text>
@@ -244,12 +253,15 @@ function BookingRow({
 }
 
 export const BookingListScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
+  const cart = useBookingCart();
   const { bookings, isLoading, error, fetchBookings } = useBooking();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<FilterType>('all');
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void fetchBookings();
-  }, [fetchBookings]);
+  }, [fetchBookings]));
 
   const filtered = filter === 'all' ? bookings : bookings.filter((booking) => booking.status === filter);
 
@@ -272,15 +284,22 @@ export const BookingListScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
+      <CustomerAmbientBackground />
 
       <StaggeredView delay={20} style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>My bookings</Text>
-          <Text style={styles.headerSubtitle}>Manage your parking reservations</Text>
+          <Text style={styles.headerTitle}>{t('myBookings')}</Text>
+          <Text style={styles.headerSubtitle}>{translateUi("Manage your parking reservations")}</Text>
         </View>
         <NewBookingButton onPress={openCreateBooking} />
       </StaggeredView>
+
+      <View style={[workflowStyles.row, { paddingHorizontal: 20, paddingBottom: 12 }]}>
+        <WorkflowChip onPress={() => navigation.getParent()?.navigate('Bookings', { screen: 'FindParking' })}>{translateUi("Parking map")}</WorkflowChip>
+        <WorkflowChip onPress={() => navigation.getParent()?.navigate('Bookings', { screen: 'BookingCart' })}>{translateUi("Booking cart (")}{cart.items.length})</WorkflowChip>
+        <WorkflowChip onPress={() => navigation.getParent()?.navigate('Bookings', { screen: 'BookingAssistant' })}>{translateUi("AI assistant")}</WorkflowChip>
+      </View>
 
       <ScrollView
         horizontal
@@ -300,18 +319,18 @@ export const BookingListScreen = ({ navigation }: Props) => {
       </ScrollView>
 
       {error ? (
-        <ErrorState message={error} onRetry={fetchBookings} />
+        <ErrorState message={translateUi(error)} onRetry={fetchBookings} />
       ) : isLoading && bookings.length === 0 ? (
         <View style={styles.loadingState}>
           <ActivityIndicator color={COLORS.gold} size="large" />
-          <Text style={styles.loadingText}>Loading bookings...</Text>
+          <Text style={styles.loadingText}>{translateUi("Loading bookings...")}</Text>
         </View>
       ) : (
         <FlatList
           contentContainerStyle={styles.listContent}
           data={filtered}
           keyExtractor={(item) => item._id}
-          ListEmptyComponent={!isLoading ? <EmptyBookings filter={filter} onCreate={openCreateBooking} /> : null}
+          ListEmptyComponent={!isLoading ? <EmptyBookings filter={filter} onCreate={openCreateBooking} /> : undefined}
           refreshControl={
             <RefreshControl refreshing={isLoading} tintColor={COLORS.gold} colors={[COLORS.gold]} onRefresh={fetchBookings} />
           }
@@ -349,10 +368,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: COLORS.textPrimary,
-    fontSize: 30,
-    fontWeight: '900',
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '700',
     letterSpacing: 0,
-    lineHeight: 36,
+    lineHeight: 32,
   },
   headerSubtitle: {
     color: COLORS.textMuted,
@@ -386,7 +405,6 @@ const styles = StyleSheet.create({
   },
   filterScroll: {
     flexGrow: 0,
-    maxHeight: 50,
   },
   filtersWrap: {
     alignItems: 'center',
@@ -403,7 +421,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 6,
-    minHeight: 38,
+    minHeight: 44,
+    paddingVertical: 8,
     paddingHorizontal: 14,
   },
   filterText: {
@@ -419,7 +438,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   filterBadgeText: {
-    fontSize: 10,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '800',
   },
   listContent: {
@@ -452,9 +471,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.md,
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
   },
   bookingTimeBlock: {
     flex: 1,
+    flexBasis: 140,
     minWidth: 0,
   },
   bookingDate: {
@@ -466,14 +487,18 @@ const styles = StyleSheet.create({
   bookingTime: {
     color: COLORS.textPrimary,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
+    lineHeight: 24,
+    fontVariant: ['tabular-nums'],
     marginTop: 3,
   },
   amount: {
     color: COLORS.gold,
     fontSize: 18,
-    fontWeight: '900',
-    maxWidth: 118,
+    fontWeight: '700',
+    lineHeight: 24,
+    fontVariant: ['tabular-nums'],
+    maxWidth: '100%',
     textAlign: 'right',
   },
   slotCode: {

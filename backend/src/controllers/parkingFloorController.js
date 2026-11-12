@@ -1,6 +1,10 @@
 const ParkingFloor = require("../models/ParkingFloor");
 const Zone = require("../models/Zone");
 const Slot = require("../models/Slot");
+const Session = require("../models/Session");
+const Booking = require("../models/Booking");
+const MembershipSlotEntitlement = require("../models/MembershipSlotEntitlement");
+const AdminActionLog = require("../models/AdminActionLog");
 
 // Get all parking floors
 exports.getAllFloors = async (req, res) => {
@@ -15,7 +19,7 @@ exports.getAllFloors = async (req, res) => {
 // Create a new floor
 exports.createFloor = async (req, res) => {
   try {
-    const { floorNumber, name, layoutData } = req.body;
+    const { floorNumber, name, code, layoutData } = req.body;
     
     // Default layout structure if not provided
     const initialLayout = layoutData || {
@@ -24,25 +28,83 @@ exports.createFloor = async (req, res) => {
       elements: []
     };
 
+    const parsedFloorNumber = Number(floorNumber);
+    if (isNaN(parsedFloorNumber) || parsedFloorNumber < 1) {
+      return res.status(400).json({ success: false, message: "Số tầng không hợp lệ (phải là số nguyên dương >= 1)." });
+    }
+
+    const existingFloor = await ParkingFloor.findOne({ floorNumber: parsedFloorNumber });
+    if (existingFloor) {
+      return res.status(400).json({ success: false, message: `Tầng ${parsedFloorNumber} đã tồn tại trong hệ thống.` });
+    }
+
+    const floorName = name || `Floor ${parsedFloorNumber}`;
+    const floorCode = (code || `F${parsedFloorNumber}`).toUpperCase();
+
     const newFloor = await ParkingFloor.create({
-      floorNumber,
-      name,
+      floorNumber: parsedFloorNumber,
+      name: floorName,
+      code: floorCode,
       layoutData: initialLayout
     });
 
-    const AdminActionLog = require('../models/AdminActionLog');
-    await AdminActionLog.create({
-      action: "Created Parking Lot",
-      target: `${name || `Floor ${floorNumber}`}`,
-      type: "create",
-      adminId: req.user._id
-    });
+    if (req.user?._id) {
+      await AdminActionLog.create({
+        action: "Created Parking Lot",
+        target: floorName,
+        type: "create",
+        adminId: req.user._id
+      });
+    }
 
     res.status(201).json({ success: true, data: newFloor });
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ success: false, message: "Floor number already exists" });
+      return res.status(400).json({ success: false, message: "Số tầng hoặc mã tầng đã tồn tại." });
     }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Update metadata of a floor (name, floorNumber, code)
+exports.updateFloorInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, floorNumber, code } = req.body;
+
+    const floor = await ParkingFloor.findById(id);
+    if (!floor) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy tầng." });
+    }
+
+    if (floorNumber !== undefined) {
+      const parsed = Number(floorNumber);
+      if (isNaN(parsed) || parsed < 1) {
+        return res.status(400).json({ success: false, message: "Số tầng phải là số nguyên dương >= 1." });
+      }
+      const duplicate = await ParkingFloor.findOne({ floorNumber: parsed, _id: { $ne: id } });
+      if (duplicate) {
+        return res.status(400).json({ success: false, message: `Số tầng ${parsed} đã tồn tại.` });
+      }
+      floor.floorNumber = parsed;
+    }
+
+    if (name) floor.name = name.trim();
+    if (code) floor.code = code.trim().toUpperCase();
+
+    await floor.save();
+
+    if (req.user?._id) {
+      await AdminActionLog.create({
+        action: "Updated Parking Floor Info",
+        target: `${floor.name} (Tầng ${floor.floorNumber})`,
+        type: "update",
+        adminId: req.user._id
+      });
+    }
+
+    res.status(200).json({ success: true, data: floor });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -86,11 +148,6 @@ exports.updateFloorLayout = async (req, res) => {
       const validSlotNames = [];
 
       for (const sEl of slotElements) {
-        // -------------------------------------------------------------
-        // OPTIMIZATION: If a parking slot has not been named,
-        // do not save it to the database to avoid overload and stale data.
-        // The slot remains in layoutData for builder display but cannot be booked.
-        // -------------------------------------------------------------
         if (!sEl.name || sEl.name.trim() === '') {
           continue;
         }
@@ -99,7 +156,6 @@ exports.updateFloorLayout = async (req, res) => {
         let matchedZoneId = null;
         for (const zId in zoneDocsMap) {
           const zBounds = zoneDocsMap[zId];
-          // Check if point (sEl.x, sEl.y) is inside rectangle (zBounds)
           if (
             sEl.x >= zBounds.x &&
             sEl.x <= zBounds.x + zBounds.w &&
@@ -116,7 +172,7 @@ exports.updateFloorLayout = async (req, res) => {
         if (validSlotNames.includes(slotIdentifier)) {
           return res.status(400).json({ 
             success: false, 
-            message: `Error: Duplicate parking slot name "${slotIdentifier}" detected. Slot names must be unique within a floor.`
+            message: `Lỗi: Phát hiện trùng tên ô đỗ "${slotIdentifier}". Tên ô đỗ phải duy nhất trong một tầng.`
           });
         }
         
@@ -126,7 +182,7 @@ exports.updateFloorLayout = async (req, res) => {
         if (!matchedZoneId) {
           return res.status(400).json({ 
             success: false, 
-            message: `Error: Parking slot ${slotIdentifier} is outside every Zone. Please drag this slot into a valid Zone.`
+            message: `Lỗi: Ô đỗ "${slotIdentifier}" nằm ngoài tất cả các Zone. Vui lòng kéo ô vào bên trong một Zone hợp lệ.`
           });
         }
 
@@ -147,64 +203,75 @@ exports.updateFloorLayout = async (req, res) => {
         });
       }
 
-      // --- 3.5 STRICT PREVENTION: Check if deleted slots have active subscriptions or sessions ---
-      const slotsToDelete = await Slot.find({
-        floorID: id,
-        slotNumber: { $nin: validSlotNames }
-      }).select('slotNumber reservedFor reservedByEntitlementId reservedBySubscriptionId');
+      // --- 3.5 STRICT PREVENTION: Check if deleted slots have active dependencies ---
+      const existingSlots = await Slot.find({ floorID: id });
+      const slotsToDelete = existingSlots.filter(s => !validSlotNames.includes(s.slotNumber));
 
       if (slotsToDelete.length > 0) {
-        const deletedSlotNames = slotsToDelete.map(s => s.slotNumber);
-        
-        const problematicSlots = new Set(
-          slotsToDelete
-            .filter(
-              (slot) =>
-                slot.reservedFor ||
-                slot.reservedByEntitlementId ||
-                slot.reservedBySubscriptionId
-            )
-            .map((slot) => slot.slotNumber)
-        );
+        const slotIdsToDelete = slotsToDelete.map(s => s._id);
+        const slotNamesToDelete = slotsToDelete.map(s => s.slotNumber);
 
-        if (problematicSlots.size > 0) {
-           return res.status(400).json({
-             success: false, 
-             message: `Lỗi Hệ Thống: Không thể xoá các ô đỗ (${Array.from(problematicSlots).join(', ')}) vì khách hàng đang thuê gói VIP tại các ô này. Vui lòng chuyển ô đỗ cho khách trước khi xoá.`
-           });
-        }
-        
-        // Check active sessions (Parked Cars)
-        const Session = require('../models/Session');
+        // A. Check active sessions (cars currently parked)
         const activeSessions = await Session.find({
-           status: 'active',
-           parkingSlot: { $in: deletedSlotNames }
+          status: 'active',
+          $or: [
+            { parkingSlot: { $in: slotNamesToDelete } },
+            { floorId: id, parkingSlot: { $in: slotNamesToDelete } }
+          ]
         });
-        
+
         if (activeSessions.length > 0) {
-           const problematicSlots = activeSessions.map(s => s.parkingSlot);
-           return res.status(400).json({ 
-             success: false, 
-             message: `Lỗi Hệ Thống: Không thể xoá các ô đỗ (${problematicSlots.join(', ')}) vì đang có xe đậu tại các ô này.`
-           });
+          const busySlots = [...new Set(activeSessions.map(s => s.parkingSlot))].join(', ');
+          return res.status(400).json({
+            success: false,
+            message: `Không thể lưu sơ đồ! Các ô [${busySlots}] đang có xe đỗ thực tế. Vui lòng giữ lại các ô này.`
+          });
+        }
+
+        // B. Check active VIP entitlements
+        const activeEntitlements = await MembershipSlotEntitlement.find({
+          slotId: { $in: slotIdsToDelete },
+          status: { $in: ['active', 'transfer_locked'] },
+          expireAt: { $gt: new Date() }
+        });
+
+        if (activeEntitlements.length > 0) {
+          const vipSlots = [...new Set(activeEntitlements.map(e => e.slotCode))].join(', ');
+          return res.status(400).json({
+            success: false,
+            message: `Không thể xoá các ô VIP [${vipSlots}] vì khách hàng đang sở hữu gói thuê hiệu lực.`
+          });
+        }
+
+        // C. Check upcoming / active bookings
+        const activeBookings = await Booking.find({
+          parkingSlot: { $in: slotNamesToDelete },
+          floorId: id,
+          status: { $in: ['PAID', 'PENDING', 'ACTIVE'] },
+          scheduledEnd: { $gte: new Date() }
+        });
+
+        if (activeBookings.length > 0) {
+          const bookedSlots = [...new Set(activeBookings.map(b => b.parkingSlot))].join(', ');
+          return res.status(400).json({
+            success: false,
+            message: `Không thể xoá các ô [${bookedSlots}] vì đang có lịch đặt chỗ chưa kết thúc.`
+          });
         }
       }
-      // -----------------------------------------------------------------------------------------
 
-      // Execute bulk write for slots
       if (bulkSlotOps.length > 0) {
         await Slot.bulkWrite(bulkSlotOps);
       }
 
-      // 4. Cleanup removed slots
-      // Delete any slots in this floor that are not in the validSlotNames list
+      // Delete any slots in this floor that are not in validSlotNames
       await Slot.deleteMany({
         floorID: id,
         slotNumber: { $nin: validSlotNames }
       });
     }
 
-    // Finally, update the Floor's layoutData for frontend rendering
+    // Update the Floor's layoutData
     const floor = await ParkingFloor.findByIdAndUpdate(
       id,
       { layoutData },
@@ -212,7 +279,7 @@ exports.updateFloorLayout = async (req, res) => {
     );
 
     if (!floor) {
-      return res.status(404).json({ success: false, message: "Floor not found" });
+      return res.status(404).json({ success: false, message: "Không tìm thấy tầng." });
     }
 
     res.status(200).json({ success: true, data: floor });
@@ -221,24 +288,69 @@ exports.updateFloorLayout = async (req, res) => {
   }
 };
 
-// Delete a floor
+// Delete a floor with strict safeguards
 exports.deleteFloor = async (req, res) => {
   try {
     const { id } = req.params;
-    const Slot = require('../models/Slot');
-    const Zone = require('../models/Zone');
 
-    const floor = await ParkingFloor.findByIdAndDelete(id);
-
+    const floor = await ParkingFloor.findById(id);
     if (!floor) {
-      return res.status(404).json({ success: false, message: "Floor not found" });
+      return res.status(404).json({ success: false, message: "Không tìm thấy tầng." });
     }
 
-    // Đồng bộ xoá tất cả Slot và Zone thuộc về tầng này
+    // 1. Safeguard: Check active parking sessions
+    const activeSessionsCount = await Session.countDocuments({
+      floorId: id,
+      status: 'active'
+    });
+    if (activeSessionsCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Không thể xoá ${floor.name}! Tầng này đang có ${activeSessionsCount} xe đang đỗ thực tế.`
+      });
+    }
+
+    // 2. Safeguard: Check active VIP entitlements
+    const activeVipCount = await MembershipSlotEntitlement.countDocuments({
+      floorId: id,
+      status: { $in: ['active', 'transfer_locked'] },
+      expireAt: { $gt: new Date() }
+    });
+    if (activeVipCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Không thể xoá ${floor.name}! Tầng này đang có ${activeVipCount} slot VIP của khách hàng đang hiệu lực.`
+      });
+    }
+
+    // 3. Safeguard: Check upcoming bookings
+    const activeBookingCount = await Booking.countDocuments({
+      floorId: id,
+      status: { $in: ['PAID', 'PENDING', 'ACTIVE'] },
+      scheduledEnd: { $gte: new Date() }
+    });
+    if (activeBookingCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Không thể xoá ${floor.name}! Tầng này đang có ${activeBookingCount} lịch đặt trước sắp diễn ra.`
+      });
+    }
+
+    // Safe to delete
+    await ParkingFloor.findByIdAndDelete(id);
     await Slot.deleteMany({ floorID: id });
     await Zone.deleteMany({ floorID: id });
 
-    res.status(200).json({ success: true, message: "Floor and its associated zones and slots deleted successfully" });
+    if (req.user?._id) {
+      await AdminActionLog.create({
+        action: "Deleted Parking Floor",
+        target: `${floor.name} (Tầng ${floor.floorNumber})`,
+        type: "delete",
+        adminId: req.user._id
+      });
+    }
+
+    res.status(200).json({ success: true, message: `Đã xoá ${floor.name} cùng toàn bộ ô đỗ liên quan thành công.` });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -248,20 +360,30 @@ exports.deleteFloor = async (req, res) => {
 exports.getFloorSlots = async (req, res) => {
   try {
     const { id } = req.params;
-    const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
+    const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
 
-    const slots = await Slot.find({ floorID: id }).populate('zoneID', 'zoneName zoneType').lean();
+    const slots = await Slot.find({ floorID: id })
+      .select('-aiObservation.fullSnapshot')
+      .populate('zoneID', 'zoneName zoneType')
+      .lean();
 
-    const rawEntitlements = await MembershipSlotEntitlement.find({
-      floorId: id,
-      status: { $in: ['active', 'transfer_locked'] },
-      expireAt: { $gt: new Date() },
-    })
-      .populate('packageId', 'type name price')
-      .populate('ownerId', 'username email phone');
+    const [rawEntitlements, activeMaintenanceLogs] = await Promise.all([
+      MembershipSlotEntitlement.find({
+        floorId: id,
+        status: { $in: ['active', 'transfer_locked'] },
+        expireAt: { $gt: new Date() },
+      })
+        .populate('packageId', 'type name price')
+        .populate('ownerId', 'username email phone'),
+      SlotMaintenanceLog.find({
+        slotID: { $in: slots.map(s => s._id) },
+        $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
+      }).select('slotID').lean()
+    ]);
       
-    // Lọc bỏ những entitlement của user đã bị xoá (orphan)
+    // Filter orphaned entitlements
     const activeEntitlements = rawEntitlements.filter(e => e.ownerId);
+    const maintenanceSet = new Set(activeMaintenanceLogs.map(m => String(m.slotID)));
 
     const slotPackageMap = {};
     const slotSubscriptionMap = {};
@@ -277,11 +399,22 @@ exports.getFloorSlots = async (req, res) => {
       };
     });
 
-    const enrichedSlots = slots.map(slot => ({
-      ...slot,
-      subscriptionType: slotPackageMap[slot.slotNumber] || null,
-      subscriptionDetail: slotSubscriptionMap[slot.slotNumber] || null
-    }));
+    const enrichedSlots = slots.map(slot => {
+      const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
+      const isUnderMaintenance = slot.status === 'maintenance' || maintenanceSet.has(String(slot._id));
+      let resolvedStatus = slot.status;
+      if (isUnderMaintenance) {
+        resolvedStatus = 'maintenance';
+      } else if (isPhysicallyOccupied || slot.status === 'occupied') {
+        resolvedStatus = 'occupied';
+      }
+      return {
+        ...slot,
+        status: resolvedStatus,
+        subscriptionType: slotPackageMap[slot.slotNumber] || null,
+        subscriptionDetail: slotSubscriptionMap[slot.slotNumber] || null
+      };
+    });
 
     res.status(200).json({ success: true, data: enrichedSlots });
   } catch (error) {
@@ -292,16 +425,16 @@ exports.getFloorSlots = async (req, res) => {
 // Get Live Map Data (Unified slots across all floors with real-time status)
 exports.getLiveMapData = async (req, res) => {
   try {
-    const Session = require('../models/Session');
-    const Booking = require('../models/Booking');
     const BookingHold = require('../models/BookingHold');
     const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
 
     const slots = await Slot.find()
+      .select('-aiObservation.fullSnapshot -aiObservation.evidenceSnapshot')
       .populate('zoneID', 'zoneName zoneType')
       .populate('floorID', 'name floorNumber')
       .populate('reservedFor', '_id')
-      .populate('reservedByEntitlementId', 'ownerId status expireAt');
+      .populate('reservedByEntitlementId', 'ownerId status expireAt')
+      .lean();
 
     const now = new Date();
     const next2Hours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -327,9 +460,7 @@ exports.getLiveMapData = async (req, res) => {
     const subscriptionSlots = new Set(
       slots
         .filter((slot) => {
-          // If reservedFor is set but populated as null -> User was deleted
           if (slot.reservedFor && slot.reservedFor._id) return true;
-          // If entitlement is set but ownerId is null or it's expired -> Orphaned/Expired
           if (slot.reservedByEntitlementId && slot.reservedByEntitlementId.ownerId) {
              const ent = slot.reservedByEntitlementId;
              if (['active', 'transfer_locked'].includes(ent.status) && new Date(ent.expireAt) > now) {
@@ -344,15 +475,16 @@ exports.getLiveMapData = async (req, res) => {
     const mapData = slots.map(slot => {
       let status = 'available';
       const currentSlotKey = slotKey(slot.floorID?._id || slot.floorID, slot.slotNumber);
+      const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
+
       if (slot.status === 'maintenance' || maintenanceSet.has(String(slot._id))) {
         status = 'maintenance';
-      } else if (occupiedSlots.has(currentSlotKey)) {
+      } else if (occupiedSlots.has(currentSlotKey) || slot.status === 'occupied' || isPhysicallyOccupied) {
         status = 'occupied';
       } else if (bookedSlots.has(currentSlotKey) || heldSlots.has(currentSlotKey) || subscriptionSlots.has(String(slot._id))) {
         status = 'reserved';
       }
 
-      // Map type for frontend
       let type = 'standard';
       if (slot.slotType === 'vip') type = 'vip';
       else if (slot.slotType === 'ev') type = 'ev';
@@ -365,6 +497,9 @@ exports.getLiveMapData = async (req, res) => {
         zone: slot.zoneID ? slot.zoneID.zoneName : '',
         type,
         status,
+        detectedPlate: slot.aiObservation?.detectedPlate || null,
+        isViolation: Boolean(slot.aiObservation?.isViolation),
+        violationType: slot.aiObservation?.violationType || null,
         price: type === 'vip' ? '30,000₫/h' : type === 'ev' ? '20,000₫/h + EV' : '10,000₫/h'
       };
     });

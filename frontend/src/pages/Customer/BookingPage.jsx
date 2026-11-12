@@ -1,3 +1,5 @@
+import TelegramReceiptModal from '../../components/TelegramReceiptModal';
+import TelegramReceiptButton from '../../components/TelegramReceiptButton';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -101,6 +103,7 @@ export default function BookingPage() {
   const [manualPlateInput, setManualPlateInput] = useState('');
   const [extendEndTime, setExtendEndTime] = useState('');
   const [qrDialog, setQrDialog] = useState(null);
+  const [telegramBookingId, setTelegramBookingId] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [cancelDialog, setCancelDialog] = useState(null);
   const [cancelQuoteLoading, setCancelQuoteLoading] = useState('');
@@ -649,6 +652,8 @@ export default function BookingPage() {
         </div>
       )}
 
+      {telegramBookingId && <TelegramReceiptModal key={telegramBookingId} open onClose={() => setTelegramBookingId(null)} bookingId={telegramBookingId} />}
+
       {qrDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl">
@@ -676,6 +681,7 @@ export default function BookingPage() {
                 className="h-auto w-full"
               />
             </div>
+            {['PAID', 'ACTIVE', 'PAUSED'].includes(getBookingStatus(qrDialog.booking)) && <TelegramReceiptButton bookingId={qrDialog.booking._id} refreshKey={telegramBookingId} onClick={() => { setTelegramBookingId(qrDialog.booking._id); setQrDialog(null); }} className="mt-4 min-h-11 w-full rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 text-sm font-bold text-sky-200 hover:bg-sky-400/20" />}
             <p className="mt-4 text-center text-xs leading-5 text-white/45">
               Present this code to the kiosk or staff. It becomes invalid when the booking ends.
             </p>

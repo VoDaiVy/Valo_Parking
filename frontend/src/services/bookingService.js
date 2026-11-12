@@ -32,6 +32,12 @@ export const getAvailableBookingSlots = ({ startTime, endTime, bookingSource }) 
   });
 };
 
+export const getPricingConfig = () =>
+  apiFetch('/bookings/pricing-config', {
+    method: 'GET',
+    headers: authHeader(),
+  });
+
 export const getActiveHolds = () => {
   return apiFetch(`/bookings/active-holds`, {
     method: 'GET',
@@ -39,12 +45,17 @@ export const getActiveHolds = () => {
   });
 };
 
-export const createBooking = (payload) =>
-  apiFetch('/bookings', {
+export const createBooking = (payload) => {
+  const idempotencyKey = payload.idempotencyKey || globalThis.crypto?.randomUUID?.();
+  return apiFetch('/bookings', {
     method: 'POST',
-    headers: authHeader(),
+    headers: {
+      ...authHeader(),
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
     body: JSON.stringify(payload),
   });
+};
 
 export const quoteBooking = (payload) =>
   apiFetch('/bookings/quote', {
@@ -53,10 +64,10 @@ export const quoteBooking = (payload) =>
     body: JSON.stringify(payload),
   });
 
-export const createBookingHold = (payload) =>
+export const createBookingHold = (payload, { anonymous = false } = {}) =>
   apiFetch('/bookings/hold', {
     method: 'POST',
-    headers: authHeader(),
+    headers: anonymous ? {} : authHeader(),
     body: JSON.stringify(payload),
   });
 

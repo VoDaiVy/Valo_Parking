@@ -1,0 +1,121 @@
+/* Scoped only to Policies, Revenue, Vouchers and Vehicles; Account/Session are references. */
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) { padding: 14px 24px 24px; background: #080808; --admin-type-page: 30px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) > .relative.mx-auto { max-width: none; min-width: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency).admin-revenue-analytics > .pointer-events-none { display: block; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 0; margin: 0 0 12px; border: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > div:first-child { min-width: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header .c4-title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 0; border: 0; background: transparent; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header h1 { margin: 0; font-size: 30px !important; line-height: 38px !important; font-weight: 700 !important; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header .c4-badge { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 4px 12px; border: 1px solid rgb(234 179 8 / .2); border-radius: 999px; background: rgb(234 179 8 / .1); color: #fde047; font-size: 12px !important; line-height: 17px !important; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > div:first-child > p { margin-top: 4px; font-size: 14px !important; line-height: 22px !important; color: #9ca3af; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > button { min-height: 40px; height: 40px; width: auto; padding: 7px 12px; border-radius: 12px; background: #e8d5ad; color: #171717; box-shadow: none; transform: none; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > button:hover { background: #f0dfbe; box-shadow: none; transform: none; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > button > .absolute { display: none; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > button svg { transform: none; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header > div:last-child { gap: 8px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-controls { max-width: 100%; justify-content: flex-end; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .ra-update { flex-basis: 100%; gap: 8px; padding: 0; border: 0; font-size: 12px; line-height: 17px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis { display: grid; margin: 0 0 16px; padding: 0; gap: 0; border: 0; border-block: 1px solid rgb(255 255 255 / .1); border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; overflow: visible; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-vehicle-kpis { border: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div { display: flex; align-items: center; min-width: 0; min-height: 96px; height: auto; gap: 10px; padding: 12px 14px; border: 0; background: transparent; --admin-type-kpi: 26px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div + div { border-left: 1px solid rgb(255 255 255 / .1); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :first-child { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; padding: 0; border: 0; border-radius: 10px; background: rgb(234 179 8 / .08); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis svg { width: 18px; height: 18px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child { min-width: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child > p:first-child { margin: 0; color: rgb(191 219 254 / .55); font-size: 12px !important; line-height: 17px !important; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child > div { align-items: baseline; gap: 8px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child > div > :last-child { color: #6ee7b7; }
+/* Financial values stay intact; switch to three columns before six become narrow. */
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div { flex-wrap: wrap; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(3n+1) { border-left: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n+4) { border-top: 1px solid rgb(255 255 255 / .1); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue p:last-child { font-size: 24px !important; line-height: 30px !important; white-space: nowrap; overflow-wrap: normal; word-break: normal; overflow: visible; text-overflow: clip; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .ra-basis { padding: 0 0 12px; color: #9ca3af; }
+@media (min-width: 2000px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div + div { border-left: 1px solid rgb(255 255 255 / .1); border-top: 0; }
+}
+@media (max-width: 1023px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four > div:nth-child(3) { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four > div:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(even) { border-left: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) { padding: 12px 16px 20px; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-header h1 { font-size: 26px !important; line-height: 34px !important; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: minmax(0, 1fr); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n) { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div + div { border-top: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-three > div { flex-direction: column; align-items: flex-start; gap: 6px; padding-inline: 8px; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four > div { padding-inline: 8px; gap: 6px; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child > div { flex-wrap: wrap; }
+}
+
+body[data-valo-typography="admin"] .admin-consistency .c4-kpi-value { font-size: 26px !important; line-height: 32.5px !important; font-weight: 700 !important; }
+body[data-valo-typography="admin"] .admin-consistency .c4-revenue .c4-kpi-value { font-size: 24px !important; line-height: 30px !important; }
+
+/* Measure the available workspace, including when the Admin sidebar is open. */
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) { container: admin-workspace / inline-size; font-family: var(--admin-font-family, Montserrat, sans-serif); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-controls { flex: 0 1 auto; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child > p:first-child { text-transform: none; letter-spacing: normal; font-weight: 500; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div > :last-child > div > :last-child { white-space: normal; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-vehicle-kpis { border: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-vehicle-kpis + div { margin-top: 16px; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n) { border-left: 1px solid rgb(255 255 255 / .1); border-top: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(3n+1) { border-left: 0; }
+body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n+4) { border-top: 1px solid rgb(255 255 255 / .1); }
+@container admin-workspace (min-width: 2100px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n) { border-top: 0; border-left: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:first-child { border-left: 0; }
+}
+@container admin-workspace (max-width: 1050px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n) { border-left: 0; border-top: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(even) { border-left: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+@container admin-workspace (max-width: 700px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four > div:nth-child(3) { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four > div:nth-child(n+3) { border-top: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue { grid-template-columns: minmax(0, 1fr); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div:nth-child(n) { border-left: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-revenue > div + div { border-top: 1px solid rgb(255 255 255 / .1); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-controls { justify-content: flex-start; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .ra-update { justify-content: flex-start; }
+}
+@container admin-workspace (max-width: 420px) {
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-four,
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-three { grid-template-columns: minmax(0, 1fr); }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div:nth-child(n) { flex-direction: row; align-items: center; gap: 10px; padding-inline: 10px; border-left: 0; }
+  body[data-valo-typography="admin"] .admin-consistency:is(.admin-policy-consistency, .admin-revenue-analytics, .admin-voucher-consistency, .admin-vehicle-consistency) .c4-kpis > div + div { border-top: 1px solid rgb(255 255 255 / .1); }
+}
+
+/* Keep revenue filters and their update caption together at the top right. */
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .ra-header {
+  align-items: flex-start;
+}
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .ra-header .c4-controls {
+  flex: 0 1 440px;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+body[data-valo-typography="admin"] .admin-consistency.admin-revenue-analytics .ra-header .ra-update {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+/* Vehicles tab typography overrides the shared Admin control weight. */
+body[data-valo-typography="admin"] .admin-vehicle-consistency .vehicle-tabs > button {
+  font-family: var(--admin-font-family, Montserrat, sans-serif);
+  font-weight: 600 !important;
+}

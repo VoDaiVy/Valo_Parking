@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useSocket } from '@/hooks/useSocket';
+import { useAuth } from '@/hooks/useAuth';
 import { notificationsService } from '@/services/api/notifications';
 import type { UserNotification } from '@/types/models';
 import {
@@ -11,6 +12,8 @@ import {
 
 export const useNotifications = (filter: NotificationFilter) => {
   const socket = useSocket();
+  const { user } = useAuth();
+  const contextRole = user?.role === 'admin' ? 'admin' : user?.role === 'staff' ? 'staff' : 'customer';
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -27,16 +30,16 @@ export const useNotifications = (filter: NotificationFilter) => {
   }, [filter]);
 
   const fetchUnreadCount = useCallback(async () => {
-    const response = await notificationsService.getUnreadCount();
+    const response = await notificationsService.getUnreadCount(contextRole);
     setUnreadCount(response.data?.count || 0);
-  }, []);
+  }, [contextRole]);
 
   const fetchNotifications = useCallback(
     async (nextPage = 1, append = false) => {
       setError('');
       if (!append) setLoading(true);
       try {
-        const response = await notificationsService.getNotifications({ page: nextPage, ...query });
+        const response = await notificationsService.getNotifications({ page: nextPage, contextRole, ...query });
         const data = response.data || [];
         setNotifications((current) => (append ? [...current, ...data] : data));
         setPage(nextPage);
@@ -48,7 +51,7 @@ export const useNotifications = (filter: NotificationFilter) => {
         setRefreshing(false);
       }
     },
-    [query],
+    [query, contextRole],
   );
 
   const refetch = useCallback(async () => {

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { normalizePhone } = require('../utils/phoneUtils');
 
 const userDetailSchema = new mongoose.Schema(
   {
@@ -22,7 +23,10 @@ const userDetailSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+      set: (value) => normalizePhone(value),
     },
+    // Internal transaction fence shared by profile changes and Telegram linking.
+    telegramLinkRevision: { type: Number, default: 0, select: false },
     dob: {
       type: Date,
       default: null,
@@ -41,6 +45,8 @@ const userDetailSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+userDetailSchema.index({ phone: 1 });
 
 const UserDetail = mongoose.model('UserDetail', userDetailSchema);
 

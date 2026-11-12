@@ -8,6 +8,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   cacheDir: path.join(os.tmpdir(), 'wdp301-frontend-vite-cache'),
   plugins: [react()],
+  optimizeDeps: {
+    include: ['three', '@react-three/fiber', '@react-three/drei'],
+  },
   define: {
     'process.env': {}
   },

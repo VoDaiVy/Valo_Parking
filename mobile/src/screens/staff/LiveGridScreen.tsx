@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -73,6 +74,7 @@ const getLayoutElements = (floor: ParkingFloor | null) => {
 };
 
 function LiveActiveBadge({ count }: { count: number }) {
+  const { t: translateUi } = useLanguage();
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -105,12 +107,13 @@ function LiveActiveBadge({ count }: { count: number }) {
         <Animated.View style={[styles.liveDotHalo, { opacity, transform: [{ scale }] }]} />
         <View style={styles.liveDot} />
       </View>
-      <Text style={styles.liveBadgeText}>{count} active</Text>
+      <Text style={styles.liveBadgeText}>{count} {" "}{translateUi("active")}</Text>
     </View>
   );
 }
 
 export default function LiveGridScreen() {
+  const { t: translateUi } = useLanguage();
   const [floors, setFloors] = useState<ParkingFloor[]>([]);
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [floorSlots, setFloorSlots] = useState<Slot[]>([]);
@@ -267,11 +270,11 @@ export default function LiveGridScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
 
       <StaffHeader
         eyebrow="Live parking"
-        title="Floor monitor"
+        title={translateUi("Floor monitor")}
         right={<LiveActiveBadge count={activeSessions.length} />}
       />
 
@@ -333,11 +336,11 @@ export default function LiveGridScreen() {
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={COLORS.staffBlue} size="large" />
-            <Text style={styles.loadingText}>Loading live parking...</Text>
+            <Text style={styles.loadingText}>{translateUi("Loading live parking...")}</Text>
           </View>
         ) : error ? (
           <ErrorState
-            message={error}
+            message={translateUi(error)}
             onRetry={() => {
               void loadOverview(true);
             }}
@@ -345,17 +348,17 @@ export default function LiveGridScreen() {
         ) : !selectedFloor ? (
           <EmptyState
             icon="layers-outline"
-            title="No parking floors"
-            message="Create a parking floor before opening the live monitor."
+            title={translateUi("No parking floors")}
+            message={translateUi("Create a parking floor before opening the live monitor.")}
             accentColor={COLORS.staffBlue}
           />
         ) : (
           <>
             <MetricStrip style={styles.liveMetricStrip}>
-              <OperationalMetric icon="speedometer-outline" value={`${occupancy}%`} label="Occupied" tone={occupancy >= 90 ? 'danger' : occupancy >= 80 ? 'warning' : 'info'} />
-              <OperationalMetric icon="checkmark-circle-outline" value={String(availableCount)} label="Available" tone="success" />
-              <OperationalMetric icon="bookmark-outline" value={String(reservedCount)} label="Reserved" tone="warning" />
-              <OperationalMetric icon="construct-outline" value={String(maintenanceCount)} label="Repair" tone={maintenanceCount > 0 ? 'danger' : 'muted'} />
+              <OperationalMetric icon="speedometer-outline" value={`${occupancy}%`} label={translateUi("Occupied")} tone={occupancy >= 90 ? 'danger' : occupancy >= 80 ? 'warning' : 'info'} />
+              <OperationalMetric icon="checkmark-circle-outline" value={String(availableCount)} label={translateUi("Available")} tone="success" />
+              <OperationalMetric icon="bookmark-outline" value={String(reservedCount)} label={translateUi("Reserved")} tone="warning" />
+              <OperationalMetric icon="construct-outline" value={String(maintenanceCount)} label={translateUi("Repair")} tone={maintenanceCount > 0 ? 'danger' : 'muted'} />
             </MetricStrip>
 
             <View style={styles.floorStatus}>
@@ -370,7 +373,7 @@ export default function LiveGridScreen() {
             <View style={styles.mapCard}>
               <View style={styles.mapHeader}>
                 <View>
-                  <Text style={styles.mapEyebrow}>Current floor</Text>
+                  <Text style={styles.mapEyebrow}>{translateUi("Current floor")}</Text>
                   <Text style={styles.mapTitle}>{selectedFloor.name}</Text>
                 </View>
                 <View style={styles.mapHint}>
@@ -379,15 +382,15 @@ export default function LiveGridScreen() {
                     size={14}
                     color={COLORS.textMuted}
                   />
-                  <Text style={styles.mapHintText}>Tap a space</Text>
+                  <Text style={styles.mapHintText}>{translateUi("Tap a space")}</Text>
                 </View>
               </View>
 
               <View style={styles.legend}>
-                <LegendItem color="#7EE8A2" label="Available" />
-                <LegendItem color="#FF6B6B" label="Occupied" />
-                <LegendItem color="#FFD700" label="Reserved" />
-                <LegendItem color="#A0A0A0" label="Maintenance" />
+                <LegendItem color="#7EE8A2" label={translateUi("Available")} />
+                <LegendItem color="#FF6B6B" label={translateUi("Occupied")} />
+                <LegendItem color="#FFD700" label={translateUi("Reserved")} />
+                <LegendItem color="#A0A0A0" label={translateUi("Maintenance")} />
               </View>
 
               <View style={styles.mapViewport}>
@@ -395,8 +398,7 @@ export default function LiveGridScreen() {
                   <View style={styles.mapLoading}>
                     <ActivityIndicator color={COLORS.staffBlue} />
                     <Text style={styles.mapLoadingText}>
-                      Updating spaces...
-                    </Text>
+                      {" "}{translateUi("Updating spaces...")}{" "}</Text>
                   </View>
                 ) : layoutElements.length === 0 ? (
                   <View style={styles.noLayout}>
@@ -405,10 +407,9 @@ export default function LiveGridScreen() {
                       size={28}
                       color={COLORS.textMuted}
                     />
-                    <Text style={styles.noLayoutTitle}>No floor plan yet</Text>
+                    <Text style={styles.noLayoutTitle}>{translateUi("No floor plan yet")}</Text>
                     <Text style={styles.noLayoutText}>
-                      Add a layout in Parking lot management to display it here.
-                    </Text>
+                      {" "}{translateUi("Add a layout in Parking lot management to display it here.")}{" "}</Text>
                   </View>
                 ) : (
                   <ParkingMap2D
@@ -436,7 +437,7 @@ export default function LiveGridScreen() {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>
-                  Vehicles on {selectedFloor.name}
+                  {" "}{translateUi("Vehicles on")}{" "}{selectedFloor.name}
                 </Text>
                 <Text style={styles.sectionSubtitle}>
                   {floorSessions.length === 0
@@ -461,8 +462,7 @@ export default function LiveGridScreen() {
                   color={COLORS.success}
                 />
                 <Text style={styles.clearStateText}>
-                  All spaces are ready for incoming vehicles.
-                </Text>
+                  {" "}{translateUi("All spaces are ready for incoming vehicles.")}{" "}</Text>
               </View>
             ) : (
               <View style={styles.sessionList}>
@@ -508,10 +508,11 @@ function SessionSlotCard({ session }: { session: ActiveSession }) {
 }
 
 function LegendItem({ color, label }: { color: string; label: string }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.legendItem}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
-      <Text style={styles.legendText}>{label}</Text>
+      <Text style={styles.legendText}>{translateUi(label)}</Text>
     </View>
   );
 }
@@ -523,6 +524,7 @@ function SlotDetail({
   slot: ParkingSlotInspection;
   onClose: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const statusLabel: Record<ParkingSlotInspection['status'], string> = {
     available: 'Available',
     occupied: 'Occupied',
@@ -564,7 +566,7 @@ function SlotDetail({
     >
       <View style={styles.detailModal}>
         <Pressable
-          accessibilityLabel="Close space details"
+          accessibilityLabel={translateUi("Close space details")}
           accessibilityRole="button"
           onPress={onClose}
           style={styles.detailBackdrop}
@@ -579,19 +581,19 @@ function SlotDetail({
             <View style={styles.detailHeader}>
               <View>
                 <View style={styles.detailLiveRow}>
-                  <Text style={styles.detailLabel}>Space details</Text>
+                  <Text style={styles.detailLabel}>{translateUi("Space details")}</Text>
                   <View style={styles.detailLiveDot} />
-                  <Text style={styles.detailLiveText}>LIVE API</Text>
+                  <Text style={styles.detailLiveText}>{translateUi("LIVE API")}</Text>
                 </View>
                 <View style={styles.detailTitleRow}>
-                  <Text style={styles.detailSlot}>SLOT {slot.slotCode}</Text>
+                  <Text style={styles.detailSlot}>{translateUi("SLOT")}{" "}{slot.slotCode}</Text>
                   {zoneName ? (
                     <Text style={styles.detailZone}>{zoneName}</Text>
                   ) : null}
                 </View>
               </View>
               <Pressable
-                accessibilityLabel="Close space details"
+                accessibilityLabel={translateUi("Close space details")}
                 accessibilityRole="button"
                 hitSlop={8}
                 onPress={onClose}
@@ -629,7 +631,7 @@ function SlotDetail({
                 />
               </View>
               <View>
-                <Text style={styles.detailStatusCaption}>Current status</Text>
+                <Text style={styles.detailStatusCaption}>{translateUi("Current status")}</Text>
                 <Text style={[styles.detailStatus, { color }]}>
                   {statusLabel[slot.status]}
                 </Text>
@@ -639,32 +641,32 @@ function SlotDetail({
             {slot.status === 'occupied' && session ? (
               <View style={styles.detailRows}>
                 <DetailRow
-                  label="License plate"
+                  label={translateUi("License plate")}
                   value={session.licensePlate || 'Not available'}
                   mono
                 />
                 <DetailRow
-                  label="Customer"
+                  label={translateUi("Customer")}
                   value={
                     typeof session.userId === 'object'
                       ? session.userId?.username || 'Guest'
                       : 'Guest'
                   }
                 />
-                <DetailRow label="Phone" value={session.phone || 'Not available'} />
+                <DetailRow label={translateUi("Phone")} value={session.phone || 'Not available'} />
                 {typeof session.userId === 'object' && session.userId?.email ? (
                   <DetailRow label="Email" value={session.userId.email} accent />
                 ) : null}
                 <DetailRow
-                  label="Vehicle type"
+                  label={translateUi("Vehicle type")}
                   value={formatVehicleType(session.vehicleType)}
                 />
                 <DetailRow
-                  label="Check-in time"
+                  label={translateUi("Check-in time")}
                   value={formatDateTime(session.checkInTime)}
                 />
                 <DetailRow
-                  label="Expected duration"
+                  label={translateUi("Expected duration")}
                   value={
                     durationHours
                       ? `${durationHours} ${durationHours === 1 ? 'hour' : 'hours'}`
@@ -673,7 +675,7 @@ function SlotDetail({
                 />
                 {expirationTime ? (
                   <DetailRow
-                    label="Expiration time"
+                    label={translateUi("Expiration time")}
                     value={formatDateTime(expirationTime)}
                     accent
                     last
@@ -684,21 +686,21 @@ function SlotDetail({
               subscription ? (
                 <View style={styles.detailRows}>
                   <DetailRow
-                    label="Customer"
+                    label={translateUi("Customer")}
                     value={user?.username || 'Not available'}
                   />
-                  <DetailRow label="Phone" value={user?.phone || 'Not available'} />
+                  <DetailRow label={translateUi("Phone")} value={user?.phone || 'Not available'} />
                   <DetailRow
                     label="Email"
                     value={user?.email || 'Not available'}
                     accent
                   />
                   <DetailRow
-                    label="Package"
+                    label={translateUi("Package")}
                     value={ticketPackage?.name || ticketPackage?.type || 'Subscription'}
                   />
                   <DetailRow
-                    label="Valid until"
+                    label={translateUi("Valid until")}
                     value={formatDateTime(subscription.expireAt)}
                     accent
                     last
@@ -709,22 +711,22 @@ function SlotDetail({
                   icon="lock-closed-outline"
                   color={color}
                   title={slot.status === 'held' ? 'Space temporarily held' : 'Reserved space'}
-                  message="This space is reserved for a subscription or an upcoming booking."
+                  message={translateUi("This space is reserved for a subscription or an upcoming booking.")}
                 />
               )
             ) : slot.status === 'maintenance' ? (
               <DetailNotice
                 icon="construct-outline"
                 color={color}
-                title="Under maintenance"
-                message="This space is locked and cannot receive vehicles."
+                title={translateUi("Under maintenance")}
+                message={translateUi("This space is locked and cannot receive vehicles.")}
               />
             ) : (
               <DetailNotice
                 icon="checkmark-circle-outline"
                 color={color}
-                title="Space is empty"
-                message="Ready for the next incoming vehicle assignment."
+                title={translateUi("Space is empty")}
+                message={translateUi("Ready for the next incoming vehicle assignment.")}
               />
             )}
           </ScrollView>
@@ -747,9 +749,10 @@ function DetailRow({
   mono?: boolean;
   last?: boolean;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={[styles.infoRow, last && styles.infoRowLast]}>
-      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoLabel}>{translateUi(label)}</Text>
       <Text
         numberOfLines={2}
         style={[
@@ -839,13 +842,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 7,
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: SPACING.md,
   },
   liveBadgeText: {
     color: COLORS.success,
     fontSize: FONT_SIZES.xs,
-    fontWeight: '900',
+    fontWeight: '700',
     textTransform: 'uppercase',
   },
   liveDot: { backgroundColor: COLORS.success, borderRadius: 5, height: 10, width: 10 },
@@ -904,7 +907,7 @@ const styles = StyleSheet.create({
     minWidth: 20,
     paddingHorizontal: 3,
   },
-  floorBadgeText: { color: COLORS.background, fontSize: 10, fontWeight: '800' },
+  floorBadgeText: { color: COLORS.background, fontSize: FONT_SIZES.xs, fontWeight: '800' },
   content: { paddingBottom: SPACING.xl },
   liveMetricStrip: {
     marginHorizontal: SPACING.lg,
@@ -950,7 +953,7 @@ const styles = StyleSheet.create({
   },
   legendItem: { alignItems: 'center', flexDirection: 'row', gap: 5 },
   legendDot: { borderRadius: 3, height: 6, width: 6 },
-  legendText: { color: COLORS.textMuted, fontSize: 10 },
+  legendText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs },
   mapViewport: {
     backgroundColor: '#F2F4F7',
     borderTopColor: COLORS.border,
@@ -989,7 +992,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   detailBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(2, 5, 9, 0.72)',
   },
   detailPanel: {
@@ -1042,7 +1045,7 @@ const styles = StyleSheet.create({
   },
   detailLiveText: {
     color: '#7EE8A2',
-    fontSize: 9,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '800',
     letterSpacing: 0.8,
     marginLeft: 4,
@@ -1086,7 +1089,7 @@ const styles = StyleSheet.create({
   },
   detailStatusCaption: {
     color: COLORS.textMuted,
-    fontSize: 10,
+    fontSize: FONT_SIZES.xs,
   },
   detailStatus: {
     fontSize: FONT_SIZES.md,

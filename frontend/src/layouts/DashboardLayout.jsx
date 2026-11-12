@@ -1,4 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import NotificationDropdownItem from '../components/notifications/NotificationDropdownItem';
+import NotificationDetailModal from '../components/notifications/NotificationDetailModal';
+import { useNotificationDetails } from '../hooks/useNotificationDetails';
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { apiFetch } from "../services/api";
 import { logoutUser } from "../services/authService";
@@ -12,6 +15,11 @@ import { getDashboardDensityClass } from "./staffDensity";
 import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
+import { scopeAdminTypography } from './adminTypography';
+import '../styles/adminTypography.css';
+import '../styles/adminScrolling.css';
+import { scopeStaffTypography } from './staffTypography';
+import '../styles/staffTypography.css';
 import {
   LayoutDashboard,
   Users,
@@ -22,6 +30,7 @@ import {
   BarChart2,
   DollarSign,
   Crown,
+  Layers,
   // Customer icons
   Home,
   User,
@@ -204,6 +213,7 @@ const getInitials = (name = "") =>
     .toUpperCase();
 
 export default function DashboardLayout() {
+  const copilotContentRef = useRef(null);
   const navigate = useNavigate();
   const [user, setUser] = useState(() =>
     JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
@@ -221,6 +231,8 @@ export default function DashboardLayout() {
     notifications,
     unreadCount,
     loading: notificationsLoading,
+    error: notificationsError,
+    refresh: refreshNotifications,
     hasMore,
     fetchMore,
     markAsRead,
@@ -228,7 +240,10 @@ export default function DashboardLayout() {
   } =
     useNotifications({ contextRole: user?.role });
 
+  const { selectedNotification, openNotification, closeNotification } = useNotificationDetails(markAsRead);
   const role = user?.role;
+  useLayoutEffect(() => scopeAdminTypography(document.body, role), [role]);
+  useLayoutEffect(() => scopeStaffTypography(document.body, role), [role]);
   const densityClass = getDashboardDensityClass(role);
   const navItems = NAV_CONFIG[role] || [];
   const theme = ROLE_THEME[role] || ROLE_THEME.admin;
@@ -340,11 +355,12 @@ export default function DashboardLayout() {
 
   return (
     <div className={`${densityClass} staff-dashboard-shell h-screen overflow-hidden bg-gray-100 dark:bg-[#0D0D0D] flex font-sans transition-colors duration-300`}>
+      {role === "customer" && <NotificationDetailModal notification={selectedNotification} onClose={() => { closeNotification(); notifRef.current?.querySelector("button")?.focus(); }} contextRole="customer" />}
       {/* ══════════ SIDEBAR ══════════ */}
       <aside
         className={`
           ${collapsed ? "w-[4.5rem]" : "w-60"}
-          staff-dashboard-sidebar
+          staff-dashboard-sidebar ${role === 'staff' && !collapsed ? 'staff-sidebar-expanded' : ''}
           flex-shrink-0 bg-white dark:bg-[#111111] border-r border-gray-200 dark:border-white/5
           flex flex-col transition-all duration-300 ease-in-out relative
           z-40
@@ -362,14 +378,14 @@ export default function DashboardLayout() {
             <div className="overflow-hidden leading-none">
               <p
                 className="
-                  text-[13px] font-black tracking-[0.18em] whitespace-nowrap
+                  staff-shell-brand text-[13px] font-black tracking-[0.18em] whitespace-nowrap
                   bg-gradient-to-r from-yellow-500 via-yellow-300 to-yellow-600
                   bg-clip-text text-transparent
                 "
               >
                 VALO PARKING
               </p>
-              <p className="text-[9px] font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap mt-0.5">
+              <p className="staff-shell-caption text-[9px] font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap mt-0.5">
                 {theme.panelLabel}
               </p>
             </div>
@@ -382,6 +398,7 @@ export default function DashboardLayout() {
             <NavLink
               key={item.to}
               to={item.to}
+              aria-label={role === 'staff' ? item.label : undefined}
               end={item.to.split("/").length === 2}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold
@@ -394,7 +411,7 @@ export default function DashboardLayout() {
               title={collapsed ? item.label : undefined}
             >
               <span className="shrink-0">{item.icon}</span>
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              {!collapsed && <span className="staff-shell-nav-label truncate">{item.label}</span>}
             </NavLink>
           ))}
         </nav>
@@ -402,6 +419,8 @@ export default function DashboardLayout() {
         {/* Collapse toggle */}
         <button
           onClick={() => setCollapsed((c) => !c)}
+          aria-label={role === 'staff' ? (collapsed ? 'Expand navigation' : 'Collapse navigation') : undefined}
+          aria-expanded={role === 'staff' ? !collapsed : undefined}
           className="
             staff-dashboard-collapse absolute -right-3 top-[5.125rem]
             w-6 h-6 bg-gray-100 dark:bg-[#1C1C1C] border border-gray-200 dark:border-white/10 rounded-full
@@ -426,6 +445,8 @@ export default function DashboardLayout() {
           <button
             className="lg:hidden text-gray-500 hover:text-gray-900 dark:hover:text-white"
             onClick={() => setCollapsed((c) => !c)}
+            aria-label={role === 'staff' ? (collapsed ? 'Expand navigation' : 'Collapse navigation') : undefined}
+            aria-expanded={role === 'staff' ? !collapsed : undefined}
           >
             <Menu size={20} />
           </button>
@@ -433,10 +454,10 @@ export default function DashboardLayout() {
           <div className="hidden lg:block" />
 
           {/* Right zone */}
-          <div className="flex items-center gap-3">
+          <div className="staff-shell-toolbar flex items-center gap-3">
             {/* Role badge */}
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${theme.headerBadgeCls}`}
+              className={`staff-shell-role-badge flex items-center gap-2 px-3 py-1.5 rounded-lg border ${theme.headerBadgeCls}`}
             >
               <ShieldCheck size={13} />
               <span className="text-xs font-bold uppercase">
@@ -450,6 +471,7 @@ export default function DashboardLayout() {
                 onClick={() => setReportModalOpen(true)}
                 className="flex items-center gap-2 px-3 py-1.5 h-9 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 border border-orange-500/20 transition-all font-semibold text-xs"
                 title="Report an Issue"
+                aria-label="Report an issue"
               >
                 <AlertTriangle size={15} />
                 <span className="hidden sm:inline">Report Issue</span>
@@ -461,14 +483,19 @@ export default function DashboardLayout() {
               onClick={handleLogout}
               className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-red-400 transition-colors"
               title="Logout"
+              aria-label={role === 'staff' ? 'Log out' : undefined}
             >
               <LogOut size={17} />
             </button>
 
             {/* Notifications */}
-            <div className="relative" ref={notifRef}>
+            <div className="relative" ref={notifRef} onKeyDown={(event) => {
+              if (role === 'customer' && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('button')?.focus(); }
+            }}>
               <button
                 onClick={() => setNotifOpen((o) => !o)}
+                aria-label={role === 'staff' || role === 'customer' ? 'Notifications' : undefined}
+                aria-expanded={role === 'staff' || role === 'customer' ? notifOpen : undefined}
                 className="relative w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
                 <Bell size={17} />
@@ -479,7 +506,7 @@ export default function DashboardLayout() {
                 )}
               </button>
               {notifOpen && (
-                <div className="absolute right-0 top-[calc(100%+8px)] w-80 bg-white dark:bg-[#1A1A1A] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[400px]">
+                <div className={`${role === "customer" ? "customer-notification-dropdown" : ""} staff-shell-notifications absolute right-0 top-[calc(100%+8px)] w-80 bg-white dark:bg-[#1A1A1A] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[400px]`}>
                   <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50 dark:bg-[#111]">
                     <p className="text-gray-900 dark:text-white font-bold text-sm">
                       Notifications
@@ -494,12 +521,18 @@ export default function DashboardLayout() {
                     )}
                   </div>
                   <div className="overflow-y-auto flex-1">
-                    {notifications.length === 0 ? (
+                    {role === 'customer' && notificationsError ? (
+                      <div className="customer-notification-state" role="alert">Unable to load notifications.<button type="button" onClick={refreshNotifications}>Try again</button></div>
+                    ) : role === 'customer' && notificationsLoading && notifications.length === 0 ? (
+                      <div className="customer-notification-state" role="status">Loading notifications?</div>
+                    ) : notifications.length === 0 ? (
                       <div className="p-6 text-center text-gray-500 text-sm">
                         No notifications
                       </div>
                     ) : (
-                      notifications.map((n) => (
+                      notifications.map((n) => role === "customer" ? (
+                        <NotificationDropdownItem key={n.notificationId || n._id} notification={n} onRead={markAsRead} onOpen={() => { setNotifOpen(false); openNotification(n); }} />
+                      ) : (
                         <div
                           key={n._id || n.notificationId}
                           onClick={() => {
@@ -580,7 +613,7 @@ export default function DashboardLayout() {
 
             {/* Avatar */}
             <div
-              className={`w-9 h-9 rounded-full bg-gradient-to-br ${theme.accent}
+              className={`staff-shell-avatar w-9 h-9 rounded-full bg-gradient-to-br ${theme.accent}
                 flex items-center justify-center text-black font-extrabold text-sm cursor-pointer overflow-hidden shrink-0 shadow-sm select-none`}
               title={displayName}
             >
@@ -600,12 +633,13 @@ export default function DashboardLayout() {
 
         {/* Page content */}
         <main
+          ref={copilotContentRef}
           className="dashboard-page-content scrollbar-hidden flex-1 overflow-y-auto bg-gray-100 transition-colors duration-300 dark:bg-[#0D0D0D]"
         >
           <Outlet />
         </main>
       </div>
-      {(role === 'admin' || role === 'staff') && <ValoAICopilot />}
+      {(role === 'admin' || role === 'staff') && <ValoAICopilot contentRef={copilotContentRef} />}
 
       {/* Report Modal */}
       {reportModalOpen && (

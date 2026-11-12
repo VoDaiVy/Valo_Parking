@@ -4,7 +4,6 @@ const TicketPackage = require('../models/TicketPackage');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Subscription = require('../models/Subscription');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
-const { findActiveSlotOwnership } = require('./membershipSlotOwnershipService');
 
 const sameId = (left, right) => String(left || '') === String(right || '');
 const inSession = (query, session) => session ? query.session(session) : query;
@@ -41,13 +40,12 @@ const getActiveMembershipType = async (user, at, ticketPackages = TicketPackage)
 };
 
 const findVipRegisteredVehicleBookingRestriction = async (
-  { userId, licensePlate, floorId, slotCode, start, end },
+  { userId, licensePlate, start },
   dependencies = {}
 ) => {
   const users = dependencies.User || User;
   const vehicles = dependencies.Vehicle || Vehicle;
   const ticketPackages = dependencies.TicketPackage || TicketPackage;
-  const lookupOwnership = dependencies.findActiveSlotOwnership || findActiveSlotOwnership;
   const at = start instanceof Date && !Number.isNaN(start.getTime()) ? start : new Date();
   const plate = normalizeLicensePlate(licensePlate);
   if (!plate) return null;
@@ -62,21 +60,14 @@ const findVipRegisteredVehicleBookingRestriction = async (
   const membershipType = await getActiveMembershipType(user, at, ticketPackages);
   if (!['monthly', 'yearly'].includes(membershipType)) return null;
 
-  if (floorId && slotCode) {
-    const ownership = await lookupOwnership({ floorId, slotCode, at });
-    if (ownership && sameId(ownership.ownerId, userId)) {
-      if (!end || !ownership.expireAt || new Date(ownership.expireAt) >= end) return null;
-      return { membershipType, registeredVehicle, reason: 'VIP_EXPIRES_DURING_BOOKING' };
-    }
-  }
-
-  return { membershipType, registeredVehicle };
+  // An active monthly/yearly membership already grants direct access to the
+  // dedicated space. Creating an hourly booking for that vehicle would only
+  // duplicate the entitlement (even when the selected space is the VIP one).
+  return { membershipType, registeredVehicle, reason: 'ACTIVE_VIP_MEMBERSHIP' };
 };
 
-const vipBookingRestrictionMessage = (restriction, licensePlate) =>
-  restriction?.reason === 'VIP_EXPIRES_DURING_BOOKING'
-    ? `Ô VIP của xe ${licensePlate} hết hạn trước giờ ra. Hãy gia hạn hoặc chọn biển số xe khác.`
-    : `Xe ${licensePlate} có gói VIP. Hãy dùng ô VIP hoặc chọn biển số xe khác.`;
+const vipBookingRestrictionMessage = (_restriction, licensePlate) =>
+  `Xe ${licensePlate} đang có gói VIP và đã có ô đỗ riêng. Không cần tạo booking theo giờ; hãy dùng trực tiếp ô VIP hoặc chọn biển số xe khác.`;
 
 module.exports = {
   getActiveMembershipType, findVipRegisteredVehicleBookingRestriction,

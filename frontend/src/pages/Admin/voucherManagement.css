@@ -1,0 +1,150 @@
+/* Voucher list only; dialogs and reward business rules keep their existing controls. */
+body[data-valo-typography="admin"] .admin-consistency.admin-voucher-consistency { padding-top:14px; padding-bottom:2px; }
+body[data-valo-typography="admin"] .admin-consistency.admin-voucher-consistency .c4-header { margin-bottom:10px; }
+body[data-valo-typography="admin"] .admin-consistency.admin-voucher-consistency .c4-kpis { margin-bottom:0; }
+body[data-valo-typography="admin"] .admin-consistency.admin-voucher-consistency .c4-kpis > div { min-height:80px; padding:10px 14px; }
+.admin-voucher-consistency .voucher-toolbar { display:flex; align-items:center; gap:8px; padding:10px 0; flex-shrink:0; }
+.admin-voucher-consistency .voucher-search { position:relative; min-width:0; flex:1; }
+.admin-voucher-consistency .voucher-search > svg { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#64748b; }
+.admin-voucher-consistency .voucher-search input { width:100%; height:44px; padding:8px 12px 8px 40px; border:1px solid rgb(255 255 255 / .08); border-radius:12px; background:#111; color:white; outline:none; }
+.admin-voucher-consistency .voucher-search input:focus { border-color:#e8d5ad; }
+.admin-voucher-consistency .voucher-filter { width:150px; }
+.admin-voucher-consistency .voucher-sort { width:220px; }
+.admin-voucher-consistency .voucher-toolbar button[aria-haspopup="menu"] { height:44px; min-height:44px; padding-block:8px; box-shadow:none; }
+.admin-voucher-consistency .voucher-table { display:flex; flex-direction:column; min-height:0; border-block:1px solid rgb(255 255 255 / .08); background:rgb(8 8 8 / .85); }
+.admin-voucher-consistency .voucher-table-scroll { min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-width:none; }
+.admin-voucher-consistency .voucher-table-scroll::-webkit-scrollbar { display:none; }
+.admin-voucher-consistency .voucher-table-scroll:focus-visible { outline:2px solid #e8d5ad; outline-offset:-2px; }
+.admin-voucher-consistency .voucher-table-header { position:sticky; top:0; z-index:1; background:#111; padding:10px 12px; font-size:11px; }
+.admin-voucher-consistency .voucher-row { position:relative; min-height:64px; padding:8px 12px; transition:background-color 180ms, opacity 180ms; }
+.admin-voucher-consistency .voucher-row::before { content:''; position:absolute; inset:0 auto 0 0; width:2px; background:#e8d5ad; opacity:0; transition:opacity 180ms; }
+.admin-voucher-consistency .voucher-row:hover,
+.admin-voucher-consistency .voucher-row:focus-within { background:rgb(255 255 255 / .035); }
+.admin-voucher-consistency .voucher-row:hover::before,
+.admin-voucher-consistency .voucher-row:focus-within::before { opacity:1; }
+.admin-voucher-consistency .voucher-row > div { min-width:0; }
+.admin-voucher-consistency .voucher-row > div:nth-child(2) p { overflow-wrap:anywhere; }
+.admin-voucher-consistency .voucher-row button { width:32px; height:32px; flex-shrink:0; }
+.admin-voucher-consistency .voucher-row > div:last-child { gap:6px; }
+.admin-voucher-consistency .voucher-pagination { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; min-height:48px; padding:8px 12px; border-top:1px solid rgb(255 255 255 / .08); background:#080808; flex-shrink:0; }
+.admin-voucher-consistency .voucher-pagination p { color:rgb(255 255 255 / .4); font-size:12px; }
+.admin-voucher-consistency .voucher-pagination nav { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+.admin-voucher-consistency .voucher-pagination button { min-width:30px; height:32px; padding:0 7px; border-radius:8px; color:rgb(255 255 255 / .4); font-size:12px; }
+.admin-voucher-consistency .voucher-pagination button:hover:not(:disabled) { background:rgb(255 255 255 / .06); color:white; }
+.admin-voucher-consistency .voucher-pagination button[aria-current="page"] { background:#e8d5ad; color:#171717; }
+.admin-voucher-consistency .voucher-pagination button:disabled { opacity:.25; cursor:not-allowed; }
+.admin-voucher-consistency .voucher-pagination button:focus-visible,
+.admin-voucher-consistency .voucher-no-results button:focus-visible { outline:2px solid #e8d5ad; outline-offset:2px; }
+.admin-voucher-consistency .voucher-no-results { display:flex; min-height:200px; align-items:center; justify-content:center; flex-direction:column; gap:10px; padding:24px; text-align:center; }
+.admin-voucher-consistency .voucher-no-results > svg { color:#e8d5ad; }
+.admin-voucher-consistency .voucher-no-results p { color:#9ca3af; font-size:14px; }
+.admin-voucher-consistency .voucher-no-results button { color:#e8d5ad; padding:8px 12px; border:1px solid rgb(232 213 173 / .25); border-radius:8px; }
+@media (min-width:1024px) {
+ .admin-voucher-consistency .voucher-table-header,
+ .admin-voucher-consistency .voucher-row,
+ .admin-voucher-consistency .voucher-table-scroll > div > .grid { grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) 120px 100px 110px; gap:16px; }
+}
+@media (min-width:1024px) and (min-height:640px) {
+ body[data-valo-typography="admin"] .admin-consistency.admin-voucher-consistency { height:100%; min-height:0; }
+ .admin-voucher-consistency .voucher-page-content { display:flex; flex-direction:column; height:100%; min-height:0; }
+ .admin-voucher-consistency .voucher-page-content > :not(.voucher-table) { flex-shrink:0; }
+ .admin-voucher-consistency .voucher-table { flex:1; }
+ .admin-voucher-consistency .voucher-table-scroll { flex:1; }
+}
+@media (max-width:639px) {
+ .admin-voucher-consistency .voucher-toolbar { flex-wrap:wrap; }
+ .admin-voucher-consistency .voucher-search { flex-basis:100%; }
+ .admin-voucher-consistency .voucher-filter,
+ .admin-voucher-consistency .voucher-sort { width:auto; flex:1; min-width:0; }
+}
+
+/* Keep voucher row actions as bare icons, with their existing focus rings. */
+.admin-voucher-consistency .voucher-row > div:last-child > button {
+  border-color: transparent;
+  background: transparent;
+}
+.admin-voucher-consistency .voucher-row > div:last-child > button:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Create/Edit voucher dialog only. Header and footer stay outside the scroll body. */
+.admin-voucher-consistency .voucher-modal-backdrop { display:flex; align-items:center; justify-content:center; padding:20px 24px; background:rgb(0 0 0 / .7); }
+.admin-voucher-consistency .voucher-modal { display:flex; flex-direction:column; width:960px; max-width:100%; max-height:calc(100dvh - 40px); min-height:0; overflow:hidden; border:1px solid #303034; border-radius:16px; background:#101113; color:#f5f5f5; font-family:var(--admin-font-family, Montserrat, sans-serif); }
+.admin-voucher-consistency .voucher-modal-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 24px; border-bottom:1px solid #303034; flex-shrink:0; }
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal-header h2 { font-size:24px !important; font-weight:700 !important; line-height:30px !important; letter-spacing:normal; }
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal-header p { font-size:12px !important; font-weight:600 !important; letter-spacing:.08em; color:#e8bd52; }
+.admin-voucher-consistency .voucher-modal-header .h-12 { width:44px; height:44px; border-radius:12px; border-color:rgb(232 189 82 / .2); background:rgb(232 189 82 / .07); color:#e8bd52; }
+.admin-voucher-consistency .voucher-modal-body { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:20px 24px; }
+.admin-voucher-consistency .voucher-modal-columns { display:grid; grid-template-columns:minmax(0,56fr) minmax(0,44fr); }
+.admin-voucher-consistency .voucher-modal-column { display:flex; flex-direction:column; gap:18px; min-width:0; padding-right:24px; }
+.admin-voucher-consistency .voucher-modal-values { padding-right:0; padding-left:24px; border-left:1px solid #303034; }
+.admin-voucher-consistency .voucher-modal-column > * { min-width:0; }
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal-column > label > span,
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal-column > div > span { font-size:13px !important; font-weight:500 !important; color:#d5d5d8; }
+.admin-voucher-consistency .voucher-modal input,
+.admin-voucher-consistency .voucher-modal textarea,
+.admin-voucher-consistency .voucher-modal button[aria-haspopup="menu"] { height:46px; border:1px solid #303034; border-radius:12px; background:#1b1c1e; padding-block:10px; padding-left:16px; color:#f0f0f2; outline:none; }
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal input,
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal textarea { font-size:14px !important; }
+.admin-voucher-consistency .voucher-modal textarea { height:108px; min-height:100px; resize:vertical; }
+.admin-voucher-consistency .voucher-modal input:hover,
+.admin-voucher-consistency .voucher-modal textarea:hover,
+.admin-voucher-consistency .voucher-modal button[aria-haspopup="menu"]:hover { border-color:#48484d; background:#1b1c1e; }
+.admin-voucher-consistency .voucher-modal input:focus,
+.admin-voucher-consistency .voucher-modal textarea:focus,
+.admin-voucher-consistency .voucher-modal button[aria-haspopup="menu"]:focus { border-color:#e8bd52; }
+.admin-voucher-consistency .voucher-modal * { box-shadow:none !important; }
+.admin-voucher-consistency .voucher-modal button:focus-visible { outline:2px solid #e8bd52; outline-offset:2px; }
+body[data-valo-typography="admin"] .admin-voucher-consistency .voucher-modal-column label > p { font-size:11px !important; line-height:17px !important; color:#929298; }
+.admin-voucher-consistency .voucher-modal [role="menu"] { background:#1b1c1e; border-color:#303034; backdrop-filter:none; }
+.admin-voucher-consistency .voucher-modal-notification { width:100%; margin-top:20px; border-color:#303034; background:transparent; padding:12px 16px; }
+.admin-voucher-consistency .voucher-modal-notification:hover { background:#191a1c; border-color:#48484d; }
+.admin-voucher-consistency .voucher-modal-notification svg,
+.admin-voucher-consistency .voucher-modal-preview svg { color:#e8bd52; }
+.admin-voucher-consistency .voucher-modal-notification[aria-checked="true"] > span:last-child { background:#e8bd52; }
+.admin-voucher-consistency .voucher-modal-preview { margin-top:12px; padding:12px 16px; border-color:rgb(232 189 82 / .2); background:rgb(232 189 82 / .045); overflow-wrap:anywhere; }
+.admin-voucher-consistency .voucher-modal-footer { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:14px 24px; border-top:1px solid #303034; background:#101113; flex-shrink:0; }
+.admin-voucher-consistency .voucher-modal-footer button { min-height:44px; border-radius:12px; transform:none; }
+.admin-voucher-consistency .voucher-modal-footer button:first-child { border-color:#303034; background:#1b1c1e; color:#d5d5d8; }
+.admin-voucher-consistency .voucher-modal-save { background:#e8bd52; color:#171717; }
+.admin-voucher-consistency .voucher-modal-save:hover:not(:disabled) { background:#f0cb72; }
+.admin-voucher-consistency .voucher-modal-error { margin-bottom:16px; padding:10px 12px; border:1px solid rgb(251 113 133 / .3); border-radius:12px; color:#fda4af; background:rgb(251 113 133 / .06); font-size:13px; overflow-wrap:anywhere; }
+@media (max-width:767px) {
+ .admin-voucher-consistency .voucher-modal-backdrop { padding:20px 12px; }
+ .admin-voucher-consistency .voucher-modal-header { padding:16px; }
+ .admin-voucher-consistency .voucher-modal-body { padding:16px; }
+ .admin-voucher-consistency .voucher-modal-columns { grid-template-columns:minmax(0,1fr); gap:18px; }
+ .admin-voucher-consistency .voucher-modal-column { padding:0; border:0; }
+ .admin-voucher-consistency .voucher-modal-footer { padding:12px 16px; gap:8px; }
+ .admin-voucher-consistency .voucher-modal-footer button { padding-inline:16px; }
+}
+
+/* Notification and live preview share a plain row beneath the form. */
+.admin-voucher-consistency .voucher-modal-extras { display:flex; align-items:center; gap:24px; margin-top:20px; }
+.admin-voucher-consistency .voucher-modal-extras > * { flex:1; min-width:0; }
+.admin-voucher-consistency .voucher-modal-extras .voucher-modal-notification,
+.admin-voucher-consistency .voucher-modal-extras .voucher-modal-preview { margin:0; padding:0; border:0; border-radius:0; background:transparent; }
+.admin-voucher-consistency .voucher-modal-extras .voucher-modal-notification:hover { border:0; background:transparent; }
+@media (max-width:767px) {
+ .admin-voucher-consistency .voucher-modal-extras { flex-direction:column; align-items:stretch; gap:16px; }
+}
+
+.admin-voucher-consistency .voucher-row { cursor:pointer; }
+.admin-voucher-consistency .voucher-row:focus-visible { outline:2px solid #e8d5ad; outline-offset:-2px; }
+
+/* Portalled menus escape the modal body overflow and fit the available viewport. */
+body[data-valo-typography="admin"] .voucher-modal-menu {
+  z-index:70;
+  min-width:0;
+  max-width:calc(100vw - 24px);
+  margin:0;
+  border:1px solid #303034;
+  border-radius:12px;
+  background:#1b1c1e;
+  box-shadow:none;
+  backdrop-filter:none;
+  font-family:var(--admin-font-family, Montserrat, sans-serif);
+  overscroll-behavior:contain;
+}
+body[data-valo-typography="admin"] .voucher-modal-menu button:focus-visible { outline:2px solid #e8bd52; outline-offset:-2px; }

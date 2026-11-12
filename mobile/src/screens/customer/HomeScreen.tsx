@@ -26,6 +26,7 @@ import { subscriptionsService } from '@/services/api/subscriptions';
 import { walletService } from '@/services/api/wallet';
 import type { MembershipStatus } from '@/types/subscription.types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type QuickAction = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -69,6 +70,8 @@ const PREMIUM = {
 };
 
 const QUICK_ACTIONS: QuickAction[] = [
+  { icon: 'calendar-outline', label: 'My bookings', description: 'Reservations & QR', screen: 'Bookings', params: { screen: 'BookingList' } },
+  { icon: 'gift-outline', label: 'Voucher', description: 'Rewards & spending', screen: 'WalletTab', params: { screen: 'Rewards' } },
   {
     icon: 'car-outline',
     label: 'My vehicles',
@@ -308,6 +311,7 @@ function HomeHeader({
   onNotificationsPress: () => void;
   onAvatarPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <Animated.View
       style={[
@@ -342,7 +346,7 @@ function HomeHeader({
 
       <View style={styles.headerRight}>
         <AnimatedPressable
-          accessibilityLabel="Open notifications"
+          accessibilityLabel={translateUi("Open notifications")}
           onPress={onNotificationsPress}
           pressedScale={0.94}
           style={styles.headerIconBtn}
@@ -351,7 +355,7 @@ function HomeHeader({
         </AnimatedPressable>
 
         <AnimatedPressable
-          accessibilityLabel="Open account"
+          accessibilityLabel={translateUi("Open account")}
           onPress={onAvatarPress}
           pressedScale={0.94}
           style={styles.avatarShell}
@@ -375,6 +379,7 @@ function HomeHeader({
 }
 
 function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) {
+  const { t: translateUi } = useLanguage();
   const press = useRef(new Animated.Value(0)).current;
   const shine = useRef(new Animated.Value(0)).current;
   const ripple = useRef(new Animated.Value(0)).current;
@@ -441,7 +446,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
       ]}
     >
       <Pressable
-        accessibilityLabel={label}
+        accessibilityLabel={translateUi(label)}
         accessibilityRole="button"
         onPress={onPress}
         onPressIn={() => animatePress(1)}
@@ -476,7 +481,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
             />
             <Ionicons name={icon} size={18} color={COLORS.textInverse} />
             <Text numberOfLines={1} style={styles.primaryActionText}>
-              {label}
+              {translateUi(label)}
             </Text>
             <Animated.View style={{ transform: [{ translateX: iconTranslate }] }}>
               <Ionicons name="arrow-forward" size={17} color={COLORS.textInverse} />
@@ -499,7 +504,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
             />
             <Ionicons name={icon} size={18} color={COLORS.gold} />
             <Text numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryActionText}>
-              {label}
+              {translateUi(label)}
             </Text>
           </View>
         )}
@@ -509,6 +514,7 @@ function HomeActionButton({ icon, label, variant, onPress }: ActionButtonProps) 
 }
 
 function HeroMetricTile({ metric, index }: { metric: HeroMetric; index: number }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useEntranceValue(480 + index * 90, 460);
   const accentColor = metric.tone === 'neutral' ? COLORS.textSecondary : COLORS.gold;
 
@@ -539,7 +545,7 @@ function HeroMetricTile({ metric, index }: { metric: HeroMetric; index: number }
         <Ionicons name={metric.icon} size={16} color={accentColor} />
       </View>
       <Text numberOfLines={1} style={styles.metricLabel}>
-        {metric.label}
+        {translateUi(metric.label)}
       </Text>
       <Text numberOfLines={1} adjustsFontSizeToFit style={styles.metricValue}>
         {metric.value}
@@ -573,8 +579,9 @@ const HERO_CAROUSEL_ITEMS: HeroCarouselItem[] = [
 ];
 
 function HeroCarousel({ width }: { width: number }) {
+  const { language } = useLanguage();
   const pageWidth = width;
-  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [activeIndex, setActiveIndex] = useState(0);
   const dragging = useRef(false);
@@ -613,6 +620,11 @@ function HeroCarousel({ width }: { width: number }) {
         }}
       >
         {HERO_CAROUSEL_ITEMS.map((item, index) => {
+          const localized = language === 'vi' ? [
+            { kicker: 'Dịch vụ', title: 'Chăm sóc trọn vẹn trước mỗi chuyến đi', body: 'Đặt chỗ sớm, đến nơi nhẹ nhàng và quản lý mọi bước đỗ xe tại một nơi.' },
+            { kicker: 'Gói thành viên', title: 'Tận hưởng hành trình đỗ xe thuận tiện hơn', body: 'Ưu tiên chỗ đỗ và quyền lợi hàng tháng cho người dùng thường xuyên.' },
+            { kicker: 'Mẹo đỗ xe', title: 'Chọn khung giờ đến nhanh nhất', body: 'Kiểm tra chỗ trống trước khi rời đi và tránh phải vòng quanh tìm chỗ.' },
+          ][index] : item;
           const inputRange = [(index - 1) * pageWidth, index * pageWidth, (index + 1) * pageWidth];
           const scale = scrollX.interpolate({
             inputRange,
@@ -637,9 +649,9 @@ function HeroCarousel({ width }: { width: number }) {
                   <Ionicons name={item.icon} size={19} color={item.accent} />
                 </View>
                 <Animated.View style={[styles.carouselCopy, { transform: [{ translateX }] }]}>
-                  <Text style={[styles.carouselKicker, { color: item.accent }]}>{item.kicker}</Text>
-                  <Text numberOfLines={2} style={styles.carouselTitle}>{item.title}</Text>
-                  <Text numberOfLines={2} style={styles.carouselBody}>{item.body}</Text>
+                  <Text style={[styles.carouselKicker, { color: item.accent }]}>{localized.kicker}</Text>
+                  <Text numberOfLines={2} style={styles.carouselTitle}>{localized.title}</Text>
+                  <Text numberOfLines={2} style={styles.carouselBody}>{localized.body}</Text>
                 </Animated.View>
               </LinearGradient>
             </Animated.View>
@@ -714,12 +726,14 @@ function PremiumHeroDashboard({
   onFindPress: () => void;
   onBookPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
+  const { language } = useLanguage();
   const metrics = useMemo<HeroMetric[]>(() => {
     return [
-      { icon: 'wallet-outline', label: 'Wallet', value: balance },
-      { icon: 'navigate-outline', label: 'Parking', value: 'Open 24/7', tone: 'neutral' },
+      { icon: 'wallet-outline', label: language === 'vi' ? 'Ví' : 'Wallet', value: balance },
+      { icon: 'navigate-outline', label: language === 'vi' ? 'Bãi đỗ' : 'Parking', value: 'Open 24/7', tone: 'neutral' },
     ];
-  }, [balance]);
+  }, [balance, language]);
 
   return (
     <Animated.View
@@ -814,15 +828,15 @@ function PremiumHeroDashboard({
             <View style={styles.heroMembershipDot} />
             <Ionicons name="shield-checkmark-outline" size={14} color={COLORS.gold} />
             <Text numberOfLines={1} style={styles.heroMembershipText}>
-              {activeMembership.package?.type === 'yearly' ? 'Annual member' : 'Monthly member'}
-              {activeMembership.expireAt ? ` · Expires ${formatDate(activeMembership.expireAt)}` : ''}
+              {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : translateUi("Annual member")) : (language === 'vi' ? 'Thành viên tháng' : translateUi("Monthly member"))}
+              {activeMembership.expireAt ? ` · ${language === 'vi' ? 'Hết hạn' : 'Expires'} ${formatDate(activeMembership.expireAt)}` : ''}
             </Text>
           </View>
         ) : null}
 
         <View style={[styles.heroActions, isCompact && styles.heroActionsCompact]}>
-          <HomeActionButton icon="navigate" label="Find Parking" variant="primary" onPress={onFindPress} />
-          <HomeActionButton icon="calendar-outline" label="Book Now" variant="secondary" onPress={onBookPress} />
+          <HomeActionButton icon="navigate" label={language === 'vi' ? 'Tìm chỗ đỗ' : 'Find Parking'} variant="primary" onPress={onFindPress} />
+          <HomeActionButton icon="calendar-outline" label={language === 'vi' ? 'Đặt chỗ ngay' : 'Book Now'} variant="secondary" onPress={onBookPress} />
         </View>
       </View>
     </Animated.View>
@@ -840,6 +854,7 @@ function QuickAccessCard({
   grid: boolean;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const entrance = useEntranceValue(720 + index * 90, 440);
   const press = useRef(new Animated.Value(0)).current;
 
@@ -918,7 +933,7 @@ function QuickAccessCard({
         </Animated.View>
         <View style={styles.quickCopy}>
           <Text numberOfLines={1} style={styles.quickLabel}>
-            {action.label}
+            {translateUi(action.label)}
           </Text>
           <Text numberOfLines={grid ? 2 : 1} style={styles.quickDescription}>
             {action.description}
@@ -934,25 +949,32 @@ function QuickAccessCard({
 }
 
 function QuickAccessSection({ navigation }: { navigation?: any }) {
+  const { language, t } = useLanguage();
+  const labels: Record<string, [string, string]> = language === 'vi'
+    ? { 'My bookings': [t('myBookings'), 'Đặt chỗ và mã QR'], Voucher: [t('rewards'), 'Ưu đãi và chi tiêu'], 'My vehicles': [t('myVehicles'), 'Quản lý biển số'], 'VALO Wallet': [t('wallet'), 'Nạp tiền và số dư'], History: [t('history'), 'Các phiên đỗ xe'], Membership: [t('membership'), 'Quyền lợi thành viên'] }
+    : { 'My bookings': [t('myBookings'), 'Reservations & QR'], Voucher: [t('rewards'), 'Rewards & spending'], 'My vehicles': [t('myVehicles'), 'Manage license plates'], 'VALO Wallet': [t('wallet'), 'Top up and view balance'], History: [t('history'), 'Past parking sessions'], Membership: [t('membership'), 'Member benefits'] };
   return (
     <>
       <View style={styles.sectionHeader}>
         <View>
-          <Text style={styles.sectionEyebrow}>Feature control</Text>
-          <Text style={styles.sectionTitle}>Quick access</Text>
+          <Text style={styles.sectionEyebrow}>{language === 'vi' ? 'TÍNH NĂNG' : 'FEATURE CONTROL'}</Text>
+          <Text style={styles.sectionTitle}>{t('quickAccess')}</Text>
         </View>
         <View style={styles.sectionLine} />
       </View>
       <View style={styles.quickList}>
-        {QUICK_ACTIONS.map((action, index) => (
+        {QUICK_ACTIONS.map((action, index) => {
+          const localized = labels[action.label] || [action.label, action.description];
+          return (
           <QuickAccessCard
-            action={action}
+            action={{ ...action, label: localized[0], description: localized[1] }}
             grid={false}
             index={index}
             key={action.label}
             onPress={() => navigation?.navigate?.(action.screen ?? 'Home', action.params)}
           />
-        ))}
+          );
+        })}
       </View>
     </>
   );
@@ -967,6 +989,8 @@ function MembershipCard({
   entrance: Animated.Value;
   onPress: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
+  const { language } = useLanguage();
   return (
     <Animated.View
       style={{
@@ -982,12 +1006,12 @@ function MembershipCard({
       }}
     >
       <AnimatedPressable
-        accessibilityLabel="View membership details and assigned VIP spaces"
+        accessibilityLabel={translateUi("View membership details and assigned VIP spaces")}
         onPress={onPress}
         pressedScale={0.985}
         style={styles.membershipCard}
       >
-        <SectionLabel title="Membership" />
+        <SectionLabel title={language === 'vi' ? 'Gói thành viên' : translateUi("Membership")} />
         <View style={styles.membershipTopRow}>
           <View style={styles.membershipIdentity}>
             <View style={styles.membershipIcon}>
@@ -995,7 +1019,7 @@ function MembershipCard({
             </View>
             <View style={styles.membershipTitleWrap}>
               <Text style={styles.membershipEyebrow}>
-                {activeMembership.package?.type === 'yearly' ? 'Annual member' : 'Monthly member'}
+                {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : translateUi("Annual member")) : (language === 'vi' ? 'Thành viên tháng' : translateUi("Monthly member"))}
               </Text>
               <Text numberOfLines={1} style={styles.membershipName}>
                 {activeMembership.package?.name ?? 'VALO Membership'}
@@ -1004,16 +1028,16 @@ function MembershipCard({
           </View>
           <View style={styles.membershipActivePill}>
             <View style={styles.membershipActiveDot} />
-            <Text style={styles.membershipActiveText}>Active</Text>
+            <Text style={styles.membershipActiveText}>{language === 'vi' ? 'Đang hoạt động' : translateUi("Active")}</Text>
           </View>
         </View>
 
         <View style={styles.membershipDivider} />
 
         <View style={styles.vipSlotHeader}>
-          <Text style={styles.vipSlotLabel}>Assigned VIP spaces</Text>
+          <Text style={styles.vipSlotLabel}>{language === 'vi' ? 'Chỗ VIP được gán' : 'Assigned VIP spaces'}</Text>
           {activeMembership.expireAt ? (
-            <Text style={styles.membershipExpiry}>Expires {formatDate(activeMembership.expireAt)}</Text>
+            <Text style={styles.membershipExpiry}>{language === 'vi' ? 'Hết hạn' : translateUi("Expires")} {formatDate(activeMembership.expireAt)}</Text>
           ) : null}
         </View>
         {activeMembership.reservedSlots.length > 0 ? (
@@ -1033,13 +1057,12 @@ function MembershipCard({
           <View style={styles.vipSlotPending}>
             <Ionicons name="time-outline" size={16} color={COLORS.warning} />
             <Text style={styles.vipSlotPendingText}>
-              Your plan is active. VIP space assignment is pending.
-            </Text>
+              {" "}{translateUi("Your plan is active. VIP space assignment is pending.")}{" "}</Text>
           </View>
         )}
 
         <View style={styles.membershipFooter}>
-          <Text style={styles.membershipFooterText}>View membership benefits</Text>
+          <Text style={styles.membershipFooterText}>{translateUi("View membership benefits")}</Text>
           <Ionicons name="chevron-forward" size={16} color={COLORS.gold} />
         </View>
       </AnimatedPressable>
@@ -1048,6 +1071,7 @@ function MembershipCard({
 }
 
 function InfoBanner({ entrance }: { entrance: Animated.Value }) {
+  const { t: translateUi } = useLanguage();
   return (
     <Animated.View
       style={[
@@ -1068,7 +1092,7 @@ function InfoBanner({ entrance }: { entrance: Animated.Value }) {
       <View style={styles.infoIcon}>
         <Ionicons name="information-circle-outline" size={20} color={COLORS.gold} />
       </View>
-      <Text style={styles.infoBannerText}>Open 24/7 · Reserve faster, arrive calmer.</Text>
+      <Text style={styles.infoBannerText}>{translateUi("Open 24/7 · Reserve faster, arrive calmer.")}</Text>
     </Animated.View>
   );
 }
@@ -1084,6 +1108,7 @@ function SectionLabel({ title }: { title: string }) {
 
 export default function HomeScreen({ navigation }: { navigation?: any }) {
   const { user } = useAuth();
+  const { language } = useLanguage();
   const { width } = useWindowDimensions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -1148,13 +1173,13 @@ export default function HomeScreen({ navigation }: { navigation?: any }) {
     () => (animatedBalance !== null ? formatCurrency(animatedBalance) : 'Not loaded'),
     [animatedBalance],
   );
-  const heroTitle = isCompact
-    ? 'Your parking, ready when you are.'
-    : 'Your parking space, ready when you are.';
+  const heroTitle = language === 'vi'
+    ? (isCompact ? 'Chỗ đỗ sẵn sàng khi bạn cần.' : 'Chỗ đỗ của bạn, sẵn sàng khi bạn cần.')
+    : (isCompact ? 'Your parking, ready when you are.' : 'Your parking space, ready when you are.');
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={PREMIUM.background} />
+      <StatusBar barStyle="light-content" />
       <LinearGradient
         colors={[PREMIUM.background, '#101113', '#0B0C0E']}
         locations={[0, 0.54, 1]}
@@ -1891,7 +1916,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   carouselKicker: {
-    fontSize: 11,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '900',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
@@ -1904,10 +1929,10 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   carouselBody: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '400',
+    lineHeight: 20,
     marginTop: 5,
   },
   carouselDots: {

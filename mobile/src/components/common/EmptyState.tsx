@@ -1,7 +1,9 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
+import { COLORS, CONTROL, RADIUS, SPACE, SPACING } from '@/constants/theme';
+import { typography } from '@/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -22,13 +24,14 @@ export function EmptyState({
   onAction,
   accentColor = COLORS.gold,
 }: EmptyStateProps) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.wrap}>
       <View style={styles.iconWrap}>
         <Ionicons name={icon} size={34} color={accentColor} />
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {message ? <Text style={styles.message}>{message}</Text> : null}
+      <Text accessibilityRole="header" style={styles.title}>{translateUi(title)}</Text>
+      {message ? <Text style={styles.message}>{translateUi(message)}</Text> : null}
       {actionLabel && onAction ? (
         <TouchableOpacity
           accessibilityRole="button"
@@ -36,7 +39,7 @@ export function EmptyState({
           style={[styles.action, { borderColor: accentColor }]}
           onPress={onAction}
         >
-          <Text style={[styles.actionText, { color: accentColor }]}>{actionLabel}</Text>
+          <Text style={[styles.actionText, { color: accentColor }]}>{translateUi(actionLabel)}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -46,43 +49,44 @@ export function EmptyState({
 const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACE[12],
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xl,
   },
   iconWrap: {
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.round,
-    borderWidth: 1,
-    height: 76,
+    borderRadius: RADIUS.xl,
+    height: SPACE[64],
     justifyContent: 'center',
-    width: 76,
+    width: SPACE[64],
+    marginBottom: SPACE[4],
   },
   title: {
+    ...typography.h3,
     color: COLORS.textPrimary,
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
+    maxWidth: 360,
     textAlign: 'center',
   },
   message: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZES.sm,
-    lineHeight: 20,
+    ...typography.body2,
+    color: COLORS.textSecondary,
+    maxWidth: 360,
     textAlign: 'center',
   },
   action: {
     alignItems: 'center',
-    borderRadius: RADIUS.round,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     justifyContent: 'center',
     marginTop: SPACING.xs,
-    minHeight: 44,
+    minHeight: CONTROL.minHeight,
     paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACE[12],
+    maxWidth: '100%',
   },
   actionText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '700',
+    ...typography.button,
+    textAlign: 'center',
   },
 });

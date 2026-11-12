@@ -48,7 +48,8 @@ export const fetchProfile = async (): Promise<Profile> => {
 
   const firstName = d.profile?.firstName?.trim() || '';
   const lastName = d.profile?.lastName?.trim() || '';
-  const fullName = `${lastName} ${firstName}`.trim();
+  // Match the name order stored by registration/Google and shown on the web.
+  const fullName = `${firstName} ${lastName}`.trim();
   
   return {
     _id: id,

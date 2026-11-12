@@ -1,0 +1,253 @@
+/* Staff Subscriptions — fixed-height flex column layout. */
+body[data-valo-typography="staff"] .g3-vip-page {
+  height: calc(100dvh - 70px);
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0; /* cancel Tailwind py-6 bottom gap */
+}
+
+/* Cancel Tailwind mx-auto max-w-[1400px] — fill the padded content box like Customer Management. */
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  margin-inline: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-main> :is(.g3-header, .g3-vip-metrics, .g3-toolbar) {
+  flex-shrink: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-membership-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-membership-columns {
+  flex-shrink: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 16px;
+  scrollbar-width: none;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page :is(.staff-membership-scroll, .g3-membership-list)::-webkit-scrollbar {
+  display: none;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-pagination {
+  flex: 0 0 auto;
+  min-height: 54px;
+  padding: 8px 0;
+  gap: 10px;
+  border-top: 1px solid var(--g3-border);
+  background: #080F10;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls button {
+  padding: 6px 10px;
+}
+
+/* ── Prev / Next: ghost text buttons, no card ── */
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls button[data-nav] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-width: 0;
+  color: #9AADC0;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 150ms;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls button[data-nav]:hover:not(:disabled) {
+  background: transparent;
+  border: 0;
+  color: #54E3B0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls button[data-nav]:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls button[data-nav] svg {
+  flex-shrink: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .staff-membership-page-controls>span {
+  padding-inline: 6px;
+}
+
+@media (min-width: 768px) {
+  body[data-valo-typography="staff"] .g3-vip-page .staff-membership-scroll {
+    min-width: 1050px;
+  }
+}
+
+/* Same management-header typography and description spacing as Customer/Session. */
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-main>.g3-header {
+  padding: 16px 0 0;
+  margin-bottom: 12px;
+  border: 0;
+  background: transparent;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-main>.g3-header::after {
+  display: none;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-header>div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-header h1 {
+  font-family: var(--staff-font-family);
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 700;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-header .g3-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-header .g3-subtitle::after {
+  content: "";
+  display: block;
+  height: 1px;
+  margin-top: 14px;
+  background: linear-gradient(to right, #29B98C, rgb(41 185 140 / 35%) 60%, transparent);
+  box-shadow: 0 2px 5px -2px rgb(41 185 140 / 28%);
+  pointer-events: none;
+}
+
+/* ── Sync KPI strip with Ticket Packages design ── */
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics {
+  background: #0B1716;
+  border: 1px solid #222D36;
+  border-radius: 10px;
+  box-shadow: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item {
+  min-height: 68px;
+  padding: 10px 16px;
+  gap: 10px;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item:first-child {
+  padding-left: 16px;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-icon {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-metric-value {
+  font-size: 24px;
+  line-height: 28px;
+  margin-top: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item>div:last-child>p:last-child {
+  display: none;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item+.g3-summary-item {
+  border-left: 1px solid #222D36;
+}
+
+/* ── Sync toolbar spacing with Ticket Packages ── */
+body[data-valo-typography="staff"] .g3-vip-page .g3-toolbar {
+  padding: 12px 0 10px;
+  margin-bottom: 0;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-toolbar input {
+  height: 44px;
+  min-height: 44px;
+  padding-block: 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+body[data-valo-typography="staff"] .g3-vip-page .g3-toolbar button[aria-haspopup] {
+  height: 44px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+@media (max-width: 639px) {
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item {
+    min-height: 68px;
+    padding: 10px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item:first-child {
+    padding-left: 10px;
+  }
+
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item+.g3-summary-item {
+    border-top: 0;
+  }
+
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-icon {
+    display: none;
+  }
+
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-metric-label {
+    font-size: 11px;
+  }
+}
+/* Typography/vertical alignment copied from Customer KPI and table sections. */
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-item { align-items: center; }
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-metric-label { margin: 0; font-size: 12px; line-height: 18px; }
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-icon { display: grid; place-items: center; }
+body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-icon svg { width: 19px; height: 19px; }
+body[data-valo-typography="staff"] .g3-vip-page .g3-toolbar { gap: 12px; }
+body[data-valo-typography="staff"] .g3-vip-page .g3-toolbar .g3-search { flex: 1 1 230px; }
+body[data-valo-typography="staff"] .g3-vip-page .g3-membership-columns { height: 44px; padding-block: 10px; align-items: center; font-size: 11px; line-height: 1.4; letter-spacing: .025em; }
+@media (max-width: 639px) {
+  body[data-valo-typography="staff"] .g3-vip-page .g3-vip-metrics .g3-summary-icon { display: none; }
+}

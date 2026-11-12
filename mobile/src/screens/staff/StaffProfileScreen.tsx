@@ -17,13 +17,17 @@ import {
 } from '@/components/staff';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { LanguageToggle } from '@/components/common/LanguageToggle';
 import type { StaffProfileStackParamList, StaffTabParamList } from '@/navigation/StaffNavigator';
 
 type Props = NativeStackScreenProps<StaffProfileStackParamList, 'StaffProfileHome'>;
 
 export default function StaffProfileScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const tabBarHeight = useBottomTabBarHeight();
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -59,11 +63,11 @@ export default function StaffProfileScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
-        eyebrow="Staff profile"
-        title="Profile"
-        right={<StatusBadge label="Ops" />}
+        eyebrow={t('staffProfile')}
+        title={t('profile')}
+        right={<View style={styles.headerActions}><LanguageToggle inline /><StatusBadge label={translateUi("Ops")} /></View>}
       />
 
       <ScrollView
@@ -85,40 +89,40 @@ export default function StaffProfileScreen({ navigation }: Props) {
               ) : (
                 <>
                   <Text numberOfLines={1} style={styles.name}>{displayName}</Text>
-                  <Text numberOfLines={1} style={styles.email}>{email || 'No email available'}</Text>
+                  <Text numberOfLines={1} style={styles.email}>{email || translateUi("No email available")}</Text>
                 </>
               )}
               <View style={styles.roleLine}>
-                <StatusBadge label="Operations staff" tone="success" />
+                <StatusBadge label={t('operationsStaff')} tone="success" />
               </View>
             </View>
           </View>
         </FadeInView>
 
         <FadeInView delay={70} style={styles.block}>
-          <SectionTitle title="Work shortcuts" />
+          <SectionTitle title={t('workShortcuts')} />
           <View style={styles.list}>
-            <OperationalRow icon="qr-code-outline" meta="Fast" title="Booking scanner" onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'BookingScanner' })} />
-            <OperationalRow icon="map-outline" title="Live parking grid" onPress={() => goToTab('LiveGrid')} />
-            <OperationalRow icon="car-sport-outline" title="Parking sessions" onPress={() => goToTab('Sessions')} />
-            <OperationalRow icon="notifications-outline" title="Operational notices" onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'StaffNotifications' })} />
+            <OperationalRow icon="qr-code-outline" meta={t('fast')} title={t('bookingScanner')} onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'BookingScanner' })} />
+            <OperationalRow icon="map-outline" title={t('liveParkingGrid')} onPress={() => goToTab('LiveGrid')} />
+            <OperationalRow icon="car-sport-outline" title={t('parkingSessions')} onPress={() => goToTab('Sessions')} />
+            <OperationalRow icon="notifications-outline" title={t('operationalNotices')} onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'StaffNotifications' })} />
           </View>
         </FadeInView>
 
         <FadeInView delay={120} style={styles.block}>
-          <SectionTitle title="Account" />
+          <SectionTitle title={t('account')} />
           <View style={styles.list}>
-            <OperationalRow icon="person-outline" title="Edit profile" onPress={() => navigation.navigate('EditProfile')} />
-            <OperationalRow icon="lock-closed-outline" title="Change password" tone="muted" onPress={() => navigation.navigate('ChangePassword')} />
-            <OperationalRow icon="log-out-outline" meta="Secure" title="Sign out" tone="danger" onPress={() => setLogoutOpen(true)} />
+            <OperationalRow icon="person-outline" title={t('editProfile')} onPress={() => navigation.navigate('EditProfile')} />
+            <OperationalRow icon="lock-closed-outline" title={t('changePassword')} tone="muted" onPress={() => navigation.navigate('ChangePassword')} />
+            <OperationalRow icon="log-out-outline" meta={t('secure')} title={t('signOut')} tone="danger" onPress={() => setLogoutOpen(true)} />
           </View>
         </FadeInView>
       </ScrollView>
 
       <ConfirmationPanel
-        confirmLabel="Sign out"
-        message="This will end the current staff session on this device."
-        title="Sign out?"
+        confirmLabel={t('signOut')}
+        message={t('signOutMessage')}
+        title={t('signOutQuestion')}
         tone="danger"
         visible={logoutOpen}
         onCancel={() => setLogoutOpen(false)}
@@ -133,7 +137,8 @@ export default function StaffProfileScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { backgroundColor: COLORS.background, flex: 1 },
-  scroll: { gap: SPACING.md, padding: SPACING.lg },
+  headerActions: { alignItems: 'center', flexDirection: 'row', gap: SPACING.sm },
+  scroll: { gap: SPACING.lg, padding: SPACING.lg },
   identity: {
     alignItems: 'center',
     borderBottomColor: COLORS.border,
@@ -150,9 +155,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 64,
   },
-  avatarText: { color: COLORS.textInverse, fontSize: 25, fontWeight: '900' },
+  avatarText: { color: COLORS.textInverse, fontSize: 25, fontWeight: '700' },
   identityCopy: { flex: 1, gap: 5, minWidth: 0 },
-  name: { color: COLORS.textPrimary, fontSize: 21, fontWeight: '900' },
+  name: { color: COLORS.textPrimary, fontSize: FONT_SIZES.xl, lineHeight: 28, fontWeight: '700' },
   email: { color: COLORS.textMuted, fontSize: FONT_SIZES.sm },
   roleLine: { marginTop: 4 },
   block: { gap: SPACING.md },

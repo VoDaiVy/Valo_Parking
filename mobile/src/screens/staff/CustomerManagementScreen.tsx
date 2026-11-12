@@ -1,3 +1,4 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -49,6 +50,7 @@ const formatDate = (value?: string) => {
 };
 
 export function CustomerManagementScreen({ navigation }: Props) {
+  const { t: translateUi } = useLanguage();
   const tabBarHeight = useBottomTabBarHeight();
   const { alert } = useAppAlert();
   const toast = useToast();
@@ -201,9 +203,9 @@ export function CustomerManagementScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
-        title="Customers"
+        title={translateUi("Customers")}
         subtitle={`${customers.length} customers`}
         onBack={() => navigation.navigate('ManagementHome')}
       />
@@ -211,16 +213,16 @@ export function CustomerManagementScreen({ navigation }: Props) {
       <FadeInView style={styles.searchWrap}>
         <Ionicons name="search-outline" size={19} color={COLORS.textMuted} />
         <TextInput
-          accessibilityLabel="Search customers"
+          accessibilityLabel={translateUi("Search customers")}
           onChangeText={setQuery}
-          placeholder="Search name, email or phone"
+          placeholder={translateUi("Search name, email or phone")}
           placeholderTextColor={COLORS.textMuted}
           style={styles.searchInput}
           value={query}
         />
         {query ? (
           <TouchableOpacity
-            accessibilityLabel="Clear search"
+            accessibilityLabel={translateUi("Clear search")}
             accessibilityRole="button"
             onPress={() => setQuery('')}
           >
@@ -234,7 +236,7 @@ export function CustomerManagementScreen({ navigation }: Props) {
           <ActivityIndicator color={COLORS.gold} size="large" />
         </View>
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : (
         <FlatList
           contentContainerStyle={[styles.list, { paddingBottom: tabBarHeight + SPACING.lg }]}
@@ -270,7 +272,7 @@ export function CustomerManagementScreen({ navigation }: Props) {
                         {item.email || item.profile?.phone || 'No contact'}
                       </Text>
                     </View>
-                    <StatusBadge label={active ? 'Active' : 'Blocked'} tone={active ? 'success' : 'danger'} />
+                    <StatusBadge label={active ? translateUi("Active") : translateUi("Blocked")} tone={active ? 'success' : 'danger'} />
                     <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
                   </View>
                 </AnimatedPressable>
@@ -280,8 +282,8 @@ export function CustomerManagementScreen({ navigation }: Props) {
           ListEmptyComponent={
             <EmptyState
               icon="people-outline"
-              title="No customers found"
-              message="Try a different search term."
+              title={translateUi("No customers found")}
+              message={translateUi("Try a different search term.")}
             />
           }
         />
@@ -349,6 +351,7 @@ function CustomerDetailSheet({
   onSave: () => void;
   onToggleStatus: () => void;
 }) {
+  const { t: translateUi } = useLanguage();
   const active = customer ? isCustomerActive(customer) : false;
   const username = customer?.username || customer?.email.split('@')[0] || 'customer';
 
@@ -362,7 +365,7 @@ function CustomerDetailSheet({
     >
       <View style={styles.overlay}>
         <Pressable
-          accessibilityLabel="Close customer details"
+          accessibilityLabel={translateUi("Close customer details")}
           accessibilityRole="button"
           onPress={onClose}
           style={StyleSheet.absoluteFill}
@@ -371,10 +374,10 @@ function CustomerDetailSheet({
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>
-              {isEditing ? 'Edit customer' : 'Customer detail'}
+              {isEditing ? translateUi("Edit customer") : 'Customer detail'}
             </Text>
             <TouchableOpacity
-              accessibilityLabel="Close customer details"
+              accessibilityLabel={translateUi("Close customer details")}
               accessibilityRole="button"
               onPress={onClose}
               style={styles.closeButton}
@@ -407,7 +410,7 @@ function CustomerDetailSheet({
                       <View style={styles.badges}>
                         <View style={styles.roleBadge}>
                           <View style={styles.roleDot} />
-                          <Text style={styles.roleText}>Customer</Text>
+                          <Text style={styles.roleText}>{translateUi("Customer")}</Text>
                         </View>
                         <View
                           style={[
@@ -427,41 +430,41 @@ function CustomerDetailSheet({
                               !active && styles.blockedText,
                             ]}
                           >
-                            {active ? 'Active' : 'Blocked'}
+                            {active ? translateUi("Active") : translateUi("Blocked")}
                           </Text>
                         </View>
                       </View>
                     </View>
 
                     <View style={styles.infoCard}>
-                      <Text style={styles.cardTitle}>Basic info</Text>
+                      <Text style={styles.cardTitle}>{translateUi("Basic info")}</Text>
                       <CustomerInfoRow
                         icon="mail-outline"
-                        label="Email address"
+                        label={translateUi("Email address")}
                         value={customer.email}
                       />
                       <CustomerInfoRow
                         icon="call-outline"
-                        label="Phone number"
+                        label={translateUi("Phone number")}
                         value={customer.profile?.phone || 'Not provided'}
                       />
                       <CustomerInfoRow
                         icon="calendar-outline"
-                        label="Join date"
+                        label={translateUi("Join date")}
                         value={formatDate(customer.createdAt)}
                       />
                     </View>
 
                     <View style={styles.infoCard}>
-                      <Text style={styles.cardTitle}>Account activity</Text>
+                      <Text style={styles.cardTitle}>{translateUi("Account activity")}</Text>
                       <ActivityItem
                         color="#34D399"
-                        label="Account created"
+                        label={translateUi("Account created")}
                         value={formatDate(customer.createdAt)}
                       />
                       <ActivityItem
                         color={COLORS.gold}
-                        label="Last updated"
+                        label={translateUi("Last updated")}
                         value={formatDate(customer.updatedAt)}
                         last
                       />
@@ -480,24 +483,24 @@ function CustomerDetailSheet({
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.cardTitle}>Edit basic info</Text>
-                    <Text style={styles.label}>First name</Text>
+                    <Text style={styles.cardTitle}>{translateUi("Edit basic info")}</Text>
+                    <Text style={styles.label}>{translateUi("First name")}</Text>
                     <TextInput
                       value={firstName}
                       onChangeText={onChangeFirstName}
                       style={styles.input}
-                      placeholder="First name"
+                      placeholder={translateUi("First name")}
                       placeholderTextColor={COLORS.textMuted}
                     />
-                    <Text style={styles.label}>Last name</Text>
+                    <Text style={styles.label}>{translateUi("Last name")}</Text>
                     <TextInput
                       value={lastName}
                       onChangeText={onChangeLastName}
                       style={styles.input}
-                      placeholder="Last name"
+                      placeholder={translateUi("Last name")}
                       placeholderTextColor={COLORS.textMuted}
                     />
-                    <Text style={styles.label}>Phone number</Text>
+                    <Text style={styles.label}>{translateUi("Phone number")}</Text>
                     <TextInput
                       value={phone}
                       onChangeText={onChangePhone}
@@ -509,10 +512,9 @@ function CustomerDetailSheet({
                     <View style={styles.roleLock}>
                       <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.gold} />
                       <View style={styles.roleLockCopy}>
-                        <Text style={styles.roleLockLabel}>Customer role</Text>
+                        <Text style={styles.roleLockLabel}>{translateUi("Customer role")}</Text>
                         <Text style={styles.roleLockHint}>
-                          Staff cannot change account roles.
-                        </Text>
+                          {" "}{translateUi("Staff cannot change account roles.")}{" "}</Text>
                       </View>
                       <Ionicons name="lock-closed" size={15} color={COLORS.textMuted} />
                     </View>
@@ -528,7 +530,7 @@ function CustomerDetailSheet({
                       onPress={onCancelEdit}
                       style={[styles.footerButton, styles.cancelButton]}
                     >
-                      <Text style={styles.cancelText}>Cancel</Text>
+                      <Text style={styles.cancelText}>{translateUi("Cancel")}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       disabled={saving}
@@ -538,7 +540,7 @@ function CustomerDetailSheet({
                       {saving ? (
                         <ActivityIndicator color={COLORS.textInverse} />
                       ) : (
-                        <Text style={styles.saveText}>Save changes</Text>
+                        <Text style={styles.saveText}>{translateUi("Save changes")}</Text>
                       )}
                     </TouchableOpacity>
                   </>
@@ -549,7 +551,7 @@ function CustomerDetailSheet({
                       onPress={onEdit}
                       style={[styles.footerButton, styles.editButton]}
                     >
-                      <Text style={styles.editButtonText}>Edit customer</Text>
+                      <Text style={styles.editButtonText}>{translateUi("Edit customer")}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       disabled={statusSaving}
@@ -629,13 +631,14 @@ function CustomerInfoRow({
   label: string;
   value: string;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoIcon}>
         <Ionicons name={icon} size={17} color={COLORS.textMuted} />
       </View>
       <View style={styles.infoCopy}>
-        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoLabel}>{translateUi(label)}</Text>
         <Text numberOfLines={2} style={styles.infoValue}>
           {value}
         </Text>
@@ -655,6 +658,7 @@ function ActivityItem({
   value: string;
   last?: boolean;
 }) {
+  const { t: translateUi } = useLanguage();
   return (
     <View style={styles.activityRow}>
       <View style={styles.activityRail}>
@@ -664,7 +668,7 @@ function ActivityItem({
         {!last ? <View style={styles.activityLine} /> : null}
       </View>
       <View style={styles.activityCopy}>
-        <Text style={styles.activityLabel}>{label}</Text>
+        <Text style={styles.activityLabel}>{translateUi(label)}</Text>
         <Text style={styles.activityDate}>{value}</Text>
       </View>
     </View>
@@ -726,7 +730,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   statusBlocked: { backgroundColor: 'rgba(255,77,77,0.12)' },
-  statusText: { color: COLORS.success, fontSize: 10, fontWeight: '700' },
+  statusText: { color: COLORS.success, fontSize: FONT_SIZES.xs, fontWeight: '700' },
   statusTextBlocked: { color: COLORS.error },
   overlay: {
     backgroundColor: 'rgba(2,5,9,0.72)',
@@ -857,7 +861,7 @@ const styles = StyleSheet.create({
   infoCopy: { flex: 1 },
   infoLabel: {
     color: COLORS.textMuted,
-    fontSize: 10,
+    fontSize: FONT_SIZES.xs,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
@@ -906,6 +910,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   input: {
+    fontSize: FONT_SIZES.md,
+    paddingVertical: 12,
     backgroundColor: COLORS.surfaceElevated,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
@@ -926,7 +932,7 @@ const styles = StyleSheet.create({
   },
   roleLockCopy: { flex: 1, marginLeft: SPACING.sm },
   roleLockLabel: { color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, fontWeight: '600' },
-  roleLockHint: { color: COLORS.textMuted, fontSize: 10, marginTop: 2 },
+  roleLockHint: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 2 },
   sheetFooter: {
     backgroundColor: 'rgba(23,27,32,0.98)',
     borderTopColor: COLORS.border,
@@ -936,6 +942,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
   },
   footerButton: {
+    paddingVertical: 12,
     alignItems: 'center',
     borderRadius: RADIUS.md,
     borderWidth: 1,

@@ -1,8 +1,10 @@
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   FlatList,
   RefreshControl,
@@ -54,8 +56,9 @@ function elapsedLabel(session: ActiveSession) {
 }
 
 function SessionOperationalRow({ session, index, onPress }: { session: ActiveSession; index: number; onPress: () => void }) {
+  const { t: translateUi } = useLanguage();
   const isActive = session.status === 'active';
-  const tone = isActive ? 'success' : 'muted';
+  const tone = isActive || session.status === 'completed' ? 'success' : 'muted';
   const accent = staffToneColor(tone);
 
   return (
@@ -73,7 +76,7 @@ function SessionOperationalRow({ session, index, onPress }: { session: ActiveSes
           <View style={styles.statusColumn}>
             <View style={[styles.statusPill, { backgroundColor: `${accent}14`, borderColor: `${accent}44` }]}>
               <View style={[styles.statusDot, { backgroundColor: accent }]} />
-              <Text style={[styles.statusText, { color: accent }]}>{isActive ? 'Active' : 'Done'}</Text>
+              <Text style={[styles.statusText, { color: accent }]}>{isActive ? translateUi("Active") : translateUi("Done")}</Text>
             </View>
             <Text numberOfLines={1} style={styles.durationText}>{elapsedLabel(session)}</Text>
           </View>
@@ -89,6 +92,7 @@ function SessionOperationalRow({ session, index, onPress }: { session: ActiveSes
 }
 
 export const SessionListScreen = ({ navigation }: Props) => {
+  const { t: translateUi } = useLanguage();
   const tabBarHeight = useBottomTabBarHeight();
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,9 +112,9 @@ export const SessionListScreen = ({ navigation }: Props) => {
     }
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void load();
-  }, [load]);
+  }, [load]));
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -124,18 +128,18 @@ export const SessionListScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" />
       <StaffHeader
         eyebrow="Sessions"
-        title="Parking activity"
+        title={translateUi("Parking activity")}
         right={<StatusBadge label={`${activeCount} active`} tone="success" />}
       />
 
       <View style={styles.summaryWrap}>
         <MetricStrip>
-          <OperationalMetric icon="pulse-outline" label="Active" tone="success" value={activeCount} />
-          <OperationalMetric icon="checkmark-circle-outline" label="Completed" tone="muted" value={completedCount} />
-          <OperationalMetric icon="albums-outline" label="Total" value={sessions.length} />
+          <OperationalMetric icon="pulse-outline" label={translateUi("Active")} tone="success" value={activeCount} />
+          <OperationalMetric icon="checkmark-circle-outline" label={translateUi("Completed")} tone="success" value={completedCount} />
+          <OperationalMetric icon="albums-outline" label={translateUi("Total")} value={sessions.length} />
         </MetricStrip>
       </View>
 
@@ -145,7 +149,7 @@ export const SessionListScreen = ({ navigation }: Props) => {
           return (
             <AnimatedPressable key={item} onPress={() => setFilter(item)} style={[styles.filterTab, active && styles.filterTabActive]}>
               <Text style={[styles.filterText, active && styles.filterTextActive]}>
-                {item === 'active' ? 'Active' : item === 'completed' ? 'Completed' : 'All'}
+                {item === 'active' ? translateUi("Active") : item === 'completed' ? translateUi("Completed") : translateUi("All")}
               </Text>
             </AnimatedPressable>
           );
@@ -155,7 +159,7 @@ export const SessionListScreen = ({ navigation }: Props) => {
       {loading ? (
         <SessionSkeleton />
       ) : error ? (
-        <ErrorState message={error} onRetry={load} />
+        <ErrorState message={translateUi(error)} onRetry={load} />
       ) : (
         <FlatList
           data={filtered}
@@ -169,7 +173,7 @@ export const SessionListScreen = ({ navigation }: Props) => {
               onPress={() => navigation.navigate('SessionDetail', { session: item })}
             />
           )}
-          ListEmptyComponent={<EmptyState icon="car-outline" title="No sessions found" message="No sessions match the current filter." accentColor={COLORS.gold} />}
+          ListEmptyComponent={<EmptyState icon="car-outline" title={translateUi("No sessions found")} message={translateUi("No sessions match the current filter.")} accentColor={COLORS.gold} />}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -211,10 +215,10 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.round,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 38,
+    minHeight: 44,
   },
   filterTabActive: { backgroundColor: 'rgba(226,186,75,0.16)' },
-  filterText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '900', textTransform: 'uppercase' },
+  filterText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, fontWeight: '700', textTransform: 'uppercase' },
   filterTextActive: { color: COLORS.gold },
   listContent: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm },
   sessionRow: {
@@ -229,9 +233,9 @@ const styles = StyleSheet.create({
   plateColumn: { flex: 1.18, minWidth: 0 },
   statusColumn: { alignItems: 'flex-start', flex: 0.62, gap: 4, minWidth: 66 },
   detailColumn: { alignItems: 'flex-end', flex: 0.78, minWidth: 0 },
-  plateText: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '900', letterSpacing: 0.4 },
+  plateText: { color: COLORS.textPrimary, fontSize: FONT_SIZES.md, fontWeight: '700', letterSpacing: 0.4 },
   rowMeta: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 3 },
-  phoneText: { color: COLORS.textMuted, fontSize: 10, marginTop: 3 },
+  phoneText: { color: COLORS.textMuted, fontSize: FONT_SIZES.xs, marginTop: 3 },
   statusPill: {
     alignItems: 'center',
     borderRadius: RADIUS.round,
@@ -242,8 +246,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
   },
   statusDot: { borderRadius: 3, height: 6, width: 6 },
-  statusText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  durationText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '900' },
+  statusText: { fontSize: FONT_SIZES.xs, fontWeight: '700', textTransform: 'uppercase' },
+  durationText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '700' },
   timeText: { color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, fontWeight: '800' },
   skeleton: { gap: SPACING.md, padding: SPACING.lg },
   skeletonRow: {

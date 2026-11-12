@@ -1,5 +1,5 @@
 const { interpretBookingMessage, normalizeInterpretation } = require('../services/aiBookingInterpreter');
-const { detectBookingLanguage } = require('../services/aiBookingLanguage');
+const { detectBookingLanguage, detectSelectedLanguageMismatch } = require('../services/aiBookingLanguage');
 const { toEnglishBookingMessage } = require('../services/aiBookingReplyLanguage');
 const mongoose = require('mongoose');
 const aiBookingSessionService = require('../services/aiBookingSessionService');
@@ -43,16 +43,56 @@ const sendMutationResult = (res, result) => {
   return res.json({ success: true, data: sessionData(result?.session || result) });
 };
 
+const vietnamBookingClock = (now = new Date()) => {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const part = (type) => parts.find((item) => item.type === type)?.value || '';
+  return {
+    today: `${part('year')}-${part('month')}-${part('day')}`,
+    currentTime: `${part('hour')}:${part('minute')}`,
+  };
+};
+
 exports.interpret = async (req, res) => {
-  const languageInfo = detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const lockedLanguage = req.body?.draft?.__languageLocked === true
+    && ['en', 'vi'].includes(req.body?.draft?.__language)
+    ? req.body.draft.__language
+    : '';
+  const languageInfo = lockedLanguage
+    ? { language: lockedLanguage, confidence: 1 }
+    : detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
+  const languageMismatch = lockedLanguage
+    ? detectSelectedLanguageMismatch(req.body?.prompt, lockedLanguage)
+    : null;
   const responseMessage = (value) => languageInfo.language === 'en'
     ? toEnglishBookingMessage(value) : value;
+  if (languageMismatch) {
+    const draft = req.body?.draft && typeof req.body.draft === 'object' ? req.body.draft : {};
+    return res.json({
+      success: true,
+      data: {
+        intent: draft.__intent || 'UNKNOWN',
+        draft,
+        language: lockedLanguage,
+        languageConfidence: 1,
+        detectedInputLanguage: languageMismatch.language,
+        languageMismatch: true,
+        clarification: lockedLanguage === 'en'
+          ? 'English mode is selected. Please enter or speak your request in English, or switch to VI to use Vietnamese.'
+          : 'Bạn đang chọn chế độ tiếng Việt. Vui lòng nhập hoặc nói yêu cầu bằng tiếng Việt, hoặc chuyển sang EN để dùng tiếng Anh.',
+      },
+    });
+  }
   try {
+    const referenceClock = vietnamBookingClock();
     const assistantRequest = parseAssistantRequest({
       prompt: req.body?.prompt,
       draft: req.body?.draft,
-      today: req.body?.today,
-      currentTime: req.body?.currentTime,
+      today: referenceClock.today,
+      currentTime: referenceClock.currentTime,
     });
     const requestsScheduledAvailability = assistantRequest
       && (assistantRequest.intents.includes('CHECK_PARKING_AVAILABILITY')
@@ -106,6 +146,7 @@ exports.interpret = async (req, res) => {
           assistantResult: {
             message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
@@ -113,8 +154,8 @@ exports.interpret = async (req, res) => {
     const result = await interpretBookingMessage({
       prompt: req.body?.prompt,
       draft: req.body?.draft,
-      today: req.body?.today,
-      currentTime: req.body?.currentTime,
+      today: referenceClock.today,
+      currentTime: referenceClock.currentTime,
     });
     if (QUERY_INTENTS.has(result.intent)) {
       const fallbackRequest = {
@@ -144,6 +185,7 @@ exports.interpret = async (req, res) => {
           assistantResult: {
             message: responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
@@ -223,7 +265,7 @@ exports.completeSession = async (req, res) => {
       req.user._id, req.params.sessionId, req.body || {}
     ));
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Không thể hoàn tất phiên đặt chỗ lúc này.' });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Không thể hoàn tất phiên đặt chỗ lúc này.' });
   }
 };
 
