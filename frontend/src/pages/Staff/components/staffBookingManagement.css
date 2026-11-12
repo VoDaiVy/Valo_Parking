@@ -132,7 +132,7 @@ body[data-valo-typography="staff"] .staff-booking-management .sbm-controls butto
  body[data-valo-typography="staff"] .staff-booking-management .sbm-header, body[data-valo-typography="staff"] .staff-booking-management .sbm-performance { grid-column: 1 / -1; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-controls { grid-column: 1 / -1; grid-row: 3; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-workspace { display: contents; }
- body[data-valo-typography="staff"] .staff-booking-management .sbm-list { width: auto; grid-column: 1; grid-row: 4; align-self: stretch; height: 100%; overflow-y: auto; }
+ body[data-valo-typography="staff"] .staff-booking-management .sbm-list { width: auto; grid-column: 1; grid-row: 4; align-self: start; height: auto; overflow: visible; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-detail { grid-column: 2; grid-row: 4; height: 100%; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-header { flex-direction: row; }
  body[data-valo-typography="staff"] .staff-booking-management .sbm-metric-strip { grid-template-columns: repeat(4,minmax(0,1fr)); }
@@ -226,4 +226,24 @@ body[data-valo-typography="staff"] .staff-booking-management .sbm-schedule-endpo
 body[data-valo-typography="staff"] .staff-booking-management .sbm-schedule-endpoint > div { align-content: start; overflow-wrap: anywhere; }
 @media (max-width: 1023px) {
  body[data-valo-typography="staff"] .staff-booking-management .sbm-schedule { column-gap: 8px; }
+}
+
+/* Four API records per page: rows and footer stay in normal flow. */
+body[data-valo-typography="staff"] .staff-booking-management { overflow: visible; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-list { flex-shrink: 0; height: auto; overflow: visible; gap: 8px; padding-bottom: 8px; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-list > section { flex: 0 0 auto; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-group-heading { position: static; padding-block: 6px; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-list > section > div + div { margin-top: 6px; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] { display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; min-height: 72px; padding: 10px 12px; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] > div:not(.absolute) { flex-wrap: nowrap; gap: 8px; margin: 0; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] > div + div { margin-top: 6px; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] > div > div { flex-wrap: nowrap; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] > .sbm-booking-identity > div { flex: 1; overflow: hidden; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] [data-booking-status] { flex-shrink: 0; white-space: nowrap; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] > div:last-child > div:last-child { flex-shrink: 0; white-space: nowrap; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-list-pagination { flex: 0 0 auto; min-height: 40px; margin-top: 0; padding-top: 4px; gap: 8px; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-list-pagination > span { text-align: center; font-variant-numeric: tabular-nums; }
+@media (max-width: 639px) {
+ body[data-valo-typography="staff"] .staff-booking-management .sbm-list-pagination { flex-wrap: wrap; }
+ body[data-valo-typography="staff"] .staff-booking-management .sbm-booking-row[data-booking-group="HISTORY"] > div:not(.absolute) { flex-wrap: wrap; }
 }

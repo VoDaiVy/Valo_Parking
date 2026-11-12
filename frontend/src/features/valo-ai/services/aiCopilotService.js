@@ -17,6 +17,7 @@ const request = (path, options = {}) => apiFetch(`${getBasePrefix()}${path}`, {
 export const sendAIMessage = (message, conversationId) => request('/chat', { method: 'POST', body: JSON.stringify({ message, conversationId }) });
 export const getAINotifications = (filter = 'all', page = 1) => request(`/notifications?filter=${encodeURIComponent(filter)}&page=${page}`);
 export const getAINotification = (id) => request(`/notifications/${encodeURIComponent(id)}`);
+export const searchAICustomers = filters => request(`/customers/search?${new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== undefined && value !== null))}`);
 export const markAINotificationRead = (id) => request(`/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' });
 export const dismissAINotification = (id) => request(`/notifications/${encodeURIComponent(id)}/dismiss`, { method: 'PATCH' });
 export const approveAIDraft = (id) => request(`/drafts/${encodeURIComponent(id)}/approve`, { method: 'POST' });

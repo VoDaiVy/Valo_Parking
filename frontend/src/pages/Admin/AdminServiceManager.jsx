@@ -11,6 +11,8 @@ import { getServices, createService, updateService, deleteService } from '../../
 import toast, { Toaster } from 'react-hot-toast';
 import './adminServices.css';
 import { getPaginationPages } from '../Staff/sessionPagination.js';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { serviceLinkState, includeLinkedService, serviceRowPage, highlightServiceRow } from './serviceDeepLink.js';
 
 // --- Animated Counter ---------------------------------------------------------
 function AnimatedCounter({ target, duration = 1200, isCurrency, isTime }) {
@@ -91,6 +93,12 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
 // --- Main Component -----------------------------------------------------------
 const AdminServiceManager = () => {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const serviceIdQuery = searchParams.get('serviceId');
+  const linkKey = serviceIdQuery ? `${location.key}:${serviceIdQuery}` : null;
+  const [serviceLink, setServiceLink] = useState({ status: 'idle' });
+  const linkedRowRef = useRef(null);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -128,26 +136,43 @@ const AdminServiceManager = () => {
   // Styles
   const goldGrad = 'linear-gradient(135deg, #C59A3F, #E5C058)';
 
+  const aiRefreshGeneration = useRef(0);
   const fetchServices = async () => {
+    const generation = ++aiRefreshGeneration.current;
     try {
       setLoading(true);
-      const res = await getServices(false);
+      const res = await getServices(false, linkKey ? { cache: 'no-store' } : {});
+      if (generation !== aiRefreshGeneration.current) return;
+      if (linkKey) setServiceLink({ ...serviceLinkState(res, serviceIdQuery), key: linkKey });
       if (res.ok && res.data.success) {
         setServices(res.data.data);
       } else {
         toast.error(res.data.message || 'Failed to fetch services');
       }
     } catch (err) {
+      if (generation !== aiRefreshGeneration.current) return;
+      if (linkKey) setServiceLink({ status: 'error', key: linkKey });
       toast.error(err.message || 'Failed to fetch services');
     } finally {
-      setLoading(false);
+      if (generation === aiRefreshGeneration.current) setLoading(false);
     }
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchServices; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['CREATE_SERVICE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchServices();
-  }, []);
+    return () => { aiRefreshGeneration.current += 1; };
+  }, [linkKey]);
 
 
 
@@ -337,13 +362,22 @@ const AdminServiceManager = () => {
   const inputClass = "w-full px-4 py-2.5 bg-[#15191d] border border-white/[0.15] rounded-xl text-white text-sm placeholder-white/[0.36] focus:border-[#ffd555]/70 focus:ring-2 focus:ring-[#ffd555]/20 focus:bg-[#101316] focus:outline-none transition-all font-sans shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]";
   const labelClass = "block text-[10px] font-extrabold uppercase tracking-wider text-[#f4d675]/80 mb-1.5";
 
-  const totalPages = Math.max(1, Math.ceil(filteredAndSortedServices.length / 10));
+  const verifiedServiceId = linkKey && serviceLink.key === linkKey && serviceLink.status === 'ready' && !loading ? serviceLink.serviceId : null;
+  const visibleServices = useMemo(() => includeLinkedService(filteredAndSortedServices, services, verifiedServiceId), [filteredAndSortedServices, services, verifiedServiceId]);
+  useEffect(() => {
+    const targetPage = verifiedServiceId && serviceRowPage(visibleServices, verifiedServiceId);
+    if (targetPage) setPage(targetPage);
+  }, [verifiedServiceId, visibleServices, linkKey]);
+  const totalPages = Math.max(1, Math.ceil(visibleServices.length / 10));
   const currentPage = Math.min(page, totalPages);
-  const pageServices = filteredAndSortedServices.slice((currentPage - 1) * 10, currentPage * 10);
+  const pageServices = visibleServices.slice((currentPage - 1) * 10, currentPage * 10);
+  useEffect(() => {
+    if (verifiedServiceId) return highlightServiceRow(linkedRowRef.current);
+  }, [verifiedServiceId, linkKey, currentPage]);
   const tableRef = useRef(null);
   useEffect(() => {
-    if (tableRef.current) tableRef.current.scrollTop = 0;
-  }, [currentPage, searchTerm, statusFilter, sortBy]);
+    if (!verifiedServiceId && tableRef.current) tableRef.current.scrollTop = 0;
+  }, [currentPage, searchTerm, statusFilter, sortBy, verifiedServiceId]);
 
   return (
     <div className="admin-services flex h-full min-h-0 bg-[#080808] text-white relative overflow-hidden font-sans">
@@ -473,13 +507,14 @@ const AdminServiceManager = () => {
 
         {/* ── Main Layout: Split ── */}
         <div ref={tableRef} className="services-table-scroll" tabIndex={0} role="region" aria-label="Services list">
+          {linkKey && serviceLink.key === linkKey && ['missing', 'error', 'unavailable'].includes(serviceLink.status) && <p role="status" className="px-4 py-3 text-sm text-amber-200">{serviceLink.status === 'missing' ? 'Service not found.' : 'Unable to load the requested service.'}</p>}
           <table>
             <thead><tr>{['Service', 'Price', 'Duration', 'Status', 'Actions'].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
             <tbody>
               {loading && services.length === 0 ? <tr><td colSpan={5} className="services-empty" role="status">Loading services...</td></tr> : pageServices.length === 0 ? <tr><td colSpan={5} className="services-empty">
                 <p>{services.length ? 'No matching services' : 'No extra services yet'}</p>
                 <button type="button" onClick={() => openModal()} className="mt-3 text-[#e8d5ad]">Add New Service</button>
-              </td></tr> : pageServices.map((service) => <tr key={service._id} className="services-row" onClick={() => openViewModal(service)}>
+              </td></tr> : pageServices.map((service) => <tr key={service._id} ref={String(service._id).toLowerCase() === verifiedServiceId?.toLowerCase() ? linkedRowRef : undefined} className="services-row" onClick={() => openViewModal(service)}>
                 <td><div className="flex min-w-0 items-center gap-3">
                   {service.imageUrl ? <img src={service.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <Package size={20} className="shrink-0 text-white/40" aria-hidden="true" />}
                   <span className="truncate text-white" title={service.name}>{service.name}</span>
@@ -497,7 +532,7 @@ const AdminServiceManager = () => {
           </table>
         </div>
         <nav className="services-pagination" aria-label="Service pages">
-          <span className="text-xs text-white/30">Page {currentPage} of {totalPages} {'\u00b7'} {filteredAndSortedServices.length} results</span>
+          <span className="text-xs text-white/30">Page {currentPage} of {totalPages} {'\u00b7'} {visibleServices.length} results</span>
           <div className="flex items-center gap-1">
             <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
             {getPaginationPages(currentPage, totalPages).map((nextPage) => typeof nextPage === 'number' ? <button type="button" key={nextPage} onClick={() => setPage(nextPage)} aria-current={nextPage === currentPage ? 'page' : undefined} className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${nextPage === currentPage ? 'bg-[#ffd555] text-black' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>{nextPage}</button> : <span key={nextPage} aria-hidden="true">...</span>)}

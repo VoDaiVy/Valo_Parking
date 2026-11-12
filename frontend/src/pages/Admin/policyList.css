@@ -1,4 +1,11 @@
 /* Policies-only list and page spacing; editor controls keep their existing styles. */
+.admin-policy-consistency .policy-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:0; align-items:stretch; border-radius:14px; overflow:hidden; }
+.admin-policy-consistency .policy-workspace > .policy-list,
+.admin-policy-consistency .policy-workspace > .policy-detail { min-width:0; border:0; border-radius:0; }
+@media (min-width:1024px) {
+ .admin-policy-consistency .policy-workspace { grid-template-columns:minmax(0,45fr) minmax(0,55fr); }
+ .admin-policy-consistency .policy-workspace > .policy-list { border-right:1px solid rgb(255 255 255 / .08); }
+}
 .admin-policy-consistency .policy-list-toolbar { min-height: 48px; padding: 6px 16px; gap: 8px; }
 .admin-policy-consistency .policy-list-columns,
 .admin-policy-consistency .policy-list-row { display: grid; grid-template-columns: minmax(0, 1fr) 94px 14px; align-items: center; gap: 8px; padding-inline: 16px; }
@@ -36,14 +43,16 @@ body[data-valo-typography="admin"] .admin-consistency.admin-policy-consistency .
   body[data-valo-typography="admin"] .admin-consistency.admin-policy-consistency .c4-header h1 { font-size: 26px !important; line-height: 34px !important; }
 }
 
-/* Use the content height supplied by the Admin shell rather than a viewport offset. */
-@media (min-width: 1024px) and (min-height: 640px) {
- body[data-valo-typography="admin"] .admin-consistency.admin-policy-consistency { height:100%; min-height:0; padding-bottom:2px; overflow:hidden; }
- .admin-policy-consistency .policy-page-content { display:flex; flex-direction:column; height:100%; min-height:0; }
+/* Give the editor a viewport-sized workspace instead of leftover space below KPIs. */
+@media (min-width: 1024px) {
+ body[data-valo-typography="admin"] .admin-consistency.admin-policy-consistency { height:auto; min-height:100%; padding-bottom:16px; overflow:visible; }
+ .admin-policy-consistency .policy-page-content { display:flex; flex-direction:column; height:auto; min-height:0; }
  .admin-policy-consistency .policy-page-content > :not(.policy-workspace) { flex-shrink:0; }
- .admin-policy-consistency .policy-workspace { flex:1; min-height:0; grid-template-columns:minmax(0,1fr) minmax(0,2fr); align-items:stretch; overflow:hidden; }
+ .admin-policy-consistency .policy-workspace { flex:none; height:max(60vh,calc(100vh - 260px)); height:max(60dvh,calc(100dvh - 260px)); min-height:0; grid-template-columns:minmax(0,45fr) minmax(0,55fr); align-items:stretch; overflow:hidden; }
  .admin-policy-consistency .policy-list, .admin-policy-consistency .policy-detail, .admin-policy-consistency .policy-detail-workspace { min-height:0; height:100%; overflow:hidden; }
- .admin-policy-consistency .policy-list-body, .admin-policy-consistency .policy-tab-content { flex:1; min-height:0; overflow-y:auto; overscroll-behavior-y:contain; }
+ .admin-policy-consistency .policy-list-body, .admin-policy-consistency .policy-tab-content { flex:1 1 0; min-height:0; overflow-y:auto; overscroll-behavior-y:contain; }
+ .admin-policy-consistency .policy-tab-content,
+ .admin-policy-consistency .policy-detail.is-creating { overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#ffffff30 transparent; }
  .admin-policy-consistency .policy-list-toolbar, .admin-policy-consistency .policy-list-columns, .admin-policy-consistency .policy-list-pagination, .admin-policy-consistency .policy-detail-header { flex-shrink:0; }
  .admin-policy-consistency .policy-list-columns { position:sticky; top:0; z-index:1; background:#101010; }
  .admin-policy-consistency .policy-detail-workspace { display:flex; flex-direction:column; }
@@ -55,7 +64,9 @@ body[data-valo-typography="admin"] .admin-consistency.admin-policy-consistency .
 .admin-policy-consistency .policy-detail-header p { margin-top:4px; font-size:12px; overflow-wrap:anywhere; }
 .admin-policy-consistency .policy-detail-header nav { margin-top:10px; flex-wrap:wrap; overflow:visible; }
 .admin-policy-consistency .policy-detail-header nav button { padding:10px; font-size:12px; }
-.admin-policy-consistency .policy-detail-header button { padding:7px 10px; font-size:12px; }
+.admin-policy-consistency .policy-detail-header > div > div:last-child { flex-wrap:nowrap; gap:6px; }
+.admin-policy-consistency .policy-detail-header > div > div:last-child > button { flex-shrink:0; white-space:nowrap; min-height:30px; padding:5px 8px; gap:6px; border-radius:10px; font-size:12px !important; line-height:18px; }
+.admin-policy-consistency .policy-detail-header > div > div:last-child > button svg { width:13px; height:13px; }
 .admin-policy-consistency .policy-tab-content { padding:16px; overflow-wrap:anywhere; }
 .admin-policy-consistency .policy-list-row { min-height:56px; height:auto; padding-block:8px; }
 .admin-policy-consistency .policy-overview > div:first-child { margin-bottom:12px; }
@@ -76,9 +87,9 @@ body[data-valo-typography="admin"] .admin-consistency.admin-policy-consistency .
 .admin-policy-consistency .policy-list-body:focus-visible, .admin-policy-consistency .policy-tab-content:focus-visible { outline:2px solid #e8d5ad; outline-offset:-2px; }
 .admin-policy-consistency .policy-detail-header button[class*="from-yellow"] { background:#e8d5ad; box-shadow:none; }
 .admin-policy-consistency .policy-detail-header button[class*="from-yellow"] > .absolute { display:none; }
-@media (max-width:1023px), (max-height:639px) {
+@media (max-width:1023px) {
  .admin-policy-consistency .policy-workspace { grid-template-columns:minmax(0,1fr); }
- .admin-policy-consistency .policy-list { border-right:0; border-bottom:1px solid rgb(255 255 255 / .08); }
+ .admin-policy-consistency .policy-workspace > .policy-list { border-right:0; border-bottom:1px solid rgb(255 255 255 / .08); }
 }
 @media (max-width:639px) {
  .admin-policy-consistency .policy-info-grid, .admin-policy-consistency .policy-metadata > .grid { grid-template-columns:minmax(0,1fr); }

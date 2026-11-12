@@ -101,17 +101,42 @@ export const getScheduleStatus = (timeBlocks) => {
   };
 };
 
+// Schedule-only formatting: do not change form values or pricing calculations.
+export const formatScheduleHour = (hour) => {
+  if (hour === '' || hour == null || !Number.isFinite(Number(hour)) || Number(hour) < 0 || Number(hour) > 24) return 'Invalid time';
+  const minutes = Math.round(Number(hour) * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+};
+export const formatSchedulePrice = (price, withUnit = true) => {
+  if (price === '' || price == null || !Number.isFinite(Number(price)) || Number(price) < 0) return 'Invalid price';
+  return `${currencyFormatter.format(Number(price))}${withUnit ? ' VND' : ''}`;
+};
+export const getTimelineWarning = (blocks) => {
+  if (!blocks.length) return 'No time blocks configured.';
+  if (blocks.some((b) => [b.startHour, b.endHour].some((v) => v === '' || v == null || !Number.isFinite(Number(v))) || Number(b.startHour) < 0 || Number(b.startHour) >= 24 || Number(b.endHour) < 0 || Number(b.endHour) > 24 || Number(b.startHour) === Number(b.endHour))) return 'Invalid time boundaries. Review the time blocks below.';
+  if (blocks.some((b) => formatSchedulePrice(b.price) === 'Invalid price')) return 'Invalid or missing block fee. Review the time blocks below.';
+  const ranges = getTimelineSegments(blocks).filter((s) => s.width > 0).sort((a, b) => a.left - b.left);
+  let end = 0;
+  let gap = false;
+  for (const range of ranges) {
+    if (range.left < end - 1e-8) return 'Overlapping time blocks. Review the time blocks below.';
+    if (range.left > end + 1e-8) gap = true;
+    end = range.left + range.width;
+  }
+  return gap || end < 100 - 1e-8 ? 'Schedule coverage incomplete. Unconfigured intervals remain empty.' : '';
+};
+
 export const getTimelineSegments = (timeBlocks) => {
   const colors = ['pricing-tone-0', 'pricing-tone-1', 'pricing-tone-2', 'pricing-tone-3', 'pricing-tone-4'];
   return timeBlocks.flatMap((block, index) => {
     const start = Number(block.startHour);
     const end = Number(block.endHour);
-    const price = Number(block.price) || 0;
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) return [];
+    const price = block.price;
+    if (block.startHour === '' || block.startHour == null || block.endHour === '' || block.endHour == null || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= 24 || end < 0 || end > 24 || start === end) return [];
 
     const base = {
       id: `${index}-${start}-${end}`,
-      label: `${formatHour(start)}-${formatHour(end)}`,
+      label: `${formatScheduleHour(start)}\u2013${formatScheduleHour(end)}`,
       price,
       color: colors[index % colors.length],
       sourceIndex: index,

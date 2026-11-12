@@ -10,7 +10,7 @@ import { sessionMetrics } from './sessionMetrics.js';
 import './components/sessionDetails.css';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { createSessionVerification, verifiedSessionForQuery } from './sessionDeepLink.js';
+import { createSessionVerification, verifiedSessionForQuery, sessionRowTarget, highlightSessionRow } from './sessionDeepLink.js';
 
 export default function SessionManagement() {
   const [sessions, setSessions] = useState([]);
@@ -30,6 +30,7 @@ export default function SessionManagement() {
   const isAdminPage = location.pathname === '/admin/sessions';
   const [verification, setVerification] = useState({ status: 'idle' });
   const [verificationAttempt, setVerificationAttempt] = useState(0);
+  const [rowFocus, setRowFocus] = useState(null);
   const verifier = useMemo(() => createSessionVerification(() => getAllSessions({ cache: 'no-store' }), (result) => {
     setVerification(result);
     if (result.sessions) {
@@ -43,8 +44,8 @@ export default function SessionManagement() {
   }), [setVerification, setSessions, setError, setLoading]);
   const adminDeepLink = isAdminPage && Boolean(sessionIdQuery);
   const verificationKey = `${location.key}:${verificationAttempt}`;
-  const selectedSession = adminDeepLink
-    ? verifiedSessionForQuery(verification, sessionIdQuery, verificationKey) : manualSession;
+  const linkedSession = adminDeepLink ? verifiedSessionForQuery(verification, sessionIdQuery, verificationKey) : null;
+  const selectedSession = adminDeepLink ? null : manualSession;
   const verificationStatus = verification.sessionId === sessionIdQuery && verification.requestKey === verificationKey
     ? verification.status : 'loading';
   const selectManualSession = (session) => {
@@ -113,7 +114,7 @@ export default function SessionManagement() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('vi-VN');
+    return new Date(dateString).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
   };
 
   const formatPrice = (price) => new Intl.NumberFormat('vi-VN', {
@@ -140,6 +141,26 @@ export default function SessionManagement() {
     [pagination.currentPage, pagination.totalPages],
   );
 
+  useEffect(() => {
+    if (!linkedSession) return;
+    const target = sessionRowTarget(linkedSession._id, verification.sessions);
+    if (!target) return;
+    const timer = setTimeout(() => {
+      setSelectedSession(null);
+      setSearchQuery('');
+      setStatusFilter('all');
+      setSortBy('newest');
+      setCurrentPage(target.page);
+      setRowFocus({ ...target, requestKey: verificationKey });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [linkedSession, verification.sessions, verificationKey]);
+
+  useEffect(() => {
+    if (!adminDeepLink || rowFocus?.requestKey !== verificationKey) return;
+    return highlightSessionRow(document.getElementById(`session-row-${rowFocus.id.toLowerCase()}`));
+  }, [rowFocus, adminDeepLink, verificationKey]);
+
   const [metricsNow, setMetricsNow] = useState(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => setMetricsNow(new Date()), 60000);
@@ -152,14 +173,14 @@ export default function SessionManagement() {
       {isAdminPage && <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />}
       {adminDeepLink && verificationStatus !== 'verified' && (
         <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
-          {verificationStatus === 'loading' ? 'Đang xác minh phiên đỗ xe từ hệ thống...'
-            : verificationStatus === 'missing' ? 'Không tìm thấy phiên đỗ xe được liên kết. Phiên có thể đã bị xóa hoặc không còn khả dụng.'
-              : verificationStatus === 'unavailable' ? 'Không thể truy cập phiên đỗ xe. Vui lòng kiểm tra phiên đăng nhập và quyền truy cập.'
-                : 'Không thể tải lại phiên đỗ xe. Dữ liệu trước đó chưa được xác minh lại; chưa thể kết luận phiên đã bị xóa.'}
+          {verificationStatus === 'loading' ? 'Verifying the linked session...'
+            : verificationStatus === 'missing' ? 'Session not found.'
+              : verificationStatus === 'unavailable' ? 'Session access is unavailable. Check your sign-in and permissions.'
+                : 'Unable to verify this session. Please try again.'}
           {verificationStatus !== 'loading' && <button type="button" className="ml-3 underline" onClick={() => {
             setVerification({ sessionId: sessionIdQuery, status: 'loading', session: null });
             setVerificationAttempt((attempt) => attempt + 1);
-          }}>Thử lại</button>}
+          }}>Retry</button>}
         </div>
       )}
       <div className="g3-management-content g3-header mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -332,7 +353,7 @@ export default function SessionManagement() {
               </thead>
                 <tbody>
                 {pagination.items.map(session => (
-                  <tr key={session._id} className="g3-data-row border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
+                  <tr key={session._id} id={`session-row-${String(session._id).toLowerCase()}`} className="g3-data-row border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
                     <td className="g3-plate px-4 py-3 font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
                     <td className="px-4 py-3 font-medium text-slate-400">{session.phone || '-'}</td>
                     <td className="px-4 py-3">

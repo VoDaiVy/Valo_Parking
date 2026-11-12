@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Car, Zap, Check, X, Loader2, RefreshCw, Image } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
@@ -33,12 +33,25 @@ export default function VehiclePending() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const aiRefreshGeneration = useRef(0);
   const fetchPending = async () => {
+    const generation = ++aiRefreshGeneration.current;
     setLoading(true);
     const res = await apiFetch('/admin/vehicles/pending', { headers: authHeader() });
+      if (generation !== aiRefreshGeneration.current) return;
     setLoading(false);
     if (res.ok) setVehicles(res.data.data || []);
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchPending; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['APPROVE_VEHICLE'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {

@@ -1,3 +1,6 @@
+const { createHash } = require('crypto');
+const UserDetail = require('../../models/UserDetail');
+const { profilePayload, assertPhoneAvailable, accountError } = require('./adminAccounts');
 const mongoose = require('mongoose');
 const AIDraft = require('../../models/AIDraft');
 const AINotification = require('../../models/AINotification');
@@ -94,14 +97,7 @@ function cleanPayload(type, input) {
     if (typeof content !== 'string' || !content.trim()) fail('Thiếu nội dung chính sách.');
     return { title: title.trim(), category: category.trim(), summary: summary?.trim() || '', content: content.trim(), effectiveDate };
   }
-  if (type === 'UPDATE_USER_PROFILE') {
-    const { firstName, lastName, phone } = input;
-    const allowed = {};
-    if (typeof firstName === 'string') allowed.firstName = firstName.trim();
-    if (typeof lastName === 'string') allowed.lastName = lastName.trim();
-    if (typeof phone === 'string') allowed.phone = phone.trim();
-    return allowed;
-  }
+  if (type === 'UPDATE_USER_PROFILE') return profilePayload(input);
   if (type === 'CREATE_SERVICE' || type === 'UPDATE_SERVICE') {
     const { name, price, timeCost, description } = input;
     const allowed = {};
@@ -109,6 +105,11 @@ function cleanPayload(type, input) {
     if (price !== undefined) allowed.price = Number(price);
     if (timeCost !== undefined) allowed.timeCost = Number(timeCost);
     if (description !== undefined) allowed.description = typeof description === 'string' ? description.trim() : description;
+    if (allowed.price !== undefined && (!Number.isFinite(allowed.price) || allowed.price < 0 || price === null || price === '')) fail('Service price must be a non-negative number.');
+    if (allowed.timeCost !== undefined && (!Number.isInteger(allowed.timeCost) || allowed.timeCost < 1)) fail('Service duration must be a positive whole number of minutes.');
+    if (allowed.name !== undefined && (typeof allowed.name !== 'string' || !allowed.name)) fail('Service name is required.');
+    if (allowed.description !== undefined && (typeof allowed.description !== 'string' || !allowed.description)) fail('Service description is required.');
+    if (type === 'UPDATE_SERVICE' && !Object.keys(allowed).length) fail('Specify a service field to change.');
     
     if (type === 'CREATE_SERVICE') {
       if (!allowed.name || allowed.price === undefined || !allowed.description) fail('Vui lòng cung cấp đầy đủ thông tin (name, description, price).');
@@ -149,10 +150,77 @@ function cleanPayload(type, input) {
     isRenewable,
   };
 }
+const ACCOUNT_TYPES = new Set(['CHANGE_USER_ROLE', 'UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE']);
+async function authorizeAccountActor(adminUserId, actorRole, type, targetId) {
+  const actor = await User.findById(adminUserId).select('role status').lean();
+  if (!actor || !actor.status || actor.role !== actorRole || !['admin', 'staff'].includes(actorRole) || (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(type))) throw accountError('ACCOUNT_FORBIDDEN', 'You do not have permission to perform this action.', 403);
+  if (String(adminUserId) === String(targetId) && type !== 'UPDATE_USER_PROFILE') throw accountError('SELF_PRIVILEGE_CHANGE', 'You cannot change your own role or account status because this could remove your administrative access. No changes were made.', 403);
+  if (actorRole === 'staff') {
+    const target = await User.findById(targetId).select('role').lean();
+    if (!target || target.role !== 'customer') throw accountError('ACCOUNT_FORBIDDEN', 'Staff can only edit customer names/phones or change customer status.', 403);
+  }
+}
+function draftFailure(code, message, draft, statusCode = 409) {
+  const error = accountError(code, message, statusCode); error.draftStatus = draft?.status; throw error;
+}
+async function approveAccountDraft(draft, adminUserId, actorRole) {
+  await authorizeAccountActor(adminUserId, actorRole, draft.type, draft.targetId);
+  if (draft.status === 'EXECUTED') return { id: draft.targetId, type: draft.type, ...draft.executionResult, status: 'EXECUTED', alreadyApplied: true };
+  if (draft.status === 'REJECTED') draftFailure('DRAFT_REJECTED', 'This proposal was rejected. Request a new proposal.', draft);
+  if (draft.status === 'EXECUTING') draftFailure('DRAFT_PROCESSING', 'This proposal is already being processed.', draft);
+  if (draft.expiresAt <= new Date()) draftFailure('DRAFT_EXPIRED', 'This proposal has expired. Request a new proposal.', draft);
+  let payload;
+  try { payload = cleanPayload(draft.type, draft.payload); } catch (error) { error.approvalStage = 'VALIDATE_PAYLOAD'; throw error; }
+  const session = await mongoose.startSession();
+  let stage = 'START_TRANSACTION';
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      // Fence the live actor as part of the same transaction. Role/status revocation
+      // racing an approval must invalidate that approval, not reuse stale auth.
+      stage = 'VERIFY_ACTOR';
+      const actor = await User.findOneAndUpdate({ _id: adminUserId, role: actorRole, status: true }, { $inc: { __v: 1 } }, { session, new: true, timestamps: false });
+      if (!actor) throw accountError('ACCOUNT_FORBIDDEN', 'Your account no longer has permission to apply this proposal.', 403);
+      // Serialize account writes across Admin actors as well: phone uniqueness
+      // and last-admin checks must not suffer snapshot-isolation write skew.
+      // Reuse an existing document/version field; this does not alter profiles
+      // or modification timestamps and requires no new schema or lock records.
+      await User.findOneAndUpdate({ role: 'admin', status: true }, { $inc: { __v: 1 } }, { sort: { _id: 1 }, session, timestamps: false });
+      stage = 'CLAIM_DRAFT';
+      const claimed = await AIDraft.findOneAndUpdate({ _id: draft._id, adminUserId, status: 'PENDING', expiresAt: { $gt: new Date() } }, { $set: { status: 'EXECUTING' } }, { new: true, session });
+      if (!claimed) {
+        const latest = await AIDraft.findOne({ _id: draft._id, adminUserId }).session(session);
+        if (latest?.status === 'EXECUTED') { result = { id: latest.targetId, type: latest.type, ...latest.executionResult, status: 'EXECUTED', alreadyApplied: true }; return; }
+        draftFailure('DRAFT_NOT_PENDING', 'This proposal is no longer awaiting approval.', latest);
+      }
+      const live = await User.findById(draft.targetId).select('role status').session(session).lean();
+      if (!live) throw accountError('ACCOUNT_NOT_FOUND', 'Account not found. No changes were made.', 404);
+      if (actorRole === 'staff' && live.role !== 'customer') throw accountError('ACCOUNT_FORBIDDEN', 'Staff can only edit customer names/phones or change customer status.', 403);
+      stage = draft.type === 'UPDATE_USER_PROFILE' ? 'UPDATE_PROFILE' : 'UPDATE_ACCOUNT';
+      let updated;
+      if (draft.type === 'CHANGE_USER_ROLE') updated = await catalogWrites.changeUserRoleSafely(draft.targetId, payload.role, { session, expectedRole: draft.current?.role, adminId: adminUserId });
+      else if (draft.type === 'UPDATE_USER_STATUS') updated = await catalogWrites.updateUserStatusSafely(draft.targetId, payload.status, { session, expectedStatus: draft.current?.status, adminId: adminUserId });
+      else updated = await catalogWrites.updateUserProfileSafely(draft.targetId, payload, { session, expectedUpdatedAt: draft.current?.updatedAt, expectedProfileUpdatedAt: draft.current?.profileUpdatedAt, adminId: adminUserId });
+      stage = 'FINALIZE_DRAFT';
+      if (draft.type === 'UPDATE_USER_STATUS' && updated.status !== payload.status) throw accountError('UPDATE_UNCONFIRMED', 'The account status change could not be confirmed. No changes were applied.', 409);
+      result = { id: updated.userId || updated._id, type: draft.type, status: 'EXECUTED', ...(draft.type === 'UPDATE_USER_STATUS' ? { accountStatus: updated.status } : {}) };
+      await AIDraft.updateOne({ _id: draft._id, status: 'EXECUTING' }, { $set: { status: 'EXECUTED', executedAt: new Date(), executionResult: result } }, { session });
+      await AIAuditLog.create([{ actorId: adminUserId, action: 'DRAFT_EXECUTED', subjectId: draft._id, metadata: result }], { session });
+    });
+    return result;
+  } catch (error) {
+    error.approvalStage ||= stage;
+    if (/Transaction numbers are only allowed|replica set|does not support retryable writes/i.test(error.message)) throw Object.assign(accountError('TRANSACTIONS_REQUIRED', 'Account changes require transaction support. The proposal remains pending.', 503), { approvalStage: error.approvalStage });
+    if (!error.publicMessage && error.statusCode === 409) throw Object.assign(accountError('ACCOUNT_CHANGED', 'This account changed since the proposal was prepared. Request a new proposal.', 409), { approvalStage: error.approvalStage });
+    throw error;
+  } finally { await session.endSession(); }
+}
 async function createDraft({ adminUserId, type, payload, targetId, notificationId, reason, evidence = [], actorRole = 'admin' }) {
-  if (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'SEND_NOTIFICATION'].includes(type)) {
+  if (!['admin', 'staff'].includes(actorRole)) throw accountError('ACCOUNT_FORBIDDEN', 'You do not have permission to prepare a proposal.', 403);
+  if (actorRole === 'staff' && !['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE', 'SEND_NOTIFICATION'].includes(type)) {
     fail('Hành động không được phép đối với Staff.', 403);
   }
+  if (ACCOUNT_TYPES.has(type)) await authorizeAccountActor(adminUserId, actorRole, type, targetId);
   let clean = cleanPayload(type, payload);
   if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
   if (notificationId && !mongoose.isValidObjectId(notificationId)) fail('Cảnh báo không hợp lệ.');
@@ -164,8 +232,10 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     current = await TicketPackage.findById(targetId).lean();
     if (!current) fail('Không tìm thấy gói vé.', 404);
   } else if (type === 'UPDATE_USER_STATUS' || type === 'CHANGE_USER_ROLE') {
-    current = await User.findById(targetId).select('status username email role').lean();
-    if (!current) fail('Không tìm thấy người dùng.', 404);
+    current = await User.findById(targetId).select('status username email role updatedAt').lean();
+    if (type === 'CHANGE_USER_ROLE' && current?.role === clean.role) throw accountError('NO_CHANGE', 'The account already has this role. No changes are needed.', 409);
+    if (type === 'UPDATE_USER_STATUS' && current?.status === clean.status) throw accountError('NO_CHANGE', 'The account already has this status. No changes are needed.', 409);
+    if (!current) throw accountError('ACCOUNT_NOT_FOUND', 'Account not found. No changes were made.', 404);
     if (actorRole === 'staff' && current.role !== 'customer') fail('Không có quyền thao tác trên người dùng này.', 403);
   } else if (type === 'SEND_NOTIFICATION') {
     if (actorRole !== 'staff') fail('Hành động này chỉ dành cho Staff Notification Management.', 403);
@@ -176,7 +246,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     if (!resolvedTargetId || String(resolvedTargetId) !== String(targetId)) {
       fail('Người nhận chưa được xác định duy nhất từ công cụ tìm người nhận. Vui lòng chọn lại.', 400);
     }
-    current = await User.findOne({ _id: targetId, status: true }).select('status username email role').lean();
+    current = await User.findOne({ _id: targetId, status: true }).select('status username email role updatedAt').lean();
     if (!current) fail('Người nhận không tồn tại hoặc không còn hoạt động.', 404);
     clean = { ...clean, expectedRecipientRole: current.role };
   } else if (type === 'APPROVE_VEHICLE') {
@@ -188,15 +258,26 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     if (!current) fail('Không tìm thấy chính sách.', 404);
     if (current.status === 'archived') fail('Chính sách đã được lưu trữ.', 400);
   } else if (type === 'UPDATE_USER_PROFILE') {
-    current = await User.findById(targetId).select('updatedAt status').lean();
-    if (!current) fail('Không tìm thấy người dùng.', 404);
+    current = await User.findById(targetId).select('updatedAt status username email role').lean();
+    if (current) {
+      const profile = await UserDetail.findOne({ userId: targetId }).select('firstName lastName phone updatedAt').lean();
+      current.profile = profile ? { firstName: profile.firstName, lastName: profile.lastName, phone: profile.phone } : { firstName: '', lastName: '', phone: '' };
+      current.profileUpdatedAt = profile?.updatedAt || null;
+      // Only requested values that actually differ belong in the executable delta.
+      clean = Object.fromEntries(Object.entries(clean).filter(([field, value]) => current.profile[field] !== value));
+      if (clean.phone !== undefined) await assertPhoneAvailable(clean.phone, targetId);
+      if (!Object.keys(clean).length) throw accountError('NO_CHANGE', 'These profile values are already up to date.', 409);
+    }
+    if (!current) throw accountError('ACCOUNT_NOT_FOUND', 'Account not found. No changes were made.', 404);
   } else if (type === 'ARCHIVE_TICKET_PACKAGE') {
     current = await TicketPackage.findById(targetId).select('updatedAt isActive').lean();
     if (!current) fail('Không tìm thấy gói vé.', 404);
     if (!current.isActive) fail('Gói vé đã được lưu trữ.', 400);
   } else if (type === 'UPDATE_SERVICE' || type === 'ARCHIVE_SERVICE') {
+    const records = evidence.filter(entry => ['get_service_catalog', 'search_services', 'get_service_detail'].includes(entry.tool)).flatMap(entry => Array.isArray(entry.data) ? entry.data : entry.data?.items || [entry.data]);
+    if (!records.some(record => String(record?._id) === String(targetId))) fail('Read the exact service before preparing a proposal.');
     const Service = require('../../models/Service');
-    current = await Service.findById(targetId).select('updatedAt isActive').lean();
+    current = await Service.findById(targetId).select('_id name price timeCost description updatedAt isActive').lean();
     if (!current) fail('Không tìm thấy dịch vụ.', 404);
     if (type === 'ARCHIVE_SERVICE' && !current.isActive) fail('Dịch vụ đã được lưu trữ.', 400);
   }
@@ -212,8 +293,31 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     if (!seen) fail('Cần kiểm tra cảnh báo trước khi gắn bản nháp.');
   }
   const hasTargetId = ['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type);
-  const draft = await AIDraft.create({ adminUserId, type, payload: clean, targetId: hasTargetId ? targetId : undefined, notificationId, current, reason: String(reason || '').slice(0, 1000), evidence: Array.isArray(evidence) ? evidence.slice(0, 10) : [], expiresAt: new Date(Date.now() + 3600000) });
-  await AIAuditLog.create({ actorId: adminUserId, action: 'DRAFT_CREATED', subjectId: draft._id, metadata: { type } });
+  let accountDraftId;
+  if (ACCOUNT_TYPES.has(type)) {
+    const seen = evidence.filter(entry => ['search_users', 'get_user_detail', 'get_current_user'].includes(entry.tool)).flatMap(entry => entry.data?.items || (entry.data ? [entry.data] : []));
+    if (!seen.some(row => String(row._id) === String(targetId))) throw accountError('UNVERIFIED_TARGET', 'Look up the exact account before preparing a proposal.');
+    const previous = await AIDraft.findOne({ adminUserId, type, targetId, payload: clean }).sort({ createdAt: -1 });
+    if (previous?.status === 'PENDING' && previous.expiresAt > new Date()) {
+      const unchanged = type === 'CHANGE_USER_ROLE' ? previous.current?.role === current.role : type === 'UPDATE_USER_STATUS' ? previous.current?.status === current.status : new Date(previous.current?.updatedAt).getTime() === new Date(current.updatedAt).getTime() && (previous.current?.profileUpdatedAt ? new Date(previous.current.profileUpdatedAt).getTime() : null) === (current.profileUpdatedAt ? new Date(current.profileUpdatedAt).getTime() : null);
+      if (unchanged) return previous;
+      await AIDraft.updateOne({ _id: previous._id, status: 'PENDING' }, { $set: { expiresAt: new Date() } });
+    }
+    if (previous?.status === 'EXECUTING') draftFailure('DRAFT_PROCESSING', 'An identical proposal is already being processed.', previous);
+    accountDraftId = new mongoose.Types.ObjectId(createHash('sha256').update(JSON.stringify({ actor: String(adminUserId), type, target: String(targetId), clean, snapshot: current, previous: previous?._id })).digest('hex').slice(0, 24));
+  }
+  let draft;
+  try {
+    draft = await AIDraft.create({ ...(accountDraftId ? { _id: accountDraftId } : {}), adminUserId, type, payload: clean, targetId: hasTargetId ? targetId : undefined, notificationId, current, reason: String(reason || '').slice(0, 1000), evidence: Array.isArray(evidence) ? evidence.slice(0, 10) : [], expiresAt: new Date(Date.now() + 3600000) });
+  } catch (error) {
+    if (accountDraftId && error.code === 11000) {
+      const existing = await AIDraft.findOne({ _id: accountDraftId, adminUserId });
+      if (existing?.status === 'PENDING' && existing.expiresAt > new Date()) return existing;
+      draftFailure('DRAFT_PROCESSING', 'This proposal is already being processed. Refresh its status.', existing);
+    }
+    throw error;
+  }
+  await AIAuditLog.create({ actorId: adminUserId, action: 'DRAFT_CREATED', subjectId: draft._id, metadata: { type } }).catch(() => console.warn('[VALO_AI] Draft audit write failed'));
   return draft;
 }
 
@@ -286,6 +390,7 @@ async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
   if (!mongoose.isValidObjectId(id)) fail('Bản nháp không hợp lệ.');
   const draft = await AIDraft.findOne({ _id: id, adminUserId });
   if (!draft) fail('Không tìm thấy bản nháp của bạn.', 404);
+  if (ACCOUNT_TYPES.has(draft.type)) return approveAccountDraft(draft, adminUserId, actorRole);
   if (draft.type === 'SEND_NOTIFICATION') {
     if (actorRole !== 'staff') fail('Hành động không được phép.', 403);
     if (draft.status === 'PENDING' && draft.expiresAt <= new Date()) fail('Bản nháp đã hết hạn.', 409);

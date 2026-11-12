@@ -1,5 +1,6 @@
-import { useState, useEffect, Fragment } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { revealCustomer, highlightCustomerRow } from './customerDeepLink.js';
+import { useState, useEffect, useRef, Fragment } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,6 +16,18 @@ import {
   getOperationalViewState,
   getResponseAvailability,
 } from '../../utils/staffOperationalAvailability';
+
+// Match CustomerProfile/Navbar field precedence; stored CDN URLs are already absolute.
+function CustomerAvatar({ user, imageClassName, fallbackClassName, children }) {
+  const [failedSource, setFailedSource] = useState(null);
+  const avatar = user?.profile?.avatar || user?.avatar || user?.avatarUrl;
+  const source = typeof avatar === 'string' ? avatar.trim() : '';
+  return source && failedSource !== source
+    ? <img src={source} alt="" className={imageClassName}
+        referrerPolicy="no-referrer" loading="lazy" decoding="async"
+        onError={() => setFailedSource(source)} />
+    : <div className={fallbackClassName}>{children}</div>;
+}
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -158,11 +171,17 @@ export default function AccountManagement() {
   };
 
   // ── Data ──
+  const customerLocation = useLocation();
+  const linkedCustomerId = useRef(null);
+  const linkedCustomerRow = useRef(null);
+  if (queryUserId) linkedCustomerId.current = queryUserId;
   const fetchUsers = async () => {
+    const generation = ++customerRequest.current;
     try {
       setLoading(true);
       setLoadError('');
       const res = await apiFetch('/staff/users', { headers: authHeader });
+      if (generation !== customerRequest.current) return;
       const responseState = getResponseAvailability(res, 'Unable to load customer accounts.');
       if (!responseState.isAvailable) {
         setUsers([]);
@@ -173,21 +192,28 @@ export default function AccountManagement() {
       // Strict Data Filtering: ONLY fetch and display accounts where role === 'customer'
       const customersOnly = (responseState.data || []).filter(u => u.role === 'customer');
       setUsers(customersOnly);
+      setPanelUser(previous => previous ? customersOnly.find(user => String(user._id) === String(previous._id)) || null : null);
     } catch (e) {
+      if (generation !== customerRequest.current) return;
       console.error(e);
       setUsers([]);
       setPanelUser(null);
       setLoadError(e?.message || 'Unable to load customer accounts.');
     }
-    finally { setLoading(false); }
+    finally { if (generation === customerRequest.current) setLoading(false); }
   };
+  const customerRequest = useRef(0);
+  const customerLoader = useRef(null);
+  useEffect(() => { customerLoader.current = fetchUsers; });
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       fetchUsers();
     }, 0);
 
-    return () => window.clearTimeout(timerId);
+    const onChange = ({ detail }) => { if (['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(detail?.type)) customerLoader.current?.(); };
+    window.addEventListener('valo:staff-data-changed', onChange);
+    return () => { customerRequest.current += 1; window.clearTimeout(timerId); window.removeEventListener('valo:staff-data-changed', onChange); };
   }, []);
 
   useEffect(() => {
@@ -375,6 +401,10 @@ export default function AccountManagement() {
     return sortOrder === 'newest' ? diff : -diff;
   });
 
+  const linked = revealCustomer(users, filtered, linkedCustomerId.current, PAGE_SIZE);
+  if (linked) filtered = linked.rows;
+  useEffect(() => { if (linked && queryUserId) setPage(linked.page); }, [users, queryUserId]);
+  useEffect(() => { if (!loading && linked) return highlightCustomerRow(linkedCustomerRow.current); }, [loading, page, customerLocation.key, users]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageUsers = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -466,7 +496,7 @@ export default function AccountManagement() {
           <div className="g3-search relative flex-1 min-w-[240px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
-              aria-label="Search customers" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
+              aria-label="Search customers" value={searchTerm} onChange={e => { linkedCustomerId.current = null; setSearchTerm(e.target.value); setPage(1); }}
               placeholder="Search name, email, phone..."
               className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
             />
@@ -488,7 +518,7 @@ export default function AccountManagement() {
                     {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
-                          <button onClick={() => { setFilterStatus(v); setPage(1); }}
+                          <button onClick={() => { linkedCustomerId.current = null; setFilterStatus(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterStatus === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
                             {l}
@@ -514,7 +544,7 @@ export default function AccountManagement() {
                     {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
-                          <button onClick={() => { setSortOrder(v); setPage(1); }}
+                          <button onClick={() => { linkedCustomerId.current = null; setSortOrder(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {sortOrder === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
                             {l}
@@ -567,16 +597,17 @@ export default function AccountManagement() {
               {!loading && pageUsers.map(u => {
                 const isActive = panelUser?._id === u._id;
                 return (
-                  <tr key={u._id} className={`g3-data-row group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
+                  <tr key={u._id} ref={String(u._id).toLowerCase() === String(linkedCustomerId.current).toLowerCase() ? linkedCustomerRow : undefined} className={`g3-data-row group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
                     onClick={() => openPanel(u)}>
                     <td className="w-4"></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="relative flex-shrink-0">
-                          {u.profile?.avatar
-                            ? <img src={u.profile.avatar} alt="" className="g3-avatar w-9 h-9 rounded-full object-cover ring-2 ring-white/10" />
-                            : <div className={`g3-avatar w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>{initials(u)}</div>
-                          }
+                          <CustomerAvatar user={u}
+                            imageClassName="g3-avatar w-9 h-9 rounded-full object-cover ring-2 ring-white/10"
+                            fallbackClassName={`g3-avatar w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>
+                            {initials(u)}
+                          </CustomerAvatar>
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#080808] ${u.status ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                         </div>
                         <div className="min-w-0">
@@ -666,10 +697,11 @@ export default function AccountManagement() {
                   <div className="flex flex-col items-center text-center">
                     <div className="relative mb-3 group cursor-pointer">
                       <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} opacity-20 blur-xl scale-125 group-hover:opacity-40 transition-opacity duration-300`} />
-                      {panelUser.profile?.avatar
-                        ? <img src={panelUser.profile.avatar} alt="" className="relative w-20 h-20 rounded-full object-cover ring-4 ring-[#1B2027] shadow-xl" />
-                        : <div className={`relative w-20 h-20 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} flex items-center justify-center text-white text-3xl font-bold shadow-xl ring-4 ring-[#1B2027]`}>{initials(panelUser)}</div>
-                      }
+                      <CustomerAvatar user={panelUser}
+                        imageClassName="relative w-20 h-20 rounded-full object-cover ring-4 ring-[#1B2027] shadow-xl"
+                        fallbackClassName={`relative w-20 h-20 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} flex items-center justify-center text-white text-3xl font-bold shadow-xl ring-4 ring-[#1B2027]`}>
+                        {initials(panelUser)}
+                      </CustomerAvatar>
                       <span className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-[3px] border-[#1B2027] ${panelUser.status ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`} />
                     </div>
                     <h2 className="text-xl font-bold text-white mb-0.5">{displayName(panelUser)}</h2>

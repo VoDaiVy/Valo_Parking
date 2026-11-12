@@ -16,6 +16,7 @@ const pricingEngine = require('../pricingEngine');
 const { startOfVietnamDay, parseVietnamCalendarDate } = require('../../utils/bookingDateRange');
 const readTools = require('./readTools');
 const { getVehicleApprovalStatistics } = require('../vehicleApprovalStatisticsService');
+const { MEMBERSHIP_KPIS } = require('./membershipResponses');
 
 const dateProperties = {
   startDate: { type: 'string', description: 'ISO date, inclusive' },
@@ -38,6 +39,14 @@ function validateDates(args = {}) {
 function noArgs(args = {}) {
   if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length) throw new Error('Công cụ này không nhận tham số.');
   return {};
+}
+function subscriptionStatisticsArgs(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).some(key => !['range', 'startDate', 'endDate', 'kpis'].includes(key))) throw new Error('Invalid membership statistics filters.');
+  if (args.range !== undefined && !['today', '7d', '30d', 'month', 'all'].includes(args.range)) throw new Error('Invalid membership statistics range.');
+  if (args.kpis !== undefined && (!Array.isArray(args.kpis) || args.kpis.some(key => !MEMBERSHIP_KPIS.includes(key)))) throw new Error('Invalid membership KPIs.');
+  const dates = Object.fromEntries(['startDate', 'endDate'].filter(key => args[key] !== undefined).map(key => [key, args[key]]));
+  const period = dates.startDate ? validateDates(dates) : dates.endDate ? { endDate: validateDates({ startDate: dates.endDate, endDate: dates.endDate }).endDate } : Object.keys(dates).length ? validateDates(dates) : { range: args.range || 'today' };
+  return { ...period, ...(args.kpis !== undefined ? { kpis: args.kpis } : {}) };
 }
 /* passthrough validator: returns args as-is so readTools functions handle their own validation */
 function passArgs(args = {}) {
@@ -148,9 +157,10 @@ const tools = [
     const [packages, counts] = await Promise.all([TicketPackage.find().select('name type price description isActive maxSlots updatedAt').lean(), Subscription.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: '$ticketPackage', sold: { $sum: 1 } } }])]);
     return packages.map((p) => ({ ...p, sold: counts.find((c) => String(c._id) === String(p._id))?.sold || 0 }));
   }),
-  define('get_subscription_stats', 'Thống kê đăng ký và gia hạn gói.', dateSchema, validateDates, async (p) => statistics.getAdminSubscriptionStatistics(p)),
+  define('get_subscription_stats', 'Read only requested membership KPIs. Expiring Soon uses the dashboard definition: active subscriptions expiring today through Vietnam calendar day 30, without a paid-only filter. Pending Transfers counts PENDING_ADMIN among the dashboard latest 100 transfer reviews, never pending subscriptions. Other sales/renewal KPIs use the requested period. Financial coverage is partial.',
+    { type: 'object', properties: { ...dateProperties, range: { type: 'string', enum: ['today', '7d', '30d', 'month', 'all'] }, kpis: { type: 'array', items: { type: 'string', enum: MEMBERSHIP_KPIS }, description: 'Only the KPIs explicitly requested. expiringSoon means 30 calendar days; expiringWithin7Days is a separate explicit 7-day KPI.' } } }, subscriptionStatisticsArgs, async (p) => readTools.getMembershipStatistics(p)),
   define('get_service_catalog', 'Dịch vụ hiện có và số lượt đặt.', emptySchema, noArgs, async () => {
-    const [services, counts] = await Promise.all([Service.find().select('name price isActive').lean(), BookingService.aggregate([{ $group: { _id: '$serviceId', usage: { $sum: 1 } } }])]);
+    const [services, counts] = await Promise.all([Service.find().select('_id name price timeCost description isActive updatedAt').lean(), BookingService.aggregate([{ $group: { _id: '$serviceId', usage: { $sum: 1 } } }])]);
     return services.map((s) => ({ ...s, usage: counts.find((c) => String(c._id) === String(s._id))?.usage || 0 }));
   }),
   define('get_policy_summary', 'Chính sách đã công bố và lượt chấp nhận.', emptySchema, noArgs, async () => {
@@ -180,6 +190,8 @@ const tools = [
   define('search_sessions',
     'Tìm kiếm phiên xe theo biển số, trạng thái, ngày, hoặc userId. Nếu không truyền tham số nào, trả các phiên hôm nay (Asia/Ho_Chi_Minh).',
     { type: 'object', properties: {
+      phone: { type: 'string', description: 'Match the phone stored on the session, including unlinked walk-ins. Accept Vietnamese national or +84 format. Do not search accounts instead.' },
+      plateMatchMode: { type: 'string', enum: ['exact', 'contains'], description: 'Complete license plates match exactly by default. Use contains only when a partial plate is requested; never add, remove, or guess digits.' },
       plateNumber: { type: 'string', description: 'Biển số xe (có thể nhập một phần).' },
       status: { type: 'string', enum: ['active', 'completed', 'cancelled'], description: 'Trạng thái phiên.' },
       startDate: { type: 'string', description: 'Ngày bắt đầu YYYY-MM-DD hoặc ISO.' },
@@ -197,14 +209,22 @@ const tools = [
     passArgs, async (p, actorRole) => readTools.getSessionDetail(p, actorRole)),
 
   define('search_users',
-    'Tìm người dùng theo tên, email, hoặc vai trò. Trả về cấu trúc { items, total }. Khi được hỏi có bao nhiêu/số lượng, hãy lấy giá trị từ trường "total", TUYỆT ĐỐI KHÔNG đếm mảng "items" vì danh sách này đã bị giới hạn (limit).',
+    'Search Admin accounts by username, email, full name or exact/partial phone. Filters include role, active status and effective VIP/expiry; honor requested sort. The result includes items, total, returned and limit: always use total for counts, never count the limited items array.',
     { type: 'object', properties: {
-      query: { type: 'string', description: 'Từ khoá tìm theo username hoặc email.' },
+      page: { type: 'number', description: 'One-based result page.' },
+      vip: { type: 'boolean', description: 'Effective VIP membership, respecting expiry.' },
+      vipStatus: { type: 'string', enum: ['active', 'expired', 'standard'] },
+      sortBy: { type: 'string', enum: ['createdAt', 'username', 'email', 'role', 'status', 'membership.expireAt'] },
+      sortOrder: { type: 'string', enum: ['asc', 'desc'] },
+      matchMode: { type: 'string', enum: ['contains', 'exact'] },
+      query: { type: 'string', description: 'Username, email, full name or phone, including a partial phone prefix.' },
       role: { type: 'string', enum: ['guest', 'customer', 'staff', 'admin'], description: 'Lọc theo vai trò.' },
       status: { type: 'boolean', description: 'true=active, false=inactive.' },
       limit: { type: 'number', description: 'Số kết quả tối đa cho mảng items (mặc định 10).' },
     } },
     passArgs, async (p, actorRole) => readTools.searchUsers(p, actorRole)),
+
+  define('get_current_user', 'Read the currently authenticated Admin account. Never supply a user ID; identity comes only from the verified server auth context.', emptySchema, noArgs, async (p, role, context) => readTools.getUserDetail({ userId: context.actorId }, role)),
 
   define('get_user_detail',
     'Thông tin profile/account an toàn của một người dùng cụ thể. Không trả password/token/OTP.',
@@ -281,35 +301,54 @@ const tools = [
     passArgs, async (p, actorRole) => readTools.searchTransactions(p, actorRole)),
 
   define('get_subscription_members',
-    'Danh sách đăng ký/membership theo userId, packageId hoặc trạng thái. Mặc định trả active.',
+    'Read membership subscriptions, including original purchaser and current slot owners. Filter by verified user/package/subscription ID or stored status. With no filters defaults to stored active; use status=all for all records. effectiveStatus separately accounts for elapsed expiry. Never substitute account VIP flags for subscription records.',
     { type: 'object', properties: {
+      subscriptionId: { type: 'string', description: 'Exact verified membership/subscription ID.' },
+      includeVehicles: { type: 'boolean', description: 'Include vehicles on file via Vehicle.owner for the original purchaser/current slot owners, regardless of subscription status, including cancelled. These are current stored owner relationships, not historical vehicle-use records.' },
       userId: { type: 'string', description: 'ObjectId người dùng.' },
       packageId: { type: 'string', description: 'ObjectId gói vé.' },
-      status: { type: 'string', enum: ['pending', 'active', 'expired', 'cancelled', 'failed'], description: 'Trạng thái đăng ký.' },
+      status: { type: 'string', enum: ['pending', 'active', 'expired', 'cancelled', 'failed', 'all'], description: 'Stored subscription status; all includes every status. Inspect effectiveStatus for elapsed expiry.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 15).' },
     } },
     passArgs, async (p, actorRole) => readTools.getSubscriptionMembers(p, actorRole)),
 
+  define('get_subscription_detail',
+    'Read one membership subscription by its verified ID, including package, original purchaser, current slot owners, assigned spaces, dates, amount, payment and effective status. Read-only; not the customer membership/QR endpoint.',
+    { type: 'object', properties: { subscriptionId: { type: 'string' }, includeVehicles: { type: 'boolean', description: 'Include stored vehicle-owner relationships, including for cancelled memberships.' } }, required: ['subscriptionId'] },
+    passArgs, async (p, actorRole) => readTools.getSubscriptionDetail(p, actorRole)),
+
   define('search_ticket_packages',
-    'Tìm kiếm gói vé theo tên, loại (hourly/daily/monthly/yearly) và trạng thái (isActive). Trả về đầy đủ các trường business schema: name, type, price, description, maxSlots, renewalWindowDays, isRenewable, isActive.',
+    'Read the complete Ticket Packages catalog by name, description, type or status, including daily/inactive packages. Returns verified details, updatedAt and total count. Read-only; not the public active membership-package subset.',
     { type: 'object', properties: {
-      query: { type: 'string', description: 'Từ khoá tìm kiếm theo tên gói vé.' },
-      type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'], description: 'Loại gói vé.' },
-      isActive: { type: 'boolean', description: 'Trạng thái hoạt động.' },
-      limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 10, tối đa 20).' },
-    } },
-    passArgs, async (p, actorRole) => readTools.searchTicketPackages(p, actorRole)),
-    
+      query: { type: 'string', description: 'Literal name, description, or type search text.' },
+      type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'] },
+      isActive: { type: 'boolean' },
+      status: { type: 'string', enum: ['active', 'inactive', 'all'] },
+      limit: { type: 'number' },
+    } }, passArgs, async (p, actorRole) => readTools.searchTicketPackages(p, actorRole)),
+  define('get_ticket_package_detail', 'Read exact Ticket Package details by verified ID: name, description, type, price, isActive, updatedAt and renewal configuration. Read-only.',
+    { type: 'object', properties: { packageId: { type: 'string' }, name: { type: 'string', description: 'Exact stored package name. Ambiguous names require an ID; never reuse a previous package ID for a newly named package.' } } }, passArgs, async (p) => readTools.getTicketPackageDetail(p)),
+  define('get_ticket_package_stats', 'Read inventory statistics for Ticket Packages, with optional search/type/status filters. Counts all matching records, active/inactive totals, counts by type, and latest stored updatedAt. Catalog statistics, not membership subscriptions or revenue.',
+    { type: 'object', properties: { query: { type: 'string' }, type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'] }, status: { type: 'string', enum: ['active', 'inactive', 'all'] }, isActive: { type: 'boolean' } } }, passArgs, async (p) => readTools.getTicketPackageStatistics(p)),
+
   define('search_services',
-    'Tìm kiếm dịch vụ theo tên, giá và trạng thái. Trả về chi tiết các trường: name, price, timeCost (thời lượng), description, isActive.',
+    'Search stored services by name/description, price and status. Highest-to-lowest uses sortBy=price sortOrder=desc, before the result limit. For catalog averages use get_service_stats.',
     { type: 'object', properties: {
       name: { type: 'string', description: 'Từ khoá tìm kiếm theo tên dịch vụ.' },
+      query: { type: 'string', description: 'Literal name or description search.' },
+      status: { type: 'string', enum: ['active', 'inactive', 'all'] },
+      sortBy: { type: 'string', enum: ['price', 'name', 'createdAt', 'updatedAt', 'timeCost'] },
+      sortOrder: { type: 'string', enum: ['asc', 'desc'] },
       minPrice: { type: 'number', description: 'Giá thấp nhất.' },
       maxPrice: { type: 'number', description: 'Giá cao nhất.' },
       isActive: { type: 'boolean', description: 'Trạng thái hoạt động.' },
       limit: { type: 'number', description: 'Số kết quả tối đa (mặc định 20, tối đa 50).' },
     } },
     passArgs, async (p, actorRole) => readTools.searchServices(p, actorRole)),
+  define('get_service_detail', 'Read exact stored service details by verified ID before proposing edits.',
+    { type: 'object', properties: { serviceId: { type: 'string' } }, required: ['serviceId'] }, passArgs, p => readTools.getServiceDetail(p)),
+  define('get_service_stats', 'Admin Services dashboard KPIs: total, active, inactive and average price over all services including inactive. Optional filters scope all matching records, never just a search page. No booking/revenue weighting.',
+    { type: 'object', properties: { query: { type: 'string' }, name: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive', 'all'] }, isActive: { type: 'boolean' }, minPrice: { type: 'number' }, maxPrice: { type: 'number' } } }, passArgs, p => readTools.getServiceStatistics(p)),
 ];
 const STAFF_TOOLS = [
   'get_active_sessions',
@@ -329,6 +368,7 @@ const STAFF_TOOLS = [
 const STAFF_ONLY_TOOLS = new Set(['search_notification_recipients']);
 
 function getToolsForRole(role) {
+  if (!['admin', 'staff'].includes(role)) return [];
   if (role === 'staff') {
     return tools.filter(t => STAFF_TOOLS.includes(t.name));
   }
@@ -336,7 +376,8 @@ function getToolsForRole(role) {
 }
 
 const registry = new Map(tools.map((tool) => [tool.name, tool]));
-async function execute(name, args, actorRole = 'admin') {
+async function execute(name, args, actorRole = 'admin', context = {}) {
+  if (!['admin', 'staff'].includes(actorRole)) throw new Error('You do not have permission to use this tool.');
   const tool = registry.get(name);
   if (!tool) throw new Error('Công cụ không nằm trong allowlist.');
   
@@ -349,7 +390,7 @@ async function execute(name, args, actorRole = 'admin') {
 
   const params = tool.validate(args);
   // Pass actorRole down to the tool run function
-  const data = await tool.run(params, actorRole);
+  const data = await tool.run(params, actorRole, context);
   return { tool: name, source: name, timestamp: new Date().toISOString(), parameters: params, data };
 }
 module.exports = { tools, getToolsForRole, execute, validateDates };

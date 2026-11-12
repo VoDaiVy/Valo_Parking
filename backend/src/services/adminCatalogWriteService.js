@@ -1,3 +1,4 @@
+const { profilePayload, assertPhoneAvailable, accountError } = require('./aiCopilot/adminAccounts');
 const PricingConfig = require('../models/PricingConfig');
 const TicketPackage = require('../models/TicketPackage');
 const AdminActionLog = require('../models/AdminActionLog');
@@ -248,7 +249,8 @@ async function archiveServiceSafely(id, { session, expectedUpdatedAt, adminId } 
 }
 
 // 4. updateUserProfileSafely
-async function updateUserProfileSafely(id, payload, { session, expectedUpdatedAt, adminId } = {}) {
+async function updateUserProfileSafely(id, payload, { session, expectedUpdatedAt, expectedProfileUpdatedAt, adminId } = {}) {
+  payload = profilePayload(payload);
   const user = await (session ? User.findById(id).session(session) : User.findById(id));
   if (!user) {
     const error = new Error('Không tìm thấy người dùng.'); error.statusCode = 404; throw error;
@@ -267,28 +269,15 @@ async function updateUserProfileSafely(id, payload, { session, expectedUpdatedAt
   }
 
   let userDetail = await (session ? UserDetail.findOne({ userId: user._id }).session(session) : UserDetail.findOne({ userId: user._id }));
+  if (expectedProfileUpdatedAt !== undefined && (userDetail?.updatedAt?.getTime() || null) !== (expectedProfileUpdatedAt ? new Date(expectedProfileUpdatedAt).getTime() : null)) throw accountError('ACCOUNT_CHANGED', 'This profile changed since the proposal was prepared. Request a new proposal.', 409);
   if (!userDetail) {
     userDetail = new UserDetail({ userId: user._id });
   }
 
-  if (change.phone !== undefined) {
-    let cleanPhone = change.phone.replace(/[^\d+]/g, '');
-    if (cleanPhone) {
-      if (cleanPhone.startsWith('84') && cleanPhone.length === 11) {
-        cleanPhone = '0' + cleanPhone.slice(2);
-      } else if (cleanPhone.startsWith('+84')) {
-        cleanPhone = '0' + cleanPhone.slice(3);
-      }
-      
-      const phoneVariants = [cleanPhone, cleanPhone.replace(/^0/, '84'), cleanPhone.replace(/^0/, '+84')];
-      const existingUserWithPhone = await (session ? UserDetail.findOne({ phone: { $in: phoneVariants }, userId: { $ne: user._id } }).session(session) : UserDetail.findOne({ phone: { $in: phoneVariants }, userId: { $ne: user._id } }));
-      
-      if (existingUserWithPhone) {
-        const error = new Error('Số điện thoại này đã được liên kết với tài khoản khác.'); error.statusCode = 400; throw error;
-      }
-      change.phone = cleanPhone;
-    }
-  }
+  // Legacy drafts may include copied, unchanged fields. Never rewrite those or
+  // reject a name-only change because of an unrelated stored phone value.
+  for (const key of Object.keys(change)) if (change[key] === userDetail[key]) delete change[key];
+  if (change.phone !== undefined) await assertPhoneAvailable(change.phone, user._id, session);
 
   if (change.firstName !== undefined) userDetail.firstName = change.firstName;
   if (change.lastName !== undefined) userDetail.lastName = change.lastName;

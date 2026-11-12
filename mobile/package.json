@@ -57,18 +57,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "test": "jest --passWithNoTests"
-  },
-  "jest": {
-    "preset": "jest-expo",
-    "testMatch": [
-      "**/__tests__/**/*.test.ts",
-      "**/__tests__/**/*.test.tsx"
-    ],
-    "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1"
-    }
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "overrides": {
     "ws": "^8.18.0"

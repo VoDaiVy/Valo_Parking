@@ -1,6 +1,6 @@
 export default function ValoAIMascot({ size = 72 }) {
   return (
-    <svg width={size} height={size * 0.76} viewBox="0 0 96 73" role="img" aria-label="Xe VALO AI">
+    <svg width={size} height={size * 0.76} viewBox="0 0 96 73" role="img" aria-label="VALO AI car">
       <defs>
         <linearGradient id="valo-ai-car" x1="0" y1="0" x2="0.9" y2="1"><stop stopColor="#ffe29a"/><stop offset="0.55" stopColor="#ffba37"/><stop offset="1" stopColor="#b66312"/></linearGradient>
         <linearGradient id="valo-ai-glass" x1="0" x2="1" y1="0" y2="1"><stop stopColor="#202530"/><stop offset="1" stopColor="#060a11"/></linearGradient>

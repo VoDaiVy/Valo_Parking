@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2, RotateCcw, Save, Clock3, CalendarDays } from 'lucide-react';
 import { PricingHeader, PricingOverview, PricingSchedule, TimeBlockEditor, PricePolicyEditor, AdditionalPricingRules } from './PricingPanels';
@@ -20,7 +20,9 @@ export default function PricingManagement() {
   const [pricePolicies, setPricePolicies] = useState([]);
   const [baselineConfig, setBaselineConfig] = useState('');
 
+  const aiRefreshGeneration = useRef(0);
   const fetchConfig = async ({ silent = false } = {}) => {
+    const generation = ++aiRefreshGeneration.current;
     try {
       if (!silent) setLoading(true);
       setError('');
@@ -28,6 +30,7 @@ export default function PricingManagement() {
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
       });
       const data = await res.json();
+      if (generation !== aiRefreshGeneration.current) return;
       if (data.success && data.data) {
         const nextBlocks = data.data.timeBlocks || [];
         const nextDayNight = data.data.dayNightPricing || DEFAULT_DAY_NIGHT;
@@ -39,12 +42,23 @@ export default function PricingManagement() {
         setBaselineConfig(serializeConfig(nextBlocks, nextDayNight, nextPolicies));
       }
     } catch (err) {
+      if (generation !== aiRefreshGeneration.current) return;
       console.error(err);
       setError('Failed to load pricing config');
     } finally {
-      setLoading(false);
+      if (generation === aiRefreshGeneration.current) setLoading(false);
     }
   };
+  const aiLoader = useRef(null);
+  useEffect(() => { aiLoader.current = fetchConfig; });
+  useEffect(() => {
+    const onChange = ({ detail }) => {
+      if (['MODIFY_PRICING'].includes(detail?.type)) aiLoader.current?.();
+    };
+    window.addEventListener('valo:admin-data-changed', onChange);
+    return () => { aiRefreshGeneration.current += 1; window.removeEventListener('valo:admin-data-changed', onChange); };
+  }, []);
+
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
