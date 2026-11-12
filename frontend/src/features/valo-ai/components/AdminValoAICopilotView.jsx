@@ -79,7 +79,7 @@ export default function AdminValoAICopilotView(props) {
             {row.draft && <AdminDraft draft={row.draft} busy={noticeBusy} decide={decide}/>}</div><time>{adminDate(row.at, true)}</time></div></div>)}
           {busy && <div className="valo-ai-message-row is-ai" role="status" aria-label="Checking VALO data"><span className="valo-ai-message-avatar" aria-hidden="true"><ValoAIMascot size={30}/></span><div className="valo-ai-thinking" aria-hidden="true"><i/><i/><i/></div></div>}<div ref={bottomRef}/>
         </div>
-        {<div className="valo-ai-suggestions">{suggestions.map((text) => <button type="button" key={text} disabled={busy} onClick={() => submit(text)}>{text}</button>)}</div>}
+        {!messages.length && <div className="valo-ai-suggestions">{suggestions.map((text) => <button type="button" key={text} disabled={busy} onClick={() => submit(text)}>{text}</button>)}</div>}
         <form className="valo-ai-compose" onSubmit={(event) => { event.preventDefault(); submit(); }}><Paperclip size={17} aria-hidden="true"/><input ref={composer} aria-label="Question for VALO AI" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Enter a question for VALO AI..."/><button type="submit" disabled={busy || !input.trim()} aria-label="Send question"><Send size={19}/></button></form>
       </> : <div className="valo-ai-notification-view" aria-busy={notificationLoading}>
         <NotificationFilterBar filter={filter} onFilter={key => { setFilter(key); setSelected(null); }} unreadCount={unreadCount} marking={props.markingAllRead} disabled={readingIds.length > 0} onMarkAllRead={props.markAllRead}/>

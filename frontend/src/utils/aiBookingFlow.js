@@ -179,7 +179,8 @@ export function getAwaitingBookingField(draft = {}, vehicles = [], now = Date.no
 export function resolveBookingVehicle(draft, vehicles = []) {
   const approved = vehicles.filter((vehicle) => vehicle.status === 'approved');
   const eligible = approved.filter((vehicle) => !draft.vehicleType || vehicle.vehicleType === draft.vehicleType);
-  const selected = eligible.find((vehicle) => String(vehicle._id) === String(draft.vehicleId))
+  const selected = eligible.find((vehicle) => String(vehicle._id) === String(draft.vehicleId)
+      && (!draft.licensePlate || normalizePlate(vehicle.licensePlate) === normalizePlate(draft.licensePlate)))
     || eligible.find((vehicle) => normalizePlate(vehicle.licensePlate) === normalizePlate(draft.licensePlate))
     || (!draft.licensePlate && eligible.length === 1 ? eligible[0] : null);
   if (selected) {
@@ -362,6 +363,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
   const existing = bookingResult.data?.data || [];
   const candidates = [];
   const conflicts = [];
+  const bookingConflicts = [];
   const suggestions = [];
   const availabilityCache = new Map();
   const restrictionCache = new Map();
@@ -393,6 +395,15 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const requestedOverlap = candidates.find((candidate) => normalizePlate(candidate.vehicle.licensePlate) === normalizePlate(vehicle.licensePlate)
       && rangesOverlap(startTime, endTime, new Date(candidate.startTime), new Date(candidate.endTime)));
     if (ownOverlap || requestedOverlap) {
+      if (ownOverlap) bookingConflicts.push({
+        code: 'VEHICLE_BOOKING_OVERLAP', licensePlate: vehicle.licensePlate, ownership: 'self',
+        conflictBooking: {
+          bookingId: String(ownOverlap._id || ''),
+          scheduledStart: ownOverlap.scheduledStart || ownOverlap.startTime,
+          scheduledEnd: ownOverlap.scheduledEnd || ownOverlap.endTime,
+          parkingSlot: ownOverlap.parkingSlot || ownOverlap.slotCode || '', status: ownOverlap.status,
+        },
+      });
       conflicts.push(`Xe ${vehicle.licensePlate} đã có booking trùng thời gian trong khoảng ${rangeLabel(request)}. Hãy chọn khoảng thời gian khác.`);
       continue;
     }
@@ -426,7 +437,14 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       ))
       : null;
     const seed = `${vehicle.licensePlate}:${request.date}:${request.startTime}:${request.endTime}`;
-    const chosen = exact || (!preferredSlot ? chooseAutoSlot(floorSlots, seed, vehicleType) : null);
+    const autoSlots = floorSlots.filter((slot) => !requestSpecs.some((other) => {
+      if (other === request || !other.slotCode || normalize(other.slotCode) !== normalize(slot.slotCode)) return false;
+      if (other.floorName && !floorMatches(slot, other.floorName)) return false;
+      return rangesOverlap(startTime, endTime,
+        new Date(`${other.date}T${other.startTime}:00+07:00`),
+        new Date(`${other.endDate}T${other.endTime}:00+07:00`));
+    }));
+    const chosen = exact || (!preferredSlot ? chooseAutoSlot(autoSlots, seed, vehicleType) : null);
     if (!chosen) {
       const sameRangeRequests = requestSpecs.filter((item) => item.date === request.date && item.endDate === request.endDate
         && item.startTime === request.startTime && item.endTime === request.endTime);
@@ -471,7 +489,7 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       slot: chosen, availableSlots: floorSlots,
     });
   }
-  if (conflicts.length || candidates.length !== requestSpecs.length) return { conflicts, suggestions, days };
+  if (conflicts.length || candidates.length !== requestSpecs.length) return { conflicts, bookingConflicts, suggestions, days };
 
   const items = candidates.map((candidate, index) => ({
     clientItemId: `ai-${index}-${candidate.date}-${candidate.vehicle.licensePlate}`,

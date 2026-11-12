@@ -119,7 +119,8 @@ const startServer = async () => {
       // Start parking session scheduler
       startScheduler(app);
       const stopTelegramWorker = require('./services/telegramWorker').startTelegramWorker();
-      const stopOnShutdown = () => stopTelegramWorker();
+      const stopTelegramPolling = require('./services/telegramPollingService').startTelegramPolling();
+      const stopOnShutdown = () => { stopTelegramPolling(); stopTelegramWorker(); };
       process.once('SIGTERM', stopOnShutdown);
       process.once('SIGINT', stopOnShutdown);
       require('./services/aiCopilot/monitor').startMonitor(app);

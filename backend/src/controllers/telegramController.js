@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const Update = require('../models/TelegramUpdate');
+const { storeUpdate } = require('../services/telegramUpdateService');
 const service = require('../services/telegramLinkService');
 const client = require('../services/telegramClient');
 function verifyWebhookSecret(value, secret = process.env.TELEGRAM_WEBHOOK_SECRET) {
@@ -27,16 +27,8 @@ async function webhook(req, res) {
   if (!client.enabled()) return res.sendStatus(503);
   if (!verifyWebhookSecret(req.get('X-Telegram-Bot-Api-Secret-Token'))) return res.sendStatus(403);
   if (!Number.isSafeInteger(req.body?.update_id)) return res.sendStatus(400);
-  // Persist only fields needed by the bot. Never accept inline/group data as an account binding.
-  const input = req.body.message;
-  const payload = input ? { message: {
-    text: typeof input.text === 'string' ? input.text.slice(0, 256) : undefined,
-    from: { id: Number.isSafeInteger(input.from?.id) ? input.from.id : undefined, username: typeof input.from?.username === 'string' ? input.from.username.slice(0, 64) : undefined },
-    chat: { id: Number.isSafeInteger(input.chat?.id) ? input.chat.id : undefined, type: ['private', 'group', 'supergroup', 'channel'].includes(input.chat?.type) ? input.chat.type : undefined },
-    ...(input.contact ? { contact: { user_id: Number.isSafeInteger(input.contact.user_id) ? input.contact.user_id : undefined, phone_number: typeof input.contact.phone_number === 'string' ? input.contact.phone_number.slice(0, 32) : undefined } } : {}),
-  } } : {};
   try {
-    await Update.updateOne({ updateId: req.body.update_id }, { $setOnInsert: { updateId: req.body.update_id, payload } }, { upsert: true });
+    await storeUpdate(req.body);
     return res.sendStatus(200);
   } catch (error) {
     if (error.code === 11000) return res.sendStatus(200);
