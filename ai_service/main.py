@@ -2693,7 +2693,8 @@ def _crop_slot_perspective(img, pts, img_w, img_h, expand=1.15):
 
 
 if __name__ == "__main__":
-    print("Starting ValoParking AI Service on port 8000...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    print(f"Starting ValoParking AI Service on port {port}...")
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
