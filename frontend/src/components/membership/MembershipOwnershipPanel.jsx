@@ -30,6 +30,7 @@ import {
   extractMissingPolicies,
   isPolicyAcceptanceRequired,
 } from "../../utils/policyErrors";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 const RenewDate = ({ label, value, align = "left" }) => (
   <div className={align === "right" ? "text-right" : ""}>
@@ -54,6 +55,7 @@ export default function MembershipOwnershipPanel({
   onRefresh,
   onTransfer,
 }) {
+  const { t } = useLanguage();
   const [membershipQr, setMembershipQr] = useState("");
   const [membershipQrError, setMembershipQrError] = useState("");
   const [membershipQrOpen, setMembershipQrOpen] = useState(false);
@@ -67,6 +69,10 @@ export default function MembershipOwnershipPanel({
     open: false,
     missingPolicies: [],
   });
+  const renewalMessage = String(membership?.renewal?.message || "");
+  const localizedRenewalMessage = renewalMessage.toLowerCase().includes("manual renewal")
+    ? t('membershipHub.manualRenewalHint')
+    : renewalMessage;
 
   const syncCurrentUserProfile = async () => {
     const { ok, data } = await apiFetch("/profile", {
@@ -275,7 +281,7 @@ export default function MembershipOwnershipPanel({
                     </span>
                     <div>
                       <p className="text-xs font-bold text-white/45">
-                        Current membership
+                        {t('membershipHub.currentMembership')}
                       </p>
                       <h2 className="mt-1 text-2xl font-black tracking-tight">
                         {membership.package.name}
@@ -286,12 +292,12 @@ export default function MembershipOwnershipPanel({
                     <span className="flex items-center gap-2">
                       <CalendarClock size={16} className="text-[#E8B63E]" />
                       {membership.daysUntilExpiration > 0
-                        ? `${membership.daysUntilExpiration} days remaining`
-                        : "Expired"}
+                        ? t('membershipHub.daysRemaining', { days: membership.daysUntilExpiration })
+                        : t('membershipHub.expired')}
                     </span>
                     <span className="flex items-center gap-2">
                       <MapPin size={16} className="text-[#E8B63E]" />
-                      {membership.reservedSlots?.length || 0} reserved spaces
+                      {t('membershipHub.reservedSpaces', { count: membership.reservedSlots?.length || 0 })}
                     </span>
                   </div>
                   {membership.status === "active" && (
@@ -302,7 +308,7 @@ export default function MembershipOwnershipPanel({
                       className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#DCA11D]/35 bg-[#DCA11D]/10 px-4 text-sm font-black text-[#E8B63E] transition hover:bg-[#DCA11D]/15 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <QrCode size={17} />
-                      {membershipQr ? "Show membership QR" : "QR unavailable"}
+                      {membershipQr ? t('membershipHub.showQr') : t('membershipHub.qrUnavailable')}
                     </button>
                   )}
                   {membershipQrError && (
@@ -318,15 +324,15 @@ export default function MembershipOwnershipPanel({
                       : "border-rose-500/20 bg-rose-500/10 text-rose-300"
                   }`}
                 >
-                  {membership.status === "active" ? "Active" : "Expired"}
+                  {membership.status === "active" ? t('membershipHub.active') : t('membershipHub.expired')}
                 </span>
               </div>
             </div>
 
             <div className="flex flex-col justify-center border-t border-white/5 bg-white/[0.025] p-6 sm:p-8 lg:border-l lg:border-t-0">
-              <p className="text-xs font-bold text-white/45">Renewal</p>
+              <p className="text-xs font-bold text-white/45">{t('membershipHub.renewal')}</p>
               <p className="mt-2 text-sm leading-6 text-white/65">
-                {membership.renewal?.message}
+                {localizedRenewalMessage}
               </p>
               <button
                 type="button"
@@ -344,10 +350,10 @@ export default function MembershipOwnershipPanel({
                   <RotateCcw size={17} />
                 )}
                 {membership.reservedSlots?.some((slot) => slot.entitlementId)
-                  ? "Renew each space below"
+                  ? t('membershipHub.renewEachSpace')
                   : membership.renewal?.canRenew
-                    ? "Review renewal"
-                    : `Opens ${membership.renewal?.renewalWindowDays || 7} days before expiry`}
+                    ? t('membershipHub.reviewRenewal')
+                    : t('membershipHub.opensBeforeExpiry', { days: membership.renewal?.renewalWindowDays || 7 })}
               </button>
             </div>
           </div>
@@ -359,14 +365,14 @@ export default function MembershipOwnershipPanel({
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-[#DCA11D]">
-                Individual entitlements
+                {t('membershipHub.individualEntitlements')}
               </p>
               <h2 className="mt-1 text-xl font-black">
-                Your reserved parking spaces
+                {t('membershipHub.reservedParkingSpaces')}
               </h2>
             </div>
             <span className="text-sm font-bold text-white/35">
-              {membership.reservedSlots.length}/3 spaces
+              {t('membershipHub.spaceCount', { count: membership.reservedSlots.length })}
             </span>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -377,7 +383,7 @@ export default function MembershipOwnershipPanel({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-lg font-black">Space {slot.slotCode}</p>
+                    <p className="text-lg font-black">{t('membershipHub.space')} {slot.slotCode}</p>
                     <p className="mt-1 text-xs text-white/40">
                       {slot.floorName || `Floor ${slot.floorNumber || ""}`}
                     </p>
@@ -388,7 +394,7 @@ export default function MembershipOwnershipPanel({
                 </div>
                 {slot.expireAt && (
                   <p className="mt-4 text-xs text-white/45">
-                    Valid until{" "}
+                    {t('membershipHub.validUntil')} {" "}
                     <strong className="text-white/75">
                       {new Date(slot.expireAt).toLocaleDateString("vi-VN")}
                     </strong>
@@ -401,7 +407,7 @@ export default function MembershipOwnershipPanel({
                     disabled={!slot.entitlementId || renewLoading}
                     className="min-h-10 rounded-xl bg-white px-3 text-xs font-black text-black transition hover:bg-white/85 disabled:opacity-35"
                   >
-                    Renew
+                    {t('membershipHub.renew')}
                   </button>
                   <button
                     type="button"
@@ -409,7 +415,7 @@ export default function MembershipOwnershipPanel({
                     disabled={!slot.canTransfer}
                     className="min-h-10 rounded-xl border border-[#DCA11D]/30 bg-[#DCA11D]/10 px-3 text-xs font-black text-[#E8B63E] transition hover:bg-[#DCA11D]/15 disabled:cursor-not-allowed disabled:opacity-35"
                   >
-                    Transfer
+                    {t('membershipHub.transfer')}
                   </button>
                 </div>
               </article>

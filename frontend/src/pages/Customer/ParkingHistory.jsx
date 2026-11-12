@@ -17,8 +17,10 @@ import {
 } from "lucide-react";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import { formatLicensePlateDisplay } from "../../utils/licensePlate";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 export default function ParkingHistory() {
+  const { t } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,7 +30,7 @@ export default function ParkingHistory() {
     setLoading(true);
     const token = localStorage.getItem("accessToken");
     if (!token) {
-      setError("Please login to view history");
+      setError(t('historyPage.loginRequired'));
       setLoading(false);
       return;
     }
@@ -40,10 +42,10 @@ export default function ParkingHistory() {
       if (ok && data?.success) {
         setSessions(data.data);
       } else {
-        setError(data?.message || "Failed to load history.");
+        setError(data?.message || t('historyPage.loadFailed'));
       }
     } catch {
-      setError("Network error occurred.");
+      setError(t('historyPage.networkError'));
     } finally {
       setLoading(false);
     }
@@ -158,8 +160,8 @@ export default function ParkingHistory() {
       {/* ── HEADER ── */}
       <CustomerPageHeader
         icon={History}
-        title="Parking History"
-        description="Review your past parking sessions and expenses."
+        title={t('historyPage.title')}
+        description={t('historyPage.description')}
         className="mb-8 md:mb-10"
       />
 
@@ -176,9 +178,9 @@ export default function ParkingHistory() {
       ) : sessions.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 px-4">
           <History size={64} className="text-gray-500 mb-4" />
-          <h3 className="text-xl font-bold text-gray-300">No History Found</h3>
+          <h3 className="text-xl font-bold text-gray-300">{t('historyPage.emptyTitle')}</h3>
           <p className="text-gray-500 mt-2 text-sm">
-            You don't have any parking sessions yet.
+            {t('historyPage.emptyDescription')}
           </p>
         </div>
       ) : (
@@ -210,11 +212,11 @@ export default function ParkingHistory() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest">
-                          LICENSE PLATE
+                          {t('historyPage.licensePlate')}
                         </p>
                         {index === 0 && (
                           <span className="px-2 py-0.5 rounded text-[9px] font-black bg-yellow-500 text-black tracking-wider uppercase shadow-[0_0_10px_rgba(234,179,8,0.4)]">
-                            LATEST
+                            {t('historyPage.latest')}
                           </span>
                         )}
                       </div>
@@ -233,7 +235,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <Calendar size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">CHECK-IN</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.checkIn')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
                       {formatDate(session.checkInTime)}
@@ -243,7 +245,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <Clock size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">DURATION</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.duration')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
                       {calculateDuration(session.checkInTime, session.checkOutTime)}
@@ -253,7 +255,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <MapPin size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">SLOT</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.slot')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
                       {session.parkingSlot || "Unassigned"}
@@ -263,7 +265,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <CreditCard size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">TOTAL</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.total')}</span>
                     </div>
                     <p className="text-sm font-bold text-yellow-400">
                       {formatMoney(session.totalPrice)}

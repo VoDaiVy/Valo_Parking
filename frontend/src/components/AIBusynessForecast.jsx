@@ -7,6 +7,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { getOccupancyForecast } from '../services/aiForecastService';
+import { useLanguage } from '../i18n/hooks/useLanguage';
 
 export default function AIBusynessForecast({
   selectedDate,
@@ -14,6 +15,7 @@ export default function AIBusynessForecast({
   vehicleType = 'car',
   floorId,
 }) {
+  const { t } = useLanguage();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -164,14 +166,14 @@ export default function AIBusynessForecast({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h4 className="text-sm font-extrabold text-gray-900 dark:text-white tracking-tight">
-                AI Occupancy &amp; Peak Times Forecast
+                {t('forecast.title')}
               </h4>
               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gold/15 text-yellow-800 dark:text-gold border border-gold/30">
                 Popular Times
               </span>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
-              Forecast based on real historical traffic for {data.dayOfWeekName} ({data.date})
+              {t('forecast.basedOn', { day: data.dayOfWeekName, date: data.date })}
             </p>
           </div>
       </div>
@@ -180,7 +182,7 @@ export default function AIBusynessForecast({
         {data.peakWindows && data.peakWindows.length > 0 && (
           <div className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300">
             <TrendingUp size={13} className="text-rose-500 shrink-0" />
-            <span>Peak: {data.peakWindows.join(' & ')}</span>
+            <span>{t('forecast.peak', { windows: data.peakWindows.join(' & ') })}</span>
           </div>
         )}
       </div>
@@ -189,7 +191,7 @@ export default function AIBusynessForecast({
         <div className="relative mb-3 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <div>
-            <p className="text-xs font-extrabold">Reference forecast only</p>
+            <p className="text-xs font-extrabold">{t('forecast.referenceOnly')}</p>
             <p className="mt-0.5 text-[11px] font-medium opacity-80">
               This date is outside the {data.forecastHorizonHours || 24}-hour forecast horizon. The chart is for planning only and never changes the parking price.
             </p>
@@ -277,9 +279,9 @@ export default function AIBusynessForecast({
 
           {/* Quick slot availability count */}
           <div className="flex sm:flex-col items-center sm:items-end justify-between shrink-0 pl-2 border-t sm:border-t-0 sm:border-l border-gray-200/70 dark:border-white/10 pt-2 sm:pt-0">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">Estimated Available</span>
+            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">{t('forecast.estimatedAvailable')}</span>
             <span className="text-sm font-black text-yellow-700 dark:text-gold">
-              ~{activeForecast.estimatedAvailableSlots} / {data.totalCapacity || 54} slots
+              ~{t('forecast.slots', { available: activeForecast.estimatedAvailableSlots, total: data.totalCapacity || 54 })}
             </span>
           </div>
         </div>
@@ -289,13 +291,13 @@ export default function AIBusynessForecast({
       <div className="mt-3 flex flex-wrap items-center gap-3 px-1 pt-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Low (&lt;35%)
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {t('forecast.low')}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Moderate
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> {t('forecast.moderate')}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> Peak (&gt;80%)
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" /> {t('forecast.peakLevel')}
           </span>
         </div>
       </div>

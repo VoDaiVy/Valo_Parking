@@ -10,6 +10,7 @@ import SmartGate3D from '../../components/SmartGate3D';
 
 import { getServices } from '../../services/extraServiceApi';
 import { getLiveMapData } from '../../services/parkingFloorService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const SERVICE_PRESENTATION = [
   {
@@ -346,6 +347,7 @@ const PremiumCarServicesSection = () => {
 };
 
 export default function GuestHome() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [pulse, setPulse] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -400,21 +402,21 @@ export default function GuestHome() {
       <section className="relative pt-32 pb-20 lg:pt-40 lg:pb-28 max-w-7xl mx-auto px-6 flex flex-col lg:flex-row items-center gap-12">
         <div className="w-full lg:w-1/2 flex flex-col items-start z-10">
           <div className="inline-flex items-center gap-2 py-1.5 px-4 rounded-full bg-yellow-50 border border-yellow-200 text-yellow-700 text-xs font-bold tracking-wider mb-6 uppercase">
-            <Zap size={14} className="text-yellow-600" /> AI Recognition System 2.0
+            <Zap size={14} className="text-yellow-600" /> {t('homePage.aiBadge')}
           </div>
           <h1 className="text-5xl lg:text-6xl font-extrabold leading-tight mb-6">
-            The New Era of<br />
-            <span className="text-gold-gradient">Smart Parking.</span>
+            {t('homePage.heroTitle')}<br />
+            <span className="text-gold-gradient">{t('homePage.heroTitleAccent')}</span>
           </h1>
           <p className="text-lg text-gray-600 mb-8 max-w-lg leading-relaxed">
-            Touchless check-in with AI Cameras. Preview parking availability in real-time. One-touch payment via VALO Wallet.
+            {t('homePage.heroDescription')}
           </p>
           <div className="w-full max-w-md bg-white p-2 rounded-xl shadow-xl border border-gray-100 flex gap-2 hover:shadow-2xl transition-shadow duration-300">
             <div className="flex items-center pl-3 text-gray-400">
               <Search size={20} />
             </div>
-            <input type="text" placeholder="Enter license plate (e.g., 43A-123.45)..." className="flex-1 bg-transparent px-2 py-3 outline-none text-gray-700 font-semibold placeholder-gray-400" />
-            <button className="bg-charcoal text-white px-6 py-3 rounded-lg font-bold hover:bg-black hover:scale-105 transition-all whitespace-nowrap">Check</button>
+            <input type="text" placeholder={t('homePage.platePlaceholder')} className="flex-1 bg-transparent px-2 py-3 outline-none text-gray-700 font-semibold placeholder-gray-400" />
+            <button className="bg-charcoal text-white px-6 py-3 rounded-lg font-bold hover:bg-black hover:scale-105 transition-all whitespace-nowrap">{t('homePage.check')}</button>
           </div>
         </div>
 
@@ -423,11 +425,11 @@ export default function GuestHome() {
           <div onClick={handleMapClick} className={`bg-white rounded-2xl shadow-2xl border border-gray-100 p-6 relative overflow-hidden scan-line group ${isLoggedIn ? 'cursor-pointer hover:shadow-[0_0_25px_rgba(255,213,85,0.4)]' : ''}`}>
             <div className="flex justify-between items-center mb-6 border-b border-gray-50 pb-4">
               <div>
-                <h3 className="font-bold text-lg text-charcoal">Live Grid Map {isLoggedIn ? '(100%)' : '(50%)'}</h3>
-                <p className="text-xs text-gray-400">{isLoggedIn ? 'Click to view full interactive map' : 'Current parking status'}</p>
+                <h3 className="font-bold text-lg text-charcoal">{t('homePage.liveGridMap')} {isLoggedIn ? '(100%)' : '(50%)'}</h3>
+                <p className="text-xs text-gray-400">{isLoggedIn ? t('homePage.viewInteractiveMap') : t('homePage.currentParkingStatus')}</p>
               </div>
               <div className="bg-green-50 text-green-600 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 border border-green-100">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> {mapStats.available}/{mapStats.total} Available
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> {mapStats.available}/{mapStats.total} {t('homePage.available')}
               </div>
             </div>
             <div className="grid grid-cols-4 gap-3 relative">
@@ -437,7 +439,7 @@ export default function GuestHome() {
                     return (
                       <div key={slot.id} className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}>
                         <span className="text-xs font-bold text-green-600">{slot.id}</span>
-                        <span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span>
+                        <span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">{t('homePage.empty')}</span>
                       </div>
                     );
                   } else if (slot.status === 'occupied') {
@@ -451,14 +453,14 @@ export default function GuestHome() {
                     return (
                       <div key={slot.id} className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 h-24 flex flex-col justify-center items-center">
                         <span className="text-xs font-bold text-yellow-700">{slot.id}</span>
-                        <span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">Booked</span>
+                        <span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">{t('homePage.booked')}</span>
                       </div>
                     );
                   } else {
                     return (
                       <div key={slot.id} className="bg-charcoal border border-gray-800 rounded-lg p-3 h-24 flex flex-col justify-center items-center">
                         <span className="text-xs font-bold text-gray-500">{slot.id}</span>
-                        <span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">Maintain</span>
+                        <span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">{t('homePage.maintenance')}</span>
                       </div>
                     );
                   }
@@ -466,20 +468,20 @@ export default function GuestHome() {
               ) : (
                 <>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-01</span><Car size={24} className="text-gray-600 mt-2" /></div>
-                  <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-02</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span></div>
-                  <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-yellow-700">A-03</span><span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">Booked</span></div>
+                  <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-02</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">{t('homePage.empty')}</span></div>
+                  <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-yellow-700">A-03</span><span className="text-[10px] font-bold text-yellow-600 mt-2 uppercase tracking-wider">{t('homePage.booked')}</span></div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-04</span><Car size={24} className="text-gray-600 mt-2" /></div>
-                  <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${!pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-05</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">Empty</span></div>
+                  <div className={`bg-white border-2 border-green-400 rounded-lg p-3 h-24 flex flex-col justify-center items-center transition-all duration-300 ${!pulse ? 'shadow-[0_0_15px_rgba(34,197,94,0.3)]' : ''}`}><span className="text-xs font-bold text-green-600">A-05</span><span className="text-[10px] font-bold text-green-500 mt-2 uppercase tracking-wider bg-green-50 px-2 py-1 rounded">{t('homePage.empty')}</span></div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-06</span><Car size={24} className="text-gray-600 mt-2" /></div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-400">A-07</span><Car size={24} className="text-gray-600 mt-2" /></div>
-                  <div className="bg-charcoal border border-gray-800 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-500">A-08</span><span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">Maintain</span></div>
+                  <div className="bg-charcoal border border-gray-800 rounded-lg p-3 h-24 flex flex-col justify-center items-center"><span className="text-xs font-bold text-gray-500">A-08</span><span className="text-[10px] font-bold text-white mt-2 uppercase tracking-wider text-center">{t('homePage.maintenance')}</span></div>
                 </>
               )}
             </div>
             {!isLoggedIn && (
               <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-white via-white/90 to-transparent flex items-end justify-center pb-6">
                 <button onClick={(e) => { e.stopPropagation(); navigate('/login'); }} className="bg-charcoal text-white font-bold py-3 px-8 rounded-full text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition transform flex items-center gap-2 border border-gray-700">
-                  <ShieldCheck size={16} className="text-gold" /> Log in to view 100% of the map
+                  <ShieldCheck size={16} className="text-gold" /> {t('homePage.loginToViewMap')}
                 </button>
               </div>
             )}
@@ -493,22 +495,22 @@ export default function GuestHome() {
           
           <div className="w-full lg:w-1/2">
             <div className="inline-flex items-center gap-2 py-1.5 px-4 rounded-full bg-white/5 border border-white/10 text-gold text-xs font-bold tracking-wider mb-6 uppercase">
-              <Camera size={14} /> Seamless Check-in
+              <Camera size={14} /> {t('homePage.seamlessCheckin')}
             </div>
             <h2 className="text-3xl lg:text-4xl font-extrabold mb-6">
-              Automated <span className="text-gold-gradient">ALPR Gate</span>
+              {t('homePage.alprTitle')} <span className="text-gold-gradient">{t('homePage.alprAccent')}</span>
             </h2>
             <p className="text-gray-400 mb-8 leading-relaxed">
-              Experience the magic of 100% touchless entry. Just drive up to the barrier. Our AI cameras instantly read your license plate, cross-check your booking, and open the gate in less than a second.
+              {t('homePage.alprDescription')}
             </p>
             <ul className="space-y-4">
               <li className="flex items-center gap-3 text-gray-300">
                 <div className="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center shrink-0">✓</div>
-                High-speed recognition (0.5s response time).
+                {t('homePage.highSpeedRecognition')}
               </li>
               <li className="flex items-center gap-3 text-gray-300">
                 <div className="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center shrink-0">✓</div>
-                No tickets, no stopping, no windows down.
+                {t('homePage.noTickets')}
               </li>
             </ul>
           </div>

@@ -14,12 +14,24 @@ const validateProgram = (input) => {
   const tiers = input.tiers.map((tier) => {
     if (!tier || typeof tier !== 'object') fail('Invalid milestone');
     const result = {};
-    for (const key of ['threshold', 'discountAmount', 'minimumAmount']) {
+    const rewardType = tier.rewardType || 'FIXED_DISCOUNT';
+    if (!['FIXED_DISCOUNT', 'PERCENT_DISCOUNT'].includes(rewardType)) fail('Invalid reward type');
+    result.rewardType = rewardType;
+    for (const key of ['threshold', 'minimumAmount']) {
       const value = tier[key];
       if (!Number.isSafeInteger(value) || value < 1000 || value > MAX_MONEY) fail('Amounts must be whole VND from 1,000 to 1,000,000,000');
       result[key] = value;
     }
-    if (result.discountAmount > result.minimumAmount) fail('Discount cannot exceed the minimum order amount');
+    if (rewardType === 'PERCENT_DISCOUNT') {
+      if (!Number.isSafeInteger(tier.discountPercent) || tier.discountPercent < 1 || tier.discountPercent > 100) fail('Percentage discount must be a whole number from 1 to 100');
+      result.discountPercent = tier.discountPercent;
+      result.discountAmount = 0;
+    } else {
+      if (!Number.isSafeInteger(tier.discountAmount) || tier.discountAmount < 1000 || tier.discountAmount > MAX_MONEY) fail('Amounts must be whole VND from 1,000 to 1,000,000,000');
+      result.discountAmount = tier.discountAmount;
+      if (result.discountAmount > result.minimumAmount) fail('Discount cannot exceed the minimum order amount');
+      result.discountPercent = null;
+    }
     return result;
   }).sort((a, b) => a.threshold - b.threshold);
   if (new Set(tiers.map((tier) => tier.threshold)).size !== tiers.length) fail('Spending milestones must be unique');

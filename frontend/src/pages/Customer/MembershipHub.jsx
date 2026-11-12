@@ -4,21 +4,14 @@ import { Toaster } from "react-hot-toast";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import MembershipTransferMarketplace from "./MembershipTransferMarketplace";
 import MembershipTransfers from "./MembershipTransfers";
-
-const TABS = [
-  {
-    id: "transfers",
-    label: "My Membership",
-    icon: ArrowLeftRight,
-  },
-  {
-    id: "marketplace",
-    label: "Marketplace",
-    icon: ShoppingBag,
-  },
-];
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 export default function MembershipHub() {
+  const { t } = useLanguage();
+  const TABS = [
+    { id: "transfers", label: t('membershipHub.myMembership'), icon: ArrowLeftRight },
+    { id: "marketplace", label: t('membershipHub.marketplace'), icon: ShoppingBag },
+  ];
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "marketplace" ? "marketplace" : "transfers";
@@ -56,14 +49,14 @@ export default function MembershipHub() {
       <div className="mx-auto max-w-7xl">
         <CustomerPageHeader
           icon={ArrowLeftRight}
-          title="Membership"
-          description="Manage your membership spaces and transfers, or find an available space in the marketplace."
+          title={t('membershipHub.title')}
+          description={t('membershipHub.description')}
           className="border-b border-white/10 pb-6"
         />
 
         <nav
           role="tablist"
-          aria-label="Membership sections"
+          aria-label={t('membershipHub.sections')}
           className="mt-6 grid rounded-2xl border border-white/10 bg-[#151515] p-1.5 sm:inline-grid sm:grid-cols-2"
         >
           {TABS.map((tab) => {

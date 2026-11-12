@@ -26,6 +26,7 @@ import { getMyVehicles } from '../../services/vehicleService';
 import { getAllFloors } from '../../services/parkingFloorService';
 import { useSocket } from '../../hooks/useSocket';
 import CustomerPageHeader from '../../components/Customer/CustomerPageHeader';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 import { buildFloorLookup, getBookingFloorLabel } from '../../utils/bookingFloor';
 
@@ -88,6 +89,7 @@ const getBookingTiming = (booking) => {
 };
 
 export default function BookingPage() {
+  const { t } = useLanguage();
   const socket = useSocket();
   const [bookings, setBookings] = useState([]);
   const [floorsById, setFloorsById] = useState({});
@@ -317,8 +319,8 @@ export default function BookingPage() {
     <div className="min-h-full bg-[#050505] text-white p-6 md:p-8">
       <CustomerPageHeader
         icon={CalendarClock}
-        title="My Bookings"
-        description="Manage your parking reservations and check-in status."
+        title={t('customer.myBookingsTitle')}
+        description={t('customer.myBookingsDescription')}
         className="mb-8"
       />
 
@@ -335,8 +337,8 @@ export default function BookingPage() {
       <div className="">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h2 className="text-lg font-black">All Reservations</h2>
-            <p className="text-sm text-white/40">Present your booking QR code at the Kiosk to check in.</p>
+            <h2 className="text-lg font-black">{t('customer.allReservations')}</h2>
+            <p className="text-sm text-white/40">{t('customer.bookingQrHint')}</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300 flex items-center gap-2">
@@ -356,8 +358,8 @@ export default function BookingPage() {
         {bookings.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-white/40 flex flex-col items-center">
             <CalendarClock size={48} className="mb-4 text-white/20" />
-            <p className="text-lg font-bold text-white/60 mb-2">No bookings yet</p>
-            <p className="text-sm max-w-sm">You haven't made any parking reservations. Click "Booking" on the top navigation bar to reserve a spot.</p>
+            <p className="text-lg font-bold text-white/60 mb-2">{t('customer.noBookings')}</p>
+            <p className="text-sm max-w-sm">{t('customer.noBookingsHint')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -387,7 +389,7 @@ export default function BookingPage() {
                     </div>
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-y-2 gap-x-6 text-sm text-white/60">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">License Plate</span>
+                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">{t('customer.licensePlate')}</span>
                         <span className="font-semibold text-white">{formatLicensePlateDisplay(booking.licensePlate)}</span>
                       </div>
                       <div className="flex flex-col">
@@ -492,7 +494,7 @@ export default function BookingPage() {
             <div className="flex items-start justify-between gap-4 mb-5">
               <div>
                 <h3 className="text-xl font-black text-white">
-                  {dialog.type === 'plate' ? 'Change License Plate' : 'Extend Parking'}
+                  {dialog.type === 'plate' ? t('customer.changePlate') : t('customer.extendParking')}
                 </h3>
                 <p className="text-sm text-white/45 mt-1">
                   Slot {getBookingSlot(dialog.booking)} - {getBookingFloorLabel(dialog.booking, floorsById)}
@@ -517,7 +519,7 @@ export default function BookingPage() {
             {dialog.type === 'plate' ? (
               <div className="space-y-4">
                 <label className="block">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">Select New Vehicle</span>
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">{t('customer.selectVehicle')}</span>
                   <select
                     value={vehicleInput}
                     onChange={(event) => setVehicleInput(event.target.value)}
@@ -534,7 +536,7 @@ export default function BookingPage() {
                 </label>
                 {vehicleInput === 'manual' && (
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">Enter License Plate</span>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">{t('customer.enterPlate')}</span>
                     <input
                       type="text"
                       placeholder="e.g. 51G12345"
@@ -603,7 +605,7 @@ export default function BookingPage() {
                 <Trash2 size={22} />
               </div>
               <div>
-                <h3 className="text-xl font-black text-white">Cancel booking?</h3>
+                <h3 className="text-xl font-black text-white">{t('customer.cancelBooking')}</h3>
                 <p className="mt-1 text-sm leading-6 text-white/45">
                   Slot {getBookingSlot(cancelDialog.booking)} - {formatLicensePlateDisplay(cancelDialog.booking.licensePlate)}
                 </p>
@@ -654,7 +656,7 @@ export default function BookingPage() {
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-black text-white">Booking QR</h3>
+                <h3 className="text-xl font-black text-white">{t('customer.bookingQr')}</h3>
                 <p className="mt-1 text-sm text-white/45">
                   {getBookingSlot(qrDialog.booking)} · {formatLicensePlateDisplay(qrDialog.booking.licensePlate)}
                 </p>

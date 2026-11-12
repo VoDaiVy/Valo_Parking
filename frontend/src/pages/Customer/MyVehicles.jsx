@@ -13,6 +13,7 @@ import CarViewer from '../../components/CarViewer';
 import CustomerPageHeader from '../../components/Customer/CustomerPageHeader';
 import garageBg from '../../assets/images/garage-bg.png';
 import { formatLicensePlateDisplay, normalizeLicensePlate } from '../../utils/licensePlate';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const VEHICLE_TYPES = [
@@ -576,6 +577,7 @@ function NoModelPlaceholder({ hexColor }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MyVehicles() {
+  const { t } = useLanguage();
   const [vehicles, setVehicles]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -739,14 +741,14 @@ export default function MyVehicles() {
       {/* ── Top bar ── */}
       <CustomerPageHeader
         icon={Car}
-        title="My Garage"
-        description={vehicles.length > 0 ? `${vehicles.length}/${MAX_VEHICLES_PER_USER} vehicles` : 'No vehicles yet'}
+        title={t('vehiclesPage.title')}
+        description={vehicles.length > 0 ? t('vehiclesPage.count', { count: vehicles.length, max: MAX_VEHICLES_PER_USER }) : t('vehiclesPage.emptyTitle')}
         className="relative z-10 px-6 pb-4 pt-5"
         action={
           <button
             onClick={openAdd}
             disabled={vehicleLimitReached}
-            title={vehicleLimitReached ? `Maximum ${MAX_VEHICLES_PER_USER} vehicles reached` : 'Add vehicle'}
+            title={vehicleLimitReached ? t('vehiclesPage.limitReached', { max: MAX_VEHICLES_PER_USER }) : t('vehiclesPage.add')}
             className={`flex min-h-11 items-center gap-2 rounded-xl px-4 text-sm font-bold transition-colors ${
               vehicleLimitReached
                 ? 'cursor-not-allowed border border-white/10 bg-white/5 text-white/40 shadow-none'
@@ -754,7 +756,7 @@ export default function MyVehicles() {
             }`}
           >
             {vehicleLimitReached ? <Check size={15} /> : <Plus size={15} />}
-            {vehicleLimitReached ? 'Vehicle limit reached' : 'Add vehicle'}
+            {vehicleLimitReached ? t('vehiclesPage.limitShort') : t('vehiclesPage.add')}
           </button>
         }
       />
@@ -791,7 +793,7 @@ export default function MyVehicles() {
                   disabled:opacity-50 shadow-md"
               >
                 {actionLoading ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                Save color
+                {t('vehiclesPage.saveColor')}
               </button>
             )}
             {quickColor && quickColor !== selected?.hexColor && (
@@ -857,7 +859,7 @@ export default function MyVehicles() {
               className="p-2.5 rounded-xl text-white/60 hover:text-yellow-400
                 border border-white/15 hover:border-yellow-500/40
                 bg-white/5 hover:bg-yellow-500/10 transition-all disabled:opacity-50"
-              title="Edit"
+              title={t('common.edit')}
             >
               <Pencil size={15} />
             </button>
@@ -867,7 +869,7 @@ export default function MyVehicles() {
               className="p-2.5 rounded-xl text-white/60 hover:text-red-400
                 border border-white/15 hover:border-red-500/30
                 bg-white/5 hover:bg-red-500/10 transition-all disabled:opacity-50"
-              title="Delete vehicle"
+              title={t('vehiclesPage.delete')}
             >
               {actionLoading
                 ? <Loader2 size={15} className="animate-spin" />
@@ -893,14 +895,14 @@ export default function MyVehicles() {
             <Car size={32} className="text-yellow-400" />
           </div>
           <div>
-            <p className="font-bold text-white text-lg mb-1">No vehicles yet</p>
-            <p className="text-white/50 text-sm">Add a vehicle to use the 3D garage feature</p>
+            <p className="font-bold text-white text-lg mb-1">{t('vehiclesPage.emptyTitle')}</p>
+            <p className="text-white/50 text-sm">{t('vehiclesPage.emptyDescription')}</p>
           </div>
           <button onClick={openAdd}
             className="flex items-center gap-2 px-6 py-3 rounded-xl
               bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors">
             <Plus size={15} />
-            Add your first vehicle
+            {t('vehiclesPage.addFirst')}
           </button>
         </div>
       )}

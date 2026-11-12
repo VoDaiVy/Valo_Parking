@@ -67,9 +67,12 @@ async function applySpend(event, now = new Date(), app) {
         const [voucher] = await UserVoucher.create([{
           userId: event.userId, source: 'spending', rewardKey, rewardMonth: month, rewardThreshold: tier.threshold,
           benefitSnapshot: {
-            name: `Monthly spending reward - ${tier.discountAmount.toLocaleString('vi-VN')} VND`,
+            name: tier.rewardType === 'PERCENT_DISCOUNT'
+              ? `Monthly spending reward - ${tier.discountPercent}% off`
+              : `Monthly spending reward - ${tier.discountAmount.toLocaleString('vi-VN')} VND`,
             description: `Minimum booking ${tier.minimumAmount.toLocaleString('vi-VN')} VND. One use within ${validityDays} days.`,
-            type: 'FIXED_DISCOUNT', pointCost: 0, discountAmount: tier.discountAmount, minimumAmount: tier.minimumAmount,
+            type: tier.rewardType || 'FIXED_DISCOUNT', pointCost: 0, discountAmount: tier.discountAmount || 0,
+            discountPercent: tier.rewardType === 'PERCENT_DISCOUNT' ? tier.discountPercent : null, minimumAmount: tier.minimumAmount,
           },
           redeemedAt: now, expiresAt: new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000),
         }], { session });

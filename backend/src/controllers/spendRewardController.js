@@ -10,11 +10,13 @@ exports.getProgram = endpoint(async () => {
   const program = await service.getProgram();
   const issued = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] } });
   const used = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] }, status: 'used' });
+  const available = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] }, status: 'available', expiresAt: { $gt: new Date() }, usedAt: null });
+  const expired = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] }, status: 'expired' });
   const pendingEmails = await EmailJob.countDocuments({ status: { $in: ['pending', 'sending'] } });
   const retryingEmails = await EmailJob.countDocuments({ status: 'pending', attempts: { $gt: 0 } });
   const vouchers = await UserVoucher.find({ source: { $in: ['spending', 'manual'] } })
     .populate('userId', 'username email').sort({ redeemedAt: -1 }).limit(100).lean();
-  return { program, stats: { issued, used, pendingEmails, retryingEmails }, vouchers };
+  return { program, stats: { issued, used, available, expired, pendingEmails, retryingEmails }, vouchers };
 });
 
 exports.updateVoucherExpiry = endpoint(async (req) => {
@@ -23,7 +25,7 @@ exports.updateVoucherExpiry = endpoint(async (req) => {
   if (!raw || Number.isNaN(expiresAt.getTime())) throw Object.assign(new Error('Ngày hết hạn không hợp lệ'), { statusCode: 400 });
   if (expiresAt <= new Date()) throw Object.assign(new Error('Ngày hết hạn phải ở tương lai'), { statusCode: 400 });
   const voucher = await UserVoucher.findOneAndUpdate(
-    { _id: req.params.voucherId, status: { $in: ['available', 'expired'] } },
+    { _id: req.params.voucherId, status: { $in: ['available', 'expired'] }, usedAt: null, bookingId: null },
     { $set: { expiresAt, status: 'available' } }, { new: true, runValidators: true },
   ).populate('userId', 'username email');
   if (!voucher) throw Object.assign(new Error('Chỉ voucher chưa dùng hoặc đã hết hạn mới được chỉnh sửa'), { statusCode: 400 });

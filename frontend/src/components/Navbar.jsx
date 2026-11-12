@@ -24,6 +24,8 @@ import Logo from "../assets/images/logo.png";
 import { useNotifications } from "../hooks/useNotifications";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
+import LanguageSwitch from "../i18n/components/LanguageSwitch";
+import { useLanguage } from "../i18n/hooks/useLanguage";
 
 /* VALO PARKING - Premium Navbar */
 
@@ -83,6 +85,7 @@ const navAvatarThemes = {
 };
 
 export default function Navbar() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState(() => {
@@ -241,7 +244,18 @@ export default function Navbar() {
       .toUpperCase();
   };
 
-  const navLinks = user ? customerLinks : guestLinks;
+  const navTranslationKeys = {
+    Home: "nav.home",
+    Services: "nav.services",
+    "Parking Map": "nav.parkingMap",
+    Policy: "nav.policy",
+    Booking: "nav.booking",
+    Package: "nav.package",
+  };
+  const navLinks = (user ? customerLinks : guestLinks).map((link) => ({
+    ...link,
+    label: t(navTranslationKeys[link.label] || link.label),
+  }));
 
   const displayName = user
     ? [user.profile?.firstName, user.profile?.lastName]
@@ -705,7 +719,7 @@ export default function Navbar() {
                     id="nav-btn-login"
                     className="hidden sm:flex items-center px-4 py-2 text-[13px] font-semibold text-gray-600 hover:text-gray-900 rounded-xl hover:bg-black/[0.04] transition-all duration-200"
                   >
-                    Log In
+                    {t("auth.login")}
                   </Link>
                   <Link
                     to="/login"
@@ -714,7 +728,7 @@ export default function Navbar() {
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 group-hover:from-gold group-hover:via-yellow-400 group-hover:to-gold transition-all duration-500" />
                     <span className="relative flex items-center gap-1.5 text-white group-hover:text-gray-900 transition-colors duration-500">
-                      Get Started
+                      {t("auth.signUp")}
                       <ArrowUpRight
                         size={14}
                         className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
@@ -723,6 +737,8 @@ export default function Navbar() {
                   </Link>
                 </div>
               )}
+
+              <LanguageSwitch variant="light" size="sm" className="ml-1" />
 
               <button
                 id="nav-mobile-toggle"

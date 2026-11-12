@@ -53,6 +53,7 @@ import {
 import { findRequestedService } from '../../utils/bookingNavigation';
 import { getVipBookingSelection } from '../../utils/vipBookingPolicy';
 import { getMyVouchers } from '../../services/loyaltyService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
@@ -567,6 +568,7 @@ const getVoucherExpiryLabel = (voucher) => {
 };
 
 const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedVoucher = vouchers.find((voucher) => voucher._id === value);
@@ -609,17 +611,17 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-extrabold text-gray-900">
-            {selectedVoucher?.benefitSnapshot?.name || 'No voucher'}
+            {selectedVoucher?.benefitSnapshot?.name || t('booking.noVoucher')}
           </span>
           <span className="mt-0.5 block truncate text-[11px] font-medium text-gray-500">
             {selectedVoucher
               ? `${getVoucherBenefitLabel(selectedVoucher)} · ${getVoucherExpiryLabel(selectedVoucher)}`
-              : vouchers.length > 0 ? `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'} available` : 'No available rewards'}
+              : vouchers.length > 0 ? t('booking.vouchersAvailable', { count: vouchers.length }) : t('booking.noRewards')}
           </span>
         </span>
         {selectedVoucher && (
           <span className="hidden rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 sm:inline-flex">
-            Applied
+            {t('booking.applied')}
           </span>
         )}
         <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold' : 'group-hover:text-gray-600'}`} />
@@ -629,10 +631,10 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
         <div role="listbox" className="time-scrollbar absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_24px_60px_rgba(31,41,55,0.18)]">
           <div className="flex items-center justify-between px-2 pb-2 pt-1">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Choose a reward</p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-500">One voucher per booking</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">{t('booking.chooseReward')}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-500">{t('booking.oneVoucher')}</p>
             </div>
-            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{vouchers.length} available</span>
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{t('booking.availableCount', { count: vouchers.length })}</span>
           </div>
 
           <button
@@ -643,7 +645,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
             className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition duration-150 active:scale-[0.99] ${!value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
           >
             <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${!value ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-500'}`}><Ticket size={15} /></span>
-            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">No voucher</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>Continue without a reward</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">{t('booking.noVoucher')}</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>{t('booking.continueWithoutReward')}</span></span>
             {!value && <Check size={16} className="shrink-0 text-gold" strokeWidth={3} />}
           </button>
 
@@ -665,7 +667,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
               >
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}><Ticket size={17} strokeWidth={2.2} /></span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || t('booking.voucher')}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">{t('booking.selected')}</span>}</span>
                   <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher)}</span>
                   <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher)}</span>
                 </span>
@@ -675,7 +677,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
           })}
 
           {vouchers.length === 0 && (
-            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Rewards are issued automatically after eligible spending or sent by VALO.</p></div>
+            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">{t('booking.noVouchers')}</p><p className="mt-1 text-xs text-gray-400">{t('booking.rewardsAutoIssued')}</p></div>
           )}
         </div>
       )}
@@ -684,6 +686,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
 };
 
 export default function CreateBookingPage() {
+  const { t } = useLanguage();
   const [bookingMode, setBookingMode] = useState('manual');
   const location = useLocation();
   const requestedServiceId = useMemo(
@@ -1725,13 +1728,13 @@ export default function CreateBookingPage() {
       <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-4">
           <div>
-            <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">Book Parking</h1>
-            <p className="text-gray-500 font-medium mt-1">Reserve your spot and check live availability.</p>
+            <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">{t('booking.title')}</h1>
+            <p className="text-gray-500 font-medium mt-1">{t('booking.description')}</p>
           </div>
           <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
             <div>
               <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-0.5">
-                <Wallet size={12} /> Wallet Balance
+                <Wallet size={12} /> {t('booking.walletBalance')}
               </div>
               <div className="text-xl font-black text-gray-900">
                 {wallet ? formatMoney(wallet.balance) : '0 VND'}
@@ -1747,9 +1750,9 @@ export default function CreateBookingPage() {
           </div>
         </div>
 
-        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
-          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Tự chọn chỗ</button>
-          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Trợ lý đỗ xe AI</button>
+        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label={t('booking.bookingMode')}>
+          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{t('booking.manualMode')}</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{t('booking.aiMode')}</button>
         </div>
 
         {(error || success) && (
@@ -1775,11 +1778,11 @@ export default function CreateBookingPage() {
         /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
-              <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
+              <h2 className="text-lg font-black mb-3 text-gray-900">{t('booking.details')}</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
                 <div className="block">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">Start time</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">{t('booking.startTime')}</span>
                   <div className="flex gap-2 h-11">
                     <CustomDatePicker
                       value={startDate}
@@ -1795,7 +1798,7 @@ export default function CreateBookingPage() {
                   </div>
                 </div>
                 <div className="block">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">End time</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">{t('booking.endTime')}</span>
                   <div className="flex gap-2 h-11">
                     <CustomDatePicker
                       value={endDate}
@@ -1835,7 +1838,7 @@ export default function CreateBookingPage() {
               </div>
 
               <div className="mt-4">
-                <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Vehicle</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">{t('booking.vehicle')}</span>
                 {vehicles.length > 0 ? (
                   <CustomVehiclePicker
                     value={vehicleId}
@@ -1846,7 +1849,7 @@ export default function CreateBookingPage() {
                   <input
                     value={manualPlate}
                     onChange={handleManualPlateChange}
-                    placeholder="License plate"
+                    placeholder={t('booking.licensePlate')}
                     className="mt-1 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
@@ -1855,7 +1858,7 @@ export default function CreateBookingPage() {
                   <input
                     value={manualPlate}
                     onChange={handleManualPlateChange}
-                    placeholder="License plate"
+                    placeholder={t('booking.licensePlate')}
                     className="mt-2 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
@@ -1875,13 +1878,13 @@ export default function CreateBookingPage() {
 
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Extra services</span>
+                <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">{t('booking.extraServices')}</span>
                   <span className="text-xs font-black text-gray-900">{formatMoney(serviceTotal)}</span>
                 </div>
                 <div className="space-y-1.5 max-h-32 overflow-auto pr-1 time-scrollbar">
                   {services.length === 0 ? (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-400 font-medium">
-                      No active services.
+                      {t('booking.noActiveServices')}
                     </div>
                   ) : (
                     services.map((service) => (
@@ -1924,8 +1927,8 @@ export default function CreateBookingPage() {
 
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Voucher</span>
-                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? 'Applied' : 'Minimum not met'}</span>}
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('booking.voucher')}</span>
+                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? t('booking.applied') : t('booking.minimumNotMet')}</span>}
                 </div>
                 <CustomVoucherPicker
                   value={selectedVoucherId}
@@ -1943,17 +1946,17 @@ export default function CreateBookingPage() {
 
               <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2 shadow-inner">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> Duration</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> {t('booking.duration')}</span>
                   <span className="text-right font-bold text-gray-900">
                     {pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)
                     {pricePreview.durationMinutes > 0 && pricePreview.durationMinutes < 60 && (
-                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">Discounts apply from 60 minutes</span>
+                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">{t('booking.discountFrom60')}</span>
                     )}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> Parking</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> {t('booking.parking')}</span>
                   <span className="font-bold text-gray-900 text-right">
                     {formatMoney(parkingTotal)}
                     {pricePreview.capApplied && (
@@ -1962,16 +1965,16 @@ export default function CreateBookingPage() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Sparkles size={15} /> Services</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Sparkles size={15} /> {t('booking.services')}</span>
                   <span className="font-bold text-gray-900">{formatMoney(serviceTotal)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Wallet size={15} /> Wallet balance</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Wallet size={15} /> {t('booking.walletBalance')}</span>
                   <span className={`font-bold ${hasEnoughWallet ? 'text-emerald-600' : 'text-rose-600'}`}>{formatMoney(walletBalance)}</span>
                 </div>
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
                   <span className="flex items-center gap-2 font-black text-gray-900">
-                    Wallet charge
+                    {t('booking.walletCharge')}
                     {pricePreview.appliedPolicies?.length > 0 && (
                       <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">
                         {pricePreview.appliedPolicies.map((policy) => policy.name).join(', ')}
@@ -2000,15 +2003,15 @@ export default function CreateBookingPage() {
                 className="w-full rounded-2xl bg-gradient-to-r from-gold to-yellow-500 hover:from-yellow-500 hover:to-gold disabled:opacity-50 text-black px-4 py-4 font-black transition flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(212,175,55,0.4)] hover:shadow-[0_8px_25px_rgba(212,175,55,0.5)] active:scale-[0.98]"
               >
                 <Plus size={18} />
-                {editingClientItemId ? 'Update Booking Item' : 'Add to Booking List'}
+                {editingClientItemId ? t('booking.updateItem') : t('booking.addToList')}
               </button>
             </div>
 
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <h2 className="text-lg font-black text-gray-900">Booking List</h2>
-                  <p className="text-xs text-gray-500 font-medium">Checkout one or many vehicles together.</p>
+                  <h2 className="text-lg font-black text-gray-900">{t('booking.bookingList')}</h2>
+                  <p className="text-xs text-gray-500 font-medium">{t('booking.checkoutMany')}</p>
                 </div>
                 <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-black text-gray-700">
                   {cartItems.length}/5
@@ -2017,7 +2020,7 @@ export default function CreateBookingPage() {
 
               {cartItems.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
-                  <p className="text-sm font-bold text-gray-500">No vehicles added yet.</p>
+                  <p className="text-sm font-bold text-gray-500">{t('booking.noVehiclesAdded')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2132,9 +2135,9 @@ export default function CreateBookingPage() {
           <section className="xl:col-span-8 rounded-3xl bg-white border border-gray-200 p-3 shadow-sm flex flex-col h-[500px] xl:h-[calc(100vh-140px)]">
             <div className="flex items-center justify-between gap-4 mb-3 px-2 pt-2">
               <div>
-                <h2 className="text-lg font-black text-gray-900">Available Slots Map</h2>
+                <h2 className="text-lg font-black text-gray-900">{t('booking.availableSlots')}</h2>
                 <p className="text-sm font-medium text-gray-500">
-                  Select an available slot on the map. Occupied slots are shown live in red.
+                  {t('booking.availableSlotsHint')}
                 </p>
               </div>
               <div className="text-sm text-emerald-600 font-bold px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">{slots.length} slot(s) available</div>
@@ -2164,7 +2167,7 @@ export default function CreateBookingPage() {
               {checkingSlots && (
                 <div className="absolute inset-0 z-20 bg-[#0b0e16]/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-8">
                   <Loader2 size={40} className="text-cyan-400 animate-spin mb-4" />
-                  <p className="font-black text-white">Finding available slots...</p>
+                  <p className="font-black text-white">{t('booking.findingSlots')}</p>
                 </div>
               )}
 
@@ -2173,8 +2176,8 @@ export default function CreateBookingPage() {
                   <div className="w-16 h-16 bg-[#181c23] shadow-xl shadow-black/50 border border-white/10 rounded-full flex items-center justify-center mb-4">
                     <MapPin className="w-8 h-8 text-cyan-500" />
                   </div>
-                  <p className="font-black text-white text-xl">Select a valid time range</p>
-                  <p className="text-sm font-medium text-gray-400 mt-2 max-w-xs mx-auto">Please adjust your start and end time to view available parking spaces.</p>
+                  <p className="font-black text-white text-xl">{t('booking.validTime')}</p>
+                  <p className="text-sm font-medium text-gray-400 mt-2 max-w-xs mx-auto">{t('booking.validTimeHint')}</p>
                 </div>
               )}
 
@@ -2201,30 +2204,30 @@ export default function CreateBookingPage() {
               {!checkingSlots && slots.length > 0 && (
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center z-30 pointer-events-none px-4">
                   <div className="bg-[#181c23]/80 backdrop-blur border border-white/10 px-5 py-2.5 rounded-full flex items-center gap-4 shadow-lg pointer-events-auto">
-                    <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">Status Legend</p>
+                    <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">{t('booking.statusLegend')}</p>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-white border border-gray-300"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Available</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.available')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-rose-200 border border-rose-600"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Occupied</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.occupied')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-cyan-500 border border-cyan-400"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Selected</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.selected')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-yellow-100 border border-yellow-500"></div>
-                      <span className="text-[10px] text-yellow-500 font-bold tracking-wide">VIP Pass</span>
+                      <span className="text-[10px] text-yellow-500 font-bold tracking-wide">{t('booking.vipPass')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-red-200 border border-red-500" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 4px, rgba(127, 29, 29, 0.3) 4px, rgba(127, 29, 29, 0.3) 8px)' }}></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Maintenance</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.maintenance')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-orange-100 border border-orange-500"></div>
-                      <span className="text-[10px] text-orange-500 font-bold tracking-wide">Hold/Booked</span>
+                      <span className="text-[10px] text-orange-500 font-bold tracking-wide">{t('booking.holdBooked')}</span>
                     </div>
                   </div>
                 </div>
@@ -2240,7 +2243,7 @@ export default function CreateBookingPage() {
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
               <Wallet size={22} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900">Confirm booking payment</h2>
+            <h2 className="text-2xl font-black text-gray-900">{t('booking.confirmPayment')}</h2>
             <p className="mt-2 text-sm font-medium text-gray-500">
               Review the final amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
             </p>
@@ -2256,8 +2259,8 @@ export default function CreateBookingPage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">Confirm & pay</button>
+              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">{t('booking.cancel')}</button>
+              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">{t('booking.confirmPay')}</button>
             </div>
           </div>
         </div>
@@ -2277,7 +2280,7 @@ export default function CreateBookingPage() {
             <div className="relative inline-flex items-center rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-600 mb-3">
               Sweet Success
             </div>
-            <h2 className="text-[32px] leading-none font-black text-gray-900 mb-2">Booking Confirmed</h2>
+            <h2 className="text-[32px] leading-none font-black text-gray-900 mb-2">{t('booking.bookingConfirmed')}</h2>
             <p className="text-gray-500 font-medium text-sm mb-5 max-w-[260px]">
               Everything is ready. Each vehicle has its own QR for check-in.
             </p>
@@ -2347,7 +2350,7 @@ export default function CreateBookingPage() {
             <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 mb-4 shadow-sm">
               <AlertCircle size={32} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 mb-1">Insufficient Balance</h2>
+            <h2 className="text-2xl font-black text-gray-900 mb-1">{t('booking.insufficientBalance')}</h2>
             <p className="text-gray-500 font-medium text-sm mb-6">
               You need to top up <span className="font-bold text-gray-900">{formatMoney(topUpData.amount)}</span> to complete this checkout.
             </p>

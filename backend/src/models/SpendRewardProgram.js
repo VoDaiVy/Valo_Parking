@@ -3,7 +3,9 @@ const mongoose = require('mongoose');
 const money = { type: Number, required: true, min: 1000, max: 1000000000, validate: Number.isSafeInteger };
 const tierSchema = new mongoose.Schema({
   threshold: money,
-  discountAmount: money,
+  rewardType: { type: String, enum: ['FIXED_DISCOUNT', 'PERCENT_DISCOUNT'], default: 'FIXED_DISCOUNT' },
+  discountAmount: { ...money, required: function () { return this.rewardType !== 'PERCENT_DISCOUNT'; } },
+  discountPercent: { type: Number, min: 1, max: 100, validate: Number.isInteger, required: function () { return this.rewardType === 'PERCENT_DISCOUNT'; } },
   minimumAmount: money,
 }, { _id: false });
 

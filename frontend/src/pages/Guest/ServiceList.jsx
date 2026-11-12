@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Sparkles, Clock, CheckCircle, Star, CircleDollarSign, CalendarDays, ChevronRight } from 'lucide-react';
 import { getServices } from '../../services/extraServiceApi';
 import { buildBookingUrl } from '../../utils/bookingNavigation';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 /* ── Custom Animations ────────────────────────────────────── */
 const customStyles = `
@@ -63,13 +64,13 @@ const customStyles = `
 const formatMoney = (value = 0) =>
   `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 
-const formatServiceTime = (timeCost) => {
+const formatServiceTime = (timeCost, t) => {
   const minutes = Number(timeCost);
-  if (!Number.isFinite(minutes) || minutes < 1) return '30 min';
-  if (minutes < 60) return `${minutes} min`;
+  if (!Number.isFinite(minutes) || minutes < 1) return t('servicesPage.minutes', { value: 30 });
+  if (minutes < 60) return t('servicesPage.minutes', { value: minutes });
   const hours = Math.floor(minutes / 60);
   const rem = minutes % 60;
-  return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
+  return rem > 0 ? t('servicesPage.hoursMinutes', { hours, minutes: rem }) : t('servicesPage.hours', { value: hours });
 };
 
 /* ── Sub-components ───────────────────────────────────────── */
@@ -156,6 +157,7 @@ const ServiceNavCard = ({ service, isActive, onClick, style }) => (
 
 /* ── Main Page ────────────────────────────────────────────── */
 const ServiceList = () => {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [services, setServices] = useState([]);
@@ -217,7 +219,7 @@ const ServiceList = () => {
             style={{ borderColor: '#D4AF37', borderTopColor: 'transparent' }}
           />
           <p className="text-xs font-bold tracking-widest uppercase" style={{ color: '#D4AF37' }}>
-            Loading Services...
+            {t('servicesPage.loading')}
           </p>
         </div>
       </div>
@@ -241,7 +243,7 @@ const ServiceList = () => {
           >
             <span className="text-xl font-bold text-red-400">!</span>
           </div>
-          <p className="font-bold text-lg text-white mb-2">Something went wrong</p>
+          <p className="font-bold text-lg text-white mb-2">{t('servicesPage.errorTitle')}</p>
           <p className="text-gray-400 text-sm">{error}</p>
         </div>
       </div>
@@ -290,7 +292,7 @@ const ServiceList = () => {
             }}
           >
             <Sparkles size={11} />
-            Premium Add-Ons
+            {t('servicesPage.premiumAddons')}
           </div>
 
           {/* Heading */}
@@ -298,15 +300,12 @@ const ServiceList = () => {
             className="text-2xl md:text-3xl font-extrabold text-white mb-3 leading-tight"
             style={{ fontFamily: 'Montserrat, sans-serif' }}
           >
-            Elevate Your{' '}
-            <span className="text-gold-gradient">Parking Experience</span>
+            {t('servicesPage.heroTitle')}
           </h1>
 
           {/* Subtext */}
           <p className="text-[13px] md:text-[14px] text-gray-400 leading-relaxed max-w-xl mx-auto">
-            Choose from our exclusive range of extra services. From a sparkling
-            car wash to dedicated valet, we ensure your vehicle gets the best
-            treatment while you're away.
+            {t('servicesPage.heroDescription')}
           </p>
         </div>
 
@@ -321,7 +320,7 @@ const ServiceList = () => {
             >
               <Star size={18} className="text-gray-500" />
               <p className="text-gray-400 font-medium text-sm">
-                No premium services available at the moment. Please check back later.
+                {t('servicesPage.noServices')}
               </p>
             </div>
           </div>
@@ -403,9 +402,9 @@ const ServiceList = () => {
                         {/* Trust badges */}
                         <div className="flex flex-wrap gap-4 mt-auto">
                           {[
-                            'Quality Guaranteed',
-                            'Professional Staff',
-                            'Secure Payment',
+                            t('servicesPage.quality'),
+                            t('servicesPage.professional'),
+                            t('servicesPage.secure'),
                           ].map((label) => (
                             <div
                               key={label}
@@ -454,7 +453,7 @@ const ServiceList = () => {
                                 className="text-sm font-medium"
                                 style={{ color: 'rgba(180,180,180,0.8)' }}
                               >
-                                {formatServiceTime(selectedService.timeCost)}
+                                {formatServiceTime(selectedService.timeCost, t)}
                               </span>
                             </div>
                           </div>
@@ -482,7 +481,7 @@ const ServiceList = () => {
                   className="text-[10px] font-bold tracking-widest uppercase mb-3 px-1"
                   style={{ color: 'rgba(212,175,55,0.5)' }}
                 >
-                  All Services
+                  {t('servicesPage.allServices')}
                 </p>
 
                 {/* Scrollable on mobile when many services */}
@@ -516,6 +515,7 @@ const ServiceList = () => {
 
 /* ── Add to Booking Button ────────────────────────────────── */
 const AddToBookingButton = ({ onClick }) => {
+  const { t } = useLanguage();
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
 
@@ -552,7 +552,7 @@ const AddToBookingButton = ({ onClick }) => {
       />
       <span className="relative z-10 flex items-center gap-2">
         <CalendarDays size={16} />
-        Add to Booking
+        {t('servicesPage.addToBooking')}
       </span>
     </button>
   );

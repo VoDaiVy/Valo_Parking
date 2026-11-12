@@ -20,6 +20,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 import {
   createTopUpUrl,
   getTopUpStatus,
@@ -82,15 +83,21 @@ const statusLabel = (status = "") => {
   return normalized || "Unknown";
 };
 
-const transactionTitle = (transaction) => {
-  if (transaction?.description) return transaction.description;
-  if (transaction?.type === "TOP_UP") return "VALO wallet top-up";
-  if (transaction?.type === "REFUND") return "Wallet refund";
-  if (transaction?.type === "TRANSFER_IN") return "Membership transfer proceeds";
-  if (transaction?.type === "TRANSFER_OUT") return "Membership transfer payment";
-  if (transaction?.type === "TRANSFER_FEE") return "Membership transfer processing fee";
-  if (transaction?.refSource === "parking") return "Parking payment";
-  return "Wallet payment";
+const localizedTransactionTitle = (transaction, t) => {
+  const description = String(transaction?.description || "").toLowerCase();
+  if (description.includes("payment for") || description.includes("parking payment")) {
+    return t('walletPage.parkingPayment');
+  }
+  if (description.includes("settle kiosk") || description.includes("refund")) {
+    return t('walletPage.walletRefund');
+  }
+  if (transaction?.type === "TOP_UP") return t('walletPage.walletTopUp');
+  if (transaction?.type === "REFUND") return t('walletPage.walletRefund');
+  if (transaction?.type === "TRANSFER_IN") return t('walletPage.transferProceeds');
+  if (transaction?.type === "TRANSFER_OUT") return t('walletPage.transferPayment');
+  if (transaction?.type === "TRANSFER_FEE") return t('walletPage.transferFee');
+  if (transaction?.refSource === "parking") return t('walletPage.parkingPayment');
+  return t('walletPage.walletPayment');
 };
 
 const transactionIcon = (transaction, className = "") => {
@@ -433,6 +440,7 @@ export default function WalletPage() {
 }
 
 function BookingInsightsPanel({ data, loading, error, range, onRangeChange }) {
+  const { t } = useLanguage();
   const operational = data?.operational || {};
   const money = data?.money || {};
 
@@ -447,21 +455,20 @@ function BookingInsightsPanel({ data, loading, error, range, onRangeChange }) {
             </div>
             <InsightRangeDropdown value={range} onChange={onRangeChange} />
           </div>
-          <h2 className="mt-6 text-xl font-black tracking-tight">Your parking story</h2>
+          <h2 className="mt-6 text-xl font-black tracking-tight">{t('walletPage.parkingStory')}</h2>
           <p className="mt-2 max-w-sm text-sm leading-6 text-[#AFC2D8]">
-            Booking activity and wallet cash flow are separated so every number has a clear source.
+            {t('walletPage.parkingStoryDescription')}
           </p>
           {money.financialCoverage === "partial" && (
             <p className="mt-5 rounded-xl border border-yellow-500/10 bg-yellow-500/5 px-3 py-2 text-xs leading-5 text-yellow-100/70">
-              PayOS history is estimated from booking records. Wallet charges and refunds include
-              transactions with a verified booking reference.
+              {t('walletPage.payosEstimate')}
             </p>
           )}
         </div>
 
         <div className="p-5 sm:p-6">
           {loading ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading booking insights">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('walletPage.loadingInsights')}>
               {[0, 1, 2, 3].map((item) => (
                 <div key={item} className="h-24 animate-pulse rounded-2xl bg-white/[0.04]" />
               ))}
@@ -474,25 +481,25 @@ function BookingInsightsPanel({ data, loading, error, range, onRangeChange }) {
           ) : (
             <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
               <InsightMetric
-                label="Bookings"
+                label={t('walletPage.bookings')}
                 value={operational.totalBookings || 0}
-                note={`${operational.completedBookings || 0} completed`}
+                note={`${operational.completedBookings || 0} ${t('walletPage.completed')}`}
               />
               <InsightMetric
-                label="Wallet charges"
+                label={t('walletPage.walletCharges')}
                 value={formatMoney(money.walletBookingCharges)}
-                note="Booking sources only"
+                note={t('walletPage.bookingSourcesOnly')}
               />
               <InsightMetric
-                label="Refunded"
+                label={t('walletPage.refunded')}
                 value={formatMoney(money.walletBookingRefunds)}
-                note={`${money.walletRefundCount || 0} refund events`}
+                note={`${money.walletRefundCount || 0} ${t('walletPage.refundEvents')}`}
                 tone="positive"
               />
               <InsightMetric
-                label="Net wallet spend"
+                label={t('walletPage.netWalletSpend')}
                 value={formatMoney(money.walletNetBookingSpend)}
-                note={`${operational.scheduledHours || 0} scheduled hours`}
+                note={`${operational.scheduledHours || 0} ${t('walletPage.scheduledHours')}`}
               />
             </div>
           )}
@@ -503,6 +510,7 @@ function BookingInsightsPanel({ data, loading, error, range, onRangeChange }) {
 }
 
 function InsightRangeDropdown({ value, onChange }) {
+  const { t } = useLanguage();
   const selected =
     INSIGHT_RANGE_OPTIONS.find((option) => option.value === value) ||
     INSIGHT_RANGE_OPTIONS[1];
@@ -512,10 +520,10 @@ function InsightRangeDropdown({ value, onChange }) {
       {({ open }) => (
         <>
           <Menu.Button
-            aria-label="Booking insight period"
+            aria-label={t('walletPage.insightPeriod')}
             className="flex h-11 min-w-[148px] items-center justify-between gap-3 rounded-xl border border-yellow-500/40 bg-[#0B0B0B] px-4 text-sm font-bold text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)] outline-none transition hover:border-yellow-400/70 hover:bg-[#111111] focus-visible:border-yellow-400 focus-visible:ring-2 focus-visible:ring-yellow-400/20"
           >
-            <span>{selected.label}</span>
+            <span>{t(`walletPage.ranges.${selected.value}`)}</span>
             <ChevronDown
               aria-hidden="true"
               className={`h-4 w-4 text-yellow-300 transition-transform duration-200 ${
@@ -554,7 +562,7 @@ function InsightRangeDropdown({ value, onChange }) {
                         <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                           {isSelected && <Check aria-hidden="true" className="h-4 w-4" />}
                         </span>
-                        <span>{option.label}</span>
+                        <span>{t(`walletPage.ranges.${option.value}`)}</span>
                       </button>
                     );
                   }}
@@ -585,6 +593,7 @@ function InsightMetric({ label, value, note, tone = "default" }) {
 }
 
 function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
+  const { t } = useLanguage();
   const balance = wallet?.balance || 0;
   const overdraftLimit = wallet?.overdraftLimit ?? -100000;
   const overdraftUsed = Math.max(0, Math.abs(Math.min(balance, 0)));
@@ -598,14 +607,14 @@ function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/45">
-              Total Balance
+              {t('walletPage.totalBalance')}
             </p>
             <div className="mt-3 text-5xl font-black tracking-tight text-[#DCA11D] sm:text-6xl">
               {loading ? "..." : formatMoney(balance)}
             </div>
             <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/70">
               <TrendingUp className="h-4 w-4 text-[#DCA11D]" />
-              {formatMoney(wallet?.monthlyTopUp)} top-up this month
+              {formatMoney(wallet?.monthlyTopUp)} {t('walletPage.topUpThisMonth')}
             </p>
           </div>
 
@@ -614,7 +623,7 @@ function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
               type="button"
               onClick={onRefresh}
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/20 text-white/60 transition hover:border-yellow-500/30 hover:text-yellow-300"
-              title="Refresh wallet"
+              title={t('walletPage.refresh')}
             >
               <RefreshCw
                 className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
@@ -637,9 +646,9 @@ function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
                 <Plus className="h-5 w-5" />
               </span>
               <span>
-                <span className="block text-lg font-black">Top Up Wallet</span>
+                <span className="block text-lg font-black">{t('walletPage.topUp')}</span>
                 <span className="text-xs font-medium text-white/45">
-                  payOS QR, banking app, e-wallet
+                  {t('walletPage.topUpMethods')}
                 </span>
               </span>
             </span>
@@ -648,16 +657,16 @@ function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
 
           <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/5 px-4 py-3">
             <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400/60">
-              <Sparkles className="h-3 w-3" /> Refunds
+              <Sparkles className="h-3 w-3" /> {t('walletPage.refunds')}
             </p>
             <p className="mt-1 text-sm font-bold text-emerald-300">
-              {formatMoney(wallet?.monthlyRefunded)} <span className="text-[10px] font-medium text-emerald-400/40 normal-case tracking-normal">this month</span>
+              {formatMoney(wallet?.monthlyRefunded)} <span className="text-[10px] font-medium text-emerald-400/40 normal-case tracking-normal">{t('walletPage.thisMonth')}</span>
             </p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/40">
-              Overdraft
+              {t('walletPage.overdraft')}
             </p>
             <p className="mt-1 text-sm font-bold text-white">
               {formatMoney(overdraftUsed)} / {formatMoney(Math.abs(overdraftLimit))}
@@ -670,15 +679,16 @@ function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
 }
 
 function TransactionsPanel({ transactions, loading, showAll, onToggle }) {
+  const { t } = useLanguage();
   return (
     <div className="rounded-[24px] border border-white/5 bg-[#1A1A1A] p-5 shadow-sm sm:p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-black tracking-tight">
-            Recent Transactions
+            {t('walletPage.recentTransactions')}
           </h2>
           <p className="mt-1 text-sm text-[#AFC2D8]">
-            {showAll ? "All synced wallet activity" : "Latest wallet activity"}
+            {showAll ? t('walletPage.allActivity') : t('walletPage.latestActivity')}
           </p>
         </div>
         <button
@@ -686,7 +696,7 @@ function TransactionsPanel({ transactions, loading, showAll, onToggle }) {
           onClick={onToggle}
           className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-semibold text-[#AFC2D8] transition hover:bg-white/5 hover:text-white"
         >
-          {showAll ? "View less" : "View all"}
+          {showAll ? t('walletPage.viewLess') : t('walletPage.viewAll')}
           <ChevronRight
             className={`h-4 w-4 transition ${showAll ? "rotate-180" : ""}`}
           />
@@ -695,16 +705,16 @@ function TransactionsPanel({ transactions, loading, showAll, onToggle }) {
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-white/5">
         <div className="hidden grid-cols-[1.1fr_2fr_1fr_1fr] border-b border-white/5 bg-white/[0.02] px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-[#AFC2D8] md:grid">
-          <span>Time</span>
-          <span>Description</span>
-          <span className="text-right">Amount</span>
-          <span className="text-right">Status</span>
+          <span>{t('walletPage.time')}</span>
+          <span>{t('walletPage.description')}</span>
+          <span className="text-right">{t('walletPage.amount')}</span>
+          <span className="text-right">{t('walletPage.status')}</span>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center gap-3 py-14 text-sm font-semibold text-gray-400">
             <Loader2 className="h-5 w-5 animate-spin" />
-            Loading transactions
+            {t('walletPage.loadingTransactions')}
           </div>
         ) : transactions.length ? (
           <div className="divide-y divide-white/5">
@@ -717,7 +727,7 @@ function TransactionsPanel({ transactions, loading, showAll, onToggle }) {
           </div>
         ) : (
           <div className="py-14 text-center text-sm font-medium text-gray-500">
-            No transactions yet
+            {t('walletPage.noTransactions')}
           </div>
         )}
       </div>
@@ -726,6 +736,7 @@ function TransactionsPanel({ transactions, loading, showAll, onToggle }) {
 }
 
 function TransactionRow({ transaction }) {
+  const { t } = useLanguage();
   const credit = isCredit(transaction);
 
   return (
@@ -746,10 +757,10 @@ function TransactionRow({ transaction }) {
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-white">
-            {transactionTitle(transaction)}
+            {localizedTransactionTitle(transaction, t)}
           </p>
           <p className="mt-0.5 text-xs font-medium text-gray-500">
-            Balance: {formatMoney(transaction.balanceAfter)}
+            {t('walletPage.balanceAfter')}: {formatMoney(transaction.balanceAfter)}
           </p>
         </div>
       </div>
@@ -769,7 +780,7 @@ function TransactionRow({ transaction }) {
             transaction.status,
           )}`}
         >
-          {statusLabel(transaction.status)}
+          {t(`walletPage.statuses.${String(transaction.status || '').toLowerCase()}`, { defaultValue: statusLabel(transaction.status) })}
         </span>
       </div>
     </div>
@@ -777,13 +788,14 @@ function TransactionRow({ transaction }) {
 }
 
 function AnalyticsPanel({ wallet, weeklyBars }) {
+  const { t } = useLanguage();
   return (
     <div className="rounded-[24px] border border-white/5 bg-[#1A1A1A] p-5 shadow-sm sm:p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-black tracking-tight">Wallet Analytics</h2>
+          <h2 className="text-lg font-black tracking-tight">{t('walletPage.analytics')}</h2>
           <p className="mt-1 text-sm text-[#AFC2D8]">
-            Synced from completed transactions
+            {t('walletPage.syncedCompleted')}
           </p>
         </div>
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-yellow-500/10 text-yellow-300">
@@ -795,7 +807,7 @@ function AnalyticsPanel({ wallet, weeklyBars }) {
         <p className="text-3xl font-black tracking-tight">
           {formatMoney(wallet?.monthlyTopUp)}
         </p>
-        <p className="text-sm font-semibold text-[#AFC2D8]">top-up this month</p>
+        <p className="text-sm font-semibold text-[#AFC2D8]">{t('walletPage.topUpThisMonth')}</p>
       </div>
 
       <div className="mt-7 flex h-48 items-end justify-between gap-2">
@@ -854,6 +866,7 @@ function VerificationOverlay() {
 }
 
 function TopUpModal({ wallet, onClose, onStartPolling, onPolicyRequired }) {
+  const { t } = useLanguage();
   const [amount, setAmount] = useState(String(MIN_TOP_UP));
   const [loading, setLoading] = useState(false);
   const numericAmount = Number(amount || 0);
@@ -911,7 +924,7 @@ function TopUpModal({ wallet, onClose, onStartPolling, onPolicyRequired }) {
             </div>
             <div>
               <h2 className="text-xl font-black tracking-tight">
-                Top Up Wallet
+                {t('walletPage.topUp')}
               </h2>
               <p className="mt-1 text-sm font-medium text-gray-400">
                 Add funds through payOS QR checkout

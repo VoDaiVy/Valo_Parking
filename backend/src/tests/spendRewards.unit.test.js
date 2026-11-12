@@ -38,6 +38,15 @@ test('program rejects invalid money, duplicate tiers, over-discounts and malform
   assert.throws(() => validateProgram(input));
   assert.equal(validateProgram(config()).tiers.length, 2);
 });
+test('program accepts percentage milestones and validates their range', () => {
+  const input = { enabled: true, revision: 0, tiers: [{ threshold: 700000, rewardType: 'PERCENT_DISCOUNT', discountPercent: 20, minimumAmount: 50000 }] };
+  const normalized = validateProgram(input);
+  assert.deepEqual(normalized.tiers[0], { threshold: 700000, rewardType: 'PERCENT_DISCOUNT', discountPercent: 20, discountAmount: 0, minimumAmount: 50000 });
+  for (const value of [0, 101, 1.5, '20', null]) {
+    assert.throws(() => validateProgram({ ...input, tiers: [{ ...input.tiers[0], discountPercent: value }] }));
+  }
+  assert.throws(() => validateProgram({ ...input, tiers: [{ ...input.tiers[0], rewardType: 'UNKNOWN' }] }));
+});
 test('settled spending includes actual extras, subtracts actual refunds, excludes cancelled bookings', () => {
   const booking = { status: 'COMPLETED', prepaidAmount: 300000, paidOverageAdjustments: [{ amount: 10000 }], refundSettlements: [{ payoutStatus: 'credited', netWalletAmount: 50000 }, { payoutStatus: 'suppressed', netWalletAmount: 500 }] };
   assert.equal(bookingSpend(booking), 260000);

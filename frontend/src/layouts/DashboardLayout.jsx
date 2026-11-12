@@ -11,6 +11,8 @@ import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
 import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
+import LanguageSwitch from "../i18n/components/LanguageSwitch";
+import { useLanguage } from "../i18n/hooks/useLanguage";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
 import {
   LayoutDashboard,
@@ -204,6 +206,7 @@ const getInitials = (name = "") =>
     .toUpperCase();
 
 export default function DashboardLayout() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [user, setUser] = useState(() =>
     JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
@@ -230,7 +233,38 @@ export default function DashboardLayout() {
 
   const role = user?.role;
   const densityClass = getDashboardDensityClass(role);
-  const navItems = NAV_CONFIG[role] || [];
+  const navLabelKeys = {
+    Overview: "nav.overview",
+    "Parking Lots": "nav.parkingLots",
+    "Account Management": "nav.accountManagement",
+    "Session Management": "nav.sessionManagement",
+    Pricing: "nav.pricing",
+    "Ticket Packages": "nav.ticketPackages",
+    Subscriptions: "nav.subscriptions",
+    Services: "nav.services",
+    Policies: "nav.policies",
+    "Vehicles & 3D": "nav.vehicles",
+    "Revenue Analytics": "nav.revenue",
+    Vouchers: "nav.vouchers",
+    "Customer Management": "nav.customerManagement",
+    "Live Grid Monitor": "nav.liveGridMonitor",
+    "Gate Control": "nav.gateControl",
+    "Booking Management": "nav.bookingManagement",
+    "Notification Management": "nav.notificationManagement",
+    Home: "nav.home",
+    Profile: "nav.profile",
+    Membership: "nav.membership",
+    "My Vehicles": "nav.vehicles",
+    "My Bookings": "nav.bookings",
+    History: "nav.history",
+    Wallet: "nav.wallet",
+    Rewards: "nav.rewards",
+    Settings: "nav.settings",
+  };
+  const navItems = (NAV_CONFIG[role] || []).map((item) => ({
+    ...item,
+    label: t(navLabelKeys[item.label] || item.label),
+  }));
   const theme = ROLE_THEME[role] || ROLE_THEME.admin;
   const displayName = user
     ? [user.profile?.firstName, user.profile?.lastName]
@@ -440,9 +474,11 @@ export default function DashboardLayout() {
             >
               <ShieldCheck size={13} />
               <span className="text-xs font-bold uppercase">
-                {theme.badge.label}
+                {role === "admin" ? t("admin.role") : role === "staff" ? t("staff.role") : t("customer.role")}
               </span>
             </div>
+
+            <LanguageSwitch size="sm" />
 
             {/* Report Issue (Staff only) */}
             {role === 'staff' && (

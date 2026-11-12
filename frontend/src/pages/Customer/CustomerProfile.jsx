@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 import { QRCodeSVG } from "qrcode.react";
 import Logo from "../../assets/images/logo.png";
 import { apiFetch, API_BASE } from "../../services/api";
@@ -209,6 +210,7 @@ function GoldUnderlineField({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CustomerProfile() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const avatarInputRef = useRef(null);
   const spotlightRef = useRef(null);
@@ -986,8 +988,8 @@ export default function CustomerProfile() {
                   <Crown size={28} className="text-black" />
                 </div>
                 <div>
-                  <h4 className="text-yellow-400 font-black tracking-widest text-xl mb-1" style={{ textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}>VIP PASS</h4>
-                  <p className="text-[11px] text-yellow-500/70 font-semibold uppercase tracking-widest">Active Fixed Slots</p>
+                  <h4 className="text-yellow-400 font-black tracking-widest text-xl mb-1" style={{ textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}>{t('profilePage.vipPass')}</h4>
+                  <p className="text-[11px] text-yellow-500/70 font-semibold uppercase tracking-widest">{t('profilePage.activeFixedSlots')}</p>
                 </div>
               </div>
 
@@ -1013,7 +1015,7 @@ export default function CustomerProfile() {
                   className="inline-flex items-center gap-2 text-[11px] bg-yellow-400 text-black px-6 py-2.5 rounded-full font-black hover:bg-yellow-300 transition-all uppercase tracking-wider shadow-[0_0_18px_rgba(234,179,8,0.25)] hover:shadow-[0_0_28px_rgba(234,179,8,0.4)] hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
                 >
                   <QrCode size={15} />
-                  {membershipQrLoading ? "Loading QR..." : membershipQr ? "Show QR" : "QR unavailable"}
+                  {membershipQrLoading ? t('profilePage.loadingQr') : membershipQr ? t('profilePage.showQr') : t('profilePage.qrUnavailable')}
                 </button>
                 {membershipQrError && (
                   <p className="max-w-52 text-center text-[10px] leading-4 text-red-300 md:text-right">
@@ -1025,7 +1027,7 @@ export default function CustomerProfile() {
                     onClick={() => navigate("/customer/membership-transfers")}
                     className="text-[11px] bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 px-6 py-2.5 rounded-full font-bold hover:bg-yellow-500/20 transition-all uppercase tracking-wider shadow-[0_0_15px_rgba(234,179,8,0.15)] hover:shadow-[0_0_25px_rgba(234,179,8,0.3)] hover:-translate-y-0.5"
                   >
-                    Renew Pass
+                    {t('profilePage.renewPass')}
                   </button>
                 )}
               </div>
@@ -1048,11 +1050,12 @@ export default function CustomerProfile() {
                   <Phone size={24} />
                 </div>
                 <div>
-                  <h4 className="text-yellow-400 font-bold text-base mb-1">
+                  <h4 className="text-yellow-400 font-bold text-[0px] mb-1">
+                    <span className="text-base">{t('profilePage.parkingPrompt')}</span>
                     🎁 Have you parked at ValoParking before?
                   </h4>
                   <p className="text-sm text-yellow-500/80 leading-relaxed">
-                    Update your phone number now to see your full parking history!
+                    {t('profilePage.parkingPromptHint')}
                   </p>
                 </div>
               </div>
@@ -1063,7 +1066,7 @@ export default function CustomerProfile() {
             className="text-2xl font-bold mt-1 mb-10"
             style={{ color: "#ffdea8" }}
           >
-            Personal Records
+            {t('profilePage.personalRecords')}
           </h3>
 
           {editMode ? (
@@ -1074,7 +1077,7 @@ export default function CustomerProfile() {
                     className="flex items-center gap-1 mb-1 tracking-[0.2em] text-[10px] font-semibold"
                     style={{ color: "rgba(234,179,8,0.7)" }}
                   >
-                    <User size={10} /> NAME
+                    <User size={10} /> {t('profilePage.name')}
                   </label>
                   <input
                     autoFocus
@@ -1104,7 +1107,7 @@ export default function CustomerProfile() {
                     className="flex items-center gap-1 mb-1 tracking-[0.2em] text-[10px] font-semibold"
                     style={{ color: "rgba(234,179,8,0.7)" }}
                   >
-                    <Phone size={10} /> PHONE
+                    <Phone size={10} /> {t('profilePage.phone')}
                   </label>
                   <input
                     value={formDraft.phone}
@@ -1131,7 +1134,7 @@ export default function CustomerProfile() {
               </div>
               <GoldUnderlineField
                 field="email"
-                label="EMAIL"
+                label={t('profilePage.email')}
                 icon={Mail}
                 value={profile.email}
                 readOnly
@@ -1139,7 +1142,7 @@ export default function CustomerProfile() {
               />
               <GoldUnderlineField
                 field="createdAt"
-                label="MEMBER SINCE"
+                label={t('profilePage.memberSince')}
                 icon={CalendarDays}
                 value={
                   profile.createdAt
@@ -1213,7 +1216,7 @@ export default function CustomerProfile() {
                   (e.currentTarget.style.background = "#EAB308")
                 }
               >
-                Save Changes
+                  {t('profilePage.saveChanges')}
               </button>
             )}
             <button
@@ -1234,7 +1237,7 @@ export default function CustomerProfile() {
                 className="relative z-10 font-semibold tracking-wider text-xs transition-colors duration-300"
                 style={{ color: editMode ? "rgba(239,68,68,0.8)" : "#EAB308" }}
               >
-                {editMode ? "Cancel" : "Edit Profile"}
+                {editMode ? t('profilePage.cancel') : t('profilePage.editProfile')}
               </span>
               <div
                 className="absolute inset-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"
@@ -1249,7 +1252,7 @@ export default function CustomerProfile() {
         {/* ── Right: Security + Cards ── */}
         <div className="col-span-12 md:col-span-5">
           <h3 className="text-2xl font-bold mb-10" style={{ color: "#ffdea8" }}>
-            Security
+            {t('profilePage.security')}
           </h3>
 
           {!cpOpen ? (
@@ -1278,7 +1281,7 @@ export default function CustomerProfile() {
                 className="font-semibold tracking-widest text-xs"
                 style={{ color: "#ffdea8" }}
               >
-                Change Password
+                {t('profilePage.changePassword')}
               </span>
             </button>
           ) : (
