@@ -38,6 +38,13 @@ export default function AIMessageMarkdown({ text, links = [] }) {
   };
 
   for (const line of lines) {
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push(<p key={blocks.length}><strong>{inline(heading[1], allowedLinks)}</strong></p>);
+      continue;
+    }
     const match = line.match(/^\s{0,3}(?:([-*+])|(\d+)\.)\s+(.+)$/);
     if (!line.trim()) { flushParagraph(); continue; }
     if (match) {

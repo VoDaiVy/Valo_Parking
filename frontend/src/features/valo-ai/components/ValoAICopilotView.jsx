@@ -105,7 +105,7 @@ export default function ValoAICopilotView({ mascotRef, mascotVisible, position, 
           {busy && <div className="valo-ai-message-row is-ai"><span className="valo-ai-message-avatar"><ValoAIMascot size={30}/></span><div className="valo-ai-thinking" aria-label="VALO AI is checking data"><i/><i/><i/></div></div>}
           <div ref={bottomRef}/>
         </div>
-        <div className="valo-ai-suggestions">{suggestions.map((text) => <button type="button" key={text} onClick={() => submit(text)}>{text}</button>)}</div>
+        {!messages.length && <div className="valo-ai-suggestions">{suggestions.map((text) => <button type="button" key={text} onClick={() => submit(text)}>{text}</button>)}</div>}
         <form className="valo-ai-compose" onSubmit={(event) => { event.preventDefault(); submit(); }}><Paperclip size={17} aria-hidden="true"/><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Enter a question for VALO AI..."/><button type="submit" disabled={busy} aria-label="Send question"><Send size={19}/></button></form>
       </> : <div className="valo-ai-notification-view" aria-busy={notificationLoading}>
         <NotificationFilterBar filter={filter} onFilter={key => { setFilter(key); setSelected(null); }} unreadCount={unreadCount} marking={markingAllRead} disabled={readingIds.length > 0} onMarkAllRead={markAllRead}/>
