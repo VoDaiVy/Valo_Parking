@@ -26,6 +26,7 @@ import {
   ArrowDown,
   LayoutGrid,
   RotateCcw,
+  RotateCw,
   Eye,
   EyeOff,
   Volume2,
@@ -40,6 +41,7 @@ import {
 import { API_BASE } from '../../../services/api';
 import toast from 'react-hot-toast';
 import { formatLicensePlateDisplay } from '../../../utils/licensePlate';
+import { renderOrientedCanvas } from '../../../utils/cameraLaneCapture';
 
 const ROBOFLOW_CALIBRATED_SLOTS = [
   { slotCode: 'A1', polygon: [[0.0313, 0.0947], [0.1197, 0.0944], [0.1203, 0.3034], [0.0318, 0.3036]] },
@@ -454,6 +456,15 @@ export default function SlotCameraMonitorModal({
   const [cameraMisalignedWarning, setCameraMisalignedWarning] = useState(null);
   const [floorMismatch, setFloorMismatch] = useState(null);
   const [isAiDropdownOpen, setIsAiDropdownOpen] = useState(false);
+  const [cameraRotation, setCameraRotation] = useState(() => {
+    try {
+      const saved = localStorage.getItem('valo_slot_camera_rotation');
+      const num = Number(saved);
+      return [0, 90, 180, 270].includes(num) ? num : 0;
+    } catch {
+      return 0;
+    }
+  });
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -542,10 +553,17 @@ export default function SlotCameraMonitorModal({
           const a1MinY = a1 && a1.polygon ? Math.min(...a1.polygon.map((p) => p[1])) : 0;
           const c1MinY = c1 && c1.polygon ? Math.min(...c1.polygon.map((p) => p[1])) : 0;
           const isRowsMerged = c1 && a1 && Math.abs(c1MinY - a1MinY) < 0.08; // C/D row too close to A/B row
-          if (!isStaleWallCoords && !isStaleShiftedCoords && !isRowsMerged) {
+          // Inverted if A1 is in the bottom half of the screen (y > 0.5) from prior rotation bug
+          const isInverted = a1 && a1.polygon && Math.min(...a1.polygon.map((p) => p[1])) > 0.5;
+
+          if (!isStaleWallCoords && !isStaleShiftedCoords && !isRowsMerged && !isInverted) {
             setSlotRois(parsed);
             setSelectedSlotIndex(-1);
             loaded = true;
+          } else if (isInverted) {
+            // Clean up inverted cache so layout automatically recovers
+            localStorage.removeItem(sStorageKey);
+            localStorage.removeItem(`valo_board_corners_v7_${floorId}`);
           }
         }
       }
@@ -569,8 +587,39 @@ export default function SlotCameraMonitorModal({
       }
       const lockKey = `valo_layout_locked_v8_${floorId}`;
       setIsLayoutLocked(localStorage.getItem(lockKey) === 'true');
+      const rKey = `valo_slot_camera_rotation_${floorId}`;
+      const savedRot = localStorage.getItem(rKey) ?? localStorage.getItem('valo_slot_camera_rotation');
+      if (savedRot != null) {
+        const num = Number(savedRot);
+        if ([0, 90, 180, 270].includes(num)) {
+          setCameraRotation(num);
+        }
+      }
     } catch (e) { }
   }, [activeFloor, floorData.allSlots, generateFloorLayoutGrid]);
+
+  const handleRotateCamera = useCallback((delta = 90) => {
+    const nextRotation = (cameraRotation + delta) % 360;
+    setCameraRotation(nextRotation);
+    const fKey = activeFloor ? (activeFloor._id || activeFloor.name || 'default') : 'default';
+    localStorage.setItem(`valo_slot_camera_rotation_${fKey}`, String(nextRotation));
+    localStorage.setItem('valo_slot_camera_rotation', String(nextRotation));
+
+    // If slotRois is currently inverted (A1 at bottom half y > 0.5), auto restore canonical layout
+    setSlotRois((currentSlots) => {
+      const a1 = Array.isArray(currentSlots) ? currentSlots.find((s) => s.slotCode === 'A1') : null;
+      const isInverted = a1 && a1.polygon && Math.min(...a1.polygon.map((p) => p[1])) > 0.5;
+      if (isInverted) {
+        localStorage.removeItem(`valo_slot_roi_floor_v7_${fKey}`);
+        localStorage.removeItem(`valo_board_corners_v7_${fKey}`);
+        setBoardCorners(DEFAULT_BOARD_CORNERS);
+        return generateFloorLayoutGrid(activeFloor);
+      }
+      return currentSlots;
+    });
+
+    toast.success(`Camera angle set to ${nextRotation}°. Canonical slot order preserved.`);
+  }, [cameraRotation, activeFloor, generateFloorLayoutGrid]);
 
   // Load cameras with persistent memory (Tự động nhớ camera USB/C270 đã chọn)
   useEffect(() => {
@@ -717,6 +766,8 @@ export default function SlotCameraMonitorModal({
     localStorage.setItem(`valo_slot_roi_floor_v7_${fKey}`, JSON.stringify(slotRois));
     localStorage.setItem(`valo_board_corners_v7_${fKey}`, JSON.stringify(boardCorners));
     localStorage.setItem(`valo_layout_locked_v8_${fKey}`, 'true');
+    localStorage.setItem(`valo_slot_camera_rotation_${fKey}`, String(cameraRotation));
+    localStorage.setItem('valo_slot_camera_rotation', String(cameraRotation));
     setIsLayoutLocked(true);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
@@ -760,12 +811,21 @@ export default function SlotCameraMonitorModal({
       // Cap resolution at 1920×1080 to reduce payload size (~4× faster than 4K)
       const MAX_W = 1920;
       const MAX_H = 1080;
-      const scale = Math.min(1, MAX_W / video.videoWidth, MAX_H / video.videoHeight);
+      const swapDims = cameraRotation === 90 || cameraRotation === 270;
+      const srcW = swapDims ? video.videoHeight : video.videoWidth;
+      const srcH = swapDims ? video.videoWidth : video.videoHeight;
+      const scale = Math.min(1, MAX_W / srcW, MAX_H / srcH);
+      const outW = Math.round(video.videoWidth * scale);
+      const outH = Math.round(video.videoHeight * scale);
       const offscreen = document.createElement('canvas');
-      offscreen.width = Math.round(video.videoWidth * scale);
-      offscreen.height = Math.round(video.videoHeight * scale);
-      const ctx = offscreen.getContext('2d');
-      ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+      renderOrientedCanvas(
+        offscreen,
+        video,
+        { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight },
+        outW,
+        outH,
+        cameraRotation
+      );
       const base64Image = offscreen.toDataURL('image/jpeg', 0.88); // 0.88 quality saves ~30% size vs 0.95
 
       const token = localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
@@ -835,12 +895,21 @@ export default function SlotCameraMonitorModal({
       // Cap resolution at 1600×900 (keeps far-row plates sharp while cutting payload & decode ~40%)
       const MAX_W = 1600;
       const MAX_H = 900;
-      const scale = Math.min(1, MAX_W / video.videoWidth, MAX_H / video.videoHeight);
+      const swapDims = cameraRotation === 90 || cameraRotation === 270;
+      const srcW = swapDims ? video.videoHeight : video.videoWidth;
+      const srcH = swapDims ? video.videoWidth : video.videoHeight;
+      const scale = Math.min(1, MAX_W / srcW, MAX_H / srcH);
+      const outW = Math.round(video.videoWidth * scale);
+      const outH = Math.round(video.videoHeight * scale);
       const offscreen = document.createElement('canvas');
-      offscreen.width = Math.round(video.videoWidth * scale);
-      offscreen.height = Math.round(video.videoHeight * scale);
-      const ctx = offscreen.getContext('2d');
-      ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+      renderOrientedCanvas(
+        offscreen,
+        video,
+        { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight },
+        outW,
+        outH,
+        cameraRotation
+      );
       const base64Image = offscreen.toDataURL('image/jpeg', 0.85);
 
       // Lightweight evidence crops (320px for Gemini Deep Vision, 160px for fast Edge ALPR audit logs)
@@ -1066,7 +1135,7 @@ export default function SlotCameraMonitorModal({
     } finally {
       setIsScanning(false);
     }
-  }, [activeFloor, isScanning, slotRois, aiMode, isLayoutLocked, onSlotStatusUpdate, playAlertSound]);
+  }, [activeFloor, isScanning, slotRois, aiMode, isLayoutLocked, onSlotStatusUpdate, playAlertSound, cameraRotation]);
 
   // Auto-switch floor when AI detects camera is pointing at another floor
   const handleAutoSwitchFloor = useCallback((targetFloorNumber, targetFloorName) => {
@@ -1295,8 +1364,9 @@ export default function SlotCameraMonitorModal({
     }
     const cw = container.clientWidth;
     const ch = container.clientHeight;
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
+    const swapDims = cameraRotation === 90 || cameraRotation === 270;
+    const vw = swapDims ? video.videoHeight : video.videoWidth;
+    const vh = swapDims ? video.videoWidth : video.videoHeight;
     const videoRatio = vw / vh;
     const containerRatio = cw / ch;
 
@@ -1313,7 +1383,39 @@ export default function SlotCameraMonitorModal({
       offsetY = (ch - renderH) / 2;
     }
     return { x: offsetX, y: offsetY, width: renderW, height: renderH };
-  }, []);
+  }, [cameraRotation]);
+
+  const videoStyle = useMemo(() => {
+    const vr = getVideoRenderRect();
+    if (!cameraRotation) {
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+      };
+    }
+    if (cameraRotation === 180) {
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        transform: 'rotate(180deg)',
+      };
+    }
+    return {
+      position: 'absolute',
+      left: `${vr.x + (vr.width - vr.height) / 2}px`,
+      top: `${vr.y + (vr.height - vr.width) / 2}px`,
+      width: `${vr.height}px`,
+      height: `${vr.width}px`,
+      objectFit: 'contain',
+      transform: `rotate(${cameraRotation}deg)`,
+    };
+  }, [cameraRotation, getVideoRenderRect]);
 
   const toScreenCoords = useCallback((nx, ny) => {
     const vr = getVideoRenderRect();
@@ -1822,6 +1924,36 @@ export default function SlotCameraMonitorModal({
               </select>
             </div>
 
+            {/* Camera Setup Rotation / Flip Controls */}
+            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10" title="Rotate camera setup angle (0° → 90° → 180° → 270°)">
+              <button
+                type="button"
+                onClick={() => handleRotateCamera(90)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                  cameraRotation !== 0
+                    ? 'bg-amber-400 text-black shadow'
+                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                }`}
+                title="Rotate Camera 90° clockwise (0° → 90° → 180° → 270°)"
+              >
+                <RotateCw size={12} className={cameraRotation !== 0 ? 'text-black' : 'text-amber-400'} />
+                <span>{cameraRotation}°</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRotateCamera(180)}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+                  cameraRotation === 180
+                    ? 'bg-amber-500/25 text-amber-300 border border-amber-400/40'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+                title="Quick Flip 180° (Invert upside-down mounted camera)"
+              >
+                <RefreshCw size={11} />
+                <span>Flip 180°</span>
+              </button>
+            </div>
+
             {/* Auto Scan Toggle */}
             <label className="flex items-center gap-2 cursor-pointer select-none bg-black/40 px-3 py-1.5 rounded-xl border border-white/10 hover:border-white/20 transition">
               <input
@@ -2078,7 +2210,7 @@ export default function SlotCameraMonitorModal({
               ref={videoRef}
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-contain"
+              style={videoStyle}
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-10" />
 
@@ -2117,6 +2249,15 @@ export default function SlotCameraMonitorModal({
                 <>
                   <span className="text-gray-600">•</span>
                   <span className="text-gray-400 font-mono text-[10px]">{lastScanDuration}s</span>
+                </>
+              )}
+              {cameraRotation !== 0 && (
+                <>
+                  <span className="text-gray-600">•</span>
+                  <span className="font-mono text-amber-300 text-[10px] bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-400/30 flex items-center gap-1 font-bold">
+                    <RotateCw size={9} />
+                    {cameraRotation}°
+                  </span>
                 </>
               )}
             </div>
