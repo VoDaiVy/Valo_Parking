@@ -176,14 +176,26 @@ exports.verifyPayment = async (req, res, next) => {
         sourceSubscriptionId: subscription._id,
       });
       if (entitlementCount < (subscription.slots || []).length) {
-        subscription.status = 'active';
-        await subscription.save();
+        const repairSession = await mongoose.startSession();
+        const previousStatus = subscription.status;
+        const previousUpdatedAt = subscription.updatedAt;
         try {
-          await activateSubscriptionEntitlements(subscription);
+          // Keep repaired ownership and its durable Telegram event atomic too.
+          await repairSession.withTransaction(async () => {
+            subscription.status = 'active';
+            subscription.markModified('status');
+            await subscription.save({ session: repairSession });
+            await activateSubscriptionEntitlements(subscription, {
+              session: repairSession, recordPurchaseEvent: true,
+            });
+          });
         } catch (activationError) {
-          subscription.status = 'failed';
-          await subscription.save();
+          // Do not overwrite another verifier's successful concurrent repair.
+          await Subscription.updateOne({ _id: subscription._id, status: previousStatus,
+            updatedAt: previousUpdatedAt }, { $set: { status: 'failed' } });
           throw activationError;
+        } finally {
+          await repairSession.endSession();
         }
         return res.status(200).json({
           success: true,

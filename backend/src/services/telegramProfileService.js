@@ -2,6 +2,7 @@ const UserDetail = require('../models/UserDetail');
 const Link = require('../models/TelegramLink');
 const Claim = require('../models/TelegramClaimToken');
 const Delivery = require('../models/TelegramDelivery');
+const EventDelivery = require('../models/TelegramEventDelivery');
 const { normalizePhone } = require('../utils/phoneUtils');
 
 const validPhone = phone => /^0\d{9}$/.test(normalizePhone(phone));
@@ -22,7 +23,11 @@ async function revokeAccount(userId, session, errorCode = 'LINK_REVOKED') {
   const now = new Date();
   const link = await Link.findOneAndUpdate({ userId }, { $set: { revokedAt: now, notificationsEnabled: false } }, { session });
   await Claim.updateMany({ userId, purpose: 'link', consumedAt: null }, { $set: { revokedAt: now } }, { session });
-  if (link) await Delivery.updateMany({ linkId: link._id, status: { $in: ['pending', 'processing', 'uncertain'] } },
-    { $set: { status: 'cancelled', errorCode }, $unset: { leaseId: 1, leaseUntil: 1 } }, { session });
+  if (link) {
+    for (const Model of [Delivery, EventDelivery]) {
+      await Model.updateMany({ linkId: link._id, status: { $in: ['pending', 'processing', 'uncertain'] } },
+        { $set: { status: 'cancelled', errorCode }, $unset: { leaseId: 1, leaseUntil: 1 } }, { session });
+    }
+  }
 }
 module.exports = { validPhone, profilePhone, lockProfile, matchesProfile, revokeAccount };

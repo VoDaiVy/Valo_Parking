@@ -218,6 +218,16 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
   }
 
   await recomputeUserMembership(subscription.user, { session, rotateQr });
+  // A paid-but-failed PayOS activation is repaired without changing paymentStatus,
+  // so its save hook cannot create the purchase event. Record it after activation,
+  // within the caller's transaction when supplied, excluding pre-rollout history.
+  const rollout = new Date(process.env.TELEGRAM_EVENTS_FROM || 'invalid');
+  if (options.recordPurchaseEvent && Number.isFinite(rollout.getTime())) {
+    await require('../models/Subscription').updateOne({
+      _id: subscription._id, paymentStatus: 'paid', status: 'active',
+      createdAt: { $gte: rollout }, telegramNotification: { $exists: false },
+    }, { $set: { telegramNotification: { occurredAt: new Date() } } }, { session });
+  }
   return entitlements;
 };
 

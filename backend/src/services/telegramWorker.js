@@ -1,11 +1,14 @@
 const crypto = require('crypto');
 const Update = require('../models/TelegramUpdate');
 const Delivery = require('../models/TelegramDelivery');
+const EventDelivery = require('../models/TelegramEventDelivery');
 const Link = require('../models/TelegramLink');
 const client = require('./telegramClient');
 const { bindStart, consumeContact } = require('./telegramClaimService');
 const { formatTicket } = require('./telegramDeliveryService');
 const profileService = require('./telegramProfileService');
+const eventNotifications = require('./telegramEventNotificationService');
+const nonReplayableKinds = ['membership_expiring', 'booking_checkin_last_call', ...eventNotifications.KINDS];
 
 async function acquireLease(Model, statuses, extraFilter = {}) {
   const now = new Date();
@@ -40,6 +43,7 @@ async function processUpdate(record) {
   }
 }
 async function processDelivery(record) {
+  if (eventNotifications.KINDS.includes(record.kind)) return eventNotifications.processDelivery(record);
   if (record.kind === 'booking_checkin_last_call') return require('./telegramBookingReminderService').processDelivery(record);
   if (record.kind === 'membership_expiring') return require('./telegramMembershipReminderService').processDelivery(record);
   if (record.receiptId && !require('./telegramReceiptService').enabled()) return { status: 'cancelled', errorCode: 'PHONE_RECEIPTS_DISABLED' };
@@ -93,31 +97,34 @@ async function runTelegramWorkerOnce() {
   }
   // A crashed sender may have reached Telegram before it could persist the result.
   // Preserve that ambiguity instead of resending a phone receipt after lease expiry.
-  await Delivery.updateMany({ $or: [{ receiptId: { $exists: true } }, { kind: { $in: ['membership_expiring', 'booking_checkin_last_call'] } }], status: 'processing', leaseUntil: { $lte: new Date() } }, {
-    $set: { status: 'uncertain', errorCode: 'SEND_UNCERTAIN', nextAttemptAt: new Date('9999-12-31') },
-    $unset: { leaseId: 1, leaseUntil: 1 },
-  });
-  const delivery = await acquireLease(Delivery, ['pending', 'uncertain'], {
-    $nor: [{ status: { $in: ['uncertain', 'processing'] }, receiptId: { $exists: true } },
-      { status: { $in: ['uncertain', 'processing'] }, kind: { $in: ['membership_expiring', 'booking_checkin_last_call'] } }],
-  });
-  if (delivery) {
-    if (delivery.attempts > 5) {
-      await finish(Delivery, delivery, { status: 'uncertain', errorCode: 'SEND_UNCERTAIN', nextAttemptAt: new Date('9999-12-31') });
-      return;
-    }
-    try { await finish(Delivery, delivery, await processDelivery(delivery)); }
-    catch (error) {
-      if ([404, 410].includes(error.statusCode)) {
-        await finish(Delivery, delivery, { status: 'cancelled', errorCode: 'TICKET_NO_LONGER_VALID' });
+  for (const Model of [EventDelivery, Delivery]) {
+    await Model.updateMany({ $or: [{ receiptId: { $exists: true } }, { kind: { $in: nonReplayableKinds } }], status: 'processing', leaseUntil: { $lte: new Date() } }, {
+      $set: { status: 'uncertain', errorCode: 'SEND_UNCERTAIN', nextAttemptAt: new Date('9999-12-31') },
+      $unset: { leaseId: 1, leaseUntil: 1 },
+    });
+    const delivery = await acquireLease(Model, ['pending', 'uncertain'], {
+      kind: Model === EventDelivery ? { $in: eventNotifications.KINDS } : { $nin: eventNotifications.KINDS },
+      $nor: [{ status: { $in: ['uncertain', 'processing'] }, receiptId: { $exists: true } },
+        { status: { $in: ['uncertain', 'processing'] }, kind: { $in: nonReplayableKinds } }],
+    });
+    if (delivery) {
+      if (delivery.attempts > 5) {
+        await finish(Model, delivery, { status: 'uncertain', errorCode: 'SEND_UNCERTAIN', nextAttemptAt: new Date('9999-12-31') });
         return;
       }
-      const retry = client.classifyError(error, delivery.attempts);
-      if (retry.errorCode === 'BOT_BLOCKED' && delivery.linkId) await Link.updateOne({ _id: delivery.linkId, chatId: delivery.chatId }, { $set: { blockedAt: new Date() } });
-      if (retry.errorCode === 'BOT_BLOCKED' && delivery.phoneRecipientId) await require('../models/TelegramPhoneRecipient').updateOne({ _id: delivery.phoneRecipientId, version: delivery.recipientVersion }, { $set: { blockedAt: new Date() } });
-      // Terminal uncertainty is retained, not automatically replayed indefinitely.
-      if (retry.status === 'uncertain' && delivery.attempts >= 5) retry.nextAttemptAt = new Date('9999-12-31');
-      await finish(Delivery, delivery, retry);
+      try { await finish(Model, delivery, await processDelivery(delivery)); }
+      catch (error) {
+        if ([404, 410].includes(error.statusCode)) {
+          await finish(Model, delivery, { status: 'cancelled', errorCode: Model === EventDelivery ? 'EVENT_NO_LONGER_VALID' : 'TICKET_NO_LONGER_VALID' });
+          return;
+        }
+        const retry = client.classifyError(error, delivery.attempts);
+        if (retry.errorCode === 'BOT_BLOCKED' && delivery.linkId) await Link.updateOne({ _id: delivery.linkId, chatId: delivery.chatId }, { $set: { blockedAt: new Date() } });
+        if (retry.errorCode === 'BOT_BLOCKED' && delivery.phoneRecipientId) await require('../models/TelegramPhoneRecipient').updateOne({ _id: delivery.phoneRecipientId, version: delivery.recipientVersion }, { $set: { blockedAt: new Date() } });
+        // Terminal uncertainty is retained, not automatically replayed indefinitely.
+        if (retry.status === 'uncertain' && delivery.attempts >= 5) retry.nextAttemptAt = new Date('9999-12-31');
+        await finish(Model, delivery, retry);
+      }
     }
   }
 }
@@ -125,10 +132,17 @@ function startTelegramWorker() {
   if (!client.enabled()) return () => {};
   let stopped = false, running = false;
   let lastReconcile = 0;
+  let lastEventReconcile = 0;
   const tick = async () => {
     if (stopped || running) return;
     running = true;
     try {
+      if (Date.now() - lastEventReconcile > 5000) {
+        lastEventReconcile = Date.now();
+        await eventNotifications.reconcile().catch(() => {
+          console.warn('[Telegram] event notification scan failed');
+        });
+      }
       await runTelegramWorkerOnce();
       if (Date.now() - lastReconcile > 60000) {
         lastReconcile = Date.now();

@@ -4,6 +4,7 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 const userVoucherSchema = new mongoose.Schema(
   {
+    telegramNotification: { type: require('./telegramNotificationFields'), default: undefined },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'VoucherTemplate', required: function () { return this.source !== 'spending'; } },
     source: { type: String, enum: ['loyalty', 'spending', 'manual'], default: 'loyalty' },
@@ -39,6 +40,12 @@ userVoucherSchema.pre('validate', function setExpiry(next) {
   }
   next();
 });
+
+userVoucherSchema.pre('save', function recordTelegramEvent(next) {
+  if (this.isNew) this.telegramNotification = { occurredAt: new Date() };
+  next();
+});
+userVoucherSchema.index({ 'telegramNotification.processedAt': 1, 'telegramNotification.occurredAt': 1 });
 
 userVoucherSchema.index({ userId: 1, status: 1 });
 userVoucherSchema.index({ rewardKey: 1 }, { unique: true, partialFilterExpression: { rewardKey: { $type: 'string' } } });

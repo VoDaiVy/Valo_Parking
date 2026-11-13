@@ -95,6 +95,7 @@ const notificationSchema = new mongoose.Schema(
 
 // Index for admin history queries
 notificationSchema.index({ createdAt: -1 });
+notificationSchema.index({ 'metadata.voucherId': 1 }, { sparse: true });
 notificationSchema.index({ createdBy: 1, createdAt: -1 });
 notificationSchema.index(
   { 'metadata.aiDraftId': 1 },

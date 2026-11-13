@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
   dedupeKey: { type: String, required: true, unique: true },
-  kind: { type: String, enum: ['booking_paid', 'guest_ticket', 'membership_expiring', 'booking_checkin_last_call'], required: true },
+  kind: { type: String, enum: ['booking_paid', 'guest_ticket', 'membership_expiring', 'booking_checkin_last_call', 'membership_activated', 'violation_created', 'voucher_received'], required: true },
+  eventUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  eventOccurredAt: Date,
+  violationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Violation' },
+  voucherId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserVoucher' },
   passId: { type: mongoose.Schema.Types.ObjectId, ref: 'ParkingPass', required() { return ['booking_paid', 'guest_ticket'].includes(this.kind); } },
   bookingUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   bookingScheduledStart: Date,

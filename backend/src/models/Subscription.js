@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const subscriptionSchema = new mongoose.Schema(
   {
+    telegramNotification: { type: require('./telegramNotificationFields'), default: undefined },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -89,6 +90,9 @@ const subscriptionSchema = new mongoose.Schema(
 );
 
 subscriptionSchema.pre('save', function recordRewardPayment(next) {
+  if (this.paymentStatus === 'paid' && this.isModified('paymentStatus') && !this.telegramNotification) {
+    this.telegramNotification = { occurredAt: new Date() };
+  }
   if (this.paymentStatus === 'paid' && this.isModified('paymentStatus')
     && !this.rewardPayments.some((payment) => payment.orderCode === this.orderCode)) {
     this.rewardPayments.push({ orderCode: this.orderCode, userId: this.user, amount: this.amount, paidAt: new Date() });
@@ -96,6 +100,7 @@ subscriptionSchema.pre('save', function recordRewardPayment(next) {
   next();
 });
 subscriptionSchema.index({ 'rewardPayments.paidAt': 1 });
+subscriptionSchema.index({ 'telegramNotification.processedAt': 1, 'telegramNotification.occurredAt': 1 });
 subscriptionSchema.index({ user: 1, status: 1, expireAt: -1 });
 subscriptionSchema.index({ status: 1, paymentStatus: 1, expireAt: 1 });
 
