@@ -13,7 +13,11 @@ const { buildOtpAutofillHint, getOtpAutofillConfig } = require('../utils/otpAuto
 const notifTriggers = require('../services/notificationTriggers');
 const aiNotificationEvents = require('../services/aiCopilot/notificationEvents');
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client();
+const googleClientIds = [...new Set([
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_WEB_CLIENT_ID,
+].map((clientId) => clientId?.trim()).filter(Boolean))];
 
 /**
  * @desc    Register a new user
@@ -359,12 +363,19 @@ const googleLogin = async (req, res, next) => {
       });
     }
 
-    // Verify the Google ID token
+    if (googleClientIds.length === 0) {
+      return res.status(503).json({
+        success: false,
+        message: 'Google sign-in is not configured on the server.',
+      });
+    }
+
+    // Accept only the explicitly configured clients used by web and mobile.
     let payload;
     try {
       const ticket = await googleClient.verifyIdToken({
         idToken,
-        audience: process.env.GOOGLE_CLIENT_ID,
+        audience: googleClientIds,
       });
       payload = ticket.getPayload();
     } catch {

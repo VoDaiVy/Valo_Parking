@@ -48,6 +48,7 @@ import GateControl from "./pages/Staff/GateControl";
 // Pages – Customer
 import CustomerProfile from "./pages/Customer/CustomerProfile";
 import Membership from "./pages/Customer/Membership";
+import MembershipServices from './components/membership/MembershipServices';
 import MembershipHub from "./pages/Customer/MembershipHub";
 import MyVehicles from "./pages/Customer/MyVehicles";
 import WalletPage from "./pages/Wallet/WalletPage";
@@ -205,6 +206,7 @@ export default function App() {
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/staff/tickets" element={<TicketPackages />} />
+            <Route path="/staff/membership-services" element={<MembershipServices staff />} />
           </Route>
 
           {/* ── Customer section ── */}

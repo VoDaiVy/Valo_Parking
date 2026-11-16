@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Vehicle = require('../models/Vehicle');
 const TicketPackage = require('../models/TicketPackage');
+const { isMembershipPackageType } = require('../utils/ticketPackageRules');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Subscription = require('../models/Subscription');
 const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
@@ -58,9 +59,9 @@ const findVipRegisteredVehicleBookingRestriction = async (
   if (!registeredVehicle) return null;
 
   const membershipType = await getActiveMembershipType(user, at, ticketPackages);
-  if (!['monthly', 'yearly'].includes(membershipType)) return null;
+  if (!isMembershipPackageType(membershipType)) return null;
 
-  // An active monthly/yearly membership already grants direct access to the
+  // An active membership already grants direct access to the
   // dedicated space. Creating an hourly booking for that vehicle would only
   // duplicate the entitlement (even when the selected space is the VIP one).
   return { membershipType, registeredVehicle, reason: 'ACTIVE_VIP_MEMBERSHIP' };

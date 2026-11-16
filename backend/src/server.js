@@ -59,6 +59,7 @@ app.use("/api/policies", policyRoutes);
 app.use('/api', serviceRoutes);
 app.use('/api/ticket-packages', ticketPackageRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/membership-services', require('./routes/membershipServiceRoutes'));
 app.use('/api/loyalty', require('./routes/loyaltyRoutes'));
 app.use("/api/staff", require("./routes/staffRoutes"));
 app.use("/api/sessions", require("./routes/sessionRoutes"));

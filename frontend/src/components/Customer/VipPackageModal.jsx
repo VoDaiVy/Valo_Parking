@@ -17,6 +17,7 @@ import { getWalletInfo } from '../../services/walletService';
 import { apiFetch } from '../../services/api';
 import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
 import ParkingMapViewer from '../ParkingMapViewer';
+import { getPackageDurationLabel, getPackageTypeLabel, isMembershipPackageType } from '../../utils/ticketPackageRules';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 
 export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
@@ -74,7 +75,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
         ]);
 
         if (pkgRes.ok && pkgRes.data?.data) {
-          setPackages(pkgRes.data.data.filter((p) => p.isActive));
+          setPackages(pkgRes.data.data.filter((p) => p.isActive && isMembershipPackageType(p.type)));
         }
         if (vRes.ok && vRes.data?.data) {
           const approved = vRes.data.data.filter((v) => v.status === 'approved');
@@ -272,7 +273,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
       const slots = [{ floorId: selectedFloorId, slotCode: selectedSlotCode }];
 
       if (paymentMethod === 'wallet') {
-        const res = await paySubscriptionWithWallet(selectedPackage._id, slots, price);
+        const res = await paySubscriptionWithWallet(selectedPackage._id, slots, price, selectedPackage.revision);
         if (res.ok && res.data?.success) {
           setWalletBalance((current) => Math.max(0, current - price));
           finishPurchaseRef.current();
@@ -285,7 +286,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           setErrorMsg(res.data?.message || 'Unable to pay with the VALO Wallet. Please try again.');
         }
       } else {
-        const res = await createSubscriptionPayment(selectedPackage._id, slots, price);
+        const res = await createSubscriptionPayment(selectedPackage._id, slots, price, selectedPackage.revision);
         const createdPayment = res.data?.data;
         if (res.ok && createdPayment?.orderCode && (createdPayment.qrCode || createdPayment.checkoutUrl)) {
           setPaymentData(createdPayment);
@@ -330,7 +331,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
               <Crown size={22} className="fill-current" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-gray-900">VALO VIP & Monthly Packages</h2>
+              <h2 className="text-xl font-black text-gray-900">VALO Membership Packages</h2>
               <p className="text-xs font-semibold text-gray-500">Dedicated space 24/7 · Unlimited entry and exit · Review each package for current savings</p>
             </div>
           </div>
@@ -495,7 +496,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                   </div>
                   <div>
                     <h4 className="font-black text-gray-900">{selectedPackage.name}</h4>
-                    <p className="text-xs text-gray-500">{selectedPackage.type === 'yearly' ? 'Yearly package (365 days)' : 'Monthly package (30 days)'}</p>
+                    <p className="text-xs text-gray-500">{getPackageTypeLabel(selectedPackage)} package · {getPackageDurationLabel(selectedPackage)}</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -751,7 +752,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           ) : (
             /* Step 1: Package List */
             <div className="flex flex-col items-center justify-center py-2">
-              <div className="flex justify-center items-stretch gap-6 flex-wrap sm:flex-nowrap w-full max-w-3xl">
+              <div className="grid w-full max-w-4xl grid-cols-1 gap-6 sm:grid-cols-2">
                 {packages.length > 0 ? (
                   [...packages]
                     .sort((a, b) => {
@@ -761,34 +762,34 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                     })
                     .map((pkg) => {
                       const price = Number(pkg.price || 0);
-                      const isMonthly = pkg.type === 'monthly';
+                      const isYearly = pkg.type === 'yearly';
                       return (
                         <div
                           key={pkg._id}
                           className={`relative flex flex-col justify-between rounded-[32px] p-6 sm:p-7 w-full max-w-[340px] transition-all hover:translate-y-[-2px] ${
-                            isMonthly
+                            !isYearly
                               ? 'border-2 border-amber-200/90 bg-[#fdfdfa] shadow-[0_12px_40px_rgba(245,158,11,0.08)] hover:shadow-[0_16px_45px_rgba(245,158,11,0.15)]'
                               : 'border-2 border-purple-200/90 bg-[#fefeff] shadow-[0_12px_40px_rgba(168,85,247,0.08)] hover:shadow-[0_16px_45px_rgba(168,85,247,0.15)]'
                           }`}
                         >
                           {/* Top Badge */}
-                          {isMonthly ? (
+                          {!isYearly ? (
                             <div className="absolute top-4 right-4">
                               <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white font-black text-[10px] tracking-wider uppercase px-3 py-1 rounded-full shadow-sm">
-                                POPULAR
+                                {getPackageTypeLabel(pkg)}
                               </span>
                             </div>
                           ) : (
                             <div className="absolute top-4 right-4">
                               <span className="bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-black text-[10px] tracking-wider uppercase px-3 py-1 rounded-full shadow-sm">
-                                BEST VALUE
+                                {getPackageTypeLabel(pkg)}
                               </span>
                             </div>
                           )}
 
                           <div>
                             {/* Circle Icon */}
-                            {isMonthly ? (
+                            {!isYearly ? (
                               <div className="w-16 h-16 rounded-full bg-blue-50/80 border-4 border-blue-200/70 flex items-center justify-center mx-auto mb-2.5 text-amber-500 shadow-sm">
                                 <Crown size={28} className="text-amber-500 fill-amber-400" />
                               </div>
@@ -800,13 +801,13 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
 
                             {/* Sub-label */}
                             <div className="text-center mb-1">
-                              {isMonthly ? (
+                              {!isYearly ? (
                                 <span className="text-[11px] font-black uppercase tracking-widest text-amber-500">
-                                  MONTHLY
+                                  {getPackageTypeLabel(pkg)}
                                 </span>
                               ) : (
                                 <span className="inline-block bg-purple-100 text-purple-600 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                                  YEARLY
+                                  {getPackageTypeLabel(pkg)}
                                 </span>
                               )}
                             </div>
@@ -819,75 +820,35 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                             {/* Price Inset Box */}
                             <div
                               className={`rounded-2xl border py-4 px-4 my-4 text-center shadow-inner ${
-                                isMonthly
+                                !isYearly
                                   ? 'border-gray-100 bg-[#f9fafb]'
                                   : 'border-purple-100/70 bg-[#faf8ff]'
                               }`}
                             >
                               <div
                                 className={`text-2xl sm:text-[26px] font-black tracking-tight ${
-                                  isMonthly ? 'text-amber-500' : 'text-purple-600'
+                                  !isYearly ? 'text-amber-500' : 'text-purple-600'
                                 }`}
                               >
                                 {price.toLocaleString('en-US')} VND
                               </div>
                               <div className="text-xs text-gray-400 font-semibold mt-0.5">
-                                {isMonthly ? 'per month' : 'for 1 year'}
+                                for {getPackageDurationLabel(pkg)} / space
                               </div>
                             </div>
 
                             {/* Benefits */}
                             <ul className="space-y-3 text-xs text-gray-600 mb-6 flex-1 px-1">
-                              {isMonthly ? (
-                                <>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>All Member benefits</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Own a fixed parking slot under your name</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Free 24/7 automatic check-in</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>No need to book before arrival</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-amber-400 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Monthly subscription with priority</span>
-                                  </li>
-                                </>
-                              ) : (
-                                <>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-500 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>All Monthly VIP benefits</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-600 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span className="text-purple-700 font-bold">Includes 12 free washes / maintenance services</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-500 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>Priority support</span>
-                                  </li>
-                                  <li className="flex items-start gap-2.5">
-                                    <Check size={16} className="text-purple-500 shrink-0 mt-0.5 stroke-[2.5]" />
-                                    <span>VIP yearly package</span>
-                                  </li>
-                                </>
-                              )}
+                              {(pkg.benefits || []).map((benefit) => (
+                                <li key={benefit} className="flex items-start gap-2.5"><Check size={16} className="shrink-0 text-amber-500" /><span>{benefit}</span></li>
+                              ))}
 
                               {Array.isArray(pkg.features) && pkg.features.map((feat, idx) => (
                                 <li key={idx} className="flex items-start gap-2.5">
                                   <Check
                                     size={16}
                                     className={`shrink-0 mt-0.5 stroke-[2.5] ${
-                                      isMonthly ? 'text-amber-400' : 'text-purple-500'
+                                      !isYearly ? 'text-amber-400' : 'text-purple-500'
                                     }`}
                                   />
                                   <span>{feat}</span>
@@ -901,7 +862,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                             type="button"
                             onClick={() => handleSelectPackage(pkg)}
                             className={`w-full rounded-2xl font-black py-3.5 px-4 shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm ${
-                              isMonthly
+                              !isYearly
                                 ? 'bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-gray-950 shadow-amber-500/25'
                                 : 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-purple-500/25'
                             }`}

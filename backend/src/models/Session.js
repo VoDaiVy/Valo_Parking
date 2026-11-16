@@ -60,6 +60,9 @@ const sessionSchema = new mongoose.Schema(
       enum: ['active', 'completed', 'cancelled'],
       default: 'active',
     },
+    // Changed in the same transaction as membership service jobs. Checkout
+    // matches zero atomically so it cannot race a service being started.
+    activeServiceJobs: { type: Number, min: 0, default: 0 },
     paymentStatus: {
       type: String,
       enum: ['unpaid', 'paid', 'refunded'],
@@ -141,5 +144,22 @@ sessionSchema.pre('validate', function normalizePlate(next) {
 
 sessionSchema.index({ licensePlate: 1, status: 1, checkInTime: 1 });
 sessionSchema.index({ checkOutTime: 1, bookingId: 1, userId: 1 });
+
+sessionSchema.statics.checkoutFilter = function checkoutFilter(id) {
+  return {
+    _id: id,
+    status: 'active',
+    $or: [{ activeServiceJobs: 0 }, { activeServiceJobs: { $exists: false } }],
+  };
+};
+
+sessionSchema.statics.assertNoActiveServiceJobs = function assertNoActiveServiceJobs(parkingSession) {
+  if (parkingSession.activeServiceJobs > 0) {
+    throw Object.assign(new Error('Complete or cancel all services in progress before checking out.'), {
+      statusCode: 409,
+      code: 'MEMBERSHIP_SERVICES_IN_PROGRESS',
+    });
+  }
+};
 
 module.exports = mongoose.model('Session', sessionSchema);

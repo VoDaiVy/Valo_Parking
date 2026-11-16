@@ -1,7 +1,7 @@
 import { useLanguage } from '@/contexts/LanguageContext';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StatusBar, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState, ErrorState } from '@/components/common';
@@ -23,6 +23,8 @@ type Props = NativeStackScreenProps<StaffManagementStackParamList, 'TicketPackag
 const TYPE_TONES: Record<TicketPackage['type'], 'info' | 'brand' | 'warning'> = {
   hourly: 'info',
   daily: 'info',
+  weekly: 'brand',
+  custom: 'brand',
   monthly: 'brand',
   yearly: 'warning',
 };
@@ -93,12 +95,16 @@ export function StaffTicketPackagesScreen({ navigation }: Props) {
                   <FadeInView delay={Math.min(index * 35, 220)} key={item._id}>
                     <OperationalRow
                       icon="ticket-outline"
-                      meta={item.isActive ? 'Active' : 'Inactive'}
+                      meta={item.isActive ? 'Active' : item.inactiveReason === 'SOLD_OUT' ? 'Inactive · No available spaces' : 'Inactive · Paused by admin'}
                       subtitle={`${item.type.toUpperCase()} · ${item.price.toLocaleString('vi-VN')} VND${item.description ? ` · ${item.description}` : ''}`}
                       title={item.name}
                       tone={tone}
                       right={<StatusBadge label={item.type} tone={tone} />}
                     />
+                    {item.type !== 'hourly' && <View style={styles.capacity}>
+                      <Text style={styles.capacityText}>Limit {item.stock?.saleLimit ?? item.saleLimit ?? 'Unlimited'} · In use {item.stock?.allocatedQuantity ?? '—'}</Text>
+                      <Text style={styles.capacityText}>Payment holds {item.stock?.heldQuantity ?? '—'} · Available {item.stock?.remainingQuantity ?? (item.saleLimit == null ? 'Unlimited' : '—')}</Text>
+                    </View>}
                   </FadeInView>
                 );
               })}
@@ -129,4 +135,6 @@ const styles = StyleSheet.create({
   list: { borderTopColor: COLORS.border, borderTopWidth: StyleSheet.hairlineWidth },
   skeleton: { gap: SPACING.md, padding: SPACING.lg },
   skeletonRow: { gap: SPACING.sm, minHeight: 68 },
+  capacity: { paddingHorizontal: SPACING.md, paddingBottom: SPACING.md, gap: 4 },
+  capacityText: { color: COLORS.textSecondary, fontSize: 12 },
 });

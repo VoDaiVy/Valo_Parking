@@ -342,6 +342,7 @@ exports.transitionMembershipByQr = async (req, res, next) => {
           message: 'Active membership session not found',
         });
       }
+      Session.assertNoActiveServiceJobs(session);
 
       vehicle = await Vehicle.findOne({
         owner: userId,
@@ -360,7 +361,7 @@ exports.transitionMembershipByQr = async (req, res, next) => {
         input.action
       );
       const updatedSession = await Session.findOneAndUpdate(
-        { _id: session._id, status: 'active' },
+        Session.checkoutFilter(session._id),
         {
           status: 'completed',
           checkOutTime: new Date(),
@@ -375,7 +376,7 @@ exports.transitionMembershipByQr = async (req, res, next) => {
       if (!updatedSession) {
         return res.status(409).json({
           success: false,
-          message: 'Membership session is no longer active',
+          message: 'Membership session changed or has services in progress. Refresh before checking out.',
         });
       }
       session = updatedSession;

@@ -188,6 +188,9 @@ exports.deleteService = async (req, res, next) => {
     }
 
     // Delete image from Cloudinary
+    const referenced = await require('../models/TicketPackage').exists({ isActive: true, 'serviceBenefits.serviceId': service._id });
+    const outstanding = await require('../models/MembershipServiceGrant').exists({ serviceId: service._id, expireAt: { $gt: new Date() } });
+    if (referenced || outstanding) return res.status(409).json({ success: false, message: 'This service is included in a package or an unexpired allowance. Deactivate it to stop new requests.' });
     if (service.cloudinary_id) {
       await cloudinary.uploader.destroy(service.cloudinary_id);
     }

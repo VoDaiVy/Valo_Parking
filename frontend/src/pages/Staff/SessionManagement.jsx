@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
+import { matchesSessionTime } from './sessionTimeFilter.js';
+import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker.jsx';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import './components/staffManagement.css';
 import './components/staffSessionManagement.css';
@@ -20,6 +22,9 @@ export default function SessionManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [timeFilter, setTimeFilter] = useState({ mode: 'all', value: '', from: '', to: '' });
+  const updateTimeFilter = (patch) => { setTimeFilter(previous => ({ ...previous, ...patch })); setCurrentPage(1); };
+  const invalidTimeRange = timeFilter.mode === 'range' && timeFilter.from && timeFilter.to && timeFilter.from > timeFilter.to;
   const [sortBy, setSortBy] = useState('newest');
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiInitialPlate, setAiInitialPlate] = useState('');
@@ -124,12 +129,12 @@ export default function SessionManagement() {
   }).format(Number(price) || 0);
 
   const filteredSessions = useMemo(
-    () => filterAndSortSessions(sessions, {
+    () => filterAndSortSessions(isAdminPage ? sessions.filter(session => matchesSessionTime(session.checkInTime, timeFilter)) : sessions, {
       searchQuery,
       status: statusFilter,
       sortBy,
     }),
-    [sessions, searchQuery, statusFilter, sortBy],
+    [sessions, searchQuery, statusFilter, sortBy, isAdminPage, timeFilter],
   );
 
   const pagination = useMemo(
@@ -149,6 +154,7 @@ export default function SessionManagement() {
       setSelectedSession(null);
       setSearchQuery('');
       setStatusFilter('all');
+      setTimeFilter({ mode: 'all', value: '', from: '', to: '' });
       setSortBy('newest');
       setCurrentPage(target.page);
       setRowFocus({ ...target, requestKey: verificationKey });
@@ -212,7 +218,7 @@ export default function SessionManagement() {
           <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
         </button>}
         {/* AI Blurred Plate Assistant Button */}
-        <button
+        {isAdminPage && <button
           type="button"
           onClick={() => {
             setAiInitialPlate(searchQuery || '');
@@ -223,7 +229,7 @@ export default function SessionManagement() {
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>AI Plate Assistant</span>
-        </button>
+        </button>}
         </div>
       </div>
 
@@ -318,8 +324,22 @@ export default function SessionManagement() {
                 menuClassName="w-52"
               />
             </div>
+            {isAdminPage && <section aria-label="Filter by check-in time" className="admin-session-time-filter">
+          <div className="admin-session-time-controls">
+            <div className="admin-session-time-mode"><StaffDropdown value={timeFilter.mode} onChange={mode => updateTimeFilter({ mode, value: '', from: '', to: '' })} options={[[ 'all', 'All time' ], ['day', 'By day'], ['month', 'By month'], ['year', 'By year'], ['range', 'Date & time range']]} ariaLabel="Time filter mode" /></div>
+            {['day', 'month', 'year'].includes(timeFilter.mode) && <label className="flex flex-col gap-2 text-xs text-slate-400"><span className="sr-only">{timeFilter.mode === 'day' ? 'Date' : timeFilter.mode === 'month' ? 'Month' : 'Year'}</span><input type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'} min={timeFilter.mode === 'year' ? '1000' : undefined} max={timeFilter.mode === 'year' ? '9999' : undefined} placeholder="YYYY" value={timeFilter.value} onChange={event => updateTimeFilter({ value: event.target.value })} className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]" /></label>}
+            {timeFilter.mode === 'range' && <>
+              <div><p className="sr-only">From</p><AdminDateTimePicker label="Check-in from (Vietnam time)" value={timeFilter.from} onChange={from => updateTimeFilter({ from })} /></div>
+              <div><p className="sr-only">To</p><AdminDateTimePicker label="Check-in to (Vietnam time)" value={timeFilter.to} onChange={to => updateTimeFilter({ to })} /></div>
+            </>}
+            {timeFilter.mode !== 'all' && <button type="button" onClick={() => updateTimeFilter({ mode: 'all', value: '', from: '', to: '' })} title="Clear time filter" aria-label="Clear time filter" className="inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/5 hover:text-white"><X size={16} /></button>}
+          </div>
+          {invalidTimeRange && <p role="alert" className="mt-3 text-xs text-rose-300">End time must be on or after start time.</p>}
+        </section>}
           </div>
         )}
+
+
 
         {loading ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-14 text-center text-slate-500">
@@ -540,7 +560,7 @@ export default function SessionManagement() {
       )}
 
       {/* AI Blurred Plate Resolution Modal */}
-      <AIPlateResolutionModal
+      {isAdminPage && <AIPlateResolutionModal
         isOpen={showAiModal}
         onClose={() => setShowAiModal(false)}
         initialPlate={aiInitialPlate}
@@ -549,7 +569,7 @@ export default function SessionManagement() {
           setSearchQuery(selectedPlate);
           setCurrentPage(1);
         }}
-      />
+      />}
     </div>
   );
 }
