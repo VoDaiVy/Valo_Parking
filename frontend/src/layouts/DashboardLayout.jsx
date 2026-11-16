@@ -107,6 +107,7 @@ const NAV_CONFIG = {
     },
     { label: "Vouchers", icon: <Gift size={18} />, to: "/admin/vouchers" },
     { label: "Notifications", icon: <Bell size={18} />, to: "/admin/notifications" },
+    { label: "Customer Feedback", icon: <BookOpen size={18} />, to: "/admin/feedbacks" },
   ],
   staff: [
     {

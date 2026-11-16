@@ -34,6 +34,7 @@ import PolicyManagement from "./pages/Admin/PolicyManagement";
 import SubscriptionManagement from "./pages/Admin/SubscriptionManagement";
 import RevenueAnalytics from "./pages/Admin/RevenueAnalytics";
 import VoucherManagement from "./pages/Admin/VoucherManagement";
+import FeedbackManagement from "./pages/Admin/FeedbackManagement";
 
 // Pages – Staff
 import StaffDashboard from "./pages/Staff/Dashboard";
@@ -144,6 +145,7 @@ export default function App() {
             }
           >
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/feedbacks" element={<FeedbackManagement />} />
             <Route path="/admin/accounts" element={<AccountManagement />} />
             <Route
               path="/admin/vehicle-models"
