@@ -1,5 +1,6 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../services/api";
+import { useSearchParams } from 'react-router-dom';
 import { getMembershipStatus } from "../../services/subscriptionService";
 
 const emptyPage = { items: [], pagination: {} };
@@ -12,10 +13,13 @@ const id = (value) => value?._id || value;
 const formatDate = (value) => new Date(value).toLocaleString("vi-VN");
 
 export default function MembershipServices({ staff = false }) {
+  const [params] = useSearchParams();
   const [grants, setGrants] = useState(emptyPage);
   const [requests, setRequests] = useState(emptyPage);
   const [sessions, setSessions] = useState(emptyPage);
-  const [sessionId, setSessionId] = useState("");
+  const [sessionId, setSessionId] = useState(() => params.get('sessionId') || '');
+  const [status, setStatus] = useState('');
+  const [context, setContext] = useState(null);
   const [selected, setSelected] = useState([]);
   const [grantPage, setGrantPage] = useState(1);
   const [requestPage, setRequestPage] = useState(1);
@@ -28,6 +32,7 @@ export default function MembershipServices({ staff = false }) {
   const [legacyUses, setLegacyUses] = useState(0);
   const keys = useRef({});
   const inFlight = useRef(false);
+  useEffect(() => { const timer = setTimeout(() => setSessionId(params.get('sessionId') || ''), 0); return () => clearTimeout(timer); }, [params]);
 
   useEffect(() => {
     let active = true;
@@ -50,12 +55,13 @@ export default function MembershipServices({ staff = false }) {
             get(
               `staff/sessions?page=${sessionPage}&search=${encodeURIComponent(search)}`,
             ),
-            sessionId ? get(`staff/sessions/${sessionId}/benefits`) : null,
-            sessionId ? null : get(`requests?page=${requestPage}`),
+            sessionId ? get(`staff/sessions/${sessionId}/benefits${params.get('requestId') ? `?requestId=${encodeURIComponent(params.get('requestId'))}` : ''}`) : null,
+            sessionId ? null : get(`requests?page=${requestPage}${status ? `&status=${status}` : ''}`),
           ]);
           if (!active) return;
           setSessions(pageData(sessionData));
           setGrants(pageData(benefits?.grants));
+          setContext(benefits?.session || null);
           setRequests(pageData(benefits?.requests || history));
         } else {
           const [grantData, requestData, membership] = await Promise.all([
@@ -85,7 +91,7 @@ export default function MembershipServices({ staff = false }) {
     return () => {
       active = false;
     };
-  }, [staff, grantPage, requestPage, sessionPage, sessionId, search, reload]);
+  }, [staff, grantPage, requestPage, sessionPage, sessionId, search, reload, status, params]);
 
   const mutate = async (path, payload) => {
     if (inFlight.current) return false;
@@ -137,7 +143,7 @@ export default function MembershipServices({ staff = false }) {
   const activeService = (grant) =>
     requests.items.some(
       (request) =>
-        request.status === "in_progress" &&
+        ["pending", "in_progress"].includes(request.status) &&
         (id(request.serviceId) === id(grant.serviceId) ||
           id(request.grantId) === grant._id),
     );
@@ -225,7 +231,7 @@ export default function MembershipServices({ staff = false }) {
               {sessionId &&
                 !sessions.items.some(
                   (session) => session._id === sessionId,
-                ) && <option value={sessionId}>Selected session</option>}
+                ) && <option value={sessionId}>{context?.licensePlate || sessionId} · {context?.parkingSlot}</option>}
               {sessions.items.map((session) => (
                 <option key={session._id} value={session._id}>
                   {session.licensePlate} ·{" "}
@@ -321,11 +327,13 @@ export default function MembershipServices({ staff = false }) {
             </p>
           )}
           {!requests.items.length && <p>No service work yet.</p>}
+          {staff && <select aria-label="Filter requests" value={status} onChange={(e) => { setStatus(e.target.value); setRequestPage(1); }} className="mb-3 rounded-lg border p-2"><option value="">All</option><option value="pending">Pending</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="cancelled">Cancelled</option></select>}
           <div className="space-y-3">
-            {requests.items.map((request) => (
+            {requests.items.filter((r) => !status || r.status === status).map((request) => (
               <article
                 key={request._id}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4"
+                id={`request-${request._id}`}
+                className={`flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4 ${params.get('requestId') === request._id ? 'ring-2 ring-yellow-500' : ''}`}
               >
                 <div>
                   <h4 className="font-bold">
@@ -353,7 +361,7 @@ export default function MembershipServices({ staff = false }) {
                 {staff && (
                   <div className="flex gap-3">
                     {request.status === "pending" && (
-                      <p className="text-sm text-gray-600">
+                      request.accountingMode === 'customer_reserved' ? <button disabled={busy} onClick={() => mutate(`requests/${request._id}/start`, {})} className="min-h-11 rounded-lg bg-blue-700 px-4 font-bold text-white">Start</button> : <p className="text-sm text-gray-600">
                         Cancel this earlier request, then start the service from
                         the active parking session.
                       </p>

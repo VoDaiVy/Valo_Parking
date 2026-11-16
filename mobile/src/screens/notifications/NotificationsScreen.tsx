@@ -71,7 +71,9 @@ export const NotificationsScreen = ({ navigation }: Props) => {
   const openNotification = async (id: string, notification: Parameters<typeof getNotificationNavigationTarget>[0]) => {
     if (id) await markAsRead(id).catch(() => undefined);
     if (user?.role === 'staff' || user?.role === 'admin') {
-      if (notification.type === 'BOOKING') navigation.navigate('Bookings');
+      if (notification.metadata?.eventType === 'MEMBERSHIP_SERVICE_REQUESTED' && typeof notification.metadata.sessionId === 'string' && /^[a-f\d]{24}$/i.test(notification.metadata.sessionId)) {
+        navigation.navigate('MembershipServices', { sessionId: notification.metadata.sessionId, requestId: notification.metadata.serviceRequestId });
+      } else if (notification.type === 'BOOKING') navigation.navigate('Bookings');
       else if (notification.type === 'VIOLATION' || notification.type === 'CAMERA') navigation.navigate('ParkingOperations');
       return;
     }
