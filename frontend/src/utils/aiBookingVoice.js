@@ -1,3 +1,5 @@
+import { detectBookingInputLanguage } from './aiBookingLanguage.js';
+
 const speechLocale = (language) => (language === 'en' || language === 'en-US' ? 'en-US' : 'vi-VN');
 
 const englishParkingTerms = /\b(?:book|booking|reserve|reservation|park|parking|spot|space|slot|vehicle|car|license|plate|availability|available|wallet|balance|fee|price|location|where|cancel|change|modify|confirm|tomorrow|today|morning|afternoon|evening|night|floor|entry|exit|arrive|leave)\b/gi;
@@ -141,7 +143,7 @@ const selectPlateVoiceTranscript = (alternatives, language) => [...alternatives]
 
 export function createAiBookingRecognition(browser, {
   onTranscript, onError, onEnd, continuous = false, language = 'vi', expectLicensePlate = false,
-  contextPhrases = [],
+  contextPhrases = [], automaticLanguage = false, onClarification = () => {},
 }) {
   const SpeechRecognition = browser?.SpeechRecognition || browser?.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
@@ -157,9 +159,21 @@ export function createAiBookingRecognition(browser, {
       const rawAlternatives = Array.from(result || []).filter((alternative) => (
         String(alternative?.transcript || '').trim()
       ));
-      const transcript = expectLicensePlate
+      const detectedLanguage = automaticLanguage
+        ? detectBookingInputLanguage(rawAlternatives[0]?.transcript || '', language).language : language;
+      // Native alternatives may disagree on business data. Never choose the
+      // alternative merely because it resembles a stored plate or booking.
+      if (automaticLanguage && (!rawAlternatives.length || !Number.isFinite(Number(rawAlternatives[0].confidence)) || Number(rawAlternatives[0].confidence) < 0.8)) {
+        onClarification(); break;
+      }
+      const numbers = (text) => String(text || '').match(/\d+(?:[.:/-]\d+)*/g)?.join('|') || '';
+      if (automaticLanguage && rawAlternatives.some((alternative) => Number(alternative.confidence) >= 0.8
+        && numbers(alternative.transcript) !== numbers(rawAlternatives[0]?.transcript))) {
+        onClarification(); break;
+      }
+      const transcript = automaticLanguage ? String(rawAlternatives[0]?.transcript || '').trim() : expectLicensePlate
         ? selectPlateVoiceTranscript(rawAlternatives, language)
-        : language === 'en'
+        : detectedLanguage === 'en'
           ? selectEnglishVoiceTranscript(rawAlternatives, contextPhrases)
           : selectVietnameseVoiceTranscript(rawAlternatives, contextPhrases);
       if (transcript) { onTranscript(transcript); break; }
@@ -181,7 +195,7 @@ export function createAiBookingRecognition(browser, {
 
 // Keeps a single user-initiated voice conversation active across recognition
 // timeouts. Recognition pauses while the request and spoken reply are handled.
-export function createAiBookingVoiceSession(browser, { onTranscript, onError, onListeningChange }, restartDelayMs = 180) {
+export function createAiBookingVoiceSession(browser, { onTranscript, onError, onListeningChange, automaticLanguage = false, onClarification = () => {} }, restartDelayMs = 180) {
   if (!browser?.SpeechRecognition && !browser?.webkitSpeechRecognition) return null;
   let active = false;
   let paused = false;
@@ -202,8 +216,14 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
     const next = createAiBookingRecognition(browser, {
       continuous: true,
       language,
+      automaticLanguage,
       expectLicensePlate,
       contextPhrases,
+      onClarification: () => {
+        if (!active || paused) return;
+        paused = true; try { next.stop(); } catch { /* Already stopped. */ }
+        onClarification();
+      },
       onTranscript: (text) => {
         if (!active || paused) return;
         const normalized = String(text).trim().toLowerCase();
@@ -217,7 +237,10 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
       },
       onError: (message, code) => {
         if (!active) return;
-        if (['no-speech', 'aborted', 'network', 'bad-grammar'].includes(code)) return;
+        if (code === 'aborted') return;
+        if (['no-speech', 'network', 'bad-grammar'].includes(code)) {
+          paused = true; onClarification(); return;
+        }
         paused = true;
         if (['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(code)) active = false;
         onError(message);
@@ -292,15 +315,18 @@ const spokenCode = (value) => String(value || '').replace(/[^A-Z0-9]/gi, '')
 
 function formatEnglishBookingSpeech(value) {
   return String(value || '').trim()
-    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_, hour, minute) => {
+    .replace(/(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:VND|đồng|đ|₫)(?=\s|[.,;!?]|$)/gi,
+      (_, amount) => `${amount.replace(/[.,]/g, '')} Vietnamese dong`)
+    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*(?:am|pm)\b)/gi, (_, hour, minute) => {
       const date = new Date(`2000-01-01T${String(hour).padStart(2, '0')}:${minute}:00`);
       return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(date);
     })
-    .replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g, (_, day, month, year) => (
-      new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
-        .format(new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00Z`))
-    ))
-    .replace(/\b([0-9]{2}[A-Z]{1,2}[0-9]{4,6})\b/g, (plate) => spokenCode(plate))
+    .replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g, (original, day, month, year) => {
+      const date = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00Z`);
+      if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(day) || date.getUTCMonth() + 1 !== Number(month)) return original;
+      return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(date);
+    })
+    .replace(/\b([0-9]{2}[ .-]*[A-Z]{1,2}[ .-]*[0-9]{3,5}(?:\.[0-9]{2})?)\b/gi, (plate) => spokenCode(plate))
     .replace(/\s*[\u00b7•]\s*/g, ', ')
     .replace(/^\s*-\s*/gm, '')
     .replace(/\n+/g, '. ')
@@ -352,8 +378,8 @@ export function formatAiBookingSpeech(value, language = 'vi') {
     .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_, hour, minute) => spokenTime(hour, minute))
     .replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g,
       (_, day, month, year) => `ngày ${Number(day)} tháng ${Number(month)} năm ${year}`)
-    .replace(/(\d{1,3}(?:\.\d{3})+|\d+)\s*(?:đ|VND)(?=\s|[.,;!?]|$)/gi,
-      (_, amount) => `${amount.replace(/\./g, '')} đồng`)
+    .replace(/(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:đ|VND)(?=\s|[.,;!?]|$)/gi,
+      (_, amount) => `${amount.replace(/[.,]/g, '')} đồng`)
     .replace(/\b([Xx]e)\s+([0-9]{2}[A-Z]{1,2}[0-9]{4,6})\b/g,
       (_, prefix, plate) => `${prefix} ${spokenCode(plate)}`)
     .replace(/([Ôô])\s+([A-Z]{1,2}\d{1,4})\b/g,
@@ -362,6 +388,7 @@ export function formatAiBookingSpeech(value, language = 'vi') {
     .replace(/^\s*-\s*/gm, '')
     .replace(/\n+/g, '. ')
     .replace(/\s+/g, ' ')
+    .replace(/ngày\s+ngày/giu, 'ngày')
     .replace(/\.{2,}/g, '.')
     .trim();
   return message;
@@ -376,7 +403,7 @@ export function createConciseAiBookingSpeech(value, language = 'vi', maximumLeng
     .trim();
   if (!text || text.length <= maximumLength) return text;
 
-  const sentences = text.match(/[^.!?]+[.!?]?/g)?.map((item) => item.trim()).filter(Boolean) || [text];
+  const sentences = text.split(/(?<=[.!?])\s+(?!\d)/).map((item) => item.trim()).filter(Boolean);
   const selected = [];
   let length = 0;
   for (const sentence of sentences) {
@@ -384,8 +411,7 @@ export function createConciseAiBookingSpeech(value, language = 'vi', maximumLeng
     const nextLength = length + (length ? 1 : 0) + sentence.length;
     if (selected.length && nextLength > maximumLength) break;
     if (!selected.length && sentence.length > maximumLength) {
-      const cutoff = sentence.slice(0, maximumLength - 1).lastIndexOf(' ');
-      selected.push(`${sentence.slice(0, Math.max(cutoff, maximumLength - 30)).trim()}…`);
+      // Never announce a truncated amount, plate, date or booking status.
       break;
     }
     selected.push(sentence);

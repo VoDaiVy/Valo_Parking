@@ -1,4 +1,4 @@
-export type SubscriptionPackageType = 'monthly' | 'yearly';
+export type SubscriptionPackageType = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 export type SubscriptionPaymentMethod = 'payos' | 'wallet';
 
 export interface SubscriptionPackage {
@@ -15,6 +15,12 @@ export interface SubscriptionPackage {
   description?: string;
   isActive: boolean;
   durationMonths?: number;
+  durationDays?: number;
+  durationMinutes?: number;
+  revision?: number;
+  benefitsVersion?: number;
+  maxSlots?: number;
+  serviceBenefits?: Array<{ serviceId: string; serviceName: string; quantityPerSlot: number }>;
   benefits?: string[];
 }
 
@@ -46,6 +52,7 @@ export interface MembershipStatus {
     name: string;
     type: SubscriptionPackageType;
     price: number;
+    durationDays?: number;
     description?: string;
   } | null;
   reservedSlots: ReservedSlot[];
@@ -102,6 +109,7 @@ export interface SubscriptionSlotSelection {
 }
 
 export interface CreateSubscriptionPaymentRequest {
+  packageRevision?: number;
   packageId: string;
   slots: SubscriptionSlotSelection[];
 }

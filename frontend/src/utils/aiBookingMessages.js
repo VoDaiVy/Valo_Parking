@@ -1,4 +1,12 @@
+import { detectBookingInputLanguage } from './aiBookingLanguage.js';
 
+export const needsBookingReplyTranslation = (value, language) => {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (language === 'en' && /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(text)) return true;
+  const detected = detectBookingInputLanguage(text, language);
+  return detected.language !== language && detected.confidence >= 0.65;
+};
 const vietnameseToEnglish = (value) => {
   let text = String(value || '').trim();
   const translations = [

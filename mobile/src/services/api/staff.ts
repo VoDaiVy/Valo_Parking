@@ -122,10 +122,14 @@ export interface StaffMembershipTransitionPayload extends StaffBookingTransition
 export interface TicketPackage {
   _id: string;
   name: string;
-  type: 'hourly' | 'daily' | 'monthly' | 'yearly';
+  type: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  durationDays?: number;
   price: number;
   description?: string;
   isActive: boolean;
+  saleLimit?: number | null;
+  inactiveReason?: 'SOLD_OUT' | 'ADMIN_PAUSED' | null;
+  stock?: { saleLimit: number | null; allocatedQuantity: number; heldQuantity: number; remainingQuantity: number | null };
   createdAt?: string;
 }
 

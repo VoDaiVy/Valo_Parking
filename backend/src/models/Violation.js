@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const violationSchema = new mongoose.Schema(
   {
+    telegramNotification: { type: require('./telegramNotificationFields'), default: undefined },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -81,6 +82,12 @@ violationSchema.virtual('isOverdue').get(function isOverdue() {
   const paymentWindow = 72 * 60 * 60 * 1000;
   return Date.now() - this.createdAt.getTime() > paymentWindow;
 });
+
+violationSchema.pre('save', function recordTelegramEvent(next) {
+  if (this.isNew) this.telegramNotification = { occurredAt: new Date() };
+  next();
+});
+violationSchema.index({ 'telegramNotification.processedAt': 1, 'telegramNotification.occurredAt': 1 });
 
 violationSchema.virtual('daysLeftInPaymentWindow').get(function daysLeftInPaymentWindow() {
   if (this.status !== 'PENDING' || !this.createdAt) return 0;

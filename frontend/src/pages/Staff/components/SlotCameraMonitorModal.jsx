@@ -1704,10 +1704,10 @@ export default function SlotCameraMonitorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 animate-in fade-in duration-200">
-      <div className="w-full max-w-7xl h-[92vh] bg-[#0c0f14] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-gray-100 font-sans">
+      <div role="dialog" aria-modal="true" aria-label="Floor-level AI surveillance" className="staff-camera-dialog w-full max-w-7xl h-[92vh] bg-[#0c0f14] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-gray-100 font-sans">
 
         {/* Top Navigation Bar */}
-        <div className="flex items-center justify-between px-6 py-3.5 bg-[#12161f] border-b border-white/10 select-none">
+        <div className="staff-camera-header flex items-center justify-between px-6 py-3.5 bg-[#12161f] border-b border-white/10 select-none">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-amber-400/10 text-amber-400 border border-amber-400/20 shadow-sm">
               <Camera size={20} />
@@ -1772,6 +1772,7 @@ export default function SlotCameraMonitorModal({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close AI surveillance"
               className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition border border-white/10"
             >
               <X size={18} />
@@ -2064,7 +2065,7 @@ export default function SlotCameraMonitorModal({
         </div>
 
         {/* Main Content Area: Video Canvas + Side Status Panel */}
-        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-0 min-h-[420px]">
+        <div className="staff-camera-workspace flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-0 min-h-[420px]">
 
           {/* Video & Interactive Canvas */}
           <div

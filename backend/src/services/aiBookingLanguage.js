@@ -12,7 +12,7 @@ const ENGLISH_WORDS = new Set([
   'make', 'it', 'there', 'therefore', 'somewhere', 'bring', 'bringing', 'park', 'save', 'get',
   'hold', 'keep', 'someplace', 'tonight', 'noon', 'midnight', 'half', 'quarter', 'past',
   'through', 'whole', 'week', 'weekend', 'month', 'days', 'minutes', 'first', 'second',
-  'third', 'other', 'both', 'another', 'exactly', 'sure', 'yep', 'yeah', 'ready', 'proceed',
+  'hello', 'hi', 'thanks', 'thank', 'where', 'what', 'how', 'when', 'which', 'show', 'check', 'wallet', 'balance', 'services', 'service', 'fee', 'price', 'slot', 'floor', 'date', 'time', 'amount', 'third', 'other', 'both', 'another', 'exactly', 'sure', 'yep', 'yeah', 'ready', 'proceed',
 ]);
 
 const VIETNAMESE_WORDS = new Set([
@@ -21,15 +21,23 @@ const VIETNAMESE_WORDS = new Set([
   'sang', 'chieu', 'toi', 'trua', 'bien', 'so', 'tang', 'khu', 'huy', 'dong', 'y', 'xac',
   'nhan', 'khong', 'dung', 'thoi', 'doi', 'sua', 'them', 'nap', 'vi', 'tien', 'roi', 'nhe',
   'nha', 'duoc', 'vui', 'long', 'giup', 'bay', 'tam', 'chin', 'muoi', 'phut', 'tieng',
-  'lay', 'chon', 'o', 'goi', 'y', 'lien', 'tuc', 'vai', 'tuan', 'thang', 'ca', 'doi',
+  'chao', 'cam', 'on', 'dich', 'vu', 'phi', 'gia', 'tui', 'rang', 'mo', 'lay', 'chon', 'o', 'goi', 'y', 'lien', 'tuc', 'vai', 'tuan', 'thang', 'ca', 'doi',
 ]);
 
 const countMatches = (text, patterns) => patterns.reduce(
   (score, pattern) => score + (text.match(pattern)?.length || 0), 0,
 );
 
+function isLanguageNeutralInput(value) {
+  const text = String(value || '').trim();
+  return !text || /^(?:ok(?:ay)?|uh|um|[a-z])$/i.test(text)
+    || /^(?:[A-Z]{1,3}[\s._-]*\d+(?:[\s._-]\d+)*|\d{2}[\s.-]*[A-Z]{1,2}[\s.-]*(?:\d[\s.]*){4,5}|[+\-€$₫]?\s*\d+(?:[.,:/\s-]\d+)*(?:\s*(?:VND|USD|EUR|đ|đồng|h\d*|am|pm))?)$/iu.test(text);
+}
+
 function detectBookingLanguage(value, previousLanguage = 'vi') {
   const raw = String(value || '').trim();
+  if (!raw) return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: 0 };
+  if (isLanguageNeutralInput(raw)) return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: 0.35 };
   const normalized = fold(raw);
   const tokens = normalized.split(/\s+/).filter(Boolean);
   if (!tokens.length) return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: 0 };
@@ -47,11 +55,11 @@ function detectBookingLanguage(value, previousLanguage = 'vi') {
     /\b(?:vui long|bao nhieu|khong muon|cho toi|giup toi)\b/g,
   ]) * 2;
   if (/[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(raw)) {
-    vietnamese += 4;
+    vietnamese += english ? 2 : 4;
   }
 
   const evidence = english + vietnamese;
-  if (evidence === 0 || Math.abs(english - vietnamese) <= Math.max(1, evidence * 0.15)) {
+  if (evidence === 0 || (english > 0 && vietnamese > 0 && Math.abs(english - vietnamese) <= Math.max(1, evidence * 0.15))) {
     return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: evidence ? 0.55 : 0.35 };
   }
   const language = english > vietnamese ? 'en' : 'vi';
@@ -59,10 +67,4 @@ function detectBookingLanguage(value, previousLanguage = 'vi') {
   return { language, confidence: Number(confidence.toFixed(2)) };
 }
 
-function detectSelectedLanguageMismatch(value, selectedLanguage) {
-  const selected = selectedLanguage === 'en' ? 'en' : 'vi';
-  const detected = detectBookingLanguage(value, selected);
-  return detected.language !== selected && detected.confidence >= 0.8 ? detected : null;
-}
-
-module.exports = { detectBookingLanguage, detectSelectedLanguageMismatch };
+module.exports = { detectBookingLanguage, isLanguageNeutralInput };

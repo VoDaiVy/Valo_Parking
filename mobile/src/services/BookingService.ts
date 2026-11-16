@@ -219,9 +219,16 @@ class BookingService {
     const vehicle = asRecord(record.vehicle ?? record.vehicleId);
     const rawPaymentMethod = firstString(record, ['paymentMethod']);
     const paymentMethod = rawPaymentMethod === 'vietqr' ? 'vietqr' : 'wallet';
+    const feedback = asRecord(record.feedbackSummary);
 
     return {
       _id: id,
+      canSubmitFeedback: record.canSubmitFeedback === true,
+      feedbackSummary: feedback ? {
+        id: firstString(feedback, ['id', '_id']),
+        rating: firstNumber(feedback, ['rating']),
+        hasReply: feedback.hasReply === true,
+      } : null,
       userId: firstString(record, ['userId']),
       floorId: floor ? (floor as unknown as Booking['floorId']) : firstString(record, ['floorId']),
       slotCode: firstString(record, ['slotCode', 'parkingSlot']),

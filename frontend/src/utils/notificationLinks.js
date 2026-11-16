@@ -19,6 +19,9 @@ export function getSafeCustomerNotificationLink(notification) {
   const metadata = notification?.metadata || {};
   const validId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
   const eventType = String(metadata.eventType || '').trim().toUpperCase();
+  if (eventType === 'MEMBERSHIP_SERVICE_STATUS_CHANGED') {
+    return '/customer/membership-transfers#membership-services';
+  }
   if (MEMBERSHIP_STATUS_EVENTS.has(eventType)) {
     if (validId(metadata.entitlementId)) return `/customer/membership-transfers?entitlementId=${metadata.entitlementId}`;
     if (validId(metadata.subscriptionId)) return `/customer/membership-transfers?subscriptionId=${metadata.subscriptionId}`;

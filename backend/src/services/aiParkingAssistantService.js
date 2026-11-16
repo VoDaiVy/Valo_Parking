@@ -96,10 +96,15 @@ function detectIntents(text) {
     /\b(xem|kiem tra|danh sach|co|con)\s+(voucher|ma giam gia|uu dai)\b/,
     /\b(voucher|ma giam gia)\s+(nao|gi|kha dung|con han|cua toi)\b/,
     /\b(show|list|check|view)\s+(my\s+)?(available\s+)?(vouchers?|discounts?)\b/,
+    /\b(?:co|con|kiem tra|xem|nhung|cac)\s+(?:(?:ma|the|phieu)\s+)?giam gia\b/,
+    /\b(?:ma|the|phieu)\s+giam gia\s+(?:nao|gi|khong|con|kha dung)\b/,
+    /\b(?:do i have|have i got|any|my|available)\s+(?:any\s+)?(?:vouchers?|coupons?|discount(?:\s+codes?)?)\b/,
   ]);
   add('USE_VOUCHER', [
     /\b(dung|ap dung|chon|them|bo|xoa|huy)\s+(voucher|ma giam gia|uu dai)\b/,
     /\b(use|apply|select|add|remove|clear)\s+(a\s+|my\s+|the\s+)?(voucher|discount)\b/,
+    /\b(?:dung|ap dung|chon|them|bo|xoa|huy)\s+(?:the|phieu)\s+giam gia\b/,
+    /\b(?:use|apply|select|remove|clear)\s+(?:(?:a|my|the)\s+)?(?:coupon|discount code)\b/,
   ]);
   add('CHECK_PARKING_POLICY', [
     /\b(chinh sach|quy dinh|noi quy|dieu khoan|hoan tien)\b/,
@@ -274,6 +279,12 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   }
   const context = draft.assistantContext && typeof draft.assistantContext === 'object'
     ? draft.assistantContext : {};
+  const suppliedPlates = extractLicensePlates(text);
+  const plateOnly = suppliedPlates.length === 1 && compactPlate(raw) === compactPlate(suppliedPlates[0]);
+  const lookupIntents = ['CHECK_BOOKING_STATUS', 'CHECK_VEHICLE_PARKING_STATUS'];
+  if (!intents.length && plateOnly && lookupIntents.includes(context.pendingLookupIntent)) {
+    intents = [context.pendingLookupIntent];
+  }
   const pendingType = context.pendingAction?.type;
   if (!intents.length && ['ADD_VEHICLE', 'UPDATE_VEHICLE', 'REMOVE_VEHICLE'].includes(pendingType)) {
     intents = [pendingType];
@@ -309,7 +320,12 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
     ...(Array.isArray(bookingEntities.licensePlates) ? bookingEntities.licensePlates : []),
     ...extractLicensePlates(text),
   ])];
-  const licensePlate = compactPlate(bookingEntities.licensePlate || directPlates[0] || context.licensePlate);
+  const draftPlates = [...new Set([draft.licensePlate, ...(draft.licensePlates || []),
+    ...(Array.isArray(draft.reservationItems) ? draft.reservationItems.map((item) => item.licensePlate) : [])].map(compactPlate).filter(Boolean))];
+  const contextualBookingPlate = intents.includes('CHECK_BOOKING_STATUS')
+    ? context.lastBookingConflict?.licensePlate || (draftPlates.length === 1 ? draftPlates[0] : '') : '';
+  const licensePlate = compactPlate(directPlates[0] || context.licensePlate || contextualBookingPlate || bookingEntities.licensePlate);
+  const changedPlate = Boolean(directPlates[0] && context.licensePlate && compactPlate(directPlates[0]) !== compactPlate(context.licensePlate));
   const zone = raw.match(/\b(?:zone|khu)\s*([a-z0-9-]{1,12})\b/i)?.[1]?.toUpperCase() || '';
   const floorName = bookingEntities.floorName || raw.match(/\b(?:tầng|tang|floor)\s*([a-z0-9-]{1,12})\b/i)?.[1] || '';
   const serviceName = raw.match(/\b(?:dịch vụ|dich vu|service)\s+([^,.;:?]{2,80})/i)?.[1]?.trim()
@@ -331,7 +347,7 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
     requestedVehicleCount: bookingEntities.requestedVehicleCount || draft.requestedVehicleCount || 0,
     serviceName,
     vehicleChanges,
-    bookingId: context.bookingId || '', sessionId: context.sessionId || '',
+    bookingId: changedPlate ? '' : context.bookingId || '', sessionId: changedPlate ? '' : context.sessionId || '',
     pendingAction: context.pendingAction || null,
   };
   if (pendingType === 'UPDATE_VEHICLE' && context.pendingAction?.licensePlate) {
@@ -481,36 +497,27 @@ async function handleBookingIntent(intent, parsed, userId, now) {
   const lastConflict = parsed.draft?.assistantContext?.lastBookingConflict;
   const requestedPlate = compactPlate(parsed.entities.licensePlate || lastConflict?.licensePlate || '');
   const conflictPlate = compactPlate(lastConflict?.licensePlate || '');
-  if (intent === 'CHECK_BOOKING_STATUS' && requestedPlate && requestedPlate === conflictPlate) {
-    if (lastConflict.code === 'LICENSE_PLATE_BOOKING_CONFLICT') {
-      return {
-        message: `Biển số ${requestedPlate} đang được dùng bởi một booking còn hiệu lực trên hệ thống. Booking đó không thuộc tài khoản của bạn nên không thể hiển thị chi tiết. Hãy chọn xe đã đăng ký trong tài khoản hoặc đăng ký/xác minh biển số này.`,
-        context: { licensePlate: requestedPlate },
-      };
-    }
-    if (lastConflict.code === 'VEHICLE_BOOKING_OVERLAP' && lastConflict.conflictBooking) {
-      const conflict = lastConflict.conflictBooking;
-      return {
-        message: `Booking đang gây trùng của xe ${requestedPlate}: ${vnDateTime(conflict.scheduledStart)}–${vnDateTime(conflict.scheduledEnd)}, ô ${conflict.parkingSlot || 'chưa xác định'}. Trạng thái: ${bookingStatusText(conflict.status)}.`,
-        context: { bookingId: conflict.bookingId || '', licensePlate: requestedPlate, slotCode: conflict.parkingSlot || '' },
-      };
-    }
-  }
-
-  const approvedPlates = await Vehicle.find({ owner: userId, status: 'approved' }).distinct('licensePlate');
-  const ownership = [{ userId }];
-  if (approvedPlates.length) ownership.push({ licensePlate: { $in: approvedPlates.map(compactPlate) } });
-  const query = { $or: ownership };
-  if (parsed.entities.licensePlate) query.licensePlate = parsed.entities.licensePlate;
+  if (intent === 'CHECK_BOOKING_STATUS' && !requestedPlate) return {
+    message: 'Bạn muốn kiểm tra lượt đặt chỗ của xe nào? Hãy đọc hoặc nhập biển số.',
+    context: { pendingLookupIntent: 'CHECK_BOOKING_STATUS', bookingId: '', licensePlate: '' },
+  };
+  // Read actual account-owned bookings; draft conflict metadata is only a hint.
+  const query = { userId };
+  if (requestedPlate) query.licensePlate = requestedPlate;
   if (intent === 'CHECK_UPCOMING_BOOKING') {
     query.status = { $in: ['PENDING', 'PAID'] };
     query.scheduledEnd = { $gt: now };
   }
-  if (parsed.entities.bookingId) query._id = parsed.entities.bookingId;
+  if (parsed.entities.bookingId && intent === 'CHECK_UPCOMING_BOOKING') query._id = parsed.entities.bookingId;
   let historyFallback = false;
   let booking;
+  const conflictId = lastConflict?.conflictBooking?.bookingId;
+  if (intent === 'CHECK_BOOKING_STATUS' && requestedPlate === conflictPlate && /^[a-f\d]{24}$/i.test(conflictId || '')) {
+    booking = await Booking.findOne({ ...query, _id: conflictId, status: { $in: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED'] }, scheduledEnd: { $gt: now } })
+      .sort({ scheduledStart: 1 }).populate('floorId', 'name floorNumber').lean();
+  }
   if (intent === 'CHECK_BOOKING_STATUS' || intent === 'CHECK_PAYMENT_STATUS') {
-    booking = await Booking.findOne({
+    booking = booking || await Booking.findOne({
       ...query,
       status: { $in: ['PENDING', 'PAID', 'ACTIVE', 'PAUSED'] },
       scheduledEnd: { $gt: now },
@@ -524,6 +531,10 @@ async function handleBookingIntent(intent, parsed, userId, now) {
     booking = await Booking.findOne(query).sort(intent === 'CHECK_UPCOMING_BOOKING'
       ? { scheduledStart: 1 } : { createdAt: -1 }).populate('floorId', 'name floorNumber').lean();
   }
+  if (!booking && intent === 'CHECK_BOOKING_STATUS' && requestedPlate === conflictPlate && lastConflict?.code === 'LICENSE_PLATE_BOOKING_CONFLICT') return {
+    message: `Biển số ${requestedPlate} đang trùng với booking khác trên hệ thống. Mình chỉ có thể hiển thị chi tiết booking thuộc tài khoản của bạn. Hãy kiểm tra lại biển số hoặc chọn xe khác.`,
+    context: { licensePlate: requestedPlate, bookingId: '', pendingLookupIntent: null },
+  };
   if (!booking) return { message: intent === 'CHECK_UPCOMING_BOOKING'
     ? 'Bạn không có booking sắp tới.' : 'Mình không tìm thấy booking phù hợp trong tài khoản của bạn.', context: {} };
   const context = {
@@ -541,7 +552,7 @@ async function handleBookingIntent(intent, parsed, userId, now) {
       ? 'Booking sắp tới'
       : historyFallback
         ? 'Xe không có booking đang hiệu lực. Lịch sử gần nhất'
-        : 'Booking đang hiệu lực'}: xe ${booking.licensePlate}, ${vnDateTime(booking.scheduledStart)}–${vnTime(booking.scheduledEnd)}, ${booking.floorId?.name || 'chưa có tầng'}, ô ${booking.parkingSlot}. Trạng thái: ${bookingStatusText(booking.status)}.`,
+        : 'Booking đang hiệu lực'}: xe ${booking.licensePlate}, ${vnDateTime(booking.scheduledStart)}–${vnDateTime(booking.scheduledEnd)}, ${booking.floorId?.name || 'chưa có tầng'}, ô ${booking.parkingSlot}. Trạng thái: ${bookingStatusText(booking.status)}.`,
     context,
   };
 }
@@ -732,7 +743,7 @@ async function handleServices(intent, parsed) {
   if (!bookingPatch.endTime) missing.push('giờ ra');
   if (!hasVehicle) missing.push('xe hoặc biển số');
   const hasPriorBooking = missing.length === 0;
-  const isRemoving = /\b(bo|xoa|huy|khong\s+lay|khong\s+can|remove|delete|cancel)\b/i.test(parsed.rawText);
+  const isRemoving = /\b(bo|xoa|huy|khong\s+lay|khong\s+can|khong\s+muon|remove|delete|cancel)\b/i.test(fold(parsed.rawText));
   let nextServiceIds, nextServiceNames, message;
   const targetPlate = bookingPatch.licensePlate || bookingPatch.licensePlates?.[0] || '';
   const selectedIds = selected.map((item) => idOf(item._id));
@@ -907,7 +918,22 @@ async function handlePolicies(parsed) {
   };
 }
 
-async function handleTicketPackages(intent, parsed) {
+async function handleTicketPackages(intent, parsed, userId, now) {
+  const request = fold(parsed.rawText);
+  if (/\b(?:huy|cancel|terminate)\b/.test(request)) return {
+    message: 'Trợ lý chưa hỗ trợ hủy gói VIP. Vui lòng xem gói đang dùng ở trang Gói hoặc liên hệ nhân viên để kiểm tra điều kiện hủy. Chưa có gói nào bị hủy.',
+    context: {}, showVipModal: false,
+  };
+  if (/\b(?:cua toi|dang dung|con han|het han|han su dung|my|expiry|expire|expires|expiration|active)\b/.test(request)) {
+    const Subscription = require('../models/Subscription');
+    const subscriptions = await Subscription.find({ user: userId }).populate('ticketPackage', 'name').sort({ expireAt: -1 }).lean();
+    const lines = subscriptions.map((item) => {
+      const active = item.paymentStatus === 'paid' && item.status === 'active'
+        && new Date(item.validFrom) <= now && new Date(item.expireAt) > now;
+      return `- ${item.ticketPackage?.name || 'Gói VIP'}: ${active ? 'đang hiệu lực' : 'chưa hoặc không còn hiệu lực'}, hết hạn ${vnDateTime(item.expireAt)}.`;
+    });
+    return { message: lines.length ? `Gói VIP của bạn:\n${lines.join('\n')}` : 'Bạn chưa có gói VIP trong tài khoản.', context: {}, showVipModal: false };
+  }
   const TicketPackage = require('../models/TicketPackage');
   const packages = await TicketPackage.find({ isActive: true }).sort({ price: 1 }).lean();
   if (!packages.length) {
@@ -941,7 +967,7 @@ async function executeOne(intent, parsed, userId, now) {
   if (['CHECK_SERVICES', 'BOOK_SERVICE'].includes(intent)) return handleServices(intent, parsed);
   if (['CHECK_VOUCHERS', 'USE_VOUCHER'].includes(intent)) return handleVouchers(intent, parsed, userId, now);
   if (intent === 'CHECK_PARKING_POLICY') return handlePolicies(parsed);
-  if (intent === 'CHECK_TICKET_PACKAGES') return handleTicketPackages(intent, parsed);
+  if (intent === 'CHECK_TICKET_PACKAGES') return handleTicketPackages(intent, parsed, userId, now);
   if (intent === 'HELP') return {
     message: 'Mình có thể đặt chỗ; kiểm tra xe đang ở đâu, giờ vào/ra, thời gian và phí đỗ; xem booking, chỗ trống, ví, giao dịch, xe, dịch vụ và chính sách. Bạn muốn kiểm tra gì?', context: {},
   };
@@ -966,7 +992,7 @@ async function executeAssistantRequest(parsed, userId, now = new Date()) {
   }
   return {
     message: outputs.join('\n'),
-    context: mergedContext,
+    context: { pendingLookupIntent: null, ...mergedContext },
     pendingAction,
     pendingActionDraft,
     transition,

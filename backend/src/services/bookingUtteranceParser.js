@@ -862,8 +862,8 @@ function extractEnglishTimeData(message, previous = {}) {
     if (startTime && endTime) return { startTime, endTime };
   }
 
-  const start = message.match(new RegExp(`\\b(?:at|from|starting at|start at|arrive at|will arrive at|want to arrive at|arrival time is|plan to arrive at)\\s+(${clock})\\b`));
-  const end = message.match(new RegExp(`\\b(?:until|up to|leave at|will leave at|be leaving at|leaving at|departure time is|end at|ending at)\\s+(${clock})\\b`));
+  const start = message.match(new RegExp(`\\b(?:at|from|starting at|start at|arrive at|will arrive at|want to arrive at|arrival time is|plan to arrive at|(?:start|arrival|entry) time (?:to|is|at))\\s+(${clock})\\b`));
+  const end = message.match(new RegExp(`\\b(?:until|up to|leave at|will leave at|be leaving at|leaving at|departure time is|end at|ending at|(?:end|departure|exit) time (?:to|is|at))\\s+(${clock})\\b`));
   if (start || end) return {
     startTime: start ? parseEnglishClock(start[1]) : '',
     endTime: end ? parseEnglishClock(end[1]) : '',
@@ -948,7 +948,8 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
       (_, clock, date) => `${date} night at ${eveningClock(clock)}`);
   const continuing = previous.__intent === 'CREATE_BOOKING';
   const createCue = /\b(?:book|reserve|reservation|parking|park|spot|space|license plate|registration|somewhere to park|place to leave|save me)\b/.test(message)
-    || /\b(?:want|need|like)\b.*\b(?:dat|xe|cho)\b/.test(message);
+    || /\b(?:want|need|like)\b.*\b(?:dat|xe|cho)\b/.test(message)
+    || /\b(?:dat|dau|do|gui)\s+(?:xe|cho)\b|\bgiu cho\b/.test(message);
   const correctionCue = /\b(?:change|correct|instead|actually|wrong|meant)\b/.test(message);
   if (!continuing && !createCue) return null;
 
@@ -1104,6 +1105,9 @@ function parseEnglishBookingUtterance(prompt, today, previous = {}, currentTime 
 // Existing Vietnamese parser remains isolated so bilingual support cannot regress it.
 function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTime = '') {
   if (!validDate(today)) return null;
+  if (/^(?:bo|xoa|khong chon)\s+(?:o do|o|cho do)(?:\s+(?:da chon|hien tai))?[.! ]*$/.test(simplify(prompt))) {
+    return { changes: {}, clearSlot: true };
+  }
   const words = { 'muoi mot': 11, 'muoi hai': 12, mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9, muoi: 10 };
   const markedPrompt = String(prompt || '')
     .replace(/tháng\s+sáu/giu, 'thang6')
@@ -1371,7 +1375,7 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const mentionedSlot = /\b(o do|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message)
     || /\b(?:doi|sua|chuyen|chon|lay)\s+(?:(?:sang|qua)\s+)?o\b/.test(message);
 
-  if (!startDate && !times.length && !durationMatch && !licensePlate && !requestedVehicleCount
+  if (!startDate && !times.length && !durationMatch && !licensePlate && !statedVehicleCount && !addsAnotherVehicle
     && !vehicleType && !floorName && !zoneName && !slotCode && !createCue
     && !mentionedPlate && !mentionedFloor && !mentionedSlot) return null;
   const changes = { startDate, endDate, licensePlate, licensePlates, requestedVehicleCount,
@@ -1498,10 +1502,14 @@ function mergeParsedBookings(primary, secondary) {
 
 function parseBookingUtterance(prompt, today, previous = {}, currentTime = '', language) {
   const detected = language || detectBookingLanguage(prompt, previous.language).language;
-  const englishSignals = /\b(?:book|reserve|parking|spot|space|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|arrive|leave|until|license plate|plate number|vehicle|car|hours?|am|pm)\b/i.test(prompt);
+  // Normalize only a mixed-language command verb, never any business value.
+  prompt = String(prompt).replace(/\b(?:change|correct)\s+(?=(?:giờ|gio|ngày|ngay|biển|bien|tầng|tang)\b)/giu, 'đổi ');
+  const englishSignals = /\b(?:book|reserve|parking|spot|space|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|arrive|leave|from|until|license plate|plate number|vehicle|car|hours?|am|pm)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(prompt);
   if (detected === 'en') {
-    return parseEnglishBookingUtterance(prompt, today, previous, currentTime, 'en')
-      || parseVietnameseBookingUtterance(prompt, today, previous, currentTime);
+    return mergeParsedBookings(
+      parseEnglishBookingUtterance(prompt, today, previous, currentTime, 'en'),
+      parseVietnameseBookingUtterance(prompt, today, previous, currentTime),
+    );
   }
   const vietnamese = parseVietnameseBookingUtterance(prompt, today, previous, currentTime);
   if (!englishSignals) return vietnamese;
