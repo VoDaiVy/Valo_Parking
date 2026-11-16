@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { API_BASE, apiFetch } from '../../services/api';
 import { getServices } from '../../services/extraServiceApi';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const EMPTY_STATS = {
   totalStaff: 0,
@@ -291,19 +292,19 @@ function DashboardShell({ children }) {
   );
 }
 
-function DashboardHeader({ loading, refreshing, onRefresh }) {
+function DashboardHeader({ loading, refreshing, onRefresh, t }) {
   return (
     <div className="valo-enter flex flex-col gap-4 motion-safe:animate-[valo-dashboard-in_420ms_ease-out_both] sm:flex-row sm:items-end sm:justify-between">
       <div>
         <div className="inline-flex w-fit items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-yellow-300">
           <Settings2 size={12} />
-          Dashboard
+          {t('adminDashboard.badge')}
         </div>
         <h1 className="mt-3 text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl">
-          Admin Overview
+          {t('adminDashboard.title')}
         </h1>
         <p className="mt-1 text-sm font-medium text-blue-100/70">
-          Manage the entire VALO Smart Parking system
+          {t('adminDashboard.subtitle')}
         </p>
       </div>
 
@@ -314,7 +315,7 @@ function DashboardHeader({ loading, refreshing, onRefresh }) {
         className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-bold text-blue-100/75 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400/50 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
       >
         <RefreshCw size={14} className={loading || refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
-        Refresh
+        {t('adminDashboard.refresh')}
       </button>
     </div>
   );
@@ -426,28 +427,28 @@ function DashboardHighlightItem({ icon, title, detail, tone = 'neutral' }) {
   );
 }
 
-function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, servicesLoading, servicesError }) {
+function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, servicesLoading, servicesError, t }) {
   const revenueTrend = getRevenueTrend(finance);
   const usersOk = (Number(stats.blockedUsers) || 0) === 0;
   const lots = Number(stats.parkingLots) || 0;
   const pendingLots = Number(stats.pendingLots) || 0;
   const inactiveServices = Number(serviceCounts.inactive) || 0;
   const serviceTitle = servicesLoading
-    ? 'Loading services'
+    ? t('adminDashboard.loadingServices')
     : servicesError
-      ? 'Service health unavailable'
+      ? t('adminDashboard.serviceUnavailable')
       : inactiveServices > 0
-        ? `${inactiveServices} inactive service${inactiveServices === 1 ? '' : 's'}`
-        : 'Services active';
+        ? t('adminDashboard.inactiveServices', { count: inactiveServices })
+        : t('adminDashboard.allUsersActive');
   const serviceDetail = servicesLoading
-    ? 'Fetching configured booking services'
+    ? t('adminDashboard.fetchingServices')
     : servicesError
       ? servicesError
-      : `${serviceCounts.active} active of ${serviceCounts.total} configured services`;
+      : t('adminDashboard.activeConfiguredServices', { active: serviceCounts.active, total: serviceCounts.total });
   const revenueTitle = financeLoading
-    ? 'Loading revenue sources'
+    ? t('adminDashboard.loadingServices')
     : finance.error
-      ? 'Revenue unavailable'
+      ? t('adminDashboard.unavailable')
       : revenueTrend.percentLabel;
   const revenueDetail = financeLoading
     ? 'Fetching analytics source data'
@@ -464,8 +465,8 @@ function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, se
     },
     {
       icon: usersOk ? <CheckCircle2 size={15} /> : <UserX size={15} />,
-      title: usersOk ? 'All users active' : `${stats.blockedUsers} blocked users`,
-      detail: `${stats.activeUsers.toLocaleString('vi-VN')} active customer accounts`,
+      title: usersOk ? t('adminDashboard.allUsersActive') : t('adminDashboard.blockedUsers', { count: stats.blockedUsers }),
+      detail: t('adminDashboard.allUsersActiveDetail', { count: stats.activeUsers.toLocaleString('vi-VN') }),
       tone: usersOk ? 'success' : 'warning',
     },
     {
@@ -476,8 +477,8 @@ function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, se
     },
     {
       icon: <ParkingCircle size={15} />,
-      title: pendingLots > 0 ? `${pendingLots} lots pending` : `${lots} lot${lots === 1 ? '' : 's'} operational`,
-      detail: `${serviceCounts.total} configured services tracked`,
+      title: pendingLots > 0 ? t('adminDashboard.lotsPending', { count: pendingLots }) : t('adminDashboard.lotsOperational', { count: lots }),
+      detail: t('adminDashboard.configuredServicesTracked', { count: serviceCounts.total }),
       tone: pendingLots > 0 ? 'warning' : 'success',
     },
   ];
@@ -485,7 +486,7 @@ function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, se
   return (
     <section className="valo-enter border-y border-white/10 motion-safe:animate-[valo-dashboard-in_520ms_ease-out_220ms_both]">
       <div className="mb-2 pt-4">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-yellow-300">Dashboard Highlights</p>
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-yellow-300">{t('adminDashboard.highlights')}</p>
       </div>
       <div className="grid grid-cols-1 divide-y divide-white/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         {highlights.map((highlight) => (
@@ -496,7 +497,7 @@ function DashboardHighlights({ stats, finance, financeLoading, serviceCounts, se
   );
 }
 
-function RevenueSummary({ finance, loading }) {
+function RevenueSummary({ finance, loading, t }) {
   const current = Number(finance.currentRecordedSources) || 0;
   const previous = Number(finance.previousRecordedSources) || 0;
   const trend = getRevenueTrend(finance);
@@ -509,7 +510,7 @@ function RevenueSummary({ finance, loading }) {
 
   return (
     <DashboardSection delay={300}>
-      <SectionHeader title="Revenue Summary" subtitle="Recorded financial sources from analytics APIs" />
+      <SectionHeader title={t('adminDashboard.revenueSummary')} subtitle={t('adminDashboard.revenueSubtitle')} />
       {loading ? (
         <div className="space-y-4">
           <div className="h-10 w-48 animate-pulse rounded bg-white/10" />
@@ -644,10 +645,10 @@ function ServiceHealthDonut({ counts }) {
   );
 }
 
-function ServiceHealth({ counts, services = [], loading, error }) {
+function ServiceHealth({ counts, services = [], loading, error, t }) {
   return (
     <DashboardSection delay={360}>
-      <SectionHeader title="Service Health" subtitle="Configured booking services" />
+      <SectionHeader title={t('adminDashboard.serviceHealth')} subtitle={t('adminDashboard.serviceSubtitle')} />
       {loading ? (
         <div className="space-y-4">
           <div className="h-32 w-32 animate-pulse rounded-full bg-white/10" />
@@ -691,12 +692,12 @@ function ServiceHealth({ counts, services = [], loading, error }) {
   );
 }
 
-function RecentAdminActivity({ actions = [], loading }) {
+function RecentAdminActivity({ actions = [], loading, t }) {
   const visibleActions = actions.slice(0, 5);
 
   return (
     <DashboardSection delay={430}>
-      <SectionHeader title="Recent Admin Activity" subtitle="Latest recorded admin activity" />
+      <SectionHeader title={t('adminDashboard.recentActivity')} subtitle={t('adminDashboard.recentActivitySubtitle')} />
       {loading ? (
         <div className="space-y-3">
           {[0, 1, 2, 3, 4].map((item) => (
@@ -709,7 +710,7 @@ function RecentAdminActivity({ actions = [], loading }) {
             const actionDate = new Date(action.createdAt);
             const time = isValid(actionDate)
               ? formatDistanceToNow(actionDate, { addSuffix: true })
-              : 'Recently';
+              : t('adminDashboard.recently');
             const isLast = index === visibleActions.length - 1;
 
             return (
@@ -725,7 +726,7 @@ function RecentAdminActivity({ actions = [], loading }) {
                     <p className="truncate text-sm font-black text-slate-100">{action.action}</p>
                     <span className="shrink-0 text-xs font-semibold text-blue-200/55">{time}</span>
                   </div>
-                  <p className="mt-1 truncate text-sm font-medium text-blue-200/60">{action.target || 'System activity'}</p>
+                  <p className="mt-1 truncate text-sm font-medium text-blue-200/60">{action.target || t('adminDashboard.systemActivity')}</p>
                 </div>
               </div>
             );
@@ -733,7 +734,7 @@ function RecentAdminActivity({ actions = [], loading }) {
         </div>
       ) : (
         <div className="border-y border-dashed border-white/10 py-6 text-center text-sm font-medium text-slate-500">
-          No recent actions
+          {t('adminDashboard.noRecentActions')}
         </div>
       )}
     </DashboardSection>
@@ -759,35 +760,35 @@ function QuickAction({ icon, label, desc, tone, onClick }) {
   );
 }
 
-function AdminQuickActions({ navigate }) {
+function AdminQuickActions({ navigate, t }) {
   return (
     <DashboardSection delay={500}>
-      <SectionHeader title="Quick Actions" subtitle="Common admin workflows" />
+      <SectionHeader title={t('adminDashboard.quickActions')} subtitle={t('adminDashboard.quickActionsSubtitle')} />
       <QuickAction
         icon={<Users size={16} className="text-yellow-300" />}
-        label="Staff Accounts"
-        desc="Manage parking staff"
+        label={t('adminDashboard.staffAccounts')}
+        desc={t('adminDashboard.manageParkingStaff')}
         tone="bg-yellow-500/10"
         onClick={() => navigate('/admin/accounts')}
       />
       <QuickAction
         icon={<ParkingCircle size={16} className="text-purple-300" />}
-        label="Parking Lots"
-        desc="Manage facilities"
+        label={t('adminDashboard.parkingLots')}
+        desc={t('adminDashboard.manageFacilities')}
         tone="bg-purple-500/10"
         onClick={() => navigate('/admin/parking-lots')}
       />
       <QuickAction
         icon={<Ticket size={16} className="text-sky-300" />}
-        label="Ticket Packages"
-        desc="Manage ticket plans"
+        label={t('nav.ticketPackages')}
+        desc={t('adminDashboard.ticketPlans')}
         tone="bg-sky-500/10"
         onClick={() => navigate('/admin/tickets')}
       />
       <QuickAction
         icon={<UserX size={16} className="text-red-300" />}
-        label="User Access"
-        desc="Review blocked accounts"
+        label={t('adminDashboard.userAccess')}
+        desc={t('adminDashboard.reviewBlocked')}
         tone="bg-red-500/10"
         onClick={() => navigate('/admin/accounts')}
       />
@@ -796,6 +797,7 @@ function AdminQuickActions({ navigate }) {
 }
 
 export default function AdminDashboard() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [stats, setStats] = useState(EMPTY_STATS);
   const [finance, setFinance] = useState(EMPTY_FINANCE_SUMMARY);
@@ -903,47 +905,49 @@ export default function AdminDashboard() {
   const metrics = useMemo(() => [
     {
       icon: <Users size={18} />,
-      label: 'Total Staff',
+      label: t('adminDashboard.totalStaff'),
       value: stats.totalStaff,
       formatter: (value) => Math.round(value).toLocaleString('vi-VN'),
-      sub: 'Managed users',
+      sub: t('adminDashboard.managedUsers'),
       tone: 'yellow',
     },
     {
       icon: <ShieldCheck size={18} />,
-      label: 'Active Users',
+      label: t('adminDashboard.activeUsers'),
       value: stats.activeUsers,
       formatter: (value) => Math.round(value).toLocaleString('vi-VN'),
-      sub: stats.blockedUsers > 0 ? `${stats.blockedUsers} blocked accounts` : 'All users are active',
+      sub: stats.blockedUsers > 0 ? t('adminDashboard.blockedUsers', { count: stats.blockedUsers }) : t('adminDashboard.allUsersActive'),
       tone: 'blue',
     },
     {
       icon: <ParkingCircle size={18} />,
-      label: 'Parking Lots',
+      label: t('adminDashboard.parkingLots'),
       value: stats.parkingLots,
       formatter: (value) => Math.round(value).toLocaleString('vi-VN'),
-      sub: stats.pendingLots > 0 ? `${stats.pendingLots} pending setup` : 'Fully operational',
+      sub: stats.pendingLots > 0 ? t('adminDashboard.lotsPending', { count: stats.pendingLots }) : t('adminDashboard.fullyOperational'),
       tone: 'purple',
     },
     {
       icon: <DollarSign size={18} />,
-      label: 'Recorded Sources',
+      label: t('adminDashboard.recordedSources'),
       value: finance.currentRecordedSources,
       formatter: formatCurrency,
-      sub: finance.error ? 'Unavailable' : getRevenueTrend(finance).percentLabel,
+      sub: finance.error ? t('adminDashboard.unavailable') : getRevenueTrend(finance).percentLabel,
       tone: 'green',
     },
-  ], [finance, stats]);
+  ], [finance, stats, t]);
 
   return (
     <DashboardShell>
       <DashboardHeader
+        t={t}
         loading={loading || financeLoading || servicesLoading}
         refreshing={refreshing}
         onRefresh={handleRefresh}
       />
       <DashboardKpiStrip metrics={metrics} loading={loading || financeLoading} />
       <DashboardHighlights
+        t={t}
         stats={stats}
         finance={finance}
         financeLoading={financeLoading}
@@ -954,18 +958,19 @@ export default function AdminDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)] lg:items-start">
         <div className="flex flex-col gap-6">
-          <RevenueSummary finance={finance} loading={financeLoading} />
-          <RecentAdminActivity actions={stats.recentActions} loading={loading} />
+          <RevenueSummary finance={finance} loading={financeLoading} t={t} />
+          <RecentAdminActivity actions={stats.recentActions} loading={loading} t={t} />
         </div>
 
         <div className="flex flex-col gap-6">
           <ServiceHealth
+            t={t}
             counts={serviceCounts}
             services={services}
             loading={servicesLoading}
             error={servicesError}
           />
-          <AdminQuickActions navigate={navigate} />
+          <AdminQuickActions navigate={navigate} t={t} />
         </div>
       </div>
     </DashboardShell>

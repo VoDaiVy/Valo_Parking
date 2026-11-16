@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { apiFetch, API_BASE } from '../../services/api';
 import CarViewer from '../../components/CarViewer';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 const authHeader = () => {
@@ -20,7 +21,7 @@ const previewPublicId = (brand, model) =>
   `vehicles/${normalizeSlug(brand) || '…'}/${normalizeSlug(model || 'default') || '…'}`;
 
 // ── 3D Preview Modal ───────────────────────────────────────────────────────
-function PreviewModal({ model, onClose }) {
+function PreviewModal({ model, onClose, t }) {
   const [color, setColor] = useState('#c0392b');
 
   // Close on Escape
@@ -63,7 +64,7 @@ function PreviewModal({ model, onClose }) {
         {/* Color picker footer */}
         <div className="flex items-center gap-3 px-5 py-4 border-t border-white/10 bg-gray-950">
           <Palette size={15} className="text-gray-400 shrink-0" />
-          <span className="text-xs text-gray-400 shrink-0">Paint color test:</span>
+          <span className="text-xs text-gray-400 shrink-0">{t('adminPages.vehicleModelsUi.paintColor')}</span>
           <div className="flex items-center gap-2 flex-wrap">
             {['#c0392b','#2980b9','#27ae60','#f39c12','#8e44ad','#ecf0f1','#1a1a1a'].map((c) => (
               <button
@@ -81,7 +82,7 @@ function PreviewModal({ model, onClose }) {
               value={color}
               onChange={(e) => setColor(e.target.value)}
               className="w-6 h-6 rounded-full cursor-pointer border border-white/20 bg-transparent p-0"
-              title="Color options"
+              title={t('adminPages.vehicleModelsUi.colorOptions')}
             />
           </div>
           <span className="ml-auto font-mono text-xs text-gray-500">{color}</span>
@@ -129,6 +130,7 @@ async function syncModels() {
 
 // ── Component ──────────────────────────────────────────────────────────────
 export default function VehicleModels() {
+  const { t } = useLanguage();
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [brand, setBrand] = useState('');
@@ -163,19 +165,19 @@ export default function VehicleModels() {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!brand.trim()) return showToast('Enter Brand first', 'error');
-    if (!file) return showToast('Choose a .glb file first', 'error');
+    if (!brand.trim()) return showToast(t('adminPages.vehicleModelsUi.enterBrand'), 'error');
+    if (!file) return showToast(t('adminPages.vehicleModelsUi.chooseGlb'), 'error');
     setUploading(true);
     const { ok, data } = await uploadModel(brand, model, file);
     setUploading(false);
     if (ok) {
       const synced = data.data?.vehiclesSynced ?? 0;
-      showToast(`Uploaded: ${data.data?.publicId}${synced ? ` · updated ${synced} vehicles` : ''}`);
+      showToast(t('adminPages.vehicleModelsUi.uploadSuccess', { id: data.data?.publicId, suffix: synced ? ` · ${t('adminPages.vehicleModelsUi.updatedVehicles', { count: synced })}` : '' }));
       setBrand(''); setModel(''); setFile(null);
       if (fileRef.current) fileRef.current.value = '';
       await loadModels();
     } else {
-      showToast(data.message || 'Upload failed', 'error');
+      showToast(data.message || t('adminPages.vehicleModelsUi.uploadFailed'), 'error');
     }
   };
 
@@ -188,10 +190,10 @@ export default function VehicleModels() {
     if (ok) {
       // Show how many vehicle documents had their modelUrl cleared
       const synced = data?.data?.vehiclesSynced ?? 0;
-      showToast(`Model deleted${synced ? ` · removed 3D from ${synced} vehicles` : ''}`);
+      showToast(t('adminPages.vehicleModelsUi.deleteSuccess', { suffix: synced ? ` · ${t('adminPages.vehicleModelsUi.removedVehicles', { count: synced })}` : '' }));
       await loadModels();
     } else {
-      showToast(data?.message || 'Delete failed', 'error');
+      showToast(data?.message || t('adminPages.vehicleModelsUi.deleteFailed'), 'error');
     }
   };
 
@@ -200,9 +202,9 @@ export default function VehicleModels() {
     const { ok, data } = await syncModels();
     setSyncing(false);
     if (ok) {
-      showToast(`Sync complete · ${data.data?.updated ?? 0} vehicles updated`);
+      showToast(t('adminPages.vehicleModelsUi.syncSuccess', { count: data.data?.updated ?? 0 }));
     } else {
-      showToast(data?.message || 'Sync failed', 'error');
+      showToast(data?.message || t('adminPages.vehicleModelsUi.syncFailed'), 'error');
     }
   };
 
@@ -219,10 +221,10 @@ export default function VehicleModels() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-            <Car size={12} /> Models
+            <Car size={12} /> {t('adminPages.vehicleModelsUi.badge')}
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">3D Vehicle Models</h1>
-          <p className="text-gray-400 text-sm mt-1">Upload file <code className="font-mono bg-white/10 px-1 rounded">.glb</code> for each vehicle brand. The backend will match automatically when the user adds a vehicle.</p>
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.vehicleModels.title')}</h1>
+          <p className="text-gray-400 text-sm mt-1">{t('adminPages.vehicleModelsUi.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -231,14 +233,14 @@ export default function VehicleModels() {
             className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-yellow-500/40
               bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400
               text-xs font-bold transition disabled:opacity-50"
-            title="Sync modelUrl for all existing vehicles"
+            title={t('adminPages.vehicleModelsUi.syncVehicles')}
           >
             {syncing
               ? <Loader2 size={14} className="animate-spin" />
               : <RefreshCw size={14} />}
-            Sync vehicles
+            {t('adminPages.vehicleModelsUi.syncVehicles')}
           </button>
-          <button onClick={loadModels} className="p-2.5 rounded-xl border border-white/10 hover:bg-white/10 transition" title="Refresh list">
+          <button onClick={loadModels} className="p-2.5 rounded-xl border border-white/10 hover:bg-white/10 transition" title={t('adminPages.vehicleModelsUi.refreshList')}>
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
@@ -246,45 +248,45 @@ export default function VehicleModels() {
 
       {/* Convention note */}
       <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/8 px-5 py-4 mb-8 text-sm">
-        <p className="font-bold text-yellow-600 dark:text-yellow-400 mb-1.5">Cloudinary naming rules</p>
+        <p className="font-bold text-yellow-600 dark:text-yellow-400 mb-1.5">{t('adminPages.vehicleModelsUi.namingRules')}</p>
         <p className="text-gray-700 dark:text-gray-300">
-          Public ID will be generated automatically:&nbsp;
+          {t('adminPages.vehicleModelsUi.publicIdGenerated')}&nbsp;
           <code className="font-mono bg-white/50 dark:bg-white/10 px-1.5 py-0.5 rounded">
             vehicles/&#123;brand&#125;/&#123;model&#125;
           </code>
         </p>
         <ul className="mt-2 space-y-0.5 text-gray-600 dark:text-gray-400 list-disc list-inside">
-          <li>Brand + Model will be converted to <em>lowercase-slug</em> (spaces to hyphens)</li>
+          <li>{t('adminPages.vehicleModelsUi.slugRule')}</li>
           <li>VD: <strong>Toyota</strong> + <strong>Land Cruiser</strong> → <code className="font-mono">vehicles/toyota/land-cruiser</code></li>
-          <li>If Model is left blank -&gt; use <code className="font-mono">default</code> (fallback for the whole brand)</li>
+          <li>{t('adminPages.vehicleModelsUi.blankModel')}</li>
         </ul>
       </div>
 
       {/* Upload form */}
       <form onSubmit={handleUpload}
         className="rounded-3xl border border-white/10 bg-[#171717] p-6 mb-8 shadow-sm">
-        <h2 className="text-base font-bold text-white mb-5">Upload new model</h2>
+        <h2 className="text-base font-bold text-white mb-5">{t('adminPages.vehicleModelsUi.uploadTitle')}</h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-              Brand <span className="text-red-500">*</span>
+              {t('adminPages.vehicleModelsUi.brand')} <span className="text-red-500">*</span>
             </label>
             <input
               value={brand}
               onChange={(e) => setBrand(e.target.value)}
-              placeholder="Toyota"
+              placeholder={t('adminPages.vehicleModelsUi.brandPlaceholder')}
               className={inputCls}
             />
           </div>
           <div>
             <label className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-              Model <span className="text-gray-400">(blank = default)</span>
+              {t('adminPages.vehicleModelsUi.model')} <span className="text-gray-400">({t('adminPages.vehicleModelsUi.blankDefault')})</span>
             </label>
             <input
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="Land Cruiser"
+              placeholder={t('adminPages.vehicleModelsUi.modelPlaceholder')}
               className={inputCls}
             />
           </div>
@@ -293,7 +295,7 @@ export default function VehicleModels() {
         {/* Path preview */}
         {brand && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Cloudinary path:&nbsp;
+            {t('adminPages.vehicleModelsUi.cloudinaryPath')}&nbsp;
             <code className="font-mono bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-yellow-600 dark:text-yellow-400">
               {previewPublicId(brand, model)}
             </code>
@@ -325,8 +327,8 @@ export default function VehicleModels() {
           ) : (
             <>
               <Upload size={28} className="text-gray-400" />
-              <p className="text-sm text-gray-500">Click to choose a file <strong>.glb</strong></p>
-              <p className="text-xs text-gray-400">Maximum 50 MB</p>
+              <p className="text-sm text-gray-500">{t('adminPages.vehicleModelsUi.chooseFile')} <strong>.glb</strong></p>
+              <p className="text-xs text-gray-400">{t('adminPages.vehicleModelsUi.maximum')}</p>
             </>
           )}
         </div>
@@ -339,7 +341,7 @@ export default function VehicleModels() {
             text-black text-sm font-bold transition-colors"
         >
           {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-          {uploading ? 'Uploading...' : 'Upload Model'}
+          {uploading ? t('adminPages.vehicleModelsUi.uploading') : t('adminPages.vehicleModelsUi.uploadModel')}
         </button>
       </form>
 
@@ -347,7 +349,7 @@ export default function VehicleModels() {
       <div className="rounded-3xl border border-white/10 bg-[#171717] shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
           <h2 className="text-base font-bold text-white">
-            Model list ({models.length})
+            {t('adminPages.vehicleModelsUi.modelList')} ({models.length})
           </h2>
         </div>
 
@@ -358,7 +360,7 @@ export default function VehicleModels() {
         ) : models.length === 0 ? (
           <div className="flex flex-col items-center py-12 gap-3">
             <Car size={28} className="text-gray-300 dark:text-white/20" />
-            <p className="text-sm text-gray-500">No models yet</p>
+            <p className="text-sm text-gray-500">{t('adminPages.vehicleModelsUi.noModels')}</p>
           </div>
         ) : (
           <ul className="divide-y divide-white/[0.05]">
@@ -388,14 +390,14 @@ export default function VehicleModels() {
                 <button
                   onClick={() => setPreviewModel(m)}
                   className="p-2 rounded-lg text-gray-400 hover:text-yellow-500 hover:bg-yellow-500/10 transition opacity-0 group-hover:opacity-100"
-                  title="Xem 3D"
+                  title={t('adminPages.vehicleModelsUi.view3d')}
                 >
                   <Eye size={15} />
                 </button>
                 <button
                   onClick={() => setDeleteTarget(m.publicId)}
                   className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition opacity-0 group-hover:opacity-100"
-                  title="Delete"
+                  title={t('adminPages.vehicleModelsUi.delete')}
                 >
                   <Trash2 size={15} />
                 </button>
@@ -407,7 +409,7 @@ export default function VehicleModels() {
 
       {/* 3D Preview Modal */}
       {previewModel && (
-        <PreviewModal model={previewModel} onClose={() => setPreviewModel(null)} />
+        <PreviewModal model={previewModel} onClose={() => setPreviewModel(null)} t={t} />
       )}
 
       {/* Confirm delete dialog */}
@@ -418,7 +420,7 @@ export default function VehicleModels() {
               <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
                 <AlertCircle size={18} className="text-red-500" />
               </div>
-              <p className="font-bold text-white">Delete this model?</p>
+              <p className="font-bold text-white">{t('adminPages.vehicleModelsUi.deleteTitle')}</p>
             </div>
             <p className="text-sm text-gray-400 mb-6 font-mono bg-white/5 rounded-lg px-3 py-2">
               {deleteTarget}
@@ -426,11 +428,11 @@ export default function VehicleModels() {
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)}
                 className="flex-1 py-2.5 rounded-xl border border-white/15 text-sm font-semibold hover:bg-white/5 transition">
-                Cancel
+                {t('adminPages.vehicleModelsUi.cancel')}
               </button>
               <button onClick={handleDelete}
                 className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-400 text-white text-sm font-bold transition">
-                Delete
+                {t('adminPages.vehicleModelsUi.deleteConfirm')}
               </button>
             </div>
           </div>

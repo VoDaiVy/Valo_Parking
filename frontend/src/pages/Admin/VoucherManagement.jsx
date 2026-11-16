@@ -7,14 +7,16 @@ import {
   getSpendingProgram, saveSpendingProgram, searchVoucherRecipients, distributeVouchers,
   updateVoucherExpiry,
 } from '../../services/loyaltyService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const inputClass = 'mt-2 w-full rounded-xl border border-white/15 bg-[#161616] px-3 py-2.5 text-sm text-white outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400';
 const buttonClass = 'rounded-xl bg-yellow-400 px-4 py-2.5 text-sm font-bold text-black hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-50';
-const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
 const emptyForm = { name: '', description: '', type: 'FIXED_DISCOUNT', discountAmount: 20000, minimumAmount: 100000, discountPercent: 10, serviceId: '', redemptionLimit: '', isActive: true };
 const unwrap = (response) => { if (!response.ok) throw new Error(response.data?.errors?.map((item) => item.message).join('; ') || response.data?.message || 'Không thể thực hiện. Vui lòng thử lại.'); return response.data.data; };
 
 export default function VoucherManagement() {
+  const { t } = useLanguage();
   const [tab, setTab] = useState('auto');
   const [program, setProgram] = useState(null);
   const [stats, setStats] = useState({});
@@ -77,7 +79,7 @@ export default function VoucherManagement() {
   };
   return (
     <main className="min-h-full bg-[#0c0d0d] px-5 py-8 text-white sm:px-8"><div className="mx-auto max-w-6xl">
-      <header className="mb-7"><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-400"><Gift size={16} /> VALO REWARDS</p><h1 className="text-4xl font-black">Voucher management</h1><p className="mt-3 text-sm text-white/55">Thưởng theo chi tiêu hoặc gửi quà trực tiếp. Mọi voucher mới có hạn 7 ngày, kèm thông báo và email.</p></header>
+      <header className="mb-7"><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-yellow-400"><Gift size={16} /> VALO REWARDS</p><h1 className="text-4xl font-black">{t('adminPages.vouchers.title')}</h1><p className="mt-3 text-sm text-white/55">{t('adminPages.vouchers.subtitle')}</p></header>
       <div className="mb-6 flex flex-wrap gap-6 border-y border-white/10 py-4 text-sm text-white/60"><span>Đã cấp <strong className="ml-2 text-white">{stats.issued || 0}</strong></span><span>Còn dùng được <strong className="ml-2 text-emerald-300">{stats.available || 0}</strong></span><span>Đã dùng <strong className="ml-2 text-white">{stats.used || 0}</strong></span><span>Email chờ gửi <strong className="ml-2 text-yellow-300">{stats.pendingEmails || 0}</strong></span></div>
       {stats.retryingEmails > 0 && <p role="alert" className="mb-5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">Có {stats.retryingEmails} email voucher gửi chưa thành công. Hệ thống sẽ thử lại; admin cần kiểm tra cấu hình đăng nhập SMTP nếu tình trạng kéo dài.</p>}
       <nav className="mb-6 flex flex-wrap gap-2" aria-label="Quản lý voucher">{[['auto', 'Tự động theo chi tiêu'], ['manual', 'Gửi trực tiếp'], ['leaderboard', 'Xếp hạng theo quý']].map(([key, label]) => <button key={key} onClick={() => { setTab(key); setError(''); }} aria-pressed={tab === key} className={`rounded-xl px-4 py-3 text-sm font-bold ${tab === key ? 'bg-yellow-400 text-black' : 'bg-white/5 text-white/60'}`}>{label}</button>)}</nav>

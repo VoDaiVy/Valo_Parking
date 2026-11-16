@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import {
   getOperationalValue,
   getOperationalViewState,
@@ -130,41 +131,41 @@ function LoadingRows() {
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, t }) {
   return (
     <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${getStatusClass(status)}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${status === 'active' ? 'bg-emerald-300' : status === 'pending' ? 'bg-amber-300' : status === 'expired' ? 'bg-slate-400' : 'bg-rose-300'}`} />
-      {titleCase(status)}
+      {t ? t(`subscriptionStatus.${status}`, { defaultValue: titleCase(status) }) : titleCase(status)}
     </span>
   );
 }
 
-function SlotBadge({ slot }) {
+function SlotBadge({ slot, t }) {
   if (!slot) {
-    return <span className="text-xs font-semibold italic text-slate-500">Not assigned</span>;
+    return <span className="text-xs font-semibold italic text-slate-500">{t('subscriptionUi.notAssigned')}</span>;
   }
 
   return (
     <span className="inline-flex items-center gap-2 rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2 text-xs font-black text-yellow-300 transition group-hover:border-yellow-300/35">
       <ParkingCircle size={14} />
-      <span className="text-slate-300">{slot.floorId?.name || 'Floor'}</span>
+      <span className="text-slate-300">{slot.floorId?.name || t('subscriptionUi.floor')}</span>
       <span className="text-yellow-300">{slot.slotCode}</span>
     </span>
   );
 }
 
-function MembershipRow({ sub, index, onCustomerClick }) {
+function MembershipRow({ sub, index, onCustomerClick, t }) {
   const remaining = daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
   const displayUser = getDisplayUser(sub);
   const vehicles = displayUser?.vehicles || [];
-  const vehicleText = vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''} on file` : 'No vehicle on file';
+  const vehicleText = vehicles.length ? t('subscriptionUi.vehicleCount', { count: vehicles.length }) : t('subscriptionUi.noVehicleShort');
 
   return (
     <article
       role="button"
       tabIndex={0}
-      aria-label={`View vehicles for ${displayUser?.username || displayUser?.email || 'customer'}`}
+      aria-label={t('subscriptionUi.viewVehicles', { name: displayUser?.username || displayUser?.email || t('subscriptionUi.customer') })}
       onClick={() => onCustomerClick?.({ user: displayUser, vehicles })}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -183,20 +184,20 @@ function MembershipRow({ sub, index, onCustomerClick }) {
               <UserRound size={17} />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-black text-white sm:text-base">{displayUser?.username || 'Unknown User'}</h3>
-              <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || 'No email'}</p>
+              <h3 className="truncate text-sm font-black text-white sm:text-base">{displayUser?.username || t('subscriptionUi.unknownUser')}</h3>
+              <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || t('subscriptionUi.noEmailShort')}</p>
             </div>
           </button>
-          <button type="button" onClick={() => onCustomerClick?.({ user: displayUser, vehicles })} className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-300/50" title="View customer vehicles">
+          <button type="button" onClick={() => onCustomerClick?.({ user: displayUser, vehicles })} className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-300/50" title={t('subscriptionUi.customerVehicles')}>
             <Car size={12} />
             {vehicleText}
           </button>
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Package</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.package')}</span>
           <div className="text-right md:text-left">
-            <p className="font-black text-slate-100">{sub.ticketPackage?.name || 'Unknown Package'}</p>
+            <p className="font-black text-slate-100">{sub.ticketPackage?.name || t('subscriptionUi.unknownPackage')}</p>
             {packageType && (
               <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getPackageClass(packageType)}`}>
                 {packageType}
@@ -206,18 +207,18 @@ function MembershipRow({ sub, index, onCustomerClick }) {
         </div>
 
         <div className="flex items-center justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">VIP Slot</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.vipSlot')}</span>
           <div className="flex flex-wrap justify-end gap-1.5 md:justify-start">
             {sub.slots && sub.slots.length > 0 ? sub.slots.map((slot) => (
-              <SlotBadge key={`${slot.floorId?._id || slot.floorId}-${slot.slotCode}`} slot={slot} />
+              <SlotBadge key={`${slot.floorId?._id || slot.floorId}-${slot.slotCode}`} slot={slot} t={t} />
             )) : (
-              <SlotBadge />
+              <SlotBadge t={t} />
             )}
           </div>
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Amount</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.amount')}</span>
           <div className="text-right md:text-left">
             <p className="font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
             {sub.paymentStatus && <p className="mt-1 text-xs font-semibold text-slate-500">{titleCase(sub.paymentStatus)}</p>}
@@ -225,28 +226,28 @@ function MembershipRow({ sub, index, onCustomerClick }) {
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Period</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.period')}</span>
           <div className="text-right text-xs font-semibold text-slate-400 md:text-left">
             <p>{formatDate(sub.validFrom)}</p>
-            <p className="mt-1 text-slate-500">to {formatDate(sub.expireAt)}</p>
+            <p className="mt-1 text-slate-500">{t('subscriptionUi.to')} {formatDate(sub.expireAt)}</p>
             {remaining !== null && remaining >= 0 && (
               <p className={`mt-1 ${remaining <= 30 ? 'text-amber-300' : 'text-slate-500'}`}>
-                {remaining === 0 ? 'Expires today' : `${remaining} days left`}
+                {remaining === 0 ? t('subscriptionUi.expiresToday') : t('subscriptionUi.daysLeft', { count: remaining })}
               </p>
             )}
           </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Status</span>
-          <StatusBadge status={sub.status} />
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.status')}</span>
+          <StatusBadge status={sub.status} t={t} />
         </div>
       </div>
     </article>
   );
 }
 
-function CustomerVehiclesModal({ customer, onClose }) {
+function CustomerVehiclesModal({ customer, onClose, t }) {
   if (!customer) return null;
   const user = customer.user || {};
   const vehicles = customer.vehicles || [];
@@ -254,31 +255,31 @@ function CustomerVehiclesModal({ customer, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="customer-vehicles-title" className="w-full max-w-md rounded-2xl border border-white/15 bg-[#11151d] p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
-          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-yellow-300">Customer vehicles</p><h2 id="customer-vehicles-title" className="mt-2 text-2xl font-black text-white">{user.username || 'Unknown customer'}</h2><p className="mt-1 text-sm text-slate-400">{user.email || 'No email available'}</p></div>
-          <button type="button" onClick={onClose} aria-label="Close customer vehicles" className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"><X size={18} /></button>
+          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-yellow-300">{t('subscriptionUi.customerVehicles')}</p><h2 id="customer-vehicles-title" className="mt-2 text-2xl font-black text-white">{user.username || t('subscriptionUi.unknownCustomer')}</h2><p className="mt-1 text-sm text-slate-400">{user.email || t('subscriptionUi.noEmail')}</p></div>
+          <button type="button" onClick={onClose} aria-label={t('subscriptionUi.close')} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"><X size={18} /></button>
         </div>
         <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Registered license plates</p>
-          {vehicles.length ? <div className="mt-3 space-y-2">{vehicles.map((plate) => <div key={plate} className="flex items-center gap-3 rounded-xl border border-yellow-400/15 bg-yellow-400/[0.06] px-4 py-3"><Car size={17} className="text-yellow-300" /><span className="font-mono text-base font-black tracking-wider text-white">{plate}</span></div>)}</div> : <p className="mt-3 text-sm text-slate-400">This customer has no registered vehicle.</p>}
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{t('subscriptionUi.registeredPlates')}</p>
+          {vehicles.length ? <div className="mt-3 space-y-2">{vehicles.map((plate) => <div key={plate} className="flex items-center gap-3 rounded-xl border border-yellow-400/15 bg-yellow-400/[0.06] px-4 py-3"><Car size={17} className="text-yellow-300" /><span className="font-mono text-base font-black tracking-wider text-white">{plate}</span></div>)}</div> : <p className="mt-3 text-sm text-slate-400">{t('subscriptionUi.noVehicle')}</p>}
         </div>
-        <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300">Close</button>
+        <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black hover:bg-yellow-300">{t('subscriptionUi.close')}</button>
       </section>
     </div>
   );
 }
 
-function TransferReviewSection({ transfers, onReview }) {
+function TransferReviewSection({ transfers, onReview, t }) {
   const pendingTransfers = transfers.filter((item) => item.status === 'PENDING_ADMIN');
 
   if (!pendingTransfers.length) {
     return (
       <section className="mb-6 flex flex-col gap-3 border-y border-white/10 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-black text-white">Transfer reviews</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">No membership transfers require review.</p>
+          <h2 className="font-black text-white">{t('subscriptionUi.transferReviews')}</h2>
+          <p className="mt-1 text-sm font-medium text-slate-500">{t('subscriptionUi.noTransfers')}</p>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-300">
-          <CheckCircle2 size={14} /> 0 pending
+          <CheckCircle2 size={14} /> 0 {t('subscriptionUi.pending')}
         </span>
       </section>
     );
@@ -288,11 +289,11 @@ function TransferReviewSection({ transfers, onReview }) {
     <section className="mb-6 border-y border-amber-400/20 py-4">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-black text-white">Transfer reviews</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">Review direct transfers and public marketplace listings.</p>
+          <h2 className="font-black text-white">{t('subscriptionUi.transferReviews')}</h2>
+          <p className="mt-1 text-sm font-medium text-slate-500">{t('subscriptionUi.reviewHint')}</p>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs font-black text-amber-300">
-          <TimerReset size={14} /> {pendingTransfers.length} pending
+          <TimerReset size={14} /> {pendingTransfers.length} {t('subscriptionUi.pending')}
         </span>
       </div>
 
@@ -302,10 +303,10 @@ function TransferReviewSection({ transfers, onReview }) {
             <div className="min-w-0 flex-1">
               <span className={`mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${transfer.mode === 'PUBLIC' ? 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300' : 'border-violet-400/20 bg-violet-400/10 text-violet-300'}`}>
                 {transfer.mode === 'PUBLIC' ? <Globe2 size={12} /> : <UserCheck size={12} />}
-                {transfer.mode === 'PUBLIC' ? 'Public listing' : 'Direct transfer'}
+                {transfer.mode === 'PUBLIC' ? t('subscriptionUi.publicListing') : t('subscriptionUi.directTransfer')}
               </span>
               <p className="truncate text-sm font-black text-slate-100">
-                {transfer.entitlementId?.slotCode || 'Parking space'} · {transfer.fromUserId?.email || 'Sender'} → {transfer.mode === 'PUBLIC' ? 'Marketplace' : (transfer.toUserId?.email || 'Recipient')}
+                {transfer.entitlementId?.slotCode || t('subscriptionUi.parkingSpace')} · {transfer.fromUserId?.email || t('subscriptionUi.sender')} → {transfer.mode === 'PUBLIC' ? t('subscriptionUi.marketplace') : (transfer.toUserId?.email || t('subscriptionUi.recipient'))}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-500">
                 Price {formatCurrency(transfer.askingPrice)} · Fee {formatCurrency(transfer.transferFee)}
@@ -317,14 +318,14 @@ function TransferReviewSection({ transfers, onReview }) {
                 onClick={() => onReview(transfer._id, false)}
                 className="h-10 rounded-xl border border-rose-500/25 px-4 text-xs font-black text-rose-300 transition hover:bg-rose-500/10 focus:outline-none focus:ring-2 focus:ring-rose-300/50"
               >
-                Reject
+                {t('subscriptionUi.reject')}
               </button>
               <button
                 type="button"
                 onClick={() => onReview(transfer._id, true)}
                 className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200/70"
               >
-                {transfer.mode === 'PUBLIC' ? 'Approve & list 7d' : 'Approve & lock 24h'}
+                {transfer.mode === 'PUBLIC' ? t('subscriptionUi.approveList') : t('subscriptionUi.approveLock')}
               </button>
             </div>
           </div>
@@ -335,6 +336,7 @@ function TransferReviewSection({ transfers, onReview }) {
 }
 
 export default function SubscriptionManagement() {
+  const { t } = useLanguage();
   const isAdmin = useMemo(() => getStoredRole() === 'admin', []);
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -378,7 +380,7 @@ export default function SubscriptionManagement() {
 
       const subscriptionResponse = getResponseAvailability(
         res,
-        'Failed to fetch subscriptions'
+        t('subscriptionUi.fetchError')
       );
       if (subscriptionResponse.isAvailable) {
         setSubscriptions(subscriptionResponse.data || []);
@@ -390,13 +392,13 @@ export default function SubscriptionManagement() {
       if (isAdmin) {
         const transferResponse = getResponseAvailability(
           transferRes,
-          'Membership transfer reviews are unavailable.'
+          t('subscriptionUi.transferFetchError')
         );
         if (transferResponse.isAvailable) {
           setTransfers(transferResponse.data || []);
         } else {
           setTransfers([]);
-          setTransferError(transferResponse.error);
+          setTransferError(transferResponse.error || t('subscriptionUi.transferFetchError'));
         }
       } else {
         setTransfers([]);
@@ -404,10 +406,10 @@ export default function SubscriptionManagement() {
     } catch (err) {
       console.error(err);
       setSubscriptions([]);
-      setSubscriptionError('An error occurred while fetching subscriptions');
+      setSubscriptionError(t('subscriptionUi.genericFetchError'));
       if (isAdmin) {
         setTransfers([]);
-        setTransferError('Membership transfer reviews are unavailable.');
+        setTransferError(t('subscriptionUi.transferFetchError'));
       }
     } finally {
       setLoading(false);
@@ -419,7 +421,7 @@ export default function SubscriptionManagement() {
     const token = localStorage.getItem('accessToken');
     const rejectionReason = approved
       ? ''
-      : window.prompt('Rejection reason:')?.trim();
+      : window.prompt(t('subscriptionUi.rejectReason'))?.trim();
     if (!approved && !rejectionReason) return;
     const response = await apiFetch(
       `/admin/membership-entitlement-transfers/${transferId}/${approved ? 'approve' : 'reject'}`,
@@ -430,7 +432,7 @@ export default function SubscriptionManagement() {
       }
     );
     if (!response.ok || !response.data?.success) {
-      setTransferError(response.data?.message || 'Unable to review transfer.');
+      setTransferError(response.data?.message || t('subscriptionUi.reviewError'));
       return;
     }
     await fetchSubscriptions();
@@ -503,10 +505,10 @@ export default function SubscriptionManagement() {
         <header className="mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-              <Crown size={12} /> VIP Subscriptions
+              <Crown size={12} /> {t('adminPages.subscriptions.title')}
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">VIP Memberships</h1>
-            <p className="mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.subscriptions.title')}</h1>
+            <p className="mt-2 text-sm font-medium text-slate-400">{t('adminPages.subscriptions.subtitle')}</p>
           </div>
 
           <button
@@ -516,37 +518,37 @@ export default function SubscriptionManagement() {
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
           >
             <RefreshCw className={`h-4 w-4 ${loading || transferLoading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('common.refresh')}
           </button>
         </header>
 
         <section className={`mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] sm:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
           <SummaryItem
             icon={Crown}
-            label="Total VIP"
+            label={t('subscriptionUi.totalVip')}
             value={getOperationalValue(subscriptionState, summary.total.toLocaleString('vi-VN'))}
-            support={subscriptionState.isAvailable ? 'Loaded memberships' : 'Data unavailable'}
+            support={subscriptionState.isAvailable ? t('subscriptionUi.loaded') : t('subscriptionUi.unavailable')}
           />
           <SummaryItem
             icon={ShieldCheck}
-            label="Active"
+            label={t('subscriptionUi.active')}
             value={getOperationalValue(subscriptionState, summary.active.toLocaleString('vi-VN'))}
-            support={subscriptionState.isAvailable ? 'Current active status' : 'Data unavailable'}
+            support={subscriptionState.isAvailable ? t('subscriptionUi.activeStatus') : t('subscriptionUi.unavailable')}
             tone="text-emerald-300"
           />
           <SummaryItem
             icon={Clock3}
-            label="Expiring Soon"
+            label={t('subscriptionUi.expiringSoon')}
             value={getOperationalValue(subscriptionState, summary.expiringSoon.toLocaleString('vi-VN'))}
-            support={subscriptionState.isAvailable ? 'Within 30 days' : 'Data unavailable'}
+            support={subscriptionState.isAvailable ? t('subscriptionUi.within30') : t('subscriptionUi.unavailable')}
             tone="text-amber-300"
           />
           {isAdmin && (
             <SummaryItem
               icon={TimerReset}
-              label="Transfers"
+              label={t('subscriptionUi.transfers')}
               value={getOperationalValue(transferState, summary.pendingTransfers.toLocaleString('vi-VN'))}
-              support={transferState.isAvailable ? 'Pending admin review' : 'Data unavailable'}
+              support={transferState.isAvailable ? t('subscriptionUi.pendingReview') : t('subscriptionUi.unavailable')}
               tone="text-purple-300"
             />
           )}
@@ -557,7 +559,7 @@ export default function SubscriptionManagement() {
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
-              placeholder="Search by customer name, email, or vehicle..."
+              placeholder={t('subscriptionUi.search')}
               className="h-12 w-full rounded-xl border border-white/10 bg-black/70 pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-[#ffd555]/60 focus:ring-2 focus:ring-[#ffd555]/10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -566,7 +568,7 @@ export default function SubscriptionManagement() {
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                aria-label="Clear membership search"
+                aria-label={t('subscriptionUi.clearSearch')}
                 className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
               >
                 <X size={15} />
@@ -578,12 +580,12 @@ export default function SubscriptionManagement() {
             value={statusFilter}
             onChange={setStatusFilter}
             options={[
-              { value: 'all', label: 'All Statuses' },
-              ...statusOptions.map((status) => ({ value: status, label: titleCase(status) })),
+              { value: 'all', label: t('subscriptionUi.allStatuses') },
+              ...statusOptions.map((status) => ({ value: status, label: t(`subscriptionStatus.${status}`, { defaultValue: titleCase(status) }) })),
             ]}
             icon={Filter}
             className="lg:w-52"
-            ariaLabel="Filter subscriptions by status"
+            ariaLabel={t('subscriptionUi.filterStatus')}
           />
 
           {packageOptions.length > 0 && (
@@ -591,13 +593,13 @@ export default function SubscriptionManagement() {
               value={packageFilter}
               onChange={setPackageFilter}
               options={[
-                { value: 'all', label: 'All packages' },
+                { value: 'all', label: t('subscriptionUi.allPackages') },
                 ...packageOptions.map((type) => ({ value: type, label: titleCase(type) })),
               ]}
               icon={Crown}
               className="lg:w-52"
               align="right"
-              ariaLabel="Filter subscriptions by package"
+              ariaLabel={t('subscriptionUi.filterPackage')}
             />
           )}
         </section>
@@ -614,37 +616,37 @@ export default function SubscriptionManagement() {
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/20 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/10 focus:outline-none focus:ring-2 focus:ring-red-300/50"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Retry
+              {t('subscriptionUi.retry')}
             </button>
           </div>
         )}
 
         {isAdmin && transferLoading && (
           <section className="mb-6 border-y border-white/10 py-5 text-sm font-semibold text-slate-400">
-            Loading membership transfer reviews...
+            {t('subscriptionUi.loadingTransfers')}
           </section>
         )}
         {isAdmin && !transferLoading && transferError && (
           <section className="mb-6 flex items-start gap-3 border-y border-red-500/25 py-4 text-sm text-red-300" role="alert">
             <AlertCircle size={17} className="mt-0.5 shrink-0" />
             <div>
-              <h2 className="font-black text-red-200">Transfer reviews unavailable</h2>
+              <h2 className="font-black text-red-200">{t('subscriptionUi.transferUnavailable')}</h2>
               <p className="mt-1 font-medium text-red-300/75">{transferError}</p>
             </div>
           </section>
         )}
         {isAdmin && transferState.isAvailable && (
-          <TransferReviewSection transfers={transfers} onReview={reviewTransfer} />
+          <TransferReviewSection transfers={transfers} onReview={reviewTransfer} t={t} />
         )}
 
         <section>
           <div className="hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
-            <span>Customer</span>
-            <span>Package</span>
-            <span>VIP Slot</span>
-            <span>Amount</span>
-            <span>Period</span>
-            <span>Status</span>
+            <span>{t('subscriptionUi.customer')}</span>
+            <span>{t('subscriptionUi.package')}</span>
+            <span>{t('subscriptionUi.vipSlot')}</span>
+            <span>{t('subscriptionUi.amount')}</span>
+            <span>{t('subscriptionUi.period')}</span>
+            <span>{t('subscriptionUi.status')}</span>
           </div>
 
           {loading ? (
@@ -652,7 +654,7 @@ export default function SubscriptionManagement() {
           ) : subscriptionError ? (
             <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-6 py-10 text-center" role="alert">
               <AlertCircle size={28} className="mx-auto text-red-400" />
-              <h2 className="mt-3 text-lg font-black text-red-200">Subscription data unavailable</h2>
+              <h2 className="mt-3 text-lg font-black text-red-200">{t('subscriptionUi.subscriptionUnavailable')}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{subscriptionError}</p>
             </div>
           ) : filteredSubscriptions.length === 0 ? (
@@ -660,9 +662,9 @@ export default function SubscriptionManagement() {
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">
                 <Crown size={22} />
               </div>
-              <h2 className="text-lg font-black text-white">No VIP memberships found</h2>
+              <h2 className="text-lg font-black text-white">{t('subscriptionUi.noMemberships')}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-400">
-                {hasFilters ? 'Adjust the search or filters to see more memberships.' : 'No subscriptions are available from the current response.'}
+                {hasFilters ? t('subscriptionUi.adjustFilters') : t('subscriptionUi.noSubscriptions')}
               </p>
               {hasFilters && (
                 <button
@@ -674,20 +676,20 @@ export default function SubscriptionManagement() {
                   }}
                   className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
                 >
-                  Clear filters
+                  {t('subscriptionUi.clearFilters')}
                 </button>
               )}
             </div>
           ) : (
             <div className="space-y-2">
               {filteredSubscriptions.map((sub, index) => (
-                <MembershipRow key={sub._id} sub={sub} index={index} onCustomerClick={setSelectedCustomerVehicles} />
+                <MembershipRow key={sub._id} sub={sub} index={index} onCustomerClick={setSelectedCustomerVehicles} t={t} />
               ))}
             </div>
           )}
         </section>
       </div>
-      <CustomerVehiclesModal customer={selectedCustomerVehicles} onClose={() => setSelectedCustomerVehicles(null)} />
+      <CustomerVehiclesModal customer={selectedCustomerVehicles} onClose={() => setSelectedCustomerVehicles(null)} t={t} />
     </div>
   );
 }

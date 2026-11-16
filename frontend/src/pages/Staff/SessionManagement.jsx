@@ -5,8 +5,10 @@ import { filterAndSortSessions, getPaginationPages, paginateSessions } from './s
 import StaffDropdown from './components/StaffDropdown.jsx';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 import { useSearchParams } from 'react-router-dom';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 export default function SessionManagement() {
+  const { t, language } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -100,10 +102,10 @@ export default function SessionManagement() {
       <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-            <MonitorCheck size={12} /> Session Manager
+            <MonitorCheck size={12} /> {t('adminPages.sessionManagement.badge')}
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>
-          <p className="mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.sessionManagement.title')}</h1>
+          <p className="mt-0.5 text-sm font-medium text-blue-200/60">{t('adminPages.sessionManagement.subtitle')}</p>
         </div>
 
         {/* AI Blurred Plate Assistant Button */}
@@ -117,7 +119,7 @@ export default function SessionManagement() {
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
-          <span>AI Plate Assistant</span>
+          <span>{t('adminPages.sessionManagement.aiAssistant')}</span>
         </button>
       </div>
 
@@ -125,7 +127,7 @@ export default function SessionManagement() {
         {!loading && !error && (
           <div className="flex flex-col gap-3 border-b border-white/[0.07] bg-[#0d0d0d] p-4 lg:flex-row lg:items-center">
             <label className="relative min-w-0 flex-1 lg:max-w-md">
-              <span className="sr-only">Search sessions</span>
+              <span className="sr-only">{t('adminPages.sessionManagement.searchPlaceholder')}</span>
               <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600" />
               <input
                 type="search"
@@ -134,7 +136,7 @@ export default function SessionManagement() {
                   setSearchQuery(event.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="Search license plate or phone..."
+                placeholder={t('adminPages.sessionManagement.searchPlaceholder')}
                 className="h-11 w-full rounded-xl border border-white/10 bg-[#080808] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-[#ffd555]/40 focus:ring-2 focus:ring-[#ffd555]/10"
               />
             </label>
@@ -147,12 +149,12 @@ export default function SessionManagement() {
                     setCurrentPage(1);
                 }}
                 options={[
-                  ['all', 'All statuses'],
-                  ['active', 'Active'],
-                  ['completed', 'Completed'],
-                  ['cancelled', 'Cancelled'],
+                  ['all', language === 'vi' ? 'Tất cả trạng thái' : 'All statuses'],
+                  ['active', language === 'vi' ? 'Đang hoạt động' : 'Active'],
+                  ['completed', language === 'vi' ? 'Đã hoàn tất' : 'Completed'],
+                  ['cancelled', language === 'vi' ? 'Đã hủy' : 'Cancelled'],
                 ]}
-                ariaLabel="Filter sessions by status"
+                ariaLabel={t('adminPages.sessionManagement.filterStatus')}
                 className="w-full sm:min-w-40"
                 buttonClassName="text-xs font-black uppercase tracking-[0.08em]"
               />
@@ -164,12 +166,12 @@ export default function SessionManagement() {
                     setCurrentPage(1);
                 }}
                 options={[
-                  ['newest', 'Newest first'],
-                  ['oldest', 'Oldest first'],
-                  ['price-high', 'Price: high to low'],
-                  ['price-low', 'Price: low to high'],
+                  ['newest', language === 'vi' ? 'Mới nhất trước' : 'Newest first'],
+                  ['oldest', language === 'vi' ? 'Cũ nhất trước' : 'Oldest first'],
+                  ['price-high', language === 'vi' ? 'Giá: cao đến thấp' : 'Price: high to low'],
+                  ['price-low', language === 'vi' ? 'Giá: thấp đến cao' : 'Price: low to high'],
                 ]}
-                ariaLabel="Sort sessions"
+                ariaLabel={t('adminPages.sessionManagement.sort')}
                 align="right"
                 className="w-full sm:min-w-48"
                 buttonClassName="text-xs font-black uppercase tracking-[0.08em]"
@@ -182,7 +184,7 @@ export default function SessionManagement() {
         {loading ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-14 text-center text-slate-500">
             <Loader2 size={24} className="animate-spin text-[#d7b94a]" />
-            <p className="text-sm font-semibold">Loading sessions...</p>
+            <p className="text-sm font-semibold">{t('adminPages.sessionManagement.loading')}</p>
           </div>
         ) : error ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 border border-red-500/10 bg-red-500/[0.04] px-6 py-14 text-center" role="alert">
@@ -190,7 +192,7 @@ export default function SessionManagement() {
               <AlertTriangle size={20} />
             </div>
             <div>
-              <p className="text-sm font-black text-red-200">Session data unavailable</p>
+              <p className="text-sm font-black text-red-200">{t('adminPages.sessionManagement.unavailable')}</p>
               <p className="mt-1 text-xs font-medium text-red-300/65">{error}</p>
             </div>
           </div>
@@ -200,13 +202,13 @@ export default function SessionManagement() {
               <table className="w-full border-collapse text-left text-sm whitespace-nowrap">
               <thead className="bg-[#14120c]">
                 <tr>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">License Plate</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Phone</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Status</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check In</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check Out</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Price</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Actions</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.licensePlate')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.phone')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.status')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.checkIn')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.checkOut')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.price')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.actions')}</th>
                 </tr>
               </thead>
                 <tbody>
@@ -232,7 +234,7 @@ export default function SessionManagement() {
                         onClick={() => setSelectedSession(session)}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
-                        <ShieldCheck size={14} /> View Details
+                        <ShieldCheck size={14} /> {t('adminPages.sessionManagement.viewDetails')}
                       </button>
                     </td>
                   </tr>
@@ -242,12 +244,12 @@ export default function SessionManagement() {
                     <td colSpan="7" className="px-6 py-16 text-center">
                       <Camera size={28} className="mx-auto text-slate-700" />
                       <p className="mt-3 text-sm font-bold text-slate-400">
-                        {sessions.length === 0 ? 'No sessions found.' : 'No matching sessions.'}
+                        {sessions.length === 0 ? t('adminPages.sessionManagement.noSessions') : t('adminPages.sessionManagement.noMatching')}
                       </p>
                       <p className="mt-1 text-xs text-slate-600">
                         {sessions.length === 0
-                          ? 'Vehicle entry and exit records will appear here.'
-                          : 'Try changing your search or filters.'}
+                          ? t('adminPages.sessionManagement.recordsHint')
+                          : t('adminPages.sessionManagement.filterHint')}
                       </p>
                     </td>
                   </tr>

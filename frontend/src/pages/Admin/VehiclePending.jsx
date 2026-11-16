@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Car, Zap, Check, X, Loader2, RefreshCw, Image } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
@@ -10,6 +11,7 @@ const authHeader = () => ({
 const VEHICLE_TYPE_LABELS = { car: 'Car', electric_car: 'Electric car' };
 
 export default function VehiclePending() {
+  const { t } = useLanguage();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState({}); // { [id]: true }
@@ -85,7 +87,7 @@ export default function VehiclePending() {
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
             <Car size={12} /> Pending
           </div>
-          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Pending vehicles</h1>
+          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.pendingVehicles.title')}</h1>
           <p className="text-gray-400 text-sm mt-1">
             {vehicles.length > 0 ? `${vehicles.length} vehicles pending approval` : 'No vehicles pending approval'}
           </p>

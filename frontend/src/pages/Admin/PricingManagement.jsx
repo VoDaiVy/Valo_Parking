@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, Loader2, AlertCircle, Save, CheckCircle2, RotateCcw, Clock3 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
 
@@ -132,15 +133,15 @@ const getTimelineSegments = (timeBlocks) => {
   });
 };
 
-function PricingHeader({ status }) {
+function PricingHeader({ status, t }) {
   return (
     <div className="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
           <Edit2 size={12} /> Pricing
         </div>
-        <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Pricing Management</h1>
-        <p className="mt-1 text-sm font-medium text-blue-100/65">Manage time blocks and calendar pricing policies.</p>
+        <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.pricing.title')}</h1>
+        <p className="mt-1 text-sm font-medium text-blue-100/65">{t('adminPages.pricing.subtitle')}</p>
       </div>
       <div className={`group inline-flex h-9 w-fit items-center gap-2 rounded-full border px-3 text-xs font-black transition hover:shadow-[0_0_22px_rgba(34,197,94,0.14)] ${
         status.tone === 'success'
@@ -156,7 +157,7 @@ function PricingHeader({ status }) {
   );
 }
 
-function PricingScheduleTimeline({ timeBlocks, status }) {
+function PricingScheduleTimeline({ timeBlocks, status, t }) {
   const segments = getTimelineSegments(timeBlocks);
 
   return (
@@ -190,8 +191,8 @@ function PricingScheduleTimeline({ timeBlocks, status }) {
       <div className="relative">
         <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-xl font-black text-white">24-Hour Pricing Schedule</h2>
-            <p className="text-sm font-medium text-blue-100/60">Pricing schedule generated from the time blocks below.</p>
+            <h2 className="text-xl font-black text-white">{t('pricingUi.scheduleTitle')}</h2>
+            <p className="text-sm font-medium text-blue-100/60">{t('pricingUi.scheduleSubtitle')}</p>
           </div>
           <span className="text-xs font-bold uppercase tracking-wide text-blue-100/50">00:00 - 24:00</span>
         </div>
@@ -246,7 +247,7 @@ function SectionHeader({ title, subtitle, action }) {
   );
 }
 
-function TimeBlockRow({ block, index, onChange, onRemove }) {
+function TimeBlockRow({ block, index, onChange, onRemove, t }) {
   const rowError = getRowError(block);
   const duration = getDuration(block.startHour, block.endHour);
   const inputClass = 'w-full bg-[#171717] border border-white/10 rounded-xl px-3 py-2.5 text-sm font-bold text-white outline-none transition duration-200 focus:-translate-y-0.5 focus:border-gold focus:ring-1 focus:ring-gold/50 focus:shadow-[0_10px_24px_rgba(245,197,66,0.08)] motion-reduce:transition-none motion-reduce:transform-none';
@@ -267,7 +268,7 @@ function TimeBlockRow({ block, index, onChange, onRemove }) {
       </div>
 
       <label>
-        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">START TIME</span>
+        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">{t('pricingUi.startTime')}</span>
         <AdminSelect
           value={Number(block.startHour)}
           onChange={(nextValue) => onChange(index, 'startHour', nextValue)}
@@ -280,7 +281,7 @@ function TimeBlockRow({ block, index, onChange, onRemove }) {
       </label>
 
       <label>
-        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">END TIME</span>
+        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">{t('pricingUi.endTime')}</span>
         <AdminSelect
           value={Number(block.endHour)}
           onChange={(nextValue) => onChange(index, 'endHour', nextValue)}
@@ -294,12 +295,12 @@ function TimeBlockRow({ block, index, onChange, onRemove }) {
       </label>
 
       <div>
-        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">DURATION</span>
+        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">{t('pricingUi.duration')}</span>
         <p className="font-mono text-sm font-black text-white">{duration > 0 ? `${duration}h` : '-'}</p>
       </div>
 
       <label>
-        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">RATE (VND)</span>
+        <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:hidden">{t('pricingUi.rate')}</span>
         <div className="relative">
           <input
             type="number"
@@ -330,30 +331,30 @@ function TimeBlockRow({ block, index, onChange, onRemove }) {
   );
 }
 
-function TimeBlockEditor({ timeBlocks, onAdd, onChange, onRemove }) {
+function TimeBlockEditor({ timeBlocks, onAdd, onChange, onRemove, t }) {
   return (
     <section className="mb-8">
       <SectionHeader
-        title="Hourly time blocks"
-        subtitle="Set the hourly pricing schedule for a full parking day."
+        title={t('pricingUi.hourlyBlocks')}
+        subtitle={t('pricingUi.scheduleSubtitle')}
         action={(
           <button onClick={onAdd} className="group inline-flex items-center gap-2 rounded-xl border border-yellow-500/30 px-3 py-2 text-sm font-black text-yellow-300 transition duration-200 hover:bg-yellow-500/10 active:scale-[0.98] motion-reduce:transition-none motion-reduce:transform-none">
-            <Plus size={16} className="transition duration-200 group-hover:rotate-90 motion-reduce:transition-none motion-reduce:transform-none" /> Add time block
+            <Plus size={16} className="transition duration-200 group-hover:rotate-90 motion-reduce:transition-none motion-reduce:transform-none" /> {t('pricingUi.addBlock')}
           </button>
         )}
       />
 
       <div className="hidden border-y border-white/10 py-3 text-[10px] font-black uppercase tracking-widest text-blue-100/55 lg:grid lg:grid-cols-[56px_minmax(120px,1fr)_minmax(120px,1fr)_96px_minmax(150px,1fr)_48px]">
         <span>#</span>
-        <span>START TIME</span>
-        <span>END TIME</span>
-        <span>DURATION</span>
-        <span>RATE (VND)</span>
-        <span>ACTION</span>
+        <span>{t('pricingUi.startTime')}</span>
+        <span>{t('pricingUi.endTime')}</span>
+        <span>{t('pricingUi.duration')}</span>
+        <span>{t('pricingUi.rate')}</span>
+        <span>{t('pricingUi.action')}</span>
       </div>
 
       {timeBlocks.map((block, index) => (
-        <TimeBlockRow key={index} block={block} index={index} onChange={onChange} onRemove={onRemove} />
+        <TimeBlockRow key={index} block={block} index={index} onChange={onChange} onRemove={onRemove} t={t} />
       ))}
 
       {timeBlocks.length === 0 && (
@@ -366,18 +367,18 @@ function TimeBlockEditor({ timeBlocks, onAdd, onChange, onRemove }) {
   );
 }
 
-function PricingSummary({ timeBlocks, status }) {
+function PricingSummary({ timeBlocks, status, t }) {
   const prices = timeBlocks.map((block) => Number(block.price)).filter((price) => Number.isFinite(price));
   const lowest = prices.length ? Math.min(...prices) : 0;
   const highest = prices.length ? Math.max(...prices) : 0;
 
   return (
     <section className="mb-24 border-t border-white/10 pt-5">
-      <h2 className="mb-3 text-lg font-black text-white">Pricing Summary</h2>
+      <h2 className="mb-3 text-lg font-black text-white">{t('pricingUi.summary')}</h2>
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-blue-100/65">
         <span>{timeBlocks.length} time blocks</span>
-        <span>Lowest rate: <strong className="font-mono text-white">{formatCurrency(lowest)}</strong></span>
-        <span>Highest rate: <strong className="font-mono text-white">{formatCurrency(highest)}</strong></span>
+        <span>{t('pricingUi.lowest')}: <strong className="font-mono text-white">{formatCurrency(lowest)}</strong></span>
+        <span>{t('pricingUi.highest')}: <strong className="font-mono text-white">{formatCurrency(highest)}</strong></span>
         <span className={status.tone === 'success' ? 'text-green-300' : status.tone === 'danger' ? 'text-red-300' : 'text-yellow-300'}>{status.label}</span>
       </div>
     </section>
@@ -495,6 +496,8 @@ function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
 }
 
 export default function PricingManagement() {
+  const { t: translate } = useLanguage();
+  const t = (key, ...args) => translate(key.startsWith('pricingUi.') ? `adminPages.${key}` : key, ...args);
   const [activeTab, setActiveTab] = useState('time-blocks');
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -722,11 +725,11 @@ export default function PricingManagement() {
     <div className="min-h-[calc(100vh-70px)] overflow-auto bg-[#080808] px-6 py-7 md:px-8">
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />
       <div className="mx-auto max-w-7xl">
-        <PricingHeader status={scheduleStatus} config={config} />
+        <PricingHeader status={scheduleStatus} config={config} t={t} />
         <nav className="mb-7 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.035] p-1.5" aria-label="Pricing sections">
           {[
-            ['time-blocks', 'Time Blocks'],
-            ['policies', 'Calendar Policies'],
+            ['time-blocks', t('pricingUi.timeBlocks')],
+            ['policies', t('pricingUi.calendarPolicies')],
           ].map(([value, label]) => (
             <button
               key={value}
@@ -744,14 +747,15 @@ export default function PricingManagement() {
         {activeTab === 'time-blocks' ? (
           <>
 
-            <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} />
+            <PricingScheduleTimeline timeBlocks={timeBlocks} status={scheduleStatus} t={t} />
             <TimeBlockEditor
               timeBlocks={timeBlocks}
               onAdd={handleAddTimeBlock}
               onChange={handleTimeBlockChange}
               onRemove={handleRemoveTimeBlock}
+              t={t}
             />
-            <PricingSummary timeBlocks={timeBlocks} status={scheduleStatus} />
+            <PricingSummary timeBlocks={timeBlocks} status={scheduleStatus} t={t} />
           </>
         ) : <PricePolicyEditor policies={pricePolicies} onAdd={handleAddPolicy} onChange={handlePolicyChange} onRemove={handleRemovePolicy} />}
       </div>

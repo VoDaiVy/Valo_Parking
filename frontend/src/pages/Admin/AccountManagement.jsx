@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useSearchParams } from 'react-router-dom';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -67,33 +68,33 @@ function AnimatedCounter({ target, duration = 1200 }) {
 }
 
 // --- Role Badge --------------------------------------------------
-function RoleBadge({ role }) {
+function RoleBadge({ role, t }) {
   const cfg = ROLES[role] || ROLES.customer;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.border} ${cfg.text} select-none`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
+      {t ? t(`accountManagement.roles.${role}`, { defaultValue: cfg.label }) : cfg.label}
     </span>
   );
 }
 
 // --- Status Badge -------------------------------------------------------------
-function StatusBadge({ status }) {
+function StatusBadge({ status, t }) {
   if (status === true || status === 'active')
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Active
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />{t ? t('accountManagement.status.active') : 'Active'}
       </span>
     );
   if (status === 'pending')
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 border border-amber-400/30 text-amber-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />Pending
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />{t ? t('accountManagement.status.pending') : 'Pending'}
       </span>
     );
   return (
     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/15 border border-red-500/30 text-red-300">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />Blocked
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />{t ? t('accountManagement.status.blocked') : 'Blocked'}
     </span>
   );
 }
@@ -150,6 +151,7 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 }
 
 export default function AccountManagement() {
+  const { t } = useLanguage();
   const authHeader = { Authorization: `Bearer ${localStorage.getItem('accessToken')}` };
 
   // -- State --
@@ -452,23 +454,23 @@ export default function AccountManagement() {
           <div className="flex items-center justify-between">
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-                <Users size={12} /> User Management
+                <Users size={12} /> {t('accountManagement.badge')}
               </div>
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Account Management</h1>
-              <p className="text-gray-400 text-sm mt-1">Manage user accounts, roles, and access permissions</p>
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{t('accountManagement.title')}</h1>
+              <p className="text-gray-400 text-sm mt-1">{t('accountManagement.subtitle')}</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> {t('common.refresh')}
             </button>
           </div>
 
           {/* -- Stat Cards -- */}
           <div className="mt-6 border-y border-white/10 bg-[#080808]">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard index={0} icon={Users} label="Total Accounts" value={totalAccounts} sub="Managed users" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
-              <StatCard index={1} icon={UserPlus} label="New This Month" value={newThisMonth} sub="Recently joined" toneClass="bg-purple-500/10 text-purple-300" loading={loading} />
-              <StatCard index={2} icon={UserX} label="Blocked Accounts" value={blockedCount} sub={blockedCount > 0 ? "Requires review" : "All users are active"} toneClass="bg-red-500/10 text-red-300" subTone={blockedCount > 0 ? "text-red-400" : "text-emerald-300"} loading={loading} />
-              <StatCard index={3} icon={Clock} label="Pending Verify" value={pendingCount} sub={pendingCount > 0 ? "Awaiting action" : "Fully verified"} toneClass="bg-yellow-500/10 text-yellow-300" subTone={pendingCount > 0 ? "text-amber-400" : "text-emerald-300"} loading={loading} />
+              <StatCard index={0} icon={Users} label={t('accountManagement.stats.totalAccounts')} value={totalAccounts} sub={t('accountManagement.stats.managedUsers')} toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
+              <StatCard index={1} icon={UserPlus} label={t('accountManagement.stats.newThisMonth')} value={newThisMonth} sub={t('accountManagement.stats.recentlyJoined')} toneClass="bg-purple-500/10 text-purple-300" loading={loading} />
+              <StatCard index={2} icon={UserX} label={t('accountManagement.stats.blockedAccounts')} value={blockedCount} sub={blockedCount > 0 ? t('accountManagement.stats.requiresReview') : t('accountManagement.stats.allUsersActive')} toneClass="bg-red-500/10 text-red-300" subTone={blockedCount > 0 ? "text-red-400" : "text-emerald-300"} loading={loading} />
+              <StatCard index={3} icon={Clock} label={t('accountManagement.stats.pendingVerify')} value={pendingCount} sub={pendingCount > 0 ? t('accountManagement.stats.awaitingAction') : t('accountManagement.stats.fullyVerified')} toneClass="bg-yellow-500/10 text-yellow-300" subTone={pendingCount > 0 ? "text-amber-400" : "text-emerald-300"} loading={loading} />
             </div>
           </div>
         </div>
@@ -479,7 +481,7 @@ export default function AccountManagement() {
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
               value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
-              placeholder="Search name, email, phone..."
+              placeholder={t('accountManagement.searchPlaceholder')}
               className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
             />
           </div>
@@ -489,7 +491,7 @@ export default function AccountManagement() {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Layers size={14} className="text-white/40" />
-                <span className="font-medium">{filterRole === 'all' ? 'All Roles' : ROLES[filterRole]?.label}</span>
+                <span className="font-medium">{filterRole === 'all' ? t('accountManagement.filters.allRoles') : t(`accountManagement.roles.${filterRole}`, { defaultValue: ROLES[filterRole]?.label })}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
@@ -501,7 +503,7 @@ export default function AccountManagement() {
                           <button onClick={() => { setFilterRole(r); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterRole === r ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {r === 'all' ? 'All Roles' : ROLES[r]?.label}
+                            {r === 'all' ? t('accountManagement.filters.allRoles') : t(`accountManagement.roles.${r}`, { defaultValue: ROLES[r]?.label })}
                           </button>
                         )}
                       </Menu.Item>
@@ -515,19 +517,19 @@ export default function AccountManagement() {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Eye size={14} className="text-white/40" />
-                <span className="font-medium">{filterStatus === 'all' ? 'All Status' : filterStatus === 'active' ? 'Active' : 'Blocked'}</span>
+                <span className="font-medium">{filterStatus === 'all' ? t('accountManagement.filters.allStatus') : t(`accountManagement.status.${filterStatus}`)}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => (
+                    {['all','active','blocked'].map((v) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { setFilterStatus(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterStatus === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
+                            {v === 'all' ? t('accountManagement.filters.allStatus') : t(`accountManagement.status.${v}`)}
                           </button>
                         )}
                       </Menu.Item>
@@ -541,19 +543,19 @@ export default function AccountManagement() {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Clock size={14} className="text-white/40" />
-                <span className="font-medium"> {sortOrder === 'newest' ? 'Newest' : 'Oldest'}</span>
+                <span className="font-medium"> {sortOrder === 'newest' ? t('accountManagement.sort.newest') : t('accountManagement.sort.oldest')}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => (
+                    {['newest','oldest'].map((v) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { setSortOrder(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {sortOrder === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
+                            {t(`accountManagement.sort.${v}`)}
                           </button>
                         )}
                       </Menu.Item>
@@ -564,7 +566,7 @@ export default function AccountManagement() {
             </Menu>
           </div>
 
-          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">{filtered.length} of {users.length} accounts</div>
+          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">{t('accountManagement.results', { filtered: filtered.length, total: users.length })}</div>
         </div>
 
         {/* -- Table -- */}
@@ -573,12 +575,12 @@ export default function AccountManagement() {
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#171717] border-b border-white/10">
                 <th className="w-6"></th>
-                {['Account','Email','Phone','Role','Status','Joined Date'].map(label => (
-                  <th key={label} className="px-4 py-2.5 text-left">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{label}</span>
+                {['account','email','phone','role','status','joinedDate'].map(key => (
+                  <th key={key} className="px-4 py-2.5 text-left">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{t(`accountManagement.columns.${key}`)}</span>
                   </th>
                 ))}
-                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{t('accountManagement.columns.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -587,7 +589,7 @@ export default function AccountManagement() {
                 <tr><td colSpan="8" className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3 text-white/30">
                     <UserX size={36} />
-                    <span className="text-sm">No accounts match your filters</span>
+                    <span className="text-sm">{t('accountManagement.empty')}</span>
                   </div>
                 </td></tr>
               )}
@@ -614,8 +616,8 @@ export default function AccountManagement() {
                     </td>
                     <td className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
                     <td className="px-4 py-3 text-[13px] text-white/55">{u.profile?.phone || '-'}</td>
-                    <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
-                    <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
+                    <td className="px-4 py-3"><RoleBadge role={u.role} t={t} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={u.status} t={t} /></td>
                     <td className="px-4 py-3 text-[12px] text-white/35">{formatDate(u.createdAt)}</td>
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
@@ -634,7 +636,7 @@ export default function AccountManagement() {
 
         {/* -- Pagination -- */}
         <div className="flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
-          <span className="text-xs text-white/30">Page {page} of {totalPages} · {filtered.length} results</span>
+          <span className="text-xs text-white/30">{t('accountManagement.pagination', { page, totalPages, results: filtered.length })}</span>
           <div className="flex items-center gap-1">
             <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
@@ -698,8 +700,8 @@ export default function AccountManagement() {
                     <h2 className="text-xl font-bold text-white mb-0.5">{displayName(panelUser)}</h2>
                     <p className="text-sm text-white/40 mb-3">@{panelUser.username || (panelUser.email || '').split('@')[0]}</p>
                     <div className="flex items-center gap-2">
-                      <RoleBadge role={panelUser.role} />
-                      <StatusBadge status={panelUser.status} />
+                      <RoleBadge role={panelUser.role} t={t} />
+                      <StatusBadge status={panelUser.status} t={t} />
                     </div>
                   </div>
 

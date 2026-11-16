@@ -16,14 +16,15 @@ import {
   Wrench,
 } from 'lucide-react';
 import { getAdminPlatformRevenueByMode } from '../../services/statisticsService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
 const MODE_OPTIONS = [
-  { value: '7d', label: '7 Days' },
-  { value: 'month', label: 'Month' },
-  { value: 'quarter', label: 'Quarter' },
-  { value: 'year', label: 'Year' },
+  { value: '7d' },
+  { value: 'month' },
+  { value: 'quarter' },
+  { value: 'year' },
 ];
 
 const MONTHS = [
@@ -38,13 +39,6 @@ const SOURCE_COLORS = {
   packageRevenue: '#FACC15', // yellow-400
   membershipTransferFees: '#10B981', // emerald-500
 };
-const SOURCE_LABELS = {
-  bookingRevenue: 'Booking',
-  serviceRevenue: 'Service',
-  packageRevenue: 'Package',
-  membershipTransferFees: 'Transfer Fees',
-};
-
 /* ── Utilities ────────────────────────────────────────────────────────── */
 
 const safe = (v) => {
@@ -107,12 +101,12 @@ const getCurrentVietnamDate = () => {
 
 const statusTone = (status = '') => {
   const normalized = String(status).toUpperCase();
-  if (normalized === 'COMPLETED') return { color: '#34D399', label: 'Completed' }; // emerald-400
-  if (['PAID', 'ACTIVE', 'PAUSED'].includes(normalized)) return { color: '#3B82F6', label: 'Active' }; // blue-500
-  if (normalized === 'CANCELLED') return { color: '#FB7185', label: 'Cancelled' }; // rose-400
-  if (normalized === 'EXPIRED') return { color: '#64748B', label: 'Expired' }; // slate-500
-  if (normalized === 'PENDING') return { color: '#FBBF24', label: 'Pending' }; // amber-400
-  return { color: '#94A3B8', label: status || 'Unknown' }; // slate-400
+  if (normalized === 'COMPLETED') return { color: '#34D399', labelKey: 'completed' }; // emerald-400
+  if (['PAID', 'ACTIVE', 'PAUSED'].includes(normalized)) return { color: '#3B82F6', labelKey: 'active' }; // blue-500
+  if (normalized === 'CANCELLED') return { color: '#FB7185', labelKey: 'cancelled' }; // rose-400
+  if (normalized === 'EXPIRED') return { color: '#64748B', labelKey: 'expired' }; // slate-500
+  if (normalized === 'PENDING') return { color: '#FBBF24', labelKey: 'pending' }; // amber-400
+  return { color: '#94A3B8', labelKey: 'unknown' }; // slate-400
 };
 
 /* ── UI Components ────────────────────────────────────────────────────── */
@@ -160,6 +154,7 @@ function CustomSelect({ value, options, onChange }) {
 /* ── Main Component ───────────────────────────────────────────────────── */
 
 export default function RevenueAnalytics() {
+  const { t } = useLanguage();
   const { year: vnYear, month: vnMonth } = getCurrentVietnamDate();
   const [mode, setMode] = useState('7d');
   const [selectedYear, setSelectedYear] = useState(vnYear);
@@ -190,7 +185,7 @@ export default function RevenueAnalytics() {
         setError('');
       } else {
         setData(null);
-        setError('Revenue data could not be loaded. Try again in a moment.');
+        setError(t('adminPages.revenueUi.error'));
       }
       setLoading(false);
     });
@@ -217,18 +212,18 @@ export default function RevenueAnalytics() {
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-yellow-400/20 bg-yellow-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-yellow-300">
               <BarChart3 size={11} strokeWidth={2.5} />
-              Analytics
+              {t('adminPages.revenue.title')}
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
-              Revenue Analytics
+              {t('adminPages.revenue.title')}
             </h1>
             <p className="mt-1 text-[13px] text-slate-400">
-              Platform revenue, vehicle traffic and booking insights.
+              {t('adminPages.revenue.subtitle')}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <ModeMenu mode={mode} onChange={(m) => m !== mode && setMode(m)} />
+            <ModeMenu mode={mode} onChange={(m) => m !== mode && setMode(m)} t={t} />
             {mode !== '7d' && (
               <SecondarySelector
                 mode={mode}
@@ -248,7 +243,7 @@ export default function RevenueAnalytics() {
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-yellow-400/25 bg-yellow-400/10 px-4 text-sm font-bold text-yellow-300 transition hover:bg-yellow-400/20 disabled:opacity-50"
             >
               <RefreshCw size={14} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
-              Refresh
+              {t('adminPages.revenueUi.refresh')}
             </button>
           </div>
         </header>
@@ -265,7 +260,7 @@ export default function RevenueAnalytics() {
         ) : data ? (
           <div className="flex flex-col gap-6 pb-8">
             {/* KPI Strip */}
-            <KPIStrip summary={summary} reduceMotion={reduceMotion} />
+            <KPIStrip summary={summary} reduceMotion={reduceMotion} t={t} />
 
             <div className="border-t border-white/[0.04] my-2" />
 
@@ -274,6 +269,7 @@ export default function RevenueAnalytics() {
               trend={trend}
               granularity={granularity}
               reduceMotion={reduceMotion}
+              t={t}
             />
 
             <div className="border-t border-white/[0.04] my-2" />
@@ -281,7 +277,7 @@ export default function RevenueAnalytics() {
             {/* Row: Revenue by Source + Vehicle Traffic */}
             <section className="grid items-start gap-8 lg:grid-cols-12 xl:gap-0">
               <div className="lg:col-span-5 xl:border-r xl:border-white/[0.04] xl:pr-10 h-full">
-                <RevenueBySourceSection summary={summary} reduceMotion={reduceMotion} />
+                <RevenueBySourceSection summary={summary} reduceMotion={reduceMotion} t={t} />
               </div>
               <div className="lg:col-span-7 xl:pl-10">
                 <VehicleTrafficSection
@@ -289,6 +285,7 @@ export default function RevenueAnalytics() {
                   trafficSummary={trafficSummary}
                   granularity={granularity}
                   reduceMotion={reduceMotion}
+                  t={t}
                 />
               </div>
             </section>
@@ -301,12 +298,14 @@ export default function RevenueAnalytics() {
                 <StatusDistributionSection
                   statusDistribution={statusDistribution}
                   reduceMotion={reduceMotion}
+                  t={t}
                 />
               </div>
               <div className="lg:col-span-7 xl:pl-10">
                 <PackageValueSection
                   packageBreakdown={packageBreakdown}
                   reduceMotion={reduceMotion}
+                  t={t}
                 />
               </div>
             </section>
@@ -319,12 +318,18 @@ export default function RevenueAnalytics() {
 
 /* ── Mode Menu ────────────────────────────────────────────────────────── */
 
-function ModeMenu({ mode, onChange }) {
+function ModeMenu({ mode, onChange, t }) {
+  const modeLabels = {
+    '7d': t('adminPages.revenueUi.periods.days7'),
+    month: t('adminPages.revenueUi.periods.month'),
+    quarter: t('adminPages.revenueUi.periods.quarter'),
+    year: t('adminPages.revenueUi.periods.year'),
+  };
   return (
     <Menu as="div" className="relative z-40 inline-block text-left">
       <Menu.Button className="inline-flex h-10 w-full min-w-[120px] items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 text-sm font-semibold text-white/80 transition hover:border-yellow-400/40 hover:text-white">
         <CalendarDays size={14} className="text-white/40" />
-        <span>{MODE_OPTIONS.find((o) => o.value === mode)?.label}</span>
+        <span>{modeLabels[mode]}</span>
         <ChevronDown size={14} className="text-white/40" />
       </Menu.Button>
       <Transition
@@ -352,7 +357,7 @@ function ModeMenu({ mode, onChange }) {
                   ) : (
                     <span className="w-3.5" />
                   )}
-                  <span className="font-medium">{option.label}</span>
+                  <span className="font-medium">{modeLabels[option.value]}</span>
                 </button>
               )}
             </Menu.Item>
@@ -388,14 +393,14 @@ function SecondarySelector({
 
 /* ── 6 KPI Cards ──────────────────────────────────────────────────────── */
 
-function KPIStrip({ summary, reduceMotion }) {
+function KPIStrip({ summary, reduceMotion, t }) {
   const metrics = [
-    { icon: CircleDollarSign, label: 'Total Revenue', value: formatCurrency(summary.totalRevenue), colorClass: 'text-yellow-400' },
-    { icon: WalletCards, label: 'Booking Revenue', value: formatCurrency(summary.bookingRevenue), colorClass: 'text-blue-400' },
-    { icon: Wrench, label: 'Service Revenue', value: formatCurrency(summary.serviceRevenue), colorClass: 'text-purple-400' },
-    { icon: Crown, label: 'Package Revenue', value: formatCurrency(summary.packageRevenue), colorClass: 'text-yellow-400' },
-    { icon: Repeat, label: 'Transfer Fees', value: formatCurrency(summary.membershipTransferFees), colorClass: 'text-emerald-400' },
-    { icon: ArrowDownRight, label: 'Refunds', value: formatCurrency(summary.refunds), colorClass: 'text-rose-400' },
+    { icon: CircleDollarSign, label: t('adminPages.revenueUi.cards.total'), value: formatCurrency(summary.totalRevenue), colorClass: 'text-yellow-400' },
+    { icon: WalletCards, label: t('adminPages.revenueUi.cards.booking'), value: formatCurrency(summary.bookingRevenue), colorClass: 'text-blue-400' },
+    { icon: Wrench, label: t('adminPages.revenueUi.cards.service'), value: formatCurrency(summary.serviceRevenue), colorClass: 'text-purple-400' },
+    { icon: Crown, label: t('adminPages.revenueUi.cards.package'), value: formatCurrency(summary.packageRevenue), colorClass: 'text-yellow-400' },
+    { icon: Repeat, label: t('adminPages.revenueUi.cards.transfer'), value: formatCurrency(summary.membershipTransferFees), colorClass: 'text-emerald-400' },
+    { icon: ArrowDownRight, label: t('adminPages.revenueUi.cards.refunds'), value: formatCurrency(summary.refunds), colorClass: 'text-rose-400' },
   ];
 
   return (
@@ -404,7 +409,7 @@ function KPIStrip({ summary, reduceMotion }) {
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       className="grid grid-cols-2 gap-y-4 md:grid-cols-3 xl:grid-cols-6"
     >
-      {metrics.map((metric, index) => (
+      {metrics.map((metric) => (
         <div key={metric.label} className="flex items-center gap-3 border-r border-white/[0.04] px-2 last:border-0">
           <div className={`flex shrink-0 items-center justify-center ${metric.colorClass}`}>
             <metric.icon size={16} strokeWidth={2.5} />
@@ -425,7 +430,7 @@ function KPIStrip({ summary, reduceMotion }) {
 
 /* ── Revenue Trend Chart ──────────────────────────────────────────────── */
 
-function RevenueTrendChart({ trend, granularity, reduceMotion }) {
+function RevenueTrendChart({ trend, granularity, reduceMotion, t }) {
   const [viewMode, setViewMode] = useState('total'); // 'total' | 'bySource'
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
@@ -488,9 +493,9 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
     >
       <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-[18px] font-bold text-white">Revenue Trend</h2>
+          <h2 className="text-[18px] font-bold text-white">{t('adminPages.revenueUi.trend.title')}</h2>
           <p className="mt-1 text-[12px] text-slate-400">
-            {viewMode === 'total' ? 'Total realized platform revenue' : 'Revenue broken down by source'} over the selected period.
+            {viewMode === 'total' ? t('adminPages.revenueUi.trend.totalDescription') : t('adminPages.revenueUi.trend.sourceDescription')} {t('adminPages.revenueUi.trend.overPeriod')}
           </p>
         </div>
         <div className="flex items-center gap-6">
@@ -498,16 +503,16 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
             {sourceKeys.map((key) => (
               <span key={key} className="flex items-center gap-1.5 text-slate-400">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: lineColors[key] || '#FACC15' }} />
-                {SOURCE_LABELS[key] || 'Total'}
+                {key === 'totalRevenue' ? t('adminPages.revenueUi.trend.total') : t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'}`)}
               </span>
             ))}
           </div>
           <div className="inline-flex rounded-lg border border-white/[0.06] bg-white/[0.02] p-0.5">
             <button onClick={() => setViewMode('total')} className={`rounded-md px-3 py-1 text-xs font-bold transition ${viewMode === 'total' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`}>
-              Total
+              {t('adminPages.revenueUi.trend.total')}
             </button>
             <button onClick={() => setViewMode('bySource')} className={`rounded-md px-3 py-1 text-xs font-bold transition ${viewMode === 'bySource' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`}>
-              By Source
+              {t('adminPages.revenueUi.trend.bySource')}
             </button>
           </div>
         </div>
@@ -515,7 +520,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
 
       {hasActivity ? (
         <div className="relative w-full overflow-x-auto">
-          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[700px] w-full" role="img" aria-label="Revenue trend chart">
+          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[700px] w-full" role="img" aria-label={t('adminPages.revenueUi.trend.title')}>
             <defs>
               {sourceKeys.map((key) => (
                 <linearGradient key={`grad-${key}`} id={`grad-${key}`} x1="0" y1="0" x2="0" y2="1">
@@ -536,10 +541,10 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
               );
             })}
 
-            {sourceKeys.map((key, i) => (
+            {sourceKeys.map((key) => (
               <path key={`area-${key}`} d={makeAreaPath(key)} fill={`url(#grad-${key})`} />
             ))}
-            {sourceKeys.map((key, i) => (
+            {sourceKeys.map((key) => (
               <path key={`line-${key}`} d={makePath(key)} fill="none" stroke={lineColors[key] || '#FACC15'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             ))}
 
@@ -571,7 +576,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
                         <div key={key} className="flex items-center justify-between text-[10px]">
                           <span className="flex items-center gap-1.5 text-slate-400">
                             <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lineColors[key] || '#FACC15' }} />
-                            {SOURCE_LABELS[key] || 'Total'}
+                            {key === 'totalRevenue' ? t('adminPages.revenueUi.trend.total') : t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'}`)}
                           </span>
                           <span className="font-bold tabular-nums text-white">{formatCurrency(trend[hoveredIndex][key])}</span>
                         </div>
@@ -579,7 +584,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
                     </div>
                     {viewMode === 'bySource' && (
                       <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[10px]">
-                        <span className="font-bold text-slate-400">Total</span>
+                        <span className="font-bold text-slate-400">{t('adminPages.revenueUi.trend.total')}</span>
                         <span className="font-black tabular-nums text-yellow-400">{formatCurrency(trend[hoveredIndex].totalRevenue)}</span>
                       </div>
                     )}
@@ -591,7 +596,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
         </div>
       ) : (
         <div className="py-10">
-          <EmptyState text="No revenue recorded in this period." />
+          <EmptyState text={t('adminPages.revenueUi.trend.empty')} />
         </div>
       )}
     </motion.section>
@@ -600,20 +605,20 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
 
 /* ── Revenue by Source ─────────────────────────────────────────────────── */
 
-function RevenueBySourceSection({ summary, reduceMotion }) {
+function RevenueBySourceSection({ summary, reduceMotion, t }) {
   const total = safe(summary.sourceCompositionTotal);
   const sources = [
-    { key: 'bookingRevenue', label: 'Booking Revenue', color: SOURCE_COLORS.bookingRevenue },
-    { key: 'serviceRevenue', label: 'Service Revenue', color: SOURCE_COLORS.serviceRevenue },
-    { key: 'packageRevenue', label: 'Package Revenue', color: SOURCE_COLORS.packageRevenue },
-    { key: 'membershipTransferFees', label: 'Transfer Fees', color: SOURCE_COLORS.membershipTransferFees },
+    { key: 'bookingRevenue', label: t('adminPages.revenueUi.source.booking'), color: SOURCE_COLORS.bookingRevenue },
+    { key: 'serviceRevenue', label: t('adminPages.revenueUi.source.service'), color: SOURCE_COLORS.serviceRevenue },
+    { key: 'packageRevenue', label: t('adminPages.revenueUi.source.package'), color: SOURCE_COLORS.packageRevenue },
+    { key: 'membershipTransferFees', label: t('adminPages.revenueUi.source.transfer'), color: SOURCE_COLORS.membershipTransferFees },
   ];
 
   return (
     <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
       <div className="mb-5">
-        <h3 className="text-[16px] font-bold text-white">Revenue by Source</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Composition total: <span className="font-semibold text-white">{formatCurrency(total)}</span></p>
+        <h3 className="text-[16px] font-bold text-white">{t('adminPages.revenueUi.source.title')}</h3>
+        <p className="mt-0.5 text-[12px] text-slate-400">{t('adminPages.revenueUi.source.compositionTotal')} <span className="font-semibold text-white">{formatCurrency(total)}</span></p>
       </div>
       <div className="space-y-4">
         {sources.map((source) => {
@@ -643,7 +648,7 @@ function RevenueBySourceSection({ summary, reduceMotion }) {
 
 /* ── Vehicle Traffic ──────────────────────────────────────────────────── */
 
-function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMotion }) {
+function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMotion, t }) {
   const maxTraffic = Math.max(...traffic.flatMap((p) => [safe(p.entries), safe(p.exits)]), 1);
   const width = 800;
   const height = 160; // COMPACT HEIGHT
@@ -662,29 +667,29 @@ function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMot
     <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
       <div className="mb-5 flex items-end justify-between">
         <div>
-          <h3 className="text-[16px] font-bold text-white">Vehicle Traffic</h3>
-          <p className="mt-0.5 text-[12px] text-slate-400">Vehicles entering and exiting.</p>
+          <h3 className="text-[16px] font-bold text-white">{t('adminPages.revenueUi.traffic.title')}</h3>
+          <p className="mt-0.5 text-[12px] text-slate-400">{t('adminPages.revenueUi.traffic.subtitle')}</p>
         </div>
         <div className="flex gap-4 text-[10px] font-bold text-slate-400">
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Entries</span>
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-400" /> Exits</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" /> {t('adminPages.revenueUi.traffic.entries')}</span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-400" /> {t('adminPages.revenueUi.traffic.exits')}</span>
         </div>
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-2">
         <div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Entries</p>
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">{t('adminPages.revenueUi.traffic.entries')}</p>
           <p className="text-xl font-black tabular-nums text-white">{formatNumber(trafficSummary.totalEntries)}</p>
         </div>
         <div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Exits</p>
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">{t('adminPages.revenueUi.traffic.exits')}</p>
           <p className="text-xl font-black tabular-nums text-white">{formatNumber(trafficSummary.totalExits)}</p>
         </div>
         <div>
-          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Parked</p>
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">{t('adminPages.revenueUi.traffic.parked')}</p>
           <div className="flex items-baseline gap-1.5">
             <p className="text-xl font-black tabular-nums text-white">{formatNumber(trafficSummary.currentlyParked)}</p>
-            <p className="text-[9px] font-bold text-sky-400">Active</p>
+            <p className="text-[9px] font-bold text-sky-400">{t('adminPages.revenueUi.traffic.active')}</p>
           </div>
         </div>
       </div>
@@ -716,7 +721,7 @@ function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMot
         </div>
       ) : (
         <div className="py-6">
-          <EmptyState text="No vehicle activity." />
+          <EmptyState text={t('adminPages.revenueUi.traffic.empty')} />
         </div>
       )}
     </motion.section>
@@ -725,7 +730,7 @@ function VehicleTrafficSection({ traffic, trafficSummary, granularity, reduceMot
 
 /* ── Status Distribution ──────────────────────────────────────────────── */
 
-function StatusDistributionSection({ statusDistribution, reduceMotion }) {
+function StatusDistributionSection({ statusDistribution, reduceMotion, t }) {
   const statusRows = statusDistribution?.byStatus || [];
   const totalBookings = safe(statusDistribution?.totalBookings);
   const size = 130; // COMPACT
@@ -737,8 +742,8 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
   return (
     <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
       <div className="mb-5">
-        <h3 className="text-[16px] font-bold text-white">Status Distribution</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Booking status in the selected period.</p>
+        <h3 className="text-[16px] font-bold text-white">{t('adminPages.revenueUi.status.title')}</h3>
+        <p className="mt-0.5 text-[12px] text-slate-400">{t('adminPages.revenueUi.status.subtitle')}</p>
       </div>
       {statusRows.length > 0 && totalBookings > 0 ? (
         <div className="flex flex-row items-center gap-8">
@@ -758,7 +763,7 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pt-1">
               <span className="text-xl font-black leading-none text-white">{formatNumber(totalBookings)}</span>
-              <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-500">Bookings</span>
+              <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-500">{t('adminPages.revenueUi.status.bookings')}</span>
             </div>
           </div>
           <div className="flex-1 space-y-2.5">
@@ -769,7 +774,7 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
                 <div key={row.status} className="flex items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.color }} />
-                    <span className="font-bold text-slate-200">{tone.label}</span>
+                    <span className="font-bold text-slate-200">{t(`adminPages.revenueUi.statusLabels.${tone.labelKey}`)}</span>
                   </div>
                   <span className="font-semibold tabular-nums text-slate-400">
                     <span className="mr-2 text-white">{formatNumber(row.count)}</span>{percent.toFixed(1)}%
@@ -780,7 +785,7 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
           </div>
         </div>
       ) : (
-        <EmptyState text="No booking activity." />
+        <EmptyState text={t('adminPages.revenueUi.status.empty')} />
       )}
     </motion.section>
   );
@@ -788,14 +793,14 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
 
 /* ── Package Value ────────────────────────────────────────────────────── */
 
-function PackageValueSection({ packageBreakdown, reduceMotion }) {
+function PackageValueSection({ packageBreakdown, reduceMotion, t }) {
   const maxAmount = Math.max(...packageBreakdown.map((p) => safe(p.totalAmount)), 0);
 
   return (
     <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
       <div className="mb-5">
-        <h3 className="text-[16px] font-bold text-white">Value by Package</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Revenue generated by packages.</p>
+        <h3 className="text-[16px] font-bold text-white">{t('adminPages.revenueUi.package.title')}</h3>
+        <p className="mt-0.5 text-[12px] text-slate-400">{t('adminPages.revenueUi.package.subtitle')}</p>
       </div>
       <div>
         {packageBreakdown.length ? (
@@ -811,11 +816,11 @@ function PackageValueSection({ packageBreakdown, reduceMotion }) {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-xs font-bold text-white">
-                        {row.packageName || 'Archived package'}
-                        {!row.isActive && row.packageName !== 'Archived package' && <span className="ml-1.5 text-[9px] font-medium text-slate-500">(archived)</span>}
+                        {row.packageName || t('adminPages.revenueUi.package.archived')}
+                        {!row.isActive && row.packageName !== 'Archived package' && <span className="ml-1.5 text-[9px] font-medium text-slate-500">{t('adminPages.revenueUi.package.archivedSuffix')}</span>}
                       </p>
                       <p className="text-[10px] font-medium text-slate-500">
-                        {formatNumber(row.purchaseCount)} purchases · {formatNumber(row.renewalCount)} renewals
+                        {formatNumber(row.purchaseCount)} {t('adminPages.revenueUi.package.purchases')} · {formatNumber(row.renewalCount)} {t('adminPages.revenueUi.package.renewals')}
                       </p>
                     </div>
                   </div>
@@ -830,7 +835,7 @@ function PackageValueSection({ packageBreakdown, reduceMotion }) {
             })}
           </div>
         ) : (
-          <EmptyState text="No package transactions." />
+          <EmptyState text={t('adminPages.revenueUi.package.empty')} />
         )}
       </div>
     </motion.section>

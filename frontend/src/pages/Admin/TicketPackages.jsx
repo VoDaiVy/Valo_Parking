@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import {
   getOperationalValue,
   getOperationalViewState,
@@ -228,6 +229,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, index }) {
 }
 
 export default function TicketPackages() {
+  const { t } = useLanguage();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -418,10 +420,10 @@ export default function TicketPackages() {
         <header className="mb-8 flex animate-[fadeIn_420ms_ease-out_both] flex-col justify-between gap-4 motion-reduce:animate-none md:flex-row md:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/25 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-              <Tag size={12} /> Packages
+              <Tag size={12} /> {t('adminPages.tickets.title')}
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Ticket Packages</h1>
-            <p className="mt-2 text-sm font-medium text-slate-400">Manage parking rates and ticket packages.</p>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.tickets.title')}</h1>
+            <p className="mt-2 text-sm font-medium text-slate-400">{t('adminPages.tickets.subtitle')}</p>
           </div>
 
           {isAdmin && (
@@ -431,7 +433,7 @@ export default function TicketPackages() {
               className="group inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-500 px-6 text-sm font-black text-[#111111] shadow-lg shadow-yellow-500/20 transition hover:-translate-y-0.5 hover:shadow-yellow-500/30 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-yellow-200/80 motion-reduce:transform-none motion-reduce:transition-none"
             >
               <Plus size={18} className="transition group-hover:rotate-90 motion-reduce:transition-none" />
-              Add Package
+              {t('ticketUi.add')}
             </button>
           )}
         </header>
@@ -456,20 +458,20 @@ export default function TicketPackages() {
         <section className="mb-5 grid overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-2xl shadow-black/20 sm:grid-cols-3">
           <SummaryItem
             icon={Package}
-            label="Total Packages"
+            label={t('ticketUi.total')}
             value={getOperationalValue(packageState, summary.total.toLocaleString('vi-VN'))}
-            support={packageState.isAvailable ? 'Loaded packages' : 'Data unavailable'}
+            support={packageState.isAvailable ? t('ticketUi.loaded') : t('common.noData')}
           />
           <SummaryItem
             icon={CheckCircle2}
-            label="Active Packages"
+            label={t('ticketUi.active')}
             value={getOperationalValue(packageState, summary.active.toLocaleString('vi-VN'))}
-            support={packageState.isAvailable ? 'Enabled and visible' : 'Data unavailable'}
+            support={packageState.isAvailable ? t('ticketUi.enabled') : t('common.noData')}
             tone="text-emerald-300"
           />
           <SummaryItem
             icon={CalendarClock}
-            label="Last Updated"
+            label={t('ticketUi.updated')}
             value={getOperationalValue(packageState, summary.latestUpdated.split(' ')[0])}
             support={packageState.isAvailable ? (summary.latestUpdated.split(' ').slice(1).join(' ') || 'No timestamp') : 'Data unavailable'}
             tone="text-blue-300"
@@ -483,7 +485,7 @@ export default function TicketPackages() {
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search packages by name..."
+              placeholder={t('ticketUi.search')}
               className="h-12 w-full rounded-xl border border-white/10 bg-white/[0.04] pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-300/50 focus:ring-2 focus:ring-yellow-300/10"
             />
             {searchQuery && (
@@ -502,7 +504,7 @@ export default function TicketPackages() {
             value={typeFilter}
             onChange={setTypeFilter}
             options={[
-              { value: 'all', label: 'All types' },
+              { value: 'all', label: t('ticketUi.allTypes') },
               ...typeOptions.map((type) => ({ value: type, label: getTypeMeta(type).label })),
             ]}
             icon={Tag}
@@ -514,7 +516,7 @@ export default function TicketPackages() {
             value={statusFilter}
             onChange={setStatusFilter}
             options={[
-              { value: 'all', label: 'All status' },
+              { value: 'all', label: t('ticketUi.allStatus') },
               { value: 'active', label: 'Active' },
               { value: 'inactive', label: 'Inactive' },
             ]}
@@ -530,8 +532,8 @@ export default function TicketPackages() {
             <span>Type</span>
             <span>Price</span>
             <span>Status</span>
-            <span>Last Updated</span>
-            {isAdmin && <span className="text-right">Actions</span>}
+              <span>{t('ticketUi.updated')}</span>
+              {isAdmin && <span className="text-right">{t('ticketUi.actions')}</span>}
           </div>
 
           {loadError ? (
@@ -558,7 +560,7 @@ export default function TicketPackages() {
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">
                 <Package size={22} />
               </div>
-              <h2 className="text-lg font-black text-white">{packages.length ? 'No matching packages' : 'No ticket packages yet'}</h2>
+              <h2 className="text-lg font-black text-white">{packages.length ? t('ticketUi.emptyMatch') : t('ticketUi.empty')}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-400">
                 {packages.length ? 'Adjust the search or filters to see more packages.' : 'Create a package to start managing parking ticket rates.'}
               </p>
@@ -568,7 +570,7 @@ export default function TicketPackages() {
                   onClick={() => openModal()}
                   className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-yellow-300 px-5 text-sm font-black text-[#111111] transition hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-200/80"
                 >
-                  <Plus size={16} /> Add Package
+                  <Plus size={16} /> {t('ticketUi.add')}
                 </button>
               )}
             </div>
@@ -580,8 +582,8 @@ export default function TicketPackages() {
             <Info size={17} />
           </div>
           <div>
-            <p className="font-black text-yellow-200">Package management</p>
-            <p className="mt-1 font-medium text-slate-400">Review package changes carefully before saving.</p>
+                    <p className="font-black text-yellow-200">{t('ticketUi.management')}</p>
+                    <p className="mt-1 font-medium text-slate-400">{t('ticketUi.managementHint')}</p>
           </div>
         </aside>
 

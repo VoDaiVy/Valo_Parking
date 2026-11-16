@@ -21,6 +21,7 @@ import RefundRuleEditor from '../../components/policies/RefundRuleEditor';
 import RefundRulePreview from '../../components/policies/RefundRulePreview';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import {
   createDefaultRefundRule,
   createPolicy,
@@ -36,14 +37,7 @@ import {
   validateRefundRule,
 } from '../../services/policyService';
 
-const categories = [
-  ['terms', 'Terms'],
-  ['privacy', 'Privacy'],
-  ['refund', 'Refund'],
-  ['parking_rules', 'Parking rules'],
-  ['safety', 'Safety'],
-  ['other', 'Other'],
-];
+const categories = ['terms', 'privacy', 'refund', 'parking_rules', 'safety', 'other'];
 
 const emptyCreateForm = {
   title: '',
@@ -85,8 +79,8 @@ const statusClass = (status) => {
   return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
 };
 
-const categoryLabel = (value) =>
-  categories.find(([key]) => key === value)?.[1] || value || 'Other';
+const categoryLabel = (value, t) =>
+  t?.(`policyUi.categories.${value}`) || value || t?.('policyUi.categories.other') || 'Other';
 
 const inputClass =
   'w-full border border-white/[0.08] bg-black/45 px-4 py-3 text-sm text-white outline-none transition placeholder:text-gray-600 focus:border-yellow-400/60 focus:bg-black/70';
@@ -96,31 +90,29 @@ const scrollbarClass =
   '[&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 hover:[&::-webkit-scrollbar-thumb]:bg-yellow-400/40';
 
 const tabs = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'draft', label: 'Draft', icon: FileText },
-  { id: 'versions', label: 'Versions', icon: History },
-  { id: 'acceptances', label: 'Acceptances', icon: Users },
+  { id: 'overview', icon: LayoutDashboard },
+  { id: 'draft', icon: FileText },
+  { id: 'versions', icon: History },
+  { id: 'acceptances', icon: Users },
 ];
 
 const policyStatusOptions = [
-  { value: 'all', label: 'All Status' },
-  { value: 'published', label: 'Published' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'archived', label: 'Archived' },
+  { value: 'all' },
+  { value: 'published' },
+  { value: 'draft' },
+  { value: 'archived' },
 ];
 
 const policySortOptions = [
-  { value: 'updated', label: 'Sort Updated' },
-  { value: 'title', label: 'Sort Title' },
-  { value: 'version', label: 'Sort Version' },
+  { value: 'updated' },
+  { value: 'title' },
+  { value: 'version' },
 ];
 
-const categoryOptions = categories.map(([value, label]) => ({ value, label }));
-
-function StatusBadge({ status }) {
+function StatusBadge({ status, t }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClass(status)}`}>
-      {status || 'draft'}
+      {t ? t(`policyUi.statusLabels.${status || 'draft'}`) : status || 'draft'}
     </span>
   );
 }
@@ -179,6 +171,7 @@ function InfoLine({ label, value, children }) {
 }
 
 export default function PolicyManagement() {
+  const { t } = useLanguage();
   const [policies, setPolicies] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState(null);
@@ -229,7 +222,7 @@ export default function PolicyManagement() {
     if (res.ok && res.data?.success) {
       setPolicies(res.data.data || []);
     } else {
-      setError(res.data?.message || 'Unable to load policies.');
+      setError(res.data?.message || t('policyUi.errors.loadPolicies'));
     }
   };
 
@@ -269,7 +262,7 @@ export default function PolicyManagement() {
       );
       setDraftRuleErrors({});
     } else {
-      setError(res.data?.message || 'Unable to load policy details.');
+      setError(res.data?.message || t('policyUi.errors.loadDetails'));
     }
     setDetailLoading(false);
   };
@@ -298,7 +291,7 @@ export default function PolicyManagement() {
       } else {
         setAcceptances([]);
         setAcceptanceMeta(null);
-        setAcceptancesError(res.data?.message || 'Unable to load acceptance records.');
+        setAcceptancesError(res.data?.message || t('policyUi.errors.loadAcceptances'));
       }
       setAcceptancesLoading(false);
     };
@@ -316,7 +309,7 @@ export default function PolicyManagement() {
       : {};
     setCreateRuleErrors(ruleErrors);
     if (Object.keys(ruleErrors).length > 0) {
-      setError('Please fix the refund rule errors before creating this policy.');
+      setError(t('policyUi.errors.createRule'));
       return;
     }
 
@@ -330,14 +323,14 @@ export default function PolicyManagement() {
     };
     const res = await createPolicy(payload);
     if (res.ok && res.data?.success) {
-      showToast('Draft created');
+      showToast(t('policyUi.toasts.created'));
       setCreateForm(emptyCreateForm);
       setIsCreating(false);
       await fetchPolicies();
       setSelectedId(res.data.data._id);
       setActiveTab('draft');
     } else {
-      setError(res.data?.message || 'Unable to create policy.');
+      setError(res.data?.message || t('policyUi.errors.create'));
     }
     setSaving(false);
   };
@@ -348,11 +341,11 @@ export default function PolicyManagement() {
     setError('');
     const res = await updatePolicy(selectedPolicy._id, metadata);
     if (res.ok && res.data?.success) {
-      showToast('Policy metadata saved');
+      showToast(t('policyUi.toasts.metadataSaved'));
       await fetchPolicies();
       await loadDetail(selectedPolicy._id);
     } else {
-      setError(res.data?.message || 'Unable to save metadata.');
+      setError(res.data?.message || t('policyUi.errors.saveMetadata'));
     }
     setSaving(false);
   };
@@ -364,7 +357,7 @@ export default function PolicyManagement() {
       : {};
     setDraftRuleErrors(ruleErrors);
     if (Object.keys(ruleErrors).length > 0) {
-      setError('Please fix the refund rule errors before saving this draft.');
+      setError(t('policyUi.errors.saveRule'));
       return;
     }
 
@@ -378,10 +371,10 @@ export default function PolicyManagement() {
     };
     const res = await updatePolicyVersion(selectedPolicy._id, activeDraft._id, payload);
     if (res.ok && res.data?.success) {
-      showToast('Draft saved');
+      showToast(t('policyUi.toasts.draftSaved'));
       await loadDetail(selectedPolicy._id);
     } else {
-      setError(res.data?.message || 'Unable to save draft.');
+      setError(res.data?.message || t('policyUi.errors.saveDraft'));
     }
     setSaving(false);
   };
@@ -406,11 +399,11 @@ export default function PolicyManagement() {
         : undefined,
     });
     if (res.ok && res.data?.success) {
-      showToast('New draft version created');
+      showToast(t('policyUi.toasts.versionCreated'));
       await loadDetail(selectedPolicy._id);
       setActiveTab('draft');
     } else {
-      setError(res.data?.message || 'Unable to create draft version.');
+      setError(res.data?.message || t('policyUi.errors.createVersion'));
     }
     setSaving(false);
   };
@@ -422,17 +415,17 @@ export default function PolicyManagement() {
       : {};
     setDraftRuleErrors(ruleErrors);
     if (Object.keys(ruleErrors).length > 0) {
-      setError('Please fix the refund rule errors before publishing this draft.');
+      setError(t('policyUi.errors.publishRule'));
       return;
     }
 
     const message = selectedPolicy.controlsBookingRefunds
-      ? 'Publish this draft? The policy text and executable refund rules will become immutable together and will apply to newly paid bookings.'
-      : 'Publish this draft? Published versions cannot be edited later.';
+      ? t('policyUi.confirm.publishRules')
+      : t('policyUi.confirm.publishText');
     
     setConfirmModalState({
       isOpen: true,
-      title: 'Publish Policy',
+      title: t('policyUi.confirm.publishTitle'),
       message,
       isDestructive: false,
       action: async () => {
@@ -440,12 +433,12 @@ export default function PolicyManagement() {
         setError('');
         const res = await publishPolicyVersion(selectedPolicy._id, activeDraft._id);
         if (res.ok && res.data?.success) {
-          showToast('Policy version published');
+          showToast(t('policyUi.toasts.published'));
           await fetchPolicies();
           await loadDetail(selectedPolicy._id);
           setActiveTab('versions');
         } else {
-          setError(res.data?.message || 'Unable to publish policy.');
+          setError(res.data?.message || t('policyUi.errors.publish'));
         }
         setSaving(false);
       }
@@ -457,22 +450,22 @@ export default function PolicyManagement() {
     if (!selectedPolicy) return;
     setConfirmModalState({
       isOpen: true,
-      title: 'Delete Policy',
-      message: 'Permanently delete this policy, all versions, refund rules, and customer acceptance records? This action cannot be undone.',
+      title: t('policyUi.confirm.deleteTitle'),
+      message: t('policyUi.confirm.deleteMessage'),
       isDestructive: true,
       action: async () => {
         setSaving(true);
         setError('');
         const res = await deletePolicy(selectedPolicy._id);
         if (res.ok && res.data?.success) {
-          showToast('Policy deleted');
+          showToast(t('policyUi.toasts.deleted'));
           setSelectedId('');
           setDetail(null);
           setAcceptances([]);
           setAcceptanceMeta(null);
           await fetchPolicies();
         } else {
-          setError(res.data?.message || 'Unable to delete policy.');
+          setError(res.data?.message || t('policyUi.errors.delete'));
         }
         setSaving(false);
       }
@@ -485,12 +478,12 @@ export default function PolicyManagement() {
     const drafts = policies.filter((policy) => policy.status === 'draft').length;
     const archived = policies.filter((policy) => policy.status === 'archived').length;
     return [
-      { label: 'Total Policies', value: total, note: 'All records', icon: FileText },
-      { label: 'Published', value: published, note: 'Active policies', icon: CheckCircle2 },
-      { label: 'Drafts', value: drafts, note: 'In progress', icon: Clock3 },
-      { label: 'Archived', value: archived, note: 'Retained history', icon: Archive },
+      { label: t('policyUi.summary.total'), value: total, note: t('policyUi.summary.allRecords'), icon: FileText },
+      { label: t('policyUi.summary.published'), value: published, note: t('policyUi.summary.active'), icon: CheckCircle2 },
+      { label: t('policyUi.summary.drafts'), value: drafts, note: t('policyUi.summary.progress'), icon: Clock3 },
+      { label: t('policyUi.summary.archived'), value: archived, note: t('policyUi.summary.history'), icon: Archive },
     ];
-  }, [policies]);
+  }, [policies, t]);
 
   const visiblePolicies = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -552,18 +545,18 @@ export default function PolicyManagement() {
           <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-yellow-300">
               <FileText size={13} />
-              Policy Manager
+            {t('policyUi.badge')}
             </div>
             <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
-              Policies
+              {t('adminPages.policies.title')}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-[15px]">
-                 Manage policy drafts, versions, and acceptance records.
+              {t('adminPages.policies.subtitle')}
             </p>
           </div>
           <PremiumButton onClick={openCreate} className="w-full sm:w-auto">
             <Plus size={17} className="transition-transform group-hover:rotate-90" />
-            Create New Policy
+            {t('policyUi.create')}
           </PremiumButton>
         </motion.header>
 
@@ -610,26 +603,26 @@ export default function PolicyManagement() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               className="h-12 w-full rounded-[14px] border border-white/[0.08] bg-[#111111]/80 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-400/45 focus:bg-black/60"
-              placeholder="Search policies by name, slug or category..."
+              placeholder={t('policyUi.search')}
             />
           </label>
           <div className="grid grid-cols-2 gap-3 sm:flex">
             <AdminSelect
               value={statusFilter}
               onChange={setStatusFilter}
-              options={policyStatusOptions}
+              options={policyStatusOptions.map((option) => ({ ...option, label: option.value === 'all' ? t('policyUi.allStatus') : t(`policyUi.${option.value}`) }))}
               icon={SlidersHorizontal}
               className="w-full sm:w-44"
-              ariaLabel="Filter policies by status"
+              ariaLabel={t('policyUi.filterStatus')}
             />
             <AdminSelect
               value={sortMode}
               onChange={setSortMode}
-              options={policySortOptions}
+              options={policySortOptions.map((option) => ({ ...option, label: t(`policyUi.sort${option.value.charAt(0).toUpperCase()}${option.value.slice(1)}`) }))}
               icon={Clock3}
               className="w-full sm:w-44"
               align="right"
-              ariaLabel="Sort policies"
+              ariaLabel={t('policyUi.sortPolicies')}
             />
           </div>
         </motion.section>
@@ -648,16 +641,16 @@ export default function PolicyManagement() {
           <aside className="flex min-h-[520px] flex-col border-b border-white/[0.08] lg:border-b-0 lg:border-r">
             <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
               <div>
-                <h2 className="text-sm font-black uppercase tracking-[0.18em] text-white">Policies</h2>
+                <h2 className="text-sm font-black uppercase tracking-[0.18em] text-white">{t('policyUi.policies')}</h2>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
-                  {visiblePolicies.length} of {policies.length} policies
+                  {t('policyUi.policyCount', { shown: visiblePolicies.length, total: policies.length })}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={openCreate}
                 className="group flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-slate-300 transition hover:border-yellow-400/40 hover:bg-yellow-400/10 hover:text-yellow-300"
-                title="Create policy"
+                title={t('policyUi.actions.createPolicy')}
               >
                 <Plus size={16} className="transition-transform group-hover:rotate-90" />
               </button>
@@ -666,12 +659,12 @@ export default function PolicyManagement() {
               {loading ? (
                 <div className="flex items-center justify-center gap-3 py-16 text-sm font-bold text-slate-400">
                   <Loader2 size={16} className="animate-spin text-yellow-400" />
-                  Loading policies
+                  {t('policyUi.loadingPolicies')}
                 </div>
               ) : visiblePolicies.length === 0 ? (
                 <div className="px-6 py-14 text-center">
                   <FileText size={30} className="mx-auto mb-3 text-slate-700" />
-                  <p className="text-sm font-bold text-slate-400">No policies match this view.</p>
+                  <p className="text-sm font-bold text-slate-400">{t('policyUi.noMatch')}</p>
                 </div>
               ) : (
                 <div>
@@ -695,7 +688,7 @@ export default function PolicyManagement() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-3">
                             <p className="truncate text-sm font-black text-white">{policy.title}</p>
-                            <StatusBadge status={policy.status} />
+                            <StatusBadge status={policy.status} t={t} />
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs font-semibold text-slate-500">
                             <span className="truncate">/{policy.slug}</span>
@@ -724,11 +717,11 @@ export default function PolicyManagement() {
                 setError={setError}
               />
             ) : !selectedPolicy ? (
-              <EmptyWorkspace onCreate={openCreate} />
+              <EmptyWorkspace onCreate={openCreate} t={t} />
             ) : detailLoading ? (
               <div className="flex min-h-[620px] items-center justify-center gap-3 text-sm font-bold text-slate-400">
                 <Loader2 size={18} className="animate-spin text-yellow-400" />
-                Loading policy detail
+                {t('policyUi.loadingDetail')}
               </div>
             ) : (
               <PolicyWorkspace
@@ -754,6 +747,7 @@ export default function PolicyManagement() {
                 acceptanceMeta={acceptanceMeta}
                 acceptancesLoading={acceptancesLoading}
                 acceptancesError={acceptancesError}
+                t={t}
               />
             )}
           </section>
@@ -766,15 +760,15 @@ export default function PolicyManagement() {
         onConfirm={() => confirmModalState.action?.()}
         title={confirmModalState.title}
         message={confirmModalState.message}
-        confirmText="Confirm"
-        cancelText="Cancel"
+        confirmText={t('policyUi.actions.confirm')}
+        cancelText={t('policyUi.actions.cancel')}
         isDestructive={confirmModalState.isDestructive}
       />
     </div>
   );
 }
 
-function EmptyWorkspace({ onCreate }) {
+function EmptyWorkspace({ onCreate, t }) {
   return (
     <div className="relative flex min-h-[620px] items-center justify-center overflow-hidden px-6 text-center">
       <div className="absolute h-80 w-80 rounded-full bg-yellow-400/10 blur-[100px]" />
@@ -787,13 +781,13 @@ function EmptyWorkspace({ onCreate }) {
         <div className="mx-auto mb-7 flex h-20 w-20 items-center justify-center rounded-[22px] border border-yellow-400/25 bg-black/45 text-yellow-300 shadow-[0_0_50px_rgba(234,179,8,0.16)]">
           <FileText size={38} strokeWidth={1.4} />
         </div>
-        <h2 className="text-2xl font-black text-white">No Policy Selected</h2>
+        <h2 className="text-2xl font-black text-white">{t('policyUi.noSelection')}</h2>
         <p className="mt-3 text-sm leading-6 text-slate-400">
-          Select a policy from the navigator to view metadata, drafts, versions, and acceptance records.
+          {t('policyUi.noSelectionHint')}
         </p>
         <PremiumButton onClick={onCreate} className="mt-7">
           <Plus size={16} />
-          Create New Policy
+          {t('policyUi.create')}
         </PremiumButton>
       </motion.div>
     </div>
@@ -809,39 +803,41 @@ function CreatePolicyWorkspace({
   setCreateRuleErrors,
   setError,
 }) {
+  const { t } = useLanguage();
+  const categoryOptions = categories.map((value) => ({ value, label: t(`policyUi.categories.${value}`) }));
   return (
     <div className={`h-full overflow-y-auto p-5 lg:p-8 ${scrollbarClass}`}>
       <div className="mb-8 border-b border-white/[0.08] pb-6">
-        <SectionLabel>Draft Builder</SectionLabel>
-        <h2 className="mt-2 text-3xl font-black text-white">Create New Policy</h2>
+        <SectionLabel>{t('policyUi.createWorkspace.badge')}</SectionLabel>
+        <h2 className="mt-2 text-3xl font-black text-white">{t('policyUi.createWorkspace.title')}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-400">
-          Start with editable metadata and an initial draft version.
+          {t('policyUi.createWorkspace.subtitle')}
         </p>
       </div>
 
       <form onSubmit={handleCreate} className="space-y-6">
         <div className="grid gap-5 xl:grid-cols-2">
           <label className="block">
-            <span className={labelClass}>Title</span>
+            <span className={labelClass}>{t('policyUi.createWorkspace.titleLabel')}</span>
             <input
               value={createForm.title}
               onChange={(event) => setCreateForm((current) => ({ ...current, title: event.target.value }))}
               className={`${inputClass} rounded-[14px]`}
-              placeholder="e.g. Terms of Service"
+              placeholder={t('policyUi.createWorkspace.titlePlaceholder')}
               required
             />
           </label>
           <label className="block">
-            <span className={labelClass}>Slug Optional</span>
+            <span className={labelClass}>{t('policyUi.createWorkspace.slugLabel')}</span>
             <input
               value={createForm.slug}
               onChange={(event) => setCreateForm((current) => ({ ...current, slug: event.target.value }))}
               className={`${inputClass} rounded-[14px]`}
-              placeholder="e.g. terms-of-service"
+              placeholder={t('policyUi.createWorkspace.slugPlaceholder')}
             />
           </label>
           <label className="block">
-            <span className={labelClass}>Category</span>
+            <span className={labelClass}>{t('policyUi.createWorkspace.categoryLabel')}</span>
             <AdminSelect
               value={createForm.category}
               onChange={(nextCategory) =>
@@ -859,7 +855,7 @@ function CreatePolicyWorkspace({
               options={categoryOptions}
               icon={FileText}
               className="w-full"
-              ariaLabel="Select policy category"
+              ariaLabel={t('policyUi.createWorkspace.selectCategory')}
             />
           </label>
           <div className="flex items-end">
@@ -870,7 +866,7 @@ function CreatePolicyWorkspace({
                 onChange={(event) => setCreateForm((current) => ({ ...current, requiresAcceptance: event.target.checked }))}
                 className="h-4 w-4 accent-yellow-400"
               />
-              Requires customer acceptance
+              {t('policyUi.createWorkspace.requiresAcceptance')}
             </label>
           </div>
         </div>
@@ -894,28 +890,28 @@ function CreatePolicyWorkspace({
               className="mt-0.5 h-4 w-4 accent-yellow-400"
             />
             <span>
-              Control booking refunds
+              {t('policyUi.createWorkspace.refundControl')}
               <span className="mt-1 block text-xs font-normal leading-relaxed text-slate-400">
-                Designate this refund policy as the executable rule source. Only one policy can be designated.
+                {t('policyUi.createWorkspace.refundHint')}
               </span>
             </span>
           </label>
         )}
 
         <label className="block">
-          <span className={labelClass}>Initial Content</span>
+          <span className={labelClass}>{t('policyUi.createWorkspace.initialContent')}</span>
           <textarea
             value={createForm.content}
             onChange={(event) => setCreateForm((current) => ({ ...current, content: event.target.value }))}
             className={`${inputClass} min-h-52 rounded-[14px] leading-7`}
-            placeholder="Write your policy content here..."
+            placeholder={t('policyUi.createWorkspace.contentPlaceholder')}
             required
           />
         </label>
 
         {createForm.controlsBookingRefunds && (
           <div className="border-t border-white/[0.08] pt-6">
-            <SectionLabel>Refund Rules Configuration</SectionLabel>
+            <SectionLabel>{t('policyUi.createWorkspace.refundConfig')}</SectionLabel>
             <div className="mt-4">
               <RefundRuleEditor
                 value={createForm.refundRule}
@@ -932,7 +928,7 @@ function CreatePolicyWorkspace({
 
         <PremiumButton type="submit" disabled={saving}>
           {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          Create Policy
+          {t('policyUi.create')}
         </PremiumButton>
       </form>
     </div>
@@ -962,6 +958,7 @@ function PolicyWorkspace({
   acceptanceMeta,
   acceptancesLoading,
   acceptancesError,
+  t,
 }) {
   return (
     <div className="h-full overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -972,7 +969,7 @@ function PolicyWorkspace({
               <h2 className="truncate text-2xl font-black text-white lg:text-3xl">
                 {selectedPolicy.title}
               </h2>
-              <StatusBadge status={selectedPolicy.status} />
+              <StatusBadge status={selectedPolicy.status} t={t} />
             </div>
             <p className="mt-2 text-sm font-semibold text-slate-500">
               /{selectedPolicy.slug} · v{selectedPolicy.currentVersionNumber || 0} · Updated {formatDate(selectedPolicy.updatedAt)}
@@ -982,18 +979,18 @@ function PolicyWorkspace({
             {!activeDraft && (
               <PremiumButton variant="ghost" onClick={handleCreateNextDraft} disabled={saving}>
                 <Plus size={15} />
-                New Draft
+                {t('policyUi.actions.newDraft')}
               </PremiumButton>
             )}
             {activeDraft && (
               <PremiumButton onClick={handlePublish} disabled={saving}>
                 <Send size={15} />
-                Publish
+                {t('policyUi.actions.publish')}
               </PremiumButton>
             )}
             <PremiumButton variant="danger" onClick={handleDelete} disabled={saving}>
               <Trash2 size={15} />
-              Delete
+              {t('policyUi.actions.delete')}
             </PremiumButton>
           </div>
         </div>
@@ -1012,7 +1009,7 @@ function PolicyWorkspace({
                 }`}
               >
                 <Icon size={15} />
-                {tab.label}
+                {t(`policyUi.tabs.${tab.id}`)}
                 {selected && (
                   <motion.span
                     layoutId="policy-tab-underline"
@@ -1033,6 +1030,7 @@ function PolicyWorkspace({
             handleMetadataSave={handleMetadataSave}
             setMetadata={setMetadata}
             saving={saving}
+            t={t}
           />
         )}
         {activeTab === 'draft' && (
@@ -1048,10 +1046,11 @@ function PolicyWorkspace({
             draftRuleErrors={draftRuleErrors}
             setDraftRuleErrors={setDraftRuleErrors}
             setError={setError}
+            t={t}
           />
         )}
         {activeTab === 'versions' && (
-          <VersionTimeline versions={versions} currentVersionNumber={selectedPolicy.currentVersionNumber} />
+          <VersionTimeline versions={versions} currentVersionNumber={selectedPolicy.currentVersionNumber} t={t} />
         )}
         {activeTab === 'acceptances' && (
           <AcceptancePanel
@@ -1059,6 +1058,7 @@ function PolicyWorkspace({
             acceptanceMeta={acceptanceMeta}
             loading={acceptancesLoading}
             error={acceptancesError}
+            t={t}
           />
         )}
       </div>
@@ -1066,46 +1066,47 @@ function PolicyWorkspace({
   );
 }
 
-function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSave, saving }) {
+function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSave, saving, t }) {
+  const categoryOptions = categories.map((value) => ({ value, label: t(`policyUi.categories.${value}`) }));
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl">
       <div className="mb-7">
-        <SectionLabel>Overview</SectionLabel>
-        <h3 className="mt-2 text-2xl font-black text-white">Policy Information</h3>
+        <SectionLabel>{t('policyUi.overview.overview')}</SectionLabel>
+        <h3 className="mt-2 text-2xl font-black text-white">{t('policyUi.overview.information')}</h3>
         <p className="mt-2 text-sm leading-6 text-slate-400">
-          Metadata stays editable while version content is controlled through drafts.
+          {t('policyUi.overview.metadataHint')}
         </p>
       </div>
 
       <div className="border-y border-white/[0.08]">
-        <InfoLine label="Policy Name" value={selectedPolicy.title} />
-        <InfoLine label="Slug" value={`/${selectedPolicy.slug}`} />
-        <InfoLine label="Category" value={categoryLabel(selectedPolicy.category)} />
-        <InfoLine label="Latest Version" value={`v${selectedPolicy.currentVersionNumber || 0}`} />
-        <InfoLine label="Status">
-          <StatusBadge status={selectedPolicy.status} />
+        <InfoLine label={t('policyUi.overview.policyName')} value={selectedPolicy.title} />
+        <InfoLine label={t('policyUi.overview.slug')} value={`/${selectedPolicy.slug}`} />
+        <InfoLine label={t('policyUi.overview.category')} value={categoryLabel(selectedPolicy.category, t)} />
+        <InfoLine label={t('policyUi.overview.latestVersion')} value={`v${selectedPolicy.currentVersionNumber || 0}`} />
+        <InfoLine label={t('policyUi.overview.status')}>
+          <StatusBadge status={selectedPolicy.status} t={t} />
         </InfoLine>
-        <InfoLine label="Requires Acceptance" value={selectedPolicy.requiresAcceptance ? 'Yes' : 'No'} />
-        <InfoLine label="Controls Refunds" value={selectedPolicy.controlsBookingRefunds ? 'Yes' : 'No'} />
-        <InfoLine label="Created" value={formatDateTime(selectedPolicy.createdAt)} />
-        <InfoLine label="Updated" value={formatDateTime(selectedPolicy.updatedAt)} />
+        <InfoLine label={t('policyUi.overview.requiresAcceptance')} value={selectedPolicy.requiresAcceptance ? 'Yes' : 'No'} />
+        <InfoLine label={t('policyUi.overview.controlsRefunds')} value={selectedPolicy.controlsBookingRefunds ? 'Yes' : 'No'} />
+        <InfoLine label={t('policyUi.overview.created')} value={formatDateTime(selectedPolicy.createdAt)} />
+        <InfoLine label={t('policyUi.overview.updated')} value={formatDateTime(selectedPolicy.updatedAt)} />
       </div>
 
       {metadata && (
         <div className="mt-8 border-t border-white/[0.08] pt-7">
           <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div>
-              <SectionLabel>Editable Metadata</SectionLabel>
-              <p className="mt-2 text-sm text-slate-400">These fields use the existing save metadata handler.</p>
+              <SectionLabel>{t('policyUi.overview.editable')}</SectionLabel>
+              <p className="mt-2 text-sm text-slate-400">{t('policyUi.overview.editableHint')}</p>
             </div>
             <PremiumButton variant="light" onClick={handleMetadataSave} disabled={saving}>
               <Save size={16} />
-              Save Metadata
+              {t('policyUi.actions.saveMetadata')}
             </PremiumButton>
           </div>
           <div className="grid gap-5 xl:grid-cols-2">
             <label>
-              <span className={labelClass}>Title</span>
+              <span className={labelClass}>{t('policyUi.overview.title')}</span>
               <input
                 value={metadata.title}
                 onChange={(event) => setMetadata((current) => ({ ...current, title: event.target.value }))}
@@ -1113,7 +1114,7 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
               />
             </label>
             <label>
-              <span className={labelClass}>Slug</span>
+              <span className={labelClass}>{t('policyUi.overview.slug')}</span>
               <input
                 value={metadata.slug}
                 onChange={(event) => setMetadata((current) => ({ ...current, slug: event.target.value }))}
@@ -1121,7 +1122,7 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
               />
             </label>
             <label>
-              <span className={labelClass}>Category</span>
+              <span className={labelClass}>{t('policyUi.overview.category')}</span>
               <AdminSelect
                 value={metadata.category}
                 onChange={(nextCategory) =>
@@ -1137,7 +1138,7 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
                 options={categoryOptions}
                 icon={FileText}
                 className="w-full"
-                ariaLabel="Select policy category"
+                ariaLabel={t('policyUi.createWorkspace.selectCategory')}
               />
             </label>
             <label className="flex min-h-[48px] cursor-pointer items-center gap-3 self-end rounded-[14px] border border-white/[0.08] bg-black/45 px-4 text-sm font-bold text-slate-300 transition hover:bg-white/[0.03]">
@@ -1147,7 +1148,7 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
                 onChange={(event) => setMetadata((current) => ({ ...current, requiresAcceptance: event.target.checked }))}
                 className="h-4 w-4 accent-yellow-400"
               />
-              Requires customer acceptance
+              {t('policyUi.createWorkspace.requiresAcceptance')}
             </label>
             {metadata.category === 'refund' && (
               <label className="flex cursor-pointer items-start gap-3 border-y border-yellow-400/20 bg-yellow-400/[0.04] px-1 py-4 text-sm font-bold text-gray-200 xl:col-span-2">
@@ -1163,7 +1164,7 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
                   className="mt-1 h-4 w-4 accent-yellow-400"
                 />
                 <span>
-                  Control booking refunds
+                  {t('policyUi.createWorkspace.refundControl')}
                   <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">
                     The designated policy publishes legal text and executable refund rules as one immutable version.
                   </span>
@@ -1171,11 +1172,12 @@ function OverviewPanel({ selectedPolicy, metadata, setMetadata, handleMetadataSa
               </label>
             )}
             <label className="xl:col-span-2">
-              <span className={labelClass}>Description</span>
+              <span className={labelClass}>{t('policyUi.overview.description')}</span>
               <textarea
                 value={metadata.description}
                 onChange={(event) => setMetadata((current) => ({ ...current, description: event.target.value }))}
                 className={`${inputClass} min-h-24 rounded-[14px] leading-6`}
+                placeholder={t('policyUi.overview.descriptionPlaceholder')}
               />
             </label>
           </div>
@@ -1197,23 +1199,24 @@ function DraftPanel({
   draftRuleErrors,
   setDraftRuleErrors,
   setError,
+  t,
 }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl">
       <div className="mb-7 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
         <div>
-          <SectionLabel>Draft Editor</SectionLabel>
-          <h3 className="mt-2 text-2xl font-black text-white">Editable Draft</h3>
+          <SectionLabel>{t('policyUi.draftPanel.editor')}</SectionLabel>
+          <h3 className="mt-2 text-2xl font-black text-white">{t('policyUi.draftPanel.editableDraft')}</h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
             {selectedPolicy.controlsBookingRefunds
-              ? 'Policy text and executable refund rules stay editable in draft, then become immutable together when published.'
-              : 'Only draft versions can be edited. Publishing makes content immutable.'}
+              ? t('policyUi.confirm.publishRules')
+              : t('policyUi.draftPanel.hint')}
           </p>
         </div>
         {!activeDraft && (
           <PremiumButton variant="ghost" onClick={handleCreateNextDraft} disabled={saving}>
             <Plus size={16} />
-            Create Next Draft
+            {t('policyUi.actions.newDraft')}
           </PremiumButton>
         )}
       </div>
@@ -1221,22 +1224,22 @@ function DraftPanel({
       {!activeDraft || !draft ? (
         <div className="border-y border-white/[0.08] py-12 text-center">
           <FileText size={32} className="mx-auto mb-3 text-slate-700" />
-          <p className="text-sm font-bold text-slate-400">No editable draft exists for this policy.</p>
+          <p className="text-sm font-bold text-slate-400">{t('policyUi.draftPanel.noDraft')}</p>
         </div>
       ) : (
         <div className="space-y-5">
           <div className="grid gap-5 xl:grid-cols-[1fr_220px]">
             <label>
-              <span className={labelClass}>Version Title</span>
+              <span className={labelClass}>{t('policyUi.draftPanel.versionTitle')}</span>
               <input
                 value={draft.title}
                 onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
                 className={`${inputClass} rounded-[14px]`}
-                placeholder="Version title"
+                placeholder={t('policyUi.draftPanel.versionTitle')}
               />
             </label>
             <label>
-              <span className={labelClass}>Effective Date</span>
+              <span className={labelClass}>{t('policyUi.draftPanel.effectiveDate')}</span>
               <input
                 type="date"
                 value={draft.effectiveDate}
@@ -1246,35 +1249,35 @@ function DraftPanel({
             </label>
           </div>
           <label className="block">
-            <span className={labelClass}>Summary</span>
+            <span className={labelClass}>{t('policyUi.draftPanel.summary')}</span>
             <textarea
               value={draft.summary}
               onChange={(event) => setDraft((current) => ({ ...current, summary: event.target.value }))}
               className={`${inputClass} min-h-24 rounded-[14px] leading-6`}
-              placeholder="Summary"
+              placeholder={t('policyUi.draftPanel.summary')}
             />
           </label>
           <label className="block">
-            <span className={labelClass}>Policy Content</span>
+            <span className={labelClass}>{t('policyUi.draftPanel.content')}</span>
             <textarea
               value={draft.content}
               onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))}
               className={`${inputClass} min-h-[320px] rounded-[14px] leading-7`}
-              placeholder="Policy content"
+              placeholder={t('policyUi.draftPanel.content')}
             />
           </label>
           <label className="block">
-            <span className={labelClass}>Change Note</span>
+            <span className={labelClass}>{t('policyUi.draftPanel.changeNote')}</span>
             <input
               value={draft.changeNote}
               onChange={(event) => setDraft((current) => ({ ...current, changeNote: event.target.value }))}
               className={`${inputClass} rounded-[14px]`}
-              placeholder="Change note"
+              placeholder={t('policyUi.draftPanel.changeNotePlaceholder')}
             />
           </label>
           {selectedPolicy.controlsBookingRefunds && (
             <div className="border-t border-white/[0.08] pt-6">
-              <SectionLabel>Refund Rules</SectionLabel>
+              <SectionLabel>{t('policyUi.createWorkspace.refundConfig')}</SectionLabel>
               <div className="mt-4 grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
                 <RefundRuleEditor
                   value={draft.refundRule}
@@ -1295,13 +1298,13 @@ function DraftPanel({
           <div className="flex flex-wrap gap-3 border-t border-white/[0.08] pt-6">
             <PremiumButton variant="light" onClick={handleDraftSave} disabled={saving}>
               <Save size={16} />
-              Save Draft
+              {t('policyUi.actions.saveDraft')}
             </PremiumButton>
             <PremiumButton onClick={handlePublish} disabled={saving}>
               <Send size={16} />
               {selectedPolicy.controlsBookingRefunds
-                ? 'Publish Immutable Text + Rules'
-                : 'Publish Immutable Version'}
+                ? t('policyUi.actions.publishImmutable')
+                : t('policyUi.actions.publish')}
             </PremiumButton>
           </div>
         </div>
@@ -1310,17 +1313,17 @@ function DraftPanel({
   );
 }
 
-function VersionTimeline({ versions, currentVersionNumber }) {
+function VersionTimeline({ versions, currentVersionNumber, t }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl">
       <div className="mb-7">
-        <SectionLabel>Version History</SectionLabel>
-        <h3 className="mt-2 text-2xl font-black text-white">Timeline</h3>
-        <p className="mt-2 text-sm text-slate-400">Published versions are immutable. Drafts remain editable until publishing.</p>
+        <SectionLabel>{t('policyUi.versionsPanel.history')}</SectionLabel>
+        <h3 className="mt-2 text-2xl font-black text-white">{t('policyUi.versionsPanel.timeline')}</h3>
+        <p className="mt-2 text-sm text-slate-400">{t('policyUi.versionsPanel.hint')}</p>
       </div>
       <div className="relative border-y border-white/[0.08] py-3">
         {versions.length === 0 ? (
-          <p className="py-10 text-center text-sm font-bold text-slate-500">No versions yet.</p>
+          <p className="py-10 text-center text-sm font-bold text-slate-500">{t('policyUi.versionsPanel.empty')}</p>
         ) : (
           versions.map((version, index) => {
             const active = version.versionNumber === currentVersionNumber;
@@ -1341,7 +1344,7 @@ function VersionTimeline({ versions, currentVersionNumber }) {
                   <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{version.summary || version.changeNote || 'No summary provided.'}</p>
                 </div>
                 <div>
-                  <StatusBadge status={version.status} />
+                  <StatusBadge status={version.status} t={t} />
                   <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(version.effectiveDate)}</p>
                 </div>
                 <div className="inline-flex items-center gap-2 text-sm font-black text-emerald-300">
@@ -1357,20 +1360,20 @@ function VersionTimeline({ versions, currentVersionNumber }) {
   );
 }
 
-function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
+function AcceptancePanel({ acceptances, acceptanceMeta, loading, error, t }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
       <div className="mb-7 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div>
-          <SectionLabel>Acceptances</SectionLabel>
-          <h3 className="mt-2 text-2xl font-black text-white">Customer Records</h3>
+          <SectionLabel>{t('policyUi.acceptancesPanel.acceptances')}</SectionLabel>
+          <h3 className="mt-2 text-2xl font-black text-white">{t('policyUi.acceptancesPanel.records')}</h3>
           <p className="mt-2 text-sm text-slate-400">
-            Showing the latest {acceptanceMeta?.limit || 50} records from the existing policy acceptance endpoint.
+            {t('policyUi.acceptancesPanel.hint')}
           </p>
         </div>
         {acceptanceMeta && (
           <div className="text-sm font-bold text-slate-500">
-            {acceptanceMeta.total || 0} total records
+            {acceptanceMeta.total || 0} {t('policyUi.acceptancesPanel.total')}
           </div>
         )}
       </div>
@@ -1378,7 +1381,7 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
       {loading ? (
         <div className="flex items-center justify-center gap-3 border-y border-white/[0.08] py-14 text-sm font-bold text-slate-400">
           <Loader2 size={16} className="animate-spin text-yellow-400" />
-          Loading acceptance records
+          {t('policyUi.acceptancesPanel.loading')}
         </div>
       ) : error ? (
         <div className="border-y border-red-500/20 bg-red-500/5 py-8 text-center text-sm font-bold text-red-300">
@@ -1387,7 +1390,7 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
       ) : acceptances.length === 0 ? (
         <div className="border-y border-white/[0.08] py-14 text-center">
           <Users size={32} className="mx-auto mb-3 text-slate-700" />
-          <p className="text-sm font-bold text-slate-400">No acceptance records yet.</p>
+          <p className="text-sm font-bold text-slate-400">{t('policyUi.acceptancesPanel.empty')}</p>
         </div>
       ) : (
         <div className="overflow-hidden border-y border-white/[0.08]">
@@ -1395,17 +1398,17 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#111111] text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                 <tr>
-                  <th className="px-4 py-4">Customer</th>
-                  <th className="px-4 py-4">Version</th>
-                  <th className="px-4 py-4">Accepted</th>
-                  <th className="px-4 py-4">Source</th>
+                  <th className="px-4 py-4">{t('policyUi.acceptancesPanel.customer')}</th>
+                  <th className="px-4 py-4">{t('policyUi.acceptancesPanel.version')}</th>
+                  <th className="px-4 py-4">{t('policyUi.acceptancesPanel.accepted')}</th>
+                  <th className="px-4 py-4">{t('policyUi.acceptancesPanel.source')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.06]">
                 {acceptances.map((item) => (
                   <tr key={item._id} className="text-slate-300 transition hover:bg-white/[0.025]">
                     <td className="px-4 py-4">
-                      <p className="font-black text-white">{item.userId?.username || item.userId?.email || 'Unknown customer'}</p>
+                      <p className="font-black text-white">{item.userId?.username || item.userId?.email || t('policyUi.acceptancesPanel.unknown')}</p>
                       <p className="mt-1 text-xs font-semibold text-slate-500">{item.userId?.email || item.userId?._id || '-'}</p>
                     </td>
                     <td className="px-4 py-4 font-bold text-slate-300">
@@ -1414,7 +1417,7 @@ function AcceptancePanel({ acceptances, acceptanceMeta, loading, error }) {
                     <td className="px-4 py-4 font-semibold text-slate-400">{formatDateTime(item.acceptedAt)}</td>
                     <td className="px-4 py-4">
                       <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs font-black uppercase text-slate-400">
-                        {item.source || 'web'}
+                        {item.source || t('policyUi.acceptancesPanel.web')}
                       </span>
                     </td>
                   </tr>

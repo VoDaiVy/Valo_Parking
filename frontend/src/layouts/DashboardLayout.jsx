@@ -485,10 +485,10 @@ export default function DashboardLayout() {
               <button
                 onClick={() => setReportModalOpen(true)}
                 className="flex items-center gap-2 px-3 py-1.5 h-9 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 border border-orange-500/20 transition-all font-semibold text-xs"
-                title="Report an Issue"
+                title={t('shell.reportIssue')}
               >
                 <AlertTriangle size={15} />
-                <span className="hidden sm:inline">Report Issue</span>
+                <span className="hidden sm:inline">{t('shell.reportIssue')}</span>
               </button>
             )}
 
@@ -518,21 +518,21 @@ export default function DashboardLayout() {
                 <div className="absolute right-0 top-[calc(100%+8px)] w-80 bg-white dark:bg-[#1A1A1A] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[400px]">
                   <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50 dark:bg-[#111]">
                     <p className="text-gray-900 dark:text-white font-bold text-sm">
-                      Notifications
+                      {t('shell.notifications')}
                     </p>
                     {unreadCount > 0 && (
                       <button
                         onClick={markAllAsRead}
                         className="text-xs text-emerald-500 hover:text-emerald-400 font-medium"
                       >
-                        Mark all as read
+                        {t('shell.markAllRead')}
                       </button>
                     )}
                   </div>
                   <div className="overflow-y-auto flex-1">
                     {notifications.length === 0 ? (
                       <div className="p-6 text-center text-gray-500 text-sm">
-                        No notifications
+                        {t('shell.noNotifications')}
                       </div>
                     ) : (
                       notifications.map((n) => (
@@ -579,7 +579,7 @@ export default function DashboardLayout() {
                                   addSuffix: true,
                                   locale: enUS,
                                 })
-                                : "Just now"}
+                                : t('shell.justNow')}
                             </p>
                           </div>
                         </div>
@@ -602,12 +602,12 @@ export default function DashboardLayout() {
                       className="w-full text-center text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white py-1"
                     >
                       {role === "customer"
-                        ? notificationsLoading
-                          ? "Loading earlier notifications..."
-                          : hasMore
-                            ? "View earlier notifications"
-                            : "All notifications loaded"
-                        : "Open notification inbox"}
+                          ? notificationsLoading
+                            ? t('shell.loadingEarlierNotifications')
+                            : hasMore
+                              ? t('shell.viewEarlierNotifications')
+                              : t('shell.allNotificationsLoaded')
+                        : t('shell.openNotificationInbox')}
                     </button>
                   </div>
                 </div>
@@ -650,7 +650,7 @@ export default function DashboardLayout() {
             <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <AlertTriangle className="text-orange-500" size={20} />
-                Report an Issue
+                {t('shell.reportIssueTitle')}
               </h3>
               <button
                 onClick={() => setReportModalOpen(false)}
@@ -662,13 +662,13 @@ export default function DashboardLayout() {
 
             <div className="p-6">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Describe the issue you are experiencing in detail. This message will be sent directly to the Admin with high priority.
+                {t('shell.reportIssueHint')}
               </p>
 
               <textarea
                 value={reportContent}
                 onChange={(e) => setReportContent(e.target.value)}
-                placeholder="Type your report here..."
+                placeholder={t('shell.reportIssuePlaceholder')}
                 className="w-full h-32 px-4 py-3 bg-gray-50 dark:bg-[#111111] border border-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 text-gray-900 dark:text-white text-sm resize-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
               />
             </div>
@@ -679,7 +679,7 @@ export default function DashboardLayout() {
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/5 transition-colors"
                 disabled={reportLoading}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleSendReport}
@@ -691,7 +691,7 @@ export default function DashboardLayout() {
                 ) : (
                   <Send size={16} />
                 )}
-                Send Report
+                {t('shell.sendReport')}
               </button>
             </div>
           </div>

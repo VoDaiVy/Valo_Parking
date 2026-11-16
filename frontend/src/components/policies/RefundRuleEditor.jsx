@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { normalizeRefundRule } from '../../services/policyService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const asNumber = (value) => {
   if (value === '') return '';
@@ -55,6 +56,7 @@ function NumberField({
 }
 
 export default function RefundRuleEditor({ value, onChange, errors = {} }) {
+  const { t } = useLanguage();
   const rule = normalizeRefundRule(value);
   const updateTier = (index, field, nextValue) => {
     const cancellationTiers = rule.cancellationTiers.map((tier, tierIndex) =>
@@ -84,7 +86,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
   return (
     <div className="space-y-6 rounded-3xl border border-yellow-400/20 bg-yellow-400/[0.04] p-4 sm:p-5">
       <div>
-        <h4 className="font-black text-yellow-200">Executable refund rules</h4>
+        <h4 className="font-black text-yellow-200">{t('policyUi.refund.rules')}</h4>
         <p className="mt-1 text-sm leading-6 text-gray-400">
           These values drive booking refunds. Save them with the legal policy text and review the examples before publishing.
         </p>
@@ -92,7 +94,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
 
       <fieldset>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <legend className="text-sm font-black text-white">Cancellation tiers</legend>
+          <legend className="text-sm font-black text-white">{t('policyUi.refund.tiers')}</legend>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -150,7 +152,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
                   type="button"
                   onClick={() => moveTier(index, -1)}
                   disabled={index === 0}
-                  aria-label={`Move cancellation tier ${index + 1} up`}
+                  aria-label={t('policyUi.refund.moveUp', { index: index + 1 })}
                   className="rounded-xl border border-white/10 p-3 text-gray-300 hover:bg-white/5 disabled:opacity-30"
                 >
                   <ArrowUp size={15} />
@@ -159,7 +161,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
                   type="button"
                   onClick={() => moveTier(index, 1)}
                   disabled={index === rule.cancellationTiers.length - 1}
-                  aria-label={`Move cancellation tier ${index + 1} down`}
+                  aria-label={t('policyUi.refund.moveDown', { index: index + 1 })}
                   className="rounded-xl border border-white/10 p-3 text-gray-300 hover:bg-white/5 disabled:opacity-30"
                 >
                   <ArrowDown size={15} />
@@ -172,7 +174,7 @@ export default function RefundRuleEditor({ value, onChange, errors = {} }) {
                       cancellationTiers: rule.cancellationTiers.filter((_, tierIndex) => tierIndex !== index),
                     })
                   }
-                  aria-label={`Remove cancellation tier ${index + 1}`}
+                  aria-label={t('policyUi.refund.remove', { index: index + 1 })}
                   className="rounded-xl border border-red-500/20 p-3 text-red-300 hover:bg-red-500/10"
                 >
                   <Trash2 size={15} />
