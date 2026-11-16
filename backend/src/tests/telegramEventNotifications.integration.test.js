@@ -66,6 +66,16 @@ async function subscription(overrides = {}) {
   return Subscription.create({ user: user._id, ticketPackage: pkg._id, slots: [], amount: 500000,
     orderCode: 123456, expireAt: future(), status: 'active', paymentStatus: 'paid', ...overrides });
 }
+// Activation now validates package capacity and requires a real selected space.
+async function activationSubscription(overrides = {}) {
+  const floorId = id();
+  const slotCode = `A-${id()}`.toUpperCase();
+  await require('../models/Slot').create({
+    zoneID: id(), floorID: floorId, slotNumber: slotCode, gridX: 0, gridY: 0,
+    slotType: 'monthly',
+  });
+  return subscription({ slots: [{ floorId, slotCode }], ...overrides });
+}
 async function queued(kind) {
   await service.reconcile();
   const record = await Delivery.findOne({ kind });
@@ -100,7 +110,7 @@ test('paid activation records one event while pending subscriptions have no even
 
 test('opted-in repair records a missing purchase event while renewal and historical activation never do', async () => {
   const { activateSubscriptionEntitlements } = require('../services/membershipEntitlementService');
-  const repaired = await subscription({ status: 'failed' });
+  const repaired = await activationSubscription({ status: 'failed' });
   await Subscription.updateOne({ _id: repaired._id }, { $unset: { telegramNotification: 1 } });
   const loaded = await Subscription.findById(repaired._id);
   loaded.status = 'active';
@@ -112,12 +122,12 @@ test('opted-in repair records a missing purchase event while renewal and histori
   await activateSubscriptionEntitlements(loaded, { recordPurchaseEvent: true });
   assert.equal((await Subscription.findById(repaired._id)).telegramNotification.occurredAt.getTime(), event.occurredAt.getTime());
 
-  const renewal = await subscription();
+  const renewal = await activationSubscription();
   await Subscription.updateOne({ _id: renewal._id }, { $unset: { telegramNotification: 1 } });
   await activateSubscriptionEntitlements(await Subscription.findById(renewal._id));
   assert.equal((await Subscription.findById(renewal._id)).telegramNotification, undefined);
 
-  const historical = await subscription();
+  const historical = await activationSubscription();
   await Subscription.collection.updateOne({ _id: historical._id }, { $unset: { telegramNotification: 1 }, $set: { createdAt: new Date('2020-01-01') } });
   await activateSubscriptionEntitlements(await Subscription.findById(historical._id), { recordPurchaseEvent: true });
   assert.equal((await Subscription.findById(historical._id)).telegramNotification, undefined);
@@ -125,7 +135,7 @@ test('opted-in repair records a missing purchase event while renewal and histori
 
 test('repair activation and its purchase event roll back together when the transaction fails', async () => {
   const { activateSubscriptionEntitlements } = require('../services/membershipEntitlementService');
-  const record = await subscription({ status: 'failed' });
+  const record = await activationSubscription({ status: 'failed' });
   await Subscription.updateOne({ _id: record._id }, { $unset: { telegramNotification: 1 } });
   const originalUser = await User.findById(user._id).lean();
   const session = await mongoose.startSession();

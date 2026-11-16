@@ -1,3 +1,4 @@
+import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker.jsx';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 import { Fragment, useEffect, useState } from 'react';
 import { Menu, Listbox, Transition } from '@headlessui/react';
@@ -27,6 +28,7 @@ const MODE_OPTIONS = [
   { value: 'quarter', label: 'Quarter' },
   { value: 'year', label: 'Months in Year' },
   { value: 'years', label: 'By Year' },
+  { value: 'custom', label: 'Date & time range' },
 ];
 
 const MONTHS = [
@@ -168,6 +170,8 @@ export default function RevenueAnalytics() {
   const [selectedYear, setSelectedYear] = useState(vnYear);
   const [selectedMonth, setSelectedMonth] = useState(vnMonth);
   const [selectedQuarter, setSelectedQuarter] = useState(Math.ceil(vnMonth / 3));
+  const [customRange, setCustomRange] = useState({ from: '', to: '' });
+  const validRange = customRange.from && customRange.to && customRange.from <= customRange.to && new Date(`${customRange.to}+07:00`) - new Date(`${customRange.from}+07:00`) < 3660 * 86400000;
   const [refreshKey, setRefreshKey] = useState(0);
   const [transactionPage, setTransactionPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -176,16 +180,24 @@ export default function RevenueAnalytics() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const reduceMotion = useReducedMotion();
 
-  const availableYears = data?.availableYears || [vnYear];
+  const availableYears = Array.from({ length: 80 }, (_, index) => 2020 + index);
 
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
-      if (active) { setLoading(true); setError(''); }
+      if (active) { setLoading(true); setError(''); setData(null); }
     });
 
+    if (mode === 'custom' && !validRange) {
+      queueMicrotask(() => { if (active) { setData(null); setLoading(false); setError('Choose a start and end time in order (maximum 10 years).'); } });
+      return () => { active = false; };
+    }
     const params = { mode, transactionPage };
-    if (mode !== '7d' && mode !== 'years') params.year = String(selectedYear);
+    if (mode === 'custom') {
+      params.startDate = `${customRange.from}+07:00`;
+      params.endDate = `${customRange.to}+07:00`;
+    }
+    if (mode !== '7d' && mode !== 'custom') params.year = String(selectedYear);
     if (mode === 'month') params.month = String(selectedMonth);
     if (mode === 'quarter') params.quarter = String(selectedQuarter);
 
@@ -208,7 +220,7 @@ export default function RevenueAnalytics() {
     });
 
     return () => { active = false; };
-  }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey, transactionPage]);
+  }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey, transactionPage, customRange, validRange]);
 
   const report = inspectRevenueResponse(data);
   const summary = report.summary;
@@ -239,9 +251,8 @@ export default function RevenueAnalytics() {
             </p>
           </div>
 
-          <div className="c4-controls flex flex-wrap items-center gap-2.5">
-            <ModeMenu mode={mode} onChange={(m) => m !== mode && (setMode(m), setTransactionPage(1))} />
-            {mode !== '7d' && mode !== 'years' && (
+          <div className="c4-controls flex items-center gap-2.5">
+            {mode !== '7d' && mode !== 'custom' && (
               <SecondarySelector
                 mode={mode}
                 year={selectedYear}
@@ -253,6 +264,12 @@ export default function RevenueAnalytics() {
                 onQuarterChange={(value) => { setSelectedQuarter(value); setTransactionPage(1); }}
               />
             )}
+            {mode === 'custom' && <>
+              <AdminDateTimePicker label="Revenue from (Vietnam time)" value={customRange.from} onChange={from => { setCustomRange(previous => ({ ...previous, from })); setTransactionPage(1); }} />
+              <span className="text-xs text-white/40">to</span>
+              <AdminDateTimePicker label="Revenue to (Vietnam time)" value={customRange.to} onChange={to => { setCustomRange(previous => ({ ...previous, to })); setTransactionPage(1); }} />
+            </>}
+            <ModeMenu mode={mode} onChange={(m) => m !== mode && (setMode(m), setTransactionPage(1))} />
             <button
               type="button"
               onClick={() => setRefreshKey(v => v + 1)}
@@ -262,9 +279,10 @@ export default function RevenueAnalytics() {
               <RefreshCw size={14} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
               Refresh
             </button>
-<div className="ra-update"><span>{loading ? 'Updating...' : updatedAt ? `Last updated: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : 'Not updated'}</span><span>All amounts are in VND</span></div>
+
           </div>
         </header>
+        <div className="ra-update"><span>{loading ? 'Updating...' : updatedAt ? `Last updated: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : 'Not updated'}</span><span>All amounts are in VND</span></div>
 
         {error && (
           <div className="mb-5 flex flex-col gap-3 rounded-lg border-l-2 border-amber-400 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center">

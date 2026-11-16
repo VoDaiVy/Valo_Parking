@@ -61,6 +61,16 @@ const resolveModeDateRange = (filters = {}, now = new Date(), firstRevenueYear =
   const currentYear = localNow.getUTCFullYear();
   const currentMonth = localNow.getUTCMonth() + 1;
 
+  if (mode === 'custom') {
+    const startDate = new Date(filters.startDate);
+    const lastMinute = new Date(filters.endDate);
+    const endDate = new Date(lastMinute.getTime() + 60000);
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || startDate > lastMinute || endDate - startDate > 3660 * DAY_MS) {
+      throw Object.assign(new Error('Choose a valid date range of at most 10 years'), { statusCode: 400 });
+    }
+    return { startDate, endDate, granularity: endDate - startDate <= 93 * DAY_MS ? 'day' : 'month', mode };
+  }
+
   if (mode === '7d') {
     // Today and 6 days before, by day
     const todayStart = startOfVietnamDay(now);
@@ -94,6 +104,15 @@ const resolveModeDateRange = (filters = {}, now = new Date(), firstRevenueYear =
   }
 
   if (mode === 'years') {
+    if (filters.year) {
+      const year = Number(filters.year);
+      return {
+        startDate: startOfSpecificVietnamMonth(year, 1),
+        endDate: startOfSpecificVietnamMonth(year + 1, 1),
+        granularity: 'year',
+        mode,
+      };
+    }
     const firstYear = Number.isInteger(firstRevenueYear)
       ? Math.min(firstRevenueYear, currentYear) : currentYear;
     return {
@@ -119,7 +138,7 @@ const generateBucketLabels = (startDate, endDate, granularity) => {
       year += 1;
     }
   } else if (granularity === 'day') {
-    let cursor = new Date(startDate.getTime());
+    let cursor = startOfVietnamDay(startDate);
     while (cursor < endDate) {
       const local = toVietnamLocal(cursor);
       const y = local.getUTCFullYear();
@@ -130,7 +149,7 @@ const generateBucketLabels = (startDate, endDate, granularity) => {
     }
   } else {
     // month granularity
-    let cursor = new Date(startDate.getTime());
+    let cursor = startOfVietnamMonth(startDate);
     while (cursor < endDate) {
       const local = toVietnamLocal(cursor);
       const y = local.getUTCFullYear();

@@ -5,10 +5,13 @@ const { protect, authorize } = require('../middlewares/authMiddleware');
 
 // Public/Customer/Kiosk routes
 router.get('/active', ticketPackageController.getActivePackages);
+router.get('/explore', ticketPackageController.getExplorePackages);
+router.get('/explore/:id', ticketPackageController.getExplorePackage);
 
 // Staff console routes
 router.use(protect, authorize('staff', 'admin'));
 router.get('/', ticketPackageController.getAllPackages);
+router.get('/:id/buyers', ticketPackageController.getPackageBuyers);
 router.get('/:id', ticketPackageController.getPackageById);
 
 // Package management is reserved for administrators.

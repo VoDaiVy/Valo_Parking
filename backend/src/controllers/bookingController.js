@@ -1942,6 +1942,7 @@ exports.checkOutBooking = async (req, res, next) => {
     if (!session) {
       return res.status(404).json({ success: false, message: 'No active parking session found for this booking' });
     }
+    Session.assertNoActiveServiceJobs(session);
 
     const now = new Date();
     const previousStatus = booking.status;
@@ -1969,7 +1970,7 @@ exports.checkOutBooking = async (req, res, next) => {
         }
         currentBooking.status = 'COMPLETED';
         const updatedSession = await Session.findOneAndUpdate(
-          { _id: session._id, status: 'active' },
+          Session.checkoutFilter(session._id),
           {
             status: 'completed',
             checkOutTime: now,
@@ -1987,7 +1988,7 @@ exports.checkOutBooking = async (req, res, next) => {
           { new: true, session: mongoSession }
         );
         if (!updatedSession) {
-          throw Object.assign(new Error('Parking session is no longer active'), {
+          throw Object.assign(new Error('Parking session changed or has services in progress. Refresh before checking out.'), {
             statusCode: 409,
           });
         }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from "react-router-dom";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import { getAllFloors, getFloorSlots } from "../../services/parkingFloorService";
@@ -295,11 +296,11 @@ export default function LiveGridMonitor() {
   };
 
   return (
-    <div className={`${STAFF_THEME.page} relative flex h-[calc(100vh-70px)] flex-col overflow-hidden font-sans`}
+    <div className={`${STAFF_THEME.page} staff-live-monitor relative flex h-[calc(100vh-70px)] flex-col overflow-hidden font-sans`}
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
 
       {/* Top Toolbar: Minimal, Clean, Focused */}
-      <div className="absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
+      <div className="staff-live-toolbar absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
         <div className="flex items-center gap-2 px-3 border-r border-white/10">
           <MonitorCheck size={18} className="text-[#ffd555]" />
           <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">Live Monitor</span>
@@ -485,7 +486,7 @@ export default function LiveGridMonitor() {
               <div>
                 <span className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-[#d7b94a]">{selectedSlot.type} TICKET</span>
                 <h2 className="text-3xl font-extrabold text-white flex items-center gap-2">
-                  Ô <span className="text-[#ffd555]">{selectedSlot.id}</span>
+                  Slot <span className="text-[#ffd555]">{selectedSlot.id}</span>
                 </h2>
               </div>
               <button onClick={() => setSelectedSlot(null)} className="text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 w-8 h-8 rounded-full flex items-center justify-center transition-all border border-white/5 flex-shrink-0">
@@ -504,7 +505,7 @@ export default function LiveGridMonitor() {
                     : 'text-slate-400 hover:text-white bg-white/5'
                 }`}
               >
-                Chi Tiết Hiện Tại
+                Current Details
               </button>
               <button
                 type="button"
@@ -516,7 +517,7 @@ export default function LiveGridMonitor() {
                 }`}
               >
                 <History size={13} />
-                <span>Lịch Sử Ô Này ({slotLogs.length})</span>
+                <span>Slot History ({slotLogs.length})</span>
               </button>
             </div>
 
@@ -806,6 +807,7 @@ export default function LiveGridMonitor() {
       </div>
 
       {/* Staff Checkout Modal */}
+      {createPortal(<div className="staff-overlay-root">
       {showCheckoutModal && selectedSlot?.session && (
         <StaffCheckoutModal
           isOpen={showCheckoutModal}
@@ -930,6 +932,7 @@ export default function LiveGridMonitor() {
           fetchLiveStatus(false);
         }}
       />
+      </div>, document.body)}
     </div>
   );
 }

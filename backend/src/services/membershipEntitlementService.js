@@ -2,6 +2,10 @@ const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement')
 const Slot = require('../models/Slot');
 const Session = require('../models/Session');
 const Booking = require('../models/Booking');
+const Subscription = require('../models/Subscription');
+const mongoose = require('mongoose');
+const { buildPackageExpirationDate } = require('../utils/ticketPackageRules');
+const { grantBenefits } = require('./membershipServiceBenefitService');
 const bookingRefundService = require('./bookingRefundService');
 const { recomputeUserMembership } = require('./membershipProjectionService');
 
@@ -9,6 +13,25 @@ const normalizeSlotCode = (value) => String(value || '').trim().toUpperCase();
 
 const activateSubscriptionEntitlements = async (subscription, options = {}) => {
   const { session = null, rotateQr = true } = options;
+  if (!session) {
+    const transaction = await mongoose.startSession();
+    try {
+      return await transaction.withTransaction(() => activateSubscriptionEntitlements(subscription, { ...options, session: transaction }));
+    } finally { await transaction.endSession(); }
+  }
+  const stock = require('./ticketPackageStockService');
+  await stock.ensureActivation(subscription, { session, allowPaused: options.renewal === true });
+  if (subscription.packageTermsSnapshot) {
+    const now = new Date();
+    const claimed = await Subscription.findOneAndUpdate(
+      { _id: subscription._id, activatedAt: null, paymentStatus: 'paid' },
+      { $set: { activatedAt: now, validFrom: now, expireAt: buildPackageExpirationDate(subscription.packageTermsSnapshot, now) } },
+      { new: true, session }
+    );
+    const current = claimed || await Subscription.findById(subscription._id).session(session);
+    if (!current?.activatedAt) throw Object.assign(new Error('Payment must succeed before activating membership.'), { statusCode: 409 });
+    subscription.set(current.toObject());
+  }
   const selectedSlots = subscription.slots || [];
   const unitAmount = Math.round(
     Number(subscription.amount || 0) / Math.max(1, selectedSlots.length)
@@ -34,15 +57,20 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
         statusCode: 409,
       });
     }
+    if (slot.reservedBySubscriptionId && String(slot.reservedBySubscriptionId) !== String(subscription._id)) {
+      throw Object.assign(new Error('This space is already reserved under another membership.'), { statusCode: 409 });
+    }
 
     const entitlement = await MembershipSlotEntitlement.findOneAndUpdate(
-      { sourceSubscriptionId: subscription._id, slotId: slot._id },
+      { sourceSubscriptionId: subscription._id, slotId: slot._id, transferCount: { $in: [0, null] } },
       {
         $set: {
           ownerId: subscription.user,
           floorId: selected.floorId,
           slotCode: normalizeSlotCode(selected.slotCode),
           packageId: subscription.ticketPackage,
+          packageDurationSnapshot: subscription.packageDurationSnapshot || null,
+          packageTermsSnapshot: subscription.packageTermsSnapshot || null,
           validFrom: subscription.validFrom || subscription.createdAt || new Date(),
           expireAt: subscription.expireAt,
           status: 'active',
@@ -56,14 +84,14 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
       entitlement.lineageRootId = entitlement._id;
       await entitlement.save({ session });
     }
+    await grantBenefits({ entitlement, terms: subscription.packageTermsSnapshot, sourceKey: `purchase:${subscription._id}`, validFrom: subscription.validFrom, expireAt: subscription.activatedAt ? buildPackageExpirationDate(subscription.packageTermsSnapshot, subscription.activatedAt) : subscription.expireAt, session });
 
     const slotResult = await Slot.updateOne(
       {
         _id: slot._id,
-        $or: [
-          { reservedFor: null },
-          { reservedFor: { $exists: false } },
-          { reservedFor: subscription.user },
+        $and: [
+          { $or: [{ reservedFor: null }, { reservedFor: subscription.user }] },
+          { $or: [{ reservedBySubscriptionId: null }, { reservedBySubscriptionId: subscription._id }] },
         ],
       },
       {
@@ -217,6 +245,9 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
     entitlements.push(entitlement);
   }
 
+  await Subscription.updateOne({ _id: subscription._id }, { $set: { stockHoldUntil: null } }, { session });
+  subscription.stockHoldUntil = null;
+  await stock.refreshPackage(subscription.ticketPackage, { session });
   await recomputeUserMembership(subscription.user, { session, rotateQr });
   // A paid-but-failed PayOS activation is repaired without changing paymentStatus,
   // so its save hook cannot create the purchase event. Record it after activation,

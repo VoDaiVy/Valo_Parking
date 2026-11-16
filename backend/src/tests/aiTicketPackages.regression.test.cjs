@@ -54,7 +54,10 @@ test('Ticket Package search matches literal name/description/type, all types, an
     assert.equal((await registry.execute('search_ticket_packages', { isActive: false }, 'admin')).data.total, 2);
     await assert.rejects(registry.execute('search_ticket_packages', { status: 'active', isActive: false }, 'admin'));
     await assert.rejects(registry.execute('search_ticket_packages', { isActive: 'invented' }, 'admin'));
-    await assert.rejects(registry.execute('search_ticket_packages', { type: 'weekly' }, 'admin'));
+    for (const type of ['weekly', 'custom']) {
+      assert.equal((await registry.execute('search_ticket_packages', { type }, 'admin')).data.total, 0);
+    }
+    await assert.rejects(registry.execute('search_ticket_packages', { type: 'invented' }, 'admin'));
     await assert.rejects(registry.execute('search_ticket_packages', { query: {} }, 'admin'));
   });
 });
