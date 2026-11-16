@@ -1,5 +1,3 @@
-const { lockOwner, assertNoLegacyConflict } = require('./legacyEntitlementCompatibilityService');
-const { lockVehicle } = require('./vehicleEntitlementService');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const MembershipEntitlementTransfer = require('../models/MembershipEntitlementTransfer');
@@ -147,13 +145,10 @@ const assertTransferSpace = async (transfer, session = null, status = 'active') 
   if (session) query = query.session(session);
   const entitlement = await query;
   if (!entitlement) throw error('This membership space cannot be transferred.', 409, 'NOT_TRANSFERABLE');
-  if (await require('../models/MembershipEntitlementRenewal').exists({ entitlementId: entitlement._id, status: 'pending' }).session(session)) throw error('Resolve the pending renewal payment before transferring this space.', 409, 'RENEWAL_ALREADY_PENDING');
   await validateEntitlementSpace(entitlement, transfer.fromUserId, { session, operation: 'Transfer' });
 };
 
 const assertRecipientCapacity = async (userId, session = null) => {
-  if (session) await lockOwner(userId, session);
-  await assertNoLegacyConflict({ ownerId: userId, session });
   let vehicleQuery = Vehicle.countDocuments({ owner: userId, status: 'approved' });
   let entitlementQuery = MembershipSlotEntitlement.countDocuments({
     ownerId: userId,
@@ -168,7 +163,7 @@ const assertRecipientCapacity = async (userId, session = null) => {
     vehicleQuery,
     entitlementQuery,
   ]);
-  if (!vehicleCount || entitlementCount >= vehicleCount) {
+  if (!vehicleCount || entitlementCount >= Math.min(3, vehicleCount)) {
     throw error(
       'Recipient needs an approved vehicle and available membership capacity.',
       409,
@@ -219,7 +214,6 @@ const createTransfer = async ({
   }
   await validateEntitlementSpace(entitlement, fromUserId, { operation: 'Transfer' });
   await assertNoActiveSession(entitlement._id);
-  if (await require('../models/MembershipEntitlementRenewal').exists({ entitlementId: entitlement._id, status: 'pending' })) throw error('Resolve the pending renewal payment before transferring this space.', 409, 'RENEWAL_ALREADY_PENDING');
   if (
     await MembershipEntitlementTransfer.exists({
       entitlementId: entitlement._id,
@@ -286,23 +280,21 @@ const searchTransferRecipients = async (
 };
 
 const acceptTransfer = async (transferId, userId) => {
-  const session = await mongoose.startSession();
-  let accepted;
-  try {
-    await session.withTransaction(async () => {
-      await lockOwner(userId, session);
-      const invitation = await MembershipEntitlementTransfer.findOne({ _id: transferId, mode: 'DIRECT', toUserId: userId, status: 'PENDING_RECIPIENT' }).session(session);
-      if (!invitation) throw error('Transfer invitation is not available.', 409);
-      await assertTransferSpace(invitation, session);
-      const source = await MembershipSlotEntitlement.findById(invitation.entitlementId).session(session);
-      await assertNoLegacyConflict({ ownerId: userId, until: source.expireAt, session });
-      accepted = await MembershipEntitlementTransfer.findOneAndUpdate({
-        _id: transferId, mode: 'DIRECT', toUserId: userId, status: 'PENDING_RECIPIENT',
-      }, { $set: { status: 'PENDING_ADMIN', acceptedAt: new Date() } }, { new: true, session });
-      if (!accepted) throw error('Transfer invitation is not available.', 409);
-    });
-  } finally { await session.endSession(); }
-  return populateTransfer(MembershipEntitlementTransfer.findById(accepted._id));
+  const invitation = await MembershipEntitlementTransfer.findOne({ _id: transferId, mode: 'DIRECT', toUserId: userId, status: 'PENDING_RECIPIENT' });
+  if (!invitation) throw error('Transfer invitation is not available.', 409);
+  await assertTransferSpace(invitation);
+  const transfer = await MembershipEntitlementTransfer.findOneAndUpdate(
+    {
+      _id: transferId,
+      mode: 'DIRECT',
+      toUserId: userId,
+      status: 'PENDING_RECIPIENT',
+    },
+    { $set: { status: 'PENDING_ADMIN', acceptedAt: new Date() } },
+    { new: true }
+  );
+  if (!transfer) throw error('Transfer invitation is not available.', 409);
+  return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
 };
 
 const rejectTransfer = async (transferId, userId, reason = '') => {
@@ -373,6 +365,7 @@ const approveTransfer = async (transferId, adminId) => {
     if (!transfer) throw error('Transfer is not awaiting admin approval.', 409);
     await assertTransferSpace(transfer, session);
     await assertNoActiveSession(transfer.entitlementId, session);
+    await require('./membershipServiceBenefitService').assertNoOpenRequests(transfer.entitlementId, session);
     if (transfer.mode === 'PUBLIC') {
       await assertPublicMarketplaceReady();
       const entitlement = await MembershipSlotEntitlement.findOne({
@@ -619,6 +612,7 @@ const claimMarketplaceListing = async (transferId, buyerId) => {
 
     await assertRecipientCapacity(buyerId, session);
     await assertNoActiveSession(transfer.entitlementId, session);
+    await require('./membershipServiceBenefitService').assertNoOpenRequests(transfer.entitlementId, session);
     const entitlement = await MembershipSlotEntitlement.findOneAndUpdate(
       {
         _id: transfer.entitlementId,
@@ -693,13 +687,7 @@ const rejectByAdmin = async (transferId, adminId, reason) => {
   return populateTransfer(MembershipEntitlementTransfer.findById(transfer._id));
 };
 
-const settleTransfer = async (transferId, recipientId, vehicleId) => {
-  const completed = await MembershipEntitlementTransfer.findOne({ _id: transferId, toUserId: recipientId, status: 'COMPLETED' });
-  if (completed) {
-    if (String(completed.contractSnapshot?.vehicleId) !== String(vehicleId)) throw error('This transfer was completed for another vehicle.', 409);
-    if (completed.mode === 'PUBLIC') return toMarketplaceItem(await marketplacePopulate(MembershipEntitlementTransfer.findById(completed._id)).lean(), recipientId);
-    return populateTransfer(MembershipEntitlementTransfer.findById(completed._id));
-  }
+const settleTransfer = async (transferId, recipientId) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -712,18 +700,14 @@ const settleTransfer = async (transferId, recipientId, vehicleId) => {
     if (!transfer) {
       throw error('Transfer payment window is closed.', 409, 'TRANSFER_LOCK_EXPIRED');
     }
+    const stockEntitlement = await MembershipSlotEntitlement.findById(transfer.entitlementId).session(session);
+    if (!stockEntitlement) throw error('Membership space not found.', 409);
+    const stock = require('./ticketPackageStockService');
+    await stock.lockPackage(stockEntitlement.packageId, { session });
     await assertTransferSpace(transfer, session, 'transfer_locked');
     await assertRecipientCapacity(recipientId, session);
     await assertNoActiveSession(transfer.entitlementId, session);
-
-    const source = await MembershipSlotEntitlement.findById(transfer.entitlementId).session(session);
-    if (!mongoose.isValidObjectId(vehicleId)) throw error('Select an approved vehicle before completing this transfer.', 400);
-    await lockVehicle({ vehicleId, ownerId: recipientId, from: new Date(), until: source.expireAt,
-      excludeEntitlementId: source._id, session });
-    await lockOwner(transfer.fromUserId, session);
-    if (source.vehicleId) {
-      await Vehicle.updateOne({ _id: source.vehicleId }, { $inc: { entitlementRevision: 1 } }, { session });
-    }
+    await require('./membershipServiceBenefitService').assertNoOpenRequests(transfer.entitlementId, session);
 
     let recipientPayment = null;
     let senderCredit = null;
@@ -776,7 +760,7 @@ const settleTransfer = async (transferId, recipientId, vehicleId) => {
         transferCount: { $lt: 1 },
       },
       {
-        $set: { ownerId: recipientId, vehicleId, vehicleBindingFrom: new Date(), status: 'active' },
+        $set: { ownerId: recipientId, status: 'active' },
         $inc: { transferCount: 1 },
       },
       { new: true, session }
@@ -810,11 +794,6 @@ const settleTransfer = async (transferId, recipientId, vehicleId) => {
       TicketPackage.findById(entitlement.packageId).select('name type').session(session).lean(),
     ]);
     transfer.contractSnapshot = {
-      previousVehicleId: source.vehicleId || null,
-      previousVehicleBindingFrom: source.vehicleBindingFrom || null,
-      vehicleBindingFrom: entitlement.vehicleBindingFrom,
-      vehicleId,
-      purchasedTerms: source.packageSnapshot || null,
       contractNumber: transfer.contractNumber,
       entitlementId: entitlement._id,
       slotCode: entitlement.slotCode,
@@ -851,6 +830,7 @@ const settleTransfer = async (transferId, recipientId, vehicleId) => {
       rotateQr: true,
     });
     await recomputeUserMembership(recipientId, { session, rotateQr: true });
+    await stock.refreshPackage(stockEntitlement.packageId, { session });
     await session.commitTransaction();
     if (transfer.mode === 'PUBLIC') {
       const completed = await marketplacePopulate(

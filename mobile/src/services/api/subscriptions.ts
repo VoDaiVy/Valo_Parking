@@ -105,10 +105,9 @@ export const subscriptionsService = {
       `/customer/membership-entitlement-transfers/${transferId}/reject`,
       { reason: 'Declined by customer' },
     ),
-  settleEntitlementTransfer: (transferId: string, vehicleId?: string) =>
+  settleEntitlementTransfer: (transferId: string) =>
     apiClient.post<APIResponse<MembershipEntitlementTransfer>>(
       `/customer/membership-entitlement-transfers/${transferId}/settle-wallet`,
-      { vehicleId },
     ),
   cancelEntitlementTransfer: (transferId: string) =>
     apiClient.put<APIResponse<MembershipEntitlementTransfer>>(

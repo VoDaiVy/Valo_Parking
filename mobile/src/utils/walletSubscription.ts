@@ -19,14 +19,23 @@ export const calculateWalletBalanceFromTransactions = (transactions: WalletTrans
       return balance;
     }, 0);
 
-export const calculateExpirationDate = (packageType: SubscriptionPackageType, fromDate = new Date()) => {
+export const calculateExpirationDate = (packageType: SubscriptionPackageType, fromDate = new Date(), durationDays?: number, durationMinutes?: number) => {
   const expireAt = new Date(fromDate);
-  if (packageType === 'monthly') {
-    expireAt.setTime(expireAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-  } else {
-    expireAt.setFullYear(expireAt.getFullYear() + 1);
+  if (packageType === 'monthly' || packageType === 'yearly') {
+    const originalDay = expireAt.getUTCDate();
+    expireAt.setUTCDate(1);
+    expireAt.setUTCMonth(expireAt.getUTCMonth() + (packageType === 'yearly' ? 12 : 1));
+    const lastDay = new Date(Date.UTC(expireAt.getUTCFullYear(), expireAt.getUTCMonth() + 1, 0)).getUTCDate();
+    expireAt.setUTCDate(Math.min(originalDay, lastDay));
+    return expireAt;
   }
-  return expireAt;
+  if (packageType === 'custom' && durationMinutes !== undefined) {
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 5256000) throw new Error('Invalid membership duration.');
+    return new Date(expireAt.getTime() + durationMinutes * 60000);
+  }
+  const days = packageType === 'daily' ? 1 : packageType === 'weekly' ? 7 : durationDays;
+  if (!Number.isInteger(days) || !days || days < 1 || days > 3650) throw new Error('Invalid membership duration.');
+  return new Date(expireAt.getTime() + days * 24 * 60 * 60 * 1000);
 };
 
 export const validateSubscriptionSlots = (selectedCount: number, vehicleCount: number) => {

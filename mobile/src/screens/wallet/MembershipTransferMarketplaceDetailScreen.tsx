@@ -1,5 +1,3 @@
-import { PackageText as Text } from '@/components/profile/PackageText';
-import { EntitlementVehiclePicker } from '@/components/profile/EntitlementVehiclePicker';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -10,6 +8,7 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
+  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -34,7 +33,6 @@ const formatCountdown = (milliseconds: number) => {
 };
 
 export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }: Props) => {
-  const [receivingVehicleId, setReceivingVehicleId] = useState('');
   const { t: translateUi } = useLanguage();
   const { transferId } = route.params;
   const [listing, setListing] = useState<MembershipTransferMarketplaceListing | null>(null);
@@ -98,7 +96,7 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
     setSubmitting(true);
     setError('');
     try {
-      await subscriptionsService.settleEntitlementTransfer(transferId, receivingVehicleId);
+      await subscriptionsService.settleEntitlementTransfer(transferId);
       Alert.alert(translateUi('Transfer completed'), translateUi('The membership space is now in your account.'), [
         { text: translateUi('View membership'), onPress: () => navigation.navigate('Membership') },
       ]);
@@ -199,10 +197,9 @@ export const MembershipTransferMarketplaceDetailScreen = ({ navigation, route }:
                   <Text style={styles.secondaryText}>{translateUi("Top up wallet")}</Text>
                 </TouchableOpacity>
               ) : null}
-              <EntitlementVehiclePicker value={receivingVehicleId} onChange={setReceivingVehicleId} />
               <TouchableOpacity
                 activeOpacity={0.85}
-                disabled={!canSettle || submitting || !receivingVehicleId}
+                disabled={!canSettle || submitting}
                 onPress={() => void settle()}
                 style={[styles.primaryButton, (!canSettle || submitting) && styles.disabled]}
               >

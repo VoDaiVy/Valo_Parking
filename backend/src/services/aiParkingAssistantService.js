@@ -8,6 +8,7 @@ const Vehicle = require('../models/Vehicle');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
 const pricingEngine = require('./pricingEngine');
+const packageParking = require('./packageParkingService');
 const { getLiveParkingMap } = require('./liveParkingMapService');
 const { extractLicensePlates, parseBookingUtterance } = require('./bookingUtteranceParser');
 const { isValidCarLicensePlate, normalizeLicensePlate } = require('../utils/licensePlateUtils');
@@ -535,10 +536,19 @@ async function handleVehicleSessionIntent(intent, parsed, userId, now) {
   if (session.status === 'cancelled') {
     return { message: `Lượt đỗ gần nhất của xe ${plate} đã bị hủy nên không phát sinh phí đỗ.`, context };
   }
-  const pricing = active
-    ? await pricingEngine.calculatePrice(session.checkInTime, now)
-    : null;
-  const fee = active ? pricing.finalTotal : Number(session.totalPrice || 0);
+  let fee = Number(session.totalPrice || 0);
+  if (active) {
+    if (session.type === 'SUBSCRIPTION') {
+      try {
+        fee = (await packageParking.quoteParking(session, now)).amountToPay;
+      } catch (error) {
+        if (!['PACKAGE_INELIGIBLE', 'PACKAGE_PRICING_REVIEW_REQUIRED'].includes(error.code)) throw error;
+        return { message: `Chưa thể xác định phí đỗ theo gói cho xe ${plate}. Vui lòng nhờ nhân viên kiểm tra phiên đỗ.`, context };
+      }
+    } else {
+      fee = (await pricingEngine.calculatePrice(session.checkInTime, now)).finalTotal;
+    }
+  }
   return { message: active
     ? `Phí tạm tính của xe ${plate} là ${money(fee)}.`
     : `Phí lượt đỗ gần nhất của xe ${plate} là ${money(fee)}.`, context,

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isMembershipPackageType, getPackageBenefits } = require('../utils/ticketPackageRules');
 const { isEnabled, defaultForCurrentEnvironment } = require('../utils/featureFlags');
 
 const DAY_MS = 86400000;
@@ -17,7 +18,7 @@ function createMembershipDetailsService(deps = {}) {
   const validateTransferSpace = deps.validateTransferSpace || require('./membershipSpaceValidationService').validateEntitlementSpace;
 
   async function renewalState(userId, entity, kind = 'entitlement', now = new Date()) {
-    const pkg = entity.packageSnapshot || (kind === 'entitlement' ? entity.packageId : entity.ticketPackage);
+    const pkg = kind === 'entitlement' ? entity.packageId : entity.ticketPackage;
     const daysRemaining = Math.max(0, Math.ceil((new Date(entity.expireAt) - now) / DAY_MS));
     const renewalWindowDays = getRenewalWindowDays(pkg); // Same backend fallback as eligibility.
     const result = { canRenew: false, renewalWindowDays, daysRemaining, reasonCode: '', message: '' };
@@ -25,7 +26,7 @@ function createMembershipDetailsService(deps = {}) {
     if (!(deps.renewalEnabled ?? isEnabled('SUBSCRIPTION_RENEWAL_ENABLED', defaultForCurrentEnvironment()))) return deny('RENEWAL_DISABLED', 'Renewal is currently unavailable.');
     if (entity.status === 'transfer_locked') return deny('TRANSFER_LOCKED', 'Renewal is unavailable while a transfer is awaiting payment.');
     if (entity.status !== 'active' || new Date(entity.expireAt) <= now) return deny('MEMBERSHIP_EXPIRED', 'This membership has expired and cannot be renewed under the current policy.');
-    if (!pkg || pkg.isRenewable === false || !['monthly', 'yearly'].includes(pkg.type)) return deny('PACKAGE_NOT_RENEWABLE', 'This package does not support renewal.');
+    if (!pkg || pkg.isRenewable === false || !isMembershipPackageType((entity.packageDurationSnapshot || pkg).type)) return deny('PACKAGE_NOT_RENEWABLE', 'This package does not support renewal.');
     const pending = await (kind === 'entitlement' ? Renewal : SubscriptionRenewal).findOne({
       [kind === 'entitlement' ? 'entitlementId' : 'subscriptionId']: entity._id,
       status: 'pending',
@@ -56,18 +57,20 @@ function createMembershipDetailsService(deps = {}) {
     }
     return {
       entitlementId: entity._id, sourceSubscriptionId: entity.sourceSubscriptionId,
+      benefits: getPackageBenefits(entity.packageTermsSnapshot || entity.packageId),
       slotId: entity.slotId,
-      vehicleId: entity.vehicleId?._id || entity.vehicleId || null,
-      licensePlate: entity.vehicleId?.licensePlate || null,
-      purchasedTerms: entity.packageSnapshot || null,
-      bindingMode: entity.vehicleId ? 'vehicle' : 'legacy_shared',
-      vehicleBindingFrom: entity.vehicleBindingFrom || null,
       floorId: entity.floorId?._id || entity.floorId, floorName: entity.floorId?.name || '',
       floorNumber: entity.floorId?.floorNumber ?? null, slotCode: entity.slotCode,
       status, validFrom: entity.validFrom, expireAt: entity.expireAt, daysRemaining,
-      expiringSoon: ['active', 'transfer_locked'].includes(status) && isInRenewalWindow(entity.expireAt, entity.packageSnapshot || entity.packageId, now),
-      expiryReminderDays: getRenewalWindowDays(entity.packageSnapshot || entity.packageId),
-      package: entity.packageSnapshot || (entity.packageId ? { id: entity.packageId._id, name: entity.packageId.name, type: entity.packageId.type } : null),
+      expiringSoon: ['active', 'transfer_locked'].includes(status) && isInRenewalWindow(entity.expireAt, entity.packageId, now),
+      expiryReminderDays: getRenewalWindowDays(entity.packageId),
+      package: entity.packageId ? {
+        id: entity.packageId._id,
+        name: entity.packageId.name,
+        type: entity.packageDurationSnapshot?.type || entity.packageId.type,
+        durationDays: entity.packageDurationSnapshot?.durationDays ?? entity.packageId.durationDays ?? null,
+        durationMinutes: entity.packageDurationSnapshot?.durationMinutes ?? entity.packageId.durationMinutes ?? null,
+      } : null,
       renewal: await renewalState(userId, entity, 'entitlement', now),
       canTransfer, transferUnavailableReason,
       transferCount: entity.transferCount, unitAmount: entity.unitAmount,
@@ -76,7 +79,7 @@ function createMembershipDetailsService(deps = {}) {
 
   async function owned(userId, id, kind) {
     const entity = kind === 'entitlement'
-      ? await Entitlement.findOne({ _id: id, ownerId: userId }).populate('packageId').populate('vehicleId', 'licensePlate').populate({ path: 'floorId', select: 'name floorNumber', transform: preserveFloorReference }).lean()
+      ? await Entitlement.findOne({ _id: id, ownerId: userId }).populate('packageId').populate({ path: 'floorId', select: 'name floorNumber', transform: preserveFloorReference }).lean()
       : await Subscription.findOne({ _id: id, user: userId }).populate('ticketPackage').populate({ path: 'slots.floorId', select: 'name floorNumber', transform: preserveFloorReference }).lean();
     if (!entity) throw unavailable(); // Never fetch or return the new owner's data.
     if (kind === 'subscription') {
@@ -92,18 +95,24 @@ function createMembershipDetailsService(deps = {}) {
 
   async function getDetail(userId, id, kind = 'entitlement') {
     const entity = await owned(userId, id, kind);
-    const vehicles = await Vehicle.find({ owner: userId, status: 'approved', ...(entity.vehicleId ? { _id: entity.vehicleId?._id || entity.vehicleId } : {}) }).select('licensePlate vehicleType brand model').lean();
+    const vehicles = await Vehicle.find({ owner: userId, status: 'approved' }).select('licensePlate vehicleType brand model').lean();
     const data = kind === 'entitlement'
       ? await presentEntitlement(userId, entity)
       : {
           subscriptionId: entity._id, status: new Date(entity.expireAt) <= new Date() ? 'expired' : entity.status,
           validFrom: entity.validFrom, expireAt: entity.expireAt,
-          purchasedTerms: entity.packageSnapshot || null,
-          package: entity.packageSnapshot || (entity.ticketPackage ? { id: entity.ticketPackage._id, name: entity.ticketPackage.name, type: entity.ticketPackage.type } : null),
+          benefits: getPackageBenefits(entity.packageTermsSnapshot || entity.ticketPackage),
+          package: entity.ticketPackage ? {
+            id: entity.ticketPackage._id,
+            name: entity.ticketPackage.name,
+            type: entity.packageDurationSnapshot?.type || entity.ticketPackage.type,
+            durationDays: entity.packageDurationSnapshot?.durationDays ?? entity.ticketPackage.durationDays ?? null,
+            durationMinutes: entity.packageDurationSnapshot?.durationMinutes ?? entity.ticketPackage.durationMinutes ?? null,
+          } : null,
           slots: entity.slots,
           renewal: await renewalState(userId, entity, 'subscription'),
         };
-    return { ...data, kind, eligibleVehicles: vehicles, vehicleUsageNote: entity.vehicleId ? 'This purchased space is bound to the displayed vehicle. Parking benefits apply only at this registered space.' : 'This legacy membership shares its available spaces among approved vehicles; access depends on actual availability.' };
+    return { ...data, kind, eligibleVehicles: vehicles, vehicleUsageNote: 'Approved vehicles share your available membership spaces. Each space can serve only one vehicle at a time; access depends on actual availability.' };
   }
 
   async function history(userId, id, kind = 'entitlement', { page = 1, limit = 10 } = {}) {

@@ -1,4 +1,3 @@
-const { serviceConfiguration, validatePackageConfiguration, configurationKey, canonicalConfiguration } = require('./ticketPackageTerms');
 const { profilePayload, assertPhoneAvailable, accountError } = require('./aiCopilot/adminAccounts');
 const PricingConfig = require('../models/PricingConfig');
 const TicketPackage = require('../models/TicketPackage');
@@ -25,34 +24,13 @@ function escapeRegex(str) {
   return str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
 }
 
-// Fail closed until deployment has installed the concurrency constraints.
-async function preparePackageConfiguration(payload, excludeId, session) {
-  const indexes = await TicketPackage.collection.indexes();
-  if (!['unique_sellable_package_configuration', 'unique_sellable_package_name'].every(
-    (name) => indexes.some((index) => index.name === name && index.unique === true)
-  )) throw Object.assign(new Error('Package catalog indexes must be deployed before catalog changes.'), { statusCode: 503 });
-  payload = { ...payload, ...validatePackageConfiguration(payload) };
-  const selectedServices = await Service.find({ _id: { $in: payload.optionalServiceIds } }).session(session || null).lean();
-  const previous = excludeId ? await TicketPackage.findById(excludeId).select('optionalServiceIds optionalServices').session(session || null).lean() : null;
-  const unchangedServices = previous && JSON.stringify((previous.optionalServiceIds || []).map(String).sort()) === JSON.stringify(payload.optionalServiceIds.map(String).sort());
-  if (!unchangedServices && (selectedServices.length !== payload.optionalServiceIds.length || selectedServices.some((item) => !item.isActive)))
-    throw Object.assign(new Error('Select existing active services from the service catalog.'), { statusCode: 400 });
-  // Service catalog changes must not prevent deactivation or erase saved terms.
-  const optionalServices = unchangedServices ? previous.optionalServices || [] : selectedServices.map((item) => ({ id: item._id, name: item.name, description: item.description, chargeMode: 'SEPARATE_PAYMENT' }));
-  const configuration = { ...payload, optionalServices, serviceConfiguration: serviceConfiguration(payload.service),
-    configurationKey: configurationKey(payload), normalizedName: payload.name.trim().toLowerCase() };
-  if (payload.isActive !== false) {
-    const filter = { isActive: true, ...(excludeId ? { _id: { $ne: excludeId } } : {}) };
-    const entries = await TicketPackage.find(filter).session(session || null).lean();
-    if (entries.some((entry) => canonicalConfiguration(entry) === canonicalConfiguration(payload))) {
-      throw Object.assign(new Error('An active package already has this exact configuration. Change the service, price, duration type, slot limit, or renewal policy.'), { statusCode: 409 });
-    }
-  }
-  return configuration;
-}
-
 async function createPackage(payload, { session, draftId, adminId } = {}) {
-  payload = await preparePackageConfiguration(payload, null, session);
+  const stockService = require('./ticketPackageStockService');
+  const { manualPause, ...packagePayload } = payload;
+  payload = packagePayload;
+  const state = stockService.availability({ ...payload }, { remainingQuantity: payload.saleLimit === 0 ? 0 : null }, { creating: true, isActive: payload.isActive, manualPause });
+  payload = { ...payload, ...state };
+  payload = { ...payload, serviceBenefits: await require('./packageTermsService').resolveServiceBenefits(payload.serviceBenefits || [], session) };
   if (payload.name) {
     const trimmedName = String(payload.name).trim();
     const query = TicketPackage.findOne({
@@ -61,24 +39,43 @@ async function createPackage(payload, { session, draftId, adminId } = {}) {
     });
     const duplicate = await (session ? query.session(session) : query);
     if (duplicate) {
-      const error = new Error('An active package already uses this name. Choose another name.');
+      const error = new Error(`Gói vé "${trimmedName}" đang hoạt động đã tồn tại. Vui lòng đặt tên khác hoặc chỉnh sửa gói hiện có.`);
       error.statusCode = 409;
       throw error;
     }
   }
-  const doc = { ...payload, ...(draftId ? { _id: draftId, aiDraftId: draftId } : {}) };
+  const doc = { ...payload, revision: 1, ...(draftId ? { _id: draftId, aiDraftId: draftId } : {}) };
   const [created] = await TicketPackage.create([doc], session ? { session } : {});
   if (adminId) await AdminActionLog.create([{ action: 'Created Ticket Package', target: `${created.name} • ${created.type}`, type: 'create', adminId }], session ? { session } : {});
   return created;
 }
 async function updatePackage(id, payload, { session, expectedUpdatedAt, draftId, adminId } = {}) {
-  const existing = await TicketPackage.findById(id).session(session || null).lean();
-  if (!existing) return null;
-  const purchased = await Subscription.exists({ ticketPackage: id }).session(session || null);
-  if (purchased && canonicalConfiguration(existing) !== canonicalConfiguration(payload)) {
-    throw Object.assign(new Error('Purchased package terms are protected. Create a different package and deactivate this one instead.'), { statusCode: 409 });
+  const stockService = require('./ticketPackageStockService');
+  const currentQuery = TicketPackage.findById(id).select('serviceBenefits isActive inactiveReason saleLimit type stockRevision');
+  const current = await (session ? currentQuery.session(session) : currentQuery);
+  if (!current) return null;
+  if (!session && (current.saleLimit != null || payload.saleLimit != null)) {
+    return stockService.transact(null, (dbSession) => updatePackage(id, payload, { session: dbSession, expectedUpdatedAt, draftId, adminId }));
   }
-  payload = await preparePackageConfiguration(payload, id, session);
+  if (session) await stockService.lockPackage(id, { session });
+  const { manualPause, ...packagePayload } = payload;
+  payload = packagePayload;
+  const stock = current.saleLimit != null || payload.saleLimit != null
+    ? await stockService.snapshot({ ...current.toObject(), ...payload }, { session })
+    : { remainingQuantity: null, allocatedQuantity: 0, heldQuantity: 0 };
+  if (payload.saleLimit != null && payload.saleLimit < stock.allocatedQuantity + stock.heldQuantity) {
+    const failure = new Error(`Sale limit cannot be below ${stock.allocatedQuantity + stock.heldQuantity} allocated or held spaces.`);
+    failure.statusCode = 409;
+    throw failure;
+  }
+  if (manualPause === false && stock.remainingQuantity === 0) {
+    throw Object.assign(new Error('Increase package capacity before reopening this package.'), { statusCode: 409 });
+  }
+  payload = { ...payload, ...stockService.availability(current, stock, { manualPause, isActive: payload.isActive }) };
+  const benefitKey = (items) => JSON.stringify((items || []).map((item) => [String(item.serviceId), item.quantityPerSlot]).sort((a, b) => a[0].localeCompare(b[0])));
+  const changedBenefits = benefitKey(current?.serviceBenefits) !== benefitKey(payload.serviceBenefits);
+  const requireActiveServices = payload.isActive !== false && (changedBenefits || current?.isActive === false);
+  payload = { ...payload, serviceBenefits: await require('./packageTermsService').resolveServiceBenefits(payload.serviceBenefits || [], session, requireActiveServices) };
   if (payload.name && payload.isActive !== false) {
     const trimmedName = String(payload.name).trim();
     const query = TicketPackage.findOne({
@@ -88,18 +85,16 @@ async function updatePackage(id, payload, { session, expectedUpdatedAt, draftId,
     });
     const duplicate = await (session ? query.session(session) : query);
     if (duplicate) {
-      const error = new Error('An active package already uses this name. Choose another name.');
+      const error = new Error(`Gói vé "${trimmedName}" đang hoạt động đã tồn tại. Vui lòng đặt tên khác hoặc chỉnh sửa gói hiện có.`);
       error.statusCode = 409;
       throw error;
     }
   }
   const filter = { _id: id };
-  filter.updatedAt = expectedUpdatedAt || existing.updatedAt;
-  filter.purchaseRevision = existing.purchaseRevision ?? { $exists: false };
+  if (expectedUpdatedAt) filter.updatedAt = expectedUpdatedAt;
   if (draftId) filter.aiAppliedDraftIds = { $ne: draftId };
-  const change = draftId ? { $set: payload, $addToSet: { aiAppliedDraftIds: draftId } } : { $set: payload };
+  const change = { $set: payload, $inc: { revision: 1 }, ...(draftId ? { $addToSet: { aiAppliedDraftIds: draftId } } : {}) };
   const updated = await TicketPackage.findOneAndUpdate(filter, change, { new: true, runValidators: true, ...(session ? { session } : {}) });
-  if (!updated) throw Object.assign(new Error('This package changed during the update. Refresh before saving.'), { statusCode: 409 });
   if (updated && adminId) await AdminActionLog.create([{ action: 'Updated Ticket Package', target: `${updated.name} • ${updated.type}`, type: 'update', adminId }], session ? { session } : {});
   return updated;
 }
@@ -342,8 +337,13 @@ async function archivePackageSafely(id, { session, expectedUpdatedAt, adminId } 
   }
   if (!pkg.isActive) return pkg;
 
-  // Archiving stops new sales; purchased snapshots and renewals remain intact.
+  const activeSubs = await (session ? Subscription.findOne({ ticketPackage: id, status: { $in: ['pending', 'active'] } }).session(session) : Subscription.findOne({ ticketPackage: id, status: { $in: ['pending', 'active'] } }));
+  if (activeSubs) {
+    const error = new Error('Không thể lưu trữ gói vé vì đang có người đăng ký sử dụng (active/pending).'); error.statusCode = 409; throw error;
+  }
+
   pkg.isActive = false;
+  pkg.inactiveReason = 'ADMIN_PAUSED';
   await (session ? pkg.save({ session }) : pkg.save());
 
   if (adminId) {

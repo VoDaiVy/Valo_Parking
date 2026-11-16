@@ -1,12 +1,17 @@
-const Session = require('../models/Session');
-const { assertPaymentMatches } = require('../services/ticketPackageTerms');
 const { isInRenewalWindow } = require('../utils/membershipRenewalWindow');
+const { assertPaymentMatches } = require('../services/ticketPackageTerms');
 const Subscription = require('../models/Subscription');
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
+const { capturePackageTerms } = require('../services/packageTermsService');
+const { isMembershipPackageType, buildPackageExpirationDate, getPackageDurationDays, getPackageBenefits } = require('../utils/ticketPackageRules');
 const User = require('../models/User');
 const Slot = require('../models/Slot');
 const payos = require('../config/payos');
+const walletService = require('../services/walletService');
+const {
+  validateNewSubscriptionEligibility,
+} = require('../services/subscriptionEligibilityService');
 const {
   buildAccountMembershipQrPayload,
   buildMembershipQrPayload,
@@ -22,157 +27,426 @@ const {
   preserveFloorReference,
 } = require('../services/membershipProjectionService');
 const {
+  buildSubscriptionPaymentUrls,
+} = require('../utils/subscriptionPaymentUrls');
+const {
   buildAdminSubscriptionProjection,
 } = require('../services/adminSubscriptionProjectionService');
 const { notifySubscriptionActivatedSafely } = require('../services/aiCopilot/notificationEvents');
 
+const isPayosChannelUnavailable = (error) => {
+  const providerCode = String(
+    error?.response?.data?.code
+    ?? error?.body?.code
+    ?? error?.cause?.code
+    ?? error?.code
+    ?? ''
+  );
+  const providerMessage = String(
+    error?.response?.data?.message
+    ?? error?.body?.message
+    ?? error?.desc
+    ?? error?.message
+    ?? ''
+  );
 
-// New Monthly periods are exactly 720 hours; historical timestamps are untouched.
-const buildExpirationDate = (pkg, fromDate = new Date()) => require('../services/ticketPackageTerms').addConfiguredDuration(fromDate, typeof pkg === 'string' ? { type: pkg } : pkg);
+  return providerCode === '215'
+    || /code\s*:\s*215|kh[oô]ng c[oó] g[oó]i n[aà]o [đd]ang ho[aạ]t [đd]ộng/i.test(providerMessage);
+};
+
+async function loadPackageForPurchase(packageId) {
+  let pkg = await TicketPackage.findById(packageId);
+  if (pkg?.saleLimit != null) {
+    await require('../services/ticketPackageStockService').refreshPackage(pkg._id);
+    pkg = await TicketPackage.findById(packageId);
+  }
+  return pkg;
+}
+
+/**
+ * Build subscription expiration date from a base date.
+ * Calendar month/year packages clamp the final day to the target month.
+ */
+const buildExpirationDate = buildPackageExpirationDate;
 
 
 // Create payment order for subscription
 exports.createSubscriptionPayment = async (req, res, next) => {
   try {
-    const data = await require('../services/subscriptionPurchaseService').purchase({
-      ...req.body, userId: req.user._id, paymentMethod: 'payos',
+    const { packageId, slots } = req.body;
+    
+    // Validate package
+    const ticketPackage = await loadPackageForPurchase(packageId);
+    if (!ticketPackage || !isMembershipPackageType(ticketPackage.type) || !ticketPackage.isActive) {
+      return res.status(400).json({ success: false, message: 'Invalid subscription package.' });
+    }
+
+    const eligibility = await validateNewSubscriptionEligibility({
+      userId: req.user._id,
+      ticketPackage,
+      slots,
     });
-    res.json({ success: true, data });
-  } catch (error) { next(error); }
+
+    const amount = ticketPackage.price * Math.max(1, slots.length);
+    const terms = await capturePackageTerms(ticketPackage, req.body.packageRevision);
+
+    // Keep the same 10-digit PayOS order-code format used by regular bookings.
+    const orderCode = Number(
+      `${Date.now().toString().slice(-8)}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`
+    );
+
+    // Calculate expiration date
+    const expireAt = buildExpirationDate(ticketPackage);
+    const paymentUrls = buildSubscriptionPaymentUrls(orderCode);
+
+    // Call PayOS API to create payment link
+    const paymentData = {
+      orderCode,
+      amount: parseInt(amount),
+      // Keep this short and ASCII-safe for every PayOS-linked bank.
+      description: 'VALO VIP',
+      returnUrl: paymentUrls.returnUrl,
+      cancelUrl: paymentUrls.cancelUrl,
+      items: [
+        {
+          name: ticketPackage.name,
+          quantity: 1,
+          price: parseInt(amount),
+        },
+      ],
+    };
+
+    // Reserve before contacting the provider. Provider and local hold share the
+    // same expiry so abandoned payment links cannot monopolize package stock.
+    let heldSubscription = null;
+    if (ticketPackage.saleLimit != null) {
+      const stockHoldUntil = new Date(Date.now() + 15 * 60 * 1000);
+      paymentData.expiredAt = Math.floor(stockHoldUntil.getTime() / 1000);
+      const holdSession = await mongoose.startSession();
+      try {
+        await holdSession.withTransaction(async () => {
+          heldSubscription = new Subscription({
+            user: req.user._id, ticketPackage: ticketPackage._id,
+            packageDurationSnapshot: { type: terms.type, durationDays: terms.durationDays, durationMinutes: terms.durationMinutes },
+            packageTermsSnapshot: terms, slots: eligibility.normalizedSlots,
+            amount, orderCode, expireAt, paymentStatus: 'pending', stockHoldUntil,
+          });
+          await heldSubscription.save({ session: holdSession });
+          await require('../services/ticketPackageStockService').reserve(heldSubscription, { session: holdSession, holdUntil: stockHoldUntil });
+        });
+      } finally { await holdSession.endSession(); }
+    }
+
+    let paymentLink;
+    try {
+      paymentLink = await payos.paymentRequests.create(paymentData);
+    } catch (payosError) {
+      if (heldSubscription) {
+        await Subscription.updateOne({ _id: heldSubscription._id, paymentStatus: 'pending' }, { $set: { paymentStatus: 'failed', status: 'failed', stockHoldUntil: null } });
+        await require('../services/ticketPackageStockService').refreshPackage(ticketPackage._id);
+      }
+      if (isPayosChannelUnavailable(payosError)) {
+        return res.status(503).json({
+          success: false,
+          code: 'PAYOS_CHANNEL_UNAVAILABLE',
+          message: 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.',
+        });
+      }
+      throw payosError;
+    }
+    const checkoutUrl = paymentLink.checkoutUrl;
+
+    // Create pending subscription
+    const subscription = heldSubscription || new Subscription({
+      user: req.user._id,
+      ticketPackage: ticketPackage._id,
+      packageDurationSnapshot: { type: terms.type, durationDays: terms.durationDays, durationMinutes: terms.durationMinutes },
+      packageTermsSnapshot: terms,
+      slots: eligibility.normalizedSlots,
+      amount,
+      orderCode,
+      expireAt,
+      paymentStatus: 'pending'
+    });
+    if (!heldSubscription) await subscription.save();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        subscriptionId: subscription._id,
+        orderCode,
+        amount,
+        checkoutUrl, // Client will redirect or show QR code
+        qrCode: paymentLink.qrCode,
+        paymentLinkId: paymentLink.paymentLinkId,
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
 };
 
-// PayOS callback uses the provider signature and still verifies the provider's
-// authoritative payment-link record through the same activation implementation.
+// PayOS callback uses the provider signature and then confirms the payment
+// against PayOS' authoritative payment-link record before activating anything.
 exports.handlePaymentWebhook = async (req, res, next) => {
   try {
     let payment;
-    try { payment = await payos.webhooks.verify(req.body); }
-    catch { return res.status(400).json({ success: false, message: 'Invalid payment signature.' }); }
+    try {
+      payment = await payos.webhooks.verify(req.body);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment signature.',
+      });
+    }
+
     if (payment.code !== '00') return res.json({ success: true });
+
     const orderCode = Number(payment.orderCode);
-    if (!Number.isSafeInteger(orderCode) || orderCode <= 0) return res.status(400).json({ success: false, message: 'Invalid payment order.' });
+    if (!Number.isSafeInteger(orderCode) || orderCode <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment order.',
+      });
+    }
+
     const [purchase, entitlementRenewal, subscriptionRenewal, checkout, booking, topUp] = await Promise.all([
-      Subscription.findOne({ $and: [{ $or: [{ orderCode }, { 'pendingRenewal.orderCode': orderCode }] }, { $or: [{ paymentMethod: 'payos' }, { bindingVersion: { $ne: 1 } }] }] }),
+      Subscription.findOne({
+        $and: [
+          { $or: [{ orderCode }, { 'pendingRenewal.orderCode': orderCode }] },
+          { $or: [{ paymentMethod: 'payos' }, { bindingVersion: { $ne: 1 } }] },
+        ],
+      }),
       require('../models/MembershipEntitlementRenewal').findOne({ orderCode, paymentMethod: 'payos' }),
       require('../models/SubscriptionRenewal').findOne({ orderCode, paymentMethod: 'payos' }),
       require('../models/CheckoutAttempt').findOne({ orderCode }),
       require('../models/Booking').findOne({ vietqrOrderCode: orderCode }),
-      require('../models/WalletTransaction').findOne({ payosOrderCode: orderCode, type: 'TOP_UP' }),
+      require('../models/WalletTransaction').findOne({
+        payosOrderCode: orderCode,
+        type: 'TOP_UP',
+      }),
     ]);
-    const matches = [purchase, entitlementRenewal, subscriptionRenewal, checkout, booking, topUp].filter(Boolean);
-    if (!matches.length) return res.json({ success: true }); // Unknown/provider verification events.
-    if (matches.length !== 1) return res.status(409).json({ success: false, message: 'Ambiguous historical payment order. Reconciliation is required.' });
-    const expected = checkout ? checkout.amountDue : booking ? booking.prepaidAmount : purchase?.pendingRenewal?.orderCode === orderCode ? purchase.pendingRenewal.amount : matches[0].amount;
-    if (!Number.isSafeInteger(Number(payment.amount)) || Number(payment.amount) <= 0 || Number(payment.amount) > expected) return res.status(409).json({ success: false, message: 'Payment amount mismatch.' });
-    // Signed callbacks are notifications; the provider record confirms settlement.
+
+    const matches = [purchase, entitlementRenewal, subscriptionRenewal, checkout, booking, topUp]
+      .filter(Boolean);
+    if (!matches.length) return res.json({ success: true });
+    if (matches.length !== 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'Ambiguous historical payment order. Reconciliation is required.',
+      });
+    }
+
+    const expected = checkout
+      ? checkout.amountDue
+      : booking
+        ? booking.prepaidAmount
+        : purchase?.pendingRenewal?.orderCode === orderCode
+          ? purchase.pendingRenewal.amount
+          : matches[0].amount;
+    if (!Number.isSafeInteger(Number(payment.amount))
+      || Number(payment.amount) <= 0
+      || Number(payment.amount) > expected) {
+      return res.status(409).json({
+        success: false,
+        message: 'Payment amount mismatch.',
+      });
+    }
+
     const provider = await payos.paymentRequests.get(orderCode);
     assertPaymentMatches(provider, orderCode, expected);
-    if (Number(payment.amount) !== expected && !provider.transactions?.some((transaction) => transaction.reference === payment.reference && Number(transaction.amount) === Number(payment.amount))) return res.status(409).json({ success: false, message: 'Payment transfer does not belong to this order.' });
+    if (Number(payment.amount) !== expected
+      && !provider.transactions?.some((transaction) => (
+        transaction.reference === payment.reference
+        && Number(transaction.amount) === Number(payment.amount)
+      ))) {
+      return res.status(409).json({
+        success: false,
+        message: 'Payment transfer does not belong to this order.',
+      });
+    }
+
     if (checkout) {
       if (checkout.status === 'settled') return res.json({ success: true });
-      await require('../services/checkoutAttemptService').verifyAttempt({ attemptId: checkout._id, sessionId: checkout.sessionId });
-      return res.json({ success: true }); // Checkout and gate authorization still need the operator/vehicle.
-    }
-    if (entitlementRenewal || subscriptionRenewal) {
-      const renewal = entitlementRenewal || subscriptionRenewal;
-      const service = require(entitlementRenewal ? '../services/membershipEntitlementRenewalService' : '../services/subscriptionRenewalService');
-      await service.verifyPayosRenewal({ userId: renewal.userId, orderCode, app: req.app });
+      await require('../services/checkoutAttemptService').verifyAttempt({
+        attemptId: checkout._id,
+        sessionId: checkout.sessionId,
+      });
       return res.json({ success: true });
     }
+
+    if (entitlementRenewal || subscriptionRenewal) {
+      const renewal = entitlementRenewal || subscriptionRenewal;
+      const service = require(entitlementRenewal
+        ? '../services/membershipEntitlementRenewalService'
+        : '../services/subscriptionRenewalService');
+      await service.verifyPayosRenewal({
+        userId: renewal.userId,
+        orderCode,
+        app: req.app,
+      });
+      return res.json({ success: true });
+    }
+
     if (booking) return require('./bookingController').handleBookingWebhook(req, res, next);
     if (topUp) return require('./walletController').handleWebhook(req, res, next);
+
     req.user = { _id: purchase.user };
     req.body = { orderCode };
     return exports.verifyPayment(req, res, next);
-  } catch (error) { next(error); }
+  } catch (error) {
+    return next(error);
+  }
 };
 
 // Verify payment
 exports.verifyPayment = async (req, res, next) => {
-  let confirmed = null;
   try {
-    const orderCode = Number(req.body.orderCode);
-    if (!Number.isSafeInteger(orderCode) || orderCode <= 0) {
-      return res.status(400).json({ success: false, message: 'Invalid payment order.' });
-    }
-    const purchase = await Subscription.findOne({
-      user: req.user._id, $or: [{ orderCode }, { 'pendingRenewal.orderCode': orderCode }],
+    const { orderCode } = req.body;
+    
+    const subscription = await Subscription.findOne({
+      $or: [{ orderCode }, { 'pendingRenewal.orderCode': orderCode }],
+      user: req.user._id
     });
-    if (!purchase) return res.status(404).json({ success: false, message: 'Subscription not found.' });
-    const legacyRenewal = Number(purchase.pendingRenewal?.orderCode) === orderCode;
-    if (purchase.bindingVersion === 1 && purchase.paymentMethod !== 'payos') return res.status(409).json({ success: false, message: 'This order does not use PayOS.' });
-    const needsRepair = purchase.paymentStatus === 'paid' && await MembershipSlotEntitlement.countDocuments({ sourceSubscriptionId: purchase._id }) < purchase.slots.length;
-    if (purchase.paymentStatus === 'paid' && !legacyRenewal && purchase.status !== 'failed' && !needsRepair) {
-      return res.json({ success: true, message: 'Already paid.', data: { expireAt: purchase.expireAt, validFrom: purchase.validFrom } });
+    
+    if (!subscription) {
+      return res.status(404).json({ success: false, message: 'Subscription not found.' });
     }
-    const payment = await payos.paymentRequests.get(orderCode);
-    if (payment.status !== 'PAID') {
-      if (!legacyRenewal && ['CANCELLED', 'FAILED', 'EXPIRED'].includes(payment.status)) {
-        const state = 'cancelled';
-        await Subscription.updateOne({ _id: purchase._id, status: 'pending', paymentStatus: 'pending' }, { $set: { status: state, paymentStatus: state } });
-      }
-      return res.status(409).json({ success: false, code: ['CANCELLED', 'FAILED', 'EXPIRED'].includes(payment.status) ? 'PAYMENT_ORDER_CLOSED' : 'PAYMENT_NOT_COMPLETED', message: 'Payment not completed.' });
-    }
-    assertPaymentMatches(payment, orderCode, legacyRenewal ? purchase.pendingRenewal.amount : purchase.amount);
-    confirmed = purchase._id;
-    const activationTime = purchase.activatedAt || new Date();
-    const dbSession = await mongoose.startSession();
-    try {
-      await dbSession.withTransaction(async () => {
-        const current = await Subscription.findById(purchase._id).session(dbSession);
-        if (legacyRenewal) {
-          await require('../services/legacyEntitlementCompatibilityService').lockOwner(current.user, dbSession);
-          if (Number(current.pendingRenewal?.orderCode) !== orderCode) return;
-          const period = current.pendingRenewal;
-          // Historical PayOS renewal orders still enter through this callback.
-          // Protect their extension just like the dedicated renewal services.
-          for (const slot of current.slots) {
-            await require('../services/membershipBookingConflictService').assertNoMembershipBookingConflict({
-              floorId: slot.floorId, slotCode: slot.slotCode, validFrom: current.expireAt,
-              expireAt: period.newExpireAt, session: dbSession,
+
+    const isRenewal = subscription.pendingRenewal && subscription.pendingRenewal.orderCode == orderCode;
+
+    if (!isRenewal && subscription.paymentStatus === 'paid') {
+      const entitlementCount = await MembershipSlotEntitlement.countDocuments({
+        sourceSubscriptionId: subscription._id,
+      });
+      if (entitlementCount < (subscription.slots || []).length) {
+        const repairSession = await mongoose.startSession();
+        const previousStatus = subscription.status;
+        const previousUpdatedAt = subscription.updatedAt;
+        try {
+          // Keep repaired ownership and its durable Telegram event atomic too.
+          await repairSession.withTransaction(async () => {
+            const current = await Subscription.findById(subscription._id).session(repairSession);
+            current.status = 'active';
+            current.markModified('status');
+            await current.save({ session: repairSession });
+            await activateSubscriptionEntitlements(current, {
+              session: repairSession, recordPurchaseEvent: true,
             });
-          }
-          current.expireAt = period.newExpireAt;
-          if (!current.rewardPayments.some((entry) => entry.orderCode === orderCode)) {
-            current.rewardPayments.push({ orderCode, userId: current.user, amount: period.amount, paidAt: new Date() });
-          }
-          current.pendingRenewal = undefined;
-          await MembershipSlotEntitlement.updateMany({
-            sourceSubscriptionId: current._id, ownerId: current.user, status: 'active',
-          }, { $set: { expireAt: period.newExpireAt } }, { session: dbSession });
-          await Slot.updateMany({ reservedBySubscriptionId: current._id, reservedFor: current.user },
-            { $set: { reservedUntil: period.newExpireAt } }, { session: dbSession });
-        } else {
-          if (current.paymentStatus === 'paid' && current.status !== 'failed' && !needsRepair) return;
-          if (current.packageSnapshot && !current.activatedAt) {
-            current.activatedAt = activationTime;
-            current.validFrom = activationTime;
-            current.expireAt = buildExpirationDate(current.packageSnapshot, activationTime);
-          }
+          });
+        } catch (activationError) {
+          // Do not overwrite another verifier's successful concurrent repair.
+          await Subscription.updateOne({ _id: subscription._id, status: previousStatus,
+            updatedAt: previousUpdatedAt }, { $set: { status: 'failed' } });
+          throw activationError;
+        } finally {
+          await repairSession.endSession();
         }
-        current.paymentStatus = 'paid';
-        current.status = 'active';
-        current.activationFailureReason = undefined;
-        current.reconciliationRequired = false;
-        await current.save({ session: dbSession });
-        await activateSubscriptionEntitlements(current, { session: dbSession });
-        const type = current.packageSnapshot?.type || (await TicketPackage.findById(current.ticketPackage).session(dbSession))?.type;
-        if (!legacyRenewal && !current.bindingVersion && type === 'yearly') {
-          await User.updateOne({ _id: current.user }, { $set: { 'membership.freeServiceCount': 12 } }, { session: dbSession });
-        }
-      });
-    } finally { await dbSession.endSession(); }
-    const activated = await Subscription.findById(purchase._id);
-    if (activated?.status === 'active') notifySubscriptionActivatedSafely(activated, activated.packageSnapshot || await TicketPackage.findById(activated.ticketPackage), req.app);
-    return res.json({ success: true, message: 'Payment confirmed and membership activated.', data: { expireAt: activated.expireAt, validFrom: activated.validFrom } });
-  } catch (error) {
-    if (confirmed) {
-      // Never overwrite a concurrent successful activation with a failure.
-      await Subscription.updateOne({ _id: confirmed, status: { $ne: 'active' } }, {
-        $set: { paymentStatus: 'paid', status: 'failed', activationFailureReason: error.message, reconciliationRequired: true },
-      });
+        return res.status(200).json({
+          success: true,
+          message: 'Payment was already completed and membership activation was repaired.',
+        });
+      }
+      return res.status(200).json({ success: true, message: 'Already paid.' });
     }
-    if (confirmed) { error.code = 'PAID_PURCHASE_RECONCILIATION'; error.statusCode = 409; error.message = 'Payment received, but activation requires reconciliation. Do not pay again. Keep the order reference and contact support.'; }
+
+    // Verify via PayOS API
+    let isPaymentSuccessful = false;
+    try {
+      const payosInfo = await payos.paymentRequests.get(parseInt(orderCode));
+      if (payosInfo.status === 'PAID') {
+        isPaymentSuccessful = true;
+      }
+    } catch (payosError) {
+      console.error('Error checking PayOS status for subscription:', payosError.message);
+    }
+    
+    if (isPaymentSuccessful) {
+      if (isRenewal) {
+        const renewalSession = await mongoose.startSession();
+        try {
+          await renewalSession.withTransaction(async () => {
+            const current = await Subscription.findById(subscription._id).session(renewalSession);
+            if (!current.pendingRenewal || String(current.pendingRenewal.orderCode) !== String(orderCode)) return;
+            const stock = require('../services/ticketPackageStockService');
+            await stock.lockPackage(current.ticketPackage, { session: renewalSession });
+            if (current.expireAt <= new Date()) {
+              await stock.assertAvailable(current.ticketPackage, current.slots.length, { session: renewalSession, allowSoldOut: true });
+            }
+            if (!current.rewardPayments.some((payment) => payment.orderCode === current.pendingRenewal.orderCode)) {
+              current.rewardPayments.push({ orderCode: current.pendingRenewal.orderCode, userId: current.user, amount: current.pendingRenewal.amount, paidAt: new Date() });
+            }
+            current.expireAt = current.pendingRenewal.newExpireAt;
+            current.status = 'active';
+            current.expireWarningSent = false;
+            current.pendingRenewal = undefined;
+            await current.save({ session: renewalSession });
+            await activateSubscriptionEntitlements(current, { session: renewalSession, renewal: true });
+          });
+        } finally { await renewalSession.endSession(); }
+      } else {
+        const activationSession = await mongoose.startSession();
+        activationSession.startTransaction();
+        try {
+          subscription.paymentStatus = 'paid';
+          subscription.status = 'active';
+          await subscription.save({ session: activationSession });
+          const ticketPackage = await TicketPackage.findById(
+            subscription.ticketPackage
+          ).session(activationSession);
+          if (ticketPackage?.type === 'yearly' && !subscription.packageTermsSnapshot?.benefitsVersion) {
+            await User.updateOne(
+              { _id: req.user._id },
+              { $set: { 'membership.freeServiceCount': 12 } },
+              { session: activationSession }
+            );
+          }
+          await activateSubscriptionEntitlements(subscription, {
+            session: activationSession,
+          });
+          await activationSession.commitTransaction();
+        } catch (activationError) {
+          await activationSession.abortTransaction();
+          await Subscription.updateOne(
+            { _id: subscription._id, status: { $ne: 'active' } },
+            { $set: { paymentStatus: 'paid', status: 'failed' } }
+          );
+          return res.status(409).json({
+            success: false,
+            code: 'MEMBERSHIP_ACTIVATION_FAILED',
+            message:
+              activationError.message ||
+              'Payment succeeded but membership activation requires support.',
+          });
+        } finally {
+          activationSession.endSession();
+        }
+        
+        if (subscription.status === 'active') {
+          const tp = await TicketPackage.findById(subscription.ticketPackage).lean();
+          notifySubscriptionActivatedSafely(subscription, tp, req.app);
+        }
+      }
+
+
+      return res.status(200).json({ success: true, message: isRenewal ? 'Subscription renewed successfully!' : 'Subscription activated successfully!' });
+    } else {
+      const payosInfo = await payos.paymentRequests.get(parseInt(orderCode)).catch(() => null);
+      if (['CANCELLED', 'FAILED'].includes(payosInfo?.status)) {
+        if (isRenewal) {
+           subscription.pendingRenewal = undefined; // clear pending renewal if failed
+           await subscription.save();
+        } else {
+           subscription.paymentStatus = payosInfo.status === 'CANCELLED' ? 'cancelled' : 'failed';
+           subscription.status = payosInfo.status === 'CANCELLED' ? 'cancelled' : 'failed';
+           await subscription.save();
+           await require('../services/ticketPackageStockService').release(subscription);
+        }
+      }
+      return res.status(400).json({ success: false, message: 'Payment not completed.' });
+    }
+  } catch (error) {
     next(error);
   }
 };
@@ -180,13 +454,83 @@ exports.verifyPayment = async (req, res, next) => {
 // Pay subscription with Valo Wallet
 exports.paySubscriptionWithWallet = async (req, res, next) => {
   try {
-    const data = await require('../services/subscriptionPurchaseService').purchase({
-      ...req.body, userId: req.user._id, paymentMethod: 'wallet',
+    const { packageId, slots } = req.body;
+    
+    // Validate package
+    const ticketPackage = await loadPackageForPurchase(packageId);
+    if (!ticketPackage || !isMembershipPackageType(ticketPackage.type) || !ticketPackage.isActive) {
+      return res.status(400).json({ success: false, message: 'Invalid subscription package.' });
+    }
+
+    const eligibility = await validateNewSubscriptionEligibility({
+      userId: req.user._id,
+      ticketPackage,
+      slots,
     });
-    const activated = await Subscription.findById(data.subscriptionId);
-    if (activated?.status === 'active') notifySubscriptionActivatedSafely(activated, activated.packageSnapshot, req.app);
-    res.json({ success: true, data });
-  } catch (error) { next(error); }
+
+    const amount = ticketPackage.price * Math.max(1, slots.length);
+    const terms = await capturePackageTerms(ticketPackage, req.body.packageRevision);
+
+    // Calculate expiration date
+    const expireAt = buildExpirationDate(ticketPackage);
+
+    // Create subscription
+    const subscription = new Subscription({
+      user: req.user._id,
+      ticketPackage: ticketPackage._id,
+      packageDurationSnapshot: { type: terms.type, durationDays: terms.durationDays, durationMinutes: terms.durationMinutes },
+      packageTermsSnapshot: terms,
+      slots: eligibility.normalizedSlots,
+      amount,
+      orderCode: Number(String(Date.now()).slice(-6) + Math.floor(Math.random() * 100)),
+      expireAt,
+      paymentStatus: 'pending' // Will update after wallet debit
+    });
+    
+    await subscription.save();
+
+    const dbSession = await mongoose.startSession();
+    dbSession.startTransaction();
+    try {
+      await walletService.debitWallet(req.user._id, amount, `Buy VIP Package - ${ticketPackage.type}`, {
+        refSource: 'subscription',
+        refSourceId: subscription._id.toString(),
+        session: dbSession,
+      });
+      subscription.paymentStatus = 'paid';
+      subscription.status = 'active';
+      await subscription.save({ session: dbSession });
+
+      if (ticketPackage.type === 'yearly' && !subscription.packageTermsSnapshot?.benefitsVersion) {
+        await User.updateOne(
+          { _id: req.user._id },
+          { $set: { 'membership.freeServiceCount': 12 } },
+          { session: dbSession }
+        );
+      }
+      await activateSubscriptionEntitlements(subscription, { session: dbSession });
+      await dbSession.commitTransaction();
+    } catch (err) {
+      await dbSession.abortTransaction();
+      subscription.paymentStatus = 'failed';
+      subscription.status = 'failed';
+      await subscription.save();
+      return res.status(err.statusCode || 400).json({
+        success: false,
+        message: err.message || 'Insufficient wallet balance.',
+      });
+    } finally {
+      dbSession.endSession();
+    }
+    
+    if (subscription.status === 'active') {
+      notifySubscriptionActivatedSafely(subscription, ticketPackage, req.app);
+    }
+
+    return res.status(200).json({ success: true, message: 'Subscription activated successfully via Valo Wallet!' });
+  } catch (error) {
+    next(error);
+  }
 };
 
 exports.getMembership = async (req, res, next) => {
@@ -203,21 +547,18 @@ exports.getMembership = async (req, res, next) => {
     const [entitlements, activeSubscriptions] = await Promise.all([
       MembershipSlotEntitlement.find({
         ownerId: req.user._id,
-        validFrom: { $lte: now },
         status: { $in: ['active', 'transfer_locked'] },
         expireAt: { $gt: now },
       })
         .sort({ expireAt: -1 })
-        .populate('vehicleId', 'licensePlate')
         .populate(
           'packageId',
-          'name type price description isActive isRenewable renewalWindowDays maxSlots'
+          'name type durationDays durationMinutes benefitsVersion displayBenefits serviceBenefits price description isActive isRenewable renewalWindowDays maxSlots'
         )
         .populate({ path: 'floorId', select: 'name floorNumber', transform: preserveFloorReference })
         .lean(),
       Subscription.find({
       user: req.user._id,
-      validFrom: { $lte: now },
       status: 'active',
       paymentStatus: 'paid',
       expireAt: { $gt: now }
@@ -225,7 +566,7 @@ exports.getMembership = async (req, res, next) => {
         .sort({ expireAt: -1 })
         .populate(
           'ticketPackage',
-          'name type price description isActive isRenewable renewalWindowDays maxSlots'
+          'name type durationDays durationMinutes benefitsVersion displayBenefits serviceBenefits price description isActive isRenewable renewalWindowDays maxSlots'
         )
         .populate({ path: 'slots.floorId', select: 'name floorNumber', transform: preserveFloorReference })
         .lean(),
@@ -245,21 +586,6 @@ exports.getMembership = async (req, res, next) => {
       sourceEntitlements
     );
 
-    const activeParkingSession = await Session.findOne({ userId: req.user._id, type: 'SUBSCRIPTION', status: 'active' }).select('subscriptionId');
-    const pendingPayments = [];
-    for (const [Model, kind, ownerField, targetField] of [
-      [Subscription, 'purchase', 'user', '_id'],
-      [require('../models/MembershipEntitlementRenewal'), 'entitlement', 'userId', 'entitlementId'],
-      [require('../models/SubscriptionRenewal'), 'subscription', 'userId', 'subscriptionId'],
-    ]) {
-      const orders = await Model.find({ [ownerField]: req.user._id, paymentMethod: 'payos', status: { $in: ['pending', 'failed'] } }).sort({ createdAt: -1 }).limit(20).lean();
-      for (const order of orders) pendingPayments.push({ kind, targetId: order[targetField], packageId: order.ticketPackage,
-        orderCode: order.orderCode, amount: order.amount, checkoutUrl: order.payosCheckoutUrl,
-        idempotencyKey: order.idempotencyKey, slots: order.slots,
-        name: order.packageSnapshot?.name || 'Membership payment', status: order.status,
-        reconciliationRequired: Boolean(order.reconciliationRequired), activationFailureReason: order.activationFailureReason,
-      });
-    }
     const latestEntitlement = entitlements[0] || null;
     const latestSubscription = legacySlots[0]?.subscription || null;
     const expireAt = latestEntitlement?.expireAt
@@ -271,12 +597,15 @@ exports.getMembership = async (req, res, next) => {
     const daysUntilExpiration = expireAt
       ? Math.ceil((expireAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
       : null;
-    const purchasedTerms = latestEntitlement?.packageSnapshot || latestSubscription?.packageSnapshot;
-    const pkg = purchasedTerms ? { ...purchasedTerms, _id: purchasedTerms.id, price: purchasedTerms.unitPrice } :
+    const pkg =
       latestEntitlement?.packageId ||
       latestSubscription?.ticketPackage ||
       user?.membership?.packageId ||
       null;
+    const durationPackage = latestEntitlement?.packageDurationSnapshot
+      || latestSubscription?.packageDurationSnapshot
+      || pkg;
+    const packageTerms = latestEntitlement?.packageTermsSnapshot || latestSubscription?.packageTermsSnapshot || pkg;
 
     const renewalWindowDays = Number(pkg?.renewalWindowDays || 7);
     const legacyRenewal = latestSubscription && !entitlements.length
@@ -314,12 +643,9 @@ exports.getMembership = async (req, res, next) => {
       success: true,
       data: {
         isVip: isActive,
-        hasActiveParkingSession: Boolean(activeParkingSession),
-        purchaseEligibility: await require('../services/subscriptionEligibilityService').getPurchaseVehicleEligibility({ userId: req.user._id, now }),
-        pendingPayments,
         status: isActive ? 'active' : 'expired',
         subscriptionId:
-          latestEntitlement?.sourceSubscriptionId || latestSubscription?._id || activeParkingSession?.subscriptionId || null,
+          latestEntitlement?.sourceSubscriptionId || latestSubscription?._id || null,
         entitlementCount: reservedSlots.length,
         expireAt,
         daysUntilExpiration,
@@ -330,16 +656,18 @@ exports.getMembership = async (req, res, next) => {
         package: pkg
           ? {
               id: pkg._id,
-              name: pkg.name,
-              type: pkg.type,
-              price: pkg.price,
+              name: packageTerms.name || pkg.name,
+              type: durationPackage.type,
+              durationDays: getPackageDurationDays(durationPackage),
+              durationMinutes: durationPackage.durationMinutes ?? null,
+              price: packageTerms.unitPrice ?? pkg.price,
+              benefitsVersion: packageTerms.benefitsVersion || 0,
+              serviceBenefits: packageTerms.serviceBenefits || [],
               description: pkg.description,
             }
           : null,
         reservedSlots,
-        benefits: isActive
-          ? ['Reserved parking spaces', 'See each space for its purchased vehicle and parking benefits']
-          : [],
+        benefits: isActive ? getPackageBenefits(packageTerms) : [],
         renewal: {
           status: 'manual',
           nextRenewalDate: expireAt,
@@ -385,8 +713,7 @@ exports.getMembershipQr = async (req, res, next) => {
         expireAt: { $gt: new Date() },
       }).sort({ expireAt: -1 }),
     ]);
-    const exitOnly = !latestEntitlement && Boolean(await Session.exists({ userId: subscription.user, type: 'SUBSCRIPTION', status: 'active' }));
-    const useAccountCredential = Boolean(latestEntitlement || exitOnly);
+    const useAccountCredential = Boolean(latestEntitlement);
     const available = useAccountCredential
       ? Boolean(user)
       : isMembershipQrAvailable(subscription);
@@ -395,7 +722,7 @@ exports.getMembershipQr = async (req, res, next) => {
       data: {
         available,
         credentialType: useAccountCredential ? 'ACCOUNT' : 'LEGACY_SUBSCRIPTION',
-        membershipStatus: exitOnly ? 'exit_only' : available ? 'active' : subscription.status,
+        membershipStatus: available ? 'active' : subscription.status,
         expireAt: useAccountCredential
           ? latestEntitlement?.expireAt
           : subscription.expireAt,
@@ -426,15 +753,14 @@ exports.getAccountMembershipQr = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ success: false, message: 'Membership account not found' });
     }
-    const exitOnly = !latestEntitlement && Boolean(await Session.exists({ userId: req.user._id, type: 'SUBSCRIPTION', status: 'active' }));
-    if (latestEntitlement || exitOnly) {
+    if (latestEntitlement) {
       return res.status(200).json({
         success: true,
         data: {
           available: true,
           credentialType: 'ACCOUNT',
-          membershipStatus: exitOnly ? 'exit_only' : 'active',
-          expireAt: latestEntitlement?.expireAt || null,
+          membershipStatus: 'active',
+          expireAt: latestEntitlement.expireAt,
           payload: buildAccountMembershipQrPayload(user),
           reason: null,
         },
@@ -470,7 +796,6 @@ exports.buildExpirationDate = buildExpirationDate;
 exports.getAllSubscriptions = async (req, res, next) => {
   try {
     const subscriptions = await Subscription.find()
-      .select(req.user.role === 'staff' ? '-payosCheckoutUrl -payosPaymentLinkId -idempotencyKey -rewardPayments' : '')
       .populate('user', 'username email status')
       .populate('ticketPackage', 'name type price')
       .populate({
@@ -514,15 +839,153 @@ exports.getAllSubscriptions = async (req, res, next) => {
 // Renew subscription
 exports.renewSubscription = async (req, res, next) => {
   try {
-    const { subscriptionId, paymentMethod, idempotencyKey } = req.body;
-    if (typeof idempotencyKey !== 'string' || idempotencyKey.trim().length < 16 || idempotencyKey.length > 128) {
-      return res.status(400).json({ success: false, message: 'A stable idempotency key (16-128 characters) is required.' });
+    const { subscriptionId, paymentMethod } = req.body;
+    
+    const subscription = await Subscription.findById(subscriptionId).populate('ticketPackage');
+    if (!subscription) {
+      return res.status(404).json({ success: false, message: 'Subscription not found.' });
     }
-    const renewals = require('../services/subscriptionRenewalService');
-    const action = paymentMethod === 'WALLET' ? renewals.renewWithWallet
-      : paymentMethod === 'PAYOS' ? renewals.createPayosRenewal : null;
-    if (!action) return res.status(400).json({ success: false, message: 'Invalid payment method.' });
-    const data = await action({ userId: req.user._id, subscriptionId, idempotencyKey, app: req.app });
-    res.json({ success: true, data });
-  } catch (error) { next(error); }
+    
+    if (subscription.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+    const entitlementCount = await MembershipSlotEntitlement.countDocuments({
+      sourceSubscriptionId: subscription._id,
+    });
+    if (entitlementCount > 0) {
+      return res.status(409).json({
+        success: false,
+        code: 'USE_ENTITLEMENT_RENEWAL',
+        message: 'Renew each membership space separately.',
+      });
+    }
+
+    if (!['active', 'expired'].includes(subscription.status)) {
+      return res.status(400).json({ success: false, message: 'Can only renew active or expired subscriptions.' });
+    }
+
+    const ticketPackage = subscription.ticketPackage;
+    if (!ticketPackage || ticketPackage.isRenewable === false || !isMembershipPackageType((subscription.packageDurationSnapshot || ticketPackage).type)) {
+      return res.status(400).json({ success: false, message: 'Package is no longer available.' });
+    }
+
+    const amount = ticketPackage.price * Math.max(1, subscription.slots.length);
+    
+    // Determine the base date for renewal
+    const now = new Date();
+    const baseDate = (subscription.status === 'active' && subscription.expireAt > now) 
+                     ? subscription.expireAt 
+                     : now;
+                     
+    const newExpireAt = buildExpirationDate(subscription.packageDurationSnapshot || ticketPackage, baseDate);
+
+    if (paymentMethod === 'WALLET') {
+      if (ticketPackage.saleLimit != null) {
+        const renewalSession = await mongoose.startSession();
+        try {
+          await renewalSession.withTransaction(async () => {
+            const current = await Subscription.findById(subscription._id).session(renewalSession);
+            if (!current || !['active', 'expired'].includes(current.status) || current.expireAt.getTime() !== subscription.expireAt.getTime()) {
+              throw Object.assign(new Error('Membership changed. Refresh before renewing.'), { statusCode: 409 });
+            }
+            const stock = require('../services/ticketPackageStockService');
+            await stock.lockPackage(ticketPackage._id, { session: renewalSession });
+            if (current.expireAt <= new Date()) await stock.assertAvailable(ticketPackage._id, current.slots.length, { session: renewalSession, allowSoldOut: true });
+            const debit = await walletService.debitWallet(req.user._id, amount, `Renew VIP Package - ${ticketPackage.type}`, {
+              refSource: 'subscription_renewal', refSourceId: current._id.toString(), session: renewalSession,
+              idempotencyKey: `legacy-renewal:${current._id}:${subscription.expireAt.getTime()}`,
+            });
+            current.expireAt = newExpireAt;
+            current.rewardPayments.push({ paymentKey: `wallet:${debit.transaction._id}`, userId: req.user._id, amount, paidAt: now });
+            current.status = 'active';
+            current.expireWarningSent = false;
+            await current.save({ session: renewalSession });
+            await activateSubscriptionEntitlements(current, { session: renewalSession, renewal: true });
+          });
+          return res.status(200).json({ success: true, message: 'Renewed successfully via Valo Wallet.' });
+        } finally { await renewalSession.endSession(); }
+      }
+      try {
+        const renewalDebit = await walletService.debitWallet(req.user._id, amount, `Renew VIP Package - ${ticketPackage.type}`, {
+          refSource: 'subscription_renewal',
+          refSourceId: subscription._id.toString()
+        });
+        
+        subscription.expireAt = newExpireAt;
+        subscription.rewardPayments.push({ paymentKey: `wallet:${renewalDebit.transaction._id}`, userId: req.user._id, amount, paidAt: now });
+        subscription.status = 'active';
+        subscription.expireWarningSent = false;
+        
+        // Also update User membership and Slot reservedFor to ensure they are active
+        const user = await User.findById(req.user._id);
+        user.membership.isVip = true;
+        user.membership.expireAt = newExpireAt;
+        if (ticketPackage.type === 'yearly' && !subscription.packageTermsSnapshot?.benefitsVersion) {
+           user.membership.freeServiceCount = 12;
+        }
+        await user.save();
+
+        for (const slot of subscription.slots) {
+          await Slot.updateOne(
+            { floorID: slot.floorId, slotNumber: slot.slotCode },
+            { reservedFor: user._id }
+          );
+        }
+
+        await subscription.save();
+        return res.status(200).json({ success: true, message: 'Renewed successfully via Valo Wallet.', data: subscription });
+      } catch (err) {
+        return res.status(400).json({ success: false, message: err.message || 'Insufficient wallet balance.' });
+      }
+    } else if (paymentMethod === 'PAYOS') {
+      const orderCode = Number(String(Date.now()).slice(-6) + Math.floor(Math.random() * 100));
+      const paymentUrls = buildSubscriptionPaymentUrls(orderCode);
+      const paymentData = {
+        orderCode,
+        amount: parseInt(amount),
+        description: `Renew VIP ${ticketPackage.type}`,
+        returnUrl: paymentUrls.returnUrl,
+        cancelUrl: paymentUrls.cancelUrl,
+        items: [{ name: `Renew VIP ${ticketPackage.type}`, quantity: 1, price: parseInt(amount) }]
+      };
+
+      let paymentLink;
+      try {
+        paymentLink = await payos.paymentRequests.create(paymentData);
+      } catch (payosError) {
+        if (isPayosChannelUnavailable(payosError)) {
+          return res.status(503).json({
+            success: false,
+            code: 'PAYOS_CHANNEL_UNAVAILABLE',
+            message: 'PayOS could not create a QR code because this merchant has no active payment channel. Activate the payment channel in the PayOS dashboard, then try again.',
+          });
+        }
+        throw payosError;
+      }
+      
+      subscription.pendingRenewal = {
+        orderCode,
+        newExpireAt,
+        amount
+      };
+      await subscription.save();
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          subscriptionId: subscription._id,
+          orderCode,
+          amount,
+          checkoutUrl: paymentLink.checkoutUrl,
+          qrCode: paymentLink.qrCode,
+          paymentLinkId: paymentLink.paymentLinkId,
+        }
+      });
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid payment method.' });
+    }
+
+  } catch (error) {
+    next(error);
+  }
 };

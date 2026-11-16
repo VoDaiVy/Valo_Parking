@@ -1,4 +1,3 @@
-import TransferVehiclePicker from '../../components/membership/TransferVehiclePicker';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -54,7 +53,6 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
   const [pagination, setPagination] = useState(null);
   const [selected, setSelected] = useState(null);
   const [walletBalance, setWalletBalance] = useState(0);
-  const [receivingVehicleId, setReceivingVehicleId] = useState('');
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeAction, setActiveAction] = useState("");
@@ -202,7 +200,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
     if (!id) return;
     setActiveAction(`settle:${id}`);
     try {
-      const response = await settleEntitlementTransfer(id, receivingVehicleId);
+      const response = await settleEntitlementTransfer(id);
       if (!response.ok || !response.data?.success) {
         throw new Error(response.data?.message || "Unable to complete payment.");
       }
@@ -417,10 +415,9 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                   </p>
                 )}
 
-                {selected.canSettle && <TransferVehiclePicker value={receivingVehicleId} onChange={setReceivingVehicleId} />}
                 {selected.canSettle ? (
                   walletBalance >= Number(selected.totalDue ?? Number(selected.askingPrice || 0) + Number(selected.transferFee || 0)) ? (
-                    <button type="button" onClick={handleSettle} disabled={Boolean(activeAction) || !receivingVehicleId} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-5 font-black text-[#16130B] disabled:opacity-50">
+                    <button type="button" onClick={handleSettle} disabled={Boolean(activeAction)} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-5 font-black text-[#16130B] disabled:opacity-50">
                       {activeAction ? <Loader2 size={17} className="animate-spin" /> : <Wallet size={17} />} Pay from wallet
                     </button>
                   ) : (

@@ -17,20 +17,18 @@ export const getMembershipDetail = (kind, id) =>
 export const getMembershipRenewalHistory = (kind, id, page = 1) =>
   apiFetch(`${detailPath(kind, id)}/renewals?page=${page}&limit=10`, { headers: authHeader() });
 
-export const getTicketPackages = async ({ includeLegacy = false } = {}) => {
-  const query = new URLSearchParams({ includeHourly: 'true', includeUnavailable: 'true' });
-  if (includeLegacy) query.set('includeLegacy', 'true');
-  return apiFetch(`/ticket-packages/active?${query}`, {
+export const getTicketPackages = async () => {
+  return apiFetch('/ticket-packages/active', {
     method: 'GET',
     headers: authHeader(),
   });
 };
 
-export const createSubscriptionPayment = async (packageId, slots, adjustedPrice, idempotencyKey) => {
+export const createSubscriptionPayment = async (packageId, slots, adjustedPrice, packageRevision) => {
   return apiFetch('/subscriptions/create-payment', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ packageId, slots, adjustedPrice, idempotencyKey }),
+    body: JSON.stringify({ packageId, slots, adjustedPrice, packageRevision }),
   });
 };
 
@@ -42,11 +40,11 @@ export const verifySubscriptionPayment = async (orderCode) => {
   });
 };
 
-export const paySubscriptionWithWallet = async (packageId, slots, adjustedPrice, idempotencyKey) => {
+export const paySubscriptionWithWallet = async (packageId, slots, adjustedPrice, packageRevision) => {
   return apiFetch('/subscriptions/pay-with-wallet', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ packageId, slots, adjustedPrice, idempotencyKey }),
+    body: JSON.stringify({ packageId, slots, adjustedPrice, packageRevision }),
   });
 };
 
@@ -190,9 +188,8 @@ export const cancelEntitlementTransfer = async (transferId) =>
     headers: authHeader(),
   });
 
-export const settleEntitlementTransfer = async (transferId, vehicleId) =>
+export const settleEntitlementTransfer = async (transferId) =>
   apiFetch(`/customer/membership-entitlement-transfers/${transferId}/settle-wallet`, {
     method: 'POST',
-    body: JSON.stringify({ vehicleId }),
     headers: authHeader(),
   });
