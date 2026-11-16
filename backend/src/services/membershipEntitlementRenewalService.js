@@ -5,7 +5,7 @@ const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRen
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Slot = require('../models/Slot');
 const Subscription = require('../models/Subscription');
-const { isMembershipPackageType } = require('../utils/ticketPackageRules');
+const { isSellablePackageType } = require('../utils/ticketPackageRules');
 const Vehicle = require('../models/Vehicle');
 const { validateEntitlementSpace } = require('./membershipSpaceValidationService');
 const walletService = require('./walletService');
@@ -32,7 +32,7 @@ const getQuote = async (userId, entitlementId, options = {}) => {
   await validateEntitlementSpace(entitlement, userId, { session: options.session });
   const pkg = entitlement.packageId;
   const durationPackage = entitlement.packageDurationSnapshot || pkg;
-  if (!pkg || pkg.isRenewable === false || !isMembershipPackageType(durationPackage?.type)) {
+  if (!pkg || pkg.isRenewable === false || !isSellablePackageType(durationPackage?.type)) {
     throw businessError('This membership space cannot be renewed.', 'PACKAGE_NOT_RENEWABLE');
   }
   const daysUntilExpiration = Math.ceil(

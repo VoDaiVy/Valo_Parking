@@ -8,7 +8,7 @@ const Vehicle = require('../models/Vehicle');
 const Slot = require('../models/Slot');
 const User = require('../models/User');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
-const { isMembershipPackageType, buildPackageExpirationDate } = require('../utils/ticketPackageRules');
+const { isSellablePackageType, buildPackageExpirationDate } = require('../utils/ticketPackageRules');
 const { isEnabled } = require('../utils/featureFlags');
 const {
   getUnmigratedLegacySlots,
@@ -72,7 +72,7 @@ const validateNewSubscriptionEligibility = async ({
   now = new Date(),
   session = null,
 }) => {
-  if (!ticketPackage || !isMembershipPackageType(ticketPackage.type) || !ticketPackage.isActive) {
+  if (!ticketPackage || !isSellablePackageType(ticketPackage.type) || !ticketPackage.isActive) {
     throw businessError('Invalid subscription package.', 'INVALID_SUBSCRIPTION_PACKAGE');
   }
   buildPackageExpirationDate(ticketPackage, now);
@@ -247,7 +247,7 @@ const validateRenewalEligibility = async ({
     ticketPackage = await packageQuery;
   }
   const durationPackage = subscription.packageDurationSnapshot || ticketPackage;
-  if (!ticketPackage || !isMembershipPackageType(durationPackage?.type)) {
+  if (!ticketPackage || !isSellablePackageType(durationPackage?.type)) {
     throw businessError('Package is not renewable.', 'PACKAGE_NOT_RENEWABLE');
   }
   if (ticketPackage.isRenewable === false) {

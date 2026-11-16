@@ -2,20 +2,20 @@ const TicketPackage = require('../models/TicketPackage');
 const Subscription = require('../models/Subscription');
 const { isObjectIdOrHexString } = require('mongoose');
 const {
-  PACKAGE_TYPES,
+  SELLABLE_PACKAGE_TYPES,
   isMembershipPackageType,
   getPackageDurationDays,
   getPackageBenefits,
 } = require('../utils/ticketPackageRules');
 
-const FEATURED_TYPES = ['hourly', 'monthly', 'yearly'];
+const FEATURED_TYPES = ['weekly', 'monthly', 'yearly'];
 const WINDOW_DAYS = 30;
 
 const invalidQuery = (message) => Object.assign(new Error(message), { statusCode: 400 });
 
 function parseExploreQuery(query = {}) {
   const type = query.type === undefined ? 'all' : query.type;
-  if (typeof type !== 'string' || !['all', ...PACKAGE_TYPES].includes(type)) {
+  if (typeof type !== 'string' || !['all', ...SELLABLE_PACKAGE_TYPES].includes(type)) {
     throw invalidQuery('Invalid ticket package type.');
   }
   const parseInteger = (value, fallback, maximum, name) => {
@@ -65,7 +65,7 @@ const compareOldest = (left, right) =>
   || String(left._id).localeCompare(String(right._id));
 
 function buildExploreCatalog(packages, purchaseCounts, options, now) {
-  const activePackages = packages.filter((pkg) => pkg.isActive && PACKAGE_TYPES.includes(pkg.type));
+  const activePackages = packages.filter((pkg) => pkg.isActive && SELLABLE_PACKAGE_TYPES.includes(pkg.type));
   const featured = FEATURED_TYPES.flatMap((type) => {
     const candidates = activePackages.filter((pkg) => pkg.type === type).sort((left, right) =>
       (purchaseCounts.get(String(right._id)) || 0) - (purchaseCounts.get(String(left._id)) || 0)
@@ -104,7 +104,7 @@ function buildExploreCatalog(packages, purchaseCounts, options, now) {
 async function getExplorePackages(query = {}, now = new Date()) {
   const options = parseExploreQuery(query);
   await require('./ticketPackageStockService').refreshAll();
-  const packages = await TicketPackage.find({ isActive: true })
+  const packages = await TicketPackage.find({ isActive: true, type: { $in: SELLABLE_PACKAGE_TYPES } })
     .select('_id name type price description durationDays durationMinutes revision benefitsVersion displayBenefits serviceBenefits isActive maxSlots saleLimit createdAt').lean();
   const from = new Date(now.getTime() - WINDOW_DAYS * 86400000);
   const range = { $gte: from, $lte: now };
@@ -145,7 +145,7 @@ async function getExplorePackage(packageId) {
     throw invalidQuery('Invalid ticket package ID.');
   }
   await require('./ticketPackageStockService').refreshAll();
-  const pkg = await TicketPackage.findOne({ _id: packageId, isActive: true })
+  const pkg = await TicketPackage.findOne({ _id: packageId, isActive: true, type: { $in: SELLABLE_PACKAGE_TYPES } })
     .select('_id name type price description durationDays durationMinutes revision benefitsVersion displayBenefits serviceBenefits isActive maxSlots saleLimit').lean();
   if (!pkg) throw Object.assign(new Error('Ticket package is unavailable.'), { statusCode: 404 });
   return toPublicPackage(pkg);

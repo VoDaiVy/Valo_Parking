@@ -3,7 +3,7 @@ const Subscription = require('../models/Subscription');
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
 const { capturePackageTerms } = require('../services/packageTermsService');
-const { isMembershipPackageType, buildPackageExpirationDate, getPackageDurationDays, getPackageBenefits } = require('../utils/ticketPackageRules');
+const { isSellablePackageType, buildPackageExpirationDate, getPackageDurationDays, getPackageBenefits } = require('../utils/ticketPackageRules');
 const User = require('../models/User');
 const Slot = require('../models/Slot');
 const payos = require('../config/payos');
@@ -76,7 +76,7 @@ exports.createSubscriptionPayment = async (req, res, next) => {
     
     // Validate package
     const ticketPackage = await loadPackageForPurchase(packageId);
-    if (!ticketPackage || !isMembershipPackageType(ticketPackage.type) || !ticketPackage.isActive) {
+    if (!ticketPackage || !isSellablePackageType(ticketPackage.type) || !ticketPackage.isActive) {
       return res.status(400).json({ success: false, message: 'Invalid subscription package.' });
     }
 
@@ -344,7 +344,7 @@ exports.paySubscriptionWithWallet = async (req, res, next) => {
     
     // Validate package
     const ticketPackage = await loadPackageForPurchase(packageId);
-    if (!ticketPackage || !isMembershipPackageType(ticketPackage.type) || !ticketPackage.isActive) {
+    if (!ticketPackage || !isSellablePackageType(ticketPackage.type) || !ticketPackage.isActive) {
       return res.status(400).json({ success: false, message: 'Invalid subscription package.' });
     }
 
@@ -751,7 +751,7 @@ exports.renewSubscription = async (req, res, next) => {
     }
 
     const ticketPackage = subscription.ticketPackage;
-    if (!ticketPackage || ticketPackage.isRenewable === false || !isMembershipPackageType((subscription.packageDurationSnapshot || ticketPackage).type)) {
+    if (!ticketPackage || ticketPackage.isRenewable === false || !isSellablePackageType((subscription.packageDurationSnapshot || ticketPackage).type)) {
       return res.status(400).json({ success: false, message: 'Package is no longer available.' });
     }
 
