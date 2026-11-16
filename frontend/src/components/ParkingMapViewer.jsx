@@ -1,7 +1,8 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Maximize, Car, Zap, Accessibility, Bike, TreePine, ArrowRight, Navigation, Layers, MonitorSmartphone } from 'lucide-react';
+import { isLiveParkingSlotBookable } from '../utils/aiParkingLookup';
 
-const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, isMaintenance, isReserved, isHeld, isIncompatible, canSelectDespiteLiveState, session, canViewLicensePlate, onSelectSlot, readOnly }) => {
+const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, isMaintenance, isReserved, isHeld, isIncompatible, liveReason, canSelectDespiteLiveState, session, canViewLicensePlate, onSelectSlot, readOnly }) => {
   const hasName = !!el.name && el.name.trim() !== '';
   if (!hasName) return null;
   const slotName = el.name;
@@ -58,7 +59,10 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
     textColor = '#c2410c'; // orange-700
   }
 
-  const slotStatusLabel = isIncompatible
+  const unavailable = liveReason === 'closed' || liveReason === 'unknown';
+  const slotStatusLabel = unavailable
+    ? `${slotName}: ${liveReason === 'closed' ? 'Closed for bookings' : 'Status unavailable'}`
+    : isIncompatible
     ? `${slotName}: Not suitable for the selected vehicle`
     : isMaintenance
       ? `${slotName}: Maintenance`
@@ -71,7 +75,7 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
             : isOccupied
               ? `${slotName}: Occupied${(session?.licensePlate && canViewLicensePlate) ? ` - ${session.licensePlate}` : ''}`
               : isHeld
-                ? `${slotName}: Holding`
+                ? `${slotName}: ${liveReason === 'booked' ? 'Booked' : 'Holding'}`
                 : hasName
                   ? `${slotName}: Available`
                   : 'Unavailable slot';
@@ -87,13 +91,13 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
         borderColor: finalBorderColor,
         backgroundColor: finalBgColor,
         transition: slotTransition,
-        cursor: readOnly ? 'default' : ((((isOccupied || isHeld) && !canSelectDespiteLiveState) || isMaintenance || isReserved || isIncompatible || !hasName) ? 'not-allowed' : 'pointer'),
-        opacity: (!hasName || isIncompatible) ? 0.3 : 1
+        cursor: readOnly ? 'default' : ((((isOccupied || isHeld) && !canSelectDespiteLiveState) || isMaintenance || isReserved || isIncompatible || unavailable) ? 'not-allowed' : 'pointer'),
+        opacity: unavailable || isIncompatible ? 0.3 : 1
       }}
       className={`border-[2px] border-solid rounded-lg shadow-sm flex flex-col items-center justify-center ${isSelected ? 'ring-4 ring-cyan-500/50 shadow-cyan-500/50' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
-        if (!hasName || readOnly) return;
+        if (unavailable || readOnly) return;
         if ((!isOccupied || canSelectDespiteLiveState) && !isMaintenance && !isReserved
           && (!isHeld || canSelectDespiteLiveState) && !isIncompatible && onSelectSlot) {
           onSelectSlot({ id: slotName, type: el.type }, floorId);
@@ -102,7 +106,7 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
       <span className={`text-[10px] font-bold ${isOccupied ? 'mb-0.5' : 'mb-1'}`} style={{ color: textColor, transform: 'translateZ(2px)' }}>
         {hasName ? el.name : ''}
       </span>
-      {isOccupied && canViewLicensePlate && (
+      {isOccupied && canViewLicensePlate && session?.licensePlate && (
         <div className="bg-white border border-gray-400 text-black px-1 py-0.5 mx-1 rounded-[3px] text-[7px] font-black uppercase tracking-tighter shadow-sm mb-0.5 w-[90%] text-center overflow-hidden text-ellipsis whitespace-nowrap" style={{ transform: 'translateZ(3px)' }}>
           {session.licensePlate}
         </div>
@@ -112,7 +116,7 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
   );
 });
 
-export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect, activeSessions = [], dbSlots = [], availableSlots = null, activeHolds = [], onSelectSlot, selectedSlotId, vehicleType = '', allowScheduledAvailabilityOverride = false, is2DMode = false, hideUI = false, theme = 'dark', initialZoom, staticFit = false, readOnly = false }) {
+export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect, activeSessions = [], dbSlots = [], availableSlots = null, activeHolds = [], liveSlots = null, onSelectSlot, selectedSlotId, vehicleType = '', allowScheduledAvailabilityOverride = false, is2DMode = false, hideUI = false, theme = 'dark', initialZoom, staticFit = false, readOnly = false }) {
   const isLight = theme === 'light';
 
   const [camera, setCamera] = useState(
@@ -160,6 +164,9 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
     }, {});
   }, [availableSlots]);
 
+  const liveSlotMap = useMemo(() => liveSlots && new Map(
+    liveSlots.map((slot) => [`${slot.floorId}-${String(slot.id).trim().toUpperCase()}`, slot]),
+  ), [liveSlots]);
 
   const handleSelectSlot = useCallback((slot, floorId) => {
     if (onSelectSlot) {
@@ -310,6 +317,32 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
         const slotCode = hasName ? el.name : el.id;
         const sessionKey = `${floorId}-${slotCode}`;
         const occupiedSession = sessionMap[sessionKey];
+        const isSelected = Array.isArray(selectedSlotId)
+          ? selectedSlotId.includes(`${floorId}:${slotCode}`)
+          : (selectedSlotId === slotCode || selectedSlotId === `${floorId}:${slotCode}`);
+        if (liveSlotMap) {
+          const slot = liveSlotMap.get(`${floorId}-${String(slotCode).trim().toUpperCase()}`);
+          const reason = slot?.availabilityReason || 'unknown';
+          const isBookable = slot && isLiveParkingSlotBookable(slot, vehicleType === 'electric_car');
+          return (
+            <SlotElement
+              key={el.id}
+              floorId={floorId}
+              style={style}
+              el={el}
+              liveReason={reason}
+              isOccupied={reason === 'occupied'}
+              isMaintenance={reason === 'maintenance'}
+              isReserved={reason === 'dedicated'}
+              isHeld={reason === 'booked' || reason === 'held'}
+              isSelected={Boolean(isBookable && isSelected)}
+              isIncompatible={reason === 'available' && !isBookable}
+              canViewLicensePlate={canViewLicensePlate}
+              onSelectSlot={handleSelectSlot}
+              readOnly={readOnly}
+            />
+          );
+        }
 
         const dbSlot = dbSlotMap[`${floorId}-${slotCode}`];
         const isMaintenance = dbSlot?.status === 'maintenance';
@@ -344,10 +377,6 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
             isHeld = true;
           }
         }
-
-        const isSelected = Array.isArray(selectedSlotId)
-          ? selectedSlotId.includes(`${floorId}:${slotCode}`)
-          : (selectedSlotId === slotCode || selectedSlotId === `${floorId}:${slotCode}`);
 
         return (
           <SlotElement

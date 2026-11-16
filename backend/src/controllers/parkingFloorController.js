@@ -6,6 +6,7 @@ const Booking = require("../models/Booking");
 const MembershipSlotEntitlement = require("../models/MembershipSlotEntitlement");
 const AdminActionLog = require("../models/AdminActionLog");
 const { getVipFloorAvailability } = require('../services/vipFloorAvailabilityService');
+const { getLiveParkingMap } = require('../services/liveParkingMapService');
 
 exports.getVipFloorAvailability = async (req, res) => {
   if (!require('mongoose').isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid floor ID' });
@@ -434,104 +435,11 @@ exports.getFloorSlots = async (req, res) => {
   }
 };
 
-// Get Live Map Data (Unified slots across all floors with real-time status)
 exports.getLiveMapData = async (req, res) => {
   try {
-    const BookingHold = require('../models/BookingHold');
-    const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
-
-    const slots = await Slot.find()
-      .select('-aiObservation.fullSnapshot -aiObservation.evidenceSnapshot')
-      .populate('zoneID', 'zoneName zoneType')
-      .populate('floorID', 'name floorNumber status acceptsBookings')
-      .populate('reservedFor', '_id')
-      .populate('reservedByEntitlementId', 'ownerId status expireAt')
-      .lean();
-
-    const now = new Date();
-    const next2Hours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-
-    const activeSessions = await Session.find({ status: 'active', parkingSlot: { $ne: null } });
-    const upcomingBookings = await Booking.find({
-      status: { $in: ['PAID', 'PAUSED'] },
-      scheduledStart: { $lt: next2Hours },
-      scheduledEnd: { $gt: now }
-    });
-    const activeHolds = await BookingHold.find({ status: 'active', expiresAt: { $gt: now } });
-    const maintenanceLogs = await SlotMaintenanceLog.find({
-      startTime: { $lte: now },
-      $or: [{ endTime: { $gte: now } }, { endTime: null }]
-    }).select('slotID').lean();
-
-    // Hash maps for quick lookup
-    const slotKey = (floorId, slotCode) => `${String(floorId || '')}:${String(slotCode || '').toUpperCase()}`;
-    const occupiedSlots = new Set(activeSessions.map(s => slotKey(s.floorId, s.parkingSlot)));
-    const bookedSlots = new Set(upcomingBookings.map(b => slotKey(b.floorId, b.parkingSlot)));
-    const heldSlots = new Set(activeHolds.map(h => slotKey(h.floorId, h.slotCode)));
-    const maintenanceSet = new Set(maintenanceLogs.map(m => String(m.slotID || '')));
-    const subscriptionSlots = new Set(
-      slots
-        .filter((slot) => {
-          if (slot.reservedFor && slot.reservedFor._id) return true;
-          if (slot.reservedByEntitlementId && slot.reservedByEntitlementId.ownerId) {
-             const ent = slot.reservedByEntitlementId;
-             if (['active', 'transfer_locked'].includes(ent.status) && new Date(ent.expireAt) > now) {
-               return true;
-             }
-          }
-          return false;
-        })
-        .map((slot) => String(slot._id))
-    );
-
-    const mapData = slots.map(slot => {
-      let status = 'available';
-      const currentSlotKey = slotKey(slot.floorID?._id || slot.floorID, slot.slotNumber);
-      const isPhysicallyOccupied = Boolean(slot.aiObservation?.occupied);
-
-      if (slot.status === 'maintenance' || maintenanceSet.has(String(slot._id))) {
-        status = 'maintenance';
-      } else if (occupiedSlots.has(currentSlotKey) || slot.status === 'occupied' || isPhysicallyOccupied) {
-        status = 'occupied';
-      } else if (bookedSlots.has(currentSlotKey) || heldSlots.has(currentSlotKey) || subscriptionSlots.has(String(slot._id))) {
-        status = 'reserved';
-      }
-
-      let type = 'standard';
-      if (slot.slotType === 'vip') type = 'vip';
-      else if (slot.slotType === 'ev') type = 'ev';
-      else if (slot.slotType === 'moto') type = 'moto';
-
-      const acceptsBookings = Boolean(slot.floorID && slot.floorID.acceptsBookings !== false
-        && !['draft', 'archived'].includes(slot.floorID.status));
-      let availabilityReason = status;
-      if (status === 'reserved') {
-        availabilityReason = subscriptionSlots.has(String(slot._id)) || type === 'vip' ? 'dedicated'
-          : bookedSlots.has(currentSlotKey) ? 'booked' : 'held';
-      } else if (status === 'available') {
-        if (!acceptsBookings) availabilityReason = 'closed';
-        else if (type === 'vip') availabilityReason = 'dedicated';
-      }
-
-      return {
-        id: slot.slotNumber,
-        floorId: slot.floorID ? slot.floorID._id : null,
-        floorName: slot.floorID ? slot.floorID.name : '',
-        floorNumber: slot.floorID?.floorNumber,
-        zone: slot.zoneID ? slot.zoneID.zoneName : '',
-        type,
-        status,
-        availabilityReason,
-        acceptsBookings,
-        retired: Boolean(slot.retired),
-        detectedPlate: slot.aiObservation?.detectedPlate || null,
-        isViolation: Boolean(slot.aiObservation?.isViolation),
-        violationType: slot.aiObservation?.violationType || null,
-        price: type === 'vip' ? '30,000₫/h' : type === 'ev' ? '20,000₫/h + EV' : '10,000₫/h'
-      };
-    });
-
-    res.status(200).json({ success: true, data: mapData });
+    const data = await getLiveParkingMap();
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

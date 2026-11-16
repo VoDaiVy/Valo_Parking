@@ -12,6 +12,7 @@ export const packageDurationLabel = (pkg) => {
 
 export const packageSalesAvailability = (pkg, now = Date.now()) => {
   if (pkg?.isActive === false) return { available: false, message: 'This package is inactive.' };
+  if (pkg?.salesAvailability?.state === 'requires_configuration') return pkg.salesAvailability;
   if (pkg?.salesStartAt && new Date(pkg.salesStartAt).getTime() > now) return { available: false, message: 'Sales have not started yet.' };
   if (pkg?.salesEndAt && new Date(pkg.salesEndAt).getTime() <= now) return { available: false, message: 'Sales have ended. Existing benefits remain valid.' };
   return (pkg?.salesStartAt || pkg?.salesEndAt ? null : pkg?.salesAvailability) || { available: true, message: 'Available for purchase.' };

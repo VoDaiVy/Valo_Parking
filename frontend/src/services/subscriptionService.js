@@ -17,8 +17,10 @@ export const getMembershipDetail = (kind, id) =>
 export const getMembershipRenewalHistory = (kind, id, page = 1) =>
   apiFetch(`${detailPath(kind, id)}/renewals?page=${page}&limit=10`, { headers: authHeader() });
 
-export const getTicketPackages = async () => {
-  return apiFetch('/ticket-packages/active?includeHourly=true&includeUnavailable=true', {
+export const getTicketPackages = async ({ includeLegacy = false } = {}) => {
+  const query = new URLSearchParams({ includeHourly: 'true', includeUnavailable: 'true' });
+  if (includeLegacy) query.set('includeLegacy', 'true');
+  return apiFetch(`/ticket-packages/active?${query}`, {
     method: 'GET',
     headers: authHeader(),
   });

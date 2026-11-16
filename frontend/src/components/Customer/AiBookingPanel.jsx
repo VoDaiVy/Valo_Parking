@@ -49,7 +49,7 @@ import {
   addBookingCalendarDays,
   alignBookingClockValue,
 } from '../../utils/bookingTimePolicy';
-import { bookingStatusReply, detectDirectParkingLookup, parkingAvailabilityReply, parkingStatusReply, slotStatusReply } from '../../utils/aiParkingLookup';
+import { detectDirectParkingLookup, getLiveParkingSlots, isLiveParkingSlotBookable, parkingAvailabilityReply, parkingStatusReply, slotStatusReply } from '../../utils/aiParkingLookup';
 import {
   aiBookingStepLabel,
   chooseNewestAiBookingSession,
@@ -245,6 +245,10 @@ export default function AiBookingPanel({
   const [mapAvailableSlots, setMapAvailableSlots] = useState(null);
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState('');
+  const [liveMapSlots, setLiveMapSlots] = useState(null);
+  const [liveMapError, setLiveMapError] = useState('');
+  const [liveMapLoading, setLiveMapLoading] = useState(false);
+  const [liveMapView, setLiveMapView] = useState(null);
   const [mapTargetIndex, setMapTargetIndex] = useState(0);
   const [showVipModal, setShowVipModal] = useState(false);
   const [services, setServices] = useState([]);
@@ -278,6 +282,7 @@ export default function AiBookingPanel({
   const ownerKeyRef = useRef(getAiBookingOwnerKey());
   const confirmCreationRef = useRef(null);
   const mapRequestRef = useRef(0);
+  const liveMapRequestRef = useRef(null);
   const languageRef = useRef(initialLanguage);
   const navigatingRef = useRef(false);
   const replyQueueRef = useRef(Promise.resolve());
@@ -316,6 +321,10 @@ export default function AiBookingPanel({
     || toVietnamBookingIso(activeMapTarget?.startDate, activeMapTarget?.startTime) || '');
   const mapEndTime = String(previewMapItem?.endTime
     || toVietnamBookingIso(activeMapTarget?.endDate || activeMapTarget?.startDate, activeMapTarget?.endTime) || '');
+  const mapRangeKey = mapStartTime && mapEndTime && new Date(mapEndTime) > new Date(mapStartTime)
+    ? `${mapStartTime}/${mapEndTime}` : '';
+  const showLiveMap = !mapRangeKey || liveMapView?.rangeKey === mapRangeKey;
+  const hasMapFloor = Boolean(mapFloorId);
   const previewSelectedMapSlots = (preview?.items || []).map((item) => `${item.floorId}:${item.slotCode}`);
   const draftSelectedMapSlots = !previewSelectedMapSlots.length && Array.isArray(mapAvailableSlots)
     ? mapSelectionTargets.map((target) => mapAvailableSlots.find((slot) => (
@@ -329,6 +338,27 @@ export default function AiBookingPanel({
   const targetVehicle = vehicles.find((vehicle) => String(vehicle.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()
     === String(activeMapTarget?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase());
   const mapVehicleType = draft.vehicleType || targetVehicle?.vehicleType || targetVehicle?.type || 'car';
+  const liveMapVehicleType = liveMapView?.rangeKey === mapRangeKey && typeof liveMapView.electricCar === 'boolean'
+    ? (liveMapView.electricCar ? 'electric_car' : 'car')
+    : mapVehicleType;
+
+  const refreshLiveMap = useCallback(() => {
+    if (liveMapRequestRef.current) return liveMapRequestRef.current;
+    setLiveMapLoading(true);
+    liveMapRequestRef.current = getLiveMapData().then((response) => {
+      setLiveMapSlots(getLiveParkingSlots(response));
+      setLiveMapError('');
+      return response;
+    }).catch((error) => {
+      setLiveMapSlots(null);
+      setLiveMapError('Unable to load the current parking status. Try refreshing the map.');
+      throw error;
+    }).finally(() => {
+      liveMapRequestRef.current = null;
+      setLiveMapLoading(false);
+    });
+    return liveMapRequestRef.current;
+  }, []);
 
   const refreshMapAvailability = useCallback(async ({ silent = false } = {}) => {
     if (!mapStartTime || !mapEndTime || new Date(mapEndTime) <= new Date(mapStartTime)) {
@@ -362,6 +392,19 @@ export default function AiBookingPanel({
       if (request === mapRequestRef.current && !silent) setMapLoading(false);
     }
   }, [mapEndTime, mapStartTime]);
+
+  useEffect(() => {
+    if (!showLiveMap || !hasMapFloor) return;
+    const refresh = () => { refreshLiveMap().catch(() => {}); };
+    const initialTimer = window.setTimeout(refresh, 0);
+    const intervalId = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [refreshLiveMap, showLiveMap, hasMapFloor]);
 
   useEffect(() => {
     const selectedFloorId = previewMapItem?.floorId;
@@ -1457,19 +1500,15 @@ export default function AiBookingPanel({
       const directLookup = detectDirectParkingLookup(text);
       // Booking lookups use the server's account/context-aware continuation.
       if (directLookup && directLookup.intent !== 'CHECK_BOOKING_STATUS') {
-        const response = directLookup.intent === 'CHECK_BOOKING_STATUS'
-          ? await getMyBookings()
-          : directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS'
-            ? await getMyParkingHistory()
-            : await getLiveMapData();
-        const message = directLookup.intent === 'CHECK_BOOKING_STATUS'
-          ? bookingStatusReply(response, directLookup.licensePlate)
-          : directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS'
-            ? parkingStatusReply(response, directLookup.licensePlate)
-            : directLookup.intent === 'CHECK_SLOT_STATUS'
-              ? slotStatusReply(response, directLookup.slotCode, directLookup.floorName, languageRef.current)
-              : parkingAvailabilityReply(response, directLookup.floorName, { ...directLookup, language: languageRef.current });
+        const isVehicleLookup = directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS';
+        const response = isVehicleLookup ? await getMyParkingHistory() : await refreshLiveMap();
+        const message = isVehicleLookup
+          ? parkingStatusReply(response, directLookup.licensePlate)
+          : directLookup.intent === 'CHECK_SLOT_STATUS'
+            ? slotStatusReply(response, directLookup.slotCode, directLookup.floorName, languageRef.current)
+            : parkingAvailabilityReply(response, directLookup.floorName, { ...directLookup, language: languageRef.current });
         if (request !== requestRef.current) return;
+        if (!isVehicleLookup) setLiveMapView({ rangeKey: mapRangeKey, electricCar: directLookup.electricCar });
         const localizedMessage = localizeAiBookingMessage(message, languageRef.current);
         restorePreviousConversationState();
         updateDraft((currentDraft) => ({ ...currentDraft, assistantContext: {
@@ -1552,9 +1591,13 @@ export default function AiBookingPanel({
       let localizedAssistantMessage = '';
       let attachedServices;
       if (assistantResult) {
+        const canonicalIntent = result.data?.data?.canonicalIntent || nextIntent;
+        if (['CHECK_PARKING_AVAILABILITY', 'CHECK_SLOT_STATUS'].includes(canonicalIntent)) {
+          setLiveMapView({ rangeKey: mapRangeKey });
+        }
         localizedAssistantMessage = localizeAiBookingMessage(assistantResult.message, languageRef.current);
         setAssistantInfo({
-          intent: result.data?.data?.canonicalIntent || nextIntent,
+          intent: canonicalIntent,
           intents: result.data?.data?.intents || [nextIntent],
           message: localizedAssistantMessage,
         });
@@ -2091,7 +2134,10 @@ export default function AiBookingPanel({
   const resumeExpired = resumeCandidate?.status === 'EXPIRED';
   const resumeIsBooking = ['CREATE_BOOKING', 'CHECK_AVAILABILITY', 'CANCEL_BOOKING', 'MODIFY_BOOKING', 'VIEW_BOOKING']
     .includes(resumeCandidate?.intent);
-  const mapFloorAvailableCount = Array.isArray(mapAvailableSlots)
+  const mapFloorAvailableCount = showLiveMap
+    ? liveMapSlots?.filter((slot) => String(slot.floorId) === String(mapFloorId)
+      && isLiveParkingSlotBookable(slot, liveMapVehicleType === 'electric_car')).length ?? null
+    : Array.isArray(mapAvailableSlots)
     ? mapAvailableSlots.filter((slot) => {
       if (mapFloorId && String(slot.floorId) !== String(mapFloorId)) return false;
       if (slot.isDedicatedToCurrentUser) return true;
@@ -2101,6 +2147,8 @@ export default function AiBookingPanel({
     : null;
   const mapRangeStart = mapStartTime ? vnParts(mapStartTime) : null;
   const mapRangeEnd = mapEndTime ? vnParts(mapEndTime) : null;
+  const mapRefreshing = showLiveMap ? liveMapLoading : mapLoading;
+  const displayedMapError = showLiveMap ? liveMapError : mapError;
   const selectedPhaseLabels = englishPhaseLabels;
   const selectedAssistantIntentLabels = englishAssistantIntentLabels;
   const serviceVehicleCount = Math.max(
@@ -2397,22 +2445,27 @@ export default function AiBookingPanel({
           <div>
             <div className="flex items-center gap-2">
               <MapPin size={20} className="text-cyan-500" />
-              <h2 className="text-lg font-black text-gray-900">Live parking map</h2>
+              <h2 className="text-lg font-black text-gray-900">{showLiveMap ? 'Live parking map' : 'Parking map for your booking'}</h2>
             </div>
             <p className="mt-1 text-sm font-medium text-gray-500">
-              {mapRangeStart && mapRangeEnd
+              {!showLiveMap && mapRangeStart && mapRangeEnd
                 ? `Availability from ${dayText(mapRangeStart.date)} ${mapRangeStart.time} to ${dayText(mapRangeEnd.date)} ${mapRangeEnd.time}. Select an available space; your selection is highlighted in blue.`
-                : 'Enter the booking dates and times to see availability. Current parking occupancy continues to update live.'}
+                : 'Current availability on the selected floor.'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {mapFloorAvailableCount !== null && (
               <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-600">
                 {mapFloorAvailableCount} spaces available on this floor
               </div>
             )}
-            <button type="button" onClick={() => refreshMapAvailability()} disabled={mapLoading || !mapStartTime || !mapEndTime} className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-600 transition hover:border-cyan-300 hover:text-cyan-600 disabled:opacity-40" aria-label="Refresh parking map">
-              <RefreshCw size={17} className={mapLoading ? 'animate-spin' : ''} />
+            {mapRangeKey && (
+              <button type="button" onClick={() => setLiveMapView(showLiveMap ? null : { rangeKey: mapRangeKey })} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-600 hover:border-cyan-300">
+                {showLiveMap ? 'Show booking time' : 'Show current availability'}
+              </button>
+            )}
+            <button type="button" onClick={() => showLiveMap ? refreshLiveMap().catch(() => {}) : refreshMapAvailability()} disabled={mapRefreshing || !mapFloorId} className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-600 transition hover:border-cyan-300 hover:text-cyan-600 disabled:opacity-40" aria-label="Refresh parking map">
+              <RefreshCw size={17} className={mapRefreshing ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
@@ -2428,7 +2481,7 @@ export default function AiBookingPanel({
           </div>
         )}
 
-        {mapError && <div role="alert" className="mx-2 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">{mapError}</div>}
+        {displayedMapError && <div role="alert" className="mx-2 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">{displayedMapError}</div>}
 
         <div className="relative h-[500px] w-full overflow-hidden rounded-2xl border border-[#0b0e16] bg-[#0b0e16] shadow-inner">
           {mapFloors.length > 0 && (
@@ -2441,7 +2494,7 @@ export default function AiBookingPanel({
             </div>
           )}
 
-          {mapLoading && (
+          {mapRefreshing && (!showLiveMap || liveMapSlots === null) && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0b0e16]/70 text-center backdrop-blur-sm">
               <Loader2 size={36} className="mb-3 animate-spin text-cyan-400" />
               <p className="font-black text-white">Updating availability...</p>
@@ -2456,15 +2509,16 @@ export default function AiBookingPanel({
               activeSessions={mapActiveSessions}
               dbSlots={mapDbSlots}
               activeHolds={mapActiveHolds}
+              liveSlots={showLiveMap ? liveMapSlots || [] : null}
               availableSlots={mapAvailableSlots}
               selectedSlotId={selectedMapSlots}
               onSelectSlot={selectMapSlot}
-              vehicleType={mapVehicleType}
+              vehicleType={showLiveMap ? liveMapVehicleType : mapVehicleType}
               allowScheduledAvailabilityOverride
               is2DMode
               hideUI
               staticFit
-              readOnly={busy}
+              readOnly={busy || (showLiveMap && Boolean(mapRangeKey))}
               theme="dark"
             />
           ) : (
@@ -2482,6 +2536,7 @@ export default function AiBookingPanel({
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-cyan-400 bg-cyan-500" />Selected</span>
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500"><i className="h-3.5 w-3.5 rounded-sm border border-yellow-500 bg-yellow-100" />VIP</span>
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-orange-500"><i className="h-3.5 w-3.5 rounded-sm border border-orange-500 bg-orange-100" />Held/booked</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-red-500 bg-red-200" />Maintenance</span>
             </div>
           </div>
         </div>

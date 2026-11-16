@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
-const { packageDuration, salesAvailability } = require('../services/ticketPackageTerms');
+const { packageDuration, catalogSalesAvailability } = require('../services/ticketPackageTerms');
 const { getExplorePackages, getExplorePackage } = require('../services/ticketPackageExploreService');
 const {
   MEMBERSHIP_PACKAGE_TYPES,
@@ -32,20 +32,21 @@ exports.getActivePackages = async (req, res) => {
     await require('../services/ticketPackageStockService').refreshAll();
     const packages = await TicketPackage.find({
       isActive: true,
-      service: { $in: ['RESERVED_FREE', 'RESERVED_PAID'] },
+      ...(req.query.includeLegacy === 'true' ? {} : { service: { $in: ['RESERVED_FREE', 'RESERVED_PAID'] } }),
       type: { $in: req.query.includeHourly === 'true' ? ['hourly', ...MEMBERSHIP_PACKAGE_TYPES] : MEMBERSHIP_PACKAGE_TYPES },
     }).sort({ type: -1, price: 1 });
     const pricedPackages = packages.map((pkg) => {
       const base = pkg.toObject();
+      const salesAvailability = catalogSalesAvailability(pkg);
+      const hasParkingService = salesAvailability.state !== 'requires_configuration';
       const common = {
         duration: packageDuration(pkg),
-        salesAvailability: salesAvailability(pkg),
-        // Compatibility only: these packages still use the reserved-space workflow.
-        service: pkg.service,
-        serviceConfiguration: pkg.serviceConfiguration,
+        salesAvailability,
         benefits: [
-          'Reserved parking space for the selected vehicle',
-          pkg.service === 'RESERVED_FREE' ? 'Base parking included at the registered space while effective' : 'Parking fees charged at standard rates',
+          ...(hasParkingService ? [
+            'Reserved parking space for the selected vehicle',
+            pkg.service === 'RESERVED_FREE' ? 'Base parking included at the registered space while effective' : 'Parking fees charged at standard rates',
+          ] : []),
           ...(pkg.benefitsVersion >= 1 ? getPackageBenefits(pkg) : []),
           ...(pkg.optionalServices || []).map((item) => `${item.name} (optional, paid separately)`),
         ],

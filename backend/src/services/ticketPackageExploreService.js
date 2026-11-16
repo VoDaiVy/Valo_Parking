@@ -1,6 +1,6 @@
 const TicketPackage = require('../models/TicketPackage');
 const Subscription = require('../models/Subscription');
-const { packageDuration, salesAvailability } = require('./ticketPackageTerms');
+const { packageDuration, salesAvailability, catalogSalesAvailability } = require('./ticketPackageTerms');
 const { isObjectIdOrHexString } = require('mongoose');
 const {
   PACKAGE_TYPES,
@@ -37,7 +37,7 @@ function parseExploreQuery(query = {}) {
   };
 }
 
-function toPublicPackage(pkg) {
+function toPublicPackage(pkg, now) {
   const membership = isMembershipPackageType(pkg.type);
   return {
     _id: String(pkg._id),
@@ -53,7 +53,7 @@ function toPublicPackage(pkg) {
     durationMinutes: pkg.durationMinutes ?? null,
     duration: packageDuration(pkg),
     service: pkg.service,
-    salesAvailability: salesAvailability(pkg),
+    salesAvailability: membership ? catalogSalesAvailability(pkg, now) : salesAvailability(pkg, now),
     benefitsVersion: pkg.benefitsVersion || 0,
     serviceBenefits: pkg.serviceBenefits || [],
     ...(membership ? {
@@ -78,7 +78,7 @@ function buildExploreCatalog(packages, purchaseCounts, options, now) {
     if (!candidates.length) return [];
     const winner = candidates[0];
     return [{
-      ...toPublicPackage(winner),
+      ...toPublicPackage(winner, now),
       selectionReason: (purchaseCounts.get(String(winner._id)) || 0) > 0 ? 'bestseller' : 'recommended',
     }];
   });
@@ -89,7 +89,7 @@ function buildExploreCatalog(packages, purchaseCounts, options, now) {
   const offset = (options.page - 1) * options.limit;
   return {
     featured,
-    items: remaining.slice(offset, offset + options.limit).map(toPublicPackage),
+    items: remaining.slice(offset, offset + options.limit).map(pkg => toPublicPackage(pkg, now)),
     pagination: {
       page: options.page,
       limit: options.limit,

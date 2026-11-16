@@ -1,15 +1,14 @@
 const Booking = require('../models/Booking');
-const BookingHold = require('../models/BookingHold');
 const Policy = require('../models/Policy');
 const RefundRuleVersion = require('../models/RefundRuleVersion');
 const Service = require('../models/Service');
 const Session = require('../models/Session');
-const Slot = require('../models/Slot');
 const UserVoucher = require('../models/UserVoucher');
 const Vehicle = require('../models/Vehicle');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
 const pricingEngine = require('./pricingEngine');
+const { getLiveParkingMap } = require('./liveParkingMapService');
 const { extractLicensePlates, parseBookingUtterance } = require('./bookingUtteranceParser');
 const { isValidCarLicensePlate, normalizeLicensePlate } = require('../utils/licensePlateUtils');
 
@@ -41,7 +40,6 @@ const vnTime = (value) => formatDate(value, {
 });
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đồng`;
 const idOf = (value) => String(value?._id || value || '');
-const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const matches = (text, patterns) => patterns.some((pattern) => pattern.test(text));
 
@@ -616,79 +614,61 @@ async function handleBookingIntent(intent, parsed, userId, now) {
   };
 }
 
+function matchesLiveParkingScope(slot, { floorName, zoneName }) {
+  if (slot.retired) return false;
+  const floor = fold(floorName).replace(/^(tang|floor)\s*/, '');
+  const zone = fold(zoneName).replace(/^(zone|khu)\s+/, '');
+  const actualFloor = fold(slot.floorName).replace(/^(tang|floor)\s*/, '');
+  const actualFloorNumber = actualFloor.match(/\b([a-z]?\d+)\b/)?.[1];
+  const floorMatches = !floor || [actualFloor, actualFloorNumber, String(slot.floorNumber ?? '')].includes(floor);
+  return floorMatches && (!zone || fold(slot.zone).replace(/^(zone|khu)\s+/, '') === zone);
+}
+
 async function handleSlotStatus(parsed, now) {
-  const { slotCode, floorName, zoneName } = parsed.entities;
+  const { slotCode } = parsed.entities;
   if (!slotCode) return { message: 'Bạn muốn kiểm tra ô nào? Ví dụ: “Ô A10 còn trống không?”.', context: {} };
-  const slots = await Slot.find({ retired: { $ne: true }, slotNumber: new RegExp(`^${escapeRegex(slotCode)}$`, 'i') })
-    .populate('floorID', 'name floorNumber').populate('zoneID', 'zoneName').lean();
-  const filtered = slots.filter((slot) => (!floorName || fold(slot.floorID?.name).includes(fold(floorName))
-    || String(slot.floorID?.floorNumber) === String(floorName).replace(/\D/g, ''))
-    && (!zoneName || fold(slot.zoneID?.zoneName) === fold(zoneName)));
+  const slots = await getLiveParkingMap(now);
+  const normalizeCode = (code) => String(code || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+  const code = normalizeCode(slotCode);
+  const filtered = slots.filter((slot) => normalizeCode(slot.id) === code && matchesLiveParkingScope(slot, parsed.entities));
   if (!filtered.length) return { message: `Không tìm thấy ô ${slotCode}.`, context: { slotCode } };
   if (filtered.length > 1) {
-    return { message: `Có nhiều ô ${slotCode}. Hãy nói thêm tầng: ${filtered.map((slot) => slot.floorID?.name).filter(Boolean).join(', ')}.`, context: { slotCode } };
+    return { message: `Có nhiều ô ${slotCode}. Hãy nói thêm tầng: ${filtered.map((slot) => slot.floorName).filter(Boolean).join(', ')}.`, context: { slotCode } };
   }
   const slot = filtered[0];
-  const floorId = slot.floorID?._id || slot.floorID;
-  const [session, booking, hold] = await Promise.all([
-    Session.findOne({ status: 'active', floorId, parkingSlot: new RegExp(`^${escapeRegex(slot.slotNumber)}$`, 'i') }).lean(),
-    Booking.findOne({ floorId, parkingSlot: new RegExp(`^${escapeRegex(slot.slotNumber)}$`, 'i'), status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] }, scheduledStart: { $lte: now }, scheduledEnd: { $gt: now } }).lean(),
-    BookingHold.findOne({ floorId, slotCode: slot.slotNumber.toUpperCase(), status: 'active', expiresAt: { $gt: now }, startTime: { $lte: now }, endTime: { $gt: now } }).lean(),
-  ]);
-  const reason = slot.status === 'maintenance' ? 'đang bảo trì'
-    : session || slot.status === 'occupied' || slot.aiObservation?.occupied ? 'đang có xe đỗ'
-      : slot.reservedFor || slot.reservedBySubscriptionId || slot.reservedByEntitlementId || slot.slotType === 'vip' ? 'là ô dành riêng theo gói'
-        : booking || slot.status === 'booked' ? 'đã có lượt đặt'
-          : hold ? 'đang được giữ tạm' : slot.status === 'available' ? 'đang trống' : 'chưa xác định trạng thái';
+  const reasons = {
+    maintenance: 'đang bảo trì',
+    occupied: 'đang có xe đỗ',
+    dedicated: 'là ô dành riêng theo gói',
+    booked: 'đã có lượt đặt',
+    held: 'đang được giữ tạm',
+    available: 'đang trống',
+    closed: 'không mở đặt chỗ',
+  };
+  const reason = reasons[slot.availabilityReason] || 'chưa xác định trạng thái';
   return {
-    message: `Ô ${slot.slotNumber}, ${slot.floorID?.name || 'chưa xác định tầng'} ${reason}.`,
-    context: { slotCode: slot.slotNumber, floorName: slot.floorID?.name || '', zoneName: slot.zoneID?.zoneName || '' },
+    message: `Ô ${slot.id}, ${slot.floorName || 'chưa xác định tầng'} ${reason}.`,
+    context: { slotCode: slot.id, floorName: slot.floorName, zoneName: slot.zone },
   };
 }
 
 async function handleLiveAvailability(parsed, now) {
-  const slots = await Slot.find({ retired: { $ne: true } }).populate('floorID', 'name floorNumber status acceptsBookings')
-    .populate('zoneID', 'zoneName').lean();
-  const matching = slots.filter((slot) => {
-    const slotType = fold(slot.slotType || 'hourly');
-    const compatibleType = parsed.entities.vehicleType === 'electric_car'
-      ? ['hourly', 'slot', 'standard', 'ev', 'slot-ev'].includes(slotType)
-      : ['hourly', 'slot', 'standard'].includes(slotType);
-    const floorMatches = !parsed.entities.floorName
-      || fold(slot.floorID?.name).includes(fold(parsed.entities.floorName))
-      || String(slot.floorID?.floorNumber) === String(parsed.entities.floorName).replace(/\D/g, '');
-    const zoneMatches = !parsed.entities.zoneName
-      || fold(slot.zoneID?.zoneName) === fold(parsed.entities.zoneName)
-      || fold(slot.zoneID?.zoneName).includes(fold(parsed.entities.zoneName));
-    return compatibleType && floorMatches && zoneMatches && slot.floorID?.acceptsBookings !== false
-      && !['draft', 'archived'].includes(slot.floorID?.status);
-  });
-  if (!matching.length) return { message: 'Không tìm thấy tầng hoặc khu đỗ phù hợp.', context: {} };
-  const floorIds = [...new Set(matching.map((slot) => idOf(slot.floorID)))];
-  const [sessions, bookings, holds] = await Promise.all([
-    Session.find({ status: 'active', floorId: { $in: floorIds } }).select('floorId parkingSlot').lean(),
-    Booking.find({ status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] }, floorId: { $in: floorIds }, scheduledStart: { $lte: now }, scheduledEnd: { $gt: now } }).select('floorId parkingSlot').lean(),
-    BookingHold.find({ status: 'active', expiresAt: { $gt: now }, floorId: { $in: floorIds }, startTime: { $lte: now }, endTime: { $gt: now } }).select('floorId slotCode').lean(),
-  ]);
-  const used = new Set([
-    ...sessions.map((item) => `${idOf(item.floorId)}:${String(item.parkingSlot).toUpperCase()}`),
-    ...bookings.map((item) => `${idOf(item.floorId)}:${String(item.parkingSlot).toUpperCase()}`),
-    ...holds.map((item) => `${idOf(item.floorId)}:${String(item.slotCode).toUpperCase()}`),
-  ]);
-  const available = matching.filter((slot) => slot.status === 'available' && !slot.aiObservation?.occupied
-    && !slot.reservedFor && !slot.reservedBySubscriptionId && !slot.reservedByEntitlementId
-    && !used.has(`${idOf(slot.floorID)}:${String(slot.slotNumber).toUpperCase()}`));
-  const floorLabel = parsed.entities.floorName
-    ? (/^(?:tầng|floor)\b/i.test(parsed.entities.floorName) ? parsed.entities.floorName : `tầng ${parsed.entities.floorName}`)
-    : '';
-  const label = [floorLabel, parsed.entities.zoneName && `khu ${parsed.entities.zoneName}`]
-    .filter(Boolean).join(', ') || 'bãi';
-  const suggestions = available.slice(0, 5).map((slot) => `${slot.floorID?.name} · ${slot.slotNumber}`);
+  const { floorName, zoneName, vehicleType } = parsed.entities;
+  const slots = await getLiveParkingMap(now);
+  const scoped = slots.filter((slot) => matchesLiveParkingScope(slot, parsed.entities));
+  if (!scoped.length) return { message: 'Không tìm thấy tầng hoặc khu đỗ phù hợp.', context: {} };
+  const isCompatible = (slot) => slot.acceptsBookings
+    && (slot.type === 'standard' || (vehicleType === 'electric_car' && slot.type === 'ev'));
+  const matching = scoped.filter(isCompatible);
+  const available = matching.filter((slot) => slot.availabilityReason === 'available');
+  const floorLabel = floorName ? (/^(?:tầng|floor)\b/i.test(floorName) ? floorName : `tầng ${floorName}`) : '';
+  const label = [floorLabel, zoneName && `khu ${zoneName}`].filter(Boolean).join(', ') || 'bãi';
+  const suggestions = available.slice(0, 5).map((slot) => `${slot.floorName} · ${slot.id}`);
   return {
     message: available.length
       ? `Hiện ${label} còn ${available.length}/${matching.length} ô trống. Gợi ý: ${suggestions.join(', ')}.`
       : `Hiện ${label} không còn chỗ phù hợp. Bạn có thể thử tầng, khu hoặc khung giờ khác.`,
-    context: { floorName: parsed.entities.floorName, zoneName: parsed.entities.zoneName },
+    context: { floorName, zoneName },
   };
 }
 

@@ -106,13 +106,10 @@ export default function ParkingMap() {
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [showForecastModal, setShowForecastModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [dbSlots, setDbSlots] = useState([]);
-
-  // Stats
   const totalSlots = liveData.length;
-  const availableSlotsCount = liveData.filter(s => s.status === 'available').length;
-  const maintenanceSlotsCount = liveData.filter(s => s.status === 'maintenance').length;
-  const occupiedSlotsCount = totalSlots - availableSlotsCount - maintenanceSlotsCount;
+  const availableSlotsCount = liveData.filter(s => s.availabilityReason === 'available').length;
+  const maintenanceSlotsCount = liveData.filter(s => s.availabilityReason === 'maintenance').length;
+  const occupiedSlotsCount = liveData.filter(s => s.availabilityReason === 'occupied').length;
 
   useEffect(() => {
     document.title = "Live Parking Map - Valo Parking";
@@ -125,15 +122,14 @@ export default function ParkingMap() {
         ]);
         
         if (floorsRes.ok && floorsRes.data?.data) {
-          setFloors(floorsRes.data.data);
-          if (floorsRes.data.data.length > 0) {
-            setCurrentFloorId(floorsRes.data.data[0]._id);
-          }
+          const nextFloors = floorsRes.data.data;
+          setFloors(nextFloors);
+          setCurrentFloorId(current => nextFloors.some(floor => floor._id === current) ? current : nextFloors[0]?._id ?? null);
         }
         
         if (liveRes.ok && liveRes.data?.data) {
           // Filter out slots without floorId to avoid rendering ghost slots
-          setLiveData(liveRes.data.data.filter(s => s.floorId));
+          setLiveData(liveRes.data.data.filter(s => s.floorId && !s.retired));
         }
       } catch (err) {
         console.error("Failed to fetch map data", err);
@@ -145,31 +141,15 @@ export default function ParkingMap() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (!currentFloorId) return;
-    const fetchDbSlots = async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors/${currentFloorId}/slots`);
-        const data = await res.json();
-        if (data.success) {
-          setDbSlots(data.data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch db slots", err);
-      }
-    };
-    fetchDbSlots();
-  }, [currentFloorId]);
-
-  const activeSessions = useMemo(() => {
-    return liveData.filter(s => s.status === 'occupied').map(s => ({
-      floorId: s.floorId,
-      parkingSlot: s.id
-    }));
-  }, [liveData]);
+  const dbSlots = useMemo(() => liveData.map(slot => ({
+    floorID: slot.floorId,
+    slotNumber: slot.id,
+    status: slot.status,
+    subscriptionType: slot.availabilityReason === 'dedicated' ? 'vip' : null,
+  })), [liveData]);
 
   const availableSlotsList = useMemo(() => {
-    return liveData.filter(s => s.status === 'available').map(s => ({
+    return liveData.filter(s => s.availabilityReason === 'available').map(s => ({
       floorId: s.floorId,
       slotCode: s.id
     }));
@@ -180,7 +160,7 @@ export default function ParkingMap() {
     const liveSlot = liveData.find(s => s.id === slotData.id && s.floorId === floorId);
     if (!liveSlot) return;
 
-    if (liveSlot.status !== 'available') return;
+    if (liveSlot.availabilityReason !== 'available') return;
 
     if (!user) {
       setSelectedSlot(liveSlot);
@@ -252,7 +232,6 @@ export default function ParkingMap() {
               currentFloorId={currentFloorId}
               onFloorSelect={setCurrentFloorId}
               onSlotClick={handleSlotSelect}
-              activeSessions={activeSessions}
               dbSlots={dbSlots}
               availableSlots={availableSlotsList}
               is2DMode={true}

@@ -204,6 +204,21 @@ test('a live slot lookup reports the specific reason and asks for a floor if the
   }
 });
 
+test('the live availability reply counts only the available spaces shown in the requested floor', () => {
+  const response = ok([
+    { id: 'B1', floorNumber: 1, status: 'booked', availabilityReason: 'available' },
+    { id: 'D1', floorNumber: 1, status: 'available', availabilityReason: 'booked' },
+    { id: 'D2', floorNumber: 1, status: 'available', availabilityReason: 'held' },
+    { id: 'D3', floorNumber: 1, status: 'available', availabilityReason: 'closed' },
+    { id: 'D4', floorNumber: 1, status: 'available', availabilityReason: 'available', retired: true },
+    { id: 'D5', floorNumber: 1, status: 'available', availabilityReason: 'available' },
+    { id: 'D6', floorNumber: 2, status: 'available', availabilityReason: 'available' },
+  ]);
+  assert.equal(parkingAvailabilityReply(response, '1'), 'Tầng 1 hiện còn 2 chỗ phù hợp. B1, D5.');
+  assert.match(slotStatusReply(response, 'B1', '1'), /đang trống/);
+  assert.match(slotStatusReply(response, 'D1', '1'), /đã có lượt đặt/);
+});
+
 test('an unbookable requested space is explained for the exact interval with a verified alternative', async () => {
   const requested = { ...draft, slotCode: 'B2', floorName: 'Floor 1', __language: 'vi' };
   const available = { floorId: 'floor-2', floorName: 'Floor 2', slotCode: 'C3', slotType: 'SLOT' };

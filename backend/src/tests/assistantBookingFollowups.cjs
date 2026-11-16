@@ -7,6 +7,11 @@ process.env.PAYOS_CHECKSUM_KEY ||= 'test-payos-checksum-key';
 const { parseBasicVietnameseBooking } = require('../services/aiBookingInterpreter');
 const { parseAssistantRequest, executeAssistantRequest } = require('../services/aiParkingAssistantService');
 const Booking = require('../models/Booking');
+const BookingHold = require('../models/BookingHold');
+const Session = require('../models/Session');
+const Slot = require('../models/Slot');
+const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
+const { getLiveParkingMap } = require('../services/liveParkingMapService');
 const Vehicle = require('../models/Vehicle');
 const Service = require('../models/Service');
 const UserVoucher = require('../models/UserVoucher');
@@ -462,4 +467,48 @@ test('malformed plate handling does not bypass unrelated-message protection for 
   const previous = { __intent: 'CREATE_BOOKING', requestedVehicleCount: 2, startDate: '2099-11-12', startTime: '08:00', endTime: '09:00' };
   const result = await interpretBookingMessage({ prompt: 'xe thứ nhất 43AII213 qwerty abcxyz', draft: previous, today: '2099-11-11', generateText: () => assert.fail('unrelated input must not need a network call') });
   assert.equal(result.unrecognized, true); assert.deepEqual(result.draft, previous);
+});
+
+test('the live map uses actual overlapping reservations instead of stale booked flags', async (t) => {
+  const now = new Date('2026-11-16T09:45:00Z');
+  const floor = { _id: 'floor-1', name: 'Floor 1', floorNumber: 1, acceptsBookings: true };
+  const makeSlot = (slotNumber, status = 'available', fields = {}) => ({
+    _id: slotNumber, slotNumber, status, floorID: floor, ...fields,
+  });
+  const findRows = (model, rows) => t.mock.method(model, 'find', () => ({
+    select() { return this; },
+    populate() { return this; },
+    async lean() { return rows; },
+  }));
+  findRows(Slot, [
+    makeSlot('B1', 'booked'),
+    makeSlot('D1', 'booked'),
+    makeSlot('D2'),
+    makeSlot('D3'),
+    makeSlot('D4'),
+    makeSlot('D5', 'available', { slotType: 'slot-vip' }),
+    makeSlot('D6', 'available', { retired: true }),
+  ]);
+  const bookingFind = findRows(Booking, [{ floorId: floor._id, parkingSlot: 'd1' }]);
+  const holdFind = findRows(BookingHold, [{ floorId: floor._id, slotCode: 'D2' }]);
+  findRows(Session, [{ floorId: floor._id, parkingSlot: 'D3' }]);
+  findRows(SlotMaintenanceLog, [{ slotID: 'D4' }]);
+
+  const rows = await getLiveParkingMap(now);
+  const upcoming = new Date('2026-11-16T11:45:00Z');
+  assert.deepEqual(bookingFind.mock.calls[0].arguments[0].scheduledStart, { $lt: upcoming });
+  assert.deepEqual(bookingFind.mock.calls[0].arguments[0].scheduledEnd, { $gt: now });
+  assert.deepEqual(holdFind.mock.calls[0].arguments[0], {
+    status: 'active', expiresAt: { $gt: now }, startTime: { $lt: upcoming }, endTime: { $gt: now },
+  });
+  assert.deepEqual(Object.fromEntries(rows.map(row => [row.id, row.availabilityReason])), {
+    B1: 'available', D1: 'booked', D2: 'held', D3: 'occupied',
+    D4: 'maintenance', D5: 'dedicated', D6: 'closed',
+  });
+  const assistant = await executeAssistantRequest({
+    intents: ['CHECK_PARKING_AVAILABILITY', 'CHECK_SLOT_STATUS'],
+    entities: { floorName: '1', slotCode: 'D1' },
+  }, 'unit-owner', now);
+  assert.match(assistant.message, /còn 1\/5 ô trống.*B1/);
+  assert.match(assistant.message, /Ô D1.*đã có lượt đặt/);
 });

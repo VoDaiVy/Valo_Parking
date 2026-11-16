@@ -87,6 +87,16 @@ const serviceConfiguration = (kind) => ['RESERVED_FREE', 'RESERVED_PAID'].includ
   auxiliaryServices: 'CHARGED_SEPARATELY',
 } : null;
 
+const catalogSalesAvailability = (pkg, now) => {
+  const availability = salesAvailability(pkg, now);
+  if (availability.state === 'inactive' || serviceConfiguration(pkg.service)) return availability;
+  return {
+    available: false,
+    state: 'requires_configuration',
+    message: 'Parking service configuration required',
+  };
+};
+
 const comparableDuration = (pkg) => {
   const duration = packageDuration(pkg);
   return duration.unit === 'days' ? { unit: 'hours', value: duration.value * 24 } : duration;
@@ -150,4 +160,4 @@ const assertPaymentMatches = (payment, orderCode, amount) => {
   }
 };
 
-module.exports = { serviceConfiguration, durationForType, packageDuration, restoreLegacyPurchasedDuration, addConfiguredDuration, salesAvailability, validatePackageConfiguration, canonicalConfiguration, configurationKey, snapshotPackage, assertPaymentMatches };
+module.exports = { serviceConfiguration, durationForType, packageDuration, restoreLegacyPurchasedDuration, addConfiguredDuration, salesAvailability, catalogSalesAvailability, validatePackageConfiguration, canonicalConfiguration, configurationKey, snapshotPackage, assertPaymentMatches };

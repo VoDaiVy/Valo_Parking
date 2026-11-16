@@ -115,7 +115,7 @@ export function bookingStatusReply(response, licensePlate) {
   return `${isActive ? 'Booking đang hiệu lực' : 'Xe không có booking đang hiệu lực. Lịch sử gần nhất'} của xe ${plate} ${bookingState(booking.status)}${time ? `, bắt đầu ${time}` : ''}${slot ? `, ô ${slot}` : ''}.`;
 }
 
-const liveSlots = (response) => {
+export const getLiveParkingSlots = (response) => {
   const slots = normalizeList(response);
   if (!slots || !Array.isArray(response.data.data)) throw new Error(response?.data?.message || 'Không thể kiểm tra chỗ trống lúc này.');
   return slots.filter(slot => !slot.retired);
@@ -130,8 +130,15 @@ const sameFloor = (slot, requested) => {
     || actualNumber === wanted || String(slot.floorNumber ?? '') === wanted;
 };
 
+export function isLiveParkingSlotBookable(slot, electricCar = false) {
+  const type = fold(slot.type || slot.slotType || 'standard');
+  return !slot.retired && slot.acceptsBookings !== false
+    && (slot.availabilityReason || slot.status) === 'available'
+    && (['standard', 'hourly', 'slot'].includes(type) || (electricCar && ['ev', 'slot ev'].includes(type)));
+}
+
 export function parkingAvailabilityReply(response, floorName = '', { zoneName = '', electricCar = false, language = 'vi' } = {}) {
-  const slots = liveSlots(response);
+  const slots = getLiveParkingSlots(response);
   const en = language === 'en';
   const scope = [floorName && `${en ? 'Floor' : 'Tầng'} ${floorName}`, zoneName && `${en ? 'Zone' : 'Khu'} ${zoneName.toUpperCase()}`].filter(Boolean).join(' · ');
   const scoped = slots.filter(slot => sameFloor(slot, floorName)
@@ -139,13 +146,9 @@ export function parkingAvailabilityReply(response, floorName = '', { zoneName = 
   if (!scoped.length) return scope
     ? en ? `No parking spaces were found for ${scope}. Check the floor or zone name.` : `Không tìm thấy ô đỗ tại ${scope}. Bạn kiểm tra lại tầng hoặc khu nhé.`
     : en ? 'No parking space data is available yet.' : 'Bãi xe chưa có dữ liệu ô đỗ.';
-  const isCompatible = slot => {
-    const type = fold(slot.type || slot.slotType || 'standard');
-    return slot.acceptsBookings !== false && (['standard', 'hourly', 'slot'].includes(type)
-      || (electricCar && ['ev', 'slot ev'].includes(type)));
-  };
-  const available = scoped.filter(slot => isCompatible(slot) && slot.status === 'available');
-  const suggestions = (available.length ? available : scope ? slots.filter(slot => isCompatible(slot) && slot.status === 'available') : [])
+  const isBookable = slot => isLiveParkingSlotBookable(slot, electricCar);
+  const available = scoped.filter(isBookable);
+  const suggestions = (available.length ? available : scope ? slots.filter(isBookable) : [])
     .slice(0, 3).map(slot => [slot.floorName, slot.id].filter(Boolean).join(' · ')).join(', ');
   if (!available.length) {
     const location = scope || (en ? 'The car park' : 'Bãi đỗ');
@@ -161,7 +164,7 @@ export function parkingAvailabilityReply(response, floorName = '', { zoneName = 
 export function slotStatusReply(response, slotCode, floorName = '', language = 'vi') {
   const code = String(slotCode || '').toUpperCase();
   const en = language === 'en';
-  const matching = liveSlots(response).filter((slot) => compactPlate(slot.id) === compactPlate(code) && sameFloor(slot, floorName));
+  const matching = getLiveParkingSlots(response).filter((slot) => compactPlate(slot.id) === compactPlate(code) && sameFloor(slot, floorName));
   if (!matching.length) return en
     ? `Space ${code} was not found${floorName ? ` on floor ${floorName}` : ''}. Check the space code or floor.`
     : `Không tìm thấy ô ${code}${floorName ? ` ở tầng ${floorName}` : ''}. Bạn kiểm tra lại mã ô hoặc tầng nhé.`;

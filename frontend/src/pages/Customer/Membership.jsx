@@ -245,7 +245,7 @@ export default function Membership() {
         setLoading(true);
         setCatalogError('');
         const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes, catalogRes] = await Promise.all([
-          getTicketPackages(),
+          getTicketPackages({ includeLegacy: true }),
           getMyVehicles(),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(r => r.json()),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/profile`, {
@@ -266,12 +266,12 @@ export default function Membership() {
           setPackages(pkgs);
           if (requestedPackageId) {
             const requestedPackage = pkgs.find((pkg) => pkg._id === requestedPackageId && pkg.isActive && isMembershipPackageType(pkg.type));
-            if (requestedPackage) {
+            if (requestedPackage && packageSalesAvailability(requestedPackage).available) {
               setSelectedPackage(requestedPackage);
               setSelectedSlots([]);
               setShowSlotModal(true);
             } else {
-              toast.error('This package is no longer available. Please choose another package.');
+              toast.error(requestedPackage ? packageSalesAvailability(requestedPackage).message : 'This package is no longer available. Please choose another package.');
             }
           }
         }
@@ -654,7 +654,7 @@ export default function Membership() {
                     </li>
                   )}
                 </ul>
-                {buttonState.disabled && identityVerified && purchaseEligibility?.legacyConflict ? renderLegacyNotice(pkg) : buttonState.disabled ? (
+                {buttonState.disabled && packageSalesAvailability(pkg).available && identityVerified && purchaseEligibility?.legacyConflict ? renderLegacyNotice(pkg) : buttonState.disabled ? (
                   <button disabled className="relative w-full py-3 rounded-2xl font-bold text-gray-500 bg-gray-100 text-sm">
                     {buttonState.label}
                   </button>
