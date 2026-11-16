@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import StaffIssueReports from "../../components/notifications/StaffIssueReports";
+import { useSocket } from "../../hooks/useSocket";
 import { Dialog, DialogPanel, DialogTitle, Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
@@ -35,8 +38,9 @@ import StaffNotificationAudience from "./components/StaffNotificationAudience";
 import { STAFF_THEME } from "./components/staffTheme.js";
 
 const TABS = [
-  { id: "feed", label: "Live Feed" },
+  { id: "feed", label: "Inbox" },
   { id: "compose", label: "Send Notification" },
+  { id: "issues", label: "Issue Reports" },
 ];
 
 const PRIORITIES = ["INFO", "SUCCESS", "WARNING", "ERROR", "SYSTEM"];
@@ -49,10 +53,21 @@ const PRIORITY_META = {
   SYSTEM: { label: "SYSTEM", bg: "bg-violet-500/10", color: "text-violet-400", border: "border-violet-500/30" },
 };
 
-export default function NotificationManagement() {
-  let isStaffView = false;
-  try { isStaffView = JSON.parse(sessionStorage.getItem('valo_user') || '{}').role === 'staff'; } catch { /* Preserve other role views. */ }
-  const [tab, setTab] = useState("feed");
+export default function NotificationManagement({ role }) {
+  const isStaffView = role === 'staff';
+  const [selectedTab, setSelectedTab] = useState("feed");
+  const [params, setParams] = useSearchParams();
+  const tab = params.has('incident') || params.get('view') === 'issues' ? 'issues' : selectedTab;
+  const socket = useSocket();
+  const setTab = value => {
+    setSelectedTab(value);
+    if (params.has('incident') || params.get('view') === 'issues') {
+      const next = new URLSearchParams(params);
+      next.delete('incident');
+      next.delete('view');
+      setParams(next);
+    }
+  };
   const [historyList, setHistoryList] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
@@ -124,6 +139,16 @@ export default function NotificationManagement() {
     fetchHistory(1, false);
   }, [fetchHistory]);
 
+  useEffect(() => {
+    if (!socket || tab !== 'feed') return undefined;
+    socket.on('notification:new', refreshHistory);
+    if (!isStaffView) socket.on('notification:admin:new', refreshHistory);
+    return () => {
+      socket.off('notification:new', refreshHistory);
+      if (!isStaffView) socket.off('notification:admin:new', refreshHistory);
+    };
+  }, [socket, tab, refreshHistory, isStaffView]);
+
   const loadMoreHistory = useCallback(() => {
     if (!historyHasMore || historyRequestRef.current) return;
     fetchHistory(historyPage + 1, true);
@@ -149,7 +174,7 @@ export default function NotificationManagement() {
               {!isStaffView && <LiveBadge state={historyState} />}
             </div>
             <p className={STAFF_THEME.subtitle}>
-              Send notifications to the whole system or selected users.
+              {isStaffView ? 'Messages addressed to your account, operational notices and issue reports.' : 'Manage system notifications and respond to Staff issue reports.'}
             </p>
           </div>
           {isStaffView && <span className="snm-header-refresh-slot" data-inactive={tab !== "feed" || undefined} aria-hidden={tab !== "feed"} inert={tab !== "feed"}>
@@ -159,12 +184,12 @@ export default function NotificationManagement() {
 
         {!isStaffView && <StatsRow stats={apiStats} state={historyState} />}
 
-        <NotificationTabs activeTab={tab} onChange={setTab} />
+        <NotificationTabs activeTab={tab} onChange={setTab} isStaffView={isStaffView} />
 
         <section className="mt-6">
           {tab === "feed" && (
             <>
-            {isStaffView && <StatsRow stats={apiStats} state={historyState} />}
+            {isStaffView && <StatsRow stats={apiStats} state={historyState} received />}
             <FeedTab
               notifications={historyList}
               loading={historyLoading}
@@ -181,13 +206,14 @@ export default function NotificationManagement() {
             </>
           )}
           {tab === "compose" && <ComposeTab onSent={() => { setTab("feed"); refreshHistory(); }} />}
+          {tab === "issues" && <StaffIssueReports role={role} />}
         </section>
       </div>
     </div>
   );
 }
 
-function NotificationTabs({ activeTab, onChange }) {
+function NotificationTabs({ activeTab, onChange, isStaffView }) {
   return (
         <nav aria-label="Notification views" className="snm-tabs mt-6 flex flex-wrap gap-2 border-b border-white/10">
           {TABS.map((t) => (
@@ -201,7 +227,7 @@ function NotificationTabs({ activeTab, onChange }) {
                   : "border-transparent text-gray-400 hover:text-white"
               }`}
             >
-              {t.label}
+              {t.id === 'feed' && !isStaffView ? 'Live Feed' : t.label}
             </button>
           ))}
         </nav>
@@ -226,7 +252,7 @@ function LiveBadge({ state }) {
   );
 }
 
-function StatsRow({ stats, state }) {
+function StatsRow({ stats, state, received = false }) {
   const iconMap = {
     history: History,
     success: CheckCircle2,
@@ -234,8 +260,8 @@ function StatsRow({ stats, state }) {
   };
 
   const cards = [
-    { label: "Total Sent (History)", value: getOperationalValue(state, stats.totalSent), tone: "info", icon: "history" },
-    { label: "Sent Successfully", value: getOperationalValue(state, stats.success), tone: "success", icon: "success" },
+    { label: received ? "Received notifications" : "Total Sent (History)", value: getOperationalValue(state, stats.totalSent), tone: "info", icon: "history" },
+    { label: received ? "Informational messages" : "Sent Successfully", value: getOperationalValue(state, stats.success), tone: "success", icon: "success" },
     { label: "Warnings & Errors", value: getOperationalValue(state, stats.errors), tone: "error", icon: "error" },
   ];
 
@@ -405,7 +431,7 @@ function FeedTab({
 
       <div className="snm-stream overflow-hidden rounded-xl border border-white/[0.07] bg-[#111111] shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
-          <div className="font-semibold text-white">Live Events (API Send History)</div>
+          <div className="font-semibold text-white">{paginated ? "Received notifications" : "Live Events (API Send History)"}</div>
           <div className="text-xs text-gray-400">
             {paginated ? (resultAvailable ? `${filtered.length} shown` : feedLoading ? 'Loading notifications...' : 'History count unavailable') : state.isAvailable
               ? `${filtered.length} shown · ${notifications.length}/${total} loaded`
@@ -538,13 +564,14 @@ function notificationDate(value) {
 }
 
 function NotificationDrawer({ notification: m, onClose }) {
+  const scope = useLocation().pathname.startsWith('/admin/') ? 'admin' : 'staff';
   // Unpopulated database references belong in Technical Details, not the summary.
   const userLabel = (user) => typeof user === "object" && user
     ? [user.username || user.fullName || user.name, user.email].filter(Boolean).join(", ") || "User details unavailable"
     : "User details unavailable";
   const recipient = m?.targetType === "ALL_USERS" ? "All users"
     : m?.targetType === "ROLE_BASED" ? (m.targetRoles?.join(", ") || "Selected roles")
-      : m?.targetUsers?.length ? m.targetUsers.map(userLabel).join("; ") : "Recipient details unavailable";
+      : m?.targetUsers?.length ? m.targetUsers.map(userLabel).join("; ") : "Your inbox";
   return (
     <Dialog open={Boolean(m)} onClose={onClose} className="snm-detail-dialog">
       <div className="snm-detail-backdrop" aria-hidden="true" />
@@ -562,6 +589,10 @@ function NotificationDrawer({ notification: m, onClose }) {
               <section className="snm-detail-content" aria-label="Notification message">
                 <p className="snm-detail-section-label">Message</p>
                 <p className="snm-detail-message">{m.content || "No message content"}</p>
+                {m.metadata?.eventType === 'STAFF_INCIDENT' && /^[a-f0-9]{24}$/i.test(m.metadata.incidentId || '') && (
+                  <Link className="text-sm font-semibold text-amber-300 underline" onClick={onClose}
+                    to={`/${scope}/notifications?incident=${m.metadata.incidentId}`}>Open issue report</Link>
+                )}
               </section>
               <dl className="snm-detail-info">
                 {[

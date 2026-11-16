@@ -44,6 +44,7 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    bookingOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'BookingOrder', default: null },
     paymentBreakdownSnapshot: {
       parkingAmount: { type: Number, min: 0, default: null },
       serviceAmount: { type: Number, min: 0, default: null },
@@ -112,6 +113,9 @@ const bookingSchema = new mongoose.Schema(
         feeAmount: { type: Number, min: 0, default: 0 },
         refundableServiceAmount: { type: Number, min: 0, default: 0 },
         calculationVersion: { type: String, default: 'refund-engine-v1' },
+        appliedRefundPercent: { type: Number, min: 0, max: 100 },
+        appliedThresholdMinutes: { type: Number, min: 0 },
+        minutesBeforeStart: { type: Number, min: 0 },
         payoutStatus: {
           type: String,
           enum: ['credited', 'debited', 'suppressed', 'not_required'],
@@ -188,6 +192,7 @@ const bookingSchema = new mongoose.Schema(
 // Indexes
 bookingSchema.index({ vehicleId: 1, scheduledStart: 1, scheduledEnd: 1 });
 bookingSchema.index({ status: 1 });
+bookingSchema.index({ userId: 1, cancelledAt: -1 });
   bookingSchema.index({ completedAt: 1, userId: 1 });
 bookingSchema.index(
   { userId: 1, idempotencyKey: 1 },

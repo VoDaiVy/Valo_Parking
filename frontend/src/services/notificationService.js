@@ -76,6 +76,16 @@ export const sendInternalReport = (content, priority = 'INFO') =>
     body: JSON.stringify({ content, priority }),
   });
 
+const incidentHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('accessToken')}` });
+export const getInternalReports = ({ status, page, signal }) =>
+  apiFetch(`/notifications/internal-reports?${new URLSearchParams({ status, page })}`, { headers: incidentHeaders(), signal });
+export const getInternalReport = (id, signal) =>
+  apiFetch(`/notifications/internal-reports/${encodeURIComponent(id)}`, { headers: incidentHeaders(), signal });
+export const updateInternalReport = (id, data) =>
+  apiFetch(`/notifications/internal-reports/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: incidentHeaders(), body: JSON.stringify(data),
+  });
+
 /** GET /api/notifications/admin/history */
 export const getAdminHistory = ({ page = 1, limit = 20, type, priority, search } = {}) => {
   const params = new URLSearchParams();

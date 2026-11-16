@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, MessageSquare, MoreVertical, Pencil, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 
-export default function AiChatHistorySidebar({ language, items, loading, error, search, onSearch, onNew, onOpen, onRename, onDelete, selectedId, disabled, hasMore, onMore, collapsed, onToggle }) {
+export default function AiChatHistorySidebar({ id, language, items, loading, error, search, onSearch, onNew, onOpen, onRename, onDelete, selectedId, disabled, hasMore, onMore, collapsed, onToggle }) {
   const vi = language === 'vi';
   const [action, setAction] = useState(null);
   const [title, setTitle] = useState('');
@@ -47,7 +47,7 @@ export default function AiChatHistorySidebar({ language, items, loading, error, 
     }).format(date);
   };
   return <>
-    <aside aria-label={vi ? 'Lịch sử trò chuyện' : 'Chat history'} className="valo-history">
+    <aside id={id} aria-label={vi ? 'Lịch sử trò chuyện' : 'Chat history'} className="valo-history">
       <div className="valo-history-heading">
         <MessageSquare size={19} />
         <h2>{vi ? 'Lịch sử trò chuyện' : 'Chat History'}</h2>

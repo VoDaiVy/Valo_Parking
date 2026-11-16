@@ -15,7 +15,7 @@ const aiNotificationEvents = require('../services/aiCopilot/notificationEvents')
 
 const getAllowedGoogleClientIds = () =>
   Array.from(new Set(
-    [process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_IDS, process.env.GOOGLE_WEB_CLIENT_ID]
+    [process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_IDS]
       .filter(Boolean)
       .flatMap((value) => String(value).split(','))
       .map((id) => id.trim())

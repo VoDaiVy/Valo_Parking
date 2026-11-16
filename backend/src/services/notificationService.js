@@ -49,7 +49,7 @@ function normalizeUserIds(userIds) {
   return uniqueIds;
 }
 
-async function resolveRecipients(userIds, { requireActive = false, session } = {}) {
+async function resolveRecipients(userIds, { requireActive = false } = {}) {
   const normalizedIds = normalizeUserIds(userIds);
   if (!normalizedIds.length) {
     throw createServiceError('At least one recipient is required');
@@ -58,9 +58,7 @@ async function resolveRecipients(userIds, { requireActive = false, session } = {
   const query = { _id: { $in: normalizedIds } };
   if (requireActive) query.status = true;
 
-  const userQuery = User.find(query).select('_id');
-  if (session) userQuery.session(session);
-  const users = await userQuery.lean();
+  const users = await User.find(query).select('_id').lean();
   const foundIds = new Set(users.map((user) => String(user._id)));
   const unavailableIds = normalizedIds.filter((id) => !foundIds.has(id));
 
@@ -86,23 +84,22 @@ async function insertRecipientRecords(notificationId, userIds, session) {
 }
 
 async function createWithRecipients(notificationData, userIds, session) {
-  const data = {
+  if (session) {
+    const [notification] = await Notification.create([{ ...notificationData, recipientCount: userIds.length }], { session });
+    await insertRecipientRecords(notification._id, userIds, session);
+    return notification;
+  }
+  const notification = await Notification.create({
     ...notificationData,
     recipientCount: userIds.length,
-  };
-  const notification = session
-    ? (await Notification.create([data], { session }))[0]
-    : await Notification.create(data);
+  });
 
   try {
     if (userIds.length) {
-      await insertRecipientRecords(notification._id, userIds, session);
+      await insertRecipientRecords(notification._id, userIds);
     }
     return notification;
   } catch (error) {
-    // The owning transaction rolls back all writes; cleanup outside it could
-    // otherwise leak independent deletes or mask the original abort.
-    if (session) throw error;
     await Promise.allSettled([
       UserNotification.deleteMany({ notificationId: notification._id }),
       Notification.findByIdAndDelete(notification._id),
@@ -458,7 +455,7 @@ async function createForUser(userId, data, createdBy = null, options = {}) {
     targetUsers: [resolvedUserId],
     createdBy,
     metadata: data.metadata || {},
-  }, [resolvedUserId], options.session);
+  }, [resolvedUserId]);
 }
 
 // ─── Create notification for multiple users ─────────────────────────────────────
@@ -710,6 +707,8 @@ async function getUserNotifications(userId, filters = {}) {
     pipeline.push({ $match: { 'notification.type': type } });
   }
 
+  if (filters.priority) pipeline.push({ $match: { 'notification.priority': filters.priority } });
+
   // Search filter
   if (search) {
     const searchRegex = new RegExp(escapeRegex(search), 'i');
@@ -725,8 +724,10 @@ async function getUserNotifications(userId, filters = {}) {
 
   // Count total (before pagination)
   const countPipeline = [...pipeline, { $count: 'total' }];
-  const countResult = await UserNotification.aggregate(countPipeline);
-  const total = countResult.length > 0 ? countResult[0].total : 0;
+  const countResult = await UserNotification.aggregate(filters.withStats
+    ? [...pipeline, { $group: { _id: '$notification.priority', total: { $sum: 1 } } }] : countPipeline);
+  const total = countResult.reduce((sum, row) => sum + row.total, 0);
+  const errors = countResult.filter(row => ['ERROR', 'WARNING'].includes(row._id)).reduce((sum, row) => sum + row.total, 0);
 
   // Paginate
   pipeline.push({ $skip: skip });
@@ -754,6 +755,7 @@ async function getUserNotifications(userId, filters = {}) {
 
   return {
     notifications,
+    ...(filters.withStats ? { stats: { totalSent: total, success: total - errors, errors } } : {}),
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -969,6 +971,7 @@ module.exports = {
   resolveRecipients,
   searchEligibleRecipients,
   createForUser,
+  createWithRecipients,
   createForUsers,
   createForAllUsers,
   createForRole,

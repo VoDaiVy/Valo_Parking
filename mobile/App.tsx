@@ -1,3 +1,5 @@
+import { useFonts } from 'expo-font';
+import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-gesture-handler';
 import Toast from 'react-native-toast-message';
@@ -17,6 +19,8 @@ import { validateConfig } from './src/config/env';
 const configErrors = validateConfig();
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({ Montserrat: require('./assets/fonts/Montserrat.ttf') });
+  if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#93c5fd" /></View>;
   return (
     <SafeAreaProvider>
       <LanguageProvider>

@@ -1,9 +1,9 @@
 import { apiFetch } from './api';
 
-export const interpretAiBooking = (prompt, draft, today, currentTime) => apiFetch('/ai/booking/interpret', {
+export const interpretAiBooking = (prompt, draft, today, currentTime, conversationHistory = []) => apiFetch('/ai/booking/interpret', {
   method: 'POST',
   headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
-  body: JSON.stringify({ prompt, draft, today, currentTime }),
+  body: JSON.stringify({ prompt, draft, today, currentTime, conversationHistory }),
 });
 
 const authorizedRequest = (path, options = {}) => apiFetch(path, {
@@ -14,7 +14,7 @@ const authorizedRequest = (path, options = {}) => apiFetch(path, {
 export const getLatestAiBookingSession = (language) => authorizedRequest(`/ai/booking/sessions/latest${language ? `?language=${language === 'vi' ? 'vi' : 'en'}` : ''}`);
 
 export const localizeAiBookingReply = (text, language) => authorizedRequest('/ai/booking/localize', { method: 'POST', body: JSON.stringify({ text, language }) });
-export const transcribeAiBookingVoice = (audio, mimeType, previousLanguage) => authorizedRequest('/ai/booking/transcribe', { method: 'POST', body: JSON.stringify({ audio, mimeType, previousLanguage }) });
+export const transcribeAiBookingVoice = (audio, mimeType, previousLanguage, { signal, contextPhrases } = {}) => authorizedRequest('/ai/booking/transcribe', { method: 'POST', signal, body: JSON.stringify({ audio, mimeType, previousLanguage, contextPhrases }) });
 
 export const listAiBookingSessions = ({ language, search = '', page = 1 } = {}) => authorizedRequest(
   `/ai/booking/sessions?${new URLSearchParams({ ...(language ? { language } : {}), search, page: String(page) })}`

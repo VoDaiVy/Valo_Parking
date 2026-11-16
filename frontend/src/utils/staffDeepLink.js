@@ -1,3 +1,10 @@
+export const getIssueReportLink = (notification, role) => {
+  const { eventType, incidentId } = notification?.metadata || {};
+  if (!['admin', 'staff'].includes(role) || eventType !== 'STAFF_INCIDENT'
+    || !/^[a-f0-9]{24}$/i.test(incidentId || '')) return null;
+  return `/${role}/notifications?incident=${incidentId}`;
+};
+
 export const getSafeStaffDeepLink = (notification) => {
   if (!notification) return null;
 
