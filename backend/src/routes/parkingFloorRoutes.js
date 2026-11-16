@@ -7,7 +7,8 @@ const {
   updateFloorLayout,
   deleteFloor,
   getFloorSlots,
-  getLiveMapData
+  getLiveMapData,
+  getVipFloorAvailability,
 } = require("../controllers/parkingFloorController");
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
 // Public routes (for Kiosk, mobile and live map)
 router.get("/", getAllFloors);
 router.get("/live-map", getLiveMapData);
+router.get("/:id/vip-availability", getVipFloorAvailability);
 router.get("/:id/slots", getFloorSlots);
 
 // Admin-protected routes

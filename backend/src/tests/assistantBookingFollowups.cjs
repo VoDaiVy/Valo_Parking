@@ -1,10 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 process.env.GEMINI_API_KEY = '';
+process.env.PAYOS_CLIENT_ID ||= 'test-payos-client-id';
+process.env.PAYOS_API_KEY ||= 'test-payos-api-key';
+process.env.PAYOS_CHECKSUM_KEY ||= 'test-payos-checksum-key';
 const { parseBasicVietnameseBooking } = require('../services/aiBookingInterpreter');
 const { parseAssistantRequest, executeAssistantRequest } = require('../services/aiParkingAssistantService');
 const Booking = require('../models/Booking');
 const Vehicle = require('../models/Vehicle');
+const Service = require('../models/Service');
 const UserVoucher = require('../models/UserVoucher');
 const controller = require('../controllers/aiBookingController');
 
@@ -29,6 +33,245 @@ const now = new Date('2026-11-11T00:00:00Z');
 const queryOf = (value) => { const query = { sort: () => query, populate: () => query, lean: async () => value }; return query; };
 const parse = (prompt, draft = {}) => parseAssistantRequest({ prompt, draft, today: '2026-11-11', currentTime: '07:00' });
 const booking = { _id: '111111111111111111111111', userId: 'unit-owner', licensePlate: '43A11111', status: 'PAID', scheduledStart: '2099-11-11T00:00:00Z', scheduledEnd: '2099-11-12T01:00:00Z', floorId: { name: 'Floor 1' }, parkingSlot: 'A5' };
+
+test('parking availability questions use the requested dates, times and space without inheriting a prior booking', async () => {
+  const draft = {
+    __intent: 'CREATE_BOOKING', slotCode: 'D4', floorName: 'Floor 2',
+    startDate: '2099-11-12', startTime: '18:00', endTime: '19:00', licensePlate: '43A11111',
+    assistantContext: { floorName: 'Floor 2', slotCode: 'D4', zoneName: 'A' },
+  };
+  for (const [prompt, slot] of [
+    ['kiểm tra chỗ trống ngày mai từ 8h đến 9h', ''],
+    ['ô B2 ngày mai 8h đến 9h còn trống không', 'B2'],
+    ['is slot B2 available tomorrow from 8 am to 9 am', 'B2'],
+  ]) {
+    const request = parse(prompt, draft);
+    assert.equal(request.scheduledAvailability, true, prompt);
+    assert.equal(request.entities.startDate, '2026-11-12');
+    assert.equal(request.entities.startTime, '08:00');
+    assert.equal(request.entities.endTime, '09:00');
+    assert.equal(request.entities.slotCode, slot);
+    assert.equal(request.entities.floorName, '');
+    assert.equal(request.entities.zoneName, '');
+  }
+  const live = parse('bãi đỗ full chưa', draft);
+  assert.equal(live.intent, 'CHECK_PARKING_AVAILABILITY');
+  assert.equal(live.scheduledAvailability, false);
+  let data;
+  await controller.interpret({ body: { prompt: 'bãi đỗ ngày mai còn chỗ không', draft }, user: { _id: 'unit-owner' } },
+    { json: result => { data = result.data; } });
+  assert.equal(data.intent, 'CHECK_AVAILABILITY');
+  assert.match(data.draft.startDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(data.draft.endTime, '');
+  assert.equal(data.draft.licensePlate, '');
+});
+
+test('AI availability exposes public slot reasons while keeping blocked spaces out of booking results', async (t) => {
+  const bookingController = require('../controllers/bookingController');
+  const Floor = require('../models/ParkingFloor');
+  const Hold = require('../models/BookingHold');
+  const Session = require('../models/Session');
+  const Slot = require('../models/Slot');
+  const Entitlement = require('../models/MembershipSlotEntitlement');
+  const Subscription = require('../models/Subscription');
+  const query = rows => ({ select() { return this; }, sort() { return this; }, lean: async () => rows });
+  const floorId = 'test-floor';
+  const names = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
+  t.mock.method(Floor, 'find', () => query([{ _id: floorId, name: 'Floor 1', floorNumber: 1,
+    layoutData: { elements: names.map((name, id) => ({ id, name, type: 'slot' })) } }]));
+  t.mock.method(Booking, 'find', () => query([{ floorId, parkingSlot: 'A2', userId: 'private-owner' }]));
+  t.mock.method(Session, 'find', () => query([{ floorId, parkingSlot: 'A3', licensePlate: 'PRIVATE' }]));
+  t.mock.method(Hold, 'find', () => query([{ floorId, slotCode: 'A4', userId: 'private-owner' }]));
+  t.mock.method(Entitlement, 'find', () => query([]));
+  t.mock.method(Subscription, 'find', () => query([]));
+  t.mock.method(Slot, 'find', filter => query(filter.status === 'maintenance' ? [{ floorID: floorId, slotNumber: 'A5' }]
+    : filter.reservedFor ? [{ floorID: floorId, slotNumber: 'A6', reservedFor: 'private-owner' }] : []));
+  const start = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const read = async bookingSource => {
+    let result;
+    const res = { status: () => res, json: body => { result = body.data; } };
+    await bookingController.getAvailableSlots({ query: { startTime: start.toISOString(), endTime: end.toISOString(), bookingSource } }, res, error => { throw error; });
+    return result;
+  };
+  const ai = await read('AI_QUICK');
+  assert.deepEqual(ai.slots.map(slot => slot.slotCode), ['A1']);
+  assert.deepEqual(ai.unavailableSlots.map(({ slotCode, reason }) => [slotCode, reason]),
+    [['A2', 'BOOKED'], ['A3', 'OCCUPIED'], ['A4', 'HELD'], ['A5', 'MAINTENANCE'], ['A6', 'VIP_PACKAGE_REQUIRED']]);
+  assert.doesNotMatch(JSON.stringify(ai.unavailableSlots), /PRIVATE|private-owner/);
+  const regular = await read(undefined);
+  assert.deepEqual(regular.slots, ai.slots);
+  assert.equal(regular.unavailableSlots, undefined);
+});
+
+test('generic requests for a parking space do not ask for an optional slot code', () => {
+  for (const noun of ['ô đỗ', 'bãi đỗ', 'chỗ đỗ']) {
+    for (const quantity of ['1', 'một']) {
+      const prompt = `tôi muốn đặt ${quantity} ${noun} vào ngày mai lúc 4h đến 5h tối cho xe 55R55555`;
+      assert.equal(parse(prompt), null, prompt);
+      const result = parseBasicVietnameseBooking(prompt, '2099-11-11', {}, '07:00', 'vi');
+      assert.ok(result, prompt);
+      assert.equal(result.draft.requestedVehicleCount, 1, prompt);
+      assert.equal(result.draft.startDate, '2099-11-12', prompt);
+      assert.equal(result.draft.endDate, '2099-11-12', prompt);
+      assert.equal(result.draft.startTime, '16:00', prompt);
+      assert.equal(result.draft.endTime, '17:00', prompt);
+      assert.equal(result.draft.licensePlate, '55R55555', prompt);
+      assert.equal(result.draft.slotCode, '', prompt);
+      assert.doesNotMatch(result.clarification || '', /mã ô|slot code/i, prompt);
+    }
+  }
+});
+
+test('the screenshot booking sequence keeps tomorrow while collecting its plate and times', () => {
+  let draft = {};
+  for (const prompt of ['tôi muốn đặt 1 bãi đỗ vào ngày mai', 'đặt 1 xe', 'tôi muốn đặt 1 ô đỗ cho xe 11A11111', '4h đến 5h tối']) {
+    assert.equal(parse(prompt, draft), null, prompt);
+    const result = parseBasicVietnameseBooking(prompt, '2099-11-11', draft, '07:00', 'vi');
+    assert.ok(result, prompt);
+    draft = { ...result.draft, __intent: result.intent };
+    assert.equal(draft.startDate, '2099-11-12', prompt);
+    assert.equal(draft.requestedVehicleCount, 1, prompt);
+    assert.doesNotMatch(result.clarification || '', /mã ô|slot code/i, prompt);
+  }
+  assert.equal(draft.licensePlate, '11A11111');
+  assert.equal(draft.startTime, '16:00');
+  assert.equal(draft.endTime, '17:00');
+});
+
+test('a generic parking request still honors a separately named slot and asks about a malformed explicit slot', () => {
+  const request = 'đặt 1 ô đỗ ngày mai 8h đến 9h cho xe 11A11111';
+  const chosen = parseBasicVietnameseBooking(`${request}, chọn ô B2`, '2099-11-11', {}, '07:00', 'vi');
+  assert.equal(chosen.draft.slotCode, 'B2');
+  assert.doesNotMatch(chosen.clarification || '', /mã ô/);
+  const invalid = parseBasicVietnameseBooking(`${request}, đổi sang ô`, '2099-11-11', {}, '07:00', 'vi');
+  assert.match(invalid.clarification, /mã ô/);
+});
+
+test('booking a space right now is creation, not a request to change its optional slot', () => {
+  for (const noun of ['ô', 'ô đỗ', 'chỗ đỗ', 'bãi đỗ']) {
+    for (const instant of ['ngay bây giờ', 'bây giờ']) {
+      const prompt = `tôi muốn đặt 1 ${noun} ${instant}`;
+      assert.equal(parse(prompt), null, prompt);
+      const result = parseBasicVietnameseBooking(prompt, '2099-11-11', {}, '10:07', 'vi');
+      assert.ok(result, prompt);
+      assert.equal(result.intent, 'CREATE_BOOKING', prompt);
+      assert.equal(result.draft.requestedVehicleCount, 1, prompt);
+      assert.equal(result.draft.startDate, '2099-11-11', prompt);
+      assert.equal(result.draft.startTime, '10:15', prompt);
+      assert.equal(result.draft.slotCode, '', prompt);
+      assert.doesNotMatch(result.clarification || '', /mã ô|đổi sang ô/);
+    }
+  }
+  const midnight = parseBasicVietnameseBooking('đặt 1 ô đỗ ngay bây giờ cho xe 11A11111', '2099-11-11', {}, '23:55', 'vi');
+  assert.equal(midnight.draft.startDate, '2099-11-12');
+  assert.equal(midnight.draft.startTime, '00:00');
+  assert.equal(midnight.draft.licensePlate, '11A11111');
+  assert.doesNotMatch(midnight.clarification || '', /mã ô/);
+});
+
+test('changing a slot keeps the existing booking and only asks for a slot when it was explicitly requested', () => {
+  const draft = { __intent: 'CREATE_BOOKING', requestedVehicleCount: 1, licensePlate: '11A11111',
+    startDate: '2099-11-12', endDate: '2099-11-12', startTime: '08:00', endTime: '09:00', slotCode: 'B2', serviceIds: ['kept-service'] };
+  const changed = parseBasicVietnameseBooking('đổi ô sang A1', '2099-11-11', draft, '10:07', 'vi');
+  assert.equal(changed.draft.slotCode, 'A1');
+  assert.equal(changed.draft.requestedVehicleCount, 1);
+  for (const field of ['startDate', 'endDate', 'startTime', 'endTime', 'licensePlate']) assert.equal(changed.draft[field], draft[field]);
+  assert.deepEqual(changed.draft.serviceIds, draft.serviceIds);
+  for (const prompt of ['đổi ô', 'đổi sang ô', 'đặt 1 ô đỗ mã']) {
+    const result = parseBasicVietnameseBooking(prompt, '2099-11-11', draft, '10:07', 'vi');
+    assert.match(result.clarification, /mã ô/, prompt);
+  }
+});
+
+test('next-morning departure replies use the arrival date rather than today or the prior departure', () => {
+  const previous = { __intent: 'CREATE_BOOKING', __awaitingField: 'endTime', requestedVehicleCount: 1,
+    startDate: '2099-11-18', endDate: '2099-11-18', startTime: '22:45', endTime: '23:00',
+    licensePlate: '11A11111', slotCode: 'B2', serviceIds: ['kept-service'], voucherId: 'kept-voucher' };
+  for (const prompt of ['7h sáng hôm sau', '7h sáng ngày hôm sau', '7 giờ sáng ngày kế tiếp']) {
+    const result = parseBasicVietnameseBooking(prompt, '2099-11-11', previous, '22:30', 'vi');
+    assert.ok(result, prompt);
+    assert.equal(result.draft.startDate, '2099-11-18', prompt);
+    assert.equal(result.draft.startTime, '22:45', prompt);
+    assert.equal(result.draft.endDate, '2099-11-19', prompt);
+    assert.equal(result.draft.endTime, '07:00', prompt);
+    assert.equal(result.clarification, undefined, prompt);
+    assert.equal(result.draft.licensePlate, previous.licensePlate);
+    assert.equal(result.draft.slotCode, previous.slotCode);
+    assert.deepEqual(result.draft.serviceIds, previous.serviceIds);
+    assert.equal(result.draft.voucherId, previous.voucherId);
+    const repeated = parseBasicVietnameseBooking(prompt, '2099-11-11', { ...result.draft, __intent: result.intent }, '22:30', 'vi');
+    assert.equal(repeated.draft.endDate, '2099-11-19', 'repeating the answer must not advance another day');
+  }
+});
+
+test('midnight departure means the next midnight unless an explicit same-day date was given', () => {
+  const previous = { __intent: 'CREATE_BOOKING', __awaitingField: 'endTime', requestedVehicleCount: 1,
+    startDate: '2099-11-18', endDate: '2099-11-18', startTime: '22:45', endTime: '', licensePlate: '11A11111' };
+  const midnight = parseBasicVietnameseBooking('0h', '2099-11-11', previous, '22:30', 'vi');
+  assert.equal(midnight.draft.endDate, '2099-11-19');
+  assert.equal(midnight.draft.endTime, '00:00');
+  assert.equal(midnight.clarification, undefined);
+  for (const prompt of ['0h ngày 18/11/2099', '7h sáng']) {
+    const result = parseBasicVietnameseBooking(prompt, '2099-11-11', previous, '22:30', 'vi');
+    assert.match(result.clarification, /ngày.*kết thúc|kết thúc.*ngày/, prompt);
+    assert.equal(result.draft.startDate, previous.startDate);
+    assert.equal(result.draft.startTime, previous.startTime);
+    assert.equal(result.draft.endTime, '');
+  }
+});
+
+test('an overnight interval in one request retains both endpoints through month and year boundaries', () => {
+  for (const [date, next] of [['2099-11-30', '2099-12-01'], ['2099-12-31', '2100-01-01']]) {
+    const day = date.split('-').reverse().join('/');
+    const prompt = `đặt 1 xe 11A11111 ngày ${day} từ 22h45 đến 7h sáng hôm sau`;
+    const result = parseBasicVietnameseBooking(prompt, '2099-11-11', {}, '22:30', 'vi');
+    assert.equal(result.draft.startDate, date);
+    assert.equal(result.draft.endDate, next);
+    assert.equal(result.draft.startTime, '22:45');
+    assert.equal(result.draft.endTime, '07:00');
+    assert.equal(result.clarification, undefined);
+  }
+});
+
+test('service-target replies can apply a pending service to both vehicles without changing their schedules', async (t) => {
+  t.mock.method(Service, 'find', () => queryOf([{ _id: 'unit-demo', name: 'demo', price: 20000, timeCost: 30 }]));
+  const rows = [
+    { licensePlate: '43A12345', startDate: '2099-11-13', endDate: '2099-11-13', startTime: '10:00', endTime: '12:00', slotCode: 'D1', serviceIds: [], serviceNames: [], voucherId: 'kept-voucher' },
+    { licensePlate: '43B54321', startDate: '2099-11-13', endDate: '2099-11-13', startTime: '08:00', endTime: '09:00', slotCode: 'C3', serviceIds: [], serviceNames: [] },
+  ];
+  for (const isRemoving of [false, true]) {
+    const items = rows.map(row => ({ ...row, serviceIds: isRemoving ? ['unit-demo'] : [], serviceNames: isRemoving ? ['demo'] : [] }));
+    const draft = { __intent: 'CREATE_BOOKING', requestedVehicleCount: 2, licensePlates: items.map(item => item.licensePlate), reservationItems: items,
+      assistantContext: { pendingServiceSelection: { serviceNames: ['demo'], isRemoving } } };
+    for (const prompt of ['cho cả 2 xe', 'cho cả hai xe.', 'cả 2', 'áp dụng cho tất cả xe', 'for both cars', 'for both vehicles']) {
+      const request = parse(prompt, draft);
+      assert.equal(request?.intent, 'BOOK_SERVICE', prompt);
+      const result = await executeAssistantRequest(request, 'unit-owner', now);
+      const updated = result.transition.draftPatch.reservationItems;
+      assert.equal(result.context.pendingServiceSelection, null);
+      for (let index = 0; index < items.length; index++) {
+        assert.deepEqual(updated[index].serviceIds, isRemoving ? [] : ['unit-demo'], prompt);
+        for (const field of ['licensePlate', 'startDate', 'endDate', 'startTime', 'endTime', 'slotCode', 'voucherId']) assert.equal(updated[index][field], items[index][field], field);
+      }
+      assert.deepEqual(draft.reservationItems, items, 'must not mutate the input booking');
+    }
+  }
+});
+
+test('choosing a service for a multi-car preview asks which vehicle before adding it', async (t) => {
+  t.mock.method(Service, 'find', () => queryOf([{ _id: 'unit-demo', name: 'demo', price: 20000, timeCost: 30 }]));
+  const items = [
+    { licensePlate: '43A12345', startDate: '2099-11-13', endDate: '2099-11-13', startTime: '10:00', endTime: '12:00', serviceIds: [], serviceNames: [] },
+    { licensePlate: '43B54321', startDate: '2099-11-13', endDate: '2099-11-13', startTime: '08:00', endTime: '09:00', serviceIds: [], serviceNames: [] },
+  ];
+  const draft = { __intent: 'CREATE_BOOKING', requestedVehicleCount: 2, licensePlates: items.map(item => item.licensePlate), reservationItems: items };
+  const result = await executeAssistantRequest(parse('thêm dịch vụ demo', draft), 'unit-owner', now);
+  assert.match(result.message, /cho xe nào/);
+  assert.deepEqual(result.context.pendingServiceSelection.serviceNames, ['demo']);
+  assert.ok(result.transition.draftPatch.reservationItems.every(item => item.serviceIds.length === 0));
+  assert.deepEqual(draft.reservationItems, items);
+});
 
 test('booking date question after an overlap uses the conflicted plate and reads live owned data', async (t) => {
   const queries = [];

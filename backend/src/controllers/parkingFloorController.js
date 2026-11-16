@@ -5,6 +5,18 @@ const Session = require("../models/Session");
 const Booking = require("../models/Booking");
 const MembershipSlotEntitlement = require("../models/MembershipSlotEntitlement");
 const AdminActionLog = require("../models/AdminActionLog");
+const { getVipFloorAvailability } = require('../services/vipFloorAvailabilityService');
+
+exports.getVipFloorAvailability = async (req, res) => {
+  if (!require('mongoose').isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid floor ID' });
+  try {
+    const data = await getVipFloorAvailability(req.params.id);
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, data });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Unable to check available spaces. Please try again.' });
+  }
+};
 
 // Get all parking floors
 exports.getAllFloors = async (req, res) => {
@@ -431,7 +443,7 @@ exports.getLiveMapData = async (req, res) => {
     const slots = await Slot.find()
       .select('-aiObservation.fullSnapshot -aiObservation.evidenceSnapshot')
       .populate('zoneID', 'zoneName zoneType')
-      .populate('floorID', 'name floorNumber')
+      .populate('floorID', 'name floorNumber status acceptsBookings')
       .populate('reservedFor', '_id')
       .populate('reservedByEntitlementId', 'ownerId status expireAt')
       .lean();
@@ -490,13 +502,28 @@ exports.getLiveMapData = async (req, res) => {
       else if (slot.slotType === 'ev') type = 'ev';
       else if (slot.slotType === 'moto') type = 'moto';
 
+      const acceptsBookings = Boolean(slot.floorID && slot.floorID.acceptsBookings !== false
+        && !['draft', 'archived'].includes(slot.floorID.status));
+      let availabilityReason = status;
+      if (status === 'reserved') {
+        availabilityReason = subscriptionSlots.has(String(slot._id)) || type === 'vip' ? 'dedicated'
+          : bookedSlots.has(currentSlotKey) ? 'booked' : 'held';
+      } else if (status === 'available') {
+        if (!acceptsBookings) availabilityReason = 'closed';
+        else if (type === 'vip') availabilityReason = 'dedicated';
+      }
+
       return {
         id: slot.slotNumber,
         floorId: slot.floorID ? slot.floorID._id : null,
         floorName: slot.floorID ? slot.floorID.name : '',
+        floorNumber: slot.floorID?.floorNumber,
         zone: slot.zoneID ? slot.zoneID.zoneName : '',
         type,
         status,
+        availabilityReason,
+        acceptsBookings,
+        retired: Boolean(slot.retired),
         detectedPlate: slot.aiObservation?.detectedPlate || null,
         isViolation: Boolean(slot.aiObservation?.isViolation),
         violationType: slot.aiObservation?.violationType || null,

@@ -166,6 +166,83 @@ test('a count/plate mismatch or exceeding five cars asks for correction without 
 test('a vehicle appended to a booking is not routed to vehicle registration', () => {
   assert.equal(parseAssistantRequest({ prompt: 'thêm xe 55D5555 và xe 66D6666', draft: previous, today: '2099-11-11', currentTime: '07:00' }), null);
 });
+
+test('adding one more car without a plate asks for that plate instead of offering services', async () => {
+  for (const prompt of ['Thêm một xe nữa.', 'thêm 1 xe nữa', 'thêm một chiếc xe nữa', 'Add one more car.', 'Add another car.', 'Add a car.']) {
+    assert.equal(parseAssistantRequest({ prompt, draft: previous, today: '2099-11-11', currentTime: '07:00' }), null, prompt);
+    const added = await interpretBookingMessage({ prompt, draft: previous, today: '2099-11-11', currentTime: '07:00' });
+    assert.equal(added.intent, 'CREATE_BOOKING', prompt);
+    assert.equal(added.draft.requestedVehicleCount, 2, prompt);
+    assert.equal(added.draft.reservationItems[0].licensePlate, previous.licensePlate);
+    assert.equal(added.draft.reservationItems[0].slotCode, previous.slotCode);
+    assert.deepEqual(added.draft.reservationItems[0].serviceIds, previous.serviceIds);
+    assert.equal(added.draft.reservationItems[0].voucherId, previous.voucherId);
+    const newCar = added.draft.reservationItems[1];
+    assert.equal(newCar.licensePlate, '');
+    assert.equal(newCar.slotCode, '');
+    assert.deepEqual(newCar.serviceIds, []);
+    assert.equal(newCar.voucherId, '');
+    for (const field of ['startDate', 'endDate', 'startTime', 'endTime']) assert.equal(newCar[field], previous[field]);
+    assert.match(added.clarification, /biển số xe 2|plate for vehicle 2/i);
+    assert.equal(parseAssistantRequest({ prompt: '55D5555', draft: { ...added.draft, __intent: added.intent }, today: '2099-11-11', currentTime: '07:00' }), null);
+    const completed = parse('55D5555', { ...added.draft, __intent: added.intent });
+    assert.deepEqual(plates(completed), ['44D4444', '55D5555']);
+    assert.equal(completed.draft.requestedVehicleCount, 2);
+  }
+});
+
+test('invalid additive requests stay in booking instead of registering a car or listing services', () => {
+  for (const prompt of ['thêm xe 44D4444', 'thêm 5 xe', 'thêm một xe 55D5555 và 66D6666', 'thêm nhiều xe']) {
+    assert.equal(parseAssistantRequest({ prompt, draft: previous, today: '2099-11-11', currentTime: '07:00' }), null, prompt);
+    const result = parse(prompt);
+    assert.ok(result.clarification, prompt);
+    assert.equal(result.draft.requestedVehicleCount, 1, prompt);
+    assert.equal(result.draft.licensePlate, previous.licensePlate);
+  }
+});
+
+test('actual service requests still follow the service flow while booking vehicles', () => {
+  for (const prompt of ['thêm demo', 'thêm dịch vụ demo', 'add Car Wash & Interior Vacuuming']) {
+    const request = parseAssistantRequest({ prompt, draft: previous, today: '2099-11-11', currentTime: '07:00' });
+    assert.equal(request.intent, 'BOOK_SERVICE', prompt);
+  }
+});
+
+test('a new car plate is not consumed by an older service or lookup question', () => {
+  const context = {
+    pendingServiceSelection: { serviceNames: ['demo'], isRemoving: false },
+    pendingLookupIntent: 'CHECK_BOOKING_STATUS',
+    lastBookingConflict: { licensePlate: previous.licensePlate },
+  };
+  const draft = { ...previous, assistantContext: context };
+  const added = parse('Thêm một xe nữa.', draft);
+  assert.equal(added.draft.assistantContext.pendingServiceSelection, null);
+  assert.equal(added.draft.assistantContext.pendingLookupIntent, null);
+  assert.deepEqual(added.draft.assistantContext.lastBookingConflict, context.lastBookingConflict);
+  assert.ok(context.pendingServiceSelection, 'the original draft must not be mutated');
+  const nextDraft = { ...added.draft, __intent: added.intent };
+  assert.equal(parseAssistantRequest({ prompt: '55D5555', draft: nextDraft, today: '2099-11-11', currentTime: '07:00' }), null);
+  assert.deepEqual(plates(parse('55D5555', nextDraft)), ['44D4444', '55D5555']);
+});
+
+test('the API controller keeps the add-car request in booking and accepts its next plate', async () => {
+  const { interpret } = require('../controllers/aiBookingController');
+  let first;
+  const errors = [];
+  await interpret({ body: { prompt: 'Thêm một xe nữa.', draft: previous }, user: { _id: 'unit-user' } },
+    { json: value => { first = value; } }, error => errors.push(error));
+  assert.deepEqual(errors, []);
+  assert.equal(first.data.intent, 'CREATE_BOOKING');
+  assert.equal(first.data.draft.requestedVehicleCount, 2);
+  assert.match(first.data.clarification, /biển số xe 2/i);
+  assert.equal(first.data.assistantResult, undefined);
+  let second;
+  await interpret({ body: { prompt: '55D5555', draft: { ...first.data.draft, __intent: first.data.intent } }, user: { _id: 'unit-user' } },
+    { json: value => { second = value; } }, error => errors.push(error));
+  assert.deepEqual(errors, []);
+  assert.equal(second.data.intent, 'CREATE_BOOKING');
+  assert.deepEqual(plates(second.data), ['44D4444', '55D5555']);
+});
 test('supplementing several cars works, while explicit account registration keeps its own route', () => {
   const result = parse('bổ sung 2 xe 55D5555 và 66D6666'); assert.deepEqual(plates(result), ['44D4444', '55D5555', '66D6666']);
   const registration = parseAssistantRequest({ prompt: 'thêm xe 55D5555 vào tài khoản', draft: previous, today: '2099-11-11', currentTime: '07:00' });

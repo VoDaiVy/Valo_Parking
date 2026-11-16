@@ -1,7 +1,7 @@
 import { validDate, validTime } from './aiBookingValidation.js';
 import { isValidLicensePlate, normalizeLicensePlate } from './licensePlate.js';
 import { localizeAiBookingMessage } from './aiBookingMessages.js';
-import { MIN_BOOKING_DURATION_MINUTES } from './bookingTimePolicy.js';
+import { MIN_BOOKING_DURATION_MINUTES, addBookingCalendarDays } from './bookingTimePolicy.js';
 
 export const MAX_AI_BOOKING_ITEMS = 5;
 const activeStatus = new Set(['PAID', 'ACTIVE', 'PAUSED']);
@@ -59,6 +59,52 @@ const zoneMatches = (slot, requested) => {
 };
 const dayLabel = (date) => date.split('-').reverse().join('/');
 const rangeLabel = (request) => `${dayLabel(request.date)} ${request.startTime} đến ${dayLabel(request.endDate)} ${request.endTime}`;
+const rangeInLanguage = (request, language) => language === 'en'
+  ? `${dayLabel(request.date)} ${request.startTime} to ${dayLabel(request.endDate)} ${request.endTime}` : rangeLabel(request);
+const slotLabel = slot => [slot.floorName, slot.slotCode].filter(Boolean).join(' · ');
+const scopeMatches = (slot, scope) => floorMatches(slot, scope.floorName)
+  && (!scope.zoneName || zoneMatches(slot, scope.zoneName) || normalize(slot.slotCode) === normalize(scope.zoneName));
+
+function slotUnavailableReason(slots, scope, vehicleType) {
+  const candidates = slots.filter(slot => normalize(slot.slotCode) === normalize(scope.slotCode) && scopeMatches(slot, scope));
+  if (candidates.length !== 1) return '';
+  const slot = candidates[0];
+  return slot.reason || (isCompatibleSlot(slot, vehicleType) ? '' : 'INCOMPATIBLE');
+}
+
+function slotReasonText(reason, language) {
+  const messages = {
+    MAINTENANCE: ['đang bảo trì', 'is under maintenance'],
+    OCCUPIED: ['đang có xe và chưa ghi nhận xe sẽ rời trước giờ bạn chọn', 'is occupied and has no recorded departure before your start time'],
+    BOOKED: ['đã có lượt đặt trùng giờ', 'has an overlapping booking'],
+    HELD: ['đang được giữ tạm trong khung giờ này', 'is temporarily held for this time'],
+    VIP_PACKAGE_REQUIRED: ['là ô dành riêng theo gói và không thể đặt theo giờ', 'is a dedicated space and cannot be booked by the hour'],
+    INCOMPATIBLE: ['không phù hợp với loại xe', 'is incompatible with the vehicle type'],
+    IN_CURRENT_REQUEST: ['đã được chọn cho xe khác có giờ đỗ trùng trong cùng yêu cầu', 'is assigned to another vehicle in this request for an overlapping period'],
+  };
+  return messages[reason]?.[language === 'en' ? 1 : 0] || '';
+}
+
+const knownParkingSlots = ({ slots = [], unavailableSlots = [], restrictedSlots = [] }) => [
+  ...slots, ...unavailableSlots, ...restrictedSlots.filter(slot => !unavailableSlots.some(item => keyOf(item) === keyOf(slot))),
+];
+
+export function aiAvailabilityReply(results, language) {
+  return results.map(result => {
+    const range = rangeInLanguage(result, language);
+    const reason = slotReasonText(result.reason, language);
+    const options = result.suggestions.map(slotLabel).join(', ');
+    const scope = result.slotCode || [result.floorName, result.zoneName].filter(Boolean).join(' · ');
+    if (language === 'en') {
+      if (reason) return `Space ${result.slotCode} ${reason} for ${range}. ${options ? `Available alternatives: ${options}.` : 'Try another time or space.'}`;
+      if (!result.count) return `${scope ? `No suitable space in ${scope}` : 'No suitable spaces remain'} for the full period ${range}. ${options ? `Available elsewhere: ${options}.` : 'Try another time or floor.'}`;
+      return `${result.count} suitable ${result.count === 1 ? 'space is' : 'spaces are'} available${scope ? ` in ${scope}` : ''} for ${range}.${options ? ` ${options}.` : ''}`;
+    }
+    if (reason) return `Ô ${result.slotCode} ${reason} trong khoảng ${range}. ${options ? `Có thể chọn: ${options}.` : 'Bạn có thể đổi giờ hoặc chọn ô khác.'}`;
+    if (!result.count) return `${scope ? `${scope} không còn chỗ phù hợp` : 'Bãi không còn chỗ phù hợp'} trong toàn bộ khoảng ${range}. ${options ? `Còn chỗ khác: ${options}.` : 'Bạn có thể thử giờ hoặc tầng khác.'}`;
+    return `Có ${result.count} chỗ phù hợp${scope ? ` tại ${scope}` : ''} trong khoảng ${range}.${options ? ` ${options}.` : ''}`;
+  }).join('\n');
+}
 const vietnamDate = (now = Date.now()) => new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date(now));
@@ -229,16 +275,22 @@ export async function checkAiAvailability(draft, gateway, now = Date.now()) {
       bookingSource: 'AI_QUICK',
     });
     if (!response.ok) throw resultError(response, `Không thể kiểm tra khoảng từ ngày ${dayLabel(schedule.date)} đến ${dayLabel(schedule.endDate)}.`);
-    const compatible = (response.data?.data?.slots || []).filter((slot) =>
-      isCompatibleSlot(slot, draft.vehicleType || 'car')
-      && floorMatches(slot, draft.floorName));
+    const data = response.data?.data;
+    if (!Array.isArray(data?.slots)) throw new Error(draft.__language === 'en' ? 'Availability data is unavailable. Please try again.' : 'Chưa tải được dữ liệu chỗ trống. Bạn vui lòng thử lại.');
+    const vehicleType = draft.vehicleType || 'car';
+    const allCompatible = data.slots.filter(slot => isCompatibleSlot(slot, vehicleType));
+    const compatible = allCompatible.filter(slot => floorMatches(slot, draft.floorName));
     const zoneMatchesOnly = draft.zoneName ? compatible.filter((slot) => zoneMatches(slot, draft.zoneName)) : compatible;
     const scoped = draft.zoneName && !zoneMatchesOnly.length
       ? compatible.filter((slot) => normalize(slot.slotCode) === normalize(draft.zoneName))
       : zoneMatchesOnly;
     const matching = scoped.filter((slot) => !draft.slotCode || normalize(slot.slotCode) === normalize(draft.slotCode));
-    results.push({ date: schedule.date, endDate: schedule.endDate, bookingMode: schedule.bookingMode,
-      count: matching.length, suggestions: matching.slice(0, 3) });
+    results.push({
+      ...schedule, floorName: draft.floorName, zoneName: draft.zoneName, slotCode: draft.slotCode,
+      count: matching.length,
+      reason: !matching.length && draft.slotCode ? slotUnavailableReason(knownParkingSlots(data), draft, vehicleType) : '',
+      suggestions: (matching.length ? matching : allCompatible).slice(0, 3),
+    });
   }
   return { availability: results };
 }
@@ -363,7 +415,13 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const durationMinutes = (end.getTime() - start.getTime()) / 60000;
     if (end <= start) throw new Error(`Giờ kết thúc của xe ${request.vehicle.licensePlate} phải sau giờ bắt đầu.`);
     if (durationMinutes < MIN_BOOKING_DURATION_MINUTES) {
-      throw new Error(`Xe ${request.vehicle.licensePlate} cần đặt tối thiểu ${MIN_BOOKING_DURATION_MINUTES} phút.`);
+      const [hour, minute] = request.startTime.split(':').map(Number);
+      const earliestMinute = hour * 60 + minute + MIN_BOOKING_DURATION_MINUTES;
+      const earliestDate = addBookingCalendarDays(request.date, Math.floor(earliestMinute / (24 * 60)));
+      const earliestTime = `${String(Math.floor(earliestMinute / 60) % 24).padStart(2, '0')}:${String(earliestMinute % 60).padStart(2, '0')}`;
+      throw new Error(draft.__language === 'en'
+        ? `Vehicle ${request.vehicle.licensePlate}: ${request.startTime} to ${request.endTime} is only ${durationMinutes} minutes. The minimum is ${MIN_BOOKING_DURATION_MINUTES} minutes. The earliest departure is ${earliestTime} on ${dayLabel(earliestDate)}. Please provide a later departure time.`
+        : `Xe ${request.vehicle.licensePlate}: từ ${request.startTime} đến ${request.endTime} chỉ có ${durationMinutes} phút, chưa đủ tối thiểu ${MIN_BOOKING_DURATION_MINUTES} phút. Giờ kết thúc sớm nhất là ${earliestTime} ngày ${dayLabel(earliestDate)}. Vui lòng nói lại giờ kết thúc.`);
     }
   }
   if (!explicitItems.length && bookingVehicles.length > 1 && draft.slotCode) {
@@ -377,7 +435,6 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
   const bookingConflicts = [];
   const suggestions = [];
   const availabilityCache = new Map();
-  const restrictionCache = new Map();
   const shortageRanges = new Set();
 
   for (const request of requestSpecs) {
@@ -392,8 +449,9 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
         bookingSource: 'AI_QUICK',
       });
       if (!response.ok) throw resultError(response, `Không thể kiểm tra chỗ ngày ${dayLabel(request.date)}.`);
-      availabilityCache.set(rangeKey, response.data?.data?.slots || []);
-      restrictionCache.set(rangeKey, response.data?.data?.restrictedSlots || []);
+      const data = response.data?.data;
+      if (!Array.isArray(data?.slots)) throw new Error(draft.__language === 'en' ? 'Availability data is unavailable. Please try again.' : 'Chưa tải được dữ liệu chỗ trống. Bạn vui lòng thử lại.');
+      availabilityCache.set(rangeKey, data);
     }
     const vehicle = request.vehicle;
     const selectedVehicle = vehicles.find((item) => String(item._id) === String(vehicle.vehicleId)
@@ -421,7 +479,8 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     const occupiedSlots = new Set(candidates.filter((candidate) =>
       rangesOverlap(startTime, endTime, new Date(candidate.startTime), new Date(candidate.endTime)))
       .map((candidate) => keyOf(candidate.slot)));
-    const allCompatibleSlots = availabilityCache.get(rangeKey).filter((slot) => isCompatibleSlot(slot, vehicleType));
+    const rangeData = availabilityCache.get(rangeKey);
+    const allCompatibleSlots = rangeData.slots.filter((slot) => isCompatibleSlot(slot, vehicleType));
     const compatibleSlots = allCompatibleSlots.filter((slot) => !occupiedSlots.has(keyOf(slot)));
     const preferredFloor = normalize(request.floorName);
     const preferredZone = normalize(request.zoneName);
@@ -441,12 +500,6 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
       continue;
     }
     const exact = exactMatches[0] || null;
-    const preferredSlotRestriction = preferredSlot
-      ? (restrictionCache.get(rangeKey) || []).find((slot) => (
-        normalize(slot.slotCode) === preferredSlot
-        && (!preferredFloor || floorMatches(slot, preferredFloor))
-      ))
-      : null;
     const seed = `${vehicle.licensePlate}:${request.date}:${request.startTime}:${request.endTime}`;
     const autoSlots = floorSlots.filter((slot) => !requestSpecs.some((other) => {
       if (other === request || !other.slotCode || normalize(other.slotCode) !== normalize(slot.slotCode)) return false;
@@ -457,13 +510,31 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
     }));
     const chosen = exact || (!preferredSlot ? chooseAutoSlot(autoSlots, seed, vehicleType) : null);
     if (!chosen) {
+      const language = draft.__language;
+      const range = rangeInLanguage(request, language);
       const sameRangeRequests = requestSpecs.filter((item) => item.date === request.date && item.endDate === request.endDate
         && item.startTime === request.startTime && item.endTime === request.endTime);
-      if (!preferredSlot && sameRangeRequests.length > 1
-        && sameRangeRequests.length > allCompatibleSlots.length && !shortageRanges.has(rangeKey)) {
+      if (!rangeData.slots.some(slot => isCompatibleSlot(slot, 'electric_car'))) {
+        if (!shortageRanges.has(rangeKey)) {
+          shortageRanges.add(rangeKey);
+          conflicts.push(language === 'en'
+            ? `The car park has no spaces open for hourly booking for the full period ${range}. Try another time.`
+            : `Bãi đã hết chỗ có thể đặt theo giờ trong toàn bộ khoảng ${range}. Bạn muốn thử khung giờ khác không?`);
+        }
+        if (!preferredSlot) continue;
+      }
+      const sharedScope = sameRangeRequests.every(item => !item.slotCode
+        && normalize(item.floorName) === preferredFloor && normalize(item.zoneName) === preferredZone
+        && (draft.vehicleType || vehicles.find(car => normalizePlate(car.licensePlate) === normalizePlate(item.vehicle.licensePlate))?.vehicleType || 'car') === vehicleType);
+      const scopedCapacity = allCompatibleSlots.filter(slot => scopeMatches(slot, request)).length;
+      if (sharedScope && sameRangeRequests.length > 1
+        && sameRangeRequests.length > scopedCapacity && !shortageRanges.has(rangeKey)) {
         shortageRanges.add(rangeKey);
-        conflicts.push(`Hiện chỉ còn ${allCompatibleSlots.length} chỗ trống trong toàn bộ khoảng ${rangeLabel(request)}, nên chưa thể đặt đủ ${sameRangeRequests.length} xe. Bạn muốn giảm số xe hay chọn thời gian khác?`);
-      } else if (!shortageRanges.has(rangeKey)) {
+        const scope = [request.floorName, request.zoneName].filter(Boolean).join(' · ');
+        conflicts.push(language === 'en'
+          ? `Only ${scopedCapacity} suitable spaces${scope ? ` in ${scope}` : ''} are available for ${sameRangeRequests.length} vehicles for ${range}. Try fewer vehicles, another floor or another time.`
+          : `Chỉ còn ${scopedCapacity} chỗ phù hợp${scope ? ` tại ${scope}` : ''} trong khoảng ${range}, chưa đủ cho ${sameRangeRequests.length} xe. Bạn có thể giảm số xe, đổi tầng hoặc đổi giờ.`);
+      } else if (preferredSlot || !shortageRanges.has(rangeKey)) {
         const isReservedByAnotherRequest = (slot) => requestSpecs.some((other) => {
           if (other === request || !other.slotCode || normalize(other.slotCode) !== normalize(slot.slotCode)) return false;
           if (other.floorName && !floorMatches(slot, other.floorName)) return false;
@@ -482,15 +553,16 @@ export async function prepareAiBooking(draft, gateway, vehicles, now = Date.now(
           floorName: suggestion.floorName,
           slotCode: suggestion.slotCode,
         });
-        if (preferredSlotRestriction?.reason === 'VIP_PACKAGE_REQUIRED') {
-          conflicts.push(`\u00d4 ${preferredSlot} l\u00e0 \u00f4 VIP, ch\u1ec9 d\u00e0nh cho xe c\u00f3 g\u00f3i VIP \u0111\u01b0\u1ee3c c\u1ea5p \u00f4 n\u00e0y. Xe ${vehicle.licensePlate} kh\u00f4ng th\u1ec3 \u0111\u1eb7t \u00f4 VIP theo gi\u1edd.${suggestion ? ` G\u1ee3i \u00fd \u00f4 th\u01b0\u1eddng: ${suggestion.floorName} · ${suggestion.slotCode}.` : ' H\u00e3y ch\u1ecdn m\u1ed9t \u00f4 th\u01b0\u1eddng kh\u00e1c.'}`);
-          continue;
-        }
-        conflicts.push(`Không có chỗ phù hợp cho toàn bộ khoảng ${rangeLabel(request)}. Xe ${vehicle.licensePlate} ${preferredSlot
-          ? `không thể dùng ô ${preferredSlot} vì ô không còn trống hoặc không phù hợp với loại xe`
-          : preferredZone
-            ? `không còn ô phù hợp tại khu ${request.zoneName}`
-            : 'không có ô phù hợp hoặc không còn trống'}.${suggestion ? ` Gợi ý: ${suggestion.floorName} · ${suggestion.slotCode}.` : ' Hãy chọn giờ, khu hoặc tầng khác.'}`);
+        const scope = preferredSlot ? (language === 'en' ? `space ${preferredSlot}` : `ô ${preferredSlot}`)
+          : [request.floorName, request.zoneName].filter(Boolean).join(' · ');
+        const takenByOtherVehicle = preferredSlot && allCompatibleSlots.some(slot => normalize(slot.slotCode) === preferredSlot
+          && scopeMatches(slot, request) && occupiedSlots.has(keyOf(slot)));
+        const reasonCode = takenByOtherVehicle ? 'IN_CURRENT_REQUEST'
+          : preferredSlot ? slotUnavailableReason(knownParkingSlots(rangeData), request, vehicleType) : '';
+        const reason = slotReasonText(reasonCode, language);
+        conflicts.push(language === 'en'
+          ? `Vehicle ${vehicle.licensePlate}: ${reason ? `space ${preferredSlot} ${reason}` : `no suitable space is available${scope ? ` for ${scope}` : ''}`} for ${range}.${suggestion ? ` Suggested space: ${slotLabel(suggestion)}.` : ' Try another time or floor.'}`
+          : `Xe ${vehicle.licensePlate}: ${reason ? `ô ${preferredSlot} ${reason}` : `không có chỗ phù hợp${scope ? ` tại ${scope}` : ''}`} trong khoảng ${range}.${suggestion ? ` Gợi ý: ${slotLabel(suggestion)}.` : ' Bạn có thể thử giờ hoặc tầng khác.'}`);
       }
       continue;
     }

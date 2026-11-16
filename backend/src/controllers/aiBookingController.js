@@ -101,12 +101,12 @@ exports.interpret = async (req, res) => {
     const requestsScheduledAvailability = assistantRequest
       && (assistantRequest.intents.includes('CHECK_PARKING_AVAILABILITY')
         || assistantRequest.intents.includes('CHECK_SLOT_STATUS'))
-      && (assistantRequest.entities.startDate || assistantRequest.entities.startTime || assistantRequest.entities.endTime);
+      && assistantRequest.scheduledAvailability;
     if (requestsScheduledAvailability) {
       const normalized = normalizeInterpretation({
         intent: 'CHECK_AVAILABILITY',
         ...assistantRequest.entities,
-      }, req.body?.draft || {});
+      }, {});
       return res.json({
         success: true,
         data: {

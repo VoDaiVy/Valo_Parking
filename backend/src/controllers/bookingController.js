@@ -452,9 +452,14 @@ const getUnavailableSlotKeys = async (
   ]);
 
   const unavailable = new Set();
+  const reasons = new Map();
+  const block = (key, reason) => {
+    unavailable.add(key);
+    reasons.set(key, reason);
+  };
 
   overlappingBookings.forEach((booking) => {
-    unavailable.add(buildSlotKey(booking.floorId, booking.parkingSlot));
+    block(buildSlotKey(booking.floorId, booking.parkingSlot), 'BOOKED');
   });
 
   activeSessions.forEach((parkingSession) => {
@@ -462,12 +467,8 @@ const getUnavailableSlotKeys = async (
       ? expectedSessionCheckout(parkingSession, now)
       : null;
     if (!allowExpectedSessionCheckout || !expectedCheckout || expectedCheckout > start) {
-      unavailable.add(buildSlotKey(parkingSession.floorId, parkingSession.parkingSlot));
+      block(buildSlotKey(parkingSession.floorId, parkingSession.parkingSlot), 'OCCUPIED');
     }
-  });
-
-  maintenanceSlots.forEach((slot) => {
-    unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
   });
 
   // Keep physical occupancy protection unless an active session has a reliable
@@ -483,18 +484,20 @@ const getUnavailableSlotKeys = async (
         : null;
       if ((slot.status === 'occupied' || slot.aiObservation?.occupied)
         && (!expectedCheckout || expectedCheckout > start)) {
-        unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
+        block(buildSlotKey(slot.floorID, slot.slotNumber), 'OCCUPIED');
       }
     });
   }
 
   activeHolds.forEach((hold) => {
-    unavailable.add(buildSlotKey(hold.floorId, hold.slotCode));
+    const key = buildSlotKey(hold.floorId, hold.slotCode);
+    if (!unavailable.has(key)) block(key, 'HELD');
   });
 
-  dedicatedKeys.forEach((key) => unavailable.add(key));
+  maintenanceSlots.forEach((slot) => block(buildSlotKey(slot.floorID, slot.slotNumber), 'MAINTENANCE'));
+  dedicatedKeys.forEach((key) => block(key, 'VIP_PACKAGE_REQUIRED'));
 
-  return { unavailable, dedicatedKeys };
+  return { unavailable, dedicatedKeys, reasons };
 };
 
 const getAvailableSlotsForRange = async (start, end, userId = null, options = {}) => {
@@ -532,6 +535,12 @@ const getAvailableSlotsForRange = async (start, end, userId = null, options = {}
         slotType: slot.slotType,
         reason: 'VIP_PACKAGE_REQUIRED',
       })),
+    ...(options.withDiagnostics ? {
+      unavailableSlots: slots.flatMap(({ floorId, floorName, floorNumber, slotCode, slotType, zoneName }) => {
+        const reason = unavailableState.reasons.get(buildSlotKey(floorId, slotCode));
+        return reason ? [{ floorId, floorName, floorNumber, slotCode, slotType, zoneName, reason }] : [];
+      }),
+    } : {}),
   };
 };
 
@@ -664,6 +673,7 @@ exports.getAvailableSlots = async (req, res, next) => {
       allowExpectedSessionCheckout: true,
       includeOwnedDedicatedSlots: false,
       withRestrictions: true,
+      withDiagnostics: req.query.bookingSource === 'AI_QUICK',
     });
 
     res.status(200).json({
@@ -674,6 +684,7 @@ exports.getAvailableSlots = async (req, res, next) => {
         count: availability.slots.length,
         slots: availability.slots,
         restrictedSlots: availability.restrictedSlots,
+        ...(availability.unavailableSlots ? { unavailableSlots: availability.unavailableSlots } : {}),
       },
     });
   } catch (error) {
@@ -3126,7 +3137,7 @@ exports.createBulkBooking = async (req, res, next) => {
       data: {
         transaction: newOrder[0],
         bookings: createdBookingsResponse,
-        ...(isAiQuickRequest ? { grandTotal } : {}),
+        grandTotal,
       }
     });
 

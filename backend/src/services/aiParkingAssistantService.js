@@ -150,6 +150,7 @@ function detectIntents(text) {
     /\b(o|slot)\s*[a-z]{0,3}[-_. ]?\d+.*\b(co ai do|dang dung|dau xe|do xe)\b/,
     /\b(o|slot)\s*[a-z]{0,3}[-_. ]?\d+.*\b(dang duoc dung|dang bi chiem|co nguoi dung)\b/,
     /\b(is\s+)?slot\s*[a-z]{0,3}[-_. ]?\d+.*\b(available|free|occupied|taken|status)\b/,
+    /\b(?:o|slot)\s*[a-z]{1,3}[-_. ]?\d+\b.*\b(bao tri|da dat|giu cho|reserved|booked|maintenance)\b/,
   ]);
   add('CHECK_PARKING_AVAILABILITY', [
     /\bcon\s+(bao nhieu\s+)?(cho|o)(\s+nao)?(\s+trong)?\b/,
@@ -158,7 +159,7 @@ function detectIntents(text) {
     /\bkiem tra.*(cho trong|o trong)\b/,
     /\bcon\s+(cho|o)\b/,
     /\b(tang|zone|khu).*(con|co).*(cho|o)\b/,
-    /\b(bai|nha xe|ham).*(day|het cho|con trong|con cho)\b/,
+    /\b(bai|nha xe|ham).*\b(day|het cho|con trong|con cho|full|kin cho)\b/,
     /\b(co the|vao).*(do xe|dau xe).*(khong|chua)\b/,
     /\b(any|how many)\s+(parking\s+)?(spaces?|slots?)\s+(available|free|left)\b/,
     /\b(is\s+there|are\s+there)\s+(a|any)?\s*(parking\s+)?(space|slot)s?\s+(available|free)\b/,
@@ -242,8 +243,7 @@ function detectIntents(text) {
 }
 
 function extractSlot(text) {
-  const match = text.match(/(?:ô|o)(?:\s+(?:đỗ|do))?\s*(?:số|so|mã|ma)?\s*([a-z]{1,3}[-_. ]?\d{1,5})\b/i)
-    || text.match(/\bslot\s*(?:so|ma)?\s*([a-z]{1,3}[-_. ]?\d{1,5})\b/i);
+  const match = fold(text).match(/\b(?:o(?:\s+do)?|slot)\s+(?:(?:so|ma)\s+)?([a-z]{1,3}[-_. ]?\d{1,5})\b/i);
   return match ? match[1].replace(/[_. ]/g, '-').toUpperCase() : '';
 }
 
@@ -297,7 +297,8 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
     const ordinals = { nhat: 1, mot: 1, hai: 2, ba: 3, tu: 4, bon: 4, nam: 5 };
     const index = ordinal ? Number(ordinals[ordinal[1]] || ordinal[1]) - 1 : -1;
     const targetPlate = ordinal ? draft.reservationItems?.[index]?.licensePlate || draft.licensePlates?.[index] : plates[0];
-    const allVehicles = /^(?:ca hai|ca hai xe|ca 2 xe|tat ca|tat ca xe|tat ca cac xe|both|both cars|all cars|all vehicles)$/.test(reply);
+    const targetReply = reply.replace(/^(?:cho|ap dung cho|for|to)\s+/, '');
+    const allVehicles = /^(?:ca (?:hai|2)(?: xe)?|tat ca|tat ca xe|tat ca cac xe|both(?: cars| vehicles)?|all cars|all vehicles)$/.test(targetReply);
     const ambiguousReply = /^(?:ok|oke|okay|dong y|duoc|yes|xe do|xe o tren|that car|the same car)$/.test(reply);
     if (plateReply || ordinal || allVehicles || ambiguousReply) raw = `${pendingService.isRemoving ? 'bỏ' : 'thêm'} dịch vụ ${pendingService.serviceNames.join(', ')}${ambiguousReply ? '' : ` cho xe ${allVehicles ? 'tất cả xe' : targetPlate || raw}`}`;
   }
@@ -312,6 +313,10 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
       && (Number(draft.requestedVehicleCount || 0) > 0
       || Boolean(draft.startDate || draft.endDate || draft.startTime || draft.endTime)
       || (Array.isArray(draft.reservationItems) && draft.reservationItems.length > 0)));
+  const bookingInterpretation = parseBookingUtterance(raw, today, draft, currentTime);
+  // Adding vehicles (including requests missing plates or failing a count
+  // check) belongs to the current booking, before generic service-name routing.
+  if (hasActiveBookingDraft && bookingInterpretation?.addingBookingVehicles) return null;
   if (isBookingScheduleAnswer(raw, draft)) {
     intents = intents.filter((intent) => !['CHECK_VEHICLE_ENTRY_TIME', 'CHECK_VEHICLE_EXIT_TIME',
       'CHECK_VEHICLE_DURATION', 'CHECK_BOOKING_STATUS', 'CHECK_UPCOMING_BOOKING'].includes(intent));
@@ -337,8 +342,13 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   }
   if (!intents.length) return null;
 
-  const bookingInterpretation = parseBookingUtterance(raw, today, draft, currentTime);
-  const bookingEntities = bookingInterpretation?.changes || {};
+  const availabilityInquiry = intents.some(intent => ['CHECK_PARKING_AVAILABILITY', 'CHECK_SLOT_STATUS'].includes(intent));
+  const hasScheduleWords = availabilityInquiry && /\b(?:hom nay|toi nay|ngay mai|ngay kia|ngay\s+\d|mai|cuoi tuan|thu\s*[2-7]|today|tomorrow|tonight|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b\d{1,4}[/-]\d{1,2}\b|\b\d{1,2}\s*(?:h|gio|:\d{2}|am|pm)\b/.test(text);
+  const availabilitySchedule = availabilityInquiry && hasScheduleWords
+    ? parseBookingUtterance(text.replace(/\b(?:kiem tra|con cho|con trong|co cho khong|co o trong)\b/g, ' ')
+      .replace(/\b(?:khu|zone)\s+[a-z0-9-]+\b/g, ' '), today, { __intent: 'CREATE_BOOKING' }, currentTime)?.changes
+    : null;
+  const bookingEntities = availabilitySchedule || bookingInterpretation?.changes || {};
   const vehicleChanges = extractVehicleChanges(raw, text);
   const editsBookingItem = Array.isArray(bookingEntities.reservationItems)
     || bookingInterpretation?.pendingReservationEditField !== undefined
@@ -385,13 +395,15 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
   const entities = {
     licensePlate: isValidCarLicensePlate(licensePlate) ? licensePlate : '',
     licensePlates: directPlates.map(compactPlate).filter(isValidCarLicensePlate),
-    floorName: String(floorName || context.floorName || '').trim(),
-    zoneName: zone || context.zoneName || '',
-    slotCode: extractSlot(raw) || context.slotCode || '',
+    floorName: String(floorName || (!availabilityInquiry ? context.floorName : '') || '').trim(),
+    zoneName: zone || (!availabilityInquiry ? context.zoneName : '') || '',
+    slotCode: (availabilityInquiry && !intents.includes('CHECK_SLOT_STATUS') ? '' : extractSlot(raw))
+      || (!availabilityInquiry ? context.slotCode : '') || '',
     startDate: bookingEntities.startDate || '', endDate: bookingEntities.endDate || '',
     startTime: bookingEntities.startTime || '', endTime: bookingEntities.endTime || '',
-    vehicleType: bookingEntities.vehicleType || draft.vehicleType || '',
-    requestedVehicleCount: bookingEntities.requestedVehicleCount || draft.requestedVehicleCount || 0,
+    vehicleType: bookingEntities.vehicleType || (/\b(?:xe dien|o to dien|electric car|electric vehicle|ev)\b/.test(text) ? 'electric_car' : '')
+      || (!availabilityInquiry ? draft.vehicleType : '') || '',
+    requestedVehicleCount: bookingEntities.requestedVehicleCount || (!availabilityInquiry ? draft.requestedVehicleCount : 0) || 0,
     serviceName,
     vehicleChanges,
     bookingId: changedPlate ? '' : context.bookingId || '', sessionId: changedPlate ? '' : context.sessionId || '',
@@ -411,7 +423,7 @@ function parseAssistantRequest({ prompt, draft = {}, today, currentTime = '' }) 
     && !entities.vehicleChanges.vehicleType && raw.length <= 50) {
     entities.vehicleChanges.brand = raw.replace(/[.,?!]+$/g, '').trim();
   }
-  return { intent: intents[0], intents, entities, rawText: raw, draft };
+  return { intent: intents[0], intents, entities, rawText: raw, draft, scheduledAvailability: availabilityInquiry && hasScheduleWords };
 }
 
 async function ownedData(userId) {
@@ -607,7 +619,7 @@ async function handleBookingIntent(intent, parsed, userId, now) {
 async function handleSlotStatus(parsed, now) {
   const { slotCode, floorName, zoneName } = parsed.entities;
   if (!slotCode) return { message: 'Bạn muốn kiểm tra ô nào? Ví dụ: “Ô A10 còn trống không?”.', context: {} };
-  const slots = await Slot.find({ slotNumber: new RegExp(`^${escapeRegex(slotCode)}$`, 'i') })
+  const slots = await Slot.find({ retired: { $ne: true }, slotNumber: new RegExp(`^${escapeRegex(slotCode)}$`, 'i') })
     .populate('floorID', 'name floorNumber').populate('zoneID', 'zoneName').lean();
   const filtered = slots.filter((slot) => (!floorName || fold(slot.floorID?.name).includes(fold(floorName))
     || String(slot.floorID?.floorNumber) === String(floorName).replace(/\D/g, ''))
@@ -623,10 +635,11 @@ async function handleSlotStatus(parsed, now) {
     Booking.findOne({ floorId, parkingSlot: new RegExp(`^${escapeRegex(slot.slotNumber)}$`, 'i'), status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] }, scheduledStart: { $lte: now }, scheduledEnd: { $gt: now } }).lean(),
     BookingHold.findOne({ floorId, slotCode: slot.slotNumber.toUpperCase(), status: 'active', expiresAt: { $gt: now }, startTime: { $lte: now }, endTime: { $gt: now } }).lean(),
   ]);
-  const unavailable = slot.status === 'maintenance' || slot.reservedFor || slot.reservedBySubscriptionId
-    || slot.reservedByEntitlementId || session || booking || hold || ['occupied', 'booked'].includes(slot.status);
   const reason = slot.status === 'maintenance' ? 'đang bảo trì'
-    : (session ? 'đang có xe đỗ' : booking || hold ? 'đã được giữ/đặt' : unavailable ? 'đang được dành riêng' : 'đang trống');
+    : session || slot.status === 'occupied' || slot.aiObservation?.occupied ? 'đang có xe đỗ'
+      : slot.reservedFor || slot.reservedBySubscriptionId || slot.reservedByEntitlementId || slot.slotType === 'vip' ? 'là ô dành riêng theo gói'
+        : booking || slot.status === 'booked' ? 'đã có lượt đặt'
+          : hold ? 'đang được giữ tạm' : slot.status === 'available' ? 'đang trống' : 'chưa xác định trạng thái';
   return {
     message: `Ô ${slot.slotNumber}, ${slot.floorID?.name || 'chưa xác định tầng'} ${reason}.`,
     context: { slotCode: slot.slotNumber, floorName: slot.floorID?.name || '', zoneName: slot.zoneID?.zoneName || '' },
@@ -634,12 +647,12 @@ async function handleSlotStatus(parsed, now) {
 }
 
 async function handleLiveAvailability(parsed, now) {
-  const slots = await Slot.find({}).populate('floorID', 'name floorNumber')
+  const slots = await Slot.find({ retired: { $ne: true } }).populate('floorID', 'name floorNumber status acceptsBookings')
     .populate('zoneID', 'zoneName').lean();
   const matching = slots.filter((slot) => {
     const slotType = fold(slot.slotType || 'hourly');
     const compatibleType = parsed.entities.vehicleType === 'electric_car'
-      ? ['hourly', 'slot', 'standard', 'ev'].includes(slotType)
+      ? ['hourly', 'slot', 'standard', 'ev', 'slot-ev'].includes(slotType)
       : ['hourly', 'slot', 'standard'].includes(slotType);
     const floorMatches = !parsed.entities.floorName
       || fold(slot.floorID?.name).includes(fold(parsed.entities.floorName))
@@ -647,7 +660,8 @@ async function handleLiveAvailability(parsed, now) {
     const zoneMatches = !parsed.entities.zoneName
       || fold(slot.zoneID?.zoneName) === fold(parsed.entities.zoneName)
       || fold(slot.zoneID?.zoneName).includes(fold(parsed.entities.zoneName));
-    return compatibleType && floorMatches && zoneMatches;
+    return compatibleType && floorMatches && zoneMatches && slot.floorID?.acceptsBookings !== false
+      && !['draft', 'archived'].includes(slot.floorID?.status);
   });
   if (!matching.length) return { message: 'Không tìm thấy tầng hoặc khu đỗ phù hợp.', context: {} };
   const floorIds = [...new Set(matching.map((slot) => idOf(slot.floorID)))];
@@ -661,7 +675,7 @@ async function handleLiveAvailability(parsed, now) {
     ...bookings.map((item) => `${idOf(item.floorId)}:${String(item.parkingSlot).toUpperCase()}`),
     ...holds.map((item) => `${idOf(item.floorId)}:${String(item.slotCode).toUpperCase()}`),
   ]);
-  const available = matching.filter((slot) => slot.status === 'available'
+  const available = matching.filter((slot) => slot.status === 'available' && !slot.aiObservation?.occupied
     && !slot.reservedFor && !slot.reservedBySubscriptionId && !slot.reservedByEntitlementId
     && !used.has(`${idOf(slot.floorID)}:${String(slot.slotNumber).toUpperCase()}`));
   const floorLabel = parsed.entities.floorName
@@ -671,7 +685,9 @@ async function handleLiveAvailability(parsed, now) {
     .filter(Boolean).join(', ') || 'bãi';
   const suggestions = available.slice(0, 5).map((slot) => `${slot.floorID?.name} · ${slot.slotNumber}`);
   return {
-    message: `Hiện ${label} còn ${available.length}/${matching.length} ô trống.${suggestions.length ? ` Gợi ý: ${suggestions.join(', ')}.` : ''}`,
+    message: available.length
+      ? `Hiện ${label} còn ${available.length}/${matching.length} ô trống. Gợi ý: ${suggestions.join(', ')}.`
+      : `Hiện ${label} không còn chỗ phù hợp. Bạn có thể thử tầng, khu hoặc khung giờ khác.`,
     context: { floorName: parsed.entities.floorName, zoneName: parsed.entities.zoneName },
   };
 }

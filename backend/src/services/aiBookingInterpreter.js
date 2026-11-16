@@ -326,6 +326,15 @@ function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime =
   // Existing per-car slots are retained when appending vehicles. A shared
   // slot must not be inherited by all the newly appended cars.
   if (parsed.clearSharedSlot) result.draft.slotCode = '';
+  if (parsed.addingBookingVehicles && parsed.changes?.reservationItems && result.draft.assistantContext) {
+    // The next plate answers the newly added booking row, rather than an
+    // earlier service-target or vehicle-lookup question.
+    result.draft.assistantContext = {
+      ...result.draft.assistantContext,
+      pendingServiceSelection: null,
+      pendingLookupIntent: null,
+    };
+  }
   if (parsed.clearVehicle) {
     result.draft.licensePlate = '';
     result.draft.licensePlates = [];
@@ -367,7 +376,7 @@ function parseBasicVietnameseBooking(prompt, today, previous = {}, currentTime =
   if (!result.clarification && result.draft.startTime && result.draft.endTime
     && result.draft.endTime <= result.draft.startTime
     && !(result.draft.endDate > result.draft.startDate)) {
-    result.clarification = `Giờ kết thúc ${result.draft.endTime} cùng ngày sớm hơn giờ bắt đầu ${result.draft.startTime}. Bạn hãy nói rõ ngày và giờ kết thúc.`;
+    result.clarification = `Giờ kết thúc ${result.draft.endTime} cùng ngày sớm hơn giờ bắt đầu ${result.draft.startTime}. Nếu muốn đỗ qua đêm, hãy nói “${result.draft.endTime} hôm sau”; hoặc nói rõ ngày và giờ kết thúc.`;
     // Do not show an impossible endpoint in the preview. Revert to a prior
     // valid departure when one exists; otherwise keep the field empty.
     const priorEndDate = validDate(previous.endDate) ? previous.endDate : result.draft.startDate;

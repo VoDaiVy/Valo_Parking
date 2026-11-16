@@ -1,3 +1,5 @@
+import VipPackageCard from './VipPackageCard';
+import './VipPackageModal.css';
 import PackageTermsSummary from '../membership/PackageTermsSummary';
 import { packageDurationLabel, packageSalesAvailability } from '../../utils/ticketPackageTerms';
 import { useState, useEffect, useRef } from 'react';
@@ -34,6 +36,9 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   const [mapActiveSessions, setMapActiveSessions] = useState([]);
   const [mapActiveHolds, setMapActiveHolds] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotLoadError, setSlotLoadError] = useState('');
+  const [slotDataFloorId, setSlotDataFloorId] = useState('');
+  const [slotsRetry, setSlotsRetry] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
 
   // Flow states
@@ -56,6 +61,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
 
   useEffect(() => {
     if (!isOpen) return;
+    let active = true;
 
     const fetchData = async () => {
       try {
@@ -69,12 +75,19 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
         setPaymentStatus('');
         setPaymentMethod('payos');
         setPolicyPrompt({ open: false, missingPolicies: [] });
-        const [pkgRes, vRes, floorRes, walletRes] = await Promise.all([
+        const [pkgRes, vRes, , walletRes] = await Promise.all([
           getTicketPackages().catch(() => ({ ok: false })),
           getMyVehicles().catch(() => ({ ok: false })),
-          apiFetch('/parking-floors').catch(() => ({ ok: false })),
+          apiFetch('/parking-floors').then((response) => {
+            if (active && response.ok && Array.isArray(response.data?.data)) {
+              setFloors(response.data.data);
+              if (response.data.data.length) setSelectedFloorId(response.data.data[0]._id);
+            }
+            return response;
+          }).catch(() => ({ ok: false })),
           getWalletInfo().catch(() => ({ ok: false })),
         ]);
+        if (!active) return;
 
         if (pkgRes.ok && pkgRes.data?.data) {
           setPackages(pkgRes.data.data.filter((p) => p.isActive));
@@ -84,22 +97,18 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           setVehicles(approved);
           if (approved.length > 0) setSelectedVehicleId(approved[0]._id);
         }
-        if (floorRes.ok && floorRes.data?.data) {
-          const fls = floorRes.data.data;
-          setFloors(fls);
-          if (fls.length > 0) setSelectedFloorId(fls[0]._id);
-        }
         if (walletRes.ok && walletRes.data?.data) {
           setWalletBalance(Number(walletRes.data.data.balance || 0));
         }
       } catch (err) {
         console.error('Error fetching VIP modal data:', err);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     fetchData();
+    return () => { active = false; };
   }, [isOpen]);
 
   useEffect(() => {
@@ -181,66 +190,48 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
     }
   };
 
-  // Load slots when selectedFloorId changes in slot selection view
+  // Prefetch while browsing plans; verify again when choosing a plan.
   useEffect(() => {
-    if (!selectedPackage || !selectedFloorId) return;
-
+    if (!isOpen || !selectedFloorId) return;
+    const controller = new AbortController();
+    const deadline = window.setTimeout(() => controller.abort(), 12000);
+    let active = true;
     const fetchSlots = async () => {
+      setLoadingSlots(true);
+      setSlotLoadError('');
       try {
-        setLoadingSlots(true);
-        setFloorSlots([]);
-        setFloorDbSlots([]);
-        setMapActiveSessions([]);
-        setMapActiveHolds([]);
-        const [res, liveMapRes] = await Promise.all([
-          apiFetch(`/parking-floors/${selectedFloorId}/slots`),
-          apiFetch('/parking-floors/live-map').catch(() => ({ ok: false })),
-        ]);
-        if (res.ok && res.data?.data) {
-          // Only show standard car slots or EV slots that are available
-          const rawSlots = res.data.data;
-          const liveSlots = (liveMapRes.ok && Array.isArray(liveMapRes.data?.data)
-            ? liveMapRes.data.data : []).filter((slot) => String(slot.floorId) === String(selectedFloorId));
-          const unavailableLiveCodes = new Set(liveSlots
-            .filter((slot) => slot.status !== 'available')
-            .map((slot) => String(slot.id || '').toUpperCase()));
-          setFloorDbSlots(rawSlots);
-          const available = rawSlots.filter((s) => 
-            (s.status === 'available' || s.isAvailable) 
-            && s.slotType !== 'SLOT-MOTO' 
-            && s.slotType !== 'SLOT-HANDICAP'
-            && !s.reservedBySubscriptionId
-            && !s.reservedByEntitlementId
-            && !unavailableLiveCodes.has(String(s.slotNumber || s.slotCode).toUpperCase())
-          );
-          setMapActiveSessions(liveSlots
-            .filter((slot) => slot.status === 'occupied')
-            .map((slot) => ({ floorId: slot.floorId, parkingSlot: slot.id })));
-          setMapActiveHolds(liveSlots
-            .filter((slot) => slot.status === 'reserved')
-            .map((slot) => ({ floorId: slot.floorId, slotCode: slot.id })));
-          setFloorSlots(available);
-          setSelectedSlotCode((current) => {
-            const stillAvailable = available.some((slot) => (
-              String(slot.slotNumber || slot.slotCode).toUpperCase() === String(current).toUpperCase()
-            ));
-            return stillAvailable ? current : '';
-          });
+        const response = await apiFetch(`/parking-floors/${selectedFloorId}/vip-availability`, { signal: controller.signal });
+        if (!active) return;
+        const data = response.data?.data;
+        if (!response.ok || !Array.isArray(data?.slots) || String(data.floorId) !== String(selectedFloorId)) {
+          throw new Error(response.data?.message || 'Unable to check available spaces. Please try again.');
         }
-      } catch (err) {
+        const slots = data.slots;
+        const available = slots.filter((slot) => slot.isAvailable === true
+          && !['SLOT-MOTO', 'SLOT-HANDICAP', 'moto', 'handicap'].includes(slot.slotType));
+        setFloorDbSlots(slots);
+        setMapActiveSessions(slots.filter((slot) => slot.status === 'occupied')
+          .map((slot) => ({ floorId: selectedFloorId, parkingSlot: slot.slotNumber })));
+        setMapActiveHolds(slots.filter((slot) => slot.status === 'booked')
+          .map((slot) => ({ floorId: selectedFloorId, slotCode: slot.slotNumber })));
+        setFloorSlots(available);
+        setSlotDataFloorId(selectedFloorId);
+        setSelectedSlotCode((current) => available.some((slot) => String(slot.slotNumber).toUpperCase() === String(current).toUpperCase()) ? current : '');
+      } catch (error) {
+        if (!active) return;
+        setSlotLoadError(error.message || 'Unable to check available spaces. Please try again.');
         setFloorSlots([]);
-        setFloorDbSlots([]);
-        setMapActiveSessions([]);
-        setMapActiveHolds([]);
         setSelectedSlotCode('');
-        console.error('Error fetching floor slots:', err);
       } finally {
-        setLoadingSlots(false);
+        window.clearTimeout(deadline);
+        if (active) setLoadingSlots(false);
       }
     };
-
     fetchSlots();
-  }, [selectedPackage, selectedFloorId]);
+    return () => { active = false; window.clearTimeout(deadline); controller.abort(); };
+  }, [isOpen, selectedFloorId, selectedPackage?._id, slotsRetry]);
+
+  const slotsReady = !loadingSlots && !slotLoadError && slotDataFloorId === selectedFloorId && Boolean(selectedFloorId);
 
   if (!isOpen) return null;
 
@@ -264,6 +255,10 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
       return;
     }
 
+    if (!slotsReady) {
+      setErrorMsg('Please wait until parking space availability has been verified.');
+      return;
+    }
     const price = Number(selectedPackage.price || 0);
     if (paymentMethod === 'wallet' && walletBalance < price) {
       setErrorMsg(`Your wallet balance (${walletBalance.toLocaleString('en-US')} VND) is not enough to pay ${price.toLocaleString('en-US')} VND. Please top up or use PayOS.`);
@@ -332,7 +327,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-gray-100 bg-white shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="vip-package-dialog-title" className="vip-package-dialog relative flex flex-col overflow-hidden rounded-[32px] border border-gray-100 bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-transparent p-5 sm:px-6">
           <div className="flex items-center gap-3">
@@ -340,21 +335,22 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
               <Crown size={22} className="fill-current" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-gray-900">VALO VIP & Monthly Packages</h2>
+              <h2 id="vip-package-dialog-title" className="text-xl font-black text-gray-900">VALO VIP & Monthly Packages</h2>
               <p className="text-xs font-semibold text-gray-500">Choose a vehicle, reserved space, and the parking service that fits your needs</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition"
+            aria-label="Close VIP packages"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto scrollbar-hidden p-5 sm:p-6 space-y-6">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-hidden p-5 sm:p-7 space-y-6">
           {loading ? (
             <div className="flex h-64 flex-col items-center justify-center gap-3 text-gray-400">
               <Loader2 size={36} className="animate-spin text-amber-500" />
@@ -610,7 +606,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                     <Sparkles size={15} className="text-amber-500" /> Choose your dedicated parking space
                   </label>
                   <span className="text-xs font-bold text-emerald-600">
-                    {floorSlots.length} spaces available
+                    {slotsReady ? `${floorSlots.length} spaces available` : slotLoadError ? 'Availability unavailable' : 'Checking availability...'}
                   </span>
                 </div>
 
@@ -618,14 +614,10 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                   Click an available space on the parking map. Unavailable, reserved and maintenance spaces cannot be selected.
                 </p>
 
-                {loadingSlots ? (
-                  <div className="flex h-80 justify-center items-center text-gray-400 gap-2 text-xs font-bold rounded-2xl border border-gray-200 bg-gray-50">
-                    <Loader2 size={18} className="animate-spin text-amber-500" /> Checking available spaces...
-                  </div>
-                ) : (
                   <div className="overflow-hidden rounded-2xl border border-gray-200 bg-slate-50 shadow-inner">
                     <div className="relative h-80 sm:h-[520px]">
                       <ParkingMapViewer
+                        readOnly={!slotsReady}
                         floors={floors}
                         currentFloorId={selectedFloorId}
                         onFloorSelect={(floorId) => {
@@ -643,6 +635,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                         }))}
                         onSelectSlot={(slot, floorId) => {
                           if (String(floorId) !== String(selectedFloorId)) return;
+                          if (!slotsReady) return;
                           const code = String(slot.id || '').toUpperCase();
                           const isAvailable = floorSlots.some((item) => (
                             String(item.slotNumber || item.slotCode).toUpperCase() === code
@@ -657,7 +650,18 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                         hideUI
                         staticFit
                       />
-                      {!floorSlots.length && (
+                      {!slotsReady && !slotLoadError && (
+                        <div role="status" className="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white/95 p-3 text-xs font-semibold text-amber-800 shadow-sm">
+                          <Loader2 size={16} className="animate-spin" /> Checking available spaces...
+                        </div>
+                      )}
+                      {slotLoadError && (
+                        <div role="alert" className="absolute inset-x-4 top-4 rounded-xl border border-rose-200 bg-white p-3 text-center text-xs text-rose-700 shadow-sm">
+                          <p>{slotLoadError}</p>
+                          <button type="button" onClick={() => setSlotsRetry((value) => value + 1)} className="mt-2 rounded-lg bg-rose-50 px-4 py-2 font-bold hover:bg-rose-100">Retry availability check</button>
+                        </div>
+                      )}
+                      {slotsReady && !floorSlots.length && (
                         <div className="pointer-events-none absolute inset-x-4 bottom-4 rounded-xl border border-amber-200 bg-amber-50/95 p-3 text-center text-xs font-bold text-amber-800 shadow-sm backdrop-blur">
                           This floor has no space available for a new VIP package. Please choose another floor.
                         </div>
@@ -673,7 +677,6 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                       </div>
                     </div>
                   </div>
-                )}
               </div>
 
               {/* Payment Method */}
@@ -741,7 +744,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
               <div className="flex flex-col gap-2 lg:col-start-2 lg:row-start-7">
                 <button
                   type="button"
-                  disabled={submitting || !selectedSlotCode || vehicles.length === 0}
+                  disabled={submitting || !slotsReady || !selectedSlotCode || vehicles.length === 0}
                   onClick={handlePrimaryAction}
                   className={`flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 font-black text-white shadow-lg transition disabled:cursor-not-allowed disabled:bg-gray-400 disabled:opacity-100 disabled:shadow-none ${
                     paymentMethod === 'payos'
@@ -762,7 +765,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           ) : (
             /* Step 1: Package List */
             <div className="flex flex-col items-center justify-center py-2">
-              <div className="flex justify-center items-stretch gap-6 flex-wrap sm:flex-nowrap w-full max-w-3xl">
+              <div className="vip-package-catalog">
                 {packages.length > 0 ? (
                   [...packages]
                     .sort((a, b) => {
@@ -770,121 +773,9 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                       if (a.type !== 'monthly' && b.type === 'monthly') return 1;
                       return Number(a.price || 0) - Number(b.price || 0);
                     })
-                    .map((pkg) => {
-                      const price = Number(pkg.price || 0);
-                      const isMonthly = pkg.type === 'monthly';
-                      return (
-                        <div
-                          key={pkg._id}
-                          className={`relative flex flex-col justify-between rounded-[32px] p-6 sm:p-7 w-full max-w-[340px] transition-all hover:translate-y-[-2px] ${
-                            isMonthly
-                              ? 'border-2 border-amber-200/90 bg-[#fdfdfa] shadow-[0_12px_40px_rgba(245,158,11,0.08)] hover:shadow-[0_16px_45px_rgba(245,158,11,0.15)]'
-                              : 'border-2 border-purple-200/90 bg-[#fefeff] shadow-[0_12px_40px_rgba(168,85,247,0.08)] hover:shadow-[0_16px_45px_rgba(168,85,247,0.15)]'
-                          }`}
-                        >
-                          {/* Top Badge */}
-                          {isMonthly ? (
-                            <div className="absolute top-4 right-4">
-                              <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white font-black text-[10px] tracking-wider uppercase px-3 py-1 rounded-full shadow-sm">
-                                POPULAR
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="absolute top-4 right-4">
-                              <span className="bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-black text-[10px] tracking-wider uppercase px-3 py-1 rounded-full shadow-sm">
-                                BEST VALUE
-                              </span>
-                            </div>
-                          )}
-
-                          <div>
-                            {/* Circle Icon */}
-                            {isMonthly ? (
-                              <div className="w-16 h-16 rounded-full bg-blue-50/80 border-4 border-blue-200/70 flex items-center justify-center mx-auto mb-2.5 text-amber-500 shadow-sm">
-                                <Crown size={28} className="text-amber-500 fill-amber-400" />
-                              </div>
-                            ) : (
-                              <div className="w-16 h-16 rounded-full bg-purple-50/80 border-4 border-purple-200/70 flex items-center justify-center mx-auto mb-2.5 text-purple-600 shadow-sm">
-                                <Sparkles size={28} className="text-purple-600 fill-purple-300" />
-                              </div>
-                            )}
-
-                            {/* Sub-label */}
-                            <div className="text-center mb-1">
-                              {isMonthly ? (
-                                <span className="text-[11px] font-black uppercase tracking-widest text-amber-500">
-                                  MONTHLY
-                                </span>
-                              ) : (
-                                <span className="inline-block bg-purple-100 text-purple-600 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                                  {pkg.type === 'hourly' ? 'HOURLY' : 'YEARLY'}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Title */}
-                            <h3 className="text-base sm:text-lg font-black text-gray-900 tracking-wide text-center uppercase">
-                              {pkg.name}
-                            </h3>
-
-                            {/* Price Inset Box */}
-                            <div
-                              className={`rounded-2xl border py-4 px-4 my-4 text-center shadow-inner ${
-                                isMonthly
-                                  ? 'border-gray-100 bg-[#f9fafb]'
-                                  : 'border-purple-100/70 bg-[#faf8ff]'
-                              }`}
-                            >
-                              <div
-                                className={`text-2xl sm:text-[26px] font-black tracking-tight ${
-                                  isMonthly ? 'text-amber-500' : 'text-purple-600'
-                                }`}
-                              >
-                                {price.toLocaleString('en-US')} VND
-                              </div>
-                              <div className="text-xs text-gray-400 font-semibold mt-0.5">
-                                {packageDurationLabel(pkg)}
-                              </div>
-                            </div>
-
-                            <PackageTermsSummary terms={pkg} showServices={false} />
-                            {/* Benefits */}
-                            <ul className="space-y-3 text-xs text-gray-600 mb-6 flex-1 px-1">
-                              {(pkg.benefits || []).map((benefit) => <li key={benefit} className="flex items-start gap-2.5"><Check size={16} className="shrink-0 text-amber-500" /><span>{benefit}</span></li>)}
-
-                              {Array.isArray(pkg.features) && pkg.features.map((feat, idx) => (
-                                <li key={idx} className="flex items-start gap-2.5">
-                                  <Check
-                                    size={16}
-                                    className={`shrink-0 mt-0.5 stroke-[2.5] ${
-                                      isMonthly ? 'text-amber-400' : 'text-purple-500'
-                                    }`}
-                                  />
-                                  <span>{feat}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-
-                          {/* Bottom Action Button */}
-                          <button
-                            type="button"
-                            disabled={!packageSalesAvailability(pkg).available}
-                            onClick={() => handleSelectPackage(pkg)}
-                            className={`w-full rounded-2xl font-black py-3.5 px-4 shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-sm ${
-                              isMonthly
-                                ? 'bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-gray-950 shadow-amber-500/25'
-                                : 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-purple-500/25'
-                            }`}
-                          >
-                            <span>{packageSalesAvailability(pkg).available ? 'Choose this package' : packageSalesAvailability(pkg).message}</span>
-                            <ArrowRight size={16} />
-                          </button>
-                        </div>
-                      );
-                    })
+                    .map((pkg) => <VipPackageCard key={pkg._id} pkg={pkg} onSelect={handleSelectPackage} />)
                 ) : (
-                  <div className="py-12 text-center text-gray-400">
+                  <div className="col-span-full py-12 text-center text-gray-400">
                     <p className="text-sm font-bold">No VIP packages are currently available.</p>
                   </div>
                 )}

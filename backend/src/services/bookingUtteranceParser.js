@@ -211,7 +211,7 @@ function extractLicensePlates(message) {
 
 function extractVehicleCount(message) {
   const words = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5 };
-  const match = message.match(/\b(\d+|mot|hai|ba|bon|nam)\s*(?:chiec\s+)?(?:xe|o do|cho(?!\s*(?:xe|toi|minh|o\s*to|oto|nguoi_dung|khach)))\b/);
+  const match = message.match(/\b(\d+|mot|hai|ba|bon|nam)\s*(?:chiec\s+)?(?:xe|o(?: do)?|bai do|cho(?!\s*(?:xe|toi|minh|o\s*to|oto|nguoi_dung|khach)))\b/);
   if (match) return Number(words[match[1]] || match[1]);
   if (/\b(?:ca|cho)\s+hai\s+xe\b|\bca\s+doi\s+xe\b/.test(message)) return 2;
   return 0;
@@ -221,7 +221,8 @@ function extractVehicleCount(message) {
 // "cho tôi E6", "I'll take E6"). Keep this deliberately narrower than a
 // license-plate matcher: a slot has one/two letters and at most four digits.
 function extractContextualSlotCode(message, continuing = false) {
-  const prefixed = message.match(/\b(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot|parking\s+(?:spot|space)|doi(?:\s+(?:sang|qua))?|chuyen(?:\s+(?:sang|qua))?|lay|chon|dung|use|take|choose|pick|select|switch\s+to|change\s+to|give\s+me|cho\s+(?:nguoi_dung|minh))\s*(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot)?\s*([a-z]{1,2})\s*([-_.]?)\s*(\d{1,4})\b/);
+  const prefixed = message.match(/\b(?:doi|chuyen|sua|change|switch)\s+(?:o(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot)\s+(?:sang|qua|thanh|to)\s+(?:(?:o(?:\s+do)?|slot)\s+)?([a-z]{1,2})\s*([-_.]?)\s*(\d{1,4})\b/)
+    || message.match(/\b(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot|parking\s+(?:spot|space)|doi(?:\s+(?:sang|qua))?|chuyen(?:\s+(?:sang|qua))?|lay|chon|dung|use|take|choose|pick|select|switch\s+to|change\s+to|give\s+me|cho\s+(?:nguoi_dung|minh))\s*(?:o(?:\s+do)?|bai(?:\s+xe)?(?:\s+do)?|cho(?:\s+do)?|vi\s+tri|slot)?\s*([a-z]{1,2})\s*([-_.]?)\s*(\d{1,4})\b/);
   if (prefixed) return `${prefixed[1]}${prefixed[2]}${prefixed[3]}`.toUpperCase();
   if (!continuing) return '';
   const bare = message.trim().match(/^([a-z]{1,2})\s*[-_. ]?\s*(\d{1,4})[.!?]?$/);
@@ -1388,6 +1389,22 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   // interpreted time in the preview and must explicitly confirm it.
   const parsedTimes = times.map(({ hour, minute, period }) => parseHour(hour, minute, period));
   if (parsedTimes.includes(null)) return null;
+  const nextDayDepartureRequested = /\b(?:hom sau|ngay sau|ngay ke tiep|ngay tiep theo)\b/.test(message);
+  const changesArrival = /\b(?:gio vao|bat dau)\b/.test(message);
+  const singleTimeIsEnd = times.length === 1 && !changesArrival && (/\b(gio ra|ket thuc|den luc|den\s+\d)/.test(message)
+    || awaitingField === 'endTime'
+    || (continuing && previous.startTime && (!previous.endTime || nextDayDepartureRequested)));
+  const arrivalDate = startDate || (continuing ? previous.startDate : '');
+  const endIsMidnight = times.length === 2
+    ? parsedTimes[1] === '00:00' && parsedTimes[0] > '00:00' && dates.length < 2
+    : singleTimeIsEnd && parsedTimes[0] === '00:00' && previous.startTime > '00:00' && !dates.length;
+  const explicitSameDay = /\b(?:cung ngay|trong ngay|ngay do)\b/.test(message);
+  if (arrivalDate && !explicitSameDay && (times.length === 2 || singleTimeIsEnd)
+    && ((nextDayDepartureRequested && dates.length < (singleTimeIsEnd ? 1 : 2)) || endIsMidnight)) {
+    // "Hôm sau" is relative to arrival, even for a future booking or a retry.
+    // A bare midnight departure is the next midnight; explicit dates win.
+    endDate = addDays(arrivalDate, 1);
+  }
   if (times.length === 2 && parsedTimes[1] <= parsedTimes[0]
     && /\b(qua dem|lien tuc)\b/.test(message) && startDate && endDate === startDate) {
     endDate = addDays(endDate, 1);
@@ -1408,10 +1425,14 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
   const slotCode = contextualSlotCode || slotMatch?.[1].toUpperCase() || '';
   const mentionedPlate = /\b(bien so|bien|xe\s+[0-9]{2}[a-z0-9.-]+)\b/.test(message);
   const mentionedFloor = /\b(tang|floor)\b/.test(message);
-  // A generic mention of the parking lot ("tới bãi") is not a request for
-  // a particular optional space. Only explicit space/slot language may clarify.
-  const mentionedSlot = /\b(o do|cho do|vi tri|slot|parking (?:spot|space))\b/.test(message)
-    || /\b(?:doi|sua|chuyen|chon|lay)\s+(?:(?:sang|qua)\s+)?o\b/.test(message);
+  // "Đặt 1 ô đỗ ..." describes what to book, not a missing optional slot
+  // code. Remove only that generic clause for intent detection, preserving
+  // separately requested spaces ("..., chọn ô B2" or "..., đổi sang ô").
+  // Creation does not depend on which date/time words follow the noun:
+  // "ngay bây giờ" has already become the internal luc_hien_tai token here.
+  const slotIntentText = message.replace(/\b(?:dat|giu(?:\s+cho)?)\s+(?:(?:\d+|mot|hai|ba|bon|nam)\s+(?:chiec\s+)?)?(?:o do|o(?!\s+do\b)|cho do|bai do)\b(?!\s+(?:ma|so)\b)/g, ' ');
+  const mentionedSlot = /\b(o do|cho do|vi tri|slot|parking (?:spot|space))\b/.test(slotIntentText)
+    || /\b(?:doi|sua|chuyen|chon|lay)\s+(?:(?:sang|qua)\s+)?o\b/.test(slotIntentText);
 
   if (!startDate && !times.length && !durationMatch && !licensePlate && !statedVehicleCount && !addsAnotherVehicle
     && !vehicleType && !floorName && !zoneName && !slotCode && !createCue
@@ -1420,9 +1441,6 @@ function parseVietnameseBookingUtterance(prompt, today, previous = {}, currentTi
     vehicleType, floorName, zoneName, slotCode, startTime: '', endTime: '' };
   let clarification = '';
   let clearTimes = false;
-  const singleTimeIsEnd = times.length === 1 && (/\b(gio ra|ket thuc|den luc|den\s+\d)/.test(message)
-    || awaitingField === 'endTime'
-    || (continuing && previous.startTime && !previous.endTime));
   if (relativeStartTime) {
     changes.startTime = relativeStartTime;
     if (singleTimeIsEnd) changes.endTime = parsedTimes[0];
@@ -1543,9 +1561,9 @@ function parseAdditionalBookingVehicles(prompt, today, previous, currentTime, la
   const oldPlates = previousLicensePlates(previous);
   if (previous.__intent !== 'CREATE_BOOKING' || !oldPlates.length
     || /\b(?:tai khoan|ho so|dang ky|register|account|vehicle profile)\b/.test(message)) return null;
-  const numbers = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const numbers = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, one: 1, a: 1, an: 1, another: 1, two: 2, three: 3, four: 4, five: 5 };
   const addition = message.match(/\b(?:them|bo sung)\s+(?:(\d+|mot|hai|ba|bon|nam|nhieu|vai)\s+(?:chiec\s+)?)?(?:xe|bien so)\b/)
-    || message.match(/\b(?:add|include|bring)\s+(?:(\d+|one|two|three|four|five|another|more|some|several)\s+)?(?:more\s+)?(?:cars?|vehicles?)\b/);
+    || message.match(/\b(?:add|include|bring)\s+(?:(\d+|one|a|an|two|three|four|five|another|more|some|several)\s+)?(?:more\s+)?(?:cars?(?!\s*wash\b)|vehicles?)\b/);
   if (!addition) return null;
   const tr = (vi, en) => language === 'en' ? en : vi;
   const incoming = extractLicensePlates(message);
@@ -1607,7 +1625,7 @@ function parseAdditionalBookingVehicles(prompt, today, previous, currentTime, la
 function parseBookingUtterance(prompt, today, previous = {}, currentTime = '', language) {
   const detected = language || detectBookingLanguage(prompt, previous.language).language;
   const addition = parseAdditionalBookingVehicles(prompt, today, previous, currentTime, detected);
-  if (addition) return addition;
+  if (addition) return { ...addition, addingBookingVehicles: true };
   // Normalize only a mixed-language command verb, never any business value.
   prompt = String(prompt).replace(/\b(?:change|correct)\s+(?=(?:giờ|gio|ngày|ngay|biển|bien|tầng|tang)\b)/giu, 'đổi ');
   const englishSignals = /\b(?:book|reserve|parking|spot|space|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|arrive|leave|from|until|license plate|plate number|vehicle|car|hours?|am|pm)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(prompt);
