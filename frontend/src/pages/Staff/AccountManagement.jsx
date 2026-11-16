@@ -1,5 +1,6 @@
-import { useState, useEffect, Fragment } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { revealCustomer, highlightCustomerRow } from './customerDeepLink.js';
+import { useState, useEffect, useRef, Fragment } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -9,10 +10,24 @@ import {
   RefreshCw, Eye, Lock
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import './components/staffManagement.css';
+import './components/staffCustomerManagement.css';
 import {
   getOperationalViewState,
   getResponseAvailability,
 } from '../../utils/staffOperationalAvailability';
+
+// Match CustomerProfile/Navbar field precedence; stored CDN URLs are already absolute.
+function CustomerAvatar({ user, imageClassName, fallbackClassName, children }) {
+  const [failedSource, setFailedSource] = useState(null);
+  const avatar = user?.profile?.avatar || user?.avatar || user?.avatarUrl;
+  const source = typeof avatar === 'string' ? avatar.trim() : '';
+  return source && failedSource !== source
+    ? <img src={source} alt="" className={imageClassName}
+        referrerPolicy="no-referrer" loading="lazy" decoding="async"
+        onError={() => setFailedSource(source)} />
+    : <div className={fallbackClassName}>{children}</div>;
+}
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -116,41 +131,16 @@ function SkeletonRow() {
 }
 
 // --- Overview Card ------------------------------------------------------------
-function StatCard({ icon: Icon, label, value, gradient, glow, loading, unavailable }) {
-  return (
-    <div
-      className="relative rounded-xl p-3 overflow-hidden cursor-default group transition-all duration-300 hover:scale-[1.02]"
-      style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 8px 40px ${glow}, 0 0 0 1px rgba(255,255,255,0.12)`; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(0,0,0,0.3)'; }}
-    >
-      {/* sweep shimmer */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-        style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%)' }} />
-      {/* gradient blob */}
-      <div className={`absolute -top-6 -right-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 group-hover:opacity-20 transition-opacity duration-300 blur-xl`} />
-
-      <div className="relative flex items-start justify-between">
-        <div>
-          <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold mb-1">{label}</p>
-          <p className="text-2xl font-bold text-white">
-            {loading
-              ? <span className="inline-block w-12 h-8 rounded bg-white/10 animate-skeleton" />
-              : unavailable
-                ? '—'
-                : <AnimatedCounter target={value} />}
-          </p>
-        </div>
-        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
-          <Icon size={16} className="text-white" />
-        </div>
-      </div>
+function StatCard({ icon: Icon, label, value, loading, unavailable }) {
+  return <article className="g3-metric" aria-label={label}>
+    <div className="g3-metric-icon"><Icon size={19} aria-hidden="true" /></div>
+    <div className="g3-metric-copy">
+      <p className="g3-metric-label">{label}</p>
+      <p className="g3-metric-value">{loading
+        ? <span className="inline-block w-12 h-6 rounded bg-white/10 animate-skeleton" />
+        : unavailable ? '?' : <AnimatedCounter target={value} />}</p>
     </div>
-  );
+  </article>;
 }
 
 export default function AccountManagement() {
@@ -181,11 +171,17 @@ export default function AccountManagement() {
   };
 
   // ── Data ──
+  const customerLocation = useLocation();
+  const linkedCustomerId = useRef(null);
+  const linkedCustomerRow = useRef(null);
+  if (queryUserId) linkedCustomerId.current = queryUserId;
   const fetchUsers = async () => {
+    const generation = ++customerRequest.current;
     try {
       setLoading(true);
       setLoadError('');
       const res = await apiFetch('/staff/users', { headers: authHeader });
+      if (generation !== customerRequest.current) return;
       const responseState = getResponseAvailability(res, 'Unable to load customer accounts.');
       if (!responseState.isAvailable) {
         setUsers([]);
@@ -196,21 +192,28 @@ export default function AccountManagement() {
       // Strict Data Filtering: ONLY fetch and display accounts where role === 'customer'
       const customersOnly = (responseState.data || []).filter(u => u.role === 'customer');
       setUsers(customersOnly);
+      setPanelUser(previous => previous ? customersOnly.find(user => String(user._id) === String(previous._id)) || null : null);
     } catch (e) {
+      if (generation !== customerRequest.current) return;
       console.error(e);
       setUsers([]);
       setPanelUser(null);
       setLoadError(e?.message || 'Unable to load customer accounts.');
     }
-    finally { setLoading(false); }
+    finally { if (generation === customerRequest.current) setLoading(false); }
   };
+  const customerRequest = useRef(0);
+  const customerLoader = useRef(null);
+  useEffect(() => { customerLoader.current = fetchUsers; });
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       fetchUsers();
     }, 0);
 
-    return () => window.clearTimeout(timerId);
+    const onChange = ({ detail }) => { if (['UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE'].includes(detail?.type)) customerLoader.current?.(); };
+    window.addEventListener('valo:staff-data-changed', onChange);
+    return () => { customerRequest.current += 1; window.clearTimeout(timerId); window.removeEventListener('valo:staff-data-changed', onChange); };
   }, []);
 
   useEffect(() => {
@@ -398,6 +401,10 @@ export default function AccountManagement() {
     return sortOrder === 'newest' ? diff : -diff;
   });
 
+  const linked = revealCustomer(users, filtered, linkedCustomerId.current, PAGE_SIZE);
+  if (linked) filtered = linked.rows;
+  useEffect(() => { if (linked && queryUserId) setPage(linked.page); }, [users, queryUserId]);
+  useEffect(() => { if (!loading && linked) return highlightCustomerRow(linkedCustomerRow.current); }, [loading, page, customerLocation.key, users]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageUsers = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -407,7 +414,7 @@ export default function AccountManagement() {
   const avatarGrad = (u) => (ROLES[u?.role] || ROLES.customer).gradient;
 
   return (
-    <div className="flex h-[calc(100vh-70px)] bg-[#080808] text-white relative overflow-hidden">
+    <div className="g3-management-page g3-customer-page flex h-[calc(100vh-70px)] bg-[#080808] text-white relative overflow-hidden">
       <style>{`
         @keyframes skeletonShimmer {
           0% { background-position: -400px 0; }
@@ -461,35 +468,35 @@ export default function AccountManagement() {
       `}</style>
 
       {/* ═══════════════ LEFT: MAIN PANEL ═══════════════ */}
-      <div className={`flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300`}>
+      <div className={`g3-management-content g3-customer-main flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300`}>
 
         {/* -- Header -- */}
-        <div className="bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
-          <div className="flex items-center justify-between">
+        <div className="g3-header bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
+          <div className="g3-header-line flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-[#ffd555] tracking-tight">Customer Management</h1>
-              <p className="text-sm text-white/40 mt-0.5">Manage customer accounts and access permissions</p>
+              <p className="g3-subtitle text-sm text-white/40 mt-0.5">Manage customer accounts and access permissions</p>
             </div>
-            <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
+            <button onClick={fetchUsers} className="g3-action g3-header-action flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
             </button>
           </div>
 
           {/* -- Stat Cards -- */}
-          <div className="grid grid-cols-4 gap-3 mt-4">
-            <StatCard icon={Users} label="Total Customers" value={totalAccounts} gradient="from-cyan-400 to-blue-500" glow="rgba(6,182,212,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} gradient="from-violet-400 to-purple-600" glow="rgba(167,139,250,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} gradient="from-rose-500 to-red-600" glow="rgba(239,68,68,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} gradient="from-amber-400 to-orange-500" glow="rgba(251,191,36,0.3)" loading={loading} unavailable={!accountState.isAvailable && !loading} />
-          </div>
+          <section aria-label="Customer summary" className="g3-metrics-strip g3-customer-metrics grid grid-cols-4 gap-3 mt-4">
+            <StatCard icon={Users} label="Total Customers" value={totalAccounts} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+          </section>
         </div>
 
         {/* -- Controls Bar -- */}
-        <div className="flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
-          <div className="relative flex-1 min-w-[240px] max-w-sm">
+        <div className="g3-toolbar flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
+          <div className="g3-search relative flex-1 min-w-[240px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
-              value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
+              aria-label="Search customers" value={searchTerm} onChange={e => { linkedCustomerId.current = null; setSearchTerm(e.target.value); setPage(1); }}
               placeholder="Search name, email, phone..."
               className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
             />
@@ -500,7 +507,7 @@ export default function AccountManagement() {
             
             {/* Status Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
+              <Menu.Button aria-label="Filter customers by status" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Eye size={14} className="text-white/40" />
                 <span className="font-medium">{filterStatus === 'all' ? 'All Status' : filterStatus === 'active' ? 'Active' : 'Blocked'}</span>
                 <ChevronDown size={14} className="text-white/40" />
@@ -511,7 +518,7 @@ export default function AccountManagement() {
                     {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
-                          <button onClick={() => { setFilterStatus(v); setPage(1); }}
+                          <button onClick={() => { linkedCustomerId.current = null; setFilterStatus(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterStatus === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
                             {l}
@@ -526,7 +533,7 @@ export default function AccountManagement() {
 
             {/* Sort Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
+              <Menu.Button aria-label="Sort customers" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Clock size={14} className="text-white/40" />
                 <span className="font-medium"> {sortOrder === 'newest' ? 'Newest' : 'Oldest'}</span>
                 <ChevronDown size={14} className="text-white/40" />
@@ -537,7 +544,7 @@ export default function AccountManagement() {
                     {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
-                          <button onClick={() => { setSortOrder(v); setPage(1); }}
+                          <button onClick={() => { linkedCustomerId.current = null; setSortOrder(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {sortOrder === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
                             {l}
@@ -551,15 +558,11 @@ export default function AccountManagement() {
             </Menu>
           </div>
 
-          <div className="ml-auto text-sm font-medium text-white/40 tracking-wide">
-            {accountState.isAvailable
-              ? `${filtered.length} of ${users.length} accounts`
-              : 'Customer counts unavailable'}
-          </div>
+
         </div>
 
         {/* -- Table -- */}
-        <div className="flex-1 overflow-auto min-h-0">
+        <div className="g3-table-scroll flex-1 overflow-auto min-h-0">
           <table className="w-full min-w-[800px] border-collapse">
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#14120c] border-b border-[#ffd555]/20">
@@ -594,33 +597,34 @@ export default function AccountManagement() {
               {!loading && pageUsers.map(u => {
                 const isActive = panelUser?._id === u._id;
                 return (
-                  <tr key={u._id} className={`group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
+                  <tr key={u._id} ref={String(u._id).toLowerCase() === String(linkedCustomerId.current).toLowerCase() ? linkedCustomerRow : undefined} className={`g3-data-row group border-b border-white/[0.04] cursor-pointer hover:bg-white/[0.02] hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_12px_rgba(0,0,0,0.2)] transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
                     onClick={() => openPanel(u)}>
                     <td className="w-4"></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="relative flex-shrink-0">
-                          {u.profile?.avatar
-                            ? <img src={u.profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-white/10" />
-                            : <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>{initials(u)}</div>
-                          }
+                          <CustomerAvatar user={u}
+                            imageClassName="g3-avatar w-9 h-9 rounded-full object-cover ring-2 ring-white/10"
+                            fallbackClassName={`g3-avatar w-9 h-9 rounded-full bg-gradient-to-br ${avatarGrad(u)} flex items-center justify-center text-white text-sm font-bold shadow-lg`}>
+                            {initials(u)}
+                          </CustomerAvatar>
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#080808] ${u.status ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-white truncate">{displayName(u)}</p>
+                          <p title={displayName(u)} className="text-[13px] font-semibold text-white truncate">{displayName(u)}</p>
                           <p className="text-[11px] text-white/40 truncate">{u.username || '-'}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
+                    <td title={u.email} className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
                     <td className="px-4 py-3 text-[13px] text-white/55">{u.profile?.phone || '-'}</td>
-                    <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
+                    <td className="px-4 py-3" data-role={u.role}><RoleBadge role={u.role} /></td>
                     <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
                     <td className="px-4 py-3 text-[12px] text-white/35">{formatDate(u.createdAt)}</td>
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" className="w-8 h-8 rounded-xl border border-[#ffd555]/10 bg-[#ffd555]/[0.02] hover:bg-[#ffd555]/10 hover:border-[#ffd555]/30 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-all duration-200 hover:scale-105">
+                          title="Edit account" aria-label="Edit account" className="g3-edit">
                           <Edit3 size={14} />
                         </button>
                       </div>
@@ -633,7 +637,7 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Pagination -- */}
-        <div className="flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
+        <div className="g3-pagination flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
           <span className="text-xs text-white/30">
             {accountState.isAvailable
               ? `Page ${page} of ${totalPages} · ${filtered.length} results`
@@ -646,7 +650,7 @@ export default function AccountManagement() {
               const p = i + 1;
               return (
                 <button key={p} onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${p === page ? 'bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>
+                  className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${p === page ? 'g3-page-active bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>
                   {p}
                 </button>
               );
@@ -693,10 +697,11 @@ export default function AccountManagement() {
                   <div className="flex flex-col items-center text-center">
                     <div className="relative mb-3 group cursor-pointer">
                       <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} opacity-20 blur-xl scale-125 group-hover:opacity-40 transition-opacity duration-300`} />
-                      {panelUser.profile?.avatar
-                        ? <img src={panelUser.profile.avatar} alt="" className="relative w-20 h-20 rounded-full object-cover ring-4 ring-[#1B2027] shadow-xl" />
-                        : <div className={`relative w-20 h-20 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} flex items-center justify-center text-white text-3xl font-bold shadow-xl ring-4 ring-[#1B2027]`}>{initials(panelUser)}</div>
-                      }
+                      <CustomerAvatar user={panelUser}
+                        imageClassName="relative w-20 h-20 rounded-full object-cover ring-4 ring-[#1B2027] shadow-xl"
+                        fallbackClassName={`relative w-20 h-20 rounded-full bg-gradient-to-br ${avatarGrad(panelUser)} flex items-center justify-center text-white text-3xl font-bold shadow-xl ring-4 ring-[#1B2027]`}>
+                        {initials(panelUser)}
+                      </CustomerAvatar>
                       <span className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-[3px] border-[#1B2027] ${panelUser.status ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`} />
                     </div>
                     <h2 className="text-xl font-bold text-white mb-0.5">{displayName(panelUser)}</h2>

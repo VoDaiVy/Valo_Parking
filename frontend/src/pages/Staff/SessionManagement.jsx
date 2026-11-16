@@ -1,27 +1,68 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
+import { matchesSessionTime } from './sessionTimeFilter.js';
+import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker.jsx';
 import StaffDropdown from './components/StaffDropdown.jsx';
+import './components/staffManagement.css';
+import './components/staffSessionManagement.css';
+import '../Admin/sessionManagement.css';
+import { sessionMetrics } from './sessionMetrics.js';
+import './components/sessionDetails.css';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
-import { useSearchParams } from 'react-router-dom';
-import { useLanguage } from '../../i18n/hooks/useLanguage';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { createSessionVerification, verifiedSessionForQuery, sessionRowTarget, highlightSessionRow } from './sessionDeepLink.js';
 
 export default function SessionManagement() {
-  const { t, language } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedSession, setSelectedSession] = useState(null);
+  const [manualSession, setSelectedSession] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [timeFilter, setTimeFilter] = useState({ mode: 'all', value: '', from: '', to: '' });
+  const updateTimeFilter = (patch) => { setTimeFilter(previous => ({ ...previous, ...patch })); setCurrentPage(1); };
+  const invalidTimeRange = timeFilter.mode === 'range' && timeFilter.from && timeFilter.to && timeFilter.from > timeFilter.to;
   const [sortBy, setSortBy] = useState('newest');
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiInitialPlate, setAiInitialPlate] = useState('');
   const [aiInitialImage, setAiInitialImage] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionIdQuery = searchParams.get('sessionId');
+  const location = useLocation();
+  const isAdminPage = location.pathname === '/admin/sessions';
+  const [verification, setVerification] = useState({ status: 'idle' });
+  const [verificationAttempt, setVerificationAttempt] = useState(0);
+  const [rowFocus, setRowFocus] = useState(null);
+  const verifier = useMemo(() => createSessionVerification(() => getAllSessions({ cache: 'no-store' }), (result) => {
+    setVerification(result);
+    if (result.sessions) {
+      setSessions(result.sessions);
+      setError('');
+      setLoading(false);
+    } else if (result.status !== 'loading') {
+      setLoading(false);
+      setError('Không thể tải danh sách phiên đỗ xe. Vui lòng thử lại.');
+    }
+  }), [setVerification, setSessions, setError, setLoading]);
+  const adminDeepLink = isAdminPage && Boolean(sessionIdQuery);
+  const verificationKey = `${location.key}:${verificationAttempt}`;
+  const linkedSession = adminDeepLink ? verifiedSessionForQuery(verification, sessionIdQuery, verificationKey) : null;
+  const selectedSession = adminDeepLink ? null : manualSession;
+  const verificationStatus = verification.sessionId === sessionIdQuery && verification.requestKey === verificationKey
+    ? verification.status : 'loading';
+  const selectManualSession = (session) => {
+    setSelectedSession(session);
+    if (adminDeepLink) {
+      verifier.cancel();
+      const params = new URLSearchParams(searchParams);
+      params.delete('sessionId');
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -43,9 +84,17 @@ export default function SessionManagement() {
   }, []);
 
   useEffect(() => {
+    if (adminDeepLink) return;
     const timerId = setTimeout(fetchSessions, 0);
     return () => clearTimeout(timerId);
-  }, [fetchSessions]);
+  }, [fetchSessions, adminDeepLink]);
+
+  useEffect(() => {
+    const timerId = setTimeout(() => {
+      verifier.verify(isAdminPage ? 'admin' : 'staff', sessionIdQuery, verificationKey);
+    }, 0);
+    return () => { clearTimeout(timerId); verifier.cancel(); };
+  }, [verifier, isAdminPage, sessionIdQuery, verificationKey]);
 
   useEffect(() => {
     const pageScroller = document.querySelector('main');
@@ -55,22 +104,23 @@ export default function SessionManagement() {
   }, []);
 
   useEffect(() => {
-    if (sessions.length > 0 && sessionIdQuery) {
+    if (!isAdminPage && sessions.length > 0 && sessionIdQuery) {
       const targetSession = sessions.find(s => s._id === sessionIdQuery);
       if (targetSession) {
-        setTimeout(() => {
+        const timerId = setTimeout(() => {
           setSelectedSession(targetSession);
           const newParams = new URLSearchParams(searchParams);
           newParams.delete('sessionId');
           setSearchParams(newParams, { replace: true });
         }, 0);
+        return () => clearTimeout(timerId);
       }
     }
-  }, [sessions, sessionIdQuery, searchParams, setSearchParams]);
+  }, [sessions, sessionIdQuery, searchParams, setSearchParams, isAdminPage]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('vi-VN');
+    return new Date(dateString).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
   };
 
   const formatPrice = (price) => new Intl.NumberFormat('vi-VN', {
@@ -80,12 +130,12 @@ export default function SessionManagement() {
   }).format(Number(price) || 0);
 
   const filteredSessions = useMemo(
-    () => filterAndSortSessions(sessions, {
+    () => filterAndSortSessions(isAdminPage ? sessions.filter(session => matchesSessionTime(session.checkInTime, timeFilter)) : sessions, {
       searchQuery,
       status: statusFilter,
       sortBy,
     }),
-    [sessions, searchQuery, statusFilter, sortBy],
+    [sessions, searchQuery, statusFilter, sortBy, isAdminPage, timeFilter],
   );
 
   const pagination = useMemo(
@@ -97,37 +147,134 @@ export default function SessionManagement() {
     [pagination.currentPage, pagination.totalPages],
   );
 
+  useEffect(() => {
+    if (!linkedSession) return;
+    const target = sessionRowTarget(linkedSession._id, verification.sessions);
+    if (!target) return;
+    const timer = setTimeout(() => {
+      setSelectedSession(null);
+      setSearchQuery('');
+      setStatusFilter('all');
+      setTimeFilter({ mode: 'all', value: '', from: '', to: '' });
+      setSortBy('newest');
+      setCurrentPage(target.page);
+      setRowFocus({ ...target, requestKey: verificationKey });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [linkedSession, verification.sessions, verificationKey]);
+
+  useEffect(() => {
+    if (!adminDeepLink || rowFocus?.requestKey !== verificationKey) return;
+    return highlightSessionRow(document.getElementById(`session-row-${rowFocus.id.toLowerCase()}`));
+  }, [rowFocus, adminDeepLink, verificationKey]);
+
+  const [metricsNow, setMetricsNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setMetricsNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, [isAdminPage]);
+  const metrics = useMemo(() => sessionMetrics(sessions, metricsNow), [sessions, metricsNow]);
+
   return (
-    <div className="min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className={`g3-management-page g3-session-page ${isAdminPage ? 'admin-session-management' : 'staff-session-management'} min-h-full bg-[#080808] px-4 py-6 text-white sm:px-6 lg:px-8`}>
+      {isAdminPage && <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />}
+      {adminDeepLink && verificationStatus !== 'verified' && (
+        <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+          {verificationStatus === 'loading' ? 'Verifying the linked session...'
+            : verificationStatus === 'missing' ? 'Session not found.'
+              : verificationStatus === 'unavailable' ? 'Session access is unavailable. Check your sign-in and permissions.'
+                : 'Unable to verify this session. Please try again.'}
+          {verificationStatus !== 'loading' && <button type="button" className="ml-3 underline" onClick={() => {
+            setVerification({ sessionId: sessionIdQuery, status: 'loading', session: null });
+            setVerificationAttempt((attempt) => attempt + 1);
+          }}>Retry</button>}
+        </div>
+      )}
+      <div className="g3-management-content g3-header mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-            <MonitorCheck size={12} /> {t('adminPages.sessionManagement.badge')}
-          </div>
-          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.sessionManagement.title')}</h1>
-          <p className="mt-0.5 text-sm font-medium text-blue-200/60">{t('adminPages.sessionManagement.subtitle')}</p>
+          {isAdminPage ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Session Management</h1>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
+                <MonitorCheck size={12} /> Session Manager
+              </div>
+            </div>
+          ) : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>}
+          <p className="g3-subtitle mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
         </div>
 
+        <div className={isAdminPage ? 'admin-session-header-actions' : 'staff-session-header-actions'}>
+        {isAdminPage && <button type="button" onClick={() => {
+          if (loading) return;
+          if (adminDeepLink) {
+            setLoading(true);
+            setVerificationAttempt((attempt) => attempt + 1);
+          } else {
+            fetchSessions();
+          }
+        }} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" aria-busy={loading} className="admin-session-refresh">
+          <RefreshCw size={14} aria-hidden="true" className={loading ? 'animate-spin motion-reduce:animate-none' : ''} />
+        </button>}
+        {!isAdminPage && <button type="button" onClick={fetchSessions} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" className="staff-session-refresh">
+          <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
+        </button>}
         {/* AI Blurred Plate Assistant Button */}
-        <button
+        {isAdminPage && <button
           type="button"
           onClick={() => {
             setAiInitialPlate(searchQuery || '');
             setAiInitialImage(null);
             setShowAiModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
+          className="g4-ai-plate-trigger g3-header-action flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
-          <span>{t('adminPages.sessionManagement.aiAssistant')}</span>
-        </button>
+          <span>AI Plate Assistant</span>
+        </button>}
+        </div>
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0b0b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+      {isAdminPage && (
+        <section aria-label="Admin session summary" aria-busy={loading} className="admin-session-metrics">
+          {[
+            { label: 'Total Sessions', value: metrics.total, Icon: MonitorCheck, note: 'All recorded sessions', tone: 'text-blue-300' },
+            { label: 'Currently Parked', value: metrics.parked, Icon: Car, note: 'Active sessions', tone: 'text-cyan-300' },
+            { label: 'Completed Today', value: metrics.completedToday, Icon: CheckCircle2, note: 'Checkouts in Vietnam time', tone: 'text-emerald-300' },
+            { label: 'Completed Sessions', value: sessions.filter((session) => session.status === 'completed').length, Icon: CheckCircle2, note: 'Finished parking sessions', tone: 'text-emerald-300' },
+          ].map(({ label, value, Icon, note, tone }) => (
+            <div key={label} className="admin-session-metric" title={loading ? 'Loading sessions' : error ? 'Session API unavailable' : note}>
+              <Icon size={18} className={`shrink-0 ${tone}`} aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-blue-200/55">{label}</p>
+                {loading ? <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" aria-label="Loading" /> : (
+                  <div className="mt-1.5 flex items-baseline gap-2">
+                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? 'N/A' : value.toLocaleString('vi-VN')}</p>
+                    <span className="truncate text-xs text-emerald-300">{error ? 'Unavailable' : note}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {!isAdminPage && <section aria-label="Session summary" className="g3-management-content staff-session-metrics">
+        {[
+          { label: 'Total Sessions', value: metrics.total, Icon: MonitorCheck, note: 'All sessions returned by the authorized session API; independent of table filters.' },
+          { label: 'Currently Parked', value: metrics.parked, Icon: Car, note: 'All sessions with active status.' },
+          { label: 'Completed Today', value: metrics.completedToday, Icon: CheckCircle2, note: 'Completed sessions checked out today in Asia/Ho_Chi_Minh.' },
+          { label: 'Needs Attention', value: metrics.needsAttention, Icon: Clock, note: metrics.needsAttention == null ? 'Unavailable: an active session has missing or invalid expected timing.' : 'Active sessions past their recorded expected duration, matching Staff diagnostics.' },
+        ].map(({ label, value, Icon, note }) => <article key={label} aria-label={label} title={loading ? 'Loading session data' : error ? 'Session data unavailable' : note} className="staff-session-metric">
+          <Icon size={19} aria-hidden="true" />
+          <div><p className="staff-session-metric-label">{label}</p><p className="staff-session-metric-value">{loading ? '...' : error ? '\u2014' : value == null ? <span className="staff-session-unavailable">Unavailable</span> : value}</p></div>
+        </article>)}
+      </section>}
+
+      <section className="g3-management-content g3-session-panel overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0b0b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
         {!loading && !error && (
-          <div className="flex flex-col gap-3 border-b border-white/[0.07] bg-[#0d0d0d] p-4 lg:flex-row lg:items-center">
-            <label className="relative min-w-0 flex-1 lg:max-w-md">
-              <span className="sr-only">{t('adminPages.sessionManagement.searchPlaceholder')}</span>
+          <div className="g3-toolbar flex flex-col gap-3 border-b border-white/[0.07] bg-[#0d0d0d] p-4 lg:flex-row lg:items-center">
+            <label className="g3-search relative min-w-0 flex-1 lg:max-w-md">
+              <span className="sr-only">Search sessions</span>
               <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600" />
               <input
                 type="search"
@@ -136,7 +283,7 @@ export default function SessionManagement() {
                   setSearchQuery(event.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder={t('adminPages.sessionManagement.searchPlaceholder')}
+                placeholder="Search license plate or phone..."
                 className="h-11 w-full rounded-xl border border-white/10 bg-[#080808] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-[#ffd555]/40 focus:ring-2 focus:ring-[#ffd555]/10"
               />
             </label>
@@ -149,12 +296,12 @@ export default function SessionManagement() {
                     setCurrentPage(1);
                 }}
                 options={[
-                  ['all', language === 'vi' ? 'Tất cả trạng thái' : 'All statuses'],
-                  ['active', language === 'vi' ? 'Đang hoạt động' : 'Active'],
-                  ['completed', language === 'vi' ? 'Đã hoàn tất' : 'Completed'],
-                  ['cancelled', language === 'vi' ? 'Đã hủy' : 'Cancelled'],
+                  ['all', 'All statuses'],
+                  ['active', 'Active'],
+                  ['completed', 'Completed'],
+                  ['cancelled', 'Cancelled'],
                 ]}
-                ariaLabel={t('adminPages.sessionManagement.filterStatus')}
+                ariaLabel="Filter sessions by status"
                 className="w-full sm:min-w-40"
                 buttonClassName="text-xs font-black uppercase tracking-[0.08em]"
               />
@@ -166,25 +313,39 @@ export default function SessionManagement() {
                     setCurrentPage(1);
                 }}
                 options={[
-                  ['newest', language === 'vi' ? 'Mới nhất trước' : 'Newest first'],
-                  ['oldest', language === 'vi' ? 'Cũ nhất trước' : 'Oldest first'],
-                  ['price-high', language === 'vi' ? 'Giá: cao đến thấp' : 'Price: high to low'],
-                  ['price-low', language === 'vi' ? 'Giá: thấp đến cao' : 'Price: low to high'],
+                  ['newest', 'Newest first'],
+                  ['oldest', 'Oldest first'],
+                  ['price-high', 'Price: high to low'],
+                  ['price-low', 'Price: low to high'],
                 ]}
-                ariaLabel={t('adminPages.sessionManagement.sort')}
+                ariaLabel="Sort sessions"
                 align="right"
                 className="w-full sm:min-w-48"
                 buttonClassName="text-xs font-black uppercase tracking-[0.08em]"
                 menuClassName="w-52"
               />
             </div>
+            {isAdminPage && <section aria-label="Filter by check-in time" className="admin-session-time-filter">
+          <div className="admin-session-time-controls">
+            <div className="admin-session-time-mode"><StaffDropdown value={timeFilter.mode} onChange={mode => updateTimeFilter({ mode, value: '', from: '', to: '' })} options={[[ 'all', 'All time' ], ['day', 'By day'], ['month', 'By month'], ['year', 'By year'], ['range', 'Date & time range']]} ariaLabel="Time filter mode" /></div>
+            {['day', 'month', 'year'].includes(timeFilter.mode) && <label className="flex flex-col gap-2 text-xs text-slate-400"><span className="sr-only">{timeFilter.mode === 'day' ? 'Date' : timeFilter.mode === 'month' ? 'Month' : 'Year'}</span><input type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'} min={timeFilter.mode === 'year' ? '1000' : undefined} max={timeFilter.mode === 'year' ? '9999' : undefined} placeholder="YYYY" value={timeFilter.value} onChange={event => updateTimeFilter({ value: event.target.value })} className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]" /></label>}
+            {timeFilter.mode === 'range' && <>
+              <div><p className="sr-only">From</p><AdminDateTimePicker label="Check-in from (Vietnam time)" value={timeFilter.from} onChange={from => updateTimeFilter({ from })} /></div>
+              <div><p className="sr-only">To</p><AdminDateTimePicker label="Check-in to (Vietnam time)" value={timeFilter.to} onChange={to => updateTimeFilter({ to })} /></div>
+            </>}
+            {timeFilter.mode !== 'all' && <button type="button" onClick={() => updateTimeFilter({ mode: 'all', value: '', from: '', to: '' })} title="Clear time filter" aria-label="Clear time filter" className="inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/5 hover:text-white"><X size={16} /></button>}
+          </div>
+          {invalidTimeRange && <p role="alert" className="mt-3 text-xs text-rose-300">End time must be on or after start time.</p>}
+        </section>}
           </div>
         )}
+
+
 
         {loading ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-14 text-center text-slate-500">
             <Loader2 size={24} className="animate-spin text-[#d7b94a]" />
-            <p className="text-sm font-semibold">{t('adminPages.sessionManagement.loading')}</p>
+            <p className="text-sm font-semibold">Loading sessions...</p>
           </div>
         ) : error ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 border border-red-500/10 bg-red-500/[0.04] px-6 py-14 text-center" role="alert">
@@ -192,29 +353,29 @@ export default function SessionManagement() {
               <AlertTriangle size={20} />
             </div>
             <div>
-              <p className="text-sm font-black text-red-200">{t('adminPages.sessionManagement.unavailable')}</p>
+              <p className="text-sm font-black text-red-200">Session data unavailable</p>
               <p className="mt-1 text-xs font-medium text-red-300/65">{error}</p>
             </div>
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto [scrollbar-color:rgba(255,213,85,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#d7b94a]/25">
+            <div className="g3-table-scroll overflow-x-auto [scrollbar-color:rgba(255,213,85,.24)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#d7b94a]/25">
               <table className="w-full border-collapse text-left text-sm whitespace-nowrap">
               <thead className="bg-[#14120c]">
                 <tr>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.licensePlate')}</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.phone')}</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.status')}</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.checkIn')}</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.checkOut')}</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.price')}</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('adminPages.sessionManagement.actions')}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">License Plate</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Phone</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Status</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check In</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check Out</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Price</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Actions</th>
                 </tr>
               </thead>
                 <tbody>
                 {pagination.items.map(session => (
-                  <tr key={session._id} className="border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
-                    <td className="px-4 py-3 font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
+                  <tr key={session._id} id={`session-row-${String(session._id).toLowerCase()}`} className="g3-data-row border-b border-white/[0.06] transition-colors duration-200 last:border-b-0 hover:bg-white/[0.025]">
+                    <td className="g3-plate px-4 py-3 font-black tracking-[0.02em] text-white">{session.licensePlate}</td>
                     <td className="px-4 py-3 font-medium text-slate-400">{session.phone || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${
@@ -228,13 +389,13 @@ export default function SessionManagement() {
                     </td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkInTime)}</td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkOutTime)}</td>
-                    <td className="px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
+                    <td className="g3-price px-4 py-3 font-black tabular-nums text-[#d7b94a]">{formatPrice(session.totalPrice)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => setSelectedSession(session)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
+                        onClick={() => selectManualSession(session)}
+                        className="g3-action inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
-                        <ShieldCheck size={14} /> {t('adminPages.sessionManagement.viewDetails')}
+                        <ShieldCheck size={14} /> View Details
                       </button>
                     </td>
                   </tr>
@@ -244,12 +405,12 @@ export default function SessionManagement() {
                     <td colSpan="7" className="px-6 py-16 text-center">
                       <Camera size={28} className="mx-auto text-slate-700" />
                       <p className="mt-3 text-sm font-bold text-slate-400">
-                        {sessions.length === 0 ? t('adminPages.sessionManagement.noSessions') : t('adminPages.sessionManagement.noMatching')}
+                        {sessions.length === 0 ? 'No sessions found.' : 'No matching sessions.'}
                       </p>
                       <p className="mt-1 text-xs text-slate-600">
                         {sessions.length === 0
-                          ? t('adminPages.sessionManagement.recordsHint')
-                          : t('adminPages.sessionManagement.filterHint')}
+                          ? 'Vehicle entry and exit records will appear here.'
+                          : 'Try changing your search or filters.'}
                       </p>
                     </td>
                   </tr>
@@ -258,16 +419,16 @@ export default function SessionManagement() {
               </table>
             </div>
 
-            {pagination.totalItems > 0 && (
-              <div className="flex flex-col gap-4 border-t border-white/[0.07] bg-[#0d0d0d] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            {(!isAdminPage || pagination.totalItems > 0) && (
+              <div className="g3-pagination flex flex-col gap-4 border-t border-white/[0.07] bg-[#0d0d0d] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p className="text-xs font-semibold text-slate-500">
-                  Showing{' '}
+                  {!isAdminPage ? `Page ${pagination.currentPage} of ${pagination.totalPages} \u00b7 ${pagination.totalItems} results` : <>Showing{' '}
                   <span className="text-slate-300">{pagination.startIndex + 1}-{pagination.endIndex}</span>
                   {' '}of <span className="text-slate-300">{pagination.totalItems}</span> sessions
                   {pagination.totalItems !== sessions.length && (
                     <span className="ml-1 text-slate-600">({sessions.length} total)</span>
                   )}
-                  <span className="ml-2 text-[#d7b94a]/70">15 per page</span>
+                  <span className="ml-2 text-[#d7b94a]/70">15 per page</span></>}
                 </p>
 
                 <nav className="flex items-center gap-1.5" aria-label="Session pagination">
@@ -322,37 +483,47 @@ export default function SessionManagement() {
 
       {/* Detail Modal */}
       {selectedSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] text-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#ffd555]/15 bg-[#14120c] p-6">
+        <div className="g4-session-details fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="g4-session-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] text-white shadow-2xl">
+            <div className="g4-session-header flex items-center justify-between border-b border-[#ffd555]/15 bg-[#14120c] p-6">
               <div>
-                <h3 className="text-xl font-bold text-[#ffd555]">Session Details</h3>
-                <p className="text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
+                <h3 className="g4-session-title text-xl font-bold text-[#ffd555]">Session Details</h3>
+                <p className="g4-session-subtitle text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
               </div>
               <button 
-                onClick={() => setSelectedSession(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffd555]"
+                onClick={() => selectManualSession(null)}
+                className="g4-session-dismiss flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/50 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffd555]"
               >
                 <X size={18} />
               </button>
             </div>
             
-            <div className="p-6 grid grid-cols-2 gap-8">
+            <div className="g4-session-body p-6 grid grid-cols-2 gap-8">
               {/* Entry Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
+                  <div className="g4-session-icon flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
                   <h4 className="font-bold text-lg">Entry Record</h4>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
+                <div className="g4-session-time rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
                   <p className="mb-1 text-sm text-white/40">Check In Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkInTime)}</p>
                 </div>
-                <div className="group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.entryImage_url ? (
-                    <img src={selectedSession.entryImage_url} alt="Entry" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `Entry Photo — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title="Click to view full-size image"
+                    >
+                      <img src={selectedSession.entryImage_url} alt="Entry" className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> Full View
+                      </span>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
@@ -365,18 +536,28 @@ export default function SessionManagement() {
               {/* Exit Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
+                  <div className="g4-session-icon flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
                   <h4 className="font-bold text-lg">Exit Record</h4>
                 </div>
-                <div className="rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
+                <div className="g4-session-time rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
                   <p className="mb-1 text-sm text-white/40">Check Out Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkOutTime)}</p>
                 </div>
-                <div className="group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.exitImage_url ? (
-                    <img src={selectedSession.exitImage_url} alt="Exit" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `Exit Photo — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title="Click to view full-size image"
+                    >
+                      <img src={selectedSession.exitImage_url} alt="Exit" className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> Full View
+                      </span>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
@@ -387,10 +568,10 @@ export default function SessionManagement() {
               </div>
             </div>
 
-            <div className="flex justify-end border-t border-white/[0.07] bg-[#0d0d0d] p-6">
+            <div className="g4-session-footer flex justify-end border-t border-white/[0.07] bg-[#0d0d0d] p-6">
               <button 
-                onClick={() => setSelectedSession(null)}
-                className="rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
+                onClick={() => selectManualSession(null)}
+                className="g4-session-close rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
               >
                 Close
               </button>
@@ -400,7 +581,7 @@ export default function SessionManagement() {
       )}
 
       {/* AI Blurred Plate Resolution Modal */}
-      <AIPlateResolutionModal
+      {isAdminPage && <AIPlateResolutionModal
         isOpen={showAiModal}
         onClose={() => setShowAiModal(false)}
         initialPlate={aiInitialPlate}
@@ -409,7 +590,38 @@ export default function SessionManagement() {
           setSearchQuery(selectedPlate);
           setCurrentPage(1);
         }}
-      />
+      />}
+
+      {/* Full-Size Image Lightbox */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative flex max-h-[92vh] max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0c0d10] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+              <span className="text-sm font-bold text-[#ffd555]">{previewImage.title}</span>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex items-center justify-center overflow-auto bg-black p-3">
+              <img
+                src={previewImage.url}
+                alt={previewImage.title}
+                className="max-h-[80vh] w-auto max-w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

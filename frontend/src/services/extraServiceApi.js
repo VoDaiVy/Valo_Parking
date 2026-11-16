@@ -5,8 +5,8 @@ const authHeader = () => ({
 });
 
 /** GET /api/services — Get service list (public) */
-export const getServices = (activeOnly = true) =>
-  apiFetch(`/services?activeOnly=${activeOnly}`);
+export const getServices = (activeOnly = true, options = {}) =>
+  apiFetch(`/services?activeOnly=${activeOnly}`, options);
 
 /** GET /api/services/:id — Get service details (public) */
 export const getServiceById = (id) =>

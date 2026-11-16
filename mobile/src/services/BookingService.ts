@@ -119,6 +119,7 @@ class BookingService {
   }
 
   createBooking(data: CreateBookingRequest) {
+    const idempotencyKey = data.idempotencyKey || globalThis.crypto?.randomUUID?.();
     return apiClient.post<CreateBookingResponse>('/bookings', {
       vehicleId: data.vehicleId,
       floorId: data.floorId,
@@ -127,6 +128,8 @@ class BookingService {
       scheduledEnd: data.endTime,
       paymentMethod: data.paymentMethod ?? 'wallet',
       services: data.services ?? [],
+    }, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
   }
 
@@ -216,9 +219,16 @@ class BookingService {
     const vehicle = asRecord(record.vehicle ?? record.vehicleId);
     const rawPaymentMethod = firstString(record, ['paymentMethod']);
     const paymentMethod = rawPaymentMethod === 'vietqr' ? 'vietqr' : 'wallet';
+    const feedback = asRecord(record.feedbackSummary);
 
     return {
       _id: id,
+      canSubmitFeedback: record.canSubmitFeedback === true,
+      feedbackSummary: feedback ? {
+        id: firstString(feedback, ['id', '_id']),
+        rating: firstNumber(feedback, ['rating']),
+        hasReply: feedback.hasReply === true,
+      } : null,
       userId: firstString(record, ['userId']),
       floorId: floor ? (floor as unknown as Booking['floorId']) : firstString(record, ['floorId']),
       slotCode: firstString(record, ['slotCode', 'parkingSlot']),

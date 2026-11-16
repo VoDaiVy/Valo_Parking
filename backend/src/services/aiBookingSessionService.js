@@ -1,4 +1,5 @@
 const AiBookingSession = require('../models/AiBookingSession');
+const BookingOrder = require('../models/BookingOrder');
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const ACTIVE_STATUSES = ['DRAFT', 'ACTIVE'];
@@ -26,6 +27,7 @@ const normalizeMessages = (messages) => (Array.isArray(messages) ? messages : []
     content: String(message?.content ?? message?.text ?? '').trim().slice(0, 4000),
     intent: String(message?.intent || '').slice(0, 100),
     state: String(message?.state || '').slice(0, 100),
+    language: ['en', 'vi'].includes(message?.language) ? message.language : '',
     createdAt: message?.createdAt && !Number.isNaN(Date.parse(message.createdAt))
       ? new Date(message.createdAt) : new Date(),
   }))
@@ -64,7 +66,7 @@ const deriveSessionProgress = ({ bookingDraft = {}, phase = 'IDLE', status } = {
   return { currentStep: 'SELECT_SLOT', completionPercent: 70 };
 };
 
-const buildSummary = (bookingDraft = {}, preview = null, currentStep = 'COLLECT_DATE') => {
+const buildSummary = (bookingDraft = {}, preview = null, currentStep = 'COLLECT_DATE', paymentStatus = 'UNPAID') => {
   const items = draftItems(bookingDraft);
   const first = items[0] || {};
   const dates = [...new Set(items.map((item) => item?.date || item?.startDate).filter(Boolean))];
@@ -83,7 +85,7 @@ const buildSummary = (bookingDraft = {}, preview = null, currentStep = 'COLLECT_
       : [bookingDraft.floorName, bookingDraft.slotCode].filter(Boolean).join(' · '),
     services: Array.isArray(bookingDraft.serviceIds) ? bookingDraft.serviceIds : [],
     currentStep,
-    paymentStatus: 'UNPAID',
+    paymentStatus,
   };
 };
 
@@ -117,20 +119,57 @@ const normalizeSnapshot = (payload = {}, status) => {
 
 const expireStaleSessions = async (userId, now = new Date()) => {
   await AiBookingSession.updateMany(
-    { userId, status: { $in: ACTIVE_STATUSES }, expiresAt: { $lte: now } },
+    { userId, deletedAt: null, status: { $in: ACTIVE_STATUSES }, expiresAt: { $lte: now } },
     { $set: { status: 'EXPIRED' } }
   );
 };
 
-const getLatestSession = async (userId) => {
+const sessionLanguageFilter = (language) => language === 'vi'
+  ? { 'bookingDraft.__language': 'vi' }
+  : { 'bookingDraft.__language': { $ne: 'vi' } };
+
+const conversationTitle = (messages = []) => String(messages.find((message) => message.role === 'user')?.content || '')
+  .replace(/\s+/g, ' ').trim().slice(0, 80);
+
+const historyItem = (session) => ({
+  sessionId: String(session._id),
+  title: session.title || conversationTitle(session.messages) || (session.bookingDraft?.__language === 'vi' ? 'Cuộc trò chuyện mới' : 'New chat'),
+  language: session.bookingDraft?.__language === 'vi' ? 'vi' : 'en',
+  status: session.status, createdAt: session.createdAt, updatedAt: session.updatedAt,
+});
+
+const listSessions = async (userId, { language, search = '', page = 1 } = {}) => {
+  const filter = { userId, deletedAt: null, ...(language ? sessionLanguageFilter(language) : {}) };
+  const term = String(search).trim().slice(0, 100);
+  if (term) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.$or = [{ title: { $regex: escaped, $options: 'i' } }, { 'messages.content': { $regex: escaped, $options: 'i' } }];
+  }
+  const pageNumber = Math.max(1, Math.min(10000, Number.parseInt(page, 10) || 1));
+  const rows = await AiBookingSession.find(filter).sort({ updatedAt: -1, _id: -1 })
+    .skip((pageNumber - 1) * 30).limit(31).select('title status bookingDraft.__language messages createdAt updatedAt').lean();
+  return { items: rows.slice(0, 30).map(historyItem), hasMore: rows.length > 30, page: pageNumber };
+};
+
+const renameSession = async (userId, sessionId, title) => {
+  const cleaned = typeof title === 'string' ? title.replace(/\s+/g, ' ').trim() : '';
+  if (!cleaned || cleaned.length > 100) throw Object.assign(new Error('Tên cuộc trò chuyện phải có từ 1 đến 100 ký tự.'), { statusCode: 400 });
+  return AiBookingSession.findOneAndUpdate({ _id: sessionId, userId, deletedAt: null }, { $set: { title: cleaned } }, { new: true, runValidators: true });
+};
+
+const deleteSession = async (userId, sessionId) => AiBookingSession.findOneAndUpdate(
+  { _id: sessionId, userId, deletedAt: null }, { $set: { deletedAt: new Date() } }, { new: true }
+);
+
+const getLatestSession = async (userId, language) => {
   await expireStaleSessions(userId);
-  const latest = await AiBookingSession.findOne({ userId }).sort({ updatedAt: -1 });
-  return [...ACTIVE_STATUSES, 'EXPIRED'].includes(latest?.status) ? latest : null;
+  const latest = await AiBookingSession.findOne({ userId, deletedAt: null, ...(language ? sessionLanguageFilter(language) : {}) }).sort({ updatedAt: -1 });
+  return [...ACTIVE_STATUSES, 'EXPIRED', 'COMPLETED'].includes(latest?.status) ? latest : null;
 };
 
 const getSession = async (userId, sessionId) => {
   await expireStaleSessions(userId);
-  return AiBookingSession.findOne({ _id: sessionId, userId });
+  return AiBookingSession.findOne({ _id: sessionId, userId, deletedAt: null });
 };
 
 const createSession = async (userId, payload = {}) => {
@@ -138,28 +177,35 @@ const createSession = async (userId, payload = {}) => {
   const clientSessionId = String(payload.clientSessionId || '').trim().slice(0, 100);
   if (clientSessionId) {
     const existing = await AiBookingSession.findOne({ userId, clientSessionId });
+    if (existing?.deletedAt) throw Object.assign(new Error('Cuộc trò chuyện đã bị xóa.'), { statusCode: 410 });
     if (existing) return existing;
   }
-  await AiBookingSession.updateMany(
-    { userId, status: { $in: ACTIVE_STATUSES } },
-    { $set: { status: 'CANCELLED', cancelledAt: new Date() } }
-  );
   const snapshot = normalizeSnapshot(payload);
-  return AiBookingSession.create({
-    userId,
-    ...(clientSessionId ? { clientSessionId } : {}),
-    status: snapshot.messages.some((message) => message.role === 'user') ? 'ACTIVE' : 'DRAFT',
-    ...snapshot,
-    expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-  });
+  try {
+    return await AiBookingSession.create({
+        userId,
+        ...(clientSessionId ? { clientSessionId } : {}),
+        status: snapshot.messages.some((message) => message.role === 'user') ? 'ACTIVE' : 'DRAFT',
+        ...snapshot,
+        title: conversationTitle(snapshot.messages),
+        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    });
+  } catch (error) {
+    if (error.code === 11000 && clientSessionId) {
+      const existing = await AiBookingSession.findOne({ userId, clientSessionId, deletedAt: null });
+      if (existing) return existing;
+    }
+    throw error;
+  }
 };
 
 const updateSession = async (userId, sessionId, payload = {}) => {
   await expireStaleSessions(userId);
-  const current = await AiBookingSession.findOne({ _id: sessionId, userId });
+  const current = await AiBookingSession.findOne({ _id: sessionId, userId, deletedAt: null });
   if (!current) return { notFound: true };
   if (!ACTIVE_STATUSES.includes(current.status)) return { inactive: true, session: current };
   const snapshot = normalizeSnapshot(payload);
+  if (!current.title) current.title = conversationTitle(snapshot.messages);
   Object.assign(current, snapshot, {
     status: snapshot.messages.some((message) => message.role === 'user') ? 'ACTIVE' : 'DRAFT',
     expiresAt: new Date(Date.now() + SESSION_TTL_MS),
@@ -171,10 +217,11 @@ const updateSession = async (userId, sessionId, payload = {}) => {
 const appendMessages = async (userId, sessionId, payload = {}) => {
   await expireStaleSessions(userId);
   const incoming = normalizeMessages(payload.messages || [payload.userMessage, payload.assistantMessage].filter(Boolean));
-  const session = await AiBookingSession.findOne({ _id: sessionId, userId });
+  const session = await AiBookingSession.findOne({ _id: sessionId, userId, deletedAt: null });
   if (!session) return { notFound: true };
   if (!ACTIVE_STATUSES.includes(session.status)) return { inactive: true, session };
   session.messages = [...session.messages, ...incoming].slice(-100);
+  if (!session.title) session.title = conversationTitle(session.messages);
   session.status = session.messages.some((message) => message.role === 'user') ? 'ACTIVE' : 'DRAFT';
   session.expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   await session.save();
@@ -182,21 +229,35 @@ const appendMessages = async (userId, sessionId, payload = {}) => {
 };
 
 const completeSession = async (userId, sessionId, payload = {}) => {
-  const session = await AiBookingSession.findOne({ _id: sessionId, userId });
+  const session = await AiBookingSession.findOne({ _id: sessionId, userId, deletedAt: null });
   if (!session) return { notFound: true };
-  if (session.status === 'CANCELLED') return { inactive: true, session };
+  if (session.status === 'COMPLETED') return { session };
+  if (!ACTIVE_STATUSES.includes(session.status) || session.expiresAt <= new Date()) {
+    return { inactive: true, session };
+  }
+  let paymentStatus = 'UNKNOWN';
+  if ((payload.intent || session.intent) === 'CREATE_BOOKING') {
+    const key = payload.bookingDraft?.__confirmationKey;
+    const order = key && await BookingOrder.findOne({ userId, idempotencyKey: key, status: 'paid' });
+    if (!order) {
+      const error = new Error('Chưa tìm thấy đơn booking đã thanh toán để hoàn tất phiên.');
+      error.statusCode = 409;
+      throw error;
+    }
+    paymentStatus = 'PAID';
+  }
   const snapshot = normalizeSnapshot(payload, 'COMPLETED');
   Object.assign(session, snapshot, {
     status: 'COMPLETED', currentStep: 'COMPLETED', completionPercent: 100,
     phase: 'SUCCESS', completedAt: session.completedAt || new Date(),
   });
-  session.summary = buildSummary(session.bookingDraft, session.preview, 'COMPLETED');
+  session.summary = buildSummary(session.bookingDraft, session.preview, 'COMPLETED', paymentStatus);
   await session.save();
   return { session };
 };
 
 const discardSession = async (userId, sessionId) => {
-  const session = await AiBookingSession.findOne({ _id: sessionId, userId });
+  const session = await AiBookingSession.findOne({ _id: sessionId, userId, deletedAt: null });
   if (!session) return { notFound: true };
   if (session.status === 'COMPLETED') return { inactive: true, session };
   session.status = 'CANCELLED';
@@ -206,6 +267,7 @@ const discardSession = async (userId, sessionId) => {
 };
 
 module.exports = {
+  listSessions, renameSession, deleteSession, conversationTitle, historyItem,
   SESSION_TTL_MS,
   appendMessages,
   buildSummary,

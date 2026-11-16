@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Camera, X, Check, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Camera, X, Check, ArrowRight, Loader2, AlertCircle, ShieldAlert, Clock, AlertTriangle } from 'lucide-react';
 import { API_BASE } from '../../services/api';
 import StaffDropdown from './components/StaffDropdown.jsx';
 
@@ -8,6 +8,8 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
   const [exitImageBase64, setExitImageBase64] = useState(null);
   const [invoiceData, setInvoiceData] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [cashReceivedAmount, setCashReceivedAmount] = useState('');
+  const [completedCheckout, setCompletedCheckout] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   
   const videoRef = useRef(null);
@@ -57,10 +59,10 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
     setExitImageBase64(dataUrl);
     stopCamera();
-    handleExitScan();
+    handleExitScan(dataUrl);
   };
 
-  const handleExitScan = async () => {
+  const handleExitScan = async (imageOverride = null) => {
     setStep('scanning');
     setErrorMsg('');
     try {
@@ -69,9 +71,12 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ licensePlate: session.licensePlate })
+        body: JSON.stringify({
+          licensePlate: session.licensePlate,
+          exitImageBase64: imageOverride || exitImageBase64,
+        })
       });
       const data = await res.json();
       
@@ -81,7 +86,14 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         return;
       }
 
-      setInvoiceData(data);
+      const invoice = data.data || data;
+      setInvoiceData({
+        ...invoice,
+        checkoutToken: invoice.checkoutToken || data.checkoutToken || null,
+        totalAmount: Number(invoice.amountToPay || 0),
+        parkingFee: Number(invoice.totalPrice || 0),
+      });
+      setCashReceivedAmount('');
       setStep('invoice');
     } catch (err) {
       console.error(err);
@@ -95,16 +107,20 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
     setErrorMsg('');
     try {
       const token = localStorage.getItem("accessToken");
+      const idempotencyKey = `staff-checkout:${session._id}:${paymentMethod}:${cashReceivedAmount || 'vietqr'}`;
       const res = await fetch(`${API_BASE}/sessions/kiosk-checkout`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify({ 
           sessionId: session._id,
           exitImageBase64,
-          paymentMethod
+          paymentMethod: paymentMethod === 'CASH' ? 'cash' : 'vietqr',
+          cashReceivedAmount: paymentMethod === 'CASH' ? Number(cashReceivedAmount) : null,
+          checkoutToken: invoiceData?.checkoutToken || null,
         })
       });
       const data = await res.json();
@@ -115,6 +131,12 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         return;
       }
 
+      if (data.requiresPayment) {
+        setErrorMsg('Bank payment is required. Complete checkout at the exit kiosk or use the staff mobile QR scanner.');
+        setStep('invoice');
+        return;
+      }
+      setCompletedCheckout(data.data || null);
       setStep('success');
       setTimeout(() => {
         onSuccess();
@@ -190,6 +212,54 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
 
           {step === 'invoice' && invoiceData && (
             <div className="flex flex-col flex-1 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              {/* Parking Violation Alert detected by AI Camera */}
+              {invoiceData.violationDetails && (
+                <div className="mb-4 rounded-xl border border-red-500/50 bg-red-950/70 p-4 text-xs text-red-200 shadow-lg space-y-2.5">
+                  <div className="flex items-center justify-between pb-2 border-b border-red-500/30">
+                    <span className="flex items-center gap-1.5 font-black text-red-400 uppercase tracking-wider text-[11px]">
+                      <ShieldAlert size={16} className="animate-pulse text-red-400" />
+                      Wrong-Slot Violation Detected
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-300 font-mono text-[10px] font-bold border border-red-500/30">
+                      AI CAMERA
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-white font-medium">
+                      <strong className="text-red-300">Violation Reason:</strong>{' '}
+                      {invoiceData.violationDetails.violationMessage || `Unauthorized parking at slot ${invoiceData.violationDetails.slotCode}`}
+                    </p>
+                    <div className="flex items-center gap-1.5 text-slate-300 text-[11px]">
+                      <Clock size={13} className="text-amber-400 flex-shrink-0" />
+                      <span>
+                        <strong className="text-slate-200">Violation Duration:</strong> From{' '}
+                        <span className="text-white font-mono font-bold">
+                          {new Date(invoiceData.violationDetails.detectedAt).toLocaleString('en-US')}
+                        </span>{' '}
+                        to{' '}
+                        <span className="text-white font-mono font-bold">
+                          {invoiceData.violationDetails.resolvedAt
+                            ? new Date(invoiceData.violationDetails.resolvedAt).toLocaleString('en-US')
+                            : 'Present'}
+                        </span>{' '}
+                        ({invoiceData.violationDetails.durationMinutes} min)
+                      </span>
+                    </div>
+                  </div>
+
+                  {invoiceData.violationDetails.evidenceSnapshot && (
+                    <div className="mt-2 rounded-lg overflow-hidden border border-red-500/30 max-h-[100px] bg-black/60 flex items-center justify-center">
+                      <img src={invoiceData.violationDetails.evidenceSnapshot} alt="Evidence" className="w-full h-auto max-h-[100px] object-contain" />
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-amber-300/80 italic pt-1">
+                    * Staff please review and explain this violation to the driver before completing checkout.
+                  </p>
+                </div>
+              )}
+
               <div className="bg-black/40 border border-white/5 rounded-xl p-5 mb-4 flex-1">
                 <div className="flex justify-between items-center pb-3 border-b border-white/5 mb-3">
                   <span className="text-gray-400 text-sm">Check-in Time</span>
@@ -233,8 +303,6 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                   onChange={setPaymentMethod}
                   options={[
                     ['CASH', 'Cash'],
-                    ['BANK_TRANSFER', 'Bank transfer'],
-                    ['POS', 'POS card'],
                   ]}
                   ariaLabel="Select payment method"
                   placement="top"
@@ -244,8 +312,31 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                 />
               </div>
 
+              {paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && (
+                <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                  <label className="block text-xs font-bold uppercase tracking-widest text-yellow-300">
+                    Cash received from customer
+                  </label>
+                  <input
+                    type="number"
+                    min={invoiceData.totalAmount}
+                    step="1000"
+                    value={cashReceivedAmount}
+                    onChange={(event) => setCashReceivedAmount(event.target.value)}
+                    placeholder={`Minimum ${invoiceData.totalAmount.toLocaleString()} VND`}
+                    className="mt-2 w-full rounded-lg border border-yellow-500/40 bg-black/50 px-3 py-2 font-mono text-white outline-none"
+                  />
+                  {Number(cashReceivedAmount) >= Number(invoiceData.totalAmount) && (
+                    <p className="mt-2 text-sm font-bold text-emerald-300">
+                      Change: {(Number(cashReceivedAmount) - Number(invoiceData.totalAmount)).toLocaleString()} VND
+                    </p>
+                  )}
+                </div>
+              )}
+
               <button 
                 onClick={handleConfirmCheckout}
+                disabled={paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
               >
                 Confirm Payment & Checkout
@@ -269,6 +360,11 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
               </div>
               <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-wide">Checkout Success</h3>
               <p className="text-gray-400">Vehicle is clear to exit.</p>
+              {completedCheckout?.changeAmount != null && (
+                <p className="mt-3 text-lg font-bold text-emerald-300">
+                  Change: {Number(completedCheckout.changeAmount).toLocaleString()} VND
+                </p>
+              )}
             </div>
           )}
 

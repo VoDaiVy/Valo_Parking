@@ -651,6 +651,8 @@ async function createDirectSubscriptionNotification(
       subscriptionId: String(subscriptionDetails.subscriptionId),
       expireAt: subscriptionDetails.expireAt,
       expireDate: subscriptionDetails.expireDate || 'N/A',
+      packageName: subscriptionDetails.packageName || 'Membership',
+      floorName: subscriptionDetails.floorName || 'your reserved spaces',
     }
   );
 

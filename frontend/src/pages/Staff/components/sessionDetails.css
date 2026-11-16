@@ -1,0 +1,45 @@
+/* Only the Staff Session Details dialog and its existing assistant trigger. */
+body[data-valo-typography="staff"] .g4-session-details .g4-session-dialog {
+  background: #080B0F;
+  border-color: rgba(16, 185, 129, 0.40);
+  color: #F5F7FA;
+  font-family: Montserrat, sans-serif;
+  box-shadow: 0 20px 60px #00000060, 0 0 0 1px #10B9810A;
+}
+body[data-valo-typography="staff"] .g4-session-details .g4-session-header {
+  background: #092019;
+  border-bottom-color: rgba(84, 227, 176, 0.15);
+  box-shadow: inset 0 -1px 0 #10B98126;
+}
+body[data-valo-typography="staff"] .g4-session-details .g4-session-title { color: #F5F7FA; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-subtitle { color: #9AADC0; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-body { background: #0B1015; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-body h4 { color: #F5F7FA; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-icon { background: #10B98112; color: #54E3B0; box-shadow: inset 0 0 0 1px #10B98140; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-time,
+body[data-valo-typography="staff"] .g4-session-details .g4-session-image { background: #0D1519; border-color: rgba(84, 227, 176, 0.15); }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-time p:first-child,
+body[data-valo-typography="staff"] .g4-session-details .g4-session-image > div { color: #9AADC0; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-time p:last-child { color: #F5F7FA; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-footer { background: #080B0F; border-top-color: rgba(84, 227, 176, 0.15); }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-dismiss {
+  background: #0D1519;
+  border-color: rgba(84, 227, 176, 0.15);
+  color: #9AADC0;
+  transition: color 200ms, background-color 200ms, border-color 200ms;
+}
+body[data-valo-typography="staff"] .g4-session-details .g4-session-dismiss:hover { background: #102A25; border-color: #10B98166; color: #54E3B0; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-close { background: #10B981; color: #06130F; transition: background-color 200ms, box-shadow 200ms; }
+body[data-valo-typography="staff"] .g4-session-details .g4-session-close:hover { background: #16C99A; box-shadow: inset 0 0 0 1px #54E3B040; }
+body[data-valo-typography="staff"] .g4-session-details button:focus-visible { outline: 2px solid #54E3B0; outline-offset: 3px; }
+
+/* Original purple utility classes are retained on the trigger; no emerald
+   action class overrides them. Only interaction feedback is refined here. */
+body[data-valo-typography="staff"] .g4-ai-plate-trigger { transition: color 200ms, background-color 200ms, border-color 200ms, box-shadow 200ms; }
+body[data-valo-typography="staff"] .g4-ai-plate-trigger:hover { box-shadow: 0 4px 16px #8B5CF61F; }
+body[data-valo-typography="staff"] .g3-management-content button.g4-ai-plate-trigger:focus-visible { outline: 2px solid #C084FC; outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-valo-typography="staff"] .g4-session-details button,
+  body[data-valo-typography="staff"] .g4-ai-plate-trigger { transition: none; }
+}

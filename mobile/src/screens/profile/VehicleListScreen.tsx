@@ -149,7 +149,7 @@ function VehicleRow({
       ]}
     >
       <AnimatedPressable
-        accessibilityLabel={`Vehicle ${item.licensePlate}`}
+        accessibilityLabel={`${translateUi("Vehicle")} ${item.licensePlate}`}
         onPress={onPress}
         onPressIn={() => animateArrow(1)}
         onPressOut={() => animateArrow(0)}
@@ -164,11 +164,11 @@ function VehicleRow({
               {item.isDefault ? <Text style={styles.defaultBadge}>{translateUi("Default")}</Text> : null}
             </View>
             <Text style={styles.vehicleMeta} numberOfLines={2}>
-              {description}{item.color ? ` · ${item.color}` : ''}
+              {description}
             </Text>
             <View style={styles.vehicleFooter}>
               <StatusChip color={statusColor} label={STATUS_LABELS[status] ?? status} />
-              <View style={[styles.colorSwatch, { backgroundColor: item.hexColor || '#ffffff' }]} />
+              <View style={styles.colorDetail}><View style={[styles.colorSwatch, { backgroundColor: /^#[0-9a-f]{6}$/i.test(item.hexColor || '') ? item.hexColor : '#969DA7' }]} /><Text style={styles.colorText}>{item.color || translateUi('Not specified')}</Text></View>
             </View>
           </View>
           <Animated.View
@@ -187,7 +187,7 @@ function VehicleRow({
           </Animated.View>
         </View>
       </AnimatedPressable>
-      <View style={styles.rowDivider} />
+
     </Animated.View>
   );
 }
@@ -231,18 +231,9 @@ export const VehicleListScreen = ({ navigation }: Props) => {
       <StatusBar barStyle="light-content" />
       <ProfileScreenHeader
         title={translateUi("My vehicles")}
-        subtitle={`${vehicles.length}/${MAX_VEHICLES_PER_USER} vehicles`}
+        subtitle={translateUi("Manage your registered vehicles")}
         onBack={() => navigation.goBack()}
-        right={
-          vehicleLimitReached ? (
-            <View style={styles.limitBadge}>
-              <Ionicons name="checkmark" size={15} color={COLORS.gold} />
-              <Text style={styles.limitBadgeText}>{translateUi("Limit reached")}</Text>
-            </View>
-          ) : (
-            <AddFab onPress={() => navigation.navigate('AddVehicle')} />
-          )
-        }
+        right={!vehicleLimitReached && !loading && !error ? <AddFab onPress={() => navigation.navigate('AddVehicle')} /> : undefined}
       />
 
       {loading ? (
@@ -256,6 +247,22 @@ export const VehicleListScreen = ({ navigation }: Props) => {
           contentContainerStyle={styles.list}
           data={vehicles}
           keyExtractor={(item, index) => getVehicleId(item) || String(index)}
+          ListHeaderComponent={vehicles.length > 0 ? (
+            <View style={styles.overview}>
+              <View style={styles.overviewTop}>
+                <View style={styles.overviewIcon}><Ionicons name="car-sport-outline" size={24} color={COLORS.gold} /></View>
+                <View style={styles.overviewCopy}>
+                  <Text style={styles.overviewTitle}>{translateUi('Your garage')}</Text>
+                  <Text style={styles.overviewText}>{translateUi('Vehicles saved for your next trip')}</Text>
+                </View>
+                <Text style={styles.overviewCount}>{vehicles.length}<Text style={styles.countTotal}>/{MAX_VEHICLES_PER_USER}</Text></Text>
+              </View>
+              <View style={styles.capacityTrack}><View style={[styles.capacityFill, { width: `${Math.min(100, vehicles.length / MAX_VEHICLES_PER_USER * 100)}%` }]} /></View>
+              <Text style={styles.overviewHint}>{translateUi(vehicleLimitReached ? 'Garage full. Remove a vehicle before adding another.' : 'Add up to 3 vehicles to your account.')}</Text>
+              <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>{translateUi('Registered vehicles')}</Text><Text style={styles.sectionHint}>{translateUi('Tap to manage')}</Text></View>
+            </View>
+          ) : undefined}
+          ListFooterComponent={vehicles.length > 0 ? <View style={styles.helpRow}><Ionicons name="information-circle-outline" size={19} color={COLORS.textMuted} /><Text style={styles.helpText}>{translateUi('Your default vehicle is selected automatically when booking.')}</Text></View> : undefined}
           ListEmptyComponent={<EmptyVehicles onAdd={() => navigation.navigate('AddVehicle')} />}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.gold} colors={[COLORS.gold]} />
@@ -275,6 +282,24 @@ export const VehicleListScreen = ({ navigation }: Props) => {
 };
 
 const styles = StyleSheet.create({
+  overview: { marginBottom: 16 },
+  overviewTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
+  overviewIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: COLORS.goldTint, alignItems: 'center', justifyContent: 'center' },
+  overviewCopy: { flex: 1 },
+  overviewTitle: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '700' },
+  overviewText: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  overviewCount: { color: COLORS.gold, fontSize: 30, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  countTotal: { color: COLORS.textMuted, fontSize: 16, fontWeight: '500' },
+  capacityTrack: { height: 4, borderRadius: 2, backgroundColor: COLORS.border, marginTop: 20, overflow: 'hidden' },
+  capacityFill: { height: 4, borderRadius: 2, backgroundColor: COLORS.gold },
+  overviewHint: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 20, marginTop: 10 },
+  sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 28 },
+  sectionTitle: { color: COLORS.textPrimary, fontWeight: '600', fontSize: 15 },
+  sectionHint: { color: COLORS.textMuted, fontSize: 12 },
+  colorDetail: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  colorText: { color: COLORS.textSecondary, fontSize: 12 },
+  helpRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 4, paddingVertical: 12 },
+  helpText: { flex: 1, color: COLORS.textMuted, fontSize: 13, lineHeight: 20 },
   safe: {
     backgroundColor: COLORS.background,
     flex: 1,
@@ -322,23 +347,28 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.sm,
   },
   vehicleWrap: {
-    marginBottom: SPACING.lg,
+    marginBottom: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
   },
   vehicleRow: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: SPACING.md,
-    minHeight: 86,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: SPACING.sm,
+    minHeight: 142,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
   },
   vehicleIconWrap: {
     alignItems: 'center',
     backgroundColor: 'rgba(226,186,75,0.08)',
     borderRadius: RADIUS.md,
-    height: 52,
+    height: 58,
     justifyContent: 'center',
-    width: 52,
+    width: 58,
   },
   vehicleBody: {
     flex: 1,
@@ -377,14 +407,16 @@ const styles = StyleSheet.create({
   vehicleFooter: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: SPACING.sm,
+    gap: 12,
+    flexWrap: 'wrap',
+    marginTop: 4,
   },
   colorSwatch: {
     borderColor: 'rgba(255,255,255,0.12)',
     borderRadius: RADIUS.round,
     borderWidth: 1,
-    height: 20,
-    width: 20,
+    height: 12,
+    width: 12,
   },
   rowDivider: {
     backgroundColor: 'rgba(255,255,255,0.08)',

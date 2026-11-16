@@ -2,39 +2,83 @@ const fold = (value) => String(value || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
   .replace(/[^a-z0-9']+/g, ' ').trim();
 
-const english = new Set([
-  'i', 'my', 'we', 'you', 'the', 'a', 'an', 'to', 'from', 'at', 'on', 'for', 'until',
-  'tomorrow', 'today', 'next', 'morning', 'afternoon', 'evening', 'want', 'need', 'please',
-  'book', 'reserve', 'parking', 'spot', 'space', 'car', 'vehicle', 'plate', 'license',
-  'arrive', 'leave', 'change', 'confirm', 'cancel', 'yes', 'no', 'top', 'up', 'show', 'qr',
-  'hold', 'keep', 'save', 'somewhere', 'tonight', 'noon', 'midnight', 'half', 'quarter',
-  'week', 'weekend', 'month', 'days', 'minutes', 'both', 'another', 'other', 'sure', 'yep',
-]);
-const vietnamese = new Set([
-  'toi', 'minh', 'ban', 'cho', 'muon', 'can', 'dat', 'giu', 'do', 'xe', 'ngay', 'mai',
-  'hom', 'gio', 'luc', 'tu', 'den', 'sang', 'chieu', 'bien', 'so', 'tang', 'khu', 'huy',
-  'dong', 'y', 'xac', 'nhan', 'khong', 'doi', 'sua', 'them', 'nap', 'vi', 'tien',
-  'lay', 'chon', 'goi', 'tuan', 'thang', 'lien', 'tuc', 'vai', 'ca',
+const ENGLISH_WORDS = new Set([
+  'i', 'me', 'my', 'mine', 'we', 'our', 'you', 'your', 'the', 'a', 'an', 'to', 'from',
+  'at', 'on', 'in', 'for', 'until', 'between', 'and', 'or', 'with', 'this', 'next',
+  'following', 'tomorrow', 'today', 'morning', 'afternoon', 'evening', 'night', 'want',
+  'need', 'like', 'would', 'can', 'could', 'please', 'book', 'reserve', 'parking', 'spot',
+  'space', 'car', 'vehicle', 'plate', 'license', 'registration', 'arrive', 'leave', 'start',
+  'end', 'change', 'confirm', 'cancel', 'yes', 'no', 'not', 'wrong', 'right', 'hour', 'hours',
+  'make', 'it', 'there', 'therefore', 'somewhere', 'bring', 'bringing', 'park', 'save', 'get',
+  'hold', 'keep', 'someplace', 'tonight', 'noon', 'midnight', 'half', 'quarter', 'past',
+  'through', 'whole', 'week', 'weekend', 'month', 'days', 'minutes', 'first', 'second',
+  'hello', 'hi', 'thanks', 'thank', 'where', 'what', 'how', 'when', 'which', 'show', 'check', 'wallet', 'balance', 'services', 'service', 'fee', 'price', 'slot', 'floor', 'date', 'time', 'amount', 'third', 'other', 'both', 'another', 'exactly', 'sure', 'yep', 'yeah', 'ready', 'proceed',
 ]);
 
-export function detectAiBookingLanguage(value, previousLanguage = 'vi') {
-  const raw = String(value || '');
-  const tokens = fold(raw).split(/\s+/).filter(Boolean);
-  let en = tokens.filter((word) => english.has(word)).length;
-  let vi = tokens.filter((word) => vietnamese.has(word)).length;
-  if (/\b(?:license plate|parking spot|parking space|go ahead|never mind|would like)\b/i.test(raw)) en += 2;
-  if (/\b(?:biển số|ngày mai|đặt chỗ|nạp thêm|đồng ý)\b/i.test(raw)) vi += 2;
-  if (/[ăâđêôơưáàảãạếềốồớờứừ]/iu.test(raw)) vi += 4;
-  if (en === vi || (!en && !vi)) return previousLanguage === 'en' ? 'en' : 'vi';
-  return en > vi ? 'en' : 'vi';
+const VIETNAMESE_WORDS = new Set([
+  'toi', 'minh', 'ban', 'cho', 'mot', 'hai', 'ba', 'bon', 'nam', 'muon', 'can', 'dat',
+  'giu', 'do', 'dau', 'gui', 'xe', 'ngay', 'mai', 'hom', 'kia', 'gio', 'luc', 'tu', 'den',
+  'sang', 'chieu', 'toi', 'trua', 'bien', 'so', 'tang', 'khu', 'huy', 'dong', 'y', 'xac',
+  'nhan', 'khong', 'dung', 'thoi', 'doi', 'sua', 'them', 'nap', 'vi', 'tien', 'roi', 'nhe',
+  'nha', 'duoc', 'vui', 'long', 'giup', 'bay', 'tam', 'chin', 'muoi', 'phut', 'tieng',
+  'chao', 'cam', 'on', 'dich', 'vu', 'phi', 'gia', 'tui', 'rang', 'mo', 'lay', 'chon', 'o', 'goi', 'y', 'lien', 'tuc', 'vai', 'tuan', 'thang', 'ca', 'doi',
+]);
+
+const countMatches = (text, patterns) => patterns.reduce(
+  (score, pattern) => score + (text.match(pattern)?.length || 0), 0,
+);
+
+export function isLanguageNeutralInput(value) {
+  const text = String(value || '').trim();
+  return !text || /^(?:ok(?:ay)?|uh|um|[a-z])$/i.test(text)
+    || /^(?:[A-Z]{1,3}[\s._-]*\d+(?:[\s._-]\d+)*|\d{2}[\s.-]*[A-Z]{1,2}[\s.-]*(?:\d[\s.]*){4,5}|[+\-€$₫]?\s*\d+(?:[.,:/\s-]\d+)*(?:\s*(?:VND|USD|EUR|đ|đồng|h\d*|am|pm))?)$/iu.test(text);
 }
 
-export function inferAiBookingConversationLanguage(draft = {}, messages = [], fallback = 'vi') {
-  if (draft?.__language === 'en' || draft?.__language === 'vi') return draft.__language;
-  const history = Array.isArray(messages) ? messages : [];
-  const lastUser = [...history].reverse().find((message) => message?.role === 'user');
-  const lastAssistant = [...history].reverse().find((message) => message?.role === 'assistant');
-  const sample = lastUser?.text ?? lastUser?.content
-    ?? lastAssistant?.text ?? lastAssistant?.content ?? '';
-  return detectAiBookingLanguage(sample, fallback);
+export function detectBookingInputLanguage(value, previousLanguage = 'vi') {
+  const raw = String(value || '').trim();
+  if (!raw) return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: 0 };
+  if (isLanguageNeutralInput(raw)) return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: 0.35 };
+  const normalized = fold(raw);
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: 0 };
+
+  let english = tokens.reduce((score, token) => score + (ENGLISH_WORDS.has(token) ? 1 : 0), 0);
+  let vietnamese = tokens.reduce((score, token) => score + (VIETNAMESE_WORDS.has(token) ? 1 : 0), 0);
+
+  english += countMatches(normalized, [
+    /\b(?:i'd|i'll|i'm|don't|that's|what's|can't|couldn't|wouldn't)\b/g,
+    /\b(?:would like|license plate|plate number|parking spot|parking space|day after tomorrow)\b/g,
+    /\b(?:go ahead|never mind|make it|looks good|how many)\b/g,
+  ]) * 2;
+  vietnamese += countMatches(normalized, [
+    /\b(?:ngay mai|ngay kia|bien so|dat cho|o do|gio vao|gio ra|dong y)\b/g,
+    /\b(?:vui long|bao nhieu|khong muon|cho toi|giup toi)\b/g,
+  ]) * 2;
+  if (/[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(raw)) {
+    vietnamese += english ? 2 : 4;
+  }
+
+  const evidence = english + vietnamese;
+  if (evidence === 0 || (english > 0 && vietnamese > 0 && Math.abs(english - vietnamese) <= Math.max(1, evidence * 0.15))) {
+    return { language: previousLanguage === 'en' ? 'en' : 'vi', confidence: evidence ? 0.55 : 0.35 };
+  }
+  const language = english > vietnamese ? 'en' : 'vi';
+  const confidence = Math.min(0.99, 0.55 + (Math.abs(english - vietnamese) / Math.max(1, evidence)) * 0.44);
+  return { language, confidence: Number(confidence.toFixed(2)) };
+}
+
+export function detectRequestedConversationLanguage(value) {
+  const text = fold(value);
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (!text || tokens.length > 12) return '';
+  if (/\b(?:khong|dung co|don't|do not|not|never)\b/.test(text)) return '';
+  const hasSwitchCue = /\b(?:doi|chuyen|dung|noi|switch|change|use|speak|conversation|chat|tro chuyen)\b/.test(text);
+  if (!hasSwitchCue) return '';
+  if (/\b(?:tieng anh|english)\b/.test(text)) return 'en';
+  if (/\b(?:tieng viet|vietnamese)\b/.test(text)) return 'vi';
+  return '';
+}
+
+export function isLanguageOnlyRequest(value) {
+  return !/\d|\b(?:book|booking|reserve|car|vehicle|plate|slot|floor|service|services|package|wallet|price|fee|confirm|cancel|dat|xe|bien|gio|ngay|tang|dich vu|goi|vi|tien|gia|xac nhan|huy)\b/.test(fold(value));
 }

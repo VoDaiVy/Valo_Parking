@@ -55,6 +55,12 @@ const MEMBERSHIP_THEMES: Record<MembershipVisualTier, {
     gradient: ['rgba(212,175,55,0.14)', 'rgba(212,175,55,0.03)'],
     pillBackground: 'rgba(212,175,55,0.12)',
   },
+  membership: {
+    ...MEMBERSHIP_TIER_COLORS.membership,
+    border: 'rgba(212,175,55,0.38)',
+    gradient: ['rgba(212,175,55,0.14)', 'rgba(212,175,55,0.03)'],
+    pillBackground: 'rgba(212,175,55,0.12)',
+  },
   yearly: {
     ...MEMBERSHIP_TIER_COLORS.yearly,
     border: 'rgba(168,85,247,0.46)',
@@ -551,6 +557,14 @@ export default function ProfileScreen({ navigation }: { navigation?: any }) {
               label: 'Notifications',
               onPress: () => navigation?.navigate?.('NotificationsTab'),
             },
+              {
+                icon: 'paper-plane-outline',
+                iconBg: 'rgba(96,180,255,0.12)',
+                iconColor: '#60B4FF',
+                label: 'Telegram tickets',
+                sublabel: 'Receive your parking QR and updates',
+                onPress: () => navigation?.navigate?.('TelegramSettings'),
+              },
             {
               icon: 'lock-closed-outline',
               iconBg: COLORS.surfaceElevated,

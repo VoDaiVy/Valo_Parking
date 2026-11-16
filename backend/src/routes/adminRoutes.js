@@ -7,6 +7,8 @@ const {
   listVehicleModels,
   syncAllVehicleModels,
   getPendingVehicles,
+  getVehicleApprovalSettings,
+  updateVehicleApprovalSettings,
   getApprovedVehicles,
   approveVehicle,
   rejectVehicle,
@@ -36,6 +38,7 @@ router.get("/users/search", authorize("admin", "staff"), searchUsers);
 
 // The rest require admin role
 router.use(authorize("admin"));
+router.use('/feedbacks', require('./adminFeedbackRoutes'));
 
 // Policies
 router.use("/policies", require("./adminPolicyRoutes"));
@@ -62,6 +65,8 @@ router.put(
 router.put("/users/:id", require("../controllers/adminController").updateUser);
 router.delete("/users/:id", require("../controllers/adminController").deleteUser);
 // Vehicle approval
+router.get("/vehicles/approval-settings", getVehicleApprovalSettings);
+router.put("/vehicles/approval-settings", updateVehicleApprovalSettings);
 router.get("/vehicles/pending", getPendingVehicles);
 router.get("/vehicles/approved", getApprovedVehicles);
 router.patch("/vehicles/:id/approve", approveVehicle);

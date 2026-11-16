@@ -1,0 +1,28 @@
+{
+  "createRequest": {
+    "title": "Thông báo vận hành",
+    "content": "Nội dung kiểm thử từ form staff, không gửi thật.",
+    "type": "SYSTEM",
+    "priority": "ERROR",
+    "targetType": "SINGLE_USER",
+    "targetUsers": ["507f1f77bcf86cd799439011"]
+  },
+  "inboxResponse": {
+    "success": true,
+    "data": [{
+      "_id": "507f1f77bcf86cd799439013",
+      "userId": "507f1f77bcf86cd799439011",
+      "notificationId": "507f1f77bcf86cd799439012",
+      "title": "Thông báo vận hành",
+      "content": "Nội dung kiểm thử từ form staff, không gửi thật.",
+      "type": "SYSTEM",
+      "priority": "ERROR",
+      "metadata": {},
+      "isRead": false,
+      "readAt": null,
+      "createdAt": "2026-10-21T03:00:01.000Z",
+      "notificationCreatedAt": "2026-10-21T03:00:00.000Z"
+    }],
+    "pagination": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 }
+  }
+}

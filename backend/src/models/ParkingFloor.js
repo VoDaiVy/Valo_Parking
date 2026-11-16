@@ -20,6 +20,15 @@ const parkingFloorSchema = new mongoose.Schema(
         return `Floor ${this.floorNumber}`;
       }
     },
+    code: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
+    // Missing status on existing records continues to mean active.
+    status: { type: String, enum: ['draft', 'active', 'archived'], default: 'active' },
+    acceptsBookings: { type: Boolean, default: true },
+    revision: { type: Number, default: 0 },
+    layoutVersion: { type: Number, default: 0 },
+    draftLayoutData: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    publishedAt: { type: Date, default: null },
+    bookingMutationAt: { type: Date },
     layoutData: {
       type: mongoose.Schema.Types.Mixed,
       default: {

@@ -25,7 +25,7 @@ const attachBookingUserDetails = (bookings = [], userDetails = []) => {
       userId: {
         ...user,
         fullName: buildFullName(detail, user.fullName || user.username || ''),
-        phone: detail?.phone || user.phone || '',
+        phone: detail?.phone || '',
       },
     };
   });

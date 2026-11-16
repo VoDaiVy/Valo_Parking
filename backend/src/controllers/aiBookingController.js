@@ -1,8 +1,10 @@
+const { validateBookingInput } = require('../services/aiBookingInputValidation');
 const { interpretBookingMessage, normalizeInterpretation } = require('../services/aiBookingInterpreter');
 const { detectBookingLanguage } = require('../services/aiBookingLanguage');
-const { toEnglishBookingMessage } = require('../services/aiBookingReplyLanguage');
+const { localizeBookingReply } = require('../services/aiBookingLocalization');
 const mongoose = require('mongoose');
 const aiBookingSessionService = require('../services/aiBookingSessionService');
+const { transcribeBookingAudio } = require('../services/aiBookingSpeech');
 const {
   QUERY_INTENTS,
   executeAssistantRequest,
@@ -22,12 +24,31 @@ const sessionData = (session) => {
       content: message.content,
       intent: message.intent || '',
       state: message.state || '',
+      language: message.language || '',
       createdAt: message.createdAt,
     })),
   };
 };
 
 const validSessionId = (value) => mongoose.Types.ObjectId.isValid(String(value || ''));
+
+exports.localizeReply = async (req, res) => {
+  if (typeof req.body?.text !== 'string' || req.body.text.length > 8000 || !['en', 'vi'].includes(req.body.language)) {
+    return res.status(400).json({ success: false, message: 'Invalid localization request' });
+  }
+  return res.json({ success: true, data: { text: await localizeBookingReply(req.body.text, req.body.language) } });
+};
+
+exports.transcribeVoice = async (req, res) => {
+  try {
+    const data = await transcribeBookingAudio(req.body || {});
+    return res.json({ success: true, data });
+  } catch (error) {
+    const language = req.body?.previousLanguage === 'vi' ? 'vi' : 'en';
+    return res.status(error.statusCode || 502).json({ success: false,
+      message: language === 'vi' ? 'Chưa nhận được giọng nói rõ ràng. Vui lòng thử lại hoặc nhập bằng bàn phím.' : 'Unable to recognize the recording. Please try again or type your request.' });
+  }
+};
 const sendMutationResult = (res, result) => {
   if (result?.notFound) {
     return res.status(404).json({ success: false, message: 'Không tìm thấy phiên đặt chỗ.' });
@@ -43,16 +64,37 @@ const sendMutationResult = (res, result) => {
   return res.json({ success: true, data: sessionData(result?.session || result) });
 };
 
+const vietnamBookingClock = (now = new Date()) => {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const part = (type) => parts.find((item) => item.type === type)?.value || '';
+  return {
+    today: `${part('year')}-${part('month')}-${part('day')}`,
+    currentTime: `${part('hour')}:${part('minute')}`,
+  };
+};
+
 exports.interpret = async (req, res) => {
   const languageInfo = detectBookingLanguage(req.body?.prompt, req.body?.draft?.__language);
-  const responseMessage = (value) => languageInfo.language === 'en'
-    ? toEnglishBookingMessage(value) : value;
+  const responseMessage = (value) => localizeBookingReply(value, languageInfo.language);
   try {
+    const referenceClock = vietnamBookingClock();
+    const inputError = validateBookingInput(req.body?.prompt, referenceClock.today);
+    if (inputError) return res.json({ success: true, data: {
+      intent: req.body?.draft?.__intent || 'UNKNOWN',
+      draft: { ...req.body?.draft, __language: languageInfo.language, __languageLocked: false },
+      language: languageInfo.language,
+      validationError: true,
+      clarification: languageInfo.language === 'en' ? inputError.englishMessage : inputError.message,
+    } });
     const assistantRequest = parseAssistantRequest({
       prompt: req.body?.prompt,
       draft: req.body?.draft,
-      today: req.body?.today,
-      currentTime: req.body?.currentTime,
+      today: referenceClock.today,
+      currentTime: referenceClock.currentTime,
     });
     const requestsScheduledAvailability = assistantRequest
       && (assistantRequest.intents.includes('CHECK_PARKING_AVAILABILITY')
@@ -67,6 +109,7 @@ exports.interpret = async (req, res) => {
         success: true,
         data: {
           ...normalized,
+          draft: { ...normalized.draft, __language: languageInfo.language, __languageLocked: false },
           language: languageInfo.language,
           languageConfidence: languageInfo.confidence,
           canonicalIntent: assistantRequest.intent,
@@ -88,6 +131,7 @@ exports.interpret = async (req, res) => {
       const draft = {
         ...previousDraft,
         ...(transition.draftPatch || {}),
+        __language: languageInfo.language, __languageLocked: false,
         assistantContext: {
           ...(previousDraft.assistantContext || {}),
           ...(assistantResult.context || {}),
@@ -104,8 +148,9 @@ exports.interpret = async (req, res) => {
           intents: assistantRequest.intents,
           draft,
           assistantResult: {
-            message: responseMessage(assistantResult.message),
+            message: await responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
@@ -113,9 +158,13 @@ exports.interpret = async (req, res) => {
     const result = await interpretBookingMessage({
       prompt: req.body?.prompt,
       draft: req.body?.draft,
-      today: req.body?.today,
-      currentTime: req.body?.currentTime,
+      today: referenceClock.today,
+      currentTime: referenceClock.currentTime,
     });
+    if (result.clarification) result.clarification = await responseMessage(result.clarification);
+    result.language = languageInfo.language;
+    result.draft = { ...result.draft, __language: languageInfo.language, __languageLocked: false };
+    if (result.unrecognized || result.validationError || result.clarification) return res.json({ success: true, data: result });
     if (QUERY_INTENTS.has(result.intent)) {
       const fallbackRequest = {
         intent: result.intent,
@@ -140,10 +189,11 @@ exports.interpret = async (req, res) => {
           languageConfidence: result.languageConfidence || languageInfo.confidence,
           canonicalIntent: result.intent,
           intents: [result.intent],
-          draft: { ...draft, ...(assistantResult.transition?.draftPatch || {}) },
+          draft: { ...draft, ...(assistantResult.transition?.draftPatch || {}), __language: languageInfo.language, __languageLocked: false },
           assistantResult: {
-            message: responseMessage(assistantResult.message),
+            message: await responseMessage(assistantResult.message),
             pendingAction: assistantResult.pendingAction || null,
+            showVipModal: assistantResult.showVipModal === true,
           },
         },
       });
@@ -152,17 +202,51 @@ exports.interpret = async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
-      message: responseMessage(error.statusCode ? error.message : 'Không thể xử lý yêu cầu AI lúc này.'),
+      message: await responseMessage(error.statusCode ? error.message : 'Không thể xử lý yêu cầu AI lúc này.'),
     });
   }
 };
 
 exports.getLatestSession = async (req, res) => {
   try {
-    const session = await aiBookingSessionService.getLatestSession(req.user._id);
+    const language = ['en', 'vi'].includes(req.query?.language) ? req.query.language : undefined;
+    const session = await aiBookingSessionService.getLatestSession(req.user._id, language);
     res.json({ success: true, data: sessionData(session) });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Không thể tải phiên đặt chỗ lúc này.' });
+  }
+};
+
+exports.listSessions = async (req, res) => {
+  try {
+    const data = await aiBookingSessionService.listSessions(req.user._id, {
+      language: ['en', 'vi'].includes(req.query?.language) ? req.query.language : undefined, search: req.query?.search || '', page: req.query?.page,
+    });
+    return res.json({ success: true, data });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Không thể tải lịch sử trò chuyện.' });
+  }
+};
+
+exports.renameSession = async (req, res) => {
+  if (!validSessionId(req.params.sessionId)) return res.status(400).json({ success: false, message: 'Mã cuộc trò chuyện không hợp lệ.' });
+  try {
+    const session = await aiBookingSessionService.renameSession(req.user._id, req.params.sessionId, req.body?.title);
+    if (!session) return res.status(404).json({ success: false, message: 'Không tìm thấy cuộc trò chuyện.' });
+    return res.json({ success: true, data: aiBookingSessionService.historyItem(session) });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Không thể đổi tên cuộc trò chuyện.' });
+  }
+};
+
+exports.deleteSession = async (req, res) => {
+  if (!validSessionId(req.params.sessionId)) return res.status(400).json({ success: false, message: 'Mã cuộc trò chuyện không hợp lệ.' });
+  try {
+    const session = await aiBookingSessionService.deleteSession(req.user._id, req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Không tìm thấy cuộc trò chuyện.' });
+    return res.json({ success: true });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Không thể xóa cuộc trò chuyện.' });
   }
 };
 
@@ -184,7 +268,7 @@ exports.createSession = async (req, res) => {
     const session = await aiBookingSessionService.createSession(req.user._id, req.body || {});
     res.status(201).json({ success: true, data: sessionData(session) });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Không thể tạo phiên đặt chỗ lúc này.' });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Không thể tạo phiên đặt chỗ lúc này.' });
   }
 };
 
@@ -223,7 +307,7 @@ exports.completeSession = async (req, res) => {
       req.user._id, req.params.sessionId, req.body || {}
     ));
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Không thể hoàn tất phiên đặt chỗ lúc này.' });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Không thể hoàn tất phiên đặt chỗ lúc này.' });
   }
 };
 

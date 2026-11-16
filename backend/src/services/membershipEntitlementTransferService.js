@@ -15,6 +15,7 @@ const {
   formatDate,
 } = require('./pdfService');
 const { recomputeUserMembership } = require('./membershipProjectionService');
+const { validateEntitlementSpace } = require('./membershipSpaceValidationService');
 
 const OPEN_STATUSES = [
   'PENDING_RECIPIENT',
@@ -136,6 +137,17 @@ const assertNoActiveSession = async (entitlementId, session = null) => {
   }
 };
 
+const assertTransferSpace = async (transfer, session = null, status = 'active') => {
+  let query = MembershipSlotEntitlement.findOne({
+    _id: transfer.entitlementId, ownerId: transfer.fromUserId,
+    status, transferCount: { $lt: 1 }, expireAt: { $gt: new Date() },
+  });
+  if (session) query = query.session(session);
+  const entitlement = await query;
+  if (!entitlement) throw error('This membership space cannot be transferred.', 409, 'NOT_TRANSFERABLE');
+  await validateEntitlementSpace(entitlement, transfer.fromUserId, { session, operation: 'Transfer' });
+};
+
 const assertRecipientCapacity = async (userId, session = null) => {
   let vehicleQuery = Vehicle.countDocuments({ owner: userId, status: 'approved' });
   let entitlementQuery = MembershipSlotEntitlement.countDocuments({
@@ -200,6 +212,7 @@ const createTransfer = async ({
   if (!entitlement) {
     throw error('This membership space cannot be transferred.', 404, 'NOT_TRANSFERABLE');
   }
+  await validateEntitlementSpace(entitlement, fromUserId, { operation: 'Transfer' });
   await assertNoActiveSession(entitlement._id);
   if (
     await MembershipEntitlementTransfer.exists({
@@ -267,6 +280,9 @@ const searchTransferRecipients = async (
 };
 
 const acceptTransfer = async (transferId, userId) => {
+  const invitation = await MembershipEntitlementTransfer.findOne({ _id: transferId, mode: 'DIRECT', toUserId: userId, status: 'PENDING_RECIPIENT' });
+  if (!invitation) throw error('Transfer invitation is not available.', 409);
+  await assertTransferSpace(invitation);
   const transfer = await MembershipEntitlementTransfer.findOneAndUpdate(
     {
       _id: transferId,
@@ -347,7 +363,9 @@ const approveTransfer = async (transferId, adminId) => {
       status: 'PENDING_ADMIN',
     }).session(session);
     if (!transfer) throw error('Transfer is not awaiting admin approval.', 409);
+    await assertTransferSpace(transfer, session);
     await assertNoActiveSession(transfer.entitlementId, session);
+    await require('./membershipServiceBenefitService').assertNoOpenRequests(transfer.entitlementId, session);
     if (transfer.mode === 'PUBLIC') {
       await assertPublicMarketplaceReady();
       const entitlement = await MembershipSlotEntitlement.findOne({
@@ -584,6 +602,7 @@ const claimMarketplaceListing = async (transferId, buyerId) => {
     if (String(transfer.fromUserId) === String(buyerId)) {
       throw error('You cannot buy your own listing.', 400, 'SELF_TRANSFER');
     }
+    await assertTransferSpace(transfer, session);
     const buyer = await User.findOne({
       _id: buyerId,
       role: 'customer',
@@ -593,6 +612,7 @@ const claimMarketplaceListing = async (transferId, buyerId) => {
 
     await assertRecipientCapacity(buyerId, session);
     await assertNoActiveSession(transfer.entitlementId, session);
+    await require('./membershipServiceBenefitService').assertNoOpenRequests(transfer.entitlementId, session);
     const entitlement = await MembershipSlotEntitlement.findOneAndUpdate(
       {
         _id: transfer.entitlementId,
@@ -680,8 +700,14 @@ const settleTransfer = async (transferId, recipientId) => {
     if (!transfer) {
       throw error('Transfer payment window is closed.', 409, 'TRANSFER_LOCK_EXPIRED');
     }
+    const stockEntitlement = await MembershipSlotEntitlement.findById(transfer.entitlementId).session(session);
+    if (!stockEntitlement) throw error('Membership space not found.', 409);
+    const stock = require('./ticketPackageStockService');
+    await stock.lockPackage(stockEntitlement.packageId, { session });
+    await assertTransferSpace(transfer, session, 'transfer_locked');
     await assertRecipientCapacity(recipientId, session);
     await assertNoActiveSession(transfer.entitlementId, session);
+    await require('./membershipServiceBenefitService').assertNoOpenRequests(transfer.entitlementId, session);
 
     let recipientPayment = null;
     let senderCredit = null;
@@ -804,6 +830,7 @@ const settleTransfer = async (transferId, recipientId) => {
       rotateQr: true,
     });
     await recomputeUserMembership(recipientId, { session, rotateQr: true });
+    await stock.refreshPackage(stockEntitlement.packageId, { session });
     await session.commitTransaction();
     if (transfer.mode === 'PUBLIC') {
       const completed = await marketplacePopulate(

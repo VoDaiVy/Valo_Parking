@@ -12,6 +12,7 @@ const zoneSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    layoutElementId: { type: String },
     zoneType: {
       type: String,
       default: "standard",

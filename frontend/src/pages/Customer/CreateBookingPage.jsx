@@ -1,3 +1,5 @@
+import TelegramReceiptModal from '../../components/TelegramReceiptModal';
+import TelegramReceiptButton from '../../components/TelegramReceiptButton';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -21,6 +23,7 @@ import {
 } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
+import VipPackageModal from '../../components/Customer/VipPackageModal';
 
 import AiBookingPanel from '../../components/Customer/AiBookingPanel';
 
@@ -53,9 +56,13 @@ import {
 import { findRequestedService } from '../../utils/bookingNavigation';
 import { getVipBookingSelection } from '../../utils/vipBookingPolicy';
 import { getMyVouchers } from '../../services/loyaltyService';
-import { useLanguage } from '../../i18n/hooks/useLanguage';
+import {
+  BOOKING_TIME_STEP_MINUTES,
+  MIN_BOOKING_DURATION_MINUTES,
+  roundUpToBookingStep,
+} from '../../utils/bookingTimePolicy';
 
-const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('vi-VN')} VND`;
+const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('en-US')} VND`;
 
 const toDateTimeLocal = (date) => {
   const pad = (value) => String(value).padStart(2, '0');
@@ -77,7 +84,7 @@ const getLocalTimeString = () => {
 
 const getMinEndTimeStr = (startStr) => {
   let [h, m] = startStr.split(':').map(Number);
-  m += 30;
+  m += MIN_BOOKING_DURATION_MINUTES;
   if (m >= 60) {
     h += 1;
     m -= 60;
@@ -87,20 +94,11 @@ const getMinEndTimeStr = (startStr) => {
 };
 
 const getInitialTimeRange = () => {
-  const start = new Date();
-  
-  // Round up to the next 15-minute block (example: 9:07 -> 9:15)
-  const minutes = start.getMinutes();
-  const remainder = minutes % 15;
-  const hasPartialMinute = start.getSeconds() > 0 || start.getMilliseconds() > 0;
-  const addMinutes = remainder === 0 ? (hasPartialMinute ? 15 : 0) : 15 - remainder;
-  
-  start.setMinutes(minutes + addMinutes);
-  start.setSeconds(0, 0);
+  const start = roundUpToBookingStep(new Date(), { strictlyFuture: true });
 
   // Default checkout is 30 minutes after check-in
   const end = new Date(start);
-  end.setMinutes(end.getMinutes() + 30);
+  end.setMinutes(end.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
 
   return {
     startTime: toDateTimeLocal(start),
@@ -109,7 +107,7 @@ const getInitialTimeRange = () => {
 };
 
 const formatDateTime = (value) =>
-  new Date(value).toLocaleString('vi-VN', {
+  new Date(value).toLocaleString('en-US', {
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -128,7 +126,7 @@ const toItemErrorMap = (itemErrors = []) =>
 
 const TIME_OPTIONS = [];
 for (let h = 0; h < 24; h++) {
-  for (let m = 0; m < 60; m += 15) {
+  for (let m = 0; m < 60; m += BOOKING_TIME_STEP_MINUTES) {
     TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   }
 }
@@ -172,7 +170,7 @@ const formatLocalDateValue = (date) => {
 const formatDateButtonLabel = (value) => {
   const date = parseLocalDate(value);
   return date
-    ? date.toLocaleDateString('vi-VN', {
+    ? date.toLocaleDateString('en-US', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -336,7 +334,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
                   key={formatLocalDateValue(date)}
                   type="button"
                   disabled={isDisabled}
-                  aria-label={date.toLocaleDateString('vi-VN')}
+                  aria-label={date.toLocaleDateString('en-US')}
                   aria-pressed={isSelected}
                   onClick={() => selectDate(date)}
                   className={`mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold transition ${
@@ -564,11 +562,10 @@ const getVoucherBenefitLabel = (voucher) => {
 const getVoucherExpiryLabel = (voucher) => {
   const expiresAt = new Date(voucher?.expiresAt);
   if (Number.isNaN(expiresAt.getTime())) return 'No expiry date';
-  return `Expires ${expiresAt.toLocaleDateString('vi-VN')}`;
+  return `Expires ${expiresAt.toLocaleDateString('en-US')}`;
 };
 
 const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
-  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedVoucher = vouchers.find((voucher) => voucher._id === value);
@@ -611,17 +608,17 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-extrabold text-gray-900">
-            {selectedVoucher?.benefitSnapshot?.name || t('booking.noVoucher')}
+            {selectedVoucher?.benefitSnapshot?.name || 'No voucher'}
           </span>
           <span className="mt-0.5 block truncate text-[11px] font-medium text-gray-500">
             {selectedVoucher
               ? `${getVoucherBenefitLabel(selectedVoucher)} · ${getVoucherExpiryLabel(selectedVoucher)}`
-              : vouchers.length > 0 ? t('booking.vouchersAvailable', { count: vouchers.length }) : t('booking.noRewards')}
+              : vouchers.length > 0 ? `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'} available` : 'No available rewards'}
           </span>
         </span>
         {selectedVoucher && (
           <span className="hidden rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 sm:inline-flex">
-            {t('booking.applied')}
+            Applied
           </span>
         )}
         <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold' : 'group-hover:text-gray-600'}`} />
@@ -631,10 +628,10 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
         <div role="listbox" className="time-scrollbar absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_24px_60px_rgba(31,41,55,0.18)]">
           <div className="flex items-center justify-between px-2 pb-2 pt-1">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">{t('booking.chooseReward')}</p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-500">{t('booking.oneVoucher')}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Choose a reward</p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-500">One voucher per booking</p>
             </div>
-            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{t('booking.availableCount', { count: vouchers.length })}</span>
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{vouchers.length} available</span>
           </div>
 
           <button
@@ -645,7 +642,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
             className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition duration-150 active:scale-[0.99] ${!value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
           >
             <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${!value ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-500'}`}><Ticket size={15} /></span>
-            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">{t('booking.noVoucher')}</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>{t('booking.continueWithoutReward')}</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">No voucher</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>Continue without a reward</span></span>
             {!value && <Check size={16} className="shrink-0 text-gold" strokeWidth={3} />}
           </button>
 
@@ -667,7 +664,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
               >
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}><Ticket size={17} strokeWidth={2.2} /></span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || t('booking.voucher')}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">{t('booking.selected')}</span>}</span>
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
                   <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher)}</span>
                   <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher)}</span>
                 </span>
@@ -677,7 +674,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
           })}
 
           {vouchers.length === 0 && (
-            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">{t('booking.noVouchers')}</p><p className="mt-1 text-xs text-gray-400">{t('booking.rewardsAutoIssued')}</p></div>
+            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Rewards are issued automatically after eligible spending or sent by VALO.</p></div>
           )}
         </div>
       )}
@@ -686,7 +683,6 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
 };
 
 export default function CreateBookingPage() {
-  const { t } = useLanguage();
   const [bookingMode, setBookingMode] = useState('manual');
   const location = useLocation();
   const requestedServiceId = useMemo(
@@ -738,7 +734,7 @@ export default function CreateBookingPage() {
     if (!forecastHourSelection.allowed) return false;
     const candidateStart = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
     const currentEnd = new Date(endTime);
-    const minimumEnd = new Date(candidateStart.getTime() + 30 * 60 * 1000);
+    const minimumEnd = new Date(candidateStart.getTime() + MIN_BOOKING_DURATION_MINUTES * 60 * 1000);
     const candidateEnd = currentEnd >= minimumEnd ? currentEnd : minimumEnd;
     const now = new Date();
     const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -784,7 +780,9 @@ export default function CreateBookingPage() {
   const [topUpSuccess, setTopUpSuccess] = useState(false);
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [telegramBookingId, setTelegramBookingId] = useState(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
+  const [showVipModal, setShowVipModal] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
   const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(4);
 
@@ -924,7 +922,7 @@ export default function CreateBookingPage() {
       const currentEndObj = new Date(`${endDate}T${endTimeStr}`);
       
       const minEndObj = new Date(newStartObj);
-      minEndObj.setMinutes(minEndObj.getMinutes() + 30);
+      minEndObj.setMinutes(minEndObj.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
       
       // If the current end time is earlier than the minimum end time (30 minutes later), adjust automatically
       if (currentEndObj < minEndObj) {
@@ -941,7 +939,7 @@ export default function CreateBookingPage() {
       const newEndObj = new Date(`${newDate}T${newTime}`);
       
       const minEndObj = new Date(startObj);
-      minEndObj.setMinutes(minEndObj.getMinutes() + 30);
+      minEndObj.setMinutes(minEndObj.getMinutes() + MIN_BOOKING_DURATION_MINUTES);
       
       if (newEndObj < minEndObj) {
         const minEndStr = toDateTimeLocal(minEndObj);
@@ -964,9 +962,12 @@ export default function CreateBookingPage() {
 
   const todayDateStr = getLocalDateString();
   const currentTimeStr = getLocalTimeString();
+  const earliestStart = roundUpToBookingStep(new Date(), { strictlyFuture: true });
+  const earliestStartDate = toDateTimeLocal(earliestStart).split('T')[0];
+  const earliestStartTime = toDateTimeLocal(earliestStart).split('T')[1];
 
   const startMinTime = startDate === todayDateStr 
-    ? currentTimeStr 
+    ? (earliestStartDate === todayDateStr ? earliestStartTime : '24:00')
     : (startDate < todayDateStr ? '24:00' : null);
 
   const endMinTime = endDate === startDate 
@@ -1188,7 +1189,7 @@ export default function CreateBookingPage() {
   }, [showTopUpModal, topUpData?.orderCode]);
 
   useEffect(() => {
-    if (!showSuccessModal || !bookingInfo) return undefined;
+    if (!showSuccessModal || !bookingInfo || telegramBookingId) return undefined;
 
     const resetTimer = setTimeout(() => {
       setSuccessRedirectCountdown(4);
@@ -1215,7 +1216,7 @@ export default function CreateBookingPage() {
       clearInterval(countdownTimer);
       clearTimeout(redirectTimer);
     };
-  }, [showSuccessModal, bookingInfo]);
+  }, [showSuccessModal, bookingInfo, telegramBookingId]);
 
   const handleFindSlots = async () => {
     const requestId = ++slotsRequestIdRef.current;
@@ -1284,8 +1285,8 @@ export default function CreateBookingPage() {
       return;
     }
 
-    if ((endObj.getTime() - startObj.getTime()) / 60000 < 30) {
-      setError('Minimum booking duration is 30 minutes.');
+    if ((endObj.getTime() - startObj.getTime()) / 60000 < MIN_BOOKING_DURATION_MINUTES) {
+      setError(`Minimum booking duration is ${MIN_BOOKING_DURATION_MINUTES} minutes.`);
       return;
     }
 
@@ -1519,7 +1520,7 @@ export default function CreateBookingPage() {
     const now = new Date();
     
     if (startObj < now) return;
-    if ((endObj - startObj) / 60000 < 30) return;
+    if ((endObj - startObj) / 60000 < MIN_BOOKING_DURATION_MINUTES) return;
     
     const timer = setTimeout(() => {
       handleFindSlots();
@@ -1728,13 +1729,13 @@ export default function CreateBookingPage() {
       <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-4">
           <div>
-            <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">{t('booking.title')}</h1>
-            <p className="text-gray-500 font-medium mt-1">{t('booking.description')}</p>
+            <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">Book Parking</h1>
+            <p className="text-gray-500 font-medium mt-1">Reserve your spot and check live availability.</p>
           </div>
           <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
             <div>
               <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-0.5">
-                <Wallet size={12} /> {t('booking.walletBalance')}
+                <Wallet size={12} /> Wallet Balance
               </div>
               <div className="text-xl font-black text-gray-900">
                 {wallet ? formatMoney(wallet.balance) : '0 VND'}
@@ -1750,9 +1751,9 @@ export default function CreateBookingPage() {
           </div>
         </div>
 
-        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label={t('booking.bookingMode')}>
-          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{t('booking.manualMode')}</button>
-          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{t('booking.aiMode')}</button>
+        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
+          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Choose a space</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>AI Parking Assistant</button>
         </div>
 
         {(error || success) && (
@@ -1778,11 +1779,11 @@ export default function CreateBookingPage() {
         /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
-              <h2 className="text-lg font-black mb-3 text-gray-900">{t('booking.details')}</h2>
+              <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
                 <div className="block">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">{t('booking.startTime')}</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">Start time</span>
                   <div className="flex gap-2 h-11">
                     <CustomDatePicker
                       value={startDate}
@@ -1798,7 +1799,7 @@ export default function CreateBookingPage() {
                   </div>
                 </div>
                 <div className="block">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">{t('booking.endTime')}</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">End time</span>
                   <div className="flex gap-2 h-11">
                     <CustomDatePicker
                       value={endDate}
@@ -1815,30 +1816,27 @@ export default function CreateBookingPage() {
                 </div>
               </div>
 
-              {/* AI 24h Busyness & Popular Times Forecast */}
+              {/* AI Occupancy & Peak Times Forecast is positioned on the right below the slots map */}
               <div className="mt-4">
-                <AIBusynessForecast
-                  selectedDate={startDate}
-                  selectedHour={parseInt(startTimeStr?.split(':')[0] || 12, 10)}
-                  vehicleType={
-                    vehicles.find((v) => v._id === vehicleId)?.type ||
-                    'car'
-                  }
-                  floorId={currentFloorId}
-                  canSelectHour={forecastHourSelection.allowed}
-                  isHourSelectable={isForecastHourSelectable}
-                  isEndHourSelectable={isForecastEndHourSelectable}
-                  selectionDisabledReason={forecastHourSelection.reason}
-                  onSelectHour={(hour, rangePoint = 'start') => {
-                    const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
-                    if (rangePoint === 'end') handleEndChange(startDate, nextTimeStr);
-                    else handleStartChange(startDate, nextTimeStr);
-                  }}
-                />
-              </div>
+              {durationHours > 168 && (
+                <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={16} className="text-amber-600 shrink-0" />
+                    <span>
+                      <strong>Tip:</strong> This is a long-stay booking ({Math.floor(durationHours / 24)} days {durationHours % 24} hours). Review the available <strong>VIP monthly packages</strong> for their current rates, benefits, and conditions.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowVipModal(true)}
+                    className="inline-flex items-center justify-center whitespace-nowrap rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-black text-white hover:bg-amber-600 transition shadow-sm self-start sm:self-auto"
+                  >
+                    View VIP Packages
+                  </button>
+                </div>
+              )}
 
-              <div className="mt-4">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">{t('booking.vehicle')}</span>
+                <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Vehicle</span>
                 {vehicles.length > 0 ? (
                   <CustomVehiclePicker
                     value={vehicleId}
@@ -1849,7 +1847,7 @@ export default function CreateBookingPage() {
                   <input
                     value={manualPlate}
                     onChange={handleManualPlateChange}
-                    placeholder={t('booking.licensePlate')}
+                    placeholder="License plate"
                     className="mt-1 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
@@ -1858,7 +1856,7 @@ export default function CreateBookingPage() {
                   <input
                     value={manualPlate}
                     onChange={handleManualPlateChange}
-                    placeholder={t('booking.licensePlate')}
+                    placeholder="License plate"
                     className="mt-2 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
@@ -1878,13 +1876,13 @@ export default function CreateBookingPage() {
 
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">{t('booking.extraServices')}</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Extra services</span>
                   <span className="text-xs font-black text-gray-900">{formatMoney(serviceTotal)}</span>
                 </div>
                 <div className="space-y-1.5 max-h-32 overflow-auto pr-1 time-scrollbar">
                   {services.length === 0 ? (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-400 font-medium">
-                      {t('booking.noActiveServices')}
+                      No active services.
                     </div>
                   ) : (
                     services.map((service) => (
@@ -1927,8 +1925,8 @@ export default function CreateBookingPage() {
 
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('booking.voucher')}</span>
-                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? t('booking.applied') : t('booking.minimumNotMet')}</span>}
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Voucher</span>
+                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? 'Applied' : 'Minimum not met'}</span>}
                 </div>
                 <CustomVoucherPicker
                   value={selectedVoucherId}
@@ -1946,17 +1944,17 @@ export default function CreateBookingPage() {
 
               <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2 shadow-inner">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> {t('booking.duration')}</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> Duration</span>
                   <span className="text-right font-bold text-gray-900">
                     {pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)
                     {pricePreview.durationMinutes > 0 && pricePreview.durationMinutes < 60 && (
-                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">{t('booking.discountFrom60')}</span>
+                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">Discounts apply from 60 minutes</span>
                     )}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> {t('booking.parking')}</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> Parking</span>
                   <span className="font-bold text-gray-900 text-right">
                     {formatMoney(parkingTotal)}
                     {pricePreview.capApplied && (
@@ -1965,16 +1963,16 @@ export default function CreateBookingPage() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Sparkles size={15} /> {t('booking.services')}</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Sparkles size={15} /> Services</span>
                   <span className="font-bold text-gray-900">{formatMoney(serviceTotal)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Wallet size={15} /> {t('booking.walletBalance')}</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Wallet size={15} /> Wallet balance</span>
                   <span className={`font-bold ${hasEnoughWallet ? 'text-emerald-600' : 'text-rose-600'}`}>{formatMoney(walletBalance)}</span>
                 </div>
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
                   <span className="flex items-center gap-2 font-black text-gray-900">
-                    {t('booking.walletCharge')}
+                    Wallet charge
                     {pricePreview.appliedPolicies?.length > 0 && (
                       <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">
                         {pricePreview.appliedPolicies.map((policy) => policy.name).join(', ')}
@@ -2003,15 +2001,15 @@ export default function CreateBookingPage() {
                 className="w-full rounded-2xl bg-gradient-to-r from-gold to-yellow-500 hover:from-yellow-500 hover:to-gold disabled:opacity-50 text-black px-4 py-4 font-black transition flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(212,175,55,0.4)] hover:shadow-[0_8px_25px_rgba(212,175,55,0.5)] active:scale-[0.98]"
               >
                 <Plus size={18} />
-                {editingClientItemId ? t('booking.updateItem') : t('booking.addToList')}
+                {editingClientItemId ? 'Update Booking Item' : 'Add to Booking List'}
               </button>
             </div>
 
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <h2 className="text-lg font-black text-gray-900">{t('booking.bookingList')}</h2>
-                  <p className="text-xs text-gray-500 font-medium">{t('booking.checkoutMany')}</p>
+                  <h2 className="text-lg font-black text-gray-900">Booking List</h2>
+                  <p className="text-xs text-gray-500 font-medium">Checkout one or many vehicles together.</p>
                 </div>
                 <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-black text-gray-700">
                   {cartItems.length}/5
@@ -2020,7 +2018,7 @@ export default function CreateBookingPage() {
 
               {cartItems.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
-                  <p className="text-sm font-bold text-gray-500">{t('booking.noVehiclesAdded')}</p>
+                  <p className="text-sm font-bold text-gray-500">No vehicles added yet.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2132,12 +2130,13 @@ export default function CreateBookingPage() {
             </div>
           </section>
 
-          <section className="xl:col-span-8 rounded-3xl bg-white border border-gray-200 p-3 shadow-sm flex flex-col h-[500px] xl:h-[calc(100vh-140px)]">
+          <section className="xl:col-span-8 flex flex-col gap-6">
+            <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm flex flex-col h-[520px]">
             <div className="flex items-center justify-between gap-4 mb-3 px-2 pt-2">
               <div>
-                <h2 className="text-lg font-black text-gray-900">{t('booking.availableSlots')}</h2>
+                <h2 className="text-lg font-black text-gray-900">Available Slots Map</h2>
                 <p className="text-sm font-medium text-gray-500">
-                  {t('booking.availableSlotsHint')}
+                  Select an available slot on the map. Occupied slots are shown live in red.
                 </p>
               </div>
               <div className="text-sm text-emerald-600 font-bold px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">{slots.length} slot(s) available</div>
@@ -2167,7 +2166,7 @@ export default function CreateBookingPage() {
               {checkingSlots && (
                 <div className="absolute inset-0 z-20 bg-[#0b0e16]/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-8">
                   <Loader2 size={40} className="text-cyan-400 animate-spin mb-4" />
-                  <p className="font-black text-white">{t('booking.findingSlots')}</p>
+                  <p className="font-black text-white">Finding available slots...</p>
                 </div>
               )}
 
@@ -2176,8 +2175,8 @@ export default function CreateBookingPage() {
                   <div className="w-16 h-16 bg-[#181c23] shadow-xl shadow-black/50 border border-white/10 rounded-full flex items-center justify-center mb-4">
                     <MapPin className="w-8 h-8 text-cyan-500" />
                   </div>
-                  <p className="font-black text-white text-xl">{t('booking.validTime')}</p>
-                  <p className="text-sm font-medium text-gray-400 mt-2 max-w-xs mx-auto">{t('booking.validTimeHint')}</p>
+                  <p className="font-black text-white text-xl">Select a valid time range</p>
+                  <p className="text-sm font-medium text-gray-400 mt-2 max-w-xs mx-auto">Please adjust your start and end time to view available parking spaces.</p>
                 </div>
               )}
 
@@ -2204,37 +2203,89 @@ export default function CreateBookingPage() {
               {!checkingSlots && slots.length > 0 && (
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center z-30 pointer-events-none px-4">
                   <div className="bg-[#181c23]/80 backdrop-blur border border-white/10 px-5 py-2.5 rounded-full flex items-center gap-4 shadow-lg pointer-events-auto">
-                    <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">{t('booking.statusLegend')}</p>
+                    <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">Status Legend</p>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-white border border-gray-300"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.available')}</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Available</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-rose-200 border border-rose-600"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.occupied')}</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Occupied</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-cyan-500 border border-cyan-400"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.selected')}</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Selected</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-yellow-100 border border-yellow-500"></div>
-                      <span className="text-[10px] text-yellow-500 font-bold tracking-wide">{t('booking.vipPass')}</span>
+                      <span className="text-[10px] text-yellow-500 font-bold tracking-wide">VIP Pass</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-red-200 border border-red-500" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 4px, rgba(127, 29, 29, 0.3) 4px, rgba(127, 29, 29, 0.3) 8px)' }}></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.maintenance')}</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Maintenance</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-orange-100 border border-orange-500"></div>
-                      <span className="text-[10px] text-orange-500 font-bold tracking-wide">{t('booking.holdBooked')}</span>
+                      <span className="text-[10px] text-orange-500 font-bold tracking-wide">Hold/Booked</span>
                     </div>
                   </div>
                 </div>
               )}
             </div>
+            </div>
+
+            <div className="rounded-3xl bg-white border border-gray-200 p-5 shadow-sm">
+              <AIBusynessForecast
+                selectedDate={startDate}
+                selectedHour={parseInt(startTimeStr?.split(':')[0] || 12, 10)}
+                vehicleType={
+                  vehicles.find((v) => v._id === vehicleId)?.type ||
+                  'car'
+                }
+                floorId={currentFloorId}
+                canSelectHour={forecastHourSelection.allowed}
+                isHourSelectable={isForecastHourSelectable}
+                isEndHourSelectable={isForecastEndHourSelectable}
+                selectionDisabledReason={forecastHourSelection.reason}
+                onSelectHour={(hour, rangePoint = 'start') => {
+                  const nextTimeStr = `${String(hour).padStart(2, '0')}:00`;
+                  if (rangePoint === 'end') handleEndChange(startDate, nextTimeStr);
+                  else handleStartChange(startDate, nextTimeStr);
+                }}
+              />
+            </div>
           </section>
         </div>}
+
+      <VipPackageModal
+        isOpen={showVipModal}
+        onClose={() => setShowVipModal(false)}
+        onSubscribed={async (vipInfo) => {
+          const vipVehicleId = String(vipInfo.vehicle?._id || '');
+          const vipPlate = String(vipInfo.vehicle?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          const belongsToVipVehicle = (item) => (
+            (vipVehicleId && String(item.vehicleId || '') === vipVehicleId)
+            || (vipPlate && String(item.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === vipPlate)
+          );
+          const removedItems = cartItems.filter(belongsToVipVehicle);
+
+          setShowVipModal(false);
+          setShowCheckoutConfirm(false);
+          setCartQuote(null);
+          setCartItemErrors({});
+          setEditingClientItemId(null);
+          setCartItems((current) => current.filter((item) => !belongsToVipVehicle(item)));
+          setSelectedServices([]);
+          setSelectedVoucherId('');
+          setSelectedSlotKey('');
+          setError('');
+          setSuccess(`VIP activated for ${vipPlate || 'the selected vehicle'}. Its hourly-booking draft was removed because the dedicated VIP space can be used directly.`);
+          await Promise.all(removedItems
+            .filter((item) => item.holdId)
+            .map((item) => releaseBookingHold(item.holdId).catch(() => null)));
+          await loadData(true);
+        }}
+      />
       </div>
 
       {showCheckoutConfirm && (
@@ -2243,7 +2294,7 @@ export default function CreateBookingPage() {
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
               <Wallet size={22} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900">{t('booking.confirmPayment')}</h2>
+            <h2 className="text-2xl font-black text-gray-900">Confirm booking payment</h2>
             <p className="mt-2 text-sm font-medium text-gray-500">
               Review the final amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
             </p>
@@ -2259,8 +2310,8 @@ export default function CreateBookingPage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">{t('booking.cancel')}</button>
-              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">{t('booking.confirmPay')}</button>
+              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">Confirm & pay</button>
             </div>
           </div>
         </div>
@@ -2280,7 +2331,7 @@ export default function CreateBookingPage() {
             <div className="relative inline-flex items-center rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-600 mb-3">
               Sweet Success
             </div>
-            <h2 className="text-[32px] leading-none font-black text-gray-900 mb-2">{t('booking.bookingConfirmed')}</h2>
+            <h2 className="text-[32px] leading-none font-black text-gray-900 mb-2">Booking Confirmed</h2>
             <p className="text-gray-500 font-medium text-sm mb-5 max-w-[260px]">
               Everything is ready. Each vehicle has its own QR for check-in.
             </p>
@@ -2325,6 +2376,7 @@ export default function CreateBookingPage() {
                       <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.endTime)}</span>
                     </div>
                   </div>
+                  <TelegramReceiptButton bookingId={booking.bookingId || booking._id} refreshKey={telegramBookingId} onClick={() => setTelegramBookingId(booking.bookingId || booking._id)} className="mt-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800" />
                 </div>
               ))}
             </div>
@@ -2343,6 +2395,8 @@ export default function CreateBookingPage() {
         </div>
       )}
 
+      {telegramBookingId && <TelegramReceiptModal key={telegramBookingId} open onClose={() => setTelegramBookingId(null)} bookingId={telegramBookingId} />}
+
       {/* TOP UP MODAL */}
       {showTopUpModal && topUpData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md">
@@ -2350,7 +2404,7 @@ export default function CreateBookingPage() {
             <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 mb-4 shadow-sm">
               <AlertCircle size={32} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 mb-1">{t('booking.insufficientBalance')}</h2>
+            <h2 className="text-2xl font-black text-gray-900 mb-1">Insufficient Balance</h2>
             <p className="text-gray-500 font-medium text-sm mb-6">
               You need to top up <span className="font-bold text-gray-900">{formatMoney(topUpData.amount)}</span> to complete this checkout.
             </p>

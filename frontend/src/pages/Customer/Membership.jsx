@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Crown, Sparkles, Check, Loader2, ArrowRight, AlertCircle, ChevronDown, QrCode, Wallet } from 'lucide-react';
 import {
   getTicketPackages,
@@ -13,10 +13,12 @@ import { getMyVehicles } from '../../services/vehicleService';
 import { apiFetch } from '../../services/api';
 import { notifyAuthChange } from '../../services/authStorage';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
+import MembershipExplore from '../../components/Customer/MembershipExplore';
+import { getExplorePackages } from '../../services/ticketPackageService';
+import { isMembershipPackageType, getPackageDurationLabel, getPackageTypeLabel } from '../../utils/ticketPackageRules';
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import toast, { Toaster } from 'react-hot-toast';
-import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const CustomFloorPicker = ({ floors, value, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -100,11 +102,15 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
 };
 
 export default function Membership() {
-  const { t } = useLanguage();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedPackageId = searchParams.get('packageId');
   const [packages, setPackages] = useState([]);
+  const [featuredPackages, setFeaturedPackages] = useState([]);
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogReload, setCatalogReload] = useState(0);
   const [vehicles, setVehicles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -124,12 +130,15 @@ export default function Membership() {
     missingPolicies: [],
   });
 
-  const subscriptionPackages = packages
-    .filter(pkg => ['monthly', 'yearly'].includes(pkg.type))
-    .sort((a, b) => {
-      const typeOrder = { monthly: 0, yearly: 1 };
-      return (typeOrder[a.type] ?? 2) - (typeOrder[b.type] ?? 2) || (a.price || 0) - (b.price || 0);
-    });
+  const subscriptionPackages = ['monthly', 'yearly'].flatMap((type) => {
+    const featured = featuredPackages.find((pkg) => pkg.type === type);
+    const pkg = packages.find((item) => item._id === featured?._id && item.isActive);
+    return pkg ? [{ ...pkg, selectionReason: featured.selectionReason }] : [];
+  });
+  const basicPackageIds = new Set(subscriptionPackages.map((pkg) => pkg._id));
+  const explorePackages = packages
+    .filter((pkg) => pkg.isActive && isMembershipPackageType(pkg.type) && !basicPackageIds.has(pkg._id))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt) || a._id.localeCompare(b._id));
 
   const isVipActive = Boolean(membership?.isVip ?? user?.membership?.isVip);
   const approvedVehicleCount = vehicles.filter(
@@ -139,6 +148,7 @@ export default function Membership() {
     0,
     Math.min(3, approvedVehicleCount) - (membership?.reservedSlots?.length || 0)
   );
+  const selectedPackageSlotLimit = Math.min(availablePurchaseSlots, selectedPackage?.maxSlots ?? 3);
 
   const syncCurrentUserProfile = async () => {
     const token = localStorage.getItem('accessToken');
@@ -231,10 +241,12 @@ export default function Membership() {
   }, [currentFloorId]);
 
   useEffect(() => {
+    let active = true;
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes] = await Promise.all([
+        setCatalogError('');
+        const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes, catalogRes] = await Promise.all([
           getTicketPackages(),
           getMyVehicles(),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(r => r.json()),
@@ -243,11 +255,27 @@ export default function Membership() {
           }).then(r => r.json()),
           getWalletInfo(),
           getMembershipStatus(),
+          getExplorePackages({ limit: 1 }),
         ]);
+        if (!active) return;
+        if (!pkgRes.ok || !pkgRes.data?.success || !catalogRes.ok || !catalogRes.data?.success) {
+          throw new Error('Unable to load membership packages. Please try again.');
+        }
+        setFeaturedPackages(catalogRes.data.data.featured);
         
         if (pkgRes.ok && pkgRes.data?.data) {
           const pkgs = pkgRes.data.data;
           setPackages(pkgs);
+          if (requestedPackageId) {
+            const requestedPackage = pkgs.find((pkg) => pkg._id === requestedPackageId && pkg.isActive && isMembershipPackageType(pkg.type));
+            if (requestedPackage) {
+              setSelectedPackage(requestedPackage);
+              setSelectedSlots([]);
+              setShowSlotModal(true);
+            } else {
+              toast.error('This package is no longer available. Please choose another package.');
+            }
+          }
         }
         if (vRes.ok) {
           setVehicles(vRes.data?.data || []);
@@ -268,13 +296,14 @@ export default function Membership() {
           setMembership(membershipRes.data.data);
         }
       } catch (err) {
-        console.error(err);
+        if (active) setCatalogError(err.message || 'Unable to load membership packages. Please try again.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchData();
-  }, []);
+    return () => { active = false; };
+  }, [requestedPackageId, catalogReload]);
 
   const handleBuyPackage = (pkg) => {
     if (!pkg) return;
@@ -301,17 +330,17 @@ export default function Membership() {
     return '';
   };
 
-  const getPackagePresentation = (pkg, index) => {
+  const getPackagePresentation = (pkg) => {
     const isYearly = pkg.type === 'yearly';
     const isMonthly = pkg.type === 'monthly';
-    const isPopular = isMonthly && index === subscriptionPackages.findIndex(item => item.type === 'monthly');
+    const isPopular = isMonthly && pkg.selectionReason === 'bestseller';
 
     if (isYearly) {
       return {
         Icon: Sparkles,
         title: pkg.name || 'Yearly VIP',
-        subtitle: t('membershipPage.perYear'),
-        badge: t('membershipPage.yearly'),
+        subtitle: 'for 1 year',
+        badge: 'Yearly',
         border: 'border border-purple-100/80 hover:border-purple-200',
         glow: 'from-purple-500/20 via-fuchsia-400/10 to-transparent',
         softWash: 'from-purple-50/90 via-white to-fuchsia-50/70',
@@ -321,19 +350,19 @@ export default function Membership() {
         checkText: 'text-purple-500',
         button: 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-fuchsia-600 shadow-lg shadow-purple-500/20',
         popular: false,
-        features: [
-          t('membershipPage.monthlyBenefits'),
-          t('membershipPage.yearlyWashes'),
-          t('membershipPage.prioritySupport'),
+        features: pkg.benefitsVersion >= 1 ? (pkg.benefits || []) : [
+          'All Monthly VIP benefits',
+          'Includes 12 free washes / maintenance services',
+          'Priority support',
         ],
       };
     }
 
     return {
       Icon: Crown,
-      title: pkg.name || 'Monthly VIP',
-      subtitle: t('membershipPage.perMonth'),
-      badge: t('membershipPage.monthly'),
+      title: pkg.name || `${pkg.type.charAt(0).toUpperCase()}${pkg.type.slice(1)} VIP`,
+      subtitle: `for ${getPackageDurationLabel(pkg)} / space`,
+      badge: getPackageTypeLabel(pkg),
       border: isPopular ? 'border-2 border-gold/80 hover:border-gold' : 'border border-gold/25 hover:border-gold/50',
       glow: 'from-gold/25 via-yellow-300/10 to-transparent',
       softWash: 'from-yellow-50/80 via-white to-amber-50/70',
@@ -343,23 +372,23 @@ export default function Membership() {
       checkText: 'text-gold',
       button: 'bg-gradient-to-r from-yellow-500 to-gold hover:from-amber-500 hover:to-yellow-400 shadow-lg shadow-gold/20',
       popular: isPopular,
-      features: [
-        t('membershipPage.memberBenefits'),
-        t('membershipPage.ownSlot'),
-        t('membershipPage.automaticCheckin'),
-        t('membershipPage.noAdvanceBooking'),
+      features: pkg.benefitsVersion >= 1 ? (pkg.benefits || []) : [
+        'All Member benefits',
+        'Own a fixed parking slot under your name',
+        'Free 24/7 automatic check-in',
+        'No need to book before arrival',
       ],
     };
   };
 
   const getPackageButton = () => {
     if (availablePurchaseSlots <= 0) {
-      return { disabled: true, label: t('membershipPage.noCapacity') };
+      return { disabled: true, label: 'No available entitlement capacity' };
     }
 
     return {
       disabled: false,
-      label: isVipActive ? t('membershipPage.addSpace') : t('membershipPage.upgrade'),
+      label: isVipActive ? 'Add another space' : 'Upgrade now',
     };
   };
 
@@ -370,7 +399,7 @@ export default function Membership() {
       setSelectedSlots(prev => prev.filter((_, i) => i !== existingIndex));
     } else {
       // Add
-      const maxSlots = availablePurchaseSlots;
+      const maxSlots = selectedPackageSlotLimit;
       if (approvedVehicleCount === 0) {
         toast.error("You need to add a vehicle before buying a VIP pass.");
         return;
@@ -384,7 +413,7 @@ export default function Membership() {
   };
 
   const handleConfirmSlots = async () => {
-    if (selectedSlots.length === 0) {
+    if (selectedSlots.length === 0 || selectedSlots.length > selectedPackageSlotLimit) {
       toast.error("Please select at least one parking slot to reserve.");
       return;
     }
@@ -406,7 +435,7 @@ export default function Membership() {
       setVerifying(true); // Show the processing state
 
       if (paymentMethod === 'wallet') {
-        const res = await paySubscriptionWithWallet(selectedPackage._id, selectedSlots, effectivePackagePrice);
+        const res = await paySubscriptionWithWallet(selectedPackage._id, selectedSlots, effectivePackagePrice, selectedPackage.revision);
         if (res.ok && res.data?.success) {
           await syncCurrentUserProfile();
           setSuccess(true);
@@ -420,7 +449,7 @@ export default function Membership() {
         }
         setVerifying(false);
       } else {
-        const res = await createSubscriptionPayment(selectedPackage._id, selectedSlots, effectivePackagePrice);
+        const res = await createSubscriptionPayment(selectedPackage._id, selectedSlots, effectivePackagePrice, selectedPackage.revision);
         if (res.ok && res.data?.data?.checkoutUrl) {
           // Redirect directly to the PayOS page
           window.location.href = res.data.data.checkoutUrl;
@@ -445,7 +474,7 @@ export default function Membership() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
         <Loader2 className="w-12 h-12 animate-spin text-gold mb-4" />
-        <p className="text-gray-500 font-medium">{t('membershipPage.processing')}</p>
+        <p className="text-gray-500 font-medium">Processing transaction, please wait...</p>
       </div>
     );
   }
@@ -469,14 +498,20 @@ export default function Membership() {
               <Sparkles size={14} />
             </div>
           </div>
-          <h1 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">{t('membershipPage.unlock')}</h1>
-          <p className="text-gray-400 text-sm md:text-base">{t('membershipPage.choosePlan')}</p>
+          <h1 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">Unlock <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-gold">Premium</span></h1>
+          <p className="text-gray-400 text-sm md:text-base">Choose the right plan and upgrade your experience</p>
         </div>
       </div>
 
       {/* Cards */}
       <div className="mx-auto -mt-10 max-w-6xl px-4 sm:px-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
+        {catalogError && (
+          <div role="alert" className="relative z-10 mb-5 rounded-2xl border border-red-200 bg-white p-5 text-sm text-red-700">
+            <p>{catalogError}</p>
+            <button type="button" onClick={() => setCatalogReload((value) => value + 1)} className="mt-3 rounded-xl bg-gray-900 px-4 py-3 font-bold text-white">Try again</button>
+          </div>
+        )}
+        <div role="group" aria-label="Basic membership plans" className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
           
           {/* Member Card */}
           <div className={`${cardShellClass} ${getDesktopGridBalanceClass(0)} border border-gray-100 hover:border-gray-200`}>
@@ -486,35 +521,35 @@ export default function Membership() {
             <div className="relative mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[20px] bg-gray-100 text-gray-500 ring-8 ring-gray-50 transition duration-300 group-hover:rotate-3 group-hover:scale-105">
               <span className="font-black text-lg">M</span>
             </div>
-            <h3 className="relative text-center font-black text-gray-900 tracking-widest text-xs mb-4">{t('membershipPage.member').toUpperCase()}</h3>
+            <h3 className="relative text-center font-black text-gray-900 tracking-widest text-xs mb-4">MEMBER</h3>
             <div className="relative text-center py-3.5 rounded-2xl bg-white/80 border border-gray-100 mb-5 shadow-inner backdrop-blur">
-              <div className="text-xl font-black text-gray-900">{t('membershipPage.default')}</div>
+              <div className="text-xl font-black text-gray-900">Default</div>
             </div>
             <ul className="relative space-y-3 mb-5 flex-1">
               <li className="flex gap-2.5 text-gray-600 text-xs">
                 <Check size={15} className="text-gray-400 shrink-0" />
-                <span>{t('membershipPage.bookByHour')}</span>
+                <span>Book parking by hour or day</span>
               </li>
               <li className="flex gap-2.5 text-gray-600 text-xs">
                 <Check size={15} className="text-gray-400 shrink-0" />
-                <span>{t('membershipPage.paidServices')}</span>
+                <span>Use add-on services (paid)</span>
               </li>
               <li className="flex gap-2.5 text-gray-400 text-xs">
                 <div className="w-3.5 h-3.5 rounded-full border border-gray-300 shrink-0 mt-0.5"></div>
-                <span>{t('membershipPage.fixedSlot')}</span>
+                <span>Dedicated fixed parking slot</span>
               </li>
               <li className="flex gap-2.5 text-gray-400 text-xs">
                 <div className="w-3.5 h-3.5 rounded-full border border-gray-300 shrink-0 mt-0.5"></div>
-                <span>{t('membershipPage.freeCheckin')}</span>
+                <span>Free check-in / No reservation required</span>
               </li>
             </ul>
             <button disabled className="relative w-full py-3 rounded-2xl font-bold text-gray-500 bg-gray-100 text-sm">
-              {t('membershipPage.inUse')}
+              In use
             </button>
           </div>
 
-          {subscriptionPackages.map((pkg, index) => {
-            const presentation = getPackagePresentation(pkg, index);
+          {!loading && !catalogError && subscriptionPackages.map((pkg, index) => {
+            const presentation = getPackagePresentation(pkg);
             const buttonState = getPackageButton(pkg);
             const Icon = presentation.Icon;
             const effectivePrice = getEffectivePackagePrice(pkg);
@@ -530,7 +565,7 @@ export default function Membership() {
               >
                 {presentation.popular && (
                   <div className="absolute top-3 right-3 z-20 bg-gold text-white text-[9px] font-black tracking-widest py-1 px-3 rounded-full uppercase shadow-lg shadow-gold/20">
-                    {t('membershipPage.popular')}
+                    Popular
                   </div>
                 )}
                 <div className={`absolute inset-0 bg-gradient-to-br ${presentation.softWash}`}></div>
@@ -600,15 +635,24 @@ export default function Membership() {
             );
           })}
 
-          {!loading && subscriptionPackages.length === 0 && (
+          {loading && <div role="status" className={`${cardShellClass} items-center justify-center text-gray-500`}><Loader2 size={28} className="animate-spin" /><span className="mt-3 text-sm">Loading packages...</span></div>}
+
+          {!loading && !catalogError && subscriptionPackages.length === 0 && (
             <div className={`${cardShellClass} min-h-[300px] justify-center border border-gray-100 text-center text-gray-500`}>
               <Crown size={32} className="mx-auto mb-3 text-gray-300" />
-              <h3 className="font-black text-gray-900 mb-2">{t('membershipPage.noPackages')}</h3>
-              <p className="text-sm">{t('membershipPage.noPackagesHint')}</p>
+              <h3 className="font-black text-gray-900 mb-2">No monthly or yearly plans available</h3>
+              <p className="text-sm">Browse the available packages in Explore more below.</p>
             </div>
           )}
 
         </div>
+        {!loading && !catalogError && (
+          <MembershipExplore
+            packages={explorePackages}
+            onSelectPackage={handleBuyPackage}
+            buttonState={getPackageButton()}
+          />
+        )}
       </div>
 
       {/* Select Slot Modal */}
@@ -617,12 +661,13 @@ export default function Membership() {
           <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-black text-gray-900">{t('membershipPage.chooseSlots')}</h3>
+                <h3 className="text-xl font-black text-gray-900">Choose Fixed Parking Slots</h3>
                 <p className="text-gray-500 mt-1">
-                {t('membershipPage.vehicleSlotsHint', { vehicles: approvedVehicleCount, slots: availablePurchaseSlots })}
+                You currently have <span className="font-bold text-gray-900">{approvedVehicleCount}</span> approved vehicles.
+                This package allows up to <span className="font-bold text-gray-900">{selectedPackageSlotLimit}</span> additional parking slots.
                 {approvedVehicleCount > 1 && (
                   <span className="block mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md">
-                    {t('membershipPage.slotTip')}
+                    Tip: You can select fewer slots than vehicles to share slots among your vehicles.
                   </span>
                 )}
               </p>
@@ -653,7 +698,7 @@ export default function Membership() {
               
               <div className="w-full md:w-80 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm flex flex-col">
                 <div className="mb-6">
-                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">{t('membershipPage.parkingFloor')}</label>
+                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Parking floor</label>
                   <CustomFloorPicker
                     floors={floors}
                     value={currentFloorId || ''}
@@ -663,7 +708,7 @@ export default function Membership() {
                 
                 <div className="mb-6 flex-1">
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
-                    {t('membershipPage.paymentMethod')}
+                    Payment method
                   </label>
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     <button 
@@ -684,7 +729,7 @@ export default function Membership() {
                       </div>
                       <div className="text-center">
                         <div className={`font-black text-xs mb-0.5 ${paymentMethod === 'payos' ? 'text-cyan-400' : 'text-gray-300'}`}>PayOS</div>
-                        <div className="text-[9px] text-gray-500 font-medium">{t('membershipPage.qrBankTransfer')}</div>
+                        <div className="text-[9px] text-gray-500 font-medium">QR code / Bank transfer</div>
                       </div>
                     </button>
                     
@@ -706,7 +751,7 @@ export default function Membership() {
                       </div>
                       <div className="text-center">
                         <div className={`font-black text-xs mb-0.5 ${paymentMethod === 'wallet' ? 'text-gold' : 'text-gray-300'}`}>Wallet Valo</div>
-                      <div className="text-[9px] text-gray-500 font-medium">{t('membershipPage.balance')}: {walletBalance.toLocaleString('vi-VN')} VND</div>
+                        <div className="text-[9px] text-gray-500 font-medium">Balance: {walletBalance.toLocaleString('vi-VN')} VND</div>
                       </div>
                     </button>
                   </div>
@@ -714,23 +759,23 @@ export default function Membership() {
                   {paymentMethod === 'wallet' && selectedPackage && walletBalance < (getEffectivePackagePrice(selectedPackage) * Math.max(1, selectedSlots.length)) && (
                     <div className="bg-rose-50 text-rose-600 text-xs p-3 rounded-xl border border-rose-100 flex gap-2 mt-4 font-medium items-start">
                       <AlertCircle className="shrink-0 w-4 h-4" />
-                      <p>{t('membershipPage.insufficientBalance')}</p>
+                      <p>Insufficient balance. Please top up or use PayOS.</p>
                     </div>
                   )}
 
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 mt-4">
-                    {t('membershipPage.selected', { selected: selectedSlots.length, total: availablePurchaseSlots })}
+                    Selected ({selectedSlots.length} / {selectedPackageSlotLimit})
                   </label>
                   <div className="space-y-2">
                     {selectedSlots.map(s => (
                       <div key={`${s.floorId}-${s.slotCode}`} className="flex items-center justify-between p-3 rounded-xl bg-gold/10 border border-gold/20 text-gold font-bold">
-                        <span>{t('membershipPage.slot')}: {s.slotCode}</span>
+                        <span>Slot: {s.slotCode}</span>
                         <Check size={18} />
                       </div>
                     ))}
                     {selectedSlots.length === 0 && (
                       <div className="text-center py-8 text-gray-400 text-sm">
-                        {t('membershipPage.clickMap')}
+                        Click the map to choose a parking slot.
                       </div>
                     )}
                   </div>
@@ -744,13 +789,14 @@ export default function Membership() {
                   {verifying ? (
                     <span className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      {t('membershipPage.processingShort')}
+                      Processing...
                     </span>
                   ) : (
                     <>
-                      {t('membershipPage.payNow')} {selectedPackage && selectedSlots.length > 0 ? `(${(getEffectivePackagePrice(selectedPackage) * selectedSlots.length).toLocaleString('vi-VN')} VND)` : ''} <ArrowRight size={18} />
+                      Pay now {selectedPackage && selectedSlots.length > 0 ? `(${(getEffectivePackagePrice(selectedPackage) * selectedSlots.length).toLocaleString('vi-VN')} VND)` : ''} <ArrowRight size={18} />
                     </>
                   )}
+                  {selectedPackage?.serviceBenefits?.map((benefit) => <p key={benefit.serviceId} className="mt-3 text-sm font-semibold text-gray-700">{benefit.serviceName}: {benefit.quantityPerSlot} uses/space × {selectedSlots.length} spaces = {benefit.quantityPerSlot * selectedSlots.length} uses</p>)}
                 </button>
               </div>
             </div>
@@ -765,14 +811,14 @@ export default function Membership() {
             <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-500 mx-auto mb-6">
               <Crown size={40} />
             </div>
-            <h3 className="text-2xl font-black text-gray-900 mb-2">{t('membershipPage.welcomeVip')}</h3>
-            <p className="text-gray-500 mb-8">{t('membershipPage.successMessage')}</p>
+            <h3 className="text-2xl font-black text-gray-900 mb-2">Welcome, VIP!</h3>
+            <p className="text-gray-500 mb-8">Transaction successful. Your benefits are active and your slot has been reserved.</p>
             
             <button 
               onClick={() => window.location.href = '/'}
               className="w-full py-4 rounded-xl font-bold text-white bg-gray-900 hover:bg-black transition"
             >
-              {t('membershipPage.backHome')}
+              Back to home
             </button>
           </div>
         </div>

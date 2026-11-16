@@ -1,27 +1,46 @@
-import { ArrowLeftRight, ShoppingBag } from "lucide-react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from 'react';
+import MembershipHistoryDrawer from '../../components/membership/MembershipHistoryDrawer';
+import { ArrowLeftRight, ShoppingBag, History } from "lucide-react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import MembershipTransferMarketplace from "./MembershipTransferMarketplace";
 import MembershipTransfers from "./MembershipTransfers";
-import { useLanguage } from "../../i18n/hooks/useLanguage";
+import MembershipServices from '../../components/membership/MembershipServices';
+
+const TABS = [
+  {
+    id: "transfers",
+    label: "My Membership",
+    icon: ArrowLeftRight,
+  },
+  {
+    id: "marketplace",
+    label: "Marketplace",
+    icon: ShoppingBag,
+  },
+];
 
 export default function MembershipHub() {
-  const { t } = useLanguage();
-  const TABS = [
-    { id: "transfers", label: t('membershipHub.myMembership'), icon: ArrowLeftRight },
-    { id: "marketplace", label: t('membershipHub.marketplace'), icon: ShoppingBag },
-  ];
+  const [historyOpen, setHistoryOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") === "marketplace" ? "marketplace" : "transfers";
+  const { hash, key: locationKey } = useLocation();
+  useEffect(() => {
+    if (hash !== '#membership-services') return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('membership-services')?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash, locationKey]);
+  const activeTab = !searchParams.has("entitlementId") && !searchParams.has("subscriptionId") && searchParams.get("tab") === "marketplace" ? "marketplace" : "transfers";
 
   const changeTab = (tab) => {
-    navigate(
-      tab === "marketplace"
-        ? "/customer/membership-transfers?tab=marketplace"
-        : "/customer/membership-transfers",
-    );
+    const params = new URLSearchParams(searchParams);
+    params.delete('entitlementId'); params.delete('subscriptionId');
+    if (tab === 'marketplace') params.set('tab', 'marketplace');
+    else params.delete('tab');
+    navigate({ pathname: '/customer/membership-transfers', search: params.toString() });
   };
 
   const handleTabKeyDown = (event, currentTab) => {
@@ -49,14 +68,16 @@ export default function MembershipHub() {
       <div className="mx-auto max-w-7xl">
         <CustomerPageHeader
           icon={ArrowLeftRight}
-          title={t('membershipHub.title')}
-          description={t('membershipHub.description')}
+          title="Membership"
+          description="Manage your membership spaces and transfers, or find an available space in the marketplace."
+          action={<button type="button" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10"><History size={17} aria-hidden="true" />History</button>}
           className="border-b border-white/10 pb-6"
         />
 
+        {historyOpen && <MembershipHistoryDrawer onClose={() => setHistoryOpen(false)} />}
         <nav
           role="tablist"
-          aria-label={t('membershipHub.sections')}
+          aria-label="Membership sections"
           className="mt-6 grid rounded-2xl border border-white/10 bg-[#151515] p-1.5 sm:inline-grid sm:grid-cols-2"
         >
           {TABS.map((tab) => {
@@ -99,6 +120,7 @@ export default function MembershipHub() {
             <MembershipTransfers embedded />
           )}
         </div>
+        <div id="membership-services"><MembershipServices key={locationKey} /></div>
       </div>
     </div>
   );

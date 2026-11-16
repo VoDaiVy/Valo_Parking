@@ -1,11 +1,15 @@
+const { renewalWindowDays: getRenewalWindowDays, isInRenewalWindow } = require('../utils/membershipRenewalWindow');
 const mongoose = require('mongoose');
 const payos = require('../config/payos');
 const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRenewal');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Slot = require('../models/Slot');
 const Subscription = require('../models/Subscription');
+const { isMembershipPackageType } = require('../utils/ticketPackageRules');
 const Vehicle = require('../models/Vehicle');
+const { validateEntitlementSpace } = require('./membershipSpaceValidationService');
 const walletService = require('./walletService');
+const { grantBenefits } = require('./membershipServiceBenefitService');
 const { recomputeUserMembership } = require('./membershipProjectionService');
 const {
   businessError,
@@ -25,15 +29,17 @@ const getQuote = async (userId, entitlementId, options = {}) => {
   if (!entitlement) {
     throw businessError('Active membership space not found.', 'ENTITLEMENT_NOT_FOUND', 404);
   }
+  await validateEntitlementSpace(entitlement, userId, { session: options.session });
   const pkg = entitlement.packageId;
-  if (!pkg || pkg.isRenewable === false || !['monthly', 'yearly'].includes(pkg.type)) {
+  const durationPackage = entitlement.packageDurationSnapshot || pkg;
+  if (!pkg || pkg.isRenewable === false || !isMembershipPackageType(durationPackage?.type)) {
     throw businessError('This membership space cannot be renewed.', 'PACKAGE_NOT_RENEWABLE');
   }
   const daysUntilExpiration = Math.ceil(
     (new Date(entitlement.expireAt).getTime() - now.getTime()) / DAY_MS
   );
-  const renewalWindowDays = Number(pkg.renewalWindowDays || 7);
-  if (daysUntilExpiration > renewalWindowDays) {
+  const renewalWindowDays = getRenewalWindowDays(pkg);
+  if (!isInRenewalWindow(entitlement.expireAt, pkg, now)) {
     throw businessError(
       `Renewal opens ${renewalWindowDays} days before expiration.`,
       'RENEWAL_WINDOW_NOT_OPEN'
@@ -60,7 +66,7 @@ const getQuote = async (userId, entitlementId, options = {}) => {
     sourceSubscriptionId: entitlement.sourceSubscriptionId,
     oldExpireAt: entitlement.expireAt,
     currentExpireAt: entitlement.expireAt,
-    newExpireAt: addPackageDuration(entitlement.expireAt, pkg.type),
+    newExpireAt: addPackageDuration(entitlement.expireAt, durationPackage),
     amount: Number(pkg.price || 0),
     daysUntilExpiration,
     renewalWindowDays,
@@ -72,7 +78,9 @@ const getQuote = async (userId, entitlementId, options = {}) => {
     package: {
       id: pkg._id,
       name: pkg.name,
-      type: pkg.type,
+      type: durationPackage.type,
+      durationDays: durationPackage.durationDays ?? null,
+      durationMinutes: durationPackage.durationMinutes ?? null,
       unitPrice: Number(pkg.price || 0),
     },
   };
@@ -91,6 +99,12 @@ const publicResult = (renewal, extra = {}) => ({
 });
 
 const activateInTransaction = async ({ renewal, quote, session, walletTransactionId }) => {
+  const stock = require('./ticketPackageStockService');
+  await stock.lockPackage(quote.entitlement.packageId?._id || quote.entitlement.packageId, { session });
+  if (new Date(quote.oldExpireAt) <= new Date()) {
+    await stock.assertAvailable(quote.entitlement.packageId?._id || quote.entitlement.packageId, 1, { session, allowSoldOut: true });
+  }
+  await validateEntitlementSpace(quote.entitlement, renewal.userId, { session });
   const entitlement = await MembershipSlotEntitlement.findOneAndUpdate(
     {
       _id: quote.entitlement._id,
@@ -102,7 +116,7 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
       $set: {
         expireAt: quote.newExpireAt,
         expireWarningSentAt: null,
-        unitAmount: quote.amount,
+        unitAmount: renewal.amount,
       },
     },
     { new: true, session }
@@ -110,6 +124,7 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
   if (!entitlement) {
     throw businessError('Membership space changed during renewal.', 'ENTITLEMENT_CHANGED', 409);
   }
+  await grantBenefits({ entitlement, terms: entitlement.packageTermsSnapshot, sourceKey: `entitlement-renewal:${renewal._id}`, validFrom: quote.oldExpireAt, expireAt: quote.newExpireAt, session });
   const slotResult = await Slot.updateOne(
     {
       _id: entitlement.slotId,
@@ -131,21 +146,32 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
     { session }
   );
   renewal.status = 'paid';
+  renewal.notificationPending = true;
   renewal.paidAt = new Date();
   renewal.walletTransactionId = walletTransactionId || null;
   await renewal.save({ session });
   await recomputeUserMembership(renewal.userId, { session, rotateQr: true });
+  await stock.refreshPackage(entitlement.packageId, { session });
   return renewal;
 };
 
-const renewWithWallet = async ({ userId, entitlementId, idempotencyKey }) => {
+const renewWithWallet = async ({ userId, entitlementId, idempotencyKey, app = null }) => {
   const existing = await MembershipEntitlementRenewal.findOne({ userId, idempotencyKey });
-  if (existing?.status === 'paid') return publicResult(existing, { alreadyProcessed: true });
+  if (existing?.status === 'paid') {
+    if (String(existing.entitlementId) !== String(entitlementId)) {
+      throw businessError('Renewal request belongs to another membership.', 'RENEWAL_ENTITLEMENT_MISMATCH', 409);
+    }
+    if (String(existing.userId) !== String(userId) || existing.paymentMethod !== 'wallet') {
+      throw businessError('Renewal request does not match this operation.', 'RENEWAL_CONTEXT_MISMATCH', 409);
+    }
+    return publicResult(existing, { alreadyProcessed: true });
+  }
   if (existing) throw businessError('Renewal request already exists.', 'RENEWAL_EXISTS', 409);
   const quote = await getQuote(userId, entitlementId);
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    await validateEntitlementSpace(quote.entitlement, userId, { session });
     const [renewal] = await MembershipEntitlementRenewal.create(
       [{
         entitlementId,
@@ -178,6 +204,7 @@ const renewWithWallet = async ({ userId, entitlementId, idempotencyKey }) => {
       walletTransactionId: debit.transaction._id,
     });
     await session.commitTransaction();
+    await require('./membershipNotifications').notifyRenewal(renewal, 'entitlement', app);
     return publicResult(renewal, {
       alreadyProcessed: false,
       walletBalance: debit.newBalance,
@@ -190,9 +217,14 @@ const renewWithWallet = async ({ userId, entitlementId, idempotencyKey }) => {
   }
 };
 
-const createPayosRenewal = async ({ userId, entitlementId, idempotencyKey }) => {
+const createPayosRenewal = async ({ userId, entitlementId, idempotencyKey, app = null }) => {
   const existing = await MembershipEntitlementRenewal.findOne({ userId, idempotencyKey });
   if (existing) {
+    if (String(existing.entitlementId) !== String(entitlementId)) throw businessError('Renewal request belongs to another membership.', 'RENEWAL_ENTITLEMENT_MISMATCH', 409);
+    if (!['pending', 'paid'].includes(existing.status)) throw businessError('This renewal attempt is no longer payable. Start a new renewal.', 'RENEWAL_ATTEMPT_CLOSED', 409);
+    if (existing.status !== 'paid') {
+      await getQuote(userId, entitlementId);
+    }
     return publicResult(existing, {
       checkoutUrl: existing.payosCheckoutUrl,
       alreadyProcessed: existing.status === 'paid',
@@ -223,8 +255,8 @@ const createPayosRenewal = async ({ userId, entitlementId, idempotencyKey }) => 
       orderCode,
       amount: parseInt(quote.amount, 10),
       description: 'VALO Renew Space',
-      returnUrl: `${clientUrl}/customer/membership-transfers?entitlementRenewOrderCode=${orderCode}`,
-      cancelUrl: `${clientUrl}/customer/membership-transfers?entitlementRenewOrderCode=${orderCode}&cancel=true`,
+      returnUrl: `${clientUrl}/customer/membership-transfers?entitlementId=${encodeURIComponent(entitlementId)}&entitlementRenewOrderCode=${orderCode}`,
+      cancelUrl: `${clientUrl}/customer/membership-transfers?entitlementId=${encodeURIComponent(entitlementId)}&entitlementRenewOrderCode=${orderCode}&cancel=true`,
       items: [{
         name: `Renew ${quote.entitlement.slotCode}`,
         quantity: 1,
@@ -247,7 +279,7 @@ const createPayosRenewal = async ({ userId, entitlementId, idempotencyKey }) => 
   }
 };
 
-const verifyPayosRenewal = async ({ userId, orderCode }) => {
+const verifyPayosRenewal = async ({ userId, orderCode, app = null }) => {
   const renewal = await MembershipEntitlementRenewal.findOne({
     userId,
     orderCode: Number(orderCode),
@@ -264,12 +296,21 @@ const verifyPayosRenewal = async ({ userId, orderCode }) => {
     throw businessError('Payment not completed.', 'PAYMENT_NOT_COMPLETED');
   }
   const quote = await getQuote(userId, renewal.entitlementId);
+  quote.oldExpireAt = renewal.oldExpireAt;
+  quote.newExpireAt = renewal.newExpireAt;
+  quote.amount = renewal.amount;
+  quote.package = renewal.packageSnapshot;
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
     const current = await MembershipEntitlementRenewal.findById(renewal._id).session(session);
+    if (current.status === 'paid') {
+      await session.commitTransaction();
+      return publicResult(current, { alreadyProcessed: true });
+    }
     await activateInTransaction({ renewal: current, quote, session });
     await session.commitTransaction();
+    await require('./membershipNotifications').notifyRenewal(current, 'entitlement', app);
     return publicResult(current, { alreadyProcessed: false });
   } catch (error) {
     await session.abortTransaction();

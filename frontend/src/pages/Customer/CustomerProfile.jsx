@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import Logo from "../../assets/images/logo.png";
 import { apiFetch, API_BASE } from "../../services/api";
 import { getMembershipQr } from "../../services/subscriptionService";
+import TelegramProfileSettings from "../../components/TelegramProfileSettings";
 import {
   forgotPassword as apiForgotPassword,
   verifyResetPasswordOTP as apiVerifyResetOTP,
@@ -238,6 +239,7 @@ export default function CustomerProfile() {
     isGoogleUser: false,
   });
   const [toast, setToast] = useState(null);
+  const [savedPhone, setSavedPhone] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [formDraft, setFormDraft] = useState({ name: "", phone: "" });
   const [formErrors, setFormErrors] = useState({ name: "", phone: "" });
@@ -307,6 +309,7 @@ export default function CustomerProfile() {
 
       if (ok && data?.success) {
         setProfile(buildProfile(data.data));
+        setSavedPhone(buildProfile(data.data).phone);
         // Flatten avatar to top-level so Navbar can read user.avatar directly
         sessionStorage.setItem(
           "valo_user",
@@ -418,6 +421,7 @@ export default function CustomerProfile() {
       const merged = { ...data.data, createdAt: profile.createdAt };
       const fresh = buildProfile(merged);
       setProfile(fresh);
+      setSavedPhone(fresh.phone);
       sessionStorage.setItem("valo_user", JSON.stringify(merged));
       window.dispatchEvent(new Event("valo_auth_change"));
       if (data.data.claimedSessions > 0) {
@@ -548,6 +552,7 @@ export default function CustomerProfile() {
       const merged = { ...data.data, createdAt: profile.createdAt };
       const fresh = buildProfile(merged);
       setProfile(fresh);
+      setSavedPhone(fresh.phone);
       sessionStorage.setItem("valo_user", JSON.stringify(merged));
       window.dispatchEvent(new Event("valo_auth_change"));
       if (data.data.claimedSessions > 0) {
@@ -1247,6 +1252,11 @@ export default function CustomerProfile() {
               />
             </button>
           </div>
+          <TelegramProfileSettings
+            key={savedPhone}
+            phone={savedPhone}
+            disabled={editMode || toast?.type === "saving"}
+          />
         </div>
 
         {/* ── Right: Security + Cards ── */}

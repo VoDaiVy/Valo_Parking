@@ -1,0 +1,22 @@
+/* Booking-specific portal styling; no shared header or Admin overrides. */
+body[data-valo-typography="staff"] .staff-booking-management .sbm-date { overflow: visible; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-date .sbm-date-trigger { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 120px; min-height: 40px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-family: Montserrat, sans-serif; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-date-trigger > span:first-child { font-size: 12px; line-height: 18px; color: #9AADC0; }
+body[data-valo-typography="staff"] .staff-booking-management .sbm-date-trigger > span:last-child { font-size: 14px; line-height: 20px; font-weight: 600; color: #F5F7FA; }
+body[data-valo-typography="staff"] .sbm-booking-calendar { z-index: 100; width: 300px; max-width: calc(100vw - 16px); padding: 12px; border: 1px solid #256C55; border-radius: 13px; background: #0D1517; color: #F5F7FA; box-shadow: 0 12px 32px rgb(0 0 0 / 25%); font-family: Montserrat, sans-serif; font-size: 13px; }
+body[data-valo-typography="staff"] .sbm-booking-calendar .sbm-calendar-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+body[data-valo-typography="staff"] .sbm-booking-calendar h2 { font-size: 14px; line-height: 20px; font-weight: 600; }
+body[data-valo-typography="staff"] .sbm-booking-calendar button { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid transparent; border-radius: 50%; background: transparent; color: #F5F7FA; font: inherit; cursor: pointer; }
+body[data-valo-typography="staff"] .sbm-booking-calendar button:hover { background: #15352B; }
+body[data-valo-typography="staff"] .sbm-booking-calendar button:focus-visible { outline: 2px solid #6EE7B7; outline-offset: -2px; }
+body[data-valo-typography="staff"] .sbm-booking-calendar :is(.sbm-calendar-weekdays, .sbm-calendar-week) { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+body[data-valo-typography="staff"] .sbm-booking-calendar .sbm-calendar-weekdays { margin-bottom: 4px; color: #9AADC0; font-size: 11px; text-align: center; line-height: 24px; }
+body[data-valo-typography="staff"] .sbm-booking-calendar [role="gridcell"] { display: grid; place-items: center; min-width: 0; }
+body[data-valo-typography="staff"] .sbm-booking-calendar [data-outside="true"] { color: #84999F; }
+body[data-valo-typography="staff"] .sbm-booking-calendar [aria-current="date"]:not([data-selected="true"]) { border-color: #34D399; }
+body[data-valo-typography="staff"] .sbm-booking-calendar [data-selected="true"] { color: #032619; background: #34D399; font-weight: 700; }
+body[data-valo-typography="staff"] .sbm-booking-calendar .sbm-calendar-footer { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px solid #223C35; }
+body[data-valo-typography="staff"] .sbm-booking-calendar .sbm-calendar-footer button { width: auto; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: #A6EBCF; }
+@media (max-width: 340px) {
+  body[data-valo-typography="staff"] .sbm-booking-calendar button { width: 32px; height: 34px; }
+}

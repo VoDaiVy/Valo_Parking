@@ -1,0 +1,5 @@
+/* Admin scroll regions keep native scrolling and keyboard access without rails. */
+body[data-valo-typography="admin"],
+body[data-valo-typography="admin"] * { scrollbar-width: none !important; }
+body[data-valo-typography="admin"]::-webkit-scrollbar,
+body[data-valo-typography="admin"] *::-webkit-scrollbar { display: none !important; }

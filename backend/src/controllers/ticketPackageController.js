@@ -1,19 +1,43 @@
 const TicketPackage = require('../models/TicketPackage');
+const { getExplorePackages, getExplorePackage } = require('../services/ticketPackageExploreService');
+const {
+  MEMBERSHIP_PACKAGE_TYPES,
+  getPackageDurationDays,
+  getPackageBenefits,
+} = require('../utils/ticketPackageRules');
+
+exports.getExplorePackages = async (req, res, next) => {
+  try {
+    const data = await getExplorePackages(req.query);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getExplorePackage = async (req, res, next) => {
+  try {
+    const data = await getExplorePackage(req.params.id);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // Get active ticket packages (For Customer/Kiosk)
 exports.getActivePackages = async (req, res) => {
   try {
+    await require('../services/ticketPackageStockService').refreshAll();
     const packages = await TicketPackage.find({
       isActive: true,
-      type: { $in: ['monthly', 'yearly'] },
+      type: { $in: MEMBERSHIP_PACKAGE_TYPES },
     }).sort({ type: -1, price: 1 });
     const pricedPackages = packages.map((pkg) => {
       const base = pkg.toObject();
       const common = {
-        durationMonths: pkg.type === 'yearly' ? 12 : 1,
-        benefits: pkg.type === 'yearly'
-          ? ['Reserved VIP slots', '12 free services', 'Priority parking access']
-          : ['Reserved VIP slots', 'Priority parking access'],
+        durationDays: getPackageDurationDays(pkg),
+        ...(['monthly', 'yearly'].includes(pkg.type) ? { durationMonths: pkg.type === 'yearly' ? 12 : 1 } : {}),
+        benefits: getPackageBenefits(pkg),
       };
       const price = {
         basePrice: pkg.price,
@@ -43,12 +67,21 @@ exports.getActivePackages = async (req, res) => {
 // Get all ticket packages (For Admin)
 exports.getAllPackages = async (req, res) => {
   try {
+    const stockService = require('../services/ticketPackageStockService');
+    await stockService.refreshAll();
     const packages = await TicketPackage.find().sort({ createdAt: -1 });
-    res.status(200).json({ success: true, data: packages });
+    const data = await Promise.all(packages.map(async (pkg) => ({ ...pkg.toObject(), stock: await stockService.snapshot(pkg) })));
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error fetching all ticket packages:', error);
     res.status(500).json({ message: 'Server error while fetching ticket packages' });
   }
+};
+
+exports.getPackageBuyers = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await require('../services/ticketPackageStockService').getBuyers(req.params.id, req.query) });
+  } catch (error) { next(error); }
 };
 
 // Get one ticket package detail
@@ -94,15 +127,30 @@ exports.updatePackage = async (req, res) => {
 // Delete ticket package (For Admin)
 exports.deletePackage = async (req, res) => {
   try {
+    const Subscription = require('../models/Subscription');
+    const AdminActionLog = require('../models/AdminActionLog');
+
+    // Prevent deletion if any active or pending subscriptions reference this package.
+    // Deleting would leave dangling references and break getMembership / renewal flows.
+    const activeSub = await Subscription.findOne({
+      ticketPackage: req.params.id,
+      status: { $in: ['pending', 'active'] },
+    }).select('_id').lean();
+    if (activeSub) {
+      return res.status(409).json({
+        success: false,
+        message: 'Không thể xóa gói vé đang được khách hàng sử dụng (active/pending). Hãy vô hiệu hóa gói thay vì xóa.',
+      });
+    }
+
     const deletedPackage = await TicketPackage.findByIdAndDelete(req.params.id);
     if (!deletedPackage) return res.status(404).json({ success: false, message: 'Ticket package not found' });
 
-    const AdminActionLog = require('../models/AdminActionLog');
     await AdminActionLog.create({
-      action: "Deleted Ticket Package",
+      action: 'Deleted Ticket Package',
       target: `${deletedPackage.name} • ${deletedPackage.type}`,
-      type: "delete",
-      adminId: req.user._id
+      type: 'delete',
+      adminId: req.user._id,
     });
 
     res.status(200).json({ success: true, message: 'Ticket package deleted successfully' });

@@ -37,7 +37,7 @@ const calculateBookingFinancialSummary = (booking, walletRefundPaid = 0) => {
   };
 };
 
-const getBookingFinancialSummaryMap = async (bookings = []) => {
+const getBookingFinancialSummaryMap = async (bookings = [], { excludeModificationRefunds = false } = {}) => {
   const bookingIds = bookings.map((booking) => booking?._id).filter(Boolean);
   if (!bookingIds.length) return new Map();
 
@@ -54,22 +54,21 @@ const getBookingFinancialSummaryMap = async (bookings = []) => {
       $group: {
         _id: '$refSourceId',
         amount: { $sum: '$amount' },
+        modificationRefund: { $sum: { $cond: [
+          { $regexMatch: { input: { $ifNull: ['$idempotencyKey', ''] }, regex: ':modification:' } }, '$amount', 0,
+        ] } },
       },
     },
   ]);
-  const refundByBookingId = new Map(
-    refundRows.map((row) => [String(row._id), Number(row.amount) || 0])
-  );
-
-  return new Map(
-    bookings.map((booking) => [
-      String(booking._id),
-      calculateBookingFinancialSummary(
-        booking,
-        refundByBookingId.get(String(booking._id)) || 0
-      ),
-    ])
-  );
+  const refundByBookingId = new Map(refundRows.map(row => [String(row._id), row]));
+  return new Map(bookings.map(booking => {
+    const refunds = refundByBookingId.get(String(booking._id));
+    const allRefunds = Number(refunds?.amount) || 0;
+    const modificationRefund = excludeModificationRefunds ? Number(refunds?.modificationRefund) || 0 : 0;
+    const financial = calculateBookingFinancialSummary(booking, allRefunds - modificationRefund);
+    if (excludeModificationRefunds) financial.reportedRefundPaid = allRefunds || financial.refundPaid;
+    return [String(booking._id), financial];
+  }));
 };
 
 module.exports = {

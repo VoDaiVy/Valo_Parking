@@ -1,3 +1,7 @@
+import TelegramReceiptModal from '../../components/TelegramReceiptModal';
+import TelegramReceiptButton from '../../components/TelegramReceiptButton';
+import BookingFeedbackModal from '../../components/Customer/BookingFeedbackModal';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -26,7 +30,6 @@ import { getMyVehicles } from '../../services/vehicleService';
 import { getAllFloors } from '../../services/parkingFloorService';
 import { useSocket } from '../../hooks/useSocket';
 import CustomerPageHeader from '../../components/Customer/CustomerPageHeader';
-import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 import { buildFloorLookup, getBookingFloorLabel } from '../../utils/bookingFloor';
 
@@ -89,7 +92,10 @@ const getBookingTiming = (booking) => {
 };
 
 export default function BookingPage() {
-  const { t } = useLanguage();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const feedbackLocation = useLocation();
+  const [feedbackBooking, setFeedbackBooking] = useState(null);
+  const linkedBookingId = searchParams.get('bookingId');
   const socket = useSocket();
   const [bookings, setBookings] = useState([]);
   const [floorsById, setFloorsById] = useState({});
@@ -103,10 +109,18 @@ export default function BookingPage() {
   const [manualPlateInput, setManualPlateInput] = useState('');
   const [extendEndTime, setExtendEndTime] = useState('');
   const [qrDialog, setQrDialog] = useState(null);
+  const [telegramBookingId, setTelegramBookingId] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [cancelDialog, setCancelDialog] = useState(null);
   const [cancelQuoteLoading, setCancelQuoteLoading] = useState('');
   const lastEventRef = useRef(null);
+
+  const activeFeedbackBooking = linkedBookingId ? bookings.find((item) => item._id === linkedBookingId) : feedbackBooking;
+
+  const closeFeedback = () => {
+    setFeedbackBooking(null);
+    if (linkedBookingId) { const next = new URLSearchParams(searchParams); next.delete('bookingId'); setSearchParams(next, { replace: true }); }
+  };
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -319,8 +333,8 @@ export default function BookingPage() {
     <div className="min-h-full bg-[#050505] text-white p-6 md:p-8">
       <CustomerPageHeader
         icon={CalendarClock}
-        title={t('customer.myBookingsTitle')}
-        description={t('customer.myBookingsDescription')}
+        title="My Bookings"
+        description="Manage your parking reservations and check-in status."
         className="mb-8"
       />
 
@@ -337,8 +351,8 @@ export default function BookingPage() {
       <div className="">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h2 className="text-lg font-black">{t('customer.allReservations')}</h2>
-            <p className="text-sm text-white/40">{t('customer.bookingQrHint')}</p>
+            <h2 className="text-lg font-black">All Reservations</h2>
+            <p className="text-sm text-white/40">Present your booking QR code at the Kiosk to check in.</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300 flex items-center gap-2">
@@ -358,8 +372,8 @@ export default function BookingPage() {
         {bookings.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-white/40 flex flex-col items-center">
             <CalendarClock size={48} className="mb-4 text-white/20" />
-            <p className="text-lg font-bold text-white/60 mb-2">{t('customer.noBookings')}</p>
-            <p className="text-sm max-w-sm">{t('customer.noBookingsHint')}</p>
+            <p className="text-lg font-bold text-white/60 mb-2">No bookings yet</p>
+            <p className="text-sm max-w-sm">You haven't made any parking reservations. Click "Booking" on the top navigation bar to reserve a spot.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -389,7 +403,7 @@ export default function BookingPage() {
                     </div>
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-y-2 gap-x-6 text-sm text-white/60">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">{t('customer.licensePlate')}</span>
+                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-[#8ea9a2] mb-0.5">License Plate</span>
                         <span className="font-semibold text-white">{formatLicensePlateDisplay(booking.licensePlate)}</span>
                       </div>
                       <div className="flex flex-col">
@@ -424,6 +438,7 @@ export default function BookingPage() {
                     </span>
 
                     <div className="flex flex-wrap lg:justify-end gap-2">
+                      {(booking.canSubmitFeedback || booking.feedbackSummary) && <button type="button" onClick={() => setFeedbackBooking(booking)} className="rounded-xl border border-yellow-300/30 bg-yellow-300/10 px-3 py-2 text-xs font-bold text-yellow-200">{booking.feedbackSummary ? `View feedback · ${booking.feedbackSummary.rating}/5 ★` : 'Rate your experience'}</button>}
                       {['PAID', 'ACTIVE', 'PAUSED'].includes(getBookingStatus(booking)) && (
                         <button
                           type="button"
@@ -488,13 +503,15 @@ export default function BookingPage() {
         )}
       </div>
 
+      {linkedBookingId && !activeFeedbackBooking && <p role="alert" className="mt-4 text-rose-300">The linked booking is unavailable.</p>}
+      {activeFeedbackBooking && <BookingFeedbackModal key={activeFeedbackBooking._id} booking={activeFeedbackBooking} refreshKey={feedbackLocation.key} onClose={closeFeedback} onSubmitted={() => loadData(true)} />}
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4 mb-5">
               <div>
                 <h3 className="text-xl font-black text-white">
-                  {dialog.type === 'plate' ? t('customer.changePlate') : t('customer.extendParking')}
+                  {dialog.type === 'plate' ? 'Change License Plate' : 'Extend Parking'}
                 </h3>
                 <p className="text-sm text-white/45 mt-1">
                   Slot {getBookingSlot(dialog.booking)} - {getBookingFloorLabel(dialog.booking, floorsById)}
@@ -519,7 +536,7 @@ export default function BookingPage() {
             {dialog.type === 'plate' ? (
               <div className="space-y-4">
                 <label className="block">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">{t('customer.selectVehicle')}</span>
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">Select New Vehicle</span>
                   <select
                     value={vehicleInput}
                     onChange={(event) => setVehicleInput(event.target.value)}
@@ -536,7 +553,7 @@ export default function BookingPage() {
                 </label>
                 {vehicleInput === 'manual' && (
                   <label className="block">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">{t('customer.enterPlate')}</span>
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-white/35">Enter License Plate</span>
                     <input
                       type="text"
                       placeholder="e.g. 51G12345"
@@ -605,7 +622,7 @@ export default function BookingPage() {
                 <Trash2 size={22} />
               </div>
               <div>
-                <h3 className="text-xl font-black text-white">{t('customer.cancelBooking')}</h3>
+                <h3 className="text-xl font-black text-white">Cancel booking?</h3>
                 <p className="mt-1 text-sm leading-6 text-white/45">
                   Slot {getBookingSlot(cancelDialog.booking)} - {formatLicensePlateDisplay(cancelDialog.booking.licensePlate)}
                 </p>
@@ -651,12 +668,14 @@ export default function BookingPage() {
         </div>
       )}
 
+      {telegramBookingId && <TelegramReceiptModal key={telegramBookingId} open onClose={() => setTelegramBookingId(null)} bookingId={telegramBookingId} />}
+
       {qrDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-black text-white">{t('customer.bookingQr')}</h3>
+                <h3 className="text-xl font-black text-white">Booking QR</h3>
                 <p className="mt-1 text-sm text-white/45">
                   {getBookingSlot(qrDialog.booking)} · {formatLicensePlateDisplay(qrDialog.booking.licensePlate)}
                 </p>
@@ -678,6 +697,7 @@ export default function BookingPage() {
                 className="h-auto w-full"
               />
             </div>
+            {['PAID', 'ACTIVE', 'PAUSED'].includes(getBookingStatus(qrDialog.booking)) && <TelegramReceiptButton bookingId={qrDialog.booking._id} refreshKey={telegramBookingId} onClick={() => { setTelegramBookingId(qrDialog.booking._id); setQrDialog(null); }} className="mt-4 min-h-11 w-full rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 text-sm font-bold text-sky-200 hover:bg-sky-400/20" />}
             <p className="mt-4 text-center text-xs leading-5 text-white/45">
               Present this code to the kiosk or staff. It becomes invalid when the booking ends.
             </p>

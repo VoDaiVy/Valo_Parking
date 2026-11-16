@@ -1,3 +1,4 @@
+import { GoogleIcon } from '@/components/auth/GoogleIcon';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,16 +34,6 @@ interface LoginScreenProps {
   };
 }
 
-function GoogleIcon() {
-  return (
-    <View style={googleIconStyles.wrap}>
-      <View style={[googleIconStyles.quad, { backgroundColor: '#4285F4' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#34A853' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#FBBC05' }]} />
-      <View style={[googleIconStyles.quad, { backgroundColor: '#EA4335' }]} />
-    </View>
-  );
-}
 
 function Field({
   icon,
@@ -135,7 +126,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#080808" />
+      <StatusBar barStyle="light-content" />
       <LinearGradient
         colors={['#080808', '#111111', '#161208']}
         locations={[0, 0.6, 1]}
@@ -271,17 +262,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   );
 }
 
-const googleIconStyles = StyleSheet.create({
-  wrap: {
-    borderRadius: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    height: 20,
-    overflow: 'hidden',
-    width: 20,
-  },
-  quad: { height: 10, width: 10 },
-});
+
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#080808' },

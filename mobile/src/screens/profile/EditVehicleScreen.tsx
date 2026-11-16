@@ -20,6 +20,7 @@ export const EditVehicleScreen = ({ navigation, route }: Props) => {
   const toast = useToast();
   const { alert } = useAppAlert();
   const [brand, setBrand] = useState('');
+  const [licensePlate, setLicensePlate] = useState('');
   const [model, setModel] = useState('');
   const [color, setColor] = useState('');
   const [nickname, setNickname] = useState('');
@@ -33,12 +34,15 @@ export const EditVehicleScreen = ({ navigation, route }: Props) => {
       try {
         const response = await vehiclesService.getVehicleById(route.params.vehicleId);
         if (response.data) {
+          setLicensePlate(response.data.licensePlate);
           setBrand(response.data.brand);
           setModel(response.data.model);
           setColor(response.data.color);
           setNickname(response.data.nickname || '');
           setHexColor(response.data.hexColor || '#ffffff');
         }
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load vehicles.');
       } finally {
         setLoading(false);
       }
@@ -121,6 +125,13 @@ export const EditVehicleScreen = ({ navigation, route }: Props) => {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
+        <View style={styles.vehicleSummary}>
+          <View style={styles.summaryIcon}><Ionicons name="car-sport-outline" size={30} color={COLORS.gold} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.summaryPlate}>{licensePlate || translateUi('Vehicle')}</Text>
+            <Text style={styles.summaryDescription}>{[brand, model].filter(Boolean).join(' ') || translateUi('Vehicle details')}</Text>
+          </View>
+        </View>
         <View style={styles.formCard}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>{translateUi("Make")}</Text>
@@ -231,6 +242,10 @@ export const EditVehicleScreen = ({ navigation, route }: Props) => {
 };
 
 const styles = StyleSheet.create({
+  vehicleSummary: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
+  summaryIcon: { width: 60, height: 60, borderRadius: 18, backgroundColor: COLORS.goldTint, alignItems: 'center', justifyContent: 'center' },
+  summaryPlate: { color: COLORS.textPrimary, fontSize: 24, fontWeight: '700', letterSpacing: 1, fontVariant: ['tabular-nums'] },
+  summaryDescription: { color: COLORS.textSecondary, fontSize: 14, marginTop: 6, lineHeight: 20 },
   keyboard: { flex: 1 },
   safe: {
     backgroundColor: COLORS.background,

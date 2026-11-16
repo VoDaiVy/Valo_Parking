@@ -3,6 +3,7 @@ const { protect, authorize } = require("../middlewares/authMiddleware");
 const {
   getAllFloors,
   createFloor,
+  updateFloorInfo,
   updateFloorLayout,
   deleteFloor,
   getFloorSlots,
@@ -11,18 +12,17 @@ const {
 
 const router = express.Router();
 
-// Public route: get all floors (for Kiosk and users)
+// Public routes (for Kiosk, mobile and live map)
 router.get("/", getAllFloors);
 router.get("/live-map", getLiveMapData);
 router.get("/:id/slots", getFloorSlots);
 
-// Middleware bảo vệ các route dưới đây (yêu cầu đăng nhập)
+// Admin-protected routes
 router.use(protect);
-
-// Restrict modifications to admin and staff using the correct authorize middleware
-router.use(authorize("admin", "staff"));
+router.use(authorize("admin"));
 
 router.post("/", createFloor);
+router.patch("/:id", updateFloorInfo);
 router.put("/:id/layout", updateFloorLayout);
 router.delete("/:id", deleteFloor);
 

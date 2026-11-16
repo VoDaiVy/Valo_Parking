@@ -56,7 +56,7 @@ export const PersonalProfileScreen = ({ navigation }: Props) => {
     }, [fetchProfile]),
   );
 
-  const fullName = [profile?.lastName, profile?.firstName].filter(Boolean).join(' ').trim();
+  const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim();
   const displayName = fullName || user?.username || 'Customer';
   const email = user?.email || '';
   const role = user?.role === 'customer' ? 'Customer' : user?.role || 'Account';

@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import './adminPageConsistency.css';
+import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Upload, RefreshCw, CheckCircle2, AlertCircle,
@@ -11,7 +13,6 @@ import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
 import { useSearchParams } from 'react-router-dom';
-import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 const authHeader = () => {
@@ -154,7 +155,7 @@ function PreviewModal({ model, onClose }) {
 }
 
 // ── Pending vehicle card ───────────────────────────────────────────────────
-function PendingCard({ vehicle, models, processing, onApprove, onReject, onPreviewImage, onPreview3D, t }) {
+function PendingCard({ vehicle, models, processing, onApprove, onReject, onPreviewImage, onPreview3D }) {
   const matched = findMatchingModel(models, vehicle.brand, vehicle.model);
   const [localFile, setLocalFile] = useState(null);
   const fileRef = useRef();
@@ -178,7 +179,7 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
         ) : (
           <span className="flex h-full flex-col items-center justify-center gap-1 text-[10px] font-bold text-slate-600">
             <Image size={18} />
-            {t('vehicleManagementExtra.noImage')}
+            No image
           </span>
         )}
       </button>
@@ -189,12 +190,25 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
             {[vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'No name yet'}
           </h3>
           <span className="rounded-full border border-orange-400/20 bg-orange-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-orange-300">
-            {t('adminPages.vehicleManagementUi.pending')}
+            Pending
           </span>
         </div>
         <p className="mt-1 font-mono text-sm font-black tracking-[0.14em] text-blue-100/80">
           {formatLicensePlateDisplay(vehicle.licensePlateDisplay || vehicle.licensePlate)}
         </p>
+        {vehicle.registrationVerification?.reason && (
+          <p className="mt-1 text-xs text-amber-300">
+            {vehicle.registrationVerification.reason.startsWith('mismatch:')
+              ? `Image mismatch: ${vehicle.registrationVerification.reason.slice(9).split(',').join(', ')}`
+              : ({
+                  image_missing: 'Registration image missing or upload failed',
+                  ai_unavailable: 'AI could not verify the image',
+                  approval_disabled: 'AI approval was switched off during verification',
+                  settings_unavailable: 'AI approval setting was unavailable',
+                  vehicle_changed: 'Vehicle details changed after approval',
+                }[vehicle.registrationVerification.reason] || 'Awaiting manual review')}
+          </p>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
           <span className="inline-flex items-center gap-1">
             {vehicle.vehicleType === 'electric_car' ? <Zap size={12} /> : <Car size={12} />}
@@ -210,7 +224,7 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
       </div>
 
       <div className="min-w-0 text-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">{t('adminPages.vehicleManagementUi.summaryOwner')}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">Owner</p>
         <p className="mt-1 truncate font-bold text-slate-300">{vehicle.owner?.name || vehicle.owner?.email || '—'}</p>
         <p className="mt-1 truncate text-xs font-semibold text-slate-600">{vehicle.owner?.email || 'No email'}</p>
       </div>
@@ -220,14 +234,14 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
           <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2">
             <CheckCircle2 size={15} className="shrink-0 text-emerald-300" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-black text-emerald-300">{t('vehicleManagementExtra.modelReady')}</p>
+              <p className="text-xs font-black text-emerald-300">3D model ready</p>
               <code className="block truncate text-[10px] font-semibold text-slate-500">{matched.publicId}</code>
             </div>
             <button
               type="button"
               onClick={() => onPreview3D(matched)}
               className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-yellow-300"
-              title={t('adminPages.vehicleManagementUi.preview')}
+              title="Preview 3D"
             >
               <Eye size={14} />
             </button>
@@ -251,10 +265,10 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
             <Upload size={16} className={localFile ? 'shrink-0 text-yellow-300' : 'shrink-0 text-slate-500'} />
             <div className="min-w-0 flex-1">
               <p className={`truncate text-xs font-black ${localFile ? 'text-yellow-300' : 'text-slate-400'}`}>
-                {localFile ? localFile.name : t('vehicleManagementExtra.attachGlb')}
+                {localFile ? localFile.name : 'Attach optional .glb'}
               </p>
               <p className="text-[10px] font-semibold text-slate-600">
-                {localFile ? `${formatBytes(localFile.size)} · ${t('vehicleManagementExtra.uploadOnApproval')}` : t('vehicleManagementExtra.noMatchingModel')}
+                {localFile ? `${formatBytes(localFile.size)} · upload on approval` : 'No matching model yet'}
               </p>
             </div>
             {localFile && (
@@ -277,7 +291,7 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
           className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-emerald-500 px-3 text-sm font-black text-white shadow-lg shadow-emerald-500/10 transition hover:bg-emerald-400 disabled:opacity-50"
         >
           {processing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          {t('vehicleManagementExtra.approve')}
+          Approve
         </button>
         <button
           onClick={() => onReject(vehicle._id)}
@@ -285,14 +299,14 @@ function PendingCard({ vehicle, models, processing, onApprove, onReject, onPrevi
           className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-red-500/25 px-3 text-sm font-black text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
         >
           <X size={14} />
-          {t('vehicleManagementExtra.reject')}
+          Reject
         </button>
       </div>
     </div>
   );
 }
 
-function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }) {
+function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D }) {
   const matched = findMatchingModel(models, vehicle.brand, vehicle.model);
   const typeLabel = { car: 'Car', electric_car: 'Electric car' }[vehicle.vehicleType] || vehicle.vehicleType;
   const approvedDate = formatDate(vehicle.updatedAt || vehicle.createdAt);
@@ -315,7 +329,7 @@ function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }
         ) : (
           <span className="flex h-full flex-col items-center justify-center gap-1 text-[10px] font-bold text-slate-600">
             <Image size={18} />
-            {t('vehicleManagementExtra.noImage')}
+            No image
           </span>
         )}
       </button>
@@ -326,7 +340,7 @@ function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }
             {[vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'No name yet'}
           </h3>
           <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-300">
-            {t('adminPages.vehicleManagementUi.approved')}
+            Approved
           </span>
         </div>
         <p className="mt-1 font-mono text-sm font-black tracking-[0.14em] text-blue-100/80">
@@ -347,7 +361,7 @@ function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }
       </div>
 
       <div className="min-w-0 text-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">{t('adminPages.vehicleManagementUi.summaryOwner')}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">Owner</p>
         <p className="mt-1 truncate font-bold text-slate-300">{vehicle.owner?.name || vehicle.owner?.email || '—'}</p>
         <p className="mt-1 truncate text-xs font-semibold text-slate-600">{vehicle.owner?.email || 'No email'}</p>
       </div>
@@ -357,7 +371,7 @@ function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }
           <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2">
             <CheckCircle2 size={15} className="shrink-0 text-emerald-300" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-black text-emerald-300">{t('vehicleManagementExtra.modelLinked')}</p>
+              <p className="text-xs font-black text-emerald-300">3D model linked</p>
               <code className="block truncate text-[10px] font-semibold text-slate-500">{matched?.publicId || 'Custom URL'}</code>
             </div>
             {matched && (
@@ -365,7 +379,7 @@ function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }
                 type="button"
                 onClick={() => onPreview3D(matched)}
                 className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-yellow-300"
-                title={t('adminPages.vehicleManagementUi.preview')}
+                title="Preview 3D"
               >
                 <Eye size={14} />
               </button>
@@ -373,14 +387,14 @@ function ApprovedVehicleCard({ vehicle, models, onPreviewImage, onPreview3D, t }
           </div>
         ) : (
           <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2">
-            <p className="text-xs font-black text-slate-400">{t('vehicleManagementExtra.no3d')}</p>
-            <p className="mt-0.5 text-[10px] font-semibold text-slate-600">{t('vehicleManagementExtra.linkHint')}</p>
+            <p className="text-xs font-black text-slate-400">No 3D model</p>
+            <p className="mt-0.5 text-[10px] font-semibold text-slate-600">Upload a matching model to link it</p>
           </div>
         )}
       </div>
 
       <div className="text-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">{t('adminPages.vehicleManagementUi.summaryApproved')}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">Approved</p>
         <p className="mt-1 font-bold text-slate-300">{approvedDate}</p>
       </div>
     </div>
@@ -395,8 +409,8 @@ const inputCls =
 
 function SummaryStrip({ metrics }) {
   return (
-    <section className="border-y border-white/[0.08]">
-      <div className="grid grid-cols-1 divide-y divide-white/[0.08] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+    <section className="c4-vehicle-kpis border-y border-white/[0.08]">
+      <div className="c4-kpis c4-four grid grid-cols-1 divide-y divide-white/[0.08] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
           return (
@@ -407,7 +421,7 @@ function SummaryStrip({ metrics }) {
               <div className="min-w-0">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-200/55">{metric.label}</p>
                 <div className="mt-1 flex items-baseline gap-2">
-                  <p className="font-mono text-3xl font-black text-white">{metric.value}</p>
+                  <p className="c4-kpi-value font-mono text-3xl font-black text-white">{metric.value}</p>
                   <p className="truncate text-xs font-bold text-blue-200/50">{metric.note}</p>
                 </div>
               </div>
@@ -419,15 +433,16 @@ function SummaryStrip({ metrics }) {
   );
 }
 
-function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount, t }) {
+function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount }) {
   const options = [
-    { id: 'pending', label: t('adminPages.vehicleManagementUi.pending'), count: pendingCount, icon: Clock },
-    { id: 'approved', label: t('adminPages.vehicleManagementUi.approved'), count: approvedCount, icon: CheckCircle2 },
-    { id: 'models', label: t('adminPages.vehicleManagementUi.models'), count: modelCount, icon: Box },
+    { id: 'pending', label: 'Pending', count: pendingCount, icon: Clock },
+    { id: 'approved', label: 'Approved', count: approvedCount, icon: CheckCircle2 },
+    { id: 'models', label: '3D Models', count: modelCount, icon: Box },
   ];
 
   return (
-    <div className="inline-grid rounded-[16px] border border-white/[0.08] bg-[#111111]/70 p-1 sm:grid-cols-3">
+    <div className="vehicle-tabs-scroll min-w-0 max-w-full overflow-x-auto">
+    <div className="vehicle-tabs inline-flex w-max items-center gap-1 rounded-[16px] border border-white/[0.08] bg-[#111111]/70 p-1">
       {options.map((option) => {
         const Icon = option.icon;
         const active = tab === option.id;
@@ -436,7 +451,7 @@ function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount, 
             key={option.id}
             type="button"
             onClick={() => setTab(option.id)}
-            className={`relative flex h-11 min-w-[150px] items-center justify-center gap-2 rounded-[12px] px-4 text-sm font-black transition ${
+            className={`relative inline-flex h-11 w-max shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[12px] px-4 text-sm font-semibold transition ${
               active ? 'text-black' : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -447,16 +462,17 @@ function SegmentControl({ tab, setTab, pendingCount, approvedCount, modelCount, 
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }}
               />
             )}
-            <span className="relative flex items-center gap-2">
-              <Icon size={15} />
+            <span className="relative inline-flex items-center gap-2 whitespace-nowrap">
+              <Icon size={15} className="shrink-0" />
               {option.label}
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-black/10' : 'bg-white/5'}`}>
+              <span className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] leading-none ${active ? 'bg-black/10' : 'bg-white/5'}`}>
                 {option.count}
               </span>
             </span>
           </button>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -528,7 +544,6 @@ function ModelGalleryCard({ model, onPreview, onDelete }) {
 }
 
 export default function VehicleManagement() {
-  const { t } = useLanguage();
   const [tab, setTab] = useState('pending');
   const reduceMotion = useReducedMotion();
 
@@ -537,6 +552,8 @@ export default function VehicleManagement() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [preview3D, setPreview3D] = useState(null);
+  const [approvalSettings, setApprovalSettings] = useState(null);
+  const [approvalSaving, setApprovalSaving] = useState(false);
   
   const [searchParams, setSearchParams] = useSearchParams();
   const vehicleIdQuery = searchParams.get('vehicleId');
@@ -568,10 +585,10 @@ export default function VehicleManagement() {
   const [modelBrandFilter, setModelBrandFilter] = useState('all');
   const fileRef = useRef();
 
-  const showToast = (msg, type = 'success') => {
+  const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
-  };
+  }, []);
 
   const loadModels = async () => {
     setModelsLoading(true);
@@ -594,15 +611,38 @@ export default function VehicleManagement() {
     if (res.ok) setApproved(res.data?.data || []);
   };
 
+  const loadApprovalSettings = useCallback(async () => {
+    const res = await apiFetch('/admin/vehicles/approval-settings', { headers: authHeader() });
+    if (res.ok) setApprovalSettings(res.data.data);
+    else showToast(res.data?.message || 'Could not load AI approval setting', 'error');
+  }, [showToast]);
+
+  const changeApprovalSettings = async (enabled) => {
+    setApprovalSaving(true);
+    const res = await apiFetch('/admin/vehicles/approval-settings', {
+      method: 'PUT',
+      headers: authHeader(),
+      body: JSON.stringify({ enabled }),
+    });
+    setApprovalSaving(false);
+    if (res.ok) {
+      setApprovalSettings(res.data.data);
+      showToast(enabled ? 'AI approval enabled' : 'AI approval disabled');
+    } else {
+      showToast(res.data?.message || 'Could not update AI approval setting', 'error');
+    }
+  };
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadModels();
       loadPending();
       loadApproved();
+      loadApprovalSettings();
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [loadApprovalSettings]);
 
   useEffect(() => {
     if (vehicleIdQuery && (!pendingLoading || !approvedLoading)) {
@@ -796,10 +836,10 @@ export default function VehicleManagement() {
     });
   }, [modelBrandFilter, modelSearch, models]);
   const summaryMetrics = [
-    { label: t('adminPages.vehicleManagementUi.pending'), value: pending.length, note: t('adminPages.vehicleManagementUi.awaitingApproval'), icon: Clock },
-    { label: t('adminPages.vehicleManagementUi.approved'), value: approved.length, note: t('adminPages.vehicleManagementUi.verifiedVehicles'), icon: CheckCircle2 },
-    { label: t('adminPages.vehicleManagementUi.models'), value: models.length, note: t('adminPages.vehicleManagementUi.uploadedAssets'), icon: Box },
-    { label: t('adminPages.vehicleManagementUi.manufacturers'), value: manufacturerCount, note: t('adminPages.vehicleManagementUi.visibleData'), icon: Building2 },
+    { label: 'Pending', value: pending.length, note: 'Awaiting approval', icon: Clock },
+    { label: 'Approved', value: approved.length, note: 'Verified vehicles', icon: CheckCircle2 },
+    { label: '3D Models', value: models.length, note: 'Uploaded assets', icon: Box },
+    { label: 'Manufacturers', value: manufacturerCount, note: 'From visible data', icon: Building2 },
   ];
   const motionProps = reduceMotion
     ? {}
@@ -811,34 +851,52 @@ export default function VehicleManagement() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className={`relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-6 text-white sm:px-6 lg:px-8 ${scrollbarClass}`}>
-      <div className="pointer-events-none absolute right-10 top-0 h-72 w-72 rounded-full bg-yellow-400/10 blur-[115px]" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.03] [background-image:linear-gradient(rgba(255,255,255,.62)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.62)_1px,transparent_1px)] [background-size:48px_48px]" />
+    <div className={`admin-consistency admin-vehicle-consistency relative min-h-[calc(100vh-70px)] overflow-auto bg-[#090909] px-4 py-6 text-white sm:px-6 lg:px-8 ${scrollbarClass}`}>
+      <AdminBackgroundOverlay />
       <div className="relative mx-auto max-w-[1500px]">
         <motion.header
           {...motionProps}
-          className="mb-7 flex flex-col gap-5 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-end lg:justify-between"
+          className="c4-header mb-7 flex flex-col gap-5 border-b border-white/[0.08] pb-7 lg:flex-row lg:items-end lg:justify-between"
         >
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-yellow-300">
+            <div className="c4-title-line"><h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
+              Vehicles &amp; 3D Models
+            </h1><div className="c4-badge">
               <Car size={13} />
-              {t('adminPages.vehicleManagementUi.badge')}
-            </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
-              {t('adminPages.vehicleManagementUi.title')}
-            </h1>
+              Vehicles
+            </div></div>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-blue-200/60 sm:text-[15px]">
-              {t('adminPages.vehicleManagementUi.subtitle')}
+              Approve vehicle registrations, manage GLB model assets, and sync previews without leaving the workspace.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => { loadPending(); loadApproved(); loadModels(); }}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
-          >
-            <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
-            {t('adminPages.vehicleManagementUi.sync')}
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-3 border-l border-white/10 pl-4">
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-white">AI approval</span>
+                <span className="block text-xs text-slate-400">
+                  {approvalSettings === null ? 'Loading...' : !approvalSettings.configured ? 'Gemini key not configured' : approvalSettings.enabled ? 'On - new registrations' : 'Off - manual review'}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="AI vehicle approval"
+                checked={approvalSettings?.enabled === true}
+                disabled={approvalSettings === null || approvalSaving || (!approvalSettings.configured && !approvalSettings.enabled)}
+                onChange={(event) => changeApprovalSettings(event.target.checked)}
+                className="peer sr-only"
+              />
+              <span aria-hidden="true" className="relative h-6 w-11 shrink-0 rounded-full bg-slate-600 transition-colors peer-checked:bg-yellow-400 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-yellow-400 peer-disabled:opacity-50 after:absolute after:left-1 after:top-1 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+            </label>
+            <button
+              type="button"
+              onClick={() => { loadPending(); loadApproved(); loadModels(); loadApprovalSettings(); }}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200"
+            >
+              <RefreshCw size={15} className={pendingLoading || approvedLoading || modelsLoading ? 'animate-spin' : ''} />
+              Sync
+            </button>
+          </div>
         </motion.header>
 
         <motion.div {...motionProps} transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.06 }}>
@@ -850,7 +908,7 @@ export default function VehicleManagement() {
           transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.1 }}
           className="my-6 flex flex-col gap-4 border-b border-white/[0.08] pb-6 lg:flex-row lg:items-center lg:justify-between"
         >
-          <SegmentControl tab={tab} setTab={setTab} pendingCount={pending.length} approvedCount={approved.length} modelCount={models.length} t={t} />
+          <SegmentControl tab={tab} setTab={setTab} pendingCount={pending.length} approvedCount={approved.length} modelCount={models.length} />
           {tab === 'pending' ? (
             <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_180px_190px_auto]">
               <label className="relative">
@@ -858,7 +916,7 @@ export default function VehicleManagement() {
                 <input
                   value={pendingSearch}
                   onChange={(e) => setPendingSearch(e.target.value)}
-                  placeholder={t('adminPages.vehicleManagementUi.searchPending')}
+                  placeholder="Search vehicle, plate, owner..."
                   className="h-12 w-full rounded-[14px] border border-white/[0.08] bg-[#111111] pl-11 pr-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-400/40"
                 />
               </label>
@@ -866,25 +924,24 @@ export default function VehicleManagement() {
                 value={pendingStatusFilter}
                 onChange={setPendingStatusFilter}
                 options={[
-                  { value: 'all', label: t('adminPages.vehicleManagementUi.allStatus') },
-                  { value: 'pending', label: t('adminPages.vehicleManagementUi.pending') },
+                  { value: 'all', label: 'All Status' },
+                  { value: 'pending', label: 'Pending' },
                 ]}
                 icon={SlidersHorizontal}
-                ariaLabel={t('adminPages.vehicleManagementUi.allStatus')}
+                ariaLabel="Filter vehicles by status"
               />
               <AdminSelect
                 value={pendingBrandFilter}
                 onChange={setPendingBrandFilter}
                 options={[
-                  { value: 'all', label: t('adminPages.vehicleManagementUi.allManufacturers') },
+                  { value: 'all', label: 'All Manufacturers' },
                   ...pendingBrands.map((item) => ({ value: item, label: item })),
                 ]}
                 icon={Building2}
-                ariaLabel={t('adminPages.vehicleManagementUi.allManufacturers')}
+                ariaLabel="Filter vehicles by manufacturer"
               />
-              <button type="button" onClick={loadPending} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
+              <button type="button" onClick={loadPending} aria-label="Refresh list" title="Refresh list" className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/[0.08] text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
                 <RefreshCw size={15} className={pendingLoading ? 'animate-spin' : ''} />
-                {t('adminPages.vehicleManagementUi.refresh')}
               </button>
             </div>
           ) : tab === 'approved' ? (
@@ -894,7 +951,7 @@ export default function VehicleManagement() {
                 <input
                   value={approvedSearch}
                   onChange={(e) => setApprovedSearch(e.target.value)}
-                  placeholder={t('adminPages.vehicleManagementUi.searchApproved')}
+                  placeholder="Search approved vehicle, plate, owner..."
                   className="h-12 w-full rounded-[14px] border border-white/[0.08] bg-[#111111] pl-11 pr-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-400/40"
                 />
               </label>
@@ -902,15 +959,14 @@ export default function VehicleManagement() {
                 value={approvedBrandFilter}
                 onChange={setApprovedBrandFilter}
                 options={[
-                  { value: 'all', label: t('adminPages.vehicleManagementUi.allManufacturers') },
+                  { value: 'all', label: 'All Manufacturers' },
                   ...approvedBrands.map((item) => ({ value: item, label: item })),
                 ]}
                 icon={Building2}
-                ariaLabel={t('adminPages.vehicleManagementUi.allManufacturers')}
+                ariaLabel="Filter approved vehicles by manufacturer"
               />
-              <button type="button" onClick={loadApproved} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
+              <button type="button" onClick={loadApproved} aria-label="Refresh list" title="Refresh list" className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/[0.08] text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200">
                 <RefreshCw size={15} className={approvedLoading ? 'animate-spin' : ''} />
-                {t('adminPages.vehicleManagementUi.refresh')}
               </button>
             </div>
           ) : (
@@ -920,7 +976,7 @@ export default function VehicleManagement() {
                 <input
                   value={modelSearch}
                   onChange={(e) => setModelSearch(e.target.value)}
-                  placeholder={t('adminPages.vehicleManagementUi.searchModels')}
+                  placeholder="Search model or public id..."
                   className="h-12 w-full rounded-[14px] border border-white/[0.08] bg-[#111111] pl-11 pr-4 text-sm font-bold text-white outline-none transition placeholder:text-slate-600 focus:border-yellow-400/40"
                 />
               </label>
@@ -928,17 +984,17 @@ export default function VehicleManagement() {
                 value={modelBrandFilter}
                 onChange={setModelBrandFilter}
                 options={[
-                  { value: 'all', label: t('adminPages.vehicleManagementUi.allBrands') },
+                  { value: 'all', label: 'All Brands' },
                   ...modelBrands.map((item) => ({ value: item, label: item })),
                 ]}
                 icon={Building2}
-                ariaLabel={t('adminPages.vehicleManagementUi.allBrands')}
+                ariaLabel="Filter models by brand"
               />
               <button type="button" onClick={handleSync} disabled={syncing} className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] border border-yellow-400/25 bg-yellow-400/10 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-400/15 disabled:opacity-50">
                 {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                {t('adminPages.vehicleManagementUi.sync')}
+                Sync
               </button>
-              <button type="button" onClick={loadModels} className="inline-flex h-12 items-center justify-center gap-0 rounded-[14px] border border-white/[0.08] px-3 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200" title={t('adminPages.vehicleManagementUi.refreshList')}>
+              <button type="button" onClick={loadModels} className="inline-flex h-12 items-center justify-center gap-0 rounded-[14px] border border-white/[0.08] px-3 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:bg-yellow-400/5 hover:text-yellow-200" title="Refresh list">
                 <RefreshCw size={15} className={modelsLoading ? 'animate-spin' : ''} />
               </button>
             </div>
@@ -954,31 +1010,31 @@ export default function VehicleManagement() {
             ) : pending.length === 0 ? (
               <EmptyState
                 icon={CheckCircle2}
-                title={t('adminPages.vehicleManagementUi.allApproved')}
-                subtitle={t('adminPages.vehicleManagementUi.noPending')}
+                title="All vehicles approved"
+                subtitle="No pending approval requests are waiting in the current response."
                 action={(
                   <button type="button" onClick={() => setTab('models')} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:text-yellow-200">
                     <Box size={15} />
-                    {t('adminPages.vehicleManagementUi.viewModels')}
+                    View 3D Models
                   </button>
                 )}
                 secondaryAction={(
                   <button type="button" onClick={loadPending} className="inline-flex h-11 items-center gap-2 rounded-full bg-yellow-300 px-4 text-sm font-black text-black transition hover:bg-yellow-200">
                     <RefreshCw size={15} />
-                    {t('adminPages.vehicleManagementUi.refresh')}
+                    Refresh
                   </button>
                 )}
               />
             ) : filteredPending.length === 0 ? (
-              <EmptyState icon={Search} title={t('adminPages.vehicleManagementUi.noFilterMatch')} subtitle={t('adminPages.vehicleManagementUi.filterHint')} />
+              <EmptyState icon={Search} title="No vehicles match current filters" subtitle="Try another plate, owner, or manufacturer filter." />
             ) : (
               <div>
                 <div className="hidden border-b border-white/[0.08] px-4 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-600 md:grid md:grid-cols-[96px_minmax(220px,1.2fr)_minmax(180px,0.8fr)_minmax(240px,1fr)_auto]">
-                  <span>{t('adminPages.vehicleManagementUi.summaryCard')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryVehicle')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryOwner')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryModel')}</span>
-                  <span className="text-right">{t('adminPages.vehicleManagementUi.summaryActions')}</span>
+                  <span>Card</span>
+                  <span>Vehicle</span>
+                  <span>Owner</span>
+                  <span>3D Model</span>
+                  <span className="text-right">Actions</span>
                 </div>
                 {filteredPending.map((v) => (
                   <PendingCard
@@ -990,7 +1046,6 @@ export default function VehicleManagement() {
                     onReject={handleReject}
                     onPreviewImage={setPreviewImg}
                     onPreview3D={setPreview3D}
-                    t={t}
                   />
                 ))}
               </div>
@@ -1007,31 +1062,31 @@ export default function VehicleManagement() {
             ) : approved.length === 0 ? (
               <EmptyState
                 icon={Car}
-                title={t('adminPages.vehicleManagementUi.noApproved')}
-                subtitle={t('adminPages.vehicleManagementUi.approvedHint')}
+                title="No approved vehicles yet"
+                subtitle="Approved vehicles will appear here after registration requests are reviewed."
                 action={(
                   <button type="button" onClick={() => setTab('pending')} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/[0.08] px-4 text-sm font-black text-slate-300 transition hover:border-yellow-400/30 hover:text-yellow-200">
                     <Clock size={15} />
-                    {t('adminPages.vehicleManagementUi.viewPending')}
+                    View Pending
                   </button>
                 )}
                 secondaryAction={(
                   <button type="button" onClick={loadApproved} className="inline-flex h-11 items-center gap-2 rounded-full bg-yellow-300 px-4 text-sm font-black text-black transition hover:bg-yellow-200">
                     <RefreshCw size={15} />
-                    {t('adminPages.vehicleManagementUi.refresh')}
+                    Refresh
                   </button>
                 )}
               />
             ) : filteredApproved.length === 0 ? (
-              <EmptyState icon={Search} title={t('adminPages.vehicleManagementUi.noApprovedMatch')} subtitle={t('adminPages.vehicleManagementUi.filterHint')} />
+              <EmptyState icon={Search} title="No approved vehicles match current filters" subtitle="Try another plate, owner, or manufacturer filter." />
             ) : (
               <div>
                 <div className="hidden border-b border-white/[0.08] px-4 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-600 md:grid md:grid-cols-[96px_minmax(220px,1.1fr)_minmax(180px,0.8fr)_minmax(220px,0.9fr)_minmax(180px,0.8fr)]">
-                  <span>{t('adminPages.vehicleManagementUi.summaryCard')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryVehicle')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryOwner')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryModel')}</span>
-                  <span>{t('adminPages.vehicleManagementUi.summaryApproved')}</span>
+                  <span>Card</span>
+                  <span>Vehicle</span>
+                  <span>Owner</span>
+                  <span>3D Model</span>
+                  <span>Approved</span>
                 </div>
                 {filteredApproved.map((vehicle) => (
                   <ApprovedVehicleCard
@@ -1040,7 +1095,6 @@ export default function VehicleManagement() {
                     models={models}
                     onPreviewImage={setPreviewImg}
                     onPreview3D={setPreview3D}
-                    t={t}
                   />
                 ))}
               </div>
@@ -1052,17 +1106,17 @@ export default function VehicleManagement() {
           <motion.section {...motionProps} transition={{ ...motionProps.transition, delay: reduceMotion ? 0 : 0.14 }} className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
             <form onSubmit={handleUpload} className="border border-white/[0.08] bg-[#101010] p-5">
               <div className="mb-5">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-yellow-300">{t('adminPages.vehicleManagementUi.uploadModel')}</p>
-                <h2 className="mt-2 text-2xl font-black text-white">{t('adminPages.vehicleManagementUi.newAsset')}</h2>
-                <p className="mt-2 text-sm leading-6 text-blue-200/50">{t('adminPages.vehicleManagementUi.uploadHint')}</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-yellow-300">Upload Model</p>
+                <h2 className="mt-2 text-2xl font-black text-white">New GLB Asset</h2>
+                <p className="mt-2 text-sm leading-6 text-blue-200/50">Use the existing upload handler and Cloudinary naming convention.</p>
               </div>
               <div className="space-y-4">
                 <label>
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">{t('adminPages.vehicleModelsUi.brand')}</span>
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">Brand</span>
                   <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Toyota" className={inputCls} />
                 </label>
                 <label>
-                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">{t('adminPages.vehicleManagementUi.modelOptional')}</span>
+                  <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">Model optional</span>
                   <input value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value)} placeholder="Land Cruiser" className={inputCls} />
                 </label>
                 {brand && (
@@ -1073,12 +1127,12 @@ export default function VehicleManagement() {
                 <div onClick={() => fileRef.current?.click()} className={`cursor-pointer border border-dashed px-5 py-8 text-center transition ${uploadFile ? 'border-yellow-400/45 bg-yellow-400/5' : 'border-white/[0.12] bg-black/30 hover:border-yellow-400/35 hover:bg-yellow-400/5'}`}>
                   <input ref={fileRef} type="file" accept=".glb" className="hidden" onChange={(e) => setUploadFile(e.target.files[0] ?? null)} />
                   <Upload size={30} className="mx-auto text-yellow-300" />
-                  <p className="mt-3 text-sm font-black text-white">{uploadFile ? uploadFile.name : t('adminPages.vehicleManagementUi.dropModel')}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">{uploadFile ? formatBytes(uploadFile.size) : t('adminPages.vehicleManagementUi.chooseGlb')}</p>
+                  <p className="mt-3 text-sm font-black text-white">{uploadFile ? uploadFile.name : 'Drop your first GLB model here'}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{uploadFile ? formatBytes(uploadFile.size) : 'Click to choose .glb · maximum 50 MB'}</p>
                 </div>
                 <button type="submit" disabled={uploading || !brand || !uploadFile} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[14px] bg-yellow-300 text-sm font-black text-black transition hover:bg-yellow-200 disabled:cursor-not-allowed disabled:opacity-50">
                   {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                  {uploading ? t('adminPages.vehicleModelsUi.uploading') : t('adminPages.vehicleManagementUi.uploadModel')}
+                  {uploading ? 'Uploading...' : 'Upload Model'}
                 </button>
               </div>
             </form>
@@ -1086,8 +1140,8 @@ export default function VehicleManagement() {
             <div>
               <div className="mb-4 flex items-center justify-between border-b border-white/[0.08] pb-4">
                 <div>
-                  <h2 className="text-xl font-black text-white">{t('adminPages.vehicleManagementUi.modelGallery')}</h2>
-                  <p className="mt-1 text-sm font-semibold text-blue-200/50">{t('adminPages.vehicleManagementUi.modelCount', { shown: filteredModels.length, total: models.length })}</p>
+                  <h2 className="text-xl font-black text-white">Model Gallery</h2>
+                  <p className="mt-1 text-sm font-semibold text-blue-200/50">{filteredModels.length} of {models.length} models</p>
                 </div>
               </div>
               {modelsLoading ? (
@@ -1095,9 +1149,9 @@ export default function VehicleManagement() {
                   <Loader2 size={28} className="animate-spin text-yellow-300" />
                 </div>
               ) : models.length === 0 ? (
-                <EmptyState icon={Cuboid} title={t('adminPages.vehicleManagementUi.noModels')} subtitle={t('adminPages.vehicleManagementUi.modelsHint')} />
+                <EmptyState icon={Cuboid} title="No 3D models uploaded yet" subtitle="Upload a GLB asset to start matching vehicle registrations with previews." />
               ) : filteredModels.length === 0 ? (
-                <EmptyState icon={Search} title={t('adminPages.vehicleManagementUi.noModelMatch')} subtitle={t('adminPages.vehicleManagementUi.modelFilterHint')} />
+                <EmptyState icon={Search} title="No models match current filters" subtitle="Try another brand or public id search." />
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {filteredModels.map((model) => (

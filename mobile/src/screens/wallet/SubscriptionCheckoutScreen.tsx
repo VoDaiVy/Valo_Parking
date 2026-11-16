@@ -58,9 +58,9 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
     [packages, route.params.packageId],
   );
 
-  const maxSlots = Math.max(
-    0,
-    Math.min(3, vehicleCount) - (membership?.reservedSlots.length || 0),
+  const maxSlots = Math.min(
+    pkg?.maxSlots ?? 3,
+    Math.max(0, Math.min(3, vehicleCount) - (membership?.reservedSlots.length || 0)),
   );
   const subscriptionTotal = calculateSubscriptionTotal(pkg?.price || 0, selectedSlots.length);
   const hasEnoughWallet = (wallet?.balance || 0) >= subscriptionTotal;
@@ -152,10 +152,10 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
     setPolicyRequired(false);
     try {
       if (method === 'wallet') {
-        await subscriptionsService.payWithWallet({ packageId: pkg._id, slots: selectedSlots });
+        await subscriptionsService.payWithWallet({ packageId: pkg._id, slots: selectedSlots, packageRevision: pkg.revision });
         navigation.navigate('Membership');
       } else {
-        const response = await subscriptionsService.createPayment({ packageId: pkg._id, slots: selectedSlots });
+        const response = await subscriptionsService.createPayment({ packageId: pkg._id, slots: selectedSlots, packageRevision: pkg.revision });
         navigation.navigate('SubscriptionPaymentStatus', {
           orderCode: response.data.orderCode,
           checkoutUrl: response.data.checkoutUrl,
@@ -193,8 +193,9 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
               <Text style={styles.packageName}>{pkg.name}</Text>
               <Text style={styles.packagePrice}>{formatCurrency(pkg.price)}</Text>
               <Text style={styles.packageMeta}>{translateUi("Total for selected spaces:")}{" "}{formatCurrency(subscriptionTotal)}</Text>
+              {pkg.serviceBenefits?.map((benefit) => <Text key={benefit.serviceId} style={styles.packageMeta}>{benefit.serviceName}: {benefit.quantityPerSlot} × {selectedSlots.length} = {benefit.quantityPerSlot * selectedSlots.length} uses</Text>)}
               <Text style={styles.packageMeta}>
-                {" "}{translateUi("Expires:")}{" "}{calculateExpirationDate(pkg.type).toLocaleDateString('en-GB')}
+                {" "}{translateUi("Estimated expiry after activation:")}{" "}{calculateExpirationDate(pkg.type, new Date(), pkg.durationDays, pkg.durationMinutes).toLocaleString('vi-VN')}
               </Text>
             </View>
           ) : (

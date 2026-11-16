@@ -1,6 +1,8 @@
 const { validationResult } = require("express-validator");
 const User = require("../models/User");
 const UserDetail = require("../models/UserDetail");
+const mongoose = require('mongoose');
+const telegramProfile = require('../services/telegramProfileService');
 const Session = require("../models/Session");
 const TicketPackage = require("../models/TicketPackage");
 const { uploadToCloudinary } = require("../middlewares/uploadMiddleware");
@@ -149,23 +151,21 @@ const updateProfile = async (req, res, next) => {
       }
     }
 
-    // Update or create UserDetail
-    const userDetail = await UserDetail.findOneAndUpdate(
-      { userId: req.user._id },
-      {
-        firstName,
-        lastName,
-        phone: cleanPhone || phone || "",
-        dob,
-        gender,
-        avatar,
-      },
-      {
-        new: true, // Return updated document
-        upsert: true, // Create if not exists
-        runValidators: true, // Run schema validators
-      },
-    );
+    const phoneProvided = Object.prototype.hasOwnProperty.call(req.body, 'phone');
+    const fields = { firstName, lastName, dob, gender, avatar,
+      ...(phoneProvided ? { phone: cleanPhone || phone || '' } : {}) };
+    let userDetail;
+    const profileSession = await mongoose.startSession();
+    try {
+      await profileSession.withTransaction(async () => {
+        const previous = await UserDetail.findOne({ userId: req.user._id }).session(profileSession);
+        userDetail = await UserDetail.findOneAndUpdate({ userId: req.user._id }, { $set: fields },
+          { new: true, upsert: true, runValidators: true, session: profileSession });
+        if (phoneProvided && normalizePhone(previous?.phone) !== normalizePhone(userDetail.phone)) {
+          await telegramProfile.revokeAccount(req.user._id, profileSession, 'PROFILE_PHONE_CHANGED');
+        }
+      });
+    } finally { await profileSession.endSession(); }
 
     const user = await User.findById(req.user._id);
 
