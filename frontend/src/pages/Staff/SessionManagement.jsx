@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
 import { matchesSessionTime } from './sessionTimeFilter.js';
@@ -10,7 +10,6 @@ import './components/staffSessionManagement.css';
 import '../Admin/sessionManagement.css';
 import { sessionMetrics } from './sessionMetrics.js';
 import './components/sessionDetails.css';
-import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createSessionVerification, verifiedSessionForQuery, sessionRowTarget, highlightSessionRow } from './sessionDeepLink.js';
 
@@ -26,9 +25,6 @@ export default function SessionManagement() {
   const updateTimeFilter = (patch) => { setTimeFilter(previous => ({ ...previous, ...patch })); setCurrentPage(1); };
   const invalidTimeRange = timeFilter.mode === 'range' && timeFilter.from && timeFilter.to && timeFilter.from > timeFilter.to;
   const [sortBy, setSortBy] = useState('newest');
-  const [showAiModal, setShowAiModal] = useState(false);
-  const [aiInitialPlate, setAiInitialPlate] = useState('');
-  const [aiInitialImage, setAiInitialImage] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionIdQuery = searchParams.get('sessionId');
@@ -217,19 +213,6 @@ export default function SessionManagement() {
         </button>}
         {!isAdminPage && <button type="button" onClick={fetchSessions} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" className="staff-session-refresh">
           <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
-        </button>}
-        {/* AI Blurred Plate Assistant Button */}
-        {isAdminPage && <button
-          type="button"
-          onClick={() => {
-            setAiInitialPlate(searchQuery || '');
-            setAiInitialImage(null);
-            setShowAiModal(true);
-          }}
-          className="g4-ai-plate-trigger g3-header-action flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
-        >
-          <Sparkles size={16} className="text-violet-400 animate-pulse" />
-          <span>AI Plate Assistant</span>
         </button>}
         </div>
       </div>
@@ -579,18 +562,6 @@ export default function SessionManagement() {
           </div>
         </div>
       )}
-
-      {/* AI Blurred Plate Resolution Modal */}
-      {isAdminPage && <AIPlateResolutionModal
-        isOpen={showAiModal}
-        onClose={() => setShowAiModal(false)}
-        initialPlate={aiInitialPlate}
-        initialImage={aiInitialImage}
-        onSelectPlate={(selectedPlate) => {
-          setSearchQuery(selectedPlate);
-          setCurrentPage(1);
-        }}
-      />}
 
       {/* Full-Size Image Lightbox */}
       {previewImage && (

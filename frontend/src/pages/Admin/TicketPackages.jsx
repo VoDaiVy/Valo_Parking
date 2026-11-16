@@ -237,6 +237,17 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }
 
   return (
     <article
+      role="button"
+      tabIndex={0}
+      aria-label={`View details for ${pkg.name || 'package'}`}
+      aria-haspopup="dialog"
+      onClick={() => onDetails(pkg)}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onDetails(pkg);
+        }
+      }}
       data-package-type={pkg.type} className="stp-row group relative overflow-hidden rounded-2xl border border-white/10 bg-[#111111]/90 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#151515] motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 45}ms` }}
     >
@@ -758,6 +769,7 @@ export default function TicketPackages() {
                   isAdmin={isAdmin}
                   onEdit={openModal}
                   onDelete={handleDelete}
+                  onDetails={setDetailPackage}
                   index={index}
                 />
               ))}
@@ -818,8 +830,12 @@ export default function TicketPackages() {
 
               </div>
               <footer className="package-detail-footer">
-                <div className="package-detail-status"><span className={`package-detail-status-switch ${detailPackage.isActive ? 'is-active' : ''}`} aria-hidden="true" /><span>Active Package<span className="sr-only">: {detailPackage.isActive ? 'Active' : 'Inactive'}</span></span></div>
-                <div className="package-detail-actions"><button type="button" onClick={() => setDetailPackage(null)}>Cancel</button><button type="button" onClick={() => { const pkg = detailPackage; setDetailPackage(null); openModal(pkg); }}><Edit2 size={14} aria-hidden="true" /> Edit</button></div>
+                {isAdmin ? (
+                  <div className="package-detail-status"><span className={`package-detail-status-switch ${detailPackage.isActive ? 'is-active' : ''}`} aria-hidden="true" /><span>Active Package<span className="sr-only">: {detailPackage.isActive ? 'Active' : 'Inactive'}</span></span></div>
+                ) : (
+                  <div className="package-detail-status">Status: <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${detailPackage.isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${detailPackage.isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{detailPackage.isActive ? 'Active' : 'Inactive'}</span></div>
+                )}
+                <div className="package-detail-actions"><button type="button" onClick={() => setDetailPackage(null)}>{isAdmin ? 'Cancel' : 'Close'}</button>{isAdmin && <button type="button" onClick={() => { const pkg = detailPackage; setDetailPackage(null); openModal(pkg); }}><Edit2 size={14} aria-hidden="true" /> Edit</button>}</div>
               </footer>
             </DialogPanel>
           </div>
