@@ -368,6 +368,7 @@ exports.transitionMembershipByQr = async (req, res, next) => {
           message: 'Active membership session not found',
         });
       }
+      Session.assertNoActiveServiceJobs(session);
 
       req.membershipCheckoutAction = {
         subscriptionId: session.subscriptionId, entitlementId: session.entitlementId || null,

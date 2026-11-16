@@ -8,13 +8,16 @@ const { snapshotPackage, addConfiguredDuration, salesAvailability } = require('.
 const { validateNewSubscriptionEligibility } = require('./subscriptionEligibilityService');
 const { activateSubscriptionEntitlements } = require('./membershipEntitlementService');
 const { buildSubscriptionPaymentUrls } = require('../utils/subscriptionPaymentUrls');
+const { MEMBERSHIP_PACKAGE_TYPES } = require('../utils/ticketPackageRules');
+const { capturePackageTerms } = require('./packageTermsService');
+const stock = require('./ticketPackageStockService');
 
 const fail = (message, statusCode = 409) => Object.assign(new Error(message), { statusCode });
 const result = (purchase) => ({ subscriptionId: purchase._id, orderCode: purchase.orderCode,
   amount: purchase.amount, checkoutUrl: purchase.payosCheckoutUrl, paymentLinkId: purchase.payosPaymentLinkId,
   status: purchase.status, expireAt: purchase.status === 'active' ? purchase.expireAt : null });
 
-async function purchase({ userId, packageId, slots, idempotencyKey, paymentMethod }) {
+async function purchase({ userId, packageId, slots, idempotencyKey, paymentMethod, packageRevision }) {
   if (typeof idempotencyKey !== 'string' || idempotencyKey.length < 16 || idempotencyKey.length > 128)
     throw fail('A stable purchase idempotency key (16–128 characters) is required.', 400);
   const indexes = await Subscription.collection.indexes();
@@ -37,7 +40,7 @@ async function purchase({ userId, packageId, slots, idempotencyKey, paymentMetho
           || JSON.stringify(stored) !== JSON.stringify(requestSlots)) throw fail('This request key belongs to a different purchase.');
         return;
       }
-      const pkg = await TicketPackage.findOneAndUpdate({ _id: packageId, isActive: true, type: { $in: ['hourly', 'monthly', 'yearly'] } },
+      const pkg = await TicketPackage.findOneAndUpdate({ _id: packageId, isActive: true, type: { $in: ['hourly', ...MEMBERSHIP_PACKAGE_TYPES] } },
         { $inc: { purchaseRevision: 1 } }, { new: true, session, timestamps: false });
       if (!pkg) throw fail('This package is unavailable.', 400);
       const availability = salesAvailability(pkg);
@@ -45,6 +48,8 @@ async function purchase({ userId, packageId, slots, idempotencyKey, paymentMetho
       if (!pkg.service) throw fail('This legacy package must be replaced with an explicitly configured service before new sales.');
       const eligibility = await validateNewSubscriptionEligibility({ userId, ticketPackage: pkg, slots, session });
       const selected = eligibility.normalizedSlots;
+      if (pkg.saleLimit != null) await stock.assertAvailable(pkg._id, selected.length, { session });
+      const packageTermsSnapshot = await capturePackageTerms(pkg, packageRevision, session);
       if (selected.some((slot) => !mongoose.isValidObjectId(slot.vehicleId))
         || new Set(selected.map((slot) => String(slot.vehicleId))).size !== selected.length)
         throw fail('Choose a different approved vehicle for each reserved space.', 400);
@@ -60,7 +65,7 @@ async function purchase({ userId, packageId, slots, idempotencyKey, paymentMetho
       if (!Number.isSafeInteger(amount) || amount < 0) throw fail('The package price must be a whole VND amount.', 400);
       [order] = await Subscription.create([{
         _id: purchaseId, user: userId, ticketPackage: pkg._id, slots: selected,
-        packageSnapshot: snapshotPackage(pkg), bindingVersion: 1, paymentMethod, idempotencyKey,
+        packageSnapshot: snapshotPackage(pkg), packageTermsSnapshot, bindingVersion: 1, paymentMethod, idempotencyKey,
         orderCode: generateOrderCode('purchase'), amount, validFrom: now, expireAt,
         status: 'pending', paymentStatus: 'pending',
       }], { session });
@@ -71,6 +76,8 @@ async function purchase({ userId, packageId, slots, idempotencyKey, paymentMetho
         order.status = 'active'; order.paymentStatus = 'paid'; order.activatedAt = now;
         await order.save({ session });
         await activateSubscriptionEntitlements(order, { session });
+      } else if (pkg.saleLimit != null) {
+        await stock.reserve(order, { session, holdUntil: new Date(+now + 15 * 60_000) });
       }
     });
   } catch (error) {

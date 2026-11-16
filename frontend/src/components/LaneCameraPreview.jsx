@@ -1,17 +1,40 @@
 import { useEffect, useRef } from 'react';
+import {
+  getSourceRectForSide,
+  normalizeRotation,
+  renderOrientedCanvas,
+  resolveLaneTransform,
+} from '../utils/cameraLaneCapture';
 
 /**
- * Renders a live cropped (and optionally 180-deg rotated) lane feed from a hidden <video> stream.
- * Keeps each lane's UI isolated to its own half of a shared dual-lane camera.
+ * Renders a live cropped (and optionally 0/90/180/270-deg rotated) lane feed from a hidden <video> stream.
+ * Supports explicit `rotate180` / `rotation` or shared `cameraConfig` so Kiosk & Staff Gate stay synchronized.
  */
 export default function LaneCameraPreview({
   videoRef,
   lane = 'full',
-  rotate180 = false,
+  rotate180,
+  rotation,
+  cameraConfig = null,
   active = true,
   className = '',
 }) {
   const displayCanvasRef = useRef(null);
+
+  const resolved = cameraConfig
+    ? resolveLaneTransform(lane, cameraConfig)
+    : {
+        side: lane === 'entry' ? 'right' : lane === 'exit' ? 'left' : 'full',
+        rotation: rotation != null ? normalizeRotation(rotation, 0) : (rotate180 ? 180 : 0),
+        splitRatio: 0.5,
+        laneOverlap: 0.08,
+      };
+
+  const targetSide = resolved.side;
+  const targetRotation = cameraConfig
+    ? resolved.rotation
+    : (rotation != null ? normalizeRotation(rotation, 0) : (rotate180 ? 180 : 0));
+  const { splitRatio, laneOverlap } = resolved;
 
   useEffect(() => {
     if (!active) return undefined;
@@ -30,31 +53,8 @@ export default function LaneCameraPreview({
       ) {
         const vw = video.videoWidth;
         const vh = video.videoHeight;
-        const halfW = Math.floor(vw / 2);
-
-        let sx = 0;
-        let sw = vw;
-        if (lane === 'exit') {
-          sx = 0;
-          sw = Math.max(1, halfW);
-        } else if (lane === 'entry') {
-          sx = halfW;
-          sw = Math.max(1, vw - halfW);
-        }
-
-        if (canvas.width !== sw || canvas.height !== vh) {
-          canvas.width = sw;
-          canvas.height = vh;
-        }
-
-        const ctx = canvas.getContext('2d');
-        ctx.save();
-        if (rotate180) {
-          ctx.translate(canvas.width, canvas.height);
-          ctx.rotate(Math.PI);
-        }
-        ctx.drawImage(video, sx, 0, sw, vh, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
+        const rect = getSourceRectForSide(vw, vh, targetSide, splitRatio, laneOverlap);
+        renderOrientedCanvas(canvas, video, rect, rect.sw, rect.sh, targetRotation);
       }
 
       rafId = requestAnimationFrame(renderFrame);
@@ -64,8 +64,7 @@ export default function LaneCameraPreview({
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [videoRef, lane, rotate180, active]);
+  }, [videoRef, targetSide, targetRotation, splitRatio, laneOverlap, active]);
 
   return <canvas ref={displayCanvasRef} className={className} />;
 }
-

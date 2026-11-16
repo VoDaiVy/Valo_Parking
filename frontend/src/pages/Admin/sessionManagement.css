@@ -78,3 +78,22 @@ body[data-valo-typography="admin"] .admin-session-management .admin-session-refr
   background: rgba(255, 213, 85, .2);
   box-shadow: inset 0 1px 0 rgba(255, 213, 85, .65), inset 0 -1px 0 rgba(255, 213, 85, .65);
 }
+
+/* Keep time controls beside search; let search yield space as filters expand. */
+body[data-valo-typography="admin"] .admin-session-management .g3-search { flex: 1 1 180px; min-width: 160px; }
+.admin-session-time-filter { flex: 0 1 auto; min-width: 0; }
+.admin-session-time-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.admin-session-time-mode { width: 160px; flex-shrink: 0; }
+.admin-session-time-controls input { width: 170px; }
+.admin-session-time-controls .admin-datetime-trigger { min-height: 44px; padding: 5px 10px; }
+.admin-session-time-controls .admin-datetime-trigger span { font-size: 12px; }
+@media (min-width: 1280px) {
+  body[data-valo-typography="admin"] .admin-session-management .g3-toolbar { flex-wrap: nowrap; }
+  .admin-session-time-controls { flex-wrap: nowrap; }
+  body[data-valo-typography="admin"] .admin-session-management .g3-toolbar > div { flex-shrink: 0; }
+  body[data-valo-typography="admin"] .admin-session-management .g3-toolbar > div > div { min-width: 140px; }
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="admin"] .admin-session-management .g3-search { flex-basis: 100%; }
+  .admin-session-time-filter { width: 100%; }
+}

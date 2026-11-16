@@ -221,6 +221,13 @@ function BookingRow({
 
             <Text numberOfLines={1} style={styles.slotCode}>{translateUi("Space")}{" "}{booking.slotCode}</Text>
             <Text numberOfLines={1} style={styles.floorLabel}>{getFloorLabel(booking.floorId)}</Text>
+            {booking.status === 'completed' && (booking.feedbackSummary || booking.canSubmitFeedback) ? (
+              <Text style={[styles.floorLabel, { color: COLORS.gold }]}>
+                {booking.feedbackSummary
+                  ? `${translateUi('Reviewed')} · ${booking.feedbackSummary.rating}/5${booking.feedbackSummary.hasReply ? ` · ${translateUi('Reply available')}` : ''}`
+                  : translateUi('Rate your experience')}
+              </Text>
+            ) : null}
 
             <View style={styles.bookingFooter}>
               <StatusChip color={statusConfig.color} label={translateUi(statusConfig.label)} />

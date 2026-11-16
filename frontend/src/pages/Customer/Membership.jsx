@@ -1,8 +1,8 @@
 import PackageTermsSummary from '../../components/membership/PackageTermsSummary';
 import { packageDurationLabel, packageSalesAvailability } from '../../utils/ticketPackageTerms';
 import { useState, useEffect, useRef } from 'react';
-import { partitionMembershipPlans } from './membershipPlans';
-import { useNavigate } from 'react-router-dom';
+import { FEATURED_MEMBERSHIP_PACKAGE_IDS, partitionMembershipPlans } from './membershipPlans';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Crown, Sparkles, Check, Loader2, ArrowRight, AlertCircle, ChevronDown, QrCode, Wallet } from 'lucide-react';
 import {
   getTicketPackages,
@@ -16,6 +16,9 @@ import { getMyVehicles } from '../../services/vehicleService';
 import { apiFetch } from '../../services/api';
 import { notifyAuthChange } from '../../services/authStorage';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
+import MembershipExplore from '../../components/Customer/MembershipExplore';
+import { getExplorePackages } from '../../services/ticketPackageService';
+import { isMembershipPackageType } from '../../utils/ticketPackageRules';
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import toast, { Toaster } from 'react-hot-toast';
@@ -103,9 +106,14 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
 
 export default function Membership() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedPackageId = searchParams.get('packageId');
   const [packages, setPackages] = useState([]);
+  const [featuredPackages, setFeaturedPackages] = useState([]);
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogReload, setCatalogReload] = useState(0);
   const [vehicles, setVehicles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
 
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -126,7 +134,10 @@ export default function Membership() {
     missingPolicies: [],
   });
 
-  const { featuredPackages: subscriptionPackages, additionalPackages } = partitionMembershipPlans(packages);
+  const { featuredPackages: subscriptionPackages, additionalPackages } = partitionMembershipPlans(packages, {
+    ...Object.fromEntries(featuredPackages.map(pkg => [pkg.type, pkg._id])),
+    ...Object.fromEntries(Object.entries(FEATURED_MEMBERSHIP_PACKAGE_IDS).filter(([, id]) => id)),
+  });
 
   const isVipActive = Boolean(membership?.isVip ?? user?.membership?.isVip);
   const purchaseEligibility = membership?.purchaseEligibility;
@@ -134,7 +145,7 @@ export default function Membership() {
   const approvedVehicleCount = purchaseEligibility?.approvedVehicleCount || 0;
   const getPurchaseCapacity = (pkg) => identityVerified
     ? Math.min(Number(pkg?.maxSlots ?? 3), purchaseEligibility.availableVehicleCapacity) : 0;
-  const availablePurchaseSlots = getPurchaseCapacity(selectedPackage);
+  const selectedPackageSlotLimit = getPurchaseCapacity(selectedPackage);
 
   const syncCurrentUserProfile = async () => {
     const token = localStorage.getItem('accessToken');
@@ -228,10 +239,12 @@ export default function Membership() {
   }, [currentFloorId]);
 
   useEffect(() => {
+    let active = true;
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes] = await Promise.all([
+        setCatalogError('');
+        const [pkgRes, vRes, floorRes, profileRes, walletRes, membershipRes, catalogRes] = await Promise.all([
           getTicketPackages(),
           getMyVehicles(),
           fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors`).then(r => r.json()),
@@ -240,11 +253,27 @@ export default function Membership() {
           }).then(r => r.json()),
           getWalletInfo(),
           getMembershipStatus(),
+          getExplorePackages({ limit: 1 }),
         ]);
+        if (!active) return;
+        if (!pkgRes.ok || !pkgRes.data?.success || !catalogRes.ok || !catalogRes.data?.success) {
+          throw new Error('Unable to load membership packages. Please try again.');
+        }
+        setFeaturedPackages(catalogRes.data.data.featured);
         
         if (pkgRes.ok && pkgRes.data?.data) {
           const pkgs = pkgRes.data.data;
           setPackages(pkgs);
+          if (requestedPackageId) {
+            const requestedPackage = pkgs.find((pkg) => pkg._id === requestedPackageId && pkg.isActive && isMembershipPackageType(pkg.type));
+            if (requestedPackage) {
+              setSelectedPackage(requestedPackage);
+              setSelectedSlots([]);
+              setShowSlotModal(true);
+            } else {
+              toast.error('This package is no longer available. Please choose another package.');
+            }
+          }
         }
         if (vRes.ok) {
           setVehicles(vRes.data?.data || []);
@@ -265,13 +294,14 @@ export default function Membership() {
           setMembership(membershipRes.data.data);
         }
       } catch (err) {
-        console.error(err);
+        if (active) setCatalogError(err.message || 'Unable to load membership packages. Please try again.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchData();
-  }, []);
+    return () => { active = false; };
+  }, [requestedPackageId, catalogReload]);
 
   useEffect(() => {
     let active = true;
@@ -317,10 +347,10 @@ export default function Membership() {
     return '';
   };
 
-  const getPackagePresentation = (pkg, index) => {
+  const getPackagePresentation = (pkg) => {
     const isYearly = pkg.type === 'yearly';
     const isMonthly = pkg.type === 'monthly';
-    const isPopular = isMonthly && index === subscriptionPackages.findIndex(item => item.type === 'monthly');
+    const isPopular = isMonthly && pkg.selectionReason === 'bestseller';
 
     if (isYearly) {
       return {
@@ -393,7 +423,7 @@ export default function Membership() {
       setSelectedSlots(prev => prev.filter((_, i) => i !== existingIndex));
     } else {
       // Add
-      const maxSlots = availablePurchaseSlots;
+      const maxSlots = selectedPackageSlotLimit;
       if (approvedVehicleCount === 0) {
         toast.error("You need to add a vehicle before buying a VIP pass.");
         return;
@@ -408,8 +438,8 @@ export default function Membership() {
 
   const handleConfirmSlots = async () => {
     if (!selectedPackage) return;
-    if (selectedSlots.length === 0) {
-      toast.error("Please select at least one parking slot to reserve.");
+    if (selectedSlots.length === 0 || selectedSlots.length > selectedPackageSlotLimit) {
+      toast.error(selectedPackageSlotLimit > 0 ? `Select between 1 and ${selectedPackageSlotLimit} parking spaces.` : 'No eligible vehicle is available for this purchase.');
       return;
     }
 
@@ -437,7 +467,7 @@ export default function Membership() {
       setVerifying(true); // Show the processing state
 
       if (paymentMethod === 'wallet') {
-        const res = await paySubscriptionWithWallet(selectedPackage._id, selectedSlots, effectivePackagePrice, idempotencyKey);
+        const res = await paySubscriptionWithWallet(selectedPackage._id, selectedSlots, effectivePackagePrice, idempotencyKey, selectedPackage.revision);
         if (res.ok && res.data?.success) {
           await syncCurrentUserProfile();
           setSuccess(res.data?.data || true);
@@ -452,7 +482,7 @@ export default function Membership() {
         }
         setVerifying(false);
       } else {
-        const res = await createSubscriptionPayment(selectedPackage._id, selectedSlots, effectivePackagePrice, idempotencyKey);
+        const res = await createSubscriptionPayment(selectedPackage._id, selectedSlots, effectivePackagePrice, idempotencyKey, selectedPackage.revision);
         if (res.ok && res.data?.data?.checkoutUrl) {
           // Redirect directly to the PayOS page
           window.location.href = res.data.data.checkoutUrl;
@@ -508,6 +538,12 @@ export default function Membership() {
       </div>
 
       <div className="mx-auto flex min-w-0 max-w-6xl flex-col gap-6 px-4 pt-6 sm:gap-8 sm:px-6 sm:pt-8">
+        {catalogError && (
+          <div role="alert" className="rounded-2xl border border-red-200 bg-white p-5 text-sm text-red-700">
+            <p>{catalogError}</p>
+            <button type="button" onClick={() => setCatalogReload(value => value + 1)} className="mt-3 rounded-xl bg-gray-900 px-4 py-3 font-bold text-white">Try again</button>
+          </div>
+        )}
 
       {/* Featured plans */}
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
@@ -547,8 +583,8 @@ export default function Membership() {
             </button>
           </div>
 
-          {subscriptionPackages.map((pkg, index) => {
-            const presentation = getPackagePresentation(pkg, index);
+          {!loading && !catalogError && subscriptionPackages.map((pkg, index) => {
+            const presentation = getPackagePresentation(pkg);
             const buttonState = getPackageButton(pkg);
             const Icon = presentation.Icon;
             const effectivePrice = getEffectivePackagePrice(pkg);
@@ -634,51 +670,23 @@ export default function Membership() {
             );
           })}
 
-          {!loading && subscriptionPackages.length === 0 && (
+          {loading && <div role="status" className={`${cardShellClass} items-center justify-center text-gray-500`}><Loader2 size={28} className="animate-spin" /><span className="mt-3 text-sm">Loading packages...</span></div>}
+
+          {!loading && !catalogError && subscriptionPackages.length === 0 && (
             <div className={`${cardShellClass} min-h-[300px] justify-center border border-gray-100 text-center text-gray-500`}>
               <Crown size={32} className="mx-auto mb-3 text-gray-300" />
-              <h3 className="font-black text-gray-900 mb-2">No VIP packages available</h3>
-              <p className="text-sm">Please check back after an administrator activates a package.</p>
+              <h3 className="font-black text-gray-900 mb-2">No monthly or yearly plans available</h3>
+              <p className="text-sm">Browse the available packages in Explore more below.</p>
             </div>
           )}
 
         </div>
-
-        {additionalPackages.length > 0 && (
-          <section aria-labelledby="more-membership-plans" className="min-w-0 border-t border-gray-200/80 pt-6 sm:pt-8">
-            <div className="mb-5">
-              <h2 id="more-membership-plans" className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">Explore More Plans</h2>
-              <p className="mt-1.5 text-sm text-gray-500">More package options for your parking needs.</p>
-            </div>
-            <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
-              {additionalPackages.map((pkg) => {
-                const isYearly = pkg.type === 'yearly';
-                const buttonState = getPackageButton(pkg);
-                return (
-                  <article key={pkg._id} className="flex min-w-0 flex-col rounded-2xl border border-gray-200/80 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-[0_8px_28px_rgba(15,23,42,0.08)] [overflow-wrap:anywhere]">
-                    <div className="mb-3 flex items-center gap-2">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${isYearly ? 'bg-purple-50 text-purple-700' : 'bg-amber-50 text-amber-700'}`}>
-                        {pkg.type === 'hourly' ? 'Hourly' : isYearly ? 'Yearly' : 'Monthly'}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold leading-snug text-gray-900">{pkg.name}</h3>
-                    <div className="my-3">
-                      <p className="text-xl font-bold tabular-nums tracking-tight text-gray-900">{getEffectivePackagePrice(pkg).toLocaleString('vi-VN')} <span className="text-xs font-semibold text-gray-500">VND</span></p>
-                      <p className="mt-1 text-xs text-gray-500">Per space / {packageDurationLabel(pkg)}</p>
-                    </div>
-                    <ul className="mb-4 space-y-1 text-xs leading-relaxed text-gray-600">{(pkg.benefits || []).map((benefit) => <li key={benefit}>{benefit}</li>)}</ul>
-                    <PackageTermsSummary terms={pkg} showServices={false} />
-                    {pkg.description && <p className="mb-5 whitespace-pre-line text-sm leading-relaxed text-gray-500">{pkg.description}</p>}
-                    {buttonState.disabled && identityVerified && purchaseEligibility?.legacyConflict ? renderLegacyNotice(pkg) : <button type="button" disabled={buttonState.disabled} onClick={() => handleBuyPackage(pkg)}
-                      aria-label={`${buttonState.label}: ${pkg.name}`}
-                      className="mt-auto min-h-11 w-full rounded-xl border border-gold/30 bg-gold/10 px-3 py-2.5 text-sm font-semibold leading-snug text-gray-900 transition-colors hover:bg-gold/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-100 disabled:text-gray-500">
-                      {buttonState.label}
-                    </button>}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
+        {!loading && !catalogError && (
+          <MembershipExplore
+            packages={additionalPackages}
+            onSelectPackage={handleBuyPackage}
+            getButtonState={getPackageButton}
+          />
         )}
       </div>
 
@@ -691,7 +699,7 @@ export default function Membership() {
                 <h3 className="text-xl font-black text-gray-900">Choose Fixed Parking Slots</h3>
                 <p className="text-gray-500 mt-1">
                 You currently have <span className="font-bold text-gray-900">{approvedVehicleCount}</span> approved vehicles.
-                You can add up to <span className="font-bold text-gray-900">{availablePurchaseSlots}</span> parking slots.
+                This package allows up to <span className="font-bold text-gray-900">{selectedPackageSlotLimit}</span> additional parking slots.
                 {approvedVehicleCount > 1 && (
                   <span className="block mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md">
                     Choose a different approved vehicle for each reserved space.
@@ -792,7 +800,7 @@ export default function Membership() {
                   )}
 
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 mt-4">
-                    Selected ({selectedSlots.length} / {availablePurchaseSlots})
+                    Selected ({selectedSlots.length} / {selectedPackageSlotLimit})
                   </label>
                   <div className="space-y-2">
                     {selectedSlots.map(s => (
@@ -830,6 +838,7 @@ export default function Membership() {
                       Pay now {selectedPackage && selectedSlots.length > 0 ? `(${(getEffectivePackagePrice(selectedPackage) * selectedSlots.length).toLocaleString('vi-VN')} VND)` : ''} <ArrowRight size={18} />
                     </>
                   )}
+                  {selectedPackage?.serviceBenefits?.map((benefit) => <p key={benefit.serviceId} className="mt-3 text-sm font-semibold text-gray-700">{benefit.serviceName}: {benefit.quantityPerSlot} uses/space × {selectedSlots.length} spaces = {benefit.quantityPerSlot * selectedSlots.length} uses</p>)}
                 </button>
               </div>
             </div>

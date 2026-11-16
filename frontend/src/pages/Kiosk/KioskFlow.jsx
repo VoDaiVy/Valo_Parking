@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import KioskWelcome from './KioskWelcome';
@@ -7,6 +7,7 @@ import KioskStep2 from './KioskStep2';
 import KioskStep3 from './KioskStep3';
 import KioskLayout from './KioskLayout';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
 
 const createRequestKey = () => {
@@ -53,9 +54,11 @@ const KIOSK_IDLE_TIMEOUT_MS = 120000;
 export default function KioskFlow() {
   const navigate = useNavigate();
   const location = useLocation();
+  const socket = useSocket();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successSession, setSuccessSession] = useState(null); // stores the successful session data
   const [kioskAlert, setKioskAlert] = useState(null);
+  const lastEntrySyncRef = useRef({ key: '', at: 0 });
 
   // Shared State across steps
   const [formData, setFormData] = useState(createEmptyKioskFormData);
@@ -67,6 +70,126 @@ export default function KioskFlow() {
   const handleNext = (step) => {
     navigate(`/kiosk/step${step}`);
   };
+
+  const applySyncedEntryScan = useCallback((payload) => {
+    const { mode = 'verified', licensePlate, verifyData, session, entryImageBase64 = null } = payload || {};
+    if (!licensePlate || successSession) return;
+
+    const now = Date.now();
+    const dedupeKey = `${mode}:${licensePlate}`;
+    if (
+      lastEntrySyncRef.current.key === dedupeKey &&
+      now - lastEntrySyncRef.current.at < 4000
+    ) {
+      return;
+    }
+
+    if (mode === 'checked_in' && session) {
+      const canShowTicketScreen =
+        location.pathname === '/kiosk' ||
+        location.pathname === '/kiosk/' ||
+        location.pathname === '/kiosk/step1' ||
+        location.pathname === '/kiosk/step2';
+      if (!canShowTicketScreen) return;
+
+      lastEntrySyncRef.current = { key: dedupeKey, at: now };
+      setKioskAlert(null);
+      setFormData({
+        ...createEmptyKioskFormData(),
+        step3Mode: 'fastpass',
+        licensePlate: session.licensePlate || licensePlate,
+        selectedSlot: session.parkingSlot || '',
+        floorId: session.floorId || '',
+        isMonthly: session.type === 'SUBSCRIPTION',
+        hasPreBooking: session.type === 'RESERVATION',
+        entryImageBase64: entryImageBase64 || null,
+      });
+      setSuccessSession(session);
+      navigate('/kiosk/step3');
+      return;
+    }
+
+    if (!verifyData || verifyData.isActive) return;
+
+    const isEligible = Boolean(verifyData.isMonthly || verifyData.hasPreBooking || verifyData.isVIP);
+    if (!isEligible) return;
+
+    // Only auto-transition when kiosk is idle on welcome screen or Step 1
+    const onIdleEntryScreen =
+      location.pathname === '/kiosk' ||
+      location.pathname === '/kiosk/' ||
+      location.pathname === '/kiosk/step1';
+    if (!onIdleEntryScreen) return;
+
+    lastEntrySyncRef.current = { key: dedupeKey, at: now };
+
+    const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
+    const canFastPassNow = Boolean(
+      (verifyData.isMonthly || verifyData.hasPreBooking) &&
+      verifyData.assignedSlot &&
+      verifyData.assignedFloorId &&
+      !needsReallocation
+    );
+
+    setSuccessSession(null);
+    setKioskAlert(null);
+    setFormData({
+      ...createEmptyKioskFormData(),
+      step3Mode: canFastPassNow ? 'fastpass' : 'policy',
+      licensePlate,
+      phone: verifyData.phone || '',
+      entryImageBase64: entryImageBase64 || null,
+      isMonthly: Boolean(verifyData.isMonthly),
+      hasPreBooking: Boolean(verifyData.hasPreBooking),
+      isVIP: Boolean(verifyData.isVIP),
+      isRegisteredVehicle: Boolean(verifyData.isRegisteredVehicle),
+      isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
+      isBookingReallocation: Boolean(verifyData.isBookingReallocation),
+      quotaExhausted: Boolean(verifyData.quotaExhausted),
+      membershipType: verifyData.membershipType || null,
+      bookingId: verifyData.bookingId || null,
+      bookingFloorName: verifyData.assignedFloorName || null,
+      originalSlot: verifyData.originalSlot || null,
+      selectedSlot: canFastPassNow ? verifyData.assignedSlot : null,
+      floorId: canFastPassNow ? verifyData.assignedFloorId : null,
+      suggestedSlot: verifyData.suggestedSlot || null,
+      suggestedFloorId: verifyData.suggestedFloorId || null,
+      suggestedFloorName: verifyData.suggestedFloorName || null,
+      upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+      durationHours: verifyData.bookingDurationHours || 1,
+      bookingMode: verifyData.bookingMode || 'hourly',
+      ticketPackageId: verifyData.bookingTicketPackageId || verifyData.pricingPackage?._id || null,
+      pricingPackage: verifyData.pricingPackage || null,
+      pricingSource: verifyData.pricingSource || 'default',
+    });
+
+    if (canFastPassNow) {
+      navigate('/kiosk/step3');
+    } else {
+      navigate('/kiosk/step2');
+    }
+  }, [location.pathname, navigate, successSession]);
+
+  useEffect(() => {
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel = new BroadcastChannel('valo_kiosk_entry_sync');
+      channel.onmessage = (event) => {
+        if (event.data) applySyncedEntryScan(event.data);
+      };
+    }
+
+    if (socket) {
+      socket.on('kiosk:entry_plate_synced', applySyncedEntryScan);
+    }
+
+    return () => {
+      if (channel) channel.close();
+      if (socket) {
+        socket.off('kiosk:entry_plate_synced', applySyncedEntryScan);
+      }
+    };
+  }, [socket, applySyncedEntryScan]);
 
   const releaseCurrentHold = async () => {
     if (!formData.bookingHoldId) return;

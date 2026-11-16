@@ -1,5 +1,6 @@
 import { StaffTicketPackagesScreen } from '@/screens/staff/StaffTicketPackagesScreen';
 import { StaffSubscriptionManagementScreen } from '@/screens/staff/StaffSubscriptionManagementScreen';
+import { MembershipServicesScreen } from '../screens/wallet/MembershipServicesScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
@@ -36,6 +37,7 @@ export type StaffManagementStackParamList = {
   ManagementHome: undefined;
   TicketPackages: undefined;
   Subscriptions: undefined;
+  MembershipServices: undefined;
   Customers: undefined;
   Bookings: undefined;
   BookingScanner: undefined;
@@ -67,6 +69,7 @@ function SessionStackNavigator() {
 function ManagementStackNavigator() {
   return (
     <ManagementStack.Navigator initialRouteName="ManagementHome" screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.background } }}>
+      <ManagementStack.Screen name="MembershipServices" component={MembershipServicesScreen} />
       <ManagementStack.Screen name="ManagementHome" component={ManagementHubScreen} />
       <ManagementStack.Screen name="Inbox" component={NotificationsScreen} />
       <ManagementStack.Screen name="Communication" component={StaffCommunicationScreen} />

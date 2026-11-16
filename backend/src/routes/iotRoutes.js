@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const GateCameraConfig = require('../models/GateCameraConfig');
 const { protect, authorize, softProtect } = require('../middlewares/authMiddleware');
 
 const gateStates = {
@@ -58,12 +59,10 @@ const toPublicGateState = (state) => ({
 
 const canViewGateDetails = (req) => ['staff', 'admin'].includes(req.user?.role);
 
-const bridgeProtect = (req, res, next) => {
+const hasValidBridgeToken = (req) => {
   const configuredToken = process.env.IOT_BRIDGE_TOKEN || 'VALO_IOT_INTERNAL_BRIDGE_DEFAULT_TOKEN';
   const receivedToken = req.get('x-bridge-token') || '';
-  if (!receivedToken) {
-    return res.status(401).json({ success: false, message: 'Bridge authentication token is required' });
-  }
+  if (!receivedToken) return false;
 
   const isLocalRequest = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'].includes(req.hostname) ||
     ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
@@ -78,15 +77,44 @@ const bridgeProtect = (req, res, next) => {
     }
   };
 
-  const isAuthorized = isMatch(configuredToken, receivedToken) ||
+  return (
+    isMatch(configuredToken, receivedToken) ||
     (isLocalRequest && isMatch('VALO_IOT_INTERNAL_BRIDGE_DEFAULT_TOKEN', receivedToken)) ||
-    (process.env.JWT_SECRET && isMatch(process.env.JWT_SECRET, receivedToken));
+    (process.env.JWT_SECRET && isMatch(process.env.JWT_SECRET, receivedToken))
+  );
+};
 
-  if (!isAuthorized) {
+const bridgeProtect = (req, res, next) => {
+  const receivedToken = req.get('x-bridge-token') || '';
+  if (!receivedToken) {
+    return res.status(401).json({ success: false, message: 'Bridge authentication token is required' });
+  }
+
+  if (!hasValidBridgeToken(req)) {
     return res.status(401).json({ success: false, message: 'Invalid bridge token' });
   }
   req.isBridge = true;
   return next();
+};
+
+const ESP_BRIDGE_STALE_MS = 6000;
+const espBridgeTelemetry = {
+  bridgeLastSeenAt: 0,
+  espConnected: false,
+  espLastSeenAt: 0,
+  port: '',
+};
+
+const getEspStatusSnapshot = () => {
+  const now = Date.now();
+  const bridgeOnline = (now - espBridgeTelemetry.bridgeLastSeenAt) <= ESP_BRIDGE_STALE_MS;
+  const espOnline = bridgeOnline && espBridgeTelemetry.espConnected;
+  return {
+    espOnline,
+    bridgeOnline,
+    port: espOnline ? espBridgeTelemetry.port : '',
+    lastSeenAt: espBridgeTelemetry.bridgeLastSeenAt || null,
+  };
 };
 
 const { getParkingCapacitySnapshot } = require('../services/parkingCapacityService');
@@ -125,9 +153,24 @@ const fetchCapacitySafe = async () => {
 // ESP32 & Web Kiosks gọi API này để kiểm tra lệnh mở Barrier theo cổng kèm công suất bãi đỗ
 router.get('/barrier-status', softProtect, async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+
+  if (hasValidBridgeToken(req)) {
+    const now = Date.now();
+    espBridgeTelemetry.bridgeLastSeenAt = now;
+    if (req.query.esp !== undefined) {
+      const connected = req.query.esp === '1' || req.query.esp === 'true';
+      espBridgeTelemetry.espConnected = connected;
+      espBridgeTelemetry.port = connected ? String(req.query.port || '') : '';
+      if (connected) {
+        espBridgeTelemetry.espLastSeenAt = now;
+      }
+    }
+  }
+
   const { gate } = req.query;
   const showDetails = canViewGateDetails(req);
   const capacity = await fetchCapacitySafe();
+  const espStatus = getEspStatusSnapshot();
 
   if (gate) {
     const state = getGateState(gate);
@@ -138,6 +181,7 @@ router.get('/barrier-status', softProtect, async (req, res) => {
         ? gateStates
         : Object.fromEntries(Object.entries(gateStates).map(([key, value]) => [key, toPublicGateState(value)])),
       capacity,
+      espStatus,
     });
   }
 
@@ -148,6 +192,7 @@ router.get('/barrier-status', softProtect, async (req, res) => {
       ? gateStates
       : Object.fromEntries(Object.entries(gateStates).map(([key, value]) => [key, toPublicGateState(value)])),
     capacity,
+    espStatus,
   });
 });
 
@@ -258,11 +303,15 @@ router.post('/bridge/close-barrier', bridgeProtect, closeBarrierHandler);
 
 const triggerBarrierOpen = (licensePlate, slotCode, gate = 'ENTRY_1', app = null) => {
   const normGate = (gate || 'ENTRY_1').toUpperCase();
+  const prevTriggerId = gateStates[normGate]?.triggerId || 0;
+  const triggerId = Math.max(Date.now(), prevTriggerId + 1);
+  console.log(`[BACKEND IOT] 🚀 TỰ ĐỘNG MỞ CỔNG (Kiosk/System): ${normGate} | Biển số: ${licensePlate || 'N/A'} | Ô: ${slotCode || 'N/A'}`);
+
   const newState = {
     open: true,
     holdOpen: false,
     forceClose: false,
-    triggerId: Date.now(),
+    triggerId,
     licensePlate: licensePlate || '',
     slotCode: slotCode || '',
     gate: normGate,
@@ -281,6 +330,140 @@ const triggerBarrierOpen = (licensePlate, slotCode, gate = 'ENTRY_1', app = null
 
   return newState;
 };
+
+const DEFAULT_CAMERA_CONFIG = {
+  splitMode: true,
+  swapLanes: false,
+  splitRatio: 0.5,
+  laneOverlap: 0.08,
+  entryRotation: 0,
+  exitRotation: 180,
+  entryRotate180: false,
+  exitRotate180: true,
+};
+
+let cachedCameraConfig = { ...DEFAULT_CAMERA_CONFIG };
+
+const normalizeRotation = (val, fallback = 0) => {
+  const num = Number(val);
+  return [0, 90, 180, 270].includes(num) ? num : fallback;
+};
+
+const clampNumber = (val, min, max, fallback) => {
+  const num = Number(val);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(num * 100) / 100));
+};
+
+const serializeCameraConfig = (doc) => {
+  const entryRotation = doc?.entryRotation != null
+    ? normalizeRotation(doc.entryRotation, DEFAULT_CAMERA_CONFIG.entryRotation)
+    : (typeof doc?.entryRotate180 === 'boolean' ? (doc.entryRotate180 ? 180 : 0) : DEFAULT_CAMERA_CONFIG.entryRotation);
+  const exitRotation = doc?.exitRotation != null
+    ? normalizeRotation(doc.exitRotation, DEFAULT_CAMERA_CONFIG.exitRotation)
+    : (typeof doc?.exitRotate180 === 'boolean' ? (doc.exitRotate180 ? 180 : 0) : DEFAULT_CAMERA_CONFIG.exitRotation);
+
+  return {
+    splitMode: typeof doc?.splitMode === 'boolean' ? doc.splitMode : DEFAULT_CAMERA_CONFIG.splitMode,
+    swapLanes: typeof doc?.swapLanes === 'boolean' ? doc.swapLanes : DEFAULT_CAMERA_CONFIG.swapLanes,
+    splitRatio: clampNumber(doc?.splitRatio, 0.35, 0.65, DEFAULT_CAMERA_CONFIG.splitRatio),
+    laneOverlap: clampNumber(doc?.laneOverlap, 0, 0.2, DEFAULT_CAMERA_CONFIG.laneOverlap),
+    entryRotation,
+    exitRotation,
+    entryRotate180: entryRotation === 180,
+    exitRotate180: exitRotation === 180,
+  };
+};
+
+// Lấy cấu hình cắt vùng & xoay camera 2 làn (Kiosk Vào / Kiosk Ra / Gate Control cùng dùng chung)
+router.get('/camera-config', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const doc = await GateCameraConfig.findOne({ key: 'default' }).lean();
+    if (doc) {
+      cachedCameraConfig = serializeCameraConfig(doc);
+    }
+  } catch (err) {
+    console.warn('[BACKEND IOT] Fallback to cached camera config:', err.message);
+  }
+  return res.json({ success: true, data: cachedCameraConfig });
+});
+
+// Cập nhật cấu hình cắt vùng & xoay camera 2 làn và đồng bộ realtime qua Socket.IO
+router.put('/camera-config', protect, authorize('staff', 'admin'), async (req, res) => {
+  const body = req.body || {};
+  const nextEntryRot = body.entryRotation != null
+    ? normalizeRotation(body.entryRotation, cachedCameraConfig.entryRotation)
+    : (typeof body.entryRotate180 === 'boolean' ? (body.entryRotate180 ? 180 : 0) : cachedCameraConfig.entryRotation);
+  const nextExitRot = body.exitRotation != null
+    ? normalizeRotation(body.exitRotation, cachedCameraConfig.exitRotation)
+    : (typeof body.exitRotate180 === 'boolean' ? (body.exitRotate180 ? 180 : 0) : cachedCameraConfig.exitRotation);
+
+  const nextConfig = {
+    splitMode: typeof body.splitMode === 'boolean' ? body.splitMode : cachedCameraConfig.splitMode,
+    swapLanes: typeof body.swapLanes === 'boolean' ? body.swapLanes : cachedCameraConfig.swapLanes,
+    splitRatio: body.splitRatio != null
+      ? clampNumber(body.splitRatio, 0.35, 0.65, cachedCameraConfig.splitRatio)
+      : cachedCameraConfig.splitRatio,
+    laneOverlap: body.laneOverlap != null
+      ? clampNumber(body.laneOverlap, 0, 0.2, cachedCameraConfig.laneOverlap)
+      : cachedCameraConfig.laneOverlap,
+    entryRotation: nextEntryRot,
+    exitRotation: nextExitRot,
+    entryRotate180: nextEntryRot === 180,
+    exitRotate180: nextExitRot === 180,
+  };
+
+  cachedCameraConfig = nextConfig;
+
+  try {
+    const saved = await GateCameraConfig.findOneAndUpdate(
+      { key: 'default' },
+      { $set: { key: 'default', ...nextConfig } },
+      { upsert: true, new: true, lean: true }
+    );
+    cachedCameraConfig = serializeCameraConfig(saved);
+  } catch (err) {
+    console.warn('[BACKEND IOT] Failed to persist camera config to DB:', err.message);
+  }
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('gate:camera_config', cachedCameraConfig);
+  }
+
+  return res.json({ success: true, data: cachedCameraConfig });
+});
+
+// Đồng bộ biển số (VIP / Booking khi quét hoặc Check-in hoàn tất) từ Staff Gate Control sang màn hình Check-in Kiosk
+router.post('/kiosk-entry-sync', protect, authorize('staff', 'admin'), (req, res) => {
+  const {
+    mode = 'verified',
+    licensePlate,
+    verifyData = null,
+    session = null,
+    entryImageBase64 = null,
+  } = req.body || {};
+  if (!licensePlate || (!verifyData && !session)) {
+    return res.status(400).json({ success: false, message: 'licensePlate and verifyData or session are required' });
+  }
+
+  const payload = {
+    mode,
+    licensePlate,
+    verifyData,
+    session,
+    entryImageBase64,
+    syncedAt: Date.now(),
+  };
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('kiosk:entry_plate_synced', payload);
+  }
+
+  return res.json({ success: true, data: payload });
+});
 
 module.exports = {
   router,

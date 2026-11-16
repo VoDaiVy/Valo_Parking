@@ -4,12 +4,26 @@ const { lockVehicle } = require('./vehicleEntitlementService');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Slot = require('../models/Slot');
 const { recomputeUserMembership } = require('./membershipProjectionService');
+const { grantBenefits } = require('./membershipServiceBenefitService');
+const stock = require('./ticketPackageStockService');
+const { addConfiguredDuration } = require('./ticketPackageTerms');
+const { buildPackageExpirationDate } = require('../utils/ticketPackageRules');
+const mongoose = require('mongoose');
 
 const normalizeSlotCode = (value) => String(value || '').trim().toUpperCase();
 
 const activateSubscriptionEntitlements = async (subscription, options = {}) => {
   const { session = null, rotateQr = true } = options;
+  if (!session) return mongoose.connection.transaction(transaction =>
+    activateSubscriptionEntitlements(subscription, { ...options, session: transaction }));
+  const terms = subscription.packageTermsSnapshot;
+  const initialExpireAt = terms && subscription.activatedAt
+    ? subscription.packageSnapshot
+      ? addConfiguredDuration(subscription.activatedAt, subscription.packageSnapshot)
+      : buildPackageExpirationDate(terms, subscription.activatedAt)
+    : subscription.expireAt;
   await lockOwner(subscription.user, session);
+  await stock.ensureActivation(subscription, { session, allowPaused: options.renewal === true });
   const selectedSlots = subscription.slots || [];
   const unitAmount = Math.round(
     Number(subscription.amount || 0) / Math.max(1, selectedSlots.length)
@@ -33,6 +47,8 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
       sourceSubscriptionId: subscription._id, slotId: slot._id,
     }).session(session);
     if (previous) {
+      await grantBenefits({ entitlement: previous, terms, sourceKey: `purchase:${subscription._id}`,
+        validFrom: subscription.validFrom, expireAt: initialExpireAt, session });
       entitlements.push(previous);
       continue;
     }
@@ -77,6 +93,8 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
           vehicleBindingFrom: selected.vehicleId ? subscription.validFrom : undefined,
           transferCount: 0,
           packageSnapshot: subscription.packageSnapshot,
+          packageDurationSnapshot: subscription.packageDurationSnapshot || null,
+          packageTermsSnapshot: terms || null,
           ownerId: subscription.user,
           floorId: selected.floorId,
           slotCode: normalizeSlotCode(selected.slotCode),
@@ -116,6 +134,8 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
         statusCode: 409,
       });
     }
+    await grantBenefits({ entitlement, terms, sourceKey: `purchase:${subscription._id}`,
+      validFrom: subscription.validFrom, expireAt: initialExpireAt, session });
     
     // Purchases apply to subsequent check-ins. Existing sessions and bookings
     // keep their original payment and pricing context.
@@ -124,6 +144,8 @@ const activateSubscriptionEntitlements = async (subscription, options = {}) => {
   }
 
   await recomputeUserMembership(subscription.user, { session, rotateQr });
+  if (subscription.stockHoldUntil) await stock.release(subscription, { session });
+  else await stock.refreshPackage(subscription.ticketPackage, { session });
   return entitlements;
 };
 

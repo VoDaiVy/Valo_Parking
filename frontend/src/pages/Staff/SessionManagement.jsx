@@ -1,8 +1,10 @@
 import PackageParkingBreakdown from '../../components/PackageParkingBreakdown';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
 import { filterAndSortSessions, getPaginationPages, paginateSessions } from './sessionPagination.js';
+import { matchesSessionTime } from './sessionTimeFilter.js';
+import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker.jsx';
 import StaffDropdown from './components/StaffDropdown.jsx';
 import './components/staffManagement.css';
 import './components/staffSessionManagement.css';
@@ -21,10 +23,14 @@ export default function SessionManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [timeFilter, setTimeFilter] = useState({ mode: 'all', value: '', from: '', to: '' });
+  const updateTimeFilter = (patch) => { setTimeFilter(previous => ({ ...previous, ...patch })); setCurrentPage(1); };
+  const invalidTimeRange = timeFilter.mode === 'range' && timeFilter.from && timeFilter.to && timeFilter.from > timeFilter.to;
   const [sortBy, setSortBy] = useState('newest');
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiInitialPlate, setAiInitialPlate] = useState('');
   const [aiInitialImage, setAiInitialImage] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionIdQuery = searchParams.get('sessionId');
   const location = useLocation();
@@ -125,12 +131,12 @@ export default function SessionManagement() {
   }).format(Number(price) || 0);
 
   const filteredSessions = useMemo(
-    () => filterAndSortSessions(sessions, {
+    () => filterAndSortSessions(isAdminPage ? sessions.filter(session => matchesSessionTime(session.checkInTime, timeFilter)) : sessions, {
       searchQuery,
       status: statusFilter,
       sortBy,
     }),
-    [sessions, searchQuery, statusFilter, sortBy],
+    [sessions, searchQuery, statusFilter, sortBy, isAdminPage, timeFilter],
   );
 
   const pagination = useMemo(
@@ -150,6 +156,7 @@ export default function SessionManagement() {
       setSelectedSession(null);
       setSearchQuery('');
       setStatusFilter('all');
+      setTimeFilter({ mode: 'all', value: '', from: '', to: '' });
       setSortBy('newest');
       setCurrentPage(target.page);
       setRowFocus({ ...target, requestKey: verificationKey });
@@ -213,7 +220,7 @@ export default function SessionManagement() {
           <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
         </button>}
         {/* AI Blurred Plate Assistant Button */}
-        <button
+        {isAdminPage && <button
           type="button"
           onClick={() => {
             setAiInitialPlate(searchQuery || '');
@@ -224,7 +231,7 @@ export default function SessionManagement() {
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>AI Plate Assistant</span>
-        </button>
+        </button>}
         </div>
       </div>
 
@@ -319,8 +326,22 @@ export default function SessionManagement() {
                 menuClassName="w-52"
               />
             </div>
+            {isAdminPage && <section aria-label="Filter by check-in time" className="admin-session-time-filter">
+          <div className="admin-session-time-controls">
+            <div className="admin-session-time-mode"><StaffDropdown value={timeFilter.mode} onChange={mode => updateTimeFilter({ mode, value: '', from: '', to: '' })} options={[[ 'all', 'All time' ], ['day', 'By day'], ['month', 'By month'], ['year', 'By year'], ['range', 'Date & time range']]} ariaLabel="Time filter mode" /></div>
+            {['day', 'month', 'year'].includes(timeFilter.mode) && <label className="flex flex-col gap-2 text-xs text-slate-400"><span className="sr-only">{timeFilter.mode === 'day' ? 'Date' : timeFilter.mode === 'month' ? 'Month' : 'Year'}</span><input type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'} min={timeFilter.mode === 'year' ? '1000' : undefined} max={timeFilter.mode === 'year' ? '9999' : undefined} placeholder="YYYY" value={timeFilter.value} onChange={event => updateTimeFilter({ value: event.target.value })} className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]" /></label>}
+            {timeFilter.mode === 'range' && <>
+              <div><p className="sr-only">From</p><AdminDateTimePicker label="Check-in from (Vietnam time)" value={timeFilter.from} onChange={from => updateTimeFilter({ from })} /></div>
+              <div><p className="sr-only">To</p><AdminDateTimePicker label="Check-in to (Vietnam time)" value={timeFilter.to} onChange={to => updateTimeFilter({ to })} /></div>
+            </>}
+            {timeFilter.mode !== 'all' && <button type="button" onClick={() => updateTimeFilter({ mode: 'all', value: '', from: '', to: '' })} title="Clear time filter" aria-label="Clear time filter" className="inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/5 hover:text-white"><X size={16} /></button>}
+          </div>
+          {invalidTimeRange && <p role="alert" className="mt-3 text-xs text-rose-300">End time must be on or after start time.</p>}
+        </section>}
           </div>
         )}
+
+
 
         {loading ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-14 text-center text-slate-500">
@@ -498,9 +519,19 @@ export default function SessionManagement() {
                   <p className="mb-1 text-sm text-white/40">Check In Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkInTime)}</p>
                 </div>
-                <div className="g4-session-image group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.entryImage_url ? (
-                    <img src={selectedSession.entryImage_url} alt="Entry" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `Entry Photo — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title="Click to view full-size image"
+                    >
+                      <img src={selectedSession.entryImage_url} alt="Entry" className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> Full View
+                      </span>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
@@ -522,9 +553,19 @@ export default function SessionManagement() {
                   <p className="mb-1 text-sm text-white/40">Check Out Time</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkOutTime)}</p>
                 </div>
-                <div className="g4-session-image group relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b0b0b]">
+                <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.exitImage_url ? (
-                    <img src={selectedSession.exitImage_url} alt="Exit" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `Exit Photo — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title="Click to view full-size image"
+                    >
+                      <img src={selectedSession.exitImage_url} alt="Exit" className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> Full View
+                      </span>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
@@ -548,7 +589,7 @@ export default function SessionManagement() {
       )}
 
       {/* AI Blurred Plate Resolution Modal */}
-      <AIPlateResolutionModal
+      {isAdminPage && <AIPlateResolutionModal
         isOpen={showAiModal}
         onClose={() => setShowAiModal(false)}
         initialPlate={aiInitialPlate}
@@ -557,7 +598,38 @@ export default function SessionManagement() {
           setSearchQuery(selectedPlate);
           setCurrentPage(1);
         }}
-      />
+      />}
+
+      {/* Full-Size Image Lightbox */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative flex max-h-[92vh] max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0c0d10] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+              <span className="text-sm font-bold text-[#ffd555]">{previewImage.title}</span>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex items-center justify-center overflow-auto bg-black p-3">
+              <img
+                src={previewImage.url}
+                alt={previewImage.title}
+                className="max-h-[80vh] w-auto max-w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

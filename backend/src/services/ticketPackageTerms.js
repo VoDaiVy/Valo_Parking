@@ -6,16 +6,26 @@ const durationForType = (type) => ({
   monthly: { unit: 'hours', value: 720 },
   yearly: { unit: 'calendarMonths', value: 12 },
   daily: { unit: 'hours', value: 24 },
+  weekly: { unit: 'days', value: 7 },
   hourly: { unit: 'hours', value: 1 },
 }[type]);
 
 const invalidTerms = (message) => Object.assign(new Error(message), { statusCode: 400 });
 const packageDuration = (pkg) => {
-  const duration = pkg.duration && (pkg.duration.value != null || pkg.duration.unit != null) ? pkg.duration : durationForType(pkg.type);
+  const duration = pkg.duration && (pkg.duration.value != null || pkg.duration.unit != null) ? pkg.duration
+    : pkg.type === 'custom' ? { unit: 'minutes', value: pkg.durationMinutes ?? pkg.durationDays * 1440 }
+    : durationForType(pkg.type);
   const unit = duration?.unit === 'months' ? 'calendarMonths' : duration?.unit;
-  if (!duration || !Number.isSafeInteger(duration.value) || duration.value < 1 || !['hours', 'days', 'calendarMonths'].includes(unit))
-    throw invalidTerms('Duration must be a positive whole number of hours, days or months.');
+  if (!duration || !Number.isSafeInteger(duration.value) || duration.value < 1 || !['minutes', 'hours', 'days', 'calendarMonths'].includes(unit))
+    throw invalidTerms('Duration must be a positive whole number of minutes, hours, days or months.');
   return { unit, value: duration.value };
+};
+
+const restoreLegacyPurchasedDuration = (pkg, saved) => {
+  if (!pkg || !saved?.type) return pkg;
+  const snapshot = saved.toObject?.() || saved;
+  const duration = snapshot.type === 'monthly' ? { unit: 'calendarMonths', value: 1 } : packageDuration(snapshot);
+  return { ...(pkg.toObject?.() || pkg), ...snapshot, duration };
 };
 
 const addConfiguredDuration = (fromDate, pkg) => {
@@ -30,7 +40,7 @@ const addConfiguredDuration = (fromDate, pkg) => {
     const last = new Date(end);
     last.setUTCMonth(last.getUTCMonth() + 1, 0);
     end.setUTCDate(Math.min(day, last.getUTCDate()));
-  } else end = new Date(start.getTime() + value * (unit === 'days' ? 86400000 : 3600000));
+  } else end = new Date(start.getTime() + value * { days: 86400000, hours: 3600000, minutes: 60000 }[unit]);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start)
     throw invalidTerms('The configured duration is outside the supported date range.');
   return end;
@@ -87,6 +97,10 @@ const canonicalConfiguration = (pkg) => JSON.stringify({
   service: pkg.service || 'LEGACY_RESERVED',
   duration: comparableDuration(pkg),
   ...((pkg.optionalServiceIds || []).length ? { optionalServiceIds: pkg.optionalServiceIds.map(String).sort() } : {}),
+  ...((pkg.serviceBenefits || []).length ? {
+    serviceBenefits: Array.from(pkg.serviceBenefits, ({ serviceId, quantityPerSlot }) => [String(serviceId), quantityPerSlot])
+      .sort((a, b) => a[0].localeCompare(b[0])),
+  } : {}),
   price: Number(pkg.price),
   maxSlots: Number(pkg.maxSlots ?? 3),
   renewalWindowDays: Number(pkg.renewalWindowDays ?? 7),
@@ -105,6 +119,13 @@ const snapshotPackage = (pkg) => ({
   duration: packageDuration(pkg),
   optionalServices: (pkg.optionalServices || []).map((item) => ({ ...item, id: item.id })),
   optionalServiceIds: (pkg.optionalServiceIds || []).map(String),
+  durationDays: pkg.durationDays ?? null,
+  durationMinutes: pkg.durationMinutes ?? null,
+  benefitsVersion: pkg.benefitsVersion || 0,
+  displayBenefits: Array.from(pkg.displayBenefits || []),
+  serviceBenefits: Array.from(pkg.serviceBenefits || [], ({ serviceId, serviceName, quantityPerSlot }) => ({
+    serviceId, serviceName, quantityPerSlot,
+  })),
   maxSlots: pkg.maxSlots,
   renewalWindowDays: pkg.renewalWindowDays,
   isRenewable: pkg.isRenewable,
@@ -129,4 +150,4 @@ const assertPaymentMatches = (payment, orderCode, amount) => {
   }
 };
 
-module.exports = { serviceConfiguration, durationForType, packageDuration, addConfiguredDuration, salesAvailability, validatePackageConfiguration, canonicalConfiguration, configurationKey, snapshotPackage, assertPaymentMatches };
+module.exports = { serviceConfiguration, durationForType, packageDuration, restoreLegacyPurchasedDuration, addConfiguredDuration, salesAvailability, validatePackageConfiguration, canonicalConfiguration, configurationKey, snapshotPackage, assertPaymentMatches };

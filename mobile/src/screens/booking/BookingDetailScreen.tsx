@@ -3,7 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Modal,
@@ -22,6 +23,7 @@ import {
   type BookingModalVariant,
 } from '@/components/booking/BookingActionModal';
 import { QRCodeDisplay } from '@/components/booking/QRCodeDisplay';
+import { BookingFeedbackSection } from '@/components/booking/BookingFeedbackSection';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useBooking } from '@/hooks/useBooking';
 import { bookingService } from '@/services/BookingService';
@@ -104,11 +106,9 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
   const [qrError, setQrError] = useState('');
   const booking = getBookingById(route.params.bookingId);
 
-  useEffect(() => {
-    if (!booking) {
-      void fetchBookings();
-    }
-  }, [booking, fetchBookings]);
+  useFocusEffect(useCallback(() => {
+    void fetchBookings();
+  }, [fetchBookings]));
 
   useEffect(() => {
     if (!booking || !['confirmed', 'active', 'paused'].includes(booking.status)) {
@@ -219,7 +219,10 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
       secondaryLabel: 'Keep parking',
       onConfirm: () =>
         runAction(
-          () => checkOutBooking(route.params.bookingId),
+          async () => {
+            await checkOutBooking(route.params.bookingId);
+            await fetchBookings();
+          },
           'Check-out successful',
           'Your parking session has ended and your wallet balance has been updated.',
           'Check-out failed',
@@ -456,6 +459,10 @@ export const BookingDetailScreen = ({ navigation, route }: Props) => {
             </View>
           </View>
         </View>
+
+        {booking.status === 'completed' && (booking.canSubmitFeedback || booking.feedbackSummary) ? (
+          <BookingFeedbackSection key={booking._id} bookingId={booking._id} canSubmit={booking.canSubmitFeedback === true} />
+        ) : null}
 
         {canExtend || canCancel ? (
           <View style={styles.managementRow}>

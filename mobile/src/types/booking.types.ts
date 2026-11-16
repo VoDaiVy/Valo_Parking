@@ -1,4 +1,5 @@
 import type { Vehicle } from './models';
+import type { FeedbackSummary } from './feedback.types';
 
 export type BookingStatus =
   | 'pending'
@@ -98,6 +99,8 @@ export interface Session {
 }
 
 export interface Booking {
+  feedbackSummary?: FeedbackSummary | null;
+  canSubmitFeedback?: boolean;
   _id: string;
   userId: string;
   floorId: ParkingFloor | string;

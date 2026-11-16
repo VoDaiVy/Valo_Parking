@@ -1643,7 +1643,8 @@ exports.getMyBookings = async (req, res, next) => {
         { licensePlate: { $in: myVehicles } }
       ]
     }).sort({ createdAt: -1 }).populate('floorId', 'name floorNumber');
-    res.status(200).json({ success: true, data: bookings });
+    const data = await require('../services/feedbackService').attachFeedbackSummaries(bookings, req.user._id);
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error getMyBookings:', error);
     next(error);
@@ -1960,6 +1961,7 @@ exports.checkOutBooking = async (req, res, next) => {
     if (!session) {
       return res.status(404).json({ success: false, message: 'No active parking session found for this booking' });
     }
+    Session.assertNoActiveServiceJobs(session);
 
     const now = new Date();
     const previousStatus = booking.status;
@@ -1987,7 +1989,7 @@ exports.checkOutBooking = async (req, res, next) => {
         }
         currentBooking.status = 'COMPLETED';
         const updatedSession = await Session.findOneAndUpdate(
-          { _id: session._id, status: 'active' },
+          Session.checkoutFilter(session._id),
           {
             status: 'completed',
             checkOutTime: now,
@@ -2005,7 +2007,7 @@ exports.checkOutBooking = async (req, res, next) => {
           { new: true, session: mongoSession }
         );
         if (!updatedSession) {
-          throw Object.assign(new Error('Parking session is no longer active'), {
+          throw Object.assign(new Error('Parking session changed or has services in progress. Refresh before checking out.'), {
             statusCode: 409,
           });
         }

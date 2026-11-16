@@ -1,3 +1,5 @@
+import { isMembershipPackageType } from '../../utils/ticketPackageRules';
+
 // Featured plans come from the live catalog; deployments may select preferred records.
 // Override these IDs per deployment without changing card presentation.
 const env = import.meta.env || {};
@@ -9,7 +11,7 @@ export const FEATURED_MEMBERSHIP_PACKAGE_IDS = Object.freeze({
 export function partitionMembershipPlans(packages, featuredIds = FEATURED_MEMBERSHIP_PACKAGE_IDS) {
   const unique = new Map();
   for (const pkg of packages || []) {
-    if (pkg?._id && pkg.isActive === true && ['hourly', 'monthly', 'yearly'].includes(pkg.type)) {
+    if (pkg?._id && pkg.isActive === true && (pkg.type === 'hourly' || isMembershipPackageType(pkg.type))) {
       unique.set(String(pkg._id), pkg);
     }
   }

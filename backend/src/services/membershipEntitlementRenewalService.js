@@ -11,9 +11,11 @@ const MembershipEntitlementRenewal = require('../models/MembershipEntitlementRen
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
 const Slot = require('../models/Slot');
 const Subscription = require('../models/Subscription');
+const { isMembershipPackageType } = require('../utils/ticketPackageRules');
 const Vehicle = require('../models/Vehicle');
 const { validateEntitlementSpace } = require('./membershipSpaceValidationService');
 const walletService = require('./walletService');
+const { grantBenefits } = require('./membershipServiceBenefitService');
 const { recomputeUserMembership } = require('./membershipProjectionService');
 const {
   businessError,
@@ -36,11 +38,12 @@ const getQuote = async (userId, entitlementId, options = {}) => {
   await validateEntitlementSpace(entitlement, userId, { session: options.session });
   if (entitlement.vehicleId && !await Vehicle.exists({ _id: entitlement.vehicleId, owner: userId, status: 'approved' }).session(options.session || null)) throw businessError('The bound vehicle must still be approved and owned by this account.', 'VEHICLE_INELIGIBLE', 409);
   const terms = options.packageSnapshot || entitlement.packageSnapshot;
-  const pkg = terms ? { ...terms, _id: terms.id, price: terms.unitPrice } : entitlement.packageId;
+  const pkg = terms ? { ...terms, _id: terms.id, price: terms.unitPrice }
+    : require('./ticketPackageTerms').restoreLegacyPurchasedDuration(entitlement.packageId, entitlement.packageDurationSnapshot);
   const pending = await MembershipEntitlementRenewal.exists({ entitlementId, status: 'pending', ...(options.ignoreRenewalId ? { _id: { $ne: options.ignoreRenewalId } } : {}) }).session(options.session || null);
   if (!options.ignoreRenewalId && await require('../models/MembershipEntitlementTransfer').exists({ entitlementId, status: { $in: ['PENDING_RECIPIENT', 'PENDING_ADMIN', 'LISTED', 'AWAITING_PAYMENT'] } }).session(options.session || null)) throw businessError('Close the open transfer before renewing this space.', 'TRANSFER_OPEN', 409);
   if (pending) throw businessError('A renewal payment is already pending for this space.', 'RENEWAL_ALREADY_PENDING', 409);
-  if (!pkg || pkg.isRenewable === false || !['monthly', 'yearly'].includes(pkg.type)) {
+  if (!pkg || pkg.isRenewable === false || !isMembershipPackageType(pkg.type)) {
     throw businessError('This membership space cannot be renewed.', 'PACKAGE_NOT_RENEWABLE');
   }
   const daysUntilExpiration = Math.ceil(
@@ -116,6 +119,11 @@ const publicResult = (renewal, extra = {}) => ({
 
 const activateInTransaction = async ({ renewal, quote, session, walletTransactionId }) => {
   await lockOwner(renewal.userId, session);
+  const stock = require('./ticketPackageStockService');
+  await stock.lockPackage(quote.entitlement.packageId?._id || quote.entitlement.packageId, { session });
+  if (new Date(quote.oldExpireAt) <= new Date()) {
+    await stock.assertAvailable(quote.entitlement.packageId?._id || quote.entitlement.packageId, 1, { session, allowSoldOut: true });
+  }
   await validateEntitlementSpace(quote.entitlement, renewal.userId, { session });
   await assertNoMembershipBookingConflict({ floorId: quote.entitlement.floorId, slotCode: quote.entitlement.slotCode,
     validFrom: quote.oldExpireAt, expireAt: quote.newExpireAt, session });
@@ -135,7 +143,7 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
       $set: {
         expireAt: quote.newExpireAt,
         expireWarningSentAt: null,
-        unitAmount: quote.amount,
+        unitAmount: renewal.amount,
       },
     },
     { new: true, session }
@@ -143,6 +151,7 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
   if (!entitlement) {
     throw businessError('Membership space changed during renewal.', 'ENTITLEMENT_CHANGED', 409);
   }
+  await grantBenefits({ entitlement, terms: entitlement.packageTermsSnapshot, sourceKey: `entitlement-renewal:${renewal._id}`, validFrom: quote.oldExpireAt, expireAt: quote.newExpireAt, session });
   const slotResult = await Slot.updateOne(
     {
       _id: entitlement.slotId,
@@ -169,6 +178,7 @@ const activateInTransaction = async ({ renewal, quote, session, walletTransactio
   renewal.walletTransactionId = walletTransactionId || null;
   await renewal.save({ session });
   await recomputeUserMembership(renewal.userId, { session, rotateQr: true });
+  await stock.refreshPackage(entitlement.packageId, { session });
   return renewal;
 };
 

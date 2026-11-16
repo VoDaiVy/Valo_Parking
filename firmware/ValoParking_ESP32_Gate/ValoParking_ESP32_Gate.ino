@@ -510,18 +510,35 @@ public:
     lastMarqueeUpdate = 0;
   }
 
-  void calibrateSensor() {
-    if (configuredObstacleLevel != SENSOR_AUTO_DETECT) {
+  void printSensorDiagnostic() {
+    int raw = digitalRead(sensorPin);
+    bool isObst = (raw == activeObstacleLevel);
+    Serial.printf("🔍 [SENSOR DIAG] %s (Pin %d): Raw=%d | MucCoXe=%d (%s) | HienTai=%s\n",
+                  name.c_str(), sensorPin, raw, activeObstacleLevel,
+                  (activeObstacleLevel == LOW) ? "Active LOW" : "Active HIGH",
+                  isObst ? "CO VAT CAN (DANG BI CHE)" : "THONG THOANG");
+  }
+
+  void setObstacleLevel(int level) {
+    configuredObstacleLevel = level;
+    activeObstacleLevel = level;
+    sensorBaseline = (activeObstacleLevel == LOW) ? HIGH : LOW;
+    lastRawSensor = digitalRead(sensorPin);
+    printSensorDiagnostic();
+  }
+
+  void calibrateSensor(bool forceAuto = false) {
+    if (!forceAuto && configuredObstacleLevel != SENSOR_AUTO_DETECT) {
       activeObstacleLevel = configuredObstacleLevel;
       sensorBaseline = (activeObstacleLevel == LOW) ? HIGH : LOW;
-      Serial.printf("🎯 [ESP32 CHUẨN CẢM BIẾN] %s (Pin %d): MUC CO XE = %d (%s) | Thong thoang = %d\n",
+      Serial.printf("🎯 [ESP32 CHUẨN CẢM BIẾN] %s (Pin %d): MUC CO XE = %d (%s) | Thong thoang = %d | RawHienTai = %d\n",
                     name.c_str(), sensorPin, activeObstacleLevel,
                     (activeObstacleLevel == LOW) ? "Active LOW (0V khi che)" : "Active HIGH (3.3V khi che)",
-                    sensorBaseline);
+                    sensorBaseline, digitalRead(sensorPin));
       return;
     }
 
-    // Nếu để tự động: Đọc liên tiếp 8 mẫu khi cổng đóng để xác định mức thông thoáng chuẩn (Baseline)
+    // Đọc liên tiếp 8 mẫu khi cổng thông thoáng để xác định Baseline thực tế
     int countHigh = 0;
     for (int i = 0; i < 8; i++) {
       if (digitalRead(sensorPin) == HIGH)
@@ -531,6 +548,7 @@ public:
     sensorBaseline = (countHigh >= 4) ? HIGH : LOW;
 
     activeObstacleLevel = (sensorBaseline == HIGH) ? LOW : HIGH;
+    lastRawSensor = digitalRead(sensorPin);
 
     Serial.printf("🎯 [ESP32 AUTO-SENSOR] %s (Pin %d): Luc thong thoang = %d -> MUC CO XE = %d (%s)\n",
                   name.c_str(), sensorPin, sensorBaseline, activeObstacleLevel,
@@ -663,6 +681,24 @@ public:
     }
   }
 
+  bool checkAntiPinchReverse(bool isManual) {
+    if (!isManual && digitalRead(sensorPin) == activeObstacleLevel) {
+      Serial.printf("\n🚨 [%s-CHỐNG KẸT] >> PHÁT HIỆN VẬT CẢN KHI ĐANG HẠ "
+                    "CẦN! ĐẢO CHIỀU MỞ CẤP TỐC 90 ĐỘ!\n",
+                    name.c_str());
+      servo.write(90);
+      currentServoAngle = 90;
+      currentState = GATE_CAR_UNDER;
+      clearDetectionStart = 0;
+      if (lcd) {
+        lcd->setCursor(0, 1);
+        lcd->print(" OBSTACLE ALERT ");
+      }
+      return true;
+    }
+    return false;
+  }
+
   void close(bool isManual = false) {
     if (currentState == GATE_IDLE_CLOSED && currentServoAngle == 0)
       return;
@@ -687,27 +723,26 @@ public:
       // CHỈ kích hoạt khi đóng tự động (isManual == false).
       // Khi người dùng / admin chủ động bấm nút đóng cổng (isManual == true),
       // luôn hạ cần dứt khoát!
-      if (!isManual && digitalRead(sensorPin) == activeObstacleLevel) {
-        Serial.printf("\n🚨 [%s-CHỐNG KẸT] >> PHÁT HIỆN VẬT CẢN KHI ĐANG HẠ "
-                      "CẦN! ĐẢO CHIỀU MỞ CẤP TỐC 90 ĐỘ!\n",
-                      name.c_str());
-        servo.write(90);
-        currentServoAngle = 90;
-        currentState = GATE_CAR_UNDER;
-        clearDetectionStart = 0;
-        if (lcd) {
-          lcd->setCursor(0, 1);
-          lcd->print(" OBSTACLE ALERT ");
-        }
+      if (checkAntiPinchReverse(isManual)) {
         return;
       }
       servo.write(angle);
       currentServoAngle = angle;
-      delay(15);
+      for (int t = 0; t < 4; t++) {
+        delay(5);
+        if (checkAntiPinchReverse(isManual)) {
+          return;
+        }
+      }
     }
     servo.write(0);
     currentServoAngle = 0;
-    delay(150);
+    for (int t = 0; t < 15; t++) {
+      delay(10);
+      if (checkAntiPinchReverse(isManual)) {
+        return;
+      }
+    }
 
     currentState = GATE_IDLE_CLOSED;
     clearDetectionStart = 0;
@@ -920,8 +955,8 @@ public:
 GateController entryGate("ENTRY_1", ENTRY_SERVO_PIN, ENTRY_SENSOR_PIN, LOW,
                          &lcdEntry);
 
-// Cổng Ra (EXIT_1): Cảm biến Active LOW (Che tay = LOW 0V, Thông thoáng = HIGH 3.3V)
-GateController exitGate("EXIT_1", EXIT_SERVO_PIN, EXIT_SENSOR_PIN, LOW,
+// Cổng Ra (EXIT_1): Cảm biến Active HIGH (Che tay = HIGH 3.3V, Thông thoáng = LOW 0V)
+GateController exitGate("EXIT_1", EXIT_SERVO_PIN, EXIT_SENSOR_PIN, HIGH,
                         &lcdExit);
 
 // ════════════════════════════════════════════════════════════════════
@@ -955,6 +990,8 @@ void setup() {
   // 3. Khởi tạo 2 cổng
   entryGate.init();
   exitGate.init();
+  entryGate.printSensorDiagnostic();
+  exitGate.printSensorDiagnostic();
 
   // 4. Khởi tạo và self-test LCD 3 (Bảng hiển thị công suất bãi xe)
   capacityDisplay.init();
@@ -993,8 +1030,24 @@ void loop() {
 
     if (command == "CALIB" || command == "RECALIB") {
       Serial.println("\n🔄 [ESP32] >> TIEN HANH HIEU CHUAN LAI PHAN CUC CAM BIEN 2 CONG...");
-      entryGate.calibrateSensor();
-      exitGate.calibrateSensor();
+      entryGate.calibrateSensor(true);
+      exitGate.calibrateSensor(true);
+      return;
+    }
+
+    if (command == "SENSORS" || command == "STATUS") {
+      entryGate.printSensorDiagnostic();
+      exitGate.printSensorDiagnostic();
+      return;
+    }
+
+    if (command.startsWith("POLARITY|")) {
+      int level = (command.indexOf("HIGH") != -1) ? HIGH : LOW;
+      if (command.indexOf("EXIT") != -1) {
+        exitGate.setObstacleLevel(level);
+      } else {
+        entryGate.setObstacleLevel(level);
+      }
       return;
     }
 

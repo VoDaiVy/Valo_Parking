@@ -1,14 +1,39 @@
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
 const { packageDuration, salesAvailability } = require('../services/ticketPackageTerms');
+const { getExplorePackages, getExplorePackage } = require('../services/ticketPackageExploreService');
+const {
+  MEMBERSHIP_PACKAGE_TYPES,
+  getPackageDurationDays,
+  getPackageBenefits,
+} = require('../utils/ticketPackageRules');
+
+exports.getExplorePackages = async (req, res, next) => {
+  try {
+    const data = await getExplorePackages(req.query);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getExplorePackage = async (req, res, next) => {
+  try {
+    const data = await getExplorePackage(req.params.id);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // Get active ticket packages (For Customer/Kiosk)
 exports.getActivePackages = async (req, res) => {
   try {
+    await require('../services/ticketPackageStockService').refreshAll();
     const packages = await TicketPackage.find({
       isActive: true,
       service: { $in: ['RESERVED_FREE', 'RESERVED_PAID'] },
-      type: { $in: req.query.includeHourly === 'true' ? ['hourly', 'monthly', 'yearly'] : ['monthly', 'yearly'] },
+      type: { $in: req.query.includeHourly === 'true' ? ['hourly', ...MEMBERSHIP_PACKAGE_TYPES] : MEMBERSHIP_PACKAGE_TYPES },
     }).sort({ type: -1, price: 1 });
     const pricedPackages = packages.map((pkg) => {
       const base = pkg.toObject();
@@ -18,7 +43,14 @@ exports.getActivePackages = async (req, res) => {
         // Compatibility only: these packages still use the reserved-space workflow.
         service: pkg.service,
         serviceConfiguration: pkg.serviceConfiguration,
-        benefits: ['Reserved parking space for the selected vehicle', pkg.service === 'RESERVED_FREE' ? 'Base parking included at the registered space while effective' : 'Parking fees charged at standard rates', 'Additional services charged separately', ...(pkg.optionalServices || []).map((item) => `${item.name} (optional, paid separately)`)],
+        benefits: [
+          'Reserved parking space for the selected vehicle',
+          pkg.service === 'RESERVED_FREE' ? 'Base parking included at the registered space while effective' : 'Parking fees charged at standard rates',
+          ...(pkg.benefitsVersion >= 1 ? getPackageBenefits(pkg) : []),
+          ...(pkg.optionalServices || []).map((item) => `${item.name} (optional, paid separately)`),
+        ],
+        durationDays: getPackageDurationDays(pkg),
+        ...(['monthly', 'yearly'].includes(pkg.type) ? { durationMonths: pkg.type === 'yearly' ? 12 : 1 } : {}),
       };
       const price = {
         basePrice: pkg.price,
@@ -48,12 +80,21 @@ exports.getActivePackages = async (req, res) => {
 // Get all ticket packages (For Admin)
 exports.getAllPackages = async (req, res) => {
   try {
+    const stockService = require('../services/ticketPackageStockService');
+    await stockService.refreshAll();
     const packages = await TicketPackage.find().sort({ createdAt: -1 });
-    res.status(200).json({ success: true, data: packages });
+    const data = await Promise.all(packages.map(async (pkg) => ({ ...pkg.toObject(), stock: await stockService.snapshot(pkg) })));
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error fetching all ticket packages:', error);
     res.status(500).json({ message: 'Server error while fetching ticket packages' });
   }
+};
+
+exports.getPackageBuyers = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await require('../services/ticketPackageStockService').getBuyers(req.params.id, req.query) });
+  } catch (error) { next(error); }
 };
 
 // Get one ticket package detail

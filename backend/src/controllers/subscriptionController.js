@@ -25,6 +25,8 @@ const {
   buildAdminSubscriptionProjection,
 } = require('../services/adminSubscriptionProjectionService');
 const { notifySubscriptionActivatedSafely } = require('../services/aiCopilot/notificationEvents');
+const { buildPackageExpirationDate, getPackageBenefits } = require('../utils/ticketPackageRules');
+const stock = require('../services/ticketPackageStockService');
 
 
 // New Monthly periods are exactly 720 hours; historical timestamps are untouched.
@@ -109,7 +111,9 @@ exports.verifyPayment = async (req, res, next) => {
     if (payment.status !== 'PAID') {
       if (!legacyRenewal && ['CANCELLED', 'FAILED', 'EXPIRED'].includes(payment.status)) {
         const state = 'cancelled';
-        await Subscription.updateOne({ _id: purchase._id, status: 'pending', paymentStatus: 'pending' }, { $set: { status: state, paymentStatus: state } });
+        const closed = await Subscription.findOneAndUpdate({ _id: purchase._id, status: 'pending', paymentStatus: 'pending' },
+          { $set: { status: state, paymentStatus: state } }, { new: true });
+        if (closed?.stockHoldUntil) await stock.release(closed);
       }
       return res.status(409).json({ success: false, code: ['CANCELLED', 'FAILED', 'EXPIRED'].includes(payment.status) ? 'PAYMENT_ORDER_CLOSED' : 'PAYMENT_NOT_COMPLETED', message: 'Payment not completed.' });
     }
@@ -144,10 +148,12 @@ exports.verifyPayment = async (req, res, next) => {
             { $set: { reservedUntil: period.newExpireAt } }, { session: dbSession });
         } else {
           if (current.paymentStatus === 'paid' && current.status !== 'failed' && !needsRepair) return;
-          if (current.packageSnapshot && !current.activatedAt) {
+          if ((current.packageSnapshot || current.packageTermsSnapshot) && !current.activatedAt) {
             current.activatedAt = activationTime;
             current.validFrom = activationTime;
-            current.expireAt = buildExpirationDate(current.packageSnapshot, activationTime);
+            current.expireAt = current.packageSnapshot
+              ? buildExpirationDate(current.packageSnapshot, activationTime)
+              : buildPackageExpirationDate(current.packageTermsSnapshot, activationTime);
           }
         }
         current.paymentStatus = 'paid';
@@ -155,9 +161,9 @@ exports.verifyPayment = async (req, res, next) => {
         current.activationFailureReason = undefined;
         current.reconciliationRequired = false;
         await current.save({ session: dbSession });
-        await activateSubscriptionEntitlements(current, { session: dbSession });
+        await activateSubscriptionEntitlements(current, { session: dbSession, renewal: legacyRenewal });
         const type = current.packageSnapshot?.type || (await TicketPackage.findById(current.ticketPackage).session(dbSession))?.type;
-        if (!legacyRenewal && !current.bindingVersion && type === 'yearly') {
+        if (!legacyRenewal && !current.bindingVersion && !current.packageTermsSnapshot?.benefitsVersion && type === 'yearly') {
           await User.updateOne({ _id: current.user }, { $set: { 'membership.freeServiceCount': 12 } }, { session: dbSession });
         }
       });
@@ -272,6 +278,7 @@ exports.getMembership = async (req, res, next) => {
       ? Math.ceil((expireAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
       : null;
     const purchasedTerms = latestEntitlement?.packageSnapshot || latestSubscription?.packageSnapshot;
+    const serviceTerms = latestEntitlement?.packageTermsSnapshot || latestSubscription?.packageTermsSnapshot;
     const pkg = purchasedTerms ? { ...purchasedTerms, _id: purchasedTerms.id, price: purchasedTerms.unitPrice } :
       latestEntitlement?.packageId ||
       latestSubscription?.ticketPackage ||
@@ -334,11 +341,15 @@ exports.getMembership = async (req, res, next) => {
               type: pkg.type,
               price: pkg.price,
               description: pkg.description,
+              duration: purchasedTerms?.duration,
+              benefitsVersion: serviceTerms?.benefitsVersion || 0,
+              serviceBenefits: serviceTerms?.serviceBenefits || [],
             }
           : null,
         reservedSlots,
         benefits: isActive
-          ? ['Reserved parking spaces', 'See each space for its purchased vehicle and parking benefits']
+          ? ['Reserved parking spaces', 'See each space for its purchased vehicle and parking benefits',
+            ...(serviceTerms?.benefitsVersion >= 1 ? getPackageBenefits(serviceTerms) : [])]
           : [],
         renewal: {
           status: 'manual',

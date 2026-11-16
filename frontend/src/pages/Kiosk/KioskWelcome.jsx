@@ -7,6 +7,7 @@ import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
 import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
+import { useGateCameraConfig } from '../../hooks/useGateCameraConfig';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 const SCAN_ATTEMPTS = 20;
@@ -44,6 +45,12 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const fastPassKeyRef = useRef({ plate: '', key: '' });
+  const { cameraConfig } = useGateCameraConfig();
+  const cameraConfigRef = useRef(cameraConfig);
+
+  useEffect(() => {
+    cameraConfigRef.current = cameraConfig;
+  }, [cameraConfig]);
 
   const getFastPassKey = (plate) => {
     if (fastPassKeyRef.current.plate !== plate) {
@@ -180,7 +187,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   };
 
   const buildScanImageBase64 = async () => {
-    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'entry');
+    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'entry', cameraConfigRef.current);
   };
 
   const formatVietnamesePlate = (plate) => {

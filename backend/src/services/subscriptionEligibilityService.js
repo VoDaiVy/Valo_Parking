@@ -1,6 +1,7 @@
 const { assertNoMembershipBookingConflict } = require('./membershipBookingConflictService');
 const { legacyConflict } = require('./legacyEntitlementCompatibilityService');
-const { snapshotPackage, addConfiguredDuration } = require('./ticketPackageTerms');
+const { snapshotPackage, addConfiguredDuration, restoreLegacyPurchasedDuration } = require('./ticketPackageTerms');
+const { isMembershipPackageType } = require('../utils/ticketPackageRules');
 const { renewalWindowDays: getRenewalWindowDays, isInRenewalWindow } = require('../utils/membershipRenewalWindow');
 const { validateMembershipSpace } = require('./membershipSpaceValidationService');
 const crypto = require('crypto');
@@ -227,7 +228,10 @@ const validateRenewalEligibility = async ({
     if (session) packageQuery = packageQuery.session(session);
     ticketPackage = await packageQuery;
   }
-  if (!ticketPackage || !['monthly', 'yearly'].includes(ticketPackage.type)) {
+  if (!quotedTerms && !subscription.packageSnapshot) {
+    ticketPackage = restoreLegacyPurchasedDuration(ticketPackage, subscription.packageDurationSnapshot);
+  }
+  if (!ticketPackage || !isMembershipPackageType(ticketPackage.type)) {
     throw businessError('Package is not renewable.', 'PACKAGE_NOT_RENEWABLE');
   }
   if (ticketPackage.isRenewable === false) {
