@@ -1625,7 +1625,8 @@ exports.getMyBookings = async (req, res, next) => {
         { licensePlate: { $in: myVehicles } }
       ]
     }).sort({ createdAt: -1 }).populate('floorId', 'name floorNumber');
-    res.status(200).json({ success: true, data: bookings });
+    const data = await require('../services/feedbackService').attachFeedbackSummaries(bookings, req.user._id);
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error getMyBookings:', error);
     next(error);

@@ -17,6 +17,8 @@
     "test:notification": "node src/tests/notificationService.test.js",
     "test:telegram": "node --test src/tests/telegramEventNotifications.unit.test.js src/tests/telegramEventNotifications.integration.test.js src/tests/telegramVoucherDistribution.integration.test.js",
     "test:parking": "node --test src/tests/parkingLayout.unit.test.js src/tests/parkingFloorManagement.integration.test.js",
+    "test:feedback": "node --test src/tests/feedback.unit.test.js src/tests/feedback.integration.test.js src/tests/feedback.routes.test.js",
+    "prepare:feedback": "node src/scripts/prepareBookingFeedback.js",
     "test:vouchers": "node --test src/tests/spendRewards.unit.test.js src/tests/spendRewards.integration.test.js",
     "telegram:webhook": "node src/scripts/telegramWebhook.js",
     "audit:parking-passes": "node src/scripts/auditParkingPasses.js",
