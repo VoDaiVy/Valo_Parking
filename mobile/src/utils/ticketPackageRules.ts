@@ -1,6 +1,9 @@
 import type { SubscriptionPackageType } from '@/types/subscription.types';
 
 export const MEMBERSHIP_PACKAGE_TYPES: readonly string[] = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
+export const SELLABLE_PACKAGE_TYPES = ['weekly', 'monthly', 'yearly', 'custom'] as const;
+export const isSellablePackageType = (type: string | null | undefined): boolean =>
+  SELLABLE_PACKAGE_TYPES.some((value) => value === type);
 
 export const isMembershipPackageType = (type: string | null | undefined): type is SubscriptionPackageType =>
   MEMBERSHIP_PACKAGE_TYPES.includes(type || '');

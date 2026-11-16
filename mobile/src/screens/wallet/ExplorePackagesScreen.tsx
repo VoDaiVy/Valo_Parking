@@ -1,4 +1,4 @@
-import { getPackageDurationLabel } from '@/utils/ticketPackageRules';
+import { getPackageDurationLabel, isSellablePackageType, SELLABLE_PACKAGE_TYPES } from '@/utils/ticketPackageRules';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, type CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -21,7 +21,7 @@ type Props = CompositeScreenProps<
   BottomTabScreenProps<CustomerTabParamList, 'WalletTab'>
 >;
 
-const TYPES: Array<TicketPackageType | 'all'> = ['all', 'hourly', 'daily', 'weekly', 'monthly', 'yearly', 'custom'];
+const TYPES: Array<TicketPackageType | 'all'> = ['all', ...SELLABLE_PACKAGE_TYPES];
 const TYPE_COPY = {
   all: { en: 'All', vi: 'Tất cả' },
   hourly: { en: 'Hourly', vi: 'Theo giờ' },
@@ -59,7 +59,10 @@ export function ExplorePackagesScreen({ navigation }: Props) {
         const response = await ticketPackagesService.getExplore({ type, page, signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!response.success || !response.data) throw new Error(vi ? 'Không thể tải danh sách gói vé.' : 'Unable to load parking packages.');
-        setCatalog(response.data);
+        setCatalog({ ...response.data,
+          featured: response.data.featured.filter((pkg) => isSellablePackageType(pkg.type)),
+          items: response.data.items.filter((pkg) => isSellablePackageType(pkg.type)),
+        });
       } catch (loadError) {
         if (!controller.signal.aborted) setError(loadError instanceof Error ? loadError.message : (vi ? 'Không thể tải danh sách gói vé.' : 'Unable to load parking packages.'));
       } finally {

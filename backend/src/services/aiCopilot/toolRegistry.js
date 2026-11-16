@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { PACKAGE_TYPES } = require('../../utils/ticketPackageRules');
+const { SELLABLE_PACKAGE_TYPES: PACKAGE_TYPES } = require('../../utils/ticketPackageRules');
 const statistics = require('../statisticsService');
 const Session = require('../../models/Session');
 const Slot = require('../../models/Slot');
@@ -158,7 +158,7 @@ const tools = [
     return config ? { ...config, source: 'PricingConfig' } : { ...(await pricingEngine.getActivePricingConfig()), configured: false, source: 'pricingEngine.DEFAULT_CONFIG', note: 'Bảng giá mặc định đang được sử dụng vì DB chưa có cấu hình hoạt động.' };
   }),
   define('get_package_list', 'Danh sách gói vé và số đăng ký thực tế.', emptySchema, noArgs, async () => {
-    const [packages, counts] = await Promise.all([TicketPackage.find().select('name type price description durationDays durationMinutes revision benefitsVersion displayBenefits serviceBenefits isActive maxSlots updatedAt').lean(), Subscription.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: '$ticketPackage', sold: { $sum: 1 } } }])]);
+    const [packages, counts] = await Promise.all([TicketPackage.find({ type: { $in: PACKAGE_TYPES } }).select('name type price description durationDays durationMinutes revision benefitsVersion displayBenefits serviceBenefits isActive maxSlots updatedAt').lean(), Subscription.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: '$ticketPackage', sold: { $sum: 1 } } }])]);
     return packages.map((p) => ({ ...p, sold: counts.find((c) => String(c._id) === String(p._id))?.sold || 0 }));
   }),
   define('get_subscription_stats', 'Read only requested membership KPIs. Expiring Soon uses the dashboard definition: active subscriptions expiring today through Vietnam calendar day 30, without a paid-only filter. Pending Transfers counts PENDING_ADMIN among the dashboard latest 100 transfer reviews, never pending subscriptions. Other sales/renewal KPIs use the requested period. Financial coverage is partial.',
@@ -322,7 +322,7 @@ const tools = [
     passArgs, async (p, actorRole) => readTools.getSubscriptionDetail(p, actorRole)),
 
   define('search_ticket_packages',
-    'Read the complete Ticket Packages catalog by name, description, type or status, including daily/inactive packages. Returns verified details, updatedAt and total count. Read-only; not the public active membership-package subset.',
+    'Read the complete Ticket Packages catalog by name, description, type or status, including inactive supported packages. Returns verified details, updatedAt and total count. Read-only; not the public active membership-package subset.',
     { type: 'object', properties: {
       query: { type: 'string', description: 'Literal name, description, or type search text.' },
       type: { type: 'string', enum: PACKAGE_TYPES },

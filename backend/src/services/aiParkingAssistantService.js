@@ -935,7 +935,7 @@ async function handleTicketPackages(intent, parsed, userId, now) {
     return { message: lines.length ? `Gói VIP của bạn:\n${lines.join('\n')}` : 'Bạn chưa có gói VIP trong tài khoản.', context: {}, showVipModal: false };
   }
   const TicketPackage = require('../models/TicketPackage');
-  const packages = await TicketPackage.find({ isActive: true }).sort({ price: 1 }).lean();
+  const packages = await TicketPackage.find({ isActive: true, type: { $in: require('../utils/ticketPackageRules').SELLABLE_PACKAGE_TYPES } }).sort({ price: 1 }).lean();
   if (!packages.length) {
     return {
       message: 'Hiện chưa có gói vé VIP mở bán. Bạn có thể tiếp tục đặt chỗ theo giờ hoặc liên hệ quản trị viên.',
