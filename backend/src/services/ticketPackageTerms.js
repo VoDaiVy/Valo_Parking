@@ -139,4 +139,4 @@ const assertPaymentMatches = (payment, orderCode, amount) => {
   }
 };
 
-module.exports = { serviceConfiguration, durationForType, packageDuration, restoreLegacyPurchasedDuration, addConfiguredDuration, salesAvailability, catalogSalesAvailability, validatePackageConfiguration, canonicalConfiguration, configurationKey, snapshotPackage, assertPaymentMatches };
+module.exports = { serviceConfiguration, durationForType, packageDuration, addConfiguredDuration, salesAvailability, catalogSalesAvailability, validatePackageConfiguration, canonicalConfiguration, configurationKey, snapshotPackage, assertPaymentMatches };
