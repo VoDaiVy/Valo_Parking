@@ -7,7 +7,7 @@ import {
   Crown,
   Filter,
   Globe2,
-  Car,
+  Mail,
   ParkingCircle,
   RefreshCw,
   Search,
@@ -206,10 +206,10 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
               <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || 'No email'}</p>
             </div>
           </div>
-          <button type="button" onClick={() => onOpen(sub)} className="mt-2 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`View subscription details for ${displayUser?.username || 'Unknown User'}`}>
-            <Car size={14} />
-            {vehicleText}<ChevronRight size={13} />
-          </button>
+          <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500" title={vehicles.join(', ')}>
+            <Mail size={12} />
+            {vehicleText}
+          </p>
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
@@ -736,7 +736,7 @@ export default function SubscriptionManagement() {
               <tbody>{adminVisibleSubscriptions.map((sub, index) => <MembershipRow key={sub._id} sub={sub} index={index} isAdmin onOpen={setDetailMembership} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />)}</tbody>
             </table> : <div className="g3-membership-rows space-y-2">
               {(isAdmin ? visibleSubscriptions : staffVisibleSubscriptions).map((sub, index) => (
-                <MembershipRow key={sub._id} sub={sub} index={index} onOpen={setDetailMembership} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />
+                <MembershipRow key={sub._id} sub={sub} index={index} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />
               ))}
             </div>
           )}
@@ -750,37 +750,26 @@ export default function SubscriptionManagement() {
             <button type="button" aria-label="Next membership page" className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === adminTotalPages} onClick={() => setAdminPage(adminCurrentPage + 1)}>Next &rarr;</button>
           </div>
         </nav>}
-        {detailMembership && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[80]">
-          <div className="fixed inset-0 bg-black/75 backdrop-blur-sm" aria-hidden="true" />
-          <div className="fixed inset-0 overflow-y-auto p-4 sm:p-8">
-            <div className="flex min-h-full items-center justify-center">
-              <DialogPanel className="w-full max-w-2xl overflow-hidden rounded-3xl border border-emerald-300/20 bg-[#0d1418] text-white shadow-2xl">
-                <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-gradient-to-br from-emerald-400/10 to-transparent p-6">
-                  <div><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300"><Crown size={15} /> VIP subscription</p><DialogTitle className="text-2xl font-bold">{detailMembership.ticketPackage?.name || 'Membership details'}</DialogTitle><div className="mt-3"><StatusBadge status={detailMembership.status} /></div></div>
-                  <button type="button" autoFocus onClick={() => setDetailMembership(null)} className="rounded-xl border border-white/10 p-2.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Close membership details"><X size={20} /></button>
-                </div>
-                <div className="space-y-6 p-6">
-                  <div className="flex items-center gap-3"><span className="rounded-xl bg-white/5 p-3 text-slate-400"><UserRound size={22} /></span><div className="min-w-0"><p className="break-words font-bold">{getDisplayUser(detailMembership)?.username || 'Unknown User'}</p><p className="break-all text-sm text-slate-400">{getDisplayUser(detailMembership)?.email || 'No email'}</p></div></div>
-                  <section className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.04] p-4" aria-label="Owner vehicles">
-                    <h3 className="flex items-center gap-2 font-bold text-emerald-200"><Car size={19} /> Vehicles on file <span className="ml-auto rounded-full bg-emerald-300/10 px-2.5 py-0.5 text-sm">{getDisplayUser(detailMembership)?.vehicles?.length || 0}</span></h3>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-400">Vehicles registered to the current owner(s). These are not individual vehicle assignments to this subscription.</p>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">{(getDisplayUser(detailMembership)?.vehicles || []).map((plate, index) => <div key={`${plate}-${index}`} className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#101c21] p-3"><Car size={20} className="shrink-0 text-emerald-300" /><span className="break-all font-mono text-lg font-bold tracking-wider">{plate}</span></div>)}</div>
-                    {!getDisplayUser(detailMembership)?.vehicles?.length && <p className="py-4 text-sm text-slate-400">No vehicle on file.</p>}
-                    {detailMembership.currentOwners?.length > 1 && <div className="mt-3 space-y-2 border-t border-white/10 pt-3">{detailMembership.currentOwners.map((owner, index) => <p key={owner._id || index} className="break-words text-xs text-slate-400">{owner.username || owner.email || 'Unknown owner'}: {owner.vehicles?.join(', ') || 'No vehicle on file'}</p>)}</div>}
-                  </section>
-                  <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-                    {[
-                      ['Package type', titleCase(detailMembership.ticketPackage?.type)],
-                      ['VIP Slots', detailMembership.slots?.map((slot) => `${slot.floorId?.name || 'Floor'} ${slot.slotCode}`).join(', ') || 'Not assigned'],
-                      ['Amount', formatCurrency(detailMembership.amount)],
-                      ['Payment', titleCase(detailMembership.paymentStatus)],
-                      ['Valid from', vipDate(detailMembership.validFrom)],
-                      ['Expires (Vietnam)', vipDate(detailMembership.expireAt)],
-                    ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/5 bg-white/[0.02] p-3"><dt className="text-xs text-slate-400">{label}</dt><dd className="mt-1.5 break-words font-semibold">{value}</dd></div>)}
-                  </dl>
-                </div>
-              </DialogPanel>
-            </div>
+        {isAdmin && detailMembership && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[60]">
+          <div className="fixed inset-0 bg-black/60" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <DialogPanel className="max-h-[85dvh] w-full max-w-xl overflow-auto rounded-2xl border border-white/10 bg-[#171717] p-7 text-white">
+              <div className="mb-5 flex items-center justify-between gap-3"><DialogTitle className="text-xl font-bold">Membership details</DialogTitle><button type="button" onClick={() => setDetailMembership(null)} aria-label="Close membership details"><X size={18} /></button></div>
+              <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                {[
+                  ['Customer', getDisplayUser(detailMembership)?.username || 'Unknown User'],
+                  ['Email', getDisplayUser(detailMembership)?.email || 'No email'],
+                  ['Package', detailMembership.ticketPackage?.name || 'Unknown Package'],
+                  ['VIP Slots', detailMembership.slots?.map((slot) => `${slot.floorId?.name || 'Floor'} ${slot.slotCode}`).join(', ') || 'Not assigned'],
+                  ['Amount', formatCurrency(detailMembership.amount)],
+                  ['Payment', titleCase(detailMembership.paymentStatus)],
+                  ['Valid from', vipDate(detailMembership.validFrom)],
+                  ['Expires (Vietnam)', vipDate(detailMembership.expireAt)],
+                  ['Status', titleCase(detailMembership.status)],
+                  ['Vehicles', getDisplayUser(detailMembership)?.vehicles?.join(', ') || 'No vehicle on file'],
+                ].map(([label, value]) => <div key={label}><dt className="text-slate-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
+              </dl>
+            </DialogPanel>
           </div>
         </Dialog>}
         {!isAdmin && <nav className="staff-membership-pagination g3-pagination" aria-label="Membership pages">

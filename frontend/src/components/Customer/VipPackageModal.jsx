@@ -21,7 +21,6 @@ import { getWalletInfo } from '../../services/walletService';
 import { apiFetch } from '../../services/api';
 import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
 import ParkingMapViewer from '../ParkingMapViewer';
-import { isMembershipPackageType } from '../../utils/ticketPackageRules';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 
 export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
@@ -91,7 +90,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
         if (!active) return;
 
         if (pkgRes.ok && pkgRes.data?.data) {
-          setPackages(pkgRes.data.data.filter((p) => p.isActive && isMembershipPackageType(p.type)));
+          setPackages(pkgRes.data.data.filter((p) => p.isActive));
         }
         if (vRes.ok && vRes.data?.data) {
           const approved = vRes.data.data.filter((v) => v.status === 'approved');
@@ -277,7 +276,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
       const idempotencyKey = purchaseKeys.current.get(context);
 
       if (paymentMethod === 'wallet') {
-        const res = await paySubscriptionWithWallet(selectedPackage._id, slots, price, idempotencyKey, selectedPackage.revision);
+        const res = await paySubscriptionWithWallet(selectedPackage._id, slots, price, idempotencyKey);
         if (res.ok && res.data?.success) {
           setWalletBalance((current) => Math.max(0, current - price));
           finishPurchaseRef.current(res.data?.data);
@@ -290,7 +289,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           setErrorMsg(res.data?.message || 'Unable to pay with the VALO Wallet. Please try again.');
         }
       } else {
-        const res = await createSubscriptionPayment(selectedPackage._id, slots, price, idempotencyKey, selectedPackage.revision);
+        const res = await createSubscriptionPayment(selectedPackage._id, slots, price, idempotencyKey);
         const createdPayment = res.data?.data;
         if (res.ok && createdPayment?.orderCode && (createdPayment.qrCode || createdPayment.checkoutUrl)) {
           setPaymentData(createdPayment);

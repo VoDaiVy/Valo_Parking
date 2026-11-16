@@ -86,8 +86,6 @@ export const NotificationsScreen = ({ navigation }: Props) => {
         tabs.navigate('WalletTab', { screen: 'Rewards' });
       } else if (target.screen === 'Membership') {
         tabs.navigate('WalletTab', { screen: 'Membership' });
-      } else if (target.screen === 'MembershipServices') {
-        tabs.navigate('WalletTab', { screen: 'MembershipServices' });
       } else {
         tabs.navigate('WalletTab', {
           screen: 'MembershipMarketplaceDetail',

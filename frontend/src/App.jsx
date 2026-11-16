@@ -34,7 +34,6 @@ import PolicyManagement from "./pages/Admin/PolicyManagement";
 import SubscriptionManagement from "./pages/Admin/SubscriptionManagement";
 import RevenueAnalytics from "./pages/Admin/RevenueAnalytics";
 import VoucherManagement from "./pages/Admin/VoucherManagement";
-import FeedbackManagement from "./pages/Admin/FeedbackManagement";
 
 // Pages – Staff
 import StaffDashboard from "./pages/Staff/Dashboard";
@@ -49,7 +48,6 @@ import GateControl from "./pages/Staff/GateControl";
 // Pages – Customer
 import CustomerProfile from "./pages/Customer/CustomerProfile";
 import Membership from "./pages/Customer/Membership";
-import MembershipServices from './components/membership/MembershipServices';
 import MembershipHub from "./pages/Customer/MembershipHub";
 import MyVehicles from "./pages/Customer/MyVehicles";
 import WalletPage from "./pages/Wallet/WalletPage";
@@ -146,7 +144,6 @@ export default function App() {
             }
           >
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/feedbacks" element={<FeedbackManagement />} />
             <Route path="/admin/accounts" element={<AccountManagement />} />
             <Route
               path="/admin/vehicle-models"
@@ -209,7 +206,6 @@ export default function App() {
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/staff/tickets" element={<TicketPackages />} />
-            <Route path="/staff/membership-services" element={<MembershipServices staff />} />
           </Route>
 
           {/* ── Customer section ── */}

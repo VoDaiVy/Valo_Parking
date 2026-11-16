@@ -76,7 +76,7 @@ async function notifySubscriptionActivated(subscription, ticketPackage, app) {
     notificationType: 'NEW_SUBSCRIPTION', severity: 'NOTICE',
     targetRoles: ['admin', 'staff'],
     title: `Đăng ký gói VIP mới`,
-    summary: `Khách hàng vừa kích hoạt gói VIP ${ticketPackage?.name || ticketPackage?.type || ''}.`,
+    summary: `Khách hàng vừa kích hoạt gói VIP ${ticketPackage?.type === 'monthly' ? 'Tháng' : 'Năm'}.`,
     entityType: 'subscription', entityId: subscription._id, targetRoute: '/admin/subscriptions',
     evidence: { subscriptionId: subscription._id, status: subscription.status },
     sourceModules: ['Subscription'], detectedAt: new Date(),

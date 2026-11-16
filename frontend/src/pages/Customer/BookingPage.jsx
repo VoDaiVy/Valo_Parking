@@ -1,7 +1,5 @@
 import TelegramReceiptModal from '../../components/TelegramReceiptModal';
 import TelegramReceiptButton from '../../components/TelegramReceiptButton';
-import BookingFeedbackModal from '../../components/Customer/BookingFeedbackModal';
-import { useLocation, useSearchParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -92,10 +90,6 @@ const getBookingTiming = (booking) => {
 };
 
 export default function BookingPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const feedbackLocation = useLocation();
-  const [feedbackBooking, setFeedbackBooking] = useState(null);
-  const linkedBookingId = searchParams.get('bookingId');
   const socket = useSocket();
   const [bookings, setBookings] = useState([]);
   const [floorsById, setFloorsById] = useState({});
@@ -114,13 +108,6 @@ export default function BookingPage() {
   const [cancelDialog, setCancelDialog] = useState(null);
   const [cancelQuoteLoading, setCancelQuoteLoading] = useState('');
   const lastEventRef = useRef(null);
-
-  const activeFeedbackBooking = linkedBookingId ? bookings.find((item) => item._id === linkedBookingId) : feedbackBooking;
-
-  const closeFeedback = () => {
-    setFeedbackBooking(null);
-    if (linkedBookingId) { const next = new URLSearchParams(searchParams); next.delete('bookingId'); setSearchParams(next, { replace: true }); }
-  };
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -438,7 +425,6 @@ export default function BookingPage() {
                     </span>
 
                     <div className="flex flex-wrap lg:justify-end gap-2">
-                      {(booking.canSubmitFeedback || booking.feedbackSummary) && <button type="button" onClick={() => setFeedbackBooking(booking)} className="rounded-xl border border-yellow-300/30 bg-yellow-300/10 px-3 py-2 text-xs font-bold text-yellow-200">{booking.feedbackSummary ? `View feedback · ${booking.feedbackSummary.rating}/5 ★` : 'Rate your experience'}</button>}
                       {['PAID', 'ACTIVE', 'PAUSED'].includes(getBookingStatus(booking)) && (
                         <button
                           type="button"
@@ -503,8 +489,6 @@ export default function BookingPage() {
         )}
       </div>
 
-      {linkedBookingId && !activeFeedbackBooking && <p role="alert" className="mt-4 text-rose-300">The linked booking is unavailable.</p>}
-      {activeFeedbackBooking && <BookingFeedbackModal key={activeFeedbackBooking._id} booking={activeFeedbackBooking} refreshKey={feedbackLocation.key} onClose={closeFeedback} onSubmitted={() => loadData(true)} />}
       {dialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#121212] p-6 shadow-2xl">

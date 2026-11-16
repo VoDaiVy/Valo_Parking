@@ -74,12 +74,6 @@ const activateRenewalInSession = async ({
   await validateRenewalEligibility({ userId, subscriptionId: quote.subscription._id, ignoreRenewalId: renewal._id, now: renewal.createdAt, quotedTerms: renewal.packageSnapshot, session });
   await lockOwner(userId, session);
   await assertRenewalBookingAvailability(quote, session);
-  const stock = require('./ticketPackageStockService');
-  await stock.lockPackage(quote.subscription.ticketPackage?._id || quote.subscription.ticketPackage, { session });
-  if (new Date(quote.currentExpireAt) <= new Date()) {
-    await stock.assertAvailable(quote.subscription.ticketPackage?._id || quote.subscription.ticketPackage, quote.selectedSlots.length, { session, allowSoldOut: true });
-  }
-  await validateRenewalEligibility({ userId, subscriptionId: quote.subscription._id, ignoreRenewalId: renewal._id, session });
   const subscription = await Subscription.findOneAndUpdate(
     {
       _id: quote.subscription._id,
@@ -145,7 +139,6 @@ const activateRenewalInSession = async ({
   renewal.paidAt = new Date();
   await renewal.save({ session });
 
-  await stock.refreshPackage(subscription.ticketPackage, { session });
   return { renewal, subscription };
 };
 

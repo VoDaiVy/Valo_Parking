@@ -1,4 +1,3 @@
-const { PACKAGE_TYPES } = require('../../utils/ticketPackageRules');
 /**
  * readTools.js – Bounded, read-only query functions for VALO AI Copilot.
  *
@@ -69,7 +68,7 @@ const BOOKING_SAFE_SELECT = '_id licensePlate floorId parkingSlot scheduledStart
 const VEHICLE_SAFE_SELECT = '_id licensePlate vehicleType brand model color status nickname isDefault owner createdAt';
 const WALLET_TX_SAFE_SELECT = '_id userId type amount balanceBefore balanceAfter status description refSource createdAt';
 const SUBSCRIPTION_SAFE_SELECT = '_id user ticketPackage slots amount paymentStatus validFrom expireAt status renewalCount lastRenewedAt createdAt';
-const TICKET_PACKAGE_SAFE_SELECT = '_id name type price description durationDays durationMinutes revision benefitsVersion displayBenefits serviceBenefits isActive inactiveReason saleLimit maxSlots renewalWindowDays isRenewable createdAt updatedAt';
+const TICKET_PACKAGE_SAFE_SELECT = '_id name type price description isActive maxSlots renewalWindowDays isRenewable createdAt updatedAt';
 
 function parseDateRange(args) {
   const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -516,7 +515,7 @@ function ticketPackageFilter({ query, type, isActive, status } = {}) {
     filter.$or = ['name', 'description', 'type'].map(field => ({ [field]: pattern }));
   }
   if (type) {
-    if (!PACKAGE_TYPES.includes(type)) throw new Error('Choose a supported ticket package type.');
+    if (!['hourly', 'daily', 'monthly', 'yearly'].includes(type)) throw new Error('Choose an hourly, daily, monthly, or yearly package.');
     filter.type = type;
   }
   if (isActive !== undefined) {

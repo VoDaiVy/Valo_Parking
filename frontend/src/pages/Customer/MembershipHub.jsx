@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import MembershipHistoryDrawer from '../../components/membership/MembershipHistoryDrawer';
 import { ArrowLeftRight, ShoppingBag, History } from "lucide-react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import MembershipTransferMarketplace from "./MembershipTransferMarketplace";
 import MembershipTransfers from "./MembershipTransfers";
-import MembershipServices from '../../components/membership/MembershipServices';
 
 const TABS = [
   {
@@ -25,14 +24,6 @@ export default function MembershipHub() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { hash, key: locationKey } = useLocation();
-  useEffect(() => {
-    if (hash !== '#membership-services') return;
-    const frame = window.requestAnimationFrame(() => {
-      document.getElementById('membership-services')?.scrollIntoView({ block: 'start' });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [hash, locationKey]);
   const activeTab = !searchParams.has("entitlementId") && !searchParams.has("subscriptionId") && searchParams.get("tab") === "marketplace" ? "marketplace" : "transfers";
 
   const changeTab = (tab) => {
@@ -120,7 +111,6 @@ export default function MembershipHub() {
             <MembershipTransfers embedded />
           )}
         </div>
-        <div id="membership-services"><MembershipServices key={locationKey} /></div>
       </div>
     </div>
   );

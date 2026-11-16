@@ -10,13 +10,6 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-
-# Local test files
-tests/
-__tests__/
-*.test.*
-*.spec.*
-
 *.local
 .env
 .env.*

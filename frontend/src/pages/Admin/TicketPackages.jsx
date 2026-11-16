@@ -1,4 +1,10 @@
+import PackageFormSelect from './PackageFormSelect';
+import { defaultPackageDuration, packageDurationLabel as durationLabel, localSalesDate, packageSalesAvailability } from '../../utils/ticketPackageTerms';
+import PackageTermsSummary from '../../components/membership/PackageTermsSummary';
+import { API_BASE } from '../../services/api';
 import { useEffect, useRef, useMemo, useState } from 'react';
+import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
+import './packageDialog.css';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { ticketPackageLinkState, includeLinkedPackage, highlightTicketPackageRow } from './ticketPackageDeepLink.js';
 import {
@@ -9,38 +15,25 @@ import {
   Crown,
   Diamond,
   Edit2,
-  FileText,
-  Gift,
-  Users,
   Info,
   Package,
   Plus,
   RefreshCw,
   Search,
   Tag,
-  Ticket,
   Trash2,
   X,
 } from 'lucide-react';
 import '../Staff/components/staffTicketPackages.css';
 import './ticketPackages.css';
 import AdminSelect from '../../components/Admin/AdminSelect';
-import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker';
-import { defaultPackageDuration, localSalesDate, packageSalesAvailability } from '../../utils/ticketPackageTerms';
-import { getPackageDurationLabel } from '../../utils/ticketPackageRules';
-import { apiFetch } from '../../services/api';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
-import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import {
   getOperationalValue,
   getOperationalViewState,
 } from '../../utils/staffOperationalAvailability';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
-const PARKING_SERVICES = [
-  { value: 'RESERVED_FREE', label: 'Reserved space with base parking included' },
-  { value: 'RESERVED_PAID', label: 'Reserved space with standard parking fees' },
-];
 const dateFormatter = new Intl.DateTimeFormat('vi-VN', {
   day: '2-digit',
   month: '2-digit',
@@ -68,22 +61,6 @@ const TYPE_META = {
     icon: 'border-sky-400/15 bg-sky-400/10 text-sky-300',
     unit: 'daily rate',
   },
-  weekly: {
-    label: 'Weekly',
-    Icon: CalendarClock,
-    rowAccent: 'from-teal-300 to-emerald-500',
-    badge: 'border-teal-400/25 bg-teal-400/10 text-teal-300',
-    icon: 'border-teal-400/15 bg-teal-400/10 text-teal-300',
-    unit: 'weekly rate',
-  },
-  custom: {
-    label: 'Custom',
-    Icon: CalendarClock,
-    rowAccent: 'from-indigo-300 to-blue-500',
-    badge: 'border-indigo-400/25 bg-indigo-400/10 text-indigo-300',
-    icon: 'border-indigo-400/15 bg-indigo-400/10 text-indigo-300',
-    unit: 'package price',
-  },
   monthly: {
     label: 'Monthly',
     Icon: Crown,
@@ -102,19 +79,8 @@ const TYPE_META = {
   },
 };
 
-const KNOWN_TYPES = ['hourly', 'daily', 'weekly', 'monthly', 'yearly', 'custom'];
-
-const toLocalDateTime = (date) => {
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
-const durationRange = (minutes = 43200) => {
-  const start = new Date();
-  start.setSeconds(0, 0);
-  return { durationStart: toLocalDateTime(start), durationEnd: toLocalDateTime(new Date(start.getTime() + minutes * 60000)) };
-};
-const rangeMinutes = (start, end) => start && end ? (new Date(end).getTime() - new Date(start).getTime()) / 60000 : NaN;
-
+const KNOWN_TYPES = ['hourly', 'daily', 'monthly', 'yearly'];
+const serviceLabel = (service) => ({ RESERVED_FREE: 'Reserved space: base parking included', RESERVED_PAID: 'Reserved space: standard parking fees' }[service] || 'Existing purchased terms');
 
 const formatCurrency = (value = 0) => `${currencyFormatter.format(Number(value) || 0)} VND`;
 
@@ -203,42 +169,31 @@ function LoadingSkeleton({ isAdmin }) {
   );
 }
 
-function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }) {
+function PackageRow({ pkg, isAdmin, onEdit, onView, onDelete, index, rowRef }) {
   const meta = getTypeMeta(pkg.type);
   const Icon = meta.Icon;
   const isActive = Boolean(pkg.isActive);
 
   if (isAdmin) return (
-    <tr ref={rowRef} data-package-type={pkg.type} className="admin-package-row" tabIndex={0} aria-label={`View details for ${pkg.name || 'package'}`} aria-haspopup="dialog" onClick={() => onDetails(pkg)} onKeyDown={(event) => {
-      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-        event.preventDefault();
-        onDetails(pkg);
-      }
-    }}>
+    <tr ref={rowRef} data-package-type={pkg.type} className="admin-package-row">
       <td>
         <div className="flex min-w-0 items-center gap-3">
           <Icon size={19} className={`shrink-0 ${meta.icon.split(' ').find((token) => token.startsWith('text-'))}`} aria-hidden="true" />
           <div className="min-w-0">
             <p className="truncate font-semibold text-white" title={pkg.name}>{pkg.name || 'Untitled package'}</p>
             <p className="package-description truncate text-white/40" title={pkg.description}>{pkg.description || 'No description'}</p>
-            {pkg.type !== 'hourly' && <p className="mt-2 whitespace-normal text-xs text-white/60">
-              Limit {pkg.stock?.saleLimit ?? pkg.saleLimit ?? 'Unlimited'} · In use {pkg.stock?.allocatedQuantity ?? '—'} · Payment holds {pkg.stock?.heldQuantity ?? '—'} · Available {pkg.stock?.remainingQuantity ?? (pkg.saleLimit == null ? 'Unlimited' : '—')}
-            </p>}
           </div>
         </div>
       </td>
       <td><span className={`inline-flex rounded-full border px-2.5 py-0.5 ${meta.badge}`}>{meta.label}</span></td>
-      <td><p className="font-semibold text-[#e8d5ad]">{formatCurrency(pkg.price)}</p><p className="package-description text-white/40">{getPackageDurationLabel(pkg)}</p>
-        {pkg.service && <p className="package-description text-white/50">{PARKING_SERVICES.find(option => option.value === pkg.service)?.label}</p>}
-        {pkg.isActive && !packageSalesAvailability(pkg).available && <p className="package-description text-amber-200">{packageSalesAvailability(pkg).message}</p>}
-      </td>
-      <td><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{isActive ? 'Active' : 'Inactive'}</span>{!isActive && <p className="mt-2 text-xs text-white/50">{pkg.inactiveReason === 'SOLD_OUT' ? 'No available spaces' : 'Paused by admin'}</p>}</td>
+      <td><p className="font-semibold text-[#e8d5ad]">{formatCurrency(pkg.price)}</p><p className="package-description text-white/40">{durationLabel(pkg)}</p><p className="package-description text-white/50">{serviceLabel(pkg.service)}</p>{pkg.optionalServices?.length > 0 && <p className="package-description text-white/50">Optional, paid separately: {pkg.optionalServices.map((item) => item.name).join(', ')}</p>}<p className="package-description text-white/50">{packageSalesAvailability(pkg).message}{pkg.salesEndAt ? ` Sales end: ${new Date(pkg.salesEndAt).toLocaleString('en-GB')}` : ''}</p></td>
+      <td><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{isActive ? 'Active' : 'Inactive'}</span></td>
       <td className="text-white/55">{formatPackageDate(pkg.updatedAt || pkg.createdAt)}</td>
       <td>
         <div className="flex items-center justify-end gap-2">
-
-          <button type="button" onClick={(event) => { event.stopPropagation(); onEdit(pkg); }} aria-label={`Edit ${pkg.name || 'package'}`} title={`Edit ${pkg.name || 'package'}`} className="package-edit inline-flex h-8 w-8 items-center justify-center text-[#e8d5ad]/75 hover:text-[#e8d5ad] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e8d5ad]"><Edit2 size={16} /></button>
-          <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(pkg._id); }} aria-label={`Delete ${pkg.name || 'package'}`} title={`Delete ${pkg.name || 'package'}`} className="inline-flex h-8 w-8 items-center justify-center text-red-400 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"><Trash2 size={16} /></button>
+          <button type="button" onClick={() => onView(pkg)} aria-label={`View ${pkg.name}`} title="Package details" className="inline-flex h-8 w-8 items-center justify-center text-white/60 hover:text-[#e8d5ad]"><Info size={16} /></button>
+          <button type="button" onClick={() => onEdit(pkg)} aria-label={`Edit ${pkg.name || 'package'}`} title={`Edit ${pkg.name || 'package'}`} className="package-edit inline-flex h-8 w-8 items-center justify-center text-[#e8d5ad]/75 hover:text-[#e8d5ad] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e8d5ad]"><Edit2 size={16} /></button>
+          <button type="button" onClick={() => onDelete(pkg._id)} aria-label={`Delete ${pkg.name || 'package'}`} title={`Delete ${pkg.name || 'package'}`} className="inline-flex h-8 w-8 items-center justify-center text-red-400 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"><Trash2 size={16} /></button>
         </div>
       </td>
     </tr>
@@ -256,7 +211,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }
             <Icon size={19} />
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-black text-white sm:text-base">{pkg.name || 'Untitled package'}</h3>
+            <h3 className="truncate text-sm font-black text-white sm:text-base"><button type="button" onClick={() => onView(pkg)} className="text-left hover:underline">{pkg.name || 'Untitled package'}</button></h3>
             <p className="mt-1 line-clamp-1 text-xs font-medium text-slate-400">{pkg.description || 'No description'}</p>
           </div>
         </div>
@@ -272,7 +227,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Price</span>
           <div className="text-right md:text-left">
             <p className="font-mono text-sm font-black text-white sm:text-base">{formatCurrency(pkg.price)}</p>
-            <p className="mt-0.5 text-xs font-semibold text-slate-500">{meta.unit}</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">{durationLabel(pkg)}</p><p className="package-description text-white/50">{serviceLabel(pkg.service)}</p>{pkg.optionalServices?.length > 0 && <p className="package-description text-white/50">Optional, paid separately: {pkg.optionalServices.map((item) => item.name).join(', ')}</p>}<p className="package-description text-white/50">{packageSalesAvailability(pkg).message}{pkg.salesEndAt ? ` Sales end: ${new Date(pkg.salesEndAt).toLocaleString('en-GB')}` : ''}</p>
           </div>
         </div>
 
@@ -297,7 +252,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }
           <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-3 md:border-t-0 md:pt-0">
             <button
               type="button"
-              onClick={(event) => { event.stopPropagation(); onEdit(pkg); }}
+              onClick={() => onEdit(pkg)}
               aria-label={`Edit ${pkg.name || 'package'}`}
               title={`Edit ${pkg.name || 'package'}`}
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-400 transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-300/60 motion-reduce:transition-none"
@@ -306,7 +261,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }
             </button>
             <button
               type="button"
-              onClick={(event) => { event.stopPropagation(); onDelete(pkg._id); }}
+              onClick={() => onDelete(pkg._id)}
               aria-label={`Delete ${pkg.name || 'package'}`}
               title={`Delete ${pkg.name || 'package'}`}
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-400/10 bg-red-400/5 text-red-300 transition hover:border-red-400/30 hover:bg-red-500/20 hover:text-red-100 focus:outline-none focus:ring-2 focus:ring-red-300/50 motion-reduce:transition-none"
@@ -332,10 +287,32 @@ export default function TicketPackages() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   const [showModal, setShowModal] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
+  const packageDialogRef = useRef(null);
+  const packageErrorRef = useRef(null);
+  useEffect(() => {
+    if (showModal && error) packageErrorRef.current?.focus();
+  }, [showModal, error]);
+
+  // Follow the visible viewport when a mobile keyboard opens or the page pans.
+  useEffect(() => {
+    if (!showModal || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const syncViewport = () => {
+      packageDialogRef.current?.style.setProperty('--package-viewport-height', `${viewport.height}px`);
+      packageDialogRef.current?.style.setProperty('--package-viewport-top', `${viewport.offsetTop}px`);
+    };
+    syncViewport();
+    viewport.addEventListener('resize', syncViewport);
+    viewport.addEventListener('scroll', syncViewport);
+    return () => {
+      viewport.removeEventListener('resize', syncViewport);
+      viewport.removeEventListener('scroll', syncViewport);
+    };
+  }, [showModal]);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, packageId: null });
   const [editingPackage, setEditingPackage] = useState(null);
-  const [activeChanged, setActiveChanged] = useState(false);
-  const [detailPackage, setDetailPackage] = useState(null);
+  const [saving, setSaving] = useState(false);
   const packageState = getOperationalViewState({ loading, error: loadError });
 
   const [formData, setFormData] = useState({
@@ -344,32 +321,24 @@ export default function TicketPackages() {
     price: '',
     description: '',
     isActive: true,
-    saleLimit: '',
     maxSlots: 3,
+    service: '',
+    duration: defaultPackageDuration('hourly'), salesStartAt: '', salesEndAt: '', optionalServiceIds: [],
     renewalWindowDays: 7,
     isRenewable: true,
-    ...durationRange(),
-    displayBenefitsText: 'Reserved VIP slots\nPriority parking access',
-    serviceBenefits: [],
-    service: 'RESERVED_PAID',
-    duration: null,
-    salesStartAt: '',
-    salesEndAt: '',
-    optionalServiceIds: [],
   });
-  const [benefitServices, setBenefitServices] = useState([]);
-  const [benefitServicesError, setBenefitServicesError] = useState('');
-  const [savingPackage, setSavingPackage] = useState(false);
-  const saveInFlight = useRef(false);
+
+  const [serviceCatalog, setServiceCatalog] = useState([]);
+  const [serviceCatalogError, setServiceCatalogError] = useState('');
   useEffect(() => {
-    let active = true;
-    apiFetch('/services').then((response) => {
-      if (!active) return;
-      if (!response.ok || !response.data?.success) throw new Error('Unable to load services.');
-      setBenefitServices(response.data.data);
-    }).catch((error) => { if (active) setBenefitServicesError(error.message); });
-    return () => { active = false; };
-  }, []);
+    if (!showModal) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/services?activeOnly=false`)
+      .then(async (response) => { const data = await response.json(); if (!response.ok || !data.success) throw new Error('Unable to load services.'); return data.data; })
+      .then((data) => { if (!cancelled) { setServiceCatalog(data); setServiceCatalogError(''); } })
+      .catch(() => { if (!cancelled) setServiceCatalogError('Unable to load the service catalog. Existing selections are preserved.'); });
+    return () => { cancelled = true; };
+  }, [showModal]);
 
   let isAdmin = false;
   try {
@@ -392,7 +361,7 @@ export default function TicketPackages() {
       setLoading(true);
       setLoadError('');
       if (packageLinkKey) setPackageLink({ key: packageLinkKey, status: 'loading' });
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages`, {
+      const res = await fetch(`${API_BASE}/ticket-packages`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
         ...(packageLinkKey ? { cache: 'no-store' } : {}),
       });
@@ -435,9 +404,9 @@ export default function TicketPackages() {
     return () => { window.clearTimeout(timerId); aiRefreshGeneration.current += 1; };
   }, [packageLinkKey]);
 
-  const openModal = (pkg = null) => {
+  const openModal = (pkg = null, readOnly = false) => {
+    setViewOnly(readOnly);
     setError('');
-    setActiveChanged(false);
     if (pkg) {
       setEditingPackage(pkg);
       setFormData({
@@ -446,18 +415,13 @@ export default function TicketPackages() {
         price: pkg.price,
         description: pkg.description || '',
         isActive: pkg.isActive,
-        saleLimit: pkg.saleLimit ?? '',
         maxSlots: pkg.maxSlots ?? 3,
+        service: pkg.service || '',
+        duration: pkg.duration?.value ? pkg.duration : defaultPackageDuration(pkg.type),
+        salesStartAt: localSalesDate(pkg.salesStartAt), salesEndAt: localSalesDate(pkg.salesEndAt),
+        optionalServiceIds: (pkg.optionalServiceIds || []).map(String),
         renewalWindowDays: pkg.renewalWindowDays ?? 7,
         isRenewable: pkg.isRenewable ?? true,
-        ...durationRange(pkg.durationMinutes ?? (pkg.durationDays ?? 30) * 1440),
-        displayBenefitsText: (pkg.benefitsVersion ? pkg.displayBenefits : ['Reserved VIP slots', 'Priority parking access']).join('\n'),
-        serviceBenefits: (pkg.serviceBenefits || []).map((benefit) => ({ serviceId: benefit.serviceId, quantityPerSlot: benefit.quantityPerSlot })),
-        service: pkg.service || '',
-        duration: pkg.duration?.value ? pkg.duration : null,
-        salesStartAt: localSalesDate(pkg.salesStartAt),
-        salesEndAt: localSalesDate(pkg.salesEndAt),
-        optionalServiceIds: (pkg.optionalServiceIds || []).map(String),
       });
     } else {
       setEditingPackage(null);
@@ -467,18 +431,11 @@ export default function TicketPackages() {
         price: '',
         description: '',
         isActive: true,
-        saleLimit: '',
         maxSlots: 3,
+        service: '',
+        duration: defaultPackageDuration('hourly'), salesStartAt: '', salesEndAt: '', optionalServiceIds: [],
         renewalWindowDays: 7,
         isRenewable: true,
-        ...durationRange(),
-        displayBenefitsText: 'Reserved VIP slots\nPriority parking access',
-        serviceBenefits: [],
-        service: 'RESERVED_PAID',
-        duration: null,
-        salesStartAt: '',
-        salesEndAt: '',
-        optionalServiceIds: [],
       });
     }
     setShowModal(true);
@@ -486,42 +443,15 @@ export default function TicketPackages() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (saveInFlight.current || !isAdmin) return;
+    if (saving || viewOnly || !isAdmin) return;
+    setSaving(true);
     setError('');
-    if (formData.type !== 'hourly' && formData.saleLimit !== '' && (!Number.isSafeInteger(Number(formData.saleLimit)) || Number(formData.saleLimit) < 0)) {
-      setError('Membership space limit must be a whole number of 0 or more, or blank for unlimited.');
-      return;
-    }
-    const durationMinutes = rangeMinutes(formData.durationStart, formData.durationEnd);
-    if (formData.type === 'custom' && (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 5256000)) {
-      setError('Choose an end after the start. Custom duration must be between 1 minute and 3650 days.');
-      return;
-    }
-    if (new Set(formData.serviceBenefits.map((benefit) => benefit.serviceId)).size !== formData.serviceBenefits.length) {
-      setError('Select each service once and configure its uses per space.');
-      return;
-    }
-    saveInFlight.current = true;
-    setSavingPackage(true);
     try {
-      const payload = {
-        ...Object.fromEntries(Object.entries(formData).filter(([key]) => !['durationStart', 'durationEnd', 'displayBenefitsText'].includes(key))),
-        price: Number(formData.price),
-        saleLimit: formData.type === 'hourly' || formData.saleLimit === '' ? null : Number(formData.saleLimit),
-        durationDays: null,
-        durationMinutes: formData.type === 'custom' ? durationMinutes : null,
-        duration: formData.type === 'custom' ? null : formData.duration || defaultPackageDuration(formData.type),
+      const payload = { ...formData, price: Number(formData.price),
         salesStartAt: formData.salesStartAt ? new Date(formData.salesStartAt).toISOString() : null,
         salesEndAt: formData.salesEndAt ? new Date(formData.salesEndAt).toISOString() : null,
-        benefitsVersion: 1,
-        displayBenefits: formData.displayBenefitsText.split('\n').map((value) => value.trim()).filter(Boolean),
-        serviceBenefits: formData.serviceBenefits.map((benefit) => ({ serviceId: benefit.serviceId, quantityPerSlot: Number(benefit.quantityPerSlot) })),
       };
       if (!payload.service) delete payload.service;
-      // A sold-out package may reopen after a capacity edit. An untouched
-      // display toggle must not turn its automatic closure into a manual pause.
-      if (editingPackage && !activeChanged) delete payload.isActive;
-      if (editingPackage && activeChanged) payload.manualPause = !formData.isActive;
       const config = {
         headers: {
           'Content-Type': 'application/json',
@@ -530,15 +460,15 @@ export default function TicketPackages() {
       };
 
       const url = editingPackage
-        ? `${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${editingPackage._id}`
-        : `${import.meta.env.VITE_API_BASE_URL}/ticket-packages`;
+        ? `${API_BASE}/ticket-packages/${editingPackage._id}`
+        : `${API_BASE}/ticket-packages`;
       const method = editingPackage ? 'PUT' : 'POST';
 
       const res = await fetch(url, { method, ...config, body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || data.success === false) {
-        setError(data?.message || 'Không thể lưu gói vé. Vui lòng thử lại.');
+        setError(data?.message || 'Unable to save this package.');
         return; // Keep modal open so admin can see the error
       }
 
@@ -546,12 +476,10 @@ export default function TicketPackages() {
       fetchPackages();
     } catch (err) {
       console.error(err);
-      setError('Không thể kết nối đến server. Vui lòng kiểm tra mạng và thử lại.');
-    } finally {
-      saveInFlight.current = false;
-      setSavingPackage(false);
-    }
+      setError('Unable to connect to the server while saving this package.');
+    } finally { setSaving(false); }
   };
+
 
   const handleDelete = (id) => {
     setDeleteModal({ isOpen: true, packageId: id });
@@ -561,14 +489,14 @@ export default function TicketPackages() {
     const { packageId } = deleteModal;
     if (!packageId) return;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/ticket-packages/${packageId}`, {
+      const res = await fetch(`${API_BASE}/ticket-packages/${packageId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || data.success === false) {
-        setError(data?.message || 'Không thể xóa gói vé.');
+        setError(data?.message || 'Unable to delete this package.');
         setDeleteModal({ isOpen: false, packageId: null });
         return;
       }
@@ -576,7 +504,7 @@ export default function TicketPackages() {
       fetchPackages();
     } catch (err) {
       console.error(err);
-      setError('Không thể kết nối đến server khi xóa gói vé.');
+      setError('Unable to connect to the server while deleting this package.');
     } finally {
       setDeleteModal({ isOpen: false, packageId: null });
     }
@@ -665,6 +593,7 @@ export default function TicketPackages() {
           )}
         </header>
 
+        {error && !showModal && <p role="alert" className="mb-4 rounded-lg border border-red-400/25 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
         {loadError && !showModal && (
           <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-red-200 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
@@ -776,7 +705,7 @@ export default function TicketPackages() {
             isAdmin ? <div className="admin-package-table-scroll" tabIndex={0} role="region" aria-label="Ticket packages list">
               <table>
                 <thead><tr>{['Package', 'Type', 'Price', 'Status', 'Last Updated', 'Actions'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
-                <tbody>{visiblePackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} isAdmin={isAdmin} onEdit={openModal} onDelete={handleDelete} onDetails={setDetailPackage} index={index} rowRef={String(pkg._id).toLowerCase() === verifiedPackageId?.toLowerCase() ? linkedRowRef : undefined} />)}</tbody>
+                <tbody>{visiblePackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} isAdmin={isAdmin} onEdit={openModal} onView={(pkg) => openModal(pkg, true)} onDelete={handleDelete} index={index} rowRef={String(pkg._id).toLowerCase() === verifiedPackageId?.toLowerCase() ? linkedRowRef : undefined} />)}</tbody>
               </table>
             </div> : <div className="stp-rows space-y-3">
               {filteredPackages.map((pkg, index) => (
@@ -784,7 +713,7 @@ export default function TicketPackages() {
                   key={pkg._id}
                   pkg={pkg}
                   isAdmin={isAdmin}
-                  onEdit={openModal}
+                  onEdit={openModal} onView={(pkg) => openModal(pkg, true)}
                   onDelete={handleDelete}
                   index={index}
                 />
@@ -822,287 +751,182 @@ export default function TicketPackages() {
           </div>
         </aside>}
 
-        {detailPackage && <Dialog open onClose={() => setDetailPackage(null)} className="package-detail-layer">
-          <div className="package-detail-backdrop" aria-hidden="true" />
-          <div className="package-detail-position">
-            <DialogPanel className="package-detail">
-              <header className="package-detail-header">
-                <span className="package-detail-ticket"><Ticket size={23} aria-hidden="true" /></span>
-                <DialogTitle id="package-detail-title">{detailPackage.name}</DialogTitle>
-                <button type="button" onClick={() => setDetailPackage(null)} aria-label="Close package details" className="package-detail-close"><X size={18} aria-hidden="true" /></button>
-              </header>
-              <div className="package-detail-body">
-                <dl className="package-detail-summary">
-                  <div><dt>Type</dt><dd><span className={`package-detail-type ${TYPE_META[detailPackage.type]?.badge || ''}`}>{TYPE_META[detailPackage.type]?.label || detailPackage.type}</span></dd></div>
-                  <div><dt>Price</dt><dd>{formatCurrency(detailPackage.price)}</dd></div>
-                  <div><dt>Capacity</dt><dd>{detailPackage.saleLimit ?? 'Unlimited'}</dd></div>
-                  <div><dt>Renewal</dt><dd>{detailPackage.isRenewable === false ? 'Off' : `${detailPackage.renewalWindowDays ?? 7} days`}</dd></div>
-                </dl>
-                <div className="package-detail-fields">
-                  <div><h3><Gift size={17} aria-hidden="true" />Benefits</h3><div className="package-detail-value">{(detailPackage.benefitsVersion ? detailPackage.displayBenefits || [] : detailPackage.displayBenefits?.length ? detailPackage.displayBenefits : ['Reserved VIP slots', 'Priority parking access']).join('\n') || '\u2014'}</div></div>
-                  <div><h3><FileText size={17} aria-hidden="true" />Description</h3><div className="package-detail-value">{detailPackage.description || '\u2014'}</div></div>
-                  <div><h3><Users size={17} aria-hidden="true" />Max Slots per Purchase</h3><div className="package-detail-value package-detail-slots">{detailPackage.maxSlots ?? 3}</div></div>
+        <Dialog open={showModal} onClose={() => { if (!saving) setShowModal(false); }} className={`package-dialog${isAdmin && !viewOnly ? ' package-dialog--editor' : ''}`}>
+          <div className="package-dialog-backdrop" aria-hidden="true" />
+          <div ref={packageDialogRef} className="package-dialog-viewport">
+            <DialogPanel className="package-dialog-panel">
+              <header className="package-dialog-header">
+                <div>
+                  <DialogTitle className="package-dialog-title">{viewOnly ? 'Package Details' : editingPackage ? 'Edit Package' : 'Create Package'}</DialogTitle>
+                  <Description className="package-dialog-description">Set parking rates and package availability.</Description>
+                  {isAdmin && !viewOnly && <span className="package-flat-info" tabIndex={0} role="note" aria-label="Package configuration help">Configuration notes <Info size={13} aria-hidden="true" /><span className="package-flat-info-content">Monthly defaults to 720 hours; Yearly defaults to 12 calendar months. Calendar months clamp to the last valid day. Purchased terms are protected: create another package to change a purchased configuration. Active names and configurations must be unique. Sales dates use local time and affect new orders only. Existing benefits, pending PayOS payments and eligible renewals retain their original terms. Inactive stops new purchases. Max Spaces is per purchase, with no global quantity limit.</span></span>}
                 </div>
+                <button type="button" autoFocus onClick={() => setShowModal(false)} className="package-dialog-close" aria-label="Close package dialog"><X size={20} aria-hidden="true" /></button>
+              </header>
+              <form onSubmit={handleSubmit} className="package-dialog-form">
+                <div className="package-dialog-body" role="region" aria-label="Package form fields" tabIndex={0}>
+                <fieldset disabled={viewOnly || saving} className="package-dialog-fields">
+                  {isAdmin && !viewOnly ? <>
+                  {error && <div ref={packageErrorRef} role="alert" tabIndex={-1} className="package-dialog-error">{error}</div>}
+                  <div className="package-flat-column">
+                    <div className="package-dialog-field"><label htmlFor="package-name">Package Name <span aria-hidden="true">*</span></label>
+                      <input id="package-name" name="name" type="text" required maxLength={120} pattern=".*\S.*" title="Enter a package name with at least one non-space character." value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Standard Monthly" />
+                    </div>
+                    <div className="package-dialog-grid">
+                      <div className="package-dialog-field"><label htmlFor="package-type">Type <span aria-hidden="true">*</span></label>
+                        <PackageFormSelect id="package-type" label="Type" value={formData.type} required disabled={saving} onChange={(type) => setFormData({ ...formData, type, duration: defaultPackageDuration(type) })} options={[{ value: 'hourly', label: 'Hourly' }, ...(editingPackage?.type === 'daily' ? [{ value: 'daily', label: 'Daily (legacy)' }] : []), { value: 'monthly', label: 'Monthly' }, { value: 'yearly', label: 'Yearly' }]} />
+                      </div>
+                      <div className="package-dialog-field"><label htmlFor="package-price">Price (VND) <span aria-hidden="true">*</span></label>
+                        <input id="package-price" name="price" type="number" inputMode="numeric" required min="0" step="1" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} placeholder="e.g. 300000" title="Whole VND amounts, minimum 0" />
+                      </div>
+                    </div>
+                    <div className="package-dialog-field"><label htmlFor="package-description">Description <span className="package-dialog-optional">Optional</span></label>
+                      <textarea id="package-description" name="description" rows={2} maxLength={1000} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Add package details" />
+                    </div>
+                    <div className="package-dialog-grid package-flat-separated">
+                      <div className="package-dialog-field"><label htmlFor="package-duration">Duration <span aria-hidden="true">*</span></label>
+                        <input id="package-duration" type="number" required min="1" step="1" value={formData.duration.value} onChange={(e) => setFormData({ ...formData, duration: { ...formData.duration, value: Number(e.target.value) } })} />
+                      </div>
+                      <div className="package-dialog-field"><label htmlFor="package-duration-unit">Duration Unit</label>
+                        <PackageFormSelect id="package-duration-unit" label="Duration unit" disabled={saving} value={formData.duration.unit === 'months' ? 'calendarMonths' : formData.duration.unit} onChange={(unit) => setFormData({ ...formData, duration: { ...formData.duration, unit } })} options={[{ value: 'hours', label: 'Hours' }, { value: 'days', label: 'Days (24 hours)' }, { value: 'calendarMonths', label: 'Calendar months' }]} />
+                      </div>
+                    </div>
+                    <div className="package-dialog-grid">
+                      <div className="package-dialog-field"><label htmlFor="package-slots">Max Spaces <span aria-hidden="true">*</span></label>
+                        <input id="package-slots" name="maxSlots" type="number" inputMode="numeric" required min="1" max="10" step="1" value={formData.maxSlots} onChange={(e) => setFormData({ ...formData, maxSlots: Number(e.target.value) })} title="1-10 spaces per purchase; no global sales quantity limit" />
+                      </div>
+                      <div className="package-dialog-field"><label htmlFor="package-renewal-window">Renewal Window (days) <span aria-hidden="true">*</span></label>
+                        <input id="package-renewal-window" name="renewalWindowDays" type="number" inputMode="numeric" required min="1" max="60" step="1" value={formData.renewalWindowDays} onChange={(e) => setFormData({ ...formData, renewalWindowDays: Number(e.target.value) })} title="1-60 days" />
+                      </div>
+                    </div>
+                    {formData.type === 'hourly' && <p className="package-dialog-hint">Hourly packages do not support renewal.</p>}
+                  </div>
+                  <div className="package-flat-column package-flat-right">
+                    <div className="package-dialog-field"><label htmlFor="package-service">Parking Service <span aria-hidden="true">*</span></label>
+                      <PackageFormSelect id="package-service" label="Parking service" value={formData.service} required={!editingPackage} disabled={saving} placeholder={editingPackage ? 'Existing purchased terms' : 'Select a parking service'} onChange={(service) => setFormData({ ...formData, service })} options={[{ value: '', label: editingPackage ? 'Existing purchased terms' : 'Select a parking service' }, { value: 'RESERVED_FREE', label: 'Reserved space - base parking included' }, { value: 'RESERVED_PAID', label: 'Reserved space - standard parking fees' }]} />
+                    </div>
+                    <div className="package-dialog-field"><label htmlFor="package-optional-services">Optional Services <span className="package-dialog-optional">Paid separately</span></label>
+                      <PackageFormSelect id="package-optional-services" label="Optional services" multiple disabled={saving} value={formData.optionalServiceIds} onChange={(optionalServiceIds) => setFormData({ ...formData, optionalServiceIds })} options={[
+                        ...serviceCatalog.filter((item) => item.isActive || formData.optionalServiceIds.includes(String(item._id))).map((item) => ({ value: String(item._id), label: item.name, detail: item.isActive ? undefined : 'Inactive catalog service' })),
+                        ...formData.optionalServiceIds.filter((id) => !serviceCatalog.some((item) => String(item._id) === id)).map((id) => ({ value: id, label: `Existing service ${id}` })),
+                      ]} />
+                      {serviceCatalogError && <p className="package-dialog-hint" role="alert">{serviceCatalogError}</p>}
+                    </div>
+                    <div className="package-dialog-grid package-flat-separated">
+                      <div className="package-dialog-field"><label htmlFor="package-sales-start">Sales Start <span className="package-dialog-optional">Optional</span></label><input id="package-sales-start" type="datetime-local" value={formData.salesStartAt} onChange={(e) => setFormData({ ...formData, salesStartAt: e.target.value })} title="Local time. Leave blank for no start restriction." /></div>
+                      <div className="package-dialog-field"><label htmlFor="package-sales-end">Sales End <span className="package-dialog-optional">Optional</span></label><input id="package-sales-end" type="datetime-local" value={formData.salesEndAt} min={formData.salesStartAt || undefined} onChange={(e) => setFormData({ ...formData, salesEndAt: e.target.value })} title="Local time. Leave blank for no end restriction." /></div>
+                    </div>
+                    <div className="package-flat-switches package-flat-separated">
+                      <label className="package-dialog-toggle"><input type="checkbox" name="isActive" checked={formData.isActive} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} /><span className="package-dialog-switch" aria-hidden="true" /><span>Active Package</span></label>
+                      <label className="package-dialog-toggle"><input type="checkbox" name="isRenewable" checked={formData.isRenewable} onChange={(e) => setFormData({ ...formData, isRenewable: e.target.checked })} /><span className="package-dialog-switch" aria-hidden="true" /><span>Allow Renewal</span></label>
+                    </div>
+                    <p className="package-flat-summary">{formData.service === 'RESERVED_FREE' ? 'Base parking included at the registered space.' : formData.service === 'RESERVED_PAID' ? 'Standard parking fees apply at the registered space.' : 'Purchased parking benefits remain unchanged.'} Additional services are paid separately.</p>
+                    <p className="package-dialog-hint">Sales dates stop new orders only. Existing benefits remain valid.</p>
+                  </div>
+                  </> : <>
+                  {error && <div ref={packageErrorRef} role="alert" tabIndex={-1} className="package-dialog-error">{error}</div>}
+                  {editingPackage && <p className="package-dialog-hint package-dialog-notice" role="note">Purchased terms are protected. To change a purchased configuration, create a new package and deactivate the original.</p>}
+                  <div className="package-dialog-details">
+                  <div className="package-dialog-field">
+                    <label htmlFor="package-name">Package Name <span aria-hidden="true">*</span></label>
+                    <input id="package-name" name="name" type="text" required maxLength={120} pattern=".*\S.*" title="Enter a package name with at least one non-space character."
+                      value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Standard Hourly" />
+                  </div>
+                  <div className="package-dialog-grid">
+                    <div className="package-dialog-field">
+                      <label htmlFor="package-type">Type <span aria-hidden="true">*</span></label>
+                      <select id="package-type" name="type" required value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value, duration: defaultPackageDuration(e.target.value) })}>
+                        <option value="hourly">Hourly</option>
+                        {editingPackage?.type === 'daily' && <option value="daily">Daily (legacy)</option>}
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+                    <div className="package-dialog-field">
+                      <label htmlFor="package-price">Price (VND) <span aria-hidden="true">*</span></label>
+                      <input id="package-price" name="price" type="number" inputMode="numeric" required min="0" step="1"
+                        value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} placeholder="e.g. 10000" aria-describedby="package-price-hint" />
+                      <p id="package-price-hint" className="package-dialog-hint">Whole VND amounts, minimum 0</p>
+                    </div>
+                  </div>
+                  <div className="package-dialog-field">
+                    <label htmlFor="package-description">Description <span className="package-dialog-optional">Optional</span></label>
+                    <textarea id="package-description" name="description" rows={2} maxLength={1000}
+                      value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Add package details" />
+                  </div>
 
-              </div>
-              <footer className="package-detail-footer">
-                <div className="package-detail-status"><span className={`package-detail-status-switch ${detailPackage.isActive ? 'is-active' : ''}`} aria-hidden="true" /><span>Active Package<span className="sr-only">: {detailPackage.isActive ? 'Active' : 'Inactive'}</span></span></div>
-                <div className="package-detail-actions"><button type="button" onClick={() => setDetailPackage(null)}>Cancel</button><button type="button" onClick={() => { const pkg = detailPackage; setDetailPackage(null); openModal(pkg); }}><Edit2 size={14} aria-hidden="true" /> Edit</button></div>
-              </footer>
+                  <div className="package-dialog-field">
+                    <label htmlFor="package-duration">Duration</label>
+                    <input id="package-duration" type="number" required min="1" step="1" value={formData.duration.value} onChange={(e) => setFormData({ ...formData, duration: { ...formData.duration, value: Number(e.target.value) } })} />
+                    <label htmlFor="package-duration-unit">Duration unit</label>
+                    <select id="package-duration-unit" value={formData.duration.unit === 'months' ? 'calendarMonths' : formData.duration.unit} onChange={(e) => setFormData({ ...formData, duration: { ...formData.duration, unit: e.target.value } })}><option value="hours">Hours</option><option value="days">Days (24 hours)</option><option value="calendarMonths">Calendar months</option></select>
+                    <p className="package-dialog-hint">Hourly packages do not support renewal under the existing renewal policy.</p>
+                    <p className="package-dialog-hint">Legacy defaults: Monthly = 720 hours; Yearly = 12 calendar months. Calendar months clamp to the last valid day. Existing purchases keep their terms.</p>
+                  </div>
+                  <div className="package-dialog-field">
+                    <label htmlFor="package-service">Parking service</label>
+                    <select id="package-service" required={!editingPackage} value={formData.service} onChange={(e) => setFormData({ ...formData, service: e.target.value })}>
+                      <option value="">{editingPackage ? 'Existing purchased terms' : 'Select a parking service'}</option>
+                      <option value="RESERVED_FREE">Reserved space: base parking included</option>
+                      <option value="RESERVED_PAID">Reserved space: standard parking fees</option>
+                    </select>
+                    <p className="package-dialog-hint">Applies only to the selected vehicle and registered space. Additional services are charged separately.</p>
+                  </div>
+                  <div className="package-dialog-grid">
+                    <div className="package-dialog-field"><label htmlFor="package-sales-start">Sales start (optional, local time)</label><input id="package-sales-start" type="datetime-local" value={formData.salesStartAt} onChange={(e) => setFormData({ ...formData, salesStartAt: e.target.value })} /></div>
+                    <div className="package-dialog-field"><label htmlFor="package-sales-end">Sales end (optional, local time)</label><input id="package-sales-end" type="datetime-local" value={formData.salesEndAt} min={formData.salesStartAt || undefined} onChange={(e) => setFormData({ ...formData, salesEndAt: e.target.value })} /></div>
+                  </div>
+                  <p className="package-dialog-hint">Blank dates mean no date restriction. Sales end stops new orders only. Existing benefits and pending PayOS orders remain valid. Eligible renewals use purchased terms regardless of current sales dates or Active status; existing renewal rules still apply.</p>
+                  <div className="package-dialog-field"><label htmlFor="package-optional-services">Optional services (paid separately)</label>
+                    <select id="package-optional-services" multiple value={formData.optionalServiceIds} onChange={(e) => setFormData({ ...formData, optionalServiceIds: Array.from(e.target.selectedOptions, (option) => option.value) })}>
+                      {serviceCatalog.filter((item) => item.isActive || formData.optionalServiceIds.includes(String(item._id))).map((item) => <option key={item._id} value={item._id}>{item.name}{item.isActive ? '' : ' (inactive)'}</option>)}
+                      {formData.optionalServiceIds.filter((id) => !serviceCatalog.some((item) => String(item._id) === id)).map((id) => <option key={id} value={id}>Existing service {id}</option>)}
+                    </select>
+                    {serviceCatalogError && <p role="alert">{serviceCatalogError}</p>}
+                    <p className="package-dialog-hint">Select real catalog services only. These services use the existing booking flow and are charged separately. No free-service quota is included.</p>
+                  </div>
+                  <PackageTermsSummary terms={formData} />
+                  <p className="package-dialog-hint">Active names must be unique. Different Monthly configurations are allowed; exact active configurations are rejected.</p>
+                  </div>
+                  <div className="package-dialog-settings">
+                  <div className="package-dialog-grid">
+                    <div className="package-dialog-field">
+                      <label htmlFor="package-slots">Max spaces per purchase <span aria-hidden="true">*</span></label>
+                      <input id="package-slots" name="maxSlots" type="number" inputMode="numeric" required min="1" max="10" step="1" aria-describedby="package-slots-hint"
+                        value={formData.maxSlots} onChange={(e) => setFormData({ ...formData, maxSlots: Number(e.target.value) })} />
+                      <p id="package-slots-hint" className="package-dialog-hint">1-10 spaces per purchase; no global sales quantity limit.</p>
+                    </div>
+                    <div className="package-dialog-field">
+                      <label htmlFor="package-renewal-window">Renewal Window (days) <span aria-hidden="true">*</span></label>
+                      <input id="package-renewal-window" name="renewalWindowDays" type="number" inputMode="numeric" required min="1" max="60" step="1" aria-describedby="package-renewal-hint"
+                        value={formData.renewalWindowDays} onChange={(e) => setFormData({ ...formData, renewalWindowDays: Number(e.target.value) })} />
+                      <p id="package-renewal-hint" className="package-dialog-hint">1-60 days</p>
+                    </div>
+                  </div>
+                  <div className="package-dialog-toggles">
+                  <label className="package-dialog-toggle">
+                    <input type="checkbox" name="isActive" checked={formData.isActive} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} />
+                    <span className="package-dialog-switch" aria-hidden="true" />
+                    <span>Active Package (off stops new purchases; existing benefits remain)</span>
+                  </label>
+                  <label className="package-dialog-toggle">
+                    <input type="checkbox" name="isRenewable" checked={formData.isRenewable} onChange={(e) => setFormData({ ...formData, isRenewable: e.target.checked })} />
+                    <span className="package-dialog-switch" aria-hidden="true" />
+                    <span>Allow Renewal</span>
+                  </label>
+                  </div>
+                  </div>
+                  </>}
+                </fieldset>
+                </div>
+                <footer className="package-dialog-footer">
+                  <button type="button" onClick={() => setShowModal(false)} className="package-dialog-cancel">Cancel</button>
+                  {!viewOnly && <button type="submit" disabled={saving} className="package-dialog-submit">{saving ? 'Saving...' : editingPackage ? 'Save Package' : 'Create Package'}</button>}
+                </footer>
+              </form>
             </DialogPanel>
           </div>
-        </Dialog>}
-
-        {showModal && (
-          <div className="package-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div role="dialog" aria-modal="true" aria-labelledby="package-modal-title" aria-describedby="package-modal-description" className="package-modal">
-              <div className="package-modal-header">
-                <div>
-                  <h2 id="package-modal-title" className="text-2xl font-black text-white">{editingPackage ? 'Edit Package' : 'Create Package'}</h2>
-                  <p id="package-modal-description">{editingPackage ? 'Update package details and availability.' : 'Set parking rates and package availability.'}</p>
-                </div>
-                <button type="button" onClick={() => setShowModal(false)} className="package-modal-close" aria-label="Close package dialog"><X size={18} aria-hidden="true" /></button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="package-modal-form">
-                <div className="package-modal-body">
-              {error && (
-                <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-semibold text-red-400">
-                  {error}
-                </div>
-              )}
-
-                  <div className="package-form-columns">
-                    <section className="package-form-section" aria-labelledby="package-details-heading">
-                      <h3 id="package-details-heading">Package details</h3>
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Package Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                    placeholder="e.g. Standard Hourly"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Type</label>
-                    <AdminSelect
-                      value={formData.type}
-                      onChange={(nextType) => setFormData({ ...formData, type: nextType, duration: null })}
-                      options={[
-                        { value: 'hourly', label: 'Hourly' },
-                        { value: 'daily', label: 'Daily' },
-                        { value: 'weekly', label: 'Weekly' },
-                        { value: 'monthly', label: 'Monthly' },
-                        { value: 'yearly', label: 'Yearly' },
-                        { value: 'custom', label: 'Custom duration' },
-                      ]}
-                      icon={Tag}
-                      className="w-full"
-                      ariaLabel="Select ticket package type"
-                      menuAnchor="bottom start"
-                      menuClassName="package-select-menu"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Price (VND)</label>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                      placeholder="e.g. 10000"
-                    />
-                  </div>
-                </div>
-
-                <div className="min-w-0">
-                  <label className="mb-2 block text-xs font-bold text-gray-400">Parking service</label>
-                  <AdminSelect value={formData.service} options={editingPackage && !editingPackage.service
-                    ? [{ value: '', label: 'Existing purchased terms' }, ...PARKING_SERVICES] : PARKING_SERVICES}
-                    onChange={service => setFormData(current => ({ ...current, service }))} ariaLabel="Parking service" className="w-full" />
-                </div>
-                {formData.type !== 'custom' && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="text-xs font-bold text-gray-400">Duration
-                      <input type="number" required min="1" step="1" value={(formData.duration || defaultPackageDuration(formData.type)).value}
-                        onChange={event => setFormData(current => ({ ...current, duration: { ...(current.duration || defaultPackageDuration(current.type)), value: Number(event.target.value) } }))}
-                        className="mt-2 w-full rounded-xl border border-white/10 bg-black p-3 text-white" />
-                    </label>
-                    <label className="text-xs font-bold text-gray-400">Duration unit
-                      <select value={(formData.duration || defaultPackageDuration(formData.type)).unit.replace(/^months$/, 'calendarMonths')}
-                        onChange={event => setFormData(current => ({ ...current, duration: { ...(current.duration || defaultPackageDuration(current.type)), unit: event.target.value } }))}
-                        className="mt-2 w-full rounded-xl border border-white/10 bg-black p-3 text-white">
-                        <option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option><option value="calendarMonths">Calendar months</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
-                {formData.type === 'custom' && (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {[['durationStart', 'From date and time'], ['durationEnd', 'To date and time']].map(([field, label]) => (
-                      <div key={field} className="min-w-0 text-xs font-bold text-gray-400">{label}
-                        <AdminDateTimePicker label={label} value={formData[field]} onChange={(value) => setFormData((current) => ({ ...current, [field]: value }))} />
-                      </div>
-                    ))}
-                    <p className="sm:col-span-2 text-sm text-gold" role="status">{(() => {
-                      const minutes = rangeMinutes(formData.durationStart, formData.durationEnd);
-                      return Number.isInteger(minutes) && minutes > 0 && minutes <= 5256000
-                        ? `Total: ${Math.floor(minutes / 1440)} days ${Math.floor(minutes % 1440 / 60)} hours ${minutes % 60} minutes`
-                        : 'Choose an end after the start (maximum 3650 days).';
-                    })()}</p>
-                  </div>
-                )}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {[['salesStartAt', 'Sales start'], ['salesEndAt', 'Sales end']].map(([field, label]) => (
-                    <div key={field} className="min-w-0 text-xs font-bold text-gray-400">{label}
-                      <AdminDateTimePicker label={label} value={formData[field]}
-                        onChange={value => setFormData(current => ({ ...current, [field]: value }))} />
-                      {formData[field] && <button type="button" className="mt-1 text-gold" onClick={() => setFormData(current => ({ ...current, [field]: '' }))}>Clear {label.toLowerCase()}</button>}
-                    </div>
-                  ))}
-                </div>
-
-                <label className="block text-xs font-bold text-gray-400">Benefits (one per line)
-                  <textarea value={formData.displayBenefitsText} onChange={(event) => setFormData({ ...formData, displayBenefitsText: event.target.value })} className="mt-2 min-h-24 w-full rounded-xl border border-white/10 bg-black p-3 text-sm text-white" />
-                </label>
-
-
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="min-h-[80px] w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                    placeholder="Optional description"
-                  />
-                </div>
-
-                    </section>
-                    <section className="package-form-section" aria-labelledby="package-rules-heading">
-                      <h3 id="package-rules-heading">Capacity & renewal</h3>
-                {formData.type !== 'hourly' && <fieldset className="package-capacity space-y-2">
-                  <legend className="px-2 text-sm font-bold text-white">Membership capacity</legend>
-                  <label htmlFor="package-sale-limit" className="block text-xs font-semibold text-gray-300">Total membership spaces for this package</label>
-                  <input id="package-sale-limit" type="number" min="0" step="1" value={formData.saleLimit} onChange={(event) => setFormData({ ...formData, saleLimit: event.target.value })} placeholder="Unlimited" className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white" />
-                  <p className="text-xs leading-5 text-gray-400">Leave blank for unlimited.</p>
-                  {editingPackage?.stock && <p className="text-xs text-yellow-100">In use {editingPackage.stock.allocatedQuantity} · Holds {editingPackage.stock.heldQuantity} · Minimum {editingPackage.stock.allocatedQuantity + editingPackage.stock.heldQuantity}</p>}
-                  {editingPackage?.inactiveReason === 'SOLD_OUT' && <p className="text-xs text-yellow-200">Sold out. Increase capacity to reopen.</p>}
-                </fieldset>}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Max Slots per Purchase</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      max="10"
-                      value={formData.maxSlots}
-                      onChange={(e) => setFormData({ ...formData, maxSlots: Number(e.target.value) })}
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                      placeholder="e.g. 3"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-gray-400">Renewal Window (days)</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      max="60"
-                      value={formData.renewalWindowDays}
-                      onChange={(e) => setFormData({ ...formData, renewalWindowDays: Number(e.target.value) })}
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                      placeholder="e.g. 7"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 py-1">
-                  <label className="relative inline-flex cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      className="peer sr-only"
-                      checked={formData.isRenewable}
-                      onChange={(e) => setFormData({ ...formData, isRenewable: e.target.checked })}
-                    />
-                    <div className="peer h-6 w-11 rounded-full bg-white/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-gold peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
-                    <span className="ml-3 text-sm font-bold text-white">Allow Renewal</span>
-                  </label>
-                </div>
-
-                <fieldset className="package-services">
-                  <legend className="px-2 text-sm font-bold text-white">Included services per space</legend>
-                  {benefitServicesError && <p role="alert" className="text-sm text-red-400">{benefitServicesError}</p>}
-                  {formData.serviceBenefits.map((benefit, index) => (
-                    <div key={index} className="package-service-row">
-                      <AdminSelect ariaLabel={`Service ${index + 1}`} required value={benefit.serviceId}
-                        onChange={(serviceId) => setFormData({ ...formData, serviceBenefits: formData.serviceBenefits.map((item, i) => i === index ? { ...item, serviceId } : item) })}
-                        options={[{ value: '', label: 'Select service' }, ...benefitServices.map((service) => ({ value: service._id, label: service.name }))]}
-                        icon={null} className="package-service-select" menuAnchor="bottom start" menuClassName="package-select-menu" />
-                      <input aria-label={`Uses per space ${index + 1}`} type="number" required min="1" max="10000" step="1" value={benefit.quantityPerSlot} onChange={(event) => setFormData({ ...formData, serviceBenefits: formData.serviceBenefits.map((item, i) => i === index ? { ...item, quantityPerSlot: event.target.value } : item) })} className="w-24 rounded-lg border border-white/10 bg-black p-3 text-white" />
-                      <button type="button" aria-label={`Remove service ${index + 1}`} onClick={() => setFormData({ ...formData, serviceBenefits: formData.serviceBenefits.filter((_, i) => i !== index) })} className="p-3 text-red-400"><Trash2 size={18} /></button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={() => setFormData({ ...formData, serviceBenefits: [...formData.serviceBenefits, { serviceId: '', quantityPerSlot: 1 }] })} className="min-h-11 text-sm font-bold text-gold">+ Add service</button>
-                </fieldset>
-                {benefitServices.length > 0 && <fieldset className="package-services space-y-2">
-                  <legend className="px-2 text-sm font-bold text-white">Optional paid services</legend>
-                  {benefitServices.map(item => (
-                    <label key={item._id} className="flex items-center gap-2 text-xs text-gray-300">
-                      <input type="checkbox" checked={formData.optionalServiceIds.includes(String(item._id))}
-                        onChange={event => setFormData(current => ({ ...current, optionalServiceIds: event.target.checked
-                          ? [...current.optionalServiceIds, String(item._id)]
-                          : current.optionalServiceIds.filter(id => id !== String(item._id)) }))} />
-                      {item.name}
-                    </label>
-                  ))}
-                </fieldset>}
-                    </section>
-                  </div>
-                </div>
-                <div className="package-modal-footer">
-                <div className="package-active-row flex items-center gap-3 py-2">
-                  <label className="relative inline-flex cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      className="peer sr-only"
-                      checked={formData.isActive}
-                      onChange={(e) => { setActiveChanged(true); setFormData({ ...formData, isActive: e.target.checked }); }}
-                    />
-                    <div className="peer h-6 w-11 rounded-full bg-white/10 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-gold peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
-                    <span className="ml-3 text-sm font-bold text-white">Active Package</span>
-                  </label>
-                </div>
-
-                  <div className="package-modal-actions">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 rounded-xl bg-white/5 px-4 py-3 font-bold text-gray-400 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/20"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingPackage}
-                    className="flex-1 rounded-xl bg-gold px-4 py-3 font-bold text-[#0B0E17] shadow-lg shadow-gold/20 transition hover:bg-gold/90 focus:outline-none focus:ring-2 focus:ring-yellow-200/80"
-                  >
-                    {savingPackage ? 'Saving...' : editingPackage ? 'Save Package' : 'Create Package'}
-                  </button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        </Dialog>
       </div>
 
       <ConfirmModal 
@@ -1110,8 +934,8 @@ export default function TicketPackages() {
         onClose={() => setDeleteModal({ isOpen: false, packageId: null })}
         onConfirm={executeDelete}
         title="Delete Package"
-        message="Are you sure you want to delete this package? This action cannot be undone."
-        confirmText="Delete"
+        message="Permanently delete this package? Deletion is allowed only if there are no purchases, payments, entitlements or historical references. To stop new purchases while preserving the package, edit it and turn off Active Package."
+        confirmText="Delete permanently"
         cancelText="Cancel"
         isDestructive={true}
       />

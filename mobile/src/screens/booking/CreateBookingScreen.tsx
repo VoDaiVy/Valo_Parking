@@ -1,4 +1,3 @@
-import { isMembershipPackageType } from '@/utils/ticketPackageRules';
 import type { BookingCartItem } from '@/utils/bookingCart';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -1128,7 +1127,7 @@ export const CreateBookingScreen = ({ navigation, route }: Props) => {
     membership.status === 'active' &&
     membership.expireAt &&
     new Date(membership.expireAt).getTime() > startTime.getTime() &&
-    isMembershipPackageType(membership.package?.type),
+    (membership.package?.type === 'monthly' || membership.package?.type === 'yearly'),
   );
   const selectedSlotIsOwnVipSlot = Boolean(
     activeVipMembership && (selectedSlot || selectedSlotCode) && membership?.expireAt && new Date(membership.expireAt) >= endTime && membership?.reservedSlots.some((slot) => (

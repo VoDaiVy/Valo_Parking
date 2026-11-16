@@ -1,6 +1,5 @@
 export const defaultPackageDuration = (type) => ({
   hourly: { value: 1, unit: 'hours' }, daily: { value: 24, unit: 'hours' },
-  weekly: { value: 7, unit: 'days' },
   monthly: { value: 720, unit: 'hours' }, yearly: { value: 12, unit: 'calendarMonths' },
 }[type] || { value: 1, unit: 'hours' });
 

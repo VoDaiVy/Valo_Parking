@@ -29,7 +29,6 @@ exports.getExplorePackage = async (req, res, next) => {
 // Get active ticket packages (For Customer/Kiosk)
 exports.getActivePackages = async (req, res) => {
   try {
-    await require('../services/ticketPackageStockService').refreshAll();
     const packages = await TicketPackage.find({
       isActive: true,
       ...(req.query.includeLegacy === 'true' ? {} : { service: { $in: ['RESERVED_FREE', 'RESERVED_PAID'] } }),
@@ -81,21 +80,12 @@ exports.getActivePackages = async (req, res) => {
 // Get all ticket packages (For Admin)
 exports.getAllPackages = async (req, res) => {
   try {
-    const stockService = require('../services/ticketPackageStockService');
-    await stockService.refreshAll();
     const packages = await TicketPackage.find().sort({ createdAt: -1 });
-    const data = await Promise.all(packages.map(async (pkg) => ({ ...pkg.toObject(), stock: await stockService.snapshot(pkg) })));
-    res.status(200).json({ success: true, data });
+    res.status(200).json({ success: true, data: packages });
   } catch (error) {
     console.error('Error fetching all ticket packages:', error);
     res.status(500).json({ message: 'Server error while fetching ticket packages' });
   }
-};
-
-exports.getPackageBuyers = async (req, res, next) => {
-  try {
-    res.json({ success: true, data: await require('../services/ticketPackageStockService').getBuyers(req.params.id, req.query) });
-  } catch (error) { next(error); }
 };
 
 // Get one ticket package detail

@@ -559,7 +559,6 @@ async function checkVIPSubscriptions(app) {
       }
       console.log(`[ParkingScheduler] Marked subscription ${expiringSubscription._id} as expired and released owned slots.`);
     }
-    await require('./ticketPackageStockService').refreshAll();
 
   } catch (err) {
     console.error('[ParkingScheduler] Error checking VIP subscriptions:', err.message);
@@ -588,7 +587,6 @@ async function checkPendingSubscriptions() {
     if (pendingCancelResult.modifiedCount > 0) {
       console.log(`[ParkingScheduler] Đã tự động hủy ${pendingCancelResult.modifiedCount} gói đăng ký (Subscription) chờ thanh toán quá 30 phút.`);
     }
-    await require('./ticketPackageStockService').refreshAll();
   } catch (err) {
     console.error('[ParkingScheduler] Lỗi checkPendingSubscriptions:', err.message);
   }

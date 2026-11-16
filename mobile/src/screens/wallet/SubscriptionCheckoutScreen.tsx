@@ -160,10 +160,10 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
     setPolicyRequired(false);
     try {
       if (method === 'wallet') {
-        await subscriptionsService.payWithWallet({ packageId: pkg._id, slots: selectedSlots, idempotencyKey, packageRevision: pkg.revision });
+        await subscriptionsService.payWithWallet({ packageId: pkg._id, slots: selectedSlots, idempotencyKey });
         navigation.navigate('Membership');
       } else {
-        const response = await subscriptionsService.createPayment({ packageId: pkg._id, slots: selectedSlots, idempotencyKey, packageRevision: pkg.revision });
+        const response = await subscriptionsService.createPayment({ packageId: pkg._id, slots: selectedSlots, idempotencyKey });
         navigation.navigate('SubscriptionPaymentStatus', {
           orderCode: response.data.orderCode,
           checkoutUrl: response.data.checkoutUrl,
@@ -203,9 +203,8 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
               <Text style={styles.packageMeta}>{pkg.type === 'monthly' ? '30 days (720 hours)' : '12 calendar months'} / {pkg.service === 'RESERVED_PAID' ? 'Standard parking fees' : 'Base parking included while effective'}</Text>
               <Text style={styles.packagePrice}>{formatCurrency(pkg.price)}</Text>
               <Text style={styles.packageMeta}>{translateUi("Total for selected spaces:")}{" "}{formatCurrency(subscriptionTotal)}</Text>
-              {pkg.serviceBenefits?.map((benefit) => <Text key={benefit.serviceId} style={styles.packageMeta}>{benefit.serviceName}: {benefit.quantityPerSlot} × {selectedSlots.length} = {benefit.quantityPerSlot * selectedSlots.length} uses</Text>)}
               <Text style={styles.packageMeta}>
-                {" "}{translateUi("Estimated expiry after activation:")}{" "}{calculateExpirationDate(pkg.type, new Date(), pkg.durationDays, pkg.durationMinutes, pkg.duration).toLocaleString('vi-VN')}
+                {" "}{translateUi("Expires:")}{" "}{calculateExpirationDate(pkg.type).toLocaleDateString('en-GB')}
               </Text>
             </View>
           ) : (

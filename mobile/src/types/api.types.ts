@@ -1,6 +1,5 @@
 import type { AvailableSlot, Booking, BookingServiceItem, Service, Session } from './booking.types';
 import type { APIResponse, PaginatedResponse } from './api';
-import type { SubscriptionPackageType } from './subscription.types';
 
 export interface GetAvailableSlotsRequest {
   startTime: string;
@@ -9,7 +8,7 @@ export interface GetAvailableSlotsRequest {
 
 export interface BookingMembershipPolicy {
   activeMembership: boolean;
-  membershipType: SubscriptionPackageType | null;
+  membershipType: 'monthly' | 'yearly' | null;
   assignedSlotOccupied: boolean;
   requiresAssignedSlotUse: boolean;
   reservedSlots: Array<{ floorId: string; slotCode: string }>;

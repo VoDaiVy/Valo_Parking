@@ -53,12 +53,6 @@ async function preparePackageConfiguration(payload, excludeId, session) {
 
 async function createPackage(payload, { session, draftId, adminId } = {}) {
   payload = await preparePackageConfiguration(payload, null, session);
-  const stockService = require('./ticketPackageStockService');
-  const { manualPause, ...packagePayload } = payload;
-  payload = packagePayload;
-  const state = stockService.availability({ ...payload }, { remainingQuantity: payload.saleLimit === 0 ? 0 : null }, { creating: true, isActive: payload.isActive, manualPause });
-  payload = { ...payload, ...state };
-  payload = { ...payload, serviceBenefits: await require('./packageTermsService').resolveServiceBenefits(payload.serviceBenefits || [], session) };
   if (payload.name) {
     const trimmedName = String(payload.name).trim();
     const query = TicketPackage.findOne({
@@ -72,7 +66,7 @@ async function createPackage(payload, { session, draftId, adminId } = {}) {
       throw error;
     }
   }
-  const doc = { ...payload, revision: 1, ...(draftId ? { _id: draftId, aiDraftId: draftId } : {}) };
+  const doc = { ...payload, ...(draftId ? { _id: draftId, aiDraftId: draftId } : {}) };
   const [created] = await TicketPackage.create([doc], session ? { session } : {});
   if (adminId) await AdminActionLog.create([{ action: 'Created Ticket Package', target: `${created.name} • ${created.type}`, type: 'create', adminId }], session ? { session } : {});
   return created;
@@ -85,32 +79,6 @@ async function updatePackage(id, payload, { session, expectedUpdatedAt, draftId,
     throw Object.assign(new Error('Purchased package terms are protected. Create a different package and deactivate this one instead.'), { statusCode: 409 });
   }
   payload = await preparePackageConfiguration(payload, id, session);
-  const stockService = require('./ticketPackageStockService');
-  const currentQuery = TicketPackage.findById(id).select('serviceBenefits isActive inactiveReason saleLimit type stockRevision');
-  const current = await (session ? currentQuery.session(session) : currentQuery);
-  if (!current) return null;
-  if (!session && (current.saleLimit != null || payload.saleLimit != null)) {
-    return stockService.transact(null, (dbSession) => updatePackage(id, payload, { session: dbSession, expectedUpdatedAt, draftId, adminId }));
-  }
-  if (session) await stockService.lockPackage(id, { session });
-  const { manualPause, ...packagePayload } = payload;
-  payload = packagePayload;
-  const stock = current.saleLimit != null || payload.saleLimit != null
-    ? await stockService.snapshot({ ...current.toObject(), ...payload }, { session })
-    : { remainingQuantity: null, allocatedQuantity: 0, heldQuantity: 0 };
-  if (payload.saleLimit != null && payload.saleLimit < stock.allocatedQuantity + stock.heldQuantity) {
-    const failure = new Error(`Sale limit cannot be below ${stock.allocatedQuantity + stock.heldQuantity} allocated or held spaces.`);
-    failure.statusCode = 409;
-    throw failure;
-  }
-  if (manualPause === false && stock.remainingQuantity === 0) {
-    throw Object.assign(new Error('Increase package capacity before reopening this package.'), { statusCode: 409 });
-  }
-  payload = { ...payload, ...stockService.availability(current, stock, { manualPause, isActive: payload.isActive }) };
-  const benefitKey = (items) => JSON.stringify((items || []).map((item) => [String(item.serviceId), item.quantityPerSlot]).sort((a, b) => a[0].localeCompare(b[0])));
-  const changedBenefits = benefitKey(current?.serviceBenefits) !== benefitKey(payload.serviceBenefits);
-  const requireActiveServices = payload.isActive !== false && (changedBenefits || current?.isActive === false);
-  payload = { ...payload, serviceBenefits: await require('./packageTermsService').resolveServiceBenefits(payload.serviceBenefits || [], session, requireActiveServices) };
   if (payload.name && payload.isActive !== false) {
     const trimmedName = String(payload.name).trim();
     const query = TicketPackage.findOne({
@@ -129,7 +97,7 @@ async function updatePackage(id, payload, { session, expectedUpdatedAt, draftId,
   filter.updatedAt = expectedUpdatedAt || existing.updatedAt;
   filter.purchaseRevision = existing.purchaseRevision ?? { $exists: false };
   if (draftId) filter.aiAppliedDraftIds = { $ne: draftId };
-  const change = { $set: payload, $inc: { revision: 1 }, ...(draftId ? { $addToSet: { aiAppliedDraftIds: draftId } } : {}) };
+  const change = draftId ? { $set: payload, $addToSet: { aiAppliedDraftIds: draftId } } : { $set: payload };
   const updated = await TicketPackage.findOneAndUpdate(filter, change, { new: true, runValidators: true, ...(session ? { session } : {}) });
   if (!updated) throw Object.assign(new Error('This package changed during the update. Refresh before saving.'), { statusCode: 409 });
   if (updated && adminId) await AdminActionLog.create([{ action: 'Updated Ticket Package', target: `${updated.name} • ${updated.type}`, type: 'update', adminId }], session ? { session } : {});
@@ -376,7 +344,6 @@ async function archivePackageSafely(id, { session, expectedUpdatedAt, adminId } 
 
   // Archiving stops new sales; purchased snapshots and renewals remain intact.
   pkg.isActive = false;
-  pkg.inactiveReason = 'ADMIN_PAUSED';
   await (session ? pkg.save({ session }) : pkg.save());
 
   if (adminId) {

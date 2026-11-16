@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { PACKAGE_TYPES } = require('../../utils/ticketPackageRules');
 const statistics = require('../statisticsService');
 const Session = require('../../models/Session');
 const Slot = require('../../models/Slot');
@@ -158,7 +157,7 @@ const tools = [
     return config ? { ...config, source: 'PricingConfig' } : { ...(await pricingEngine.getActivePricingConfig()), configured: false, source: 'pricingEngine.DEFAULT_CONFIG', note: 'Bảng giá mặc định đang được sử dụng vì DB chưa có cấu hình hoạt động.' };
   }),
   define('get_package_list', 'Danh sách gói vé và số đăng ký thực tế.', emptySchema, noArgs, async () => {
-    const [packages, counts] = await Promise.all([TicketPackage.find().select('name type price description durationDays durationMinutes revision benefitsVersion displayBenefits serviceBenefits isActive maxSlots updatedAt').lean(), Subscription.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: '$ticketPackage', sold: { $sum: 1 } } }])]);
+    const [packages, counts] = await Promise.all([TicketPackage.find().select('name type price description isActive maxSlots updatedAt').lean(), Subscription.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: '$ticketPackage', sold: { $sum: 1 } } }])]);
     return packages.map((p) => ({ ...p, sold: counts.find((c) => String(c._id) === String(p._id))?.sold || 0 }));
   }),
   define('get_subscription_stats', 'Read only requested membership KPIs. Expiring Soon uses the dashboard definition: active subscriptions expiring today through Vietnam calendar day 30, without a paid-only filter. Pending Transfers counts PENDING_ADMIN among the dashboard latest 100 transfer reviews, never pending subscriptions. Other sales/renewal KPIs use the requested period. Financial coverage is partial.',
@@ -325,7 +324,7 @@ const tools = [
     'Read the complete Ticket Packages catalog by name, description, type or status, including daily/inactive packages. Returns verified details, updatedAt and total count. Read-only; not the public active membership-package subset.',
     { type: 'object', properties: {
       query: { type: 'string', description: 'Literal name, description, or type search text.' },
-      type: { type: 'string', enum: PACKAGE_TYPES },
+      type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'] },
       isActive: { type: 'boolean' },
       status: { type: 'string', enum: ['active', 'inactive', 'all'] },
       limit: { type: 'number' },
@@ -333,7 +332,7 @@ const tools = [
   define('get_ticket_package_detail', 'Read exact Ticket Package details by verified ID: name, description, type, price, isActive, updatedAt and renewal configuration. Read-only.',
     { type: 'object', properties: { packageId: { type: 'string' }, name: { type: 'string', description: 'Exact stored package name. Ambiguous names require an ID; never reuse a previous package ID for a newly named package.' } } }, passArgs, async (p) => readTools.getTicketPackageDetail(p)),
   define('get_ticket_package_stats', 'Read inventory statistics for Ticket Packages, with optional search/type/status filters. Counts all matching records, active/inactive totals, counts by type, and latest stored updatedAt. Catalog statistics, not membership subscriptions or revenue.',
-    { type: 'object', properties: { query: { type: 'string' }, type: { type: 'string', enum: PACKAGE_TYPES }, status: { type: 'string', enum: ['active', 'inactive', 'all'] }, isActive: { type: 'boolean' } } }, passArgs, async (p) => readTools.getTicketPackageStatistics(p)),
+    { type: 'object', properties: { query: { type: 'string' }, type: { type: 'string', enum: ['hourly', 'daily', 'monthly', 'yearly'] }, status: { type: 'string', enum: ['active', 'inactive', 'all'] }, isActive: { type: 'boolean' } } }, passArgs, async (p) => readTools.getTicketPackageStatistics(p)),
 
   define('search_services',
     'Search stored services by name/description, price and status. Highest-to-lowest uses sortBy=price sortOrder=desc, before the result limit. For catalog averages use get_service_stats.',

@@ -34,12 +34,6 @@ build/
 # Coverage
 coverage/
 
-# Local test files
-tests/
-__tests__/
-*.test.*
-*.spec.*
-
 # Temp files
 *.tmp
 *.temp

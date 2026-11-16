@@ -23,7 +23,7 @@ import { statisticsService, type AdminSubscriptionStatistics } from '@/services/
 import { staffService, type StaffSubscription } from '@/services/api/staff';
 import { formatCurrency } from '@/utils/formatters';
 
-type Props = NativeStackScreenProps<StaffManagementStackParamList>;
+type Props = NativeStackScreenProps<StaffManagementStackParamList, 'Subscriptions'>;
 const FILTERS = ['all', 'active', 'pending', 'expired', 'cancelled'] as const;
 
 const statusTone = (status: string) => {

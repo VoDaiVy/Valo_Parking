@@ -28,7 +28,6 @@ const TOOLS: Array<{
   metaKey: string;
   tone?: 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'muted';
 }> = [
-  { screen: 'MembershipServices', icon: 'construct-outline', titleKey: 'Membership services', descriptionKey: 'Manage included service requests', metaKey: 'operations', tone: 'brand' },
   { screen: 'BookingScanner', icon: 'qr-code-outline', titleKey: 'staffScanner', descriptionKey: 'staffScannerDesc', metaKey: 'critical', tone: 'success' },
   { screen: 'Bookings', icon: 'calendar-outline', titleKey: 'staffBookings', descriptionKey: 'staffBookingsDesc', metaKey: 'operations', tone: 'brand' },
   { screen: 'TicketPackages', icon: 'ticket-outline', titleKey: 'Ticket packages', descriptionKey: 'Review package duration, vehicle eligibility and parking services.', metaKey: 'Catalog', tone: 'info' },
