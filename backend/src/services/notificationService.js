@@ -73,17 +73,22 @@ async function resolveRecipients(userIds, { requireActive = false } = {}) {
   return normalizedIds;
 }
 
-async function insertRecipientRecords(notificationId, userIds) {
+async function insertRecipientRecords(notificationId, userIds, session) {
   for (let index = 0; index < userIds.length; index += RECIPIENT_BATCH_SIZE) {
     const batch = userIds.slice(index, index + RECIPIENT_BATCH_SIZE).map((userId) => ({
       userId,
       notificationId,
     }));
-    await UserNotification.insertMany(batch, { ordered: true });
+    await UserNotification.insertMany(batch, { ordered: true, ...(session ? { session } : {}) });
   }
 }
 
-async function createWithRecipients(notificationData, userIds) {
+async function createWithRecipients(notificationData, userIds, session) {
+  if (session) {
+    const [notification] = await Notification.create([{ ...notificationData, recipientCount: userIds.length }], { session });
+    await insertRecipientRecords(notification._id, userIds, session);
+    return notification;
+  }
   const notification = await Notification.create({
     ...notificationData,
     recipientCount: userIds.length,
@@ -702,6 +707,8 @@ async function getUserNotifications(userId, filters = {}) {
     pipeline.push({ $match: { 'notification.type': type } });
   }
 
+  if (filters.priority) pipeline.push({ $match: { 'notification.priority': filters.priority } });
+
   // Search filter
   if (search) {
     const searchRegex = new RegExp(escapeRegex(search), 'i');
@@ -717,8 +724,10 @@ async function getUserNotifications(userId, filters = {}) {
 
   // Count total (before pagination)
   const countPipeline = [...pipeline, { $count: 'total' }];
-  const countResult = await UserNotification.aggregate(countPipeline);
-  const total = countResult.length > 0 ? countResult[0].total : 0;
+  const countResult = await UserNotification.aggregate(filters.withStats
+    ? [...pipeline, { $group: { _id: '$notification.priority', total: { $sum: 1 } } }] : countPipeline);
+  const total = countResult.reduce((sum, row) => sum + row.total, 0);
+  const errors = countResult.filter(row => ['ERROR', 'WARNING'].includes(row._id)).reduce((sum, row) => sum + row.total, 0);
 
   // Paginate
   pipeline.push({ $skip: skip });
@@ -746,6 +755,7 @@ async function getUserNotifications(userId, filters = {}) {
 
   return {
     notifications,
+    ...(filters.withStats ? { stats: { totalSent: total, success: total - errors, errors } } : {}),
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -961,6 +971,7 @@ module.exports = {
   resolveRecipients,
   searchEligibleRecipients,
   createForUser,
+  createWithRecipients,
   createForUsers,
   createForAllUsers,
   createForRole,

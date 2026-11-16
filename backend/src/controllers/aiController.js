@@ -282,10 +282,9 @@ exports.getOccupancyForecast = async (req, res, next) => {
     });
   } catch (error) {
     console.error('[AI Forecast] Error generating occupancy forecast:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
-      message: 'Failed to generate occupancy forecast',
-      error: error.message,
+      message: error.statusCode ? error.message : 'Failed to generate occupancy forecast',
     });
   }
 };

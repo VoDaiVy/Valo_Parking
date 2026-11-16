@@ -3,6 +3,8 @@ import { detectBookingInputLanguage } from './aiBookingLanguage.js';
 // These are complete API responses with a known meaning. They must remain
 // readable during booking confirmation even if the translation API is down.
 const vietnameseSystemReplies = [
+  [/^New bookings are restricted for this account\. Please contact support\.?$/i,
+    'Tài khoản này đang bị hạn chế tạo lượt đặt chỗ mới. Bạn vui lòng liên hệ hỗ trợ.'],
   [/^Please accept the latest required policies before continuing\.?$/i,
     'Bạn cần chấp nhận các chính sách bắt buộc mới nhất trong hộp thông báo trước khi đặt chỗ. Sau đó, hãy xác nhận đặt chỗ lại.'],
   [/^This slot is temporarily held\. Please select another slot\.?$/i,

@@ -3030,6 +3030,7 @@ exports.createBulkBooking = async (req, res, next) => {
     for (const bData of bookingsToCreate) {
       const newBooking = new Booking({
         userId: bData.userId,
+        bookingOrderId: newOrder[0]._id,
         vehicleId: bData.vehicleId,
         licensePlate: bData.licensePlate,
         floorId: bData.floorId,

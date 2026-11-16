@@ -163,7 +163,7 @@ export default function App() {
             <Route path="/admin/profile" element={<AdminProfile />} />
             <Route
               path="/admin/notifications"
-              element={<NotificationManagement />}
+              element={<NotificationManagement role="admin" />}
             />
             <Route
               path="/admin/notification-inbox"
@@ -194,7 +194,7 @@ export default function App() {
             <Route path="/staff/profile" element={<StaffProfile />} />
             <Route
               path="/staff/notifications"
-              element={<NotificationManagement />}
+              element={<NotificationManagement role="staff" />}
             />
             <Route
               path="/staff/notification-inbox"

@@ -98,6 +98,12 @@ const startServer = async () => {
     // Connect to MongoDB
     await connectDB();
     await require('./services/parkingInfrastructure').assertParkingInfrastructure();
+    try {
+      const imported = await require('./services/legacyStaffIncidentService').importLegacyStaffIncidents();
+      if (imported) console.log(`[Issue reports] Imported ${imported} legacy Staff reports.`);
+    } catch (error) {
+      console.error('[Issue reports] Legacy import failed:', error.message);
+    }
 
     // Setup Socket.IO
     const io = new Server(httpServer, {

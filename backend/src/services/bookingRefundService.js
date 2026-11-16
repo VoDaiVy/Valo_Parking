@@ -108,7 +108,7 @@ const quoteCancellation = async (booking, asOf = new Date()) => {
     ...input,
     rule: getSnapshotRule(booking),
   });
-  return attachShadowComparison('cancellation', selected, candidate);
+  return { ...attachShadowComparison('cancellation', selected, candidate), minutesBeforeStart };
 };
 
 const quoteNoShow = async (booking) => {
@@ -265,6 +265,11 @@ const settleBookingEvent = async ({
       feeAmount: calculation.feeAmount || 0,
       refundableServiceAmount: calculation.refundableServiceAmount || 0,
       calculationVersion: calculation.calculationVersion || 'refund-engine-v1',
+      ...(eventType === 'cancellation' ? {
+        appliedRefundPercent: calculation.appliedRefundPercent,
+        appliedThresholdMinutes: calculation.appliedThresholdMinutes,
+        minutesBeforeStart: calculation.minutesBeforeStart,
+      } : {}),
       payoutStatus,
       suppressionReason,
       walletTransactionId,

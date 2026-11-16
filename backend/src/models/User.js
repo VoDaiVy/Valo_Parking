@@ -41,6 +41,12 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true, // true = active, false = inactive
     },
+    bookingRestriction: {
+      blocked: { type: Boolean, default: false },
+      reason: { type: String, maxlength: 500 },
+      changedAt: Date,
+      changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    },
     membership: {
       isVip: { type: Boolean, default: false },
       expireAt: { type: Date, default: null },

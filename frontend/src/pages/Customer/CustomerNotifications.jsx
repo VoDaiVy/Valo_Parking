@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Search, ChevronDown } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import NotificationItem from '../../components/notifications/NotificationItem';
-import { getSafeStaffDeepLink } from '../../utils/staffDeepLink';
+import { getIssueReportLink, getSafeStaffDeepLink } from '../../utils/staffDeepLink';
 
 const TYPE_FILTERS = [
   { value: '', label: 'All' },
@@ -155,6 +155,9 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
                       openNotification(n);
                     } else if (contextRole === 'staff') {
                       const destination = getSafeStaffDeepLink(n);
+                      if (destination) navigate(destination);
+                    } else if (contextRole === 'admin') {
+                      const destination = getIssueReportLink(n, contextRole);
                       if (destination) navigate(destination);
                     }
                   }}
