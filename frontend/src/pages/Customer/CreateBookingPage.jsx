@@ -694,6 +694,7 @@ export default function CreateBookingPage() {
   const slotsRequestIdRef = useRef(0);
   const quoteRequestIdRef = useRef(0);
   const checkoutIdempotencyKeyRef = useRef(createClientItemId());
+  const bookingEditorRef = useRef(null);
   const [initialRange] = useState(() => getInitialTimeRange());
   const [startDate, setStartDate] = useState(() => initialRange.startTime.split('T')[0]);
   const [startTimeStr, setStartTimeStr] = useState(() => initialRange.startTime.split('T')[1]);
@@ -1005,7 +1006,17 @@ export default function CreateBookingPage() {
     [effectiveSelectedServices, freeServiceId, services]
   );
 
-  const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey);
+  const editingCartItem = editingClientItemId
+    ? cartItems.find((item) => item.clientItemId === editingClientItemId)
+    : null;
+  const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey)
+    || (editingCartItem && `${editingCartItem.floorId}:${editingCartItem.slotCode}` === selectedSlotKey
+      ? {
+          floorId: editingCartItem.floorId,
+          floorName: editingCartItem.floorName,
+          slotCode: editingCartItem.slotCode,
+        }
+      : null);
   const selectedVehicle = vehicles.find((vehicle) => vehicle._id === vehicleId);
   const {
     activeMembershipType,
@@ -1252,7 +1263,12 @@ export default function CreateBookingPage() {
       if (selectedSlotKey) {
         const [fId, sCode] = selectedSlotKey.split(':');
         const stillAvailable = nextSlots.some(s => s.floorId === fId && s.slotCode === sCode);
-        if (!stillAvailable) {
+        const isCurrentEditingHold = cartItems.some((item) => (
+          item.clientItemId === editingClientItemId
+          && String(item.floorId) === String(fId)
+          && String(item.slotCode) === String(sCode)
+        ));
+        if (!stillAvailable && !isCurrentEditingHold) {
           setSelectedSlotKey('');
         }
       }
@@ -1437,8 +1453,13 @@ export default function CreateBookingPage() {
     setSelectedServices(item.serviceIds || []);
     setSelectedVoucherId(item.voucherId || '');
     setSelectedSlotKey(`${item.floorId}:${item.slotCode}`);
+    setCurrentFloorId(item.floorId);
     setSuccess('');
     setError('');
+
+    window.requestAnimationFrame(() => {
+      bookingEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const handleRemoveCartItem = async (clientItemId) => {
@@ -1766,7 +1787,7 @@ export default function CreateBookingPage() {
           mapActiveHolds={activeHolds}
         /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
-            <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
+            <div ref={bookingEditorRef} className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0 scroll-mt-28">
               <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
