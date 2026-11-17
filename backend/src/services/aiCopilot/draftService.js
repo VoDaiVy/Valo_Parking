@@ -127,6 +127,7 @@ function cleanPayload(type, input) {
     renewalWindowDays = 7,
     isRenewable = true,
   } = input;
+  if (['hourly', 'daily'].includes(packageType)) fail('Chỉ hỗ trợ loại gói weekly, monthly, yearly, custom.');
   if (
     typeof name !== 'string' || !name.trim() || name.length > 120 ||
     !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) ||

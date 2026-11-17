@@ -7,7 +7,7 @@ const schema = new mongoose.Schema({
   vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle', required: true },
   sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
   serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service' },
-  accountingMode: { type: String, enum: ['legacy_reserved', 'consumed_on_start'], default: 'legacy_reserved' },
+  accountingMode: { type: String, enum: ['legacy_reserved', 'consumed_on_start', 'customer_reserved'], default: 'legacy_reserved' },
   startedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   startedAt: Date,
   completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

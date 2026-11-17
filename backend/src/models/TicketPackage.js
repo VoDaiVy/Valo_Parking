@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { PACKAGE_TYPES } = require('../utils/ticketPackageRules');
+const { packageIdentity, IDENTITY_INDEX } = require('../utils/ticketPackageIdentity');
 
 const ticketPackageSchema = new mongoose.Schema(
   {
@@ -12,7 +13,7 @@ const ticketPackageSchema = new mongoose.Schema(
       type: String,
       enum: PACKAGE_TYPES,
       required: true,
-      default: 'hourly',
+      default: 'monthly',
     },
     price: {
       type: Number,
@@ -27,6 +28,7 @@ const ticketPackageSchema = new mongoose.Schema(
       validate: { validator: (value) => value == null || Number.isInteger(value), message: 'Duration must be a whole number of days.' },
     },
     durationMinutes: { type: Number, min: 1, max: 5256000, validate: { validator: (value) => value == null || Number.isInteger(value), message: 'Duration must be whole minutes.' } },
+    identityKey: { type: String },
     revision: { type: Number, default: 0 },
     benefitsVersion: { type: Number, default: 0 },
     displayBenefits: { type: [String], default: [] },
@@ -70,5 +72,9 @@ const ticketPackageSchema = new mongoose.Schema(
 );
 
 ticketPackageSchema.index({ aiDraftId: 1 }, { unique: true, sparse: true });
+ticketPackageSchema.index({ identityKey: 1 }, { unique: true, sparse: true, name: IDENTITY_INDEX });
+ticketPackageSchema.pre('validate', function () {
+  this.identityKey = packageIdentity(this);
+});
 
 module.exports = mongoose.model('TicketPackage', ticketPackageSchema);

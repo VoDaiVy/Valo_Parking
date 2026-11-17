@@ -27,6 +27,7 @@ import './ticketPackages.css';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker';
 import { apiFetch } from '../../services/api';
+import { isSellablePackageType, SELLABLE_PACKAGE_TYPES } from '../../utils/ticketPackageRules';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import {
@@ -96,7 +97,7 @@ const TYPE_META = {
   },
 };
 
-const KNOWN_TYPES = ['hourly', 'daily', 'weekly', 'monthly', 'yearly', 'custom'];
+const KNOWN_TYPES = SELLABLE_PACKAGE_TYPES;
 
 const toLocalDateTime = (date) => {
   const pad = (value) => String(value).padStart(2, '0');
@@ -237,6 +238,17 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef }
 
   return (
     <article
+      role="button"
+      tabIndex={0}
+      aria-label={`View details for ${pkg.name || 'package'}`}
+      aria-haspopup="dialog"
+      onClick={() => onDetails(pkg)}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onDetails(pkg);
+        }
+      }}
       data-package-type={pkg.type} className="stp-row group relative overflow-hidden rounded-2xl border border-white/10 bg-[#111111]/90 transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#151515] motion-reduce:transform-none motion-reduce:transition-none"
       style={{ animationDelay: `${index * 45}ms` }}
     >
@@ -331,7 +343,7 @@ export default function TicketPackages() {
 
   const [formData, setFormData] = useState({
     name: '',
-    type: 'hourly',
+    type: 'monthly',
     price: '',
     description: '',
     isActive: true,
@@ -383,6 +395,7 @@ export default function TicketPackages() {
         ...(packageLinkKey ? { cache: 'no-store' } : {}),
       });
       const data = await res.json();
+      if (Array.isArray(data.data)) data.data = data.data.filter((pkg) => isSellablePackageType(pkg.type));
       if (generation !== aiRefreshGeneration.current) return;
       if (packageLinkKey) setPackageLink({ ...ticketPackageLinkState({ ok: res.ok, status: res.status, data }, packageIdQuery), key: packageLinkKey });
       if (res.ok && data.success && Array.isArray(data.data)) {
@@ -444,7 +457,7 @@ export default function TicketPackages() {
       setEditingPackage(null);
       setFormData({
         name: '',
-        type: 'hourly',
+        type: 'monthly',
         price: '',
         description: '',
         isActive: true,
@@ -570,7 +583,7 @@ export default function TicketPackages() {
   }, [packages]);
 
   const typeOptions = useMemo(() => {
-    const actualTypes = packages.map((pkg) => pkg.type).filter(Boolean);
+    const actualTypes = packages.map((pkg) => pkg.type).filter(isSellablePackageType);
     return Array.from(new Set([...KNOWN_TYPES, ...actualTypes]));
   }, [packages]);
 
@@ -758,6 +771,7 @@ export default function TicketPackages() {
                   isAdmin={isAdmin}
                   onEdit={openModal}
                   onDelete={handleDelete}
+                  onDetails={setDetailPackage}
                   index={index}
                 />
               ))}
@@ -818,8 +832,12 @@ export default function TicketPackages() {
 
               </div>
               <footer className="package-detail-footer">
-                <div className="package-detail-status"><span className={`package-detail-status-switch ${detailPackage.isActive ? 'is-active' : ''}`} aria-hidden="true" /><span>Active Package<span className="sr-only">: {detailPackage.isActive ? 'Active' : 'Inactive'}</span></span></div>
-                <div className="package-detail-actions"><button type="button" onClick={() => setDetailPackage(null)}>Cancel</button><button type="button" onClick={() => { const pkg = detailPackage; setDetailPackage(null); openModal(pkg); }}><Edit2 size={14} aria-hidden="true" /> Edit</button></div>
+                {isAdmin ? (
+                  <div className="package-detail-status"><span className={`package-detail-status-switch ${detailPackage.isActive ? 'is-active' : ''}`} aria-hidden="true" /><span>Active Package<span className="sr-only">: {detailPackage.isActive ? 'Active' : 'Inactive'}</span></span></div>
+                ) : (
+                  <div className="package-detail-status">Status: <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${detailPackage.isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${detailPackage.isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{detailPackage.isActive ? 'Active' : 'Inactive'}</span></div>
+                )}
+                <div className="package-detail-actions"><button type="button" onClick={() => setDetailPackage(null)}>{isAdmin ? 'Cancel' : 'Close'}</button>{isAdmin && <button type="button" onClick={() => { const pkg = detailPackage; setDetailPackage(null); openModal(pkg); }}><Edit2 size={14} aria-hidden="true" /> Edit</button>}</div>
               </footer>
             </DialogPanel>
           </div>
@@ -855,7 +873,7 @@ export default function TicketPackages() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                    placeholder="e.g. Standard Hourly"
+                    placeholder="e.g. Standard Monthly"
                   />
                 </div>
 
@@ -866,8 +884,6 @@ export default function TicketPackages() {
                       value={formData.type}
                       onChange={(nextType) => setFormData({ ...formData, type: nextType })}
                       options={[
-                        { value: 'hourly', label: 'Hourly' },
-                        { value: 'daily', label: 'Daily' },
                         { value: 'weekly', label: 'Weekly' },
                         { value: 'monthly', label: 'Monthly' },
                         { value: 'yearly', label: 'Yearly' },

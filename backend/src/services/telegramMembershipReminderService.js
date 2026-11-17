@@ -1,6 +1,7 @@
 const Subscription = require('../models/Subscription');
 const Entitlement = require('../models/MembershipSlotEntitlement');
 const Package = require('../models/TicketPackage');
+const { isSellablePackageType } = require('../utils/ticketPackageRules');
 const User = require('../models/User');
 const Link = require('../models/TelegramLink');
 const Delivery = require('../models/TelegramDelivery');
@@ -45,7 +46,8 @@ async function currentMembership(record, now) {
     slots = (subscription.slots || []).map(item => item.slotCode);
   }
   const pkg = await Package.findById(packageId).lean();
-  if (!pkg || pkg.isRenewable === false || !['monthly', 'yearly'].includes(pkg.type)) return null;
+  const durationPackage = ownedSpaces?.[0]?.packageDurationSnapshot || subscription.packageDurationSnapshot || pkg;
+  if (!pkg || pkg.isRenewable === false || !isSellablePackageType(durationPackage?.type)) return null;
   if (!await User.exists({ _id: record.membershipOwnerId, status: true, role: 'customer' })) return null;
   const url = renewalUrl(record, entitlementId);
   const buttons = !url ? [] : ownedSpaces?.length > 1

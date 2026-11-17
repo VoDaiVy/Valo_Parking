@@ -369,6 +369,7 @@ exports.transitionMembershipByQr = async (req, res, next) => {
         });
       }
 
+      Session.assertNoActiveServiceJobs(session);
       req.membershipCheckoutAction = {
         subscriptionId: session.subscriptionId, entitlementId: session.entitlementId || null,
         staffId: req.user._id, action: 'CHECK_OUT', reason: input.reason,

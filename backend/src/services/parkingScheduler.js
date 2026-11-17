@@ -604,6 +604,7 @@ function startScheduler(app) {
 
   console.log(`⏰ Parking scheduler started (interval: ${CHECK_INTERVAL_MS / 1000}s)`);
   require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));
+  require('./membershipServiceSelectionService').expirePending(app).catch((error) => console.error('[MembershipServices]', error.message));
 
   // Run immediately on start
   checkActiveSessions(app).catch((err) =>
@@ -629,6 +630,7 @@ function startScheduler(app) {
 
   // Then run every interval
   schedulerInterval = setInterval(() => {
+    require('./membershipServiceSelectionService').expirePending(app).catch((error) => console.error('[MembershipServices]', error.message));
     checkVIPSubscriptions(app).catch((err) => console.error('[ParkingScheduler] Membership window check:', err.message));
     require('./membershipNotifications').retryPending(app).catch((err) => console.error('[MembershipNotifications]', err.message));
     require('./spendRewardService').tick(app).catch((error) => console.error('[SpendRewards]', error.message));

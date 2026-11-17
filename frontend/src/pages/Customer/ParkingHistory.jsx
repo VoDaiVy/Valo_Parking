@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from 'react-router-dom';
+import MembershipServiceSelectionModal from '../../components/membership/MembershipServiceSelectionModal';
 import { apiFetch } from "../../services/api";
 import {
   History,
@@ -19,6 +21,9 @@ import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 
 export default function ParkingHistory() {
+  const [params] = useSearchParams();
+  const [serviceSession, setServiceSession] = useState(null);
+  const openedLink = useRef(null);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -56,6 +61,13 @@ export default function ParkingHistory() {
 
     return () => window.clearTimeout(timerId);
   }, []);
+  useEffect(() => {
+    const linked = sessions.find((s) => s._id === params.get('sessionId'));
+    if (linked?.type !== 'SUBSCRIPTION') return;
+    if (openedLink.current === params.toString()) return;
+    const timer = setTimeout(() => { openedLink.current = params.toString(); setServiceSession(linked); }, 0);
+    return () => clearTimeout(timer);
+  }, [params, sessions]);
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -201,6 +213,9 @@ export default function ParkingHistory() {
               ></div>
 
               <div className="p-5 md:p-6">
+                <span className="mb-3 inline-block rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-300">{({ BOOKING: 'Booking', SUBSCRIPTION: 'Membership', WALK_IN: 'Gửi xe thường' })[session.type] || 'Unknown'}</span>
+                {session.canSelectServices && <button onClick={() => setServiceSession(session)} className="mb-3 ml-3 min-h-11 rounded-lg border border-yellow-500 px-3 text-sm text-yellow-400">Chọn dịch vụ ưu đãi</button>}
+                {(session.serviceSummary?.pending > 0 || session.serviceSummary?.inProgress > 0) && <p className="mb-3 text-sm text-blue-300">{session.serviceSummary.pending} pending · {session.serviceSummary.inProgress} in progress</p>}
                 {/* Card Header */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
                   <div className="flex items-center gap-3 md:gap-4">
@@ -295,6 +310,7 @@ export default function ParkingHistory() {
         </div>
       )}
 
+      {serviceSession && <MembershipServiceSelectionModal key={serviceSession._id} session={serviceSession} onClose={() => setServiceSession(null)} onSaved={fetchHistory} />}
       {selectedSession && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-[#09090d] border border-yellow-500/20 rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.55)]">

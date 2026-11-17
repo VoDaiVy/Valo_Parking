@@ -17,7 +17,7 @@ import { getWalletInfo } from '../../services/walletService';
 import { apiFetch } from '../../services/api';
 import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
 import ParkingMapViewer from '../ParkingMapViewer';
-import { getPackageDurationLabel, getPackageTypeLabel, isMembershipPackageType } from '../../utils/ticketPackageRules';
+import { getPackageDurationLabel, getPackageTypeLabel, isSellablePackageType } from '../../utils/ticketPackageRules';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 
 export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
@@ -75,7 +75,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
         ]);
 
         if (pkgRes.ok && pkgRes.data?.data) {
-          setPackages(pkgRes.data.data.filter((p) => p.isActive && isMembershipPackageType(p.type)));
+          setPackages(pkgRes.data.data.filter((p) => p.isActive && isSellablePackageType(p.type)));
         }
         if (vRes.ok && vRes.data?.data) {
           const approved = vRes.data.data.filter((v) => v.status === 'approved');

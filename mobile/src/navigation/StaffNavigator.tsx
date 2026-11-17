@@ -1,5 +1,6 @@
 import { StaffTicketPackagesScreen } from '@/screens/staff/StaffTicketPackagesScreen';
 import { StaffSubscriptionManagementScreen } from '@/screens/staff/StaffSubscriptionManagementScreen';
+import { MembershipServicesScreen } from '../screens/wallet/MembershipServicesScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
@@ -36,6 +37,7 @@ export type StaffManagementStackParamList = {
   ManagementHome: undefined;
   TicketPackages: undefined;
   Subscriptions: undefined;
+  MembershipServices: { sessionId: string; requestId: string } | undefined;
   Customers: undefined;
   Bookings: undefined;
   BookingScanner: undefined;
@@ -74,6 +76,7 @@ function ManagementStackNavigator() {
       <ManagementStack.Screen name="ParkingOperations" component={StaffParkingOperationsScreen} />
       <ManagementStack.Screen name="TicketPackages" component={StaffTicketPackagesScreen} />
       <ManagementStack.Screen name="Subscriptions" component={StaffSubscriptionManagementScreen} />
+      <ManagementStack.Screen name="MembershipServices" component={MembershipServicesScreen} />
       <ManagementStack.Screen name="Customers" component={CustomerManagementScreen} />
       <ManagementStack.Screen name="Bookings" component={StaffBookingManagementScreen} />
       <ManagementStack.Screen name="BookingScanner" component={StaffBookingQrScreen} />

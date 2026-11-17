@@ -1,11 +1,13 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { MembershipServicesScreen } from '../screens/wallet/MembershipServicesScreen';
 import { WalletScreen }                  from '../screens/wallet/WalletScreen';
 import { RewardsScreen } from '../screens/wallet/RewardsScreen';
 import { TopUpScreen }                   from '../screens/wallet/TopUpScreen';
 import { TransactionHistoryScreen }      from '../screens/wallet/TransactionHistoryScreen';
 import { MembershipScreen }              from '../screens/wallet/MembershipScreen';
 import { SubscriptionPackagesScreen }    from '../screens/wallet/SubscriptionPackagesScreen';
+import { ExplorePackagesScreen } from '../screens/wallet/ExplorePackagesScreen';
 import { SubscriptionCheckoutScreen }    from '../screens/wallet/SubscriptionCheckoutScreen';
 import { SubscriptionPaymentStatusScreen } from '../screens/wallet/SubscriptionPaymentStatusScreen';
 import { MembershipTransferMarketplaceScreen } from '../screens/wallet/MembershipTransferMarketplaceScreen';
@@ -28,10 +30,12 @@ export const WalletStackNavigator = () => (
     <Stack.Screen name="TopUp"                      component={TopUpScreen} />
     <Stack.Screen name="TransactionHistory"         component={TransactionHistoryScreen} />
     <Stack.Screen name="Membership"                 component={MembershipScreen} />
+    <Stack.Screen name="MembershipServices" component={MembershipServicesScreen} />
     <Stack.Screen name="MembershipHub"              component={MembershipHubScreen} />
     <Stack.Screen name="MembershipMarketplace"      component={MembershipTransferMarketplaceScreen} />
     <Stack.Screen name="MembershipMarketplaceDetail" component={MembershipTransferMarketplaceDetailScreen} />
     <Stack.Screen name="SubscriptionPackages"       component={SubscriptionPackagesScreen} />
+    <Stack.Screen name="ExplorePackages" component={ExplorePackagesScreen} />
     <Stack.Screen name="SubscriptionCheckout"       component={SubscriptionCheckoutScreen} />
     <Stack.Screen name="SubscriptionPaymentStatus"  component={SubscriptionPaymentStatusScreen} />
   </Stack.Navigator>

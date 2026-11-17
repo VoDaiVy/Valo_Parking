@@ -1,4 +1,6 @@
 export const MEMBERSHIP_PACKAGE_TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
+export const SELLABLE_PACKAGE_TYPES = ['weekly', 'monthly', 'yearly', 'custom'];
+export const isSellablePackageType = (type) => SELLABLE_PACKAGE_TYPES.includes(type);
 
 export const isMembershipPackageType = (type) => MEMBERSHIP_PACKAGE_TYPES.includes(type);
 

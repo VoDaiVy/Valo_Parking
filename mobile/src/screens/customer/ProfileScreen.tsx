@@ -49,6 +49,12 @@ const MEMBERSHIP_THEMES: Record<MembershipVisualTier, {
     gradient: ['rgba(148,163,184,0.09)', 'rgba(148,163,184,0.02)'],
     pillBackground: 'rgba(148,163,184,0.12)',
   },
+  membership: {
+    ...MEMBERSHIP_TIER_COLORS.membership,
+    border: 'rgba(212,175,55,0.38)',
+    gradient: ['rgba(212,175,55,0.14)', 'rgba(212,175,55,0.03)'],
+    pillBackground: 'rgba(212,175,55,0.12)',
+  },
   monthly: {
     ...MEMBERSHIP_TIER_COLORS.monthly,
     border: 'rgba(212,175,55,0.38)',
