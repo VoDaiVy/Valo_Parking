@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Loader2, RotateCcw, Save, Clock3, CalendarDays } from 'lucide-react';
 import { PricingHeader, PricingOverview, PricingSchedule, TimeBlockEditor, PricePolicyEditor, AdditionalPricingRules } from './PricingPanels';
 import { DEFAULT_DAY_NIGHT, serializeConfig, getScheduleStatus } from './pricingDisplay';
@@ -7,6 +8,7 @@ import './pricingManagement.css';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 
 export default function PricingManagement() {
+  const { t } = useTranslation();
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [activeTab, setActiveTab] = useState('time-blocks');
   const [config, setConfig] = useState(null);
@@ -44,7 +46,7 @@ export default function PricingManagement() {
     } catch (err) {
       if (generation !== aiRefreshGeneration.current) return;
       console.error(err);
-      setError('Failed to load pricing config');
+      setError(t('pricingErrors.loadFailed', { defaultValue: 'Failed to load pricing configuration.' }));
     } finally {
       if (generation === aiRefreshGeneration.current) setLoading(false);
     }
@@ -115,21 +117,21 @@ export default function PricingManagement() {
   const handleSave = async () => {
     // Validate
     if (timeBlocks.length === 0) {
-      setError('Must have at least one time block.');
+      setError(t('pricingUi.validationMinBlock', { defaultValue: 'Must have at least one time block.' }));
       return;
     }
     for (let i = 0; i < timeBlocks.length; i++) {
       const b = timeBlocks[i];
       if (b.startHour < 0 || b.startHour > 23 || b.endHour < 0 || b.endHour > 24) {
-        setError('Hours must be between 0 and 24.');
+        setError(t('pricingUi.validationHours', { defaultValue: 'Hours must be between 0 and 24.' }));
         return;
       }
       if (b.price === '' || b.price < 0) {
-        setError('Price must be a valid number and cannot be negative.');
+        setError(t('pricingUi.validationPrice', { defaultValue: 'Price must be a valid number and cannot be negative.' }));
         return;
       }
       if (b.startHour === b.endHour) {
-        setError('A time block cannot have the same start and end time.');
+        setError(t('pricingUi.validationSameTime', { defaultValue: 'A time block cannot have the same start and end time.' }));
         return;
       }
     }
@@ -156,43 +158,43 @@ export default function PricingManagement() {
           for (let h = 0; h < end; h++) markHour(h);
         }
       } catch (e) {
-        setError(e.message);
+          setError(t('pricingUi.overlapDetected', { defaultValue: e.message, hour: e.message.replace('Overlap detected at ', '') }));
         return;
       }
     }
 
     const missingHour = hours.findIndex(h => !h);
     if (missingHour !== -1) {
-      setError(`Gap detected in schedule. Time block missing for hour ${missingHour}:00`);
+      setError(t('pricingUi.validationGap', { defaultValue: 'Gap detected in schedule. Time block missing for hour {{hour}}:00', hour: missingHour }));
       return;
     }
 
     for (const [period, block] of Object.entries(dayNightPricing)) {
       if (!Number.isInteger(Number(block.startHour)) || Number(block.startHour) < 0 || Number(block.startHour) > 23
         || block.price === '' || !Number.isFinite(Number(block.price)) || Number(block.price) < 0) {
-        setError(`${period === 'day' ? 'Day' : 'Night'} pricing needs a valid start hour and non-negative price.`);
+        setError(t('pricingUi.validationDayNight', { defaultValue: '{{period}} pricing needs a valid start hour and non-negative price.', period: period === 'day' ? t('pricingUi.day', { defaultValue: 'Day' }) : t('pricingUi.night', { defaultValue: 'Night' }) }));
         return;
       }
     }
     if ((Number(dayNightPricing.day.startHour) + 12) % 24 !== Number(dayNightPricing.night.startHour)) {
-      setError('Day and night blocks must be consecutive and exactly 12 hours each.');
+      setError(t('pricingUi.validationDayNightConsecutive', { defaultValue: 'Day and night blocks must be consecutive and exactly 12 hours each.' }));
       return;
     }
     for (const policy of pricePolicies) {
       if (!policy.name?.trim() || policy.adjustmentPercent === '' || !Number.isFinite(Number(policy.adjustmentPercent)) || Number(policy.adjustmentPercent) < -100 || Number(policy.adjustmentPercent) > 500) {
-        setError('Each policy needs a name and a valid percentage: decrease up to 100%, increase up to 500%.');
+        setError(t('pricingUi.validationPolicyPercent', { defaultValue: 'Each policy needs a name and a valid percentage: decrease up to 100%, increase up to 500%.' }));
         return;
       }
       if (policy.scope === 'weekday' && !policy.daysOfWeek?.length) {
-        setError(`Select at least one weekday for ${policy.name}.`);
+        setError(t('pricingUi.validationWeekday', { defaultValue: 'Select at least one weekday for {{name}}.', name: policy.name }));
         return;
       }
       if (policy.scope === 'month' && !policy.months?.length) {
-        setError(`Select at least one month for ${policy.name}.`);
+        setError(t('pricingUi.validationMonth', { defaultValue: 'Select at least one month for {{name}}.', name: policy.name }));
         return;
       }
       if (policy.scope === 'date_range' && (!policy.startDate || !policy.endDate || policy.startDate > policy.endDate)) {
-        setError(`Choose a valid date range for ${policy.name}.`);
+        setError(t('pricingUi.validationDateRange', { defaultValue: 'Choose a valid date range for {{name}}.', name: policy.name }));
         return;
       }
     }
@@ -218,14 +220,14 @@ export default function PricingManagement() {
       });
       const data = await res.json();
       if (data.success) {
-        setSuccess('Pricing configuration updated successfully!');
+        setSuccess(t('pricingUi.saved', { defaultValue: 'Pricing configuration updated successfully!' }));
         await fetchConfig({ silent: true });
       } else {
-        setError(data.message || 'Failed to update configuration.');
+        setError(data.message || t('pricingUi.saveFailed', { defaultValue: 'Failed to update configuration.' }));
       }
     } catch (err) {
       console.error(err);
-      setError('Network error while saving config.');
+      setError(t('pricingUi.networkSaveError', { defaultValue: 'Network error while saving config.' }));
     } finally {
       setSaving(false);
     }
@@ -244,14 +246,14 @@ export default function PricingManagement() {
     row?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
   };
 
-  if (loading) return <div className="pricing-page pricing-loading" role="status"><Loader2 className="animate-spin" size={24} />Loading pricing configuration...</div>;
+  if (loading) return <div className="pricing-page pricing-loading" role="status"><Loader2 className="animate-spin" size={24} />{t('pricingUi.loading', { defaultValue: 'Loading pricing configuration...' })}</div>;
 
   return <div className={`pricing-page ${activeTab === 'policies' ? 'pricing-calendar-page' : ''}`}>
     <AdminBackgroundOverlay />
     <div className="pricing-content">
       <PricingHeader status={scheduleStatus} />
       <nav className="pricing-tabs" role="tablist" aria-label="Pricing sections">
-        {[['time-blocks', 'Time Blocks', Clock3], ['policies', 'Calendar Policies', CalendarDays]].map(([value, label, Icon], index) => (
+        {[['time-blocks', t('pricingUi.timeBlocks', { defaultValue: 'Time Blocks' }), Clock3], ['policies', t('pricingUi.calendarPolicies', { defaultValue: 'Calendar Policies' }), CalendarDays]].map(([value, label, Icon], index) => (
           <button key={value} type="button" role="tab" id={`pricing-tab-${value}`}
             aria-selected={activeTab === value} aria-controls={`pricing-panel-${value}`} tabIndex={activeTab === value ? 0 : -1}
             onClick={() => setActiveTab(value)}
@@ -279,8 +281,8 @@ export default function PricingManagement() {
       {config && <AdditionalPricingRules config={config} />}
     </div>
     {(hasUnsavedChanges || error || success || saving) && <footer className="pricing-save-bar">
-      <p role={error ? 'alert' : 'status'} className={error ? 'pricing-error' : success ? 'pricing-success' : ''}>{error || success || 'You have unsaved changes'}</p>
-      <div><button type="button" className="pricing-button" onClick={handleResetChanges} disabled={saving || !hasUnsavedChanges}><RotateCcw size={16} aria-hidden="true" />Reset changes</button><button type="button" className="pricing-button pricing-primary" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} aria-hidden="true" />}{saving ? 'Saving...' : 'Save configuration'}</button></div>
+      <p role={error ? 'alert' : 'status'} className={error ? 'pricing-error' : success ? 'pricing-success' : ''}>{error || success || t('pricingUi.unsaved', { defaultValue: 'You have unsaved changes' })}</p>
+      <div><button type="button" className="pricing-button" onClick={handleResetChanges} disabled={saving || !hasUnsavedChanges}><RotateCcw size={16} aria-hidden="true" />{t('pricingUi.reset', { defaultValue: 'Reset changes' })}</button><button type="button" className="pricing-button pricing-primary" onClick={handleSave} disabled={saving}>{saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} aria-hidden="true" />}{saving ? t('pricingUi.saving', { defaultValue: 'Saving...' }) : t('pricingUi.save', { defaultValue: 'Save configuration' })}</button></div>
     </footer>}
   </div>;
 }

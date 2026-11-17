@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import './vipMemberships.css';
 import { vipDate, vipDaysUntil } from './vipMembershipDates.js';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
@@ -43,10 +44,10 @@ const dateFormatter = new Intl.DateTimeFormat('en-GB', {
 
 const formatCurrency = (value = 0) => `${currencyFormatter.format(Number(value) || 0)} VND`;
 
-const formatDate = (value) => {
-  if (!value) return 'Not available';
+const formatDate = (value, fallback = 'Not available') => {
+  if (!value) return fallback;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Not available';
+  if (Number.isNaN(date.getTime())) return fallback;
   return dateFormatter.format(date);
 };
 
@@ -65,13 +66,13 @@ const titleCase = (value = '') => {
   return String(value).charAt(0).toUpperCase() + String(value).slice(1);
 };
 
-const getDisplayUser = (subscription) => {
+const getDisplayUser = (subscription, t) => {
   const currentOwners = subscription.currentOwners || [];
   if (subscription.currentOwner) return subscription.currentOwner;
   if (currentOwners.length > 1) {
     return {
-      username: `${currentOwners.length} Current Owners`,
-      email: 'Ownership differs by parking slot',
+      username: t ? t('subscriptionUi.currentOwners', { count: currentOwners.length }) : `${currentOwners.length} Current Owners`,
+      email: t ? t('subscriptionUi.ownershipDiffers') : 'Ownership differs by parking slot',
       vehicles: Array.from(
         new Set(currentOwners.flatMap((owner) => owner.vehicles || [])),
       ),
@@ -147,43 +148,46 @@ function LoadingRows() {
 }
 
 function StatusBadge({ status }) {
+  const { t } = useLanguage();
   return (
     <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${getStatusClass(status)}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${status === 'active' ? 'bg-emerald-300' : status === 'pending' ? 'bg-amber-300' : status === 'expired' ? 'bg-slate-400' : 'bg-rose-300'}`} />
-      {titleCase(status)}
+      {t(`subscriptionStatus.${status}`, { defaultValue: titleCase(status) })}
     </span>
   );
 }
 
 function SlotBadge({ slot }) {
+  const { t } = useLanguage();
   if (!slot) {
-    return <span className="text-xs font-semibold italic text-slate-500">Not assigned</span>;
+    return <span className="text-xs font-semibold italic text-slate-500">{t('subscriptionUi.notAssigned', { defaultValue: 'Not assigned' })}</span>;
   }
 
   return (
     <span className="g3-slot-badge inline-flex items-center gap-2 rounded-xl border border-yellow-400/20 bg-yellow-400/10 px-3 py-2 text-xs font-black text-yellow-300 transition group-hover:border-yellow-300/35">
       <ParkingCircle size={14} />
-      <span className="text-slate-300">{slot.floorId?.name || 'Floor'}</span>
+      <span className="text-slate-300">{slot.floorId?.name || t('subscriptionUi.floor', { defaultValue: 'Floor' })}</span>
       <span className="text-yellow-300">{slot.slotCode}</span>
     </span>
   );
 }
 
 function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
+  const { t } = useLanguage();
   const remaining = isAdmin ? vipDaysUntil(sub.expireAt) : daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
-  const displayUser = getDisplayUser(sub);
+  const displayUser = getDisplayUser(sub, t);
   const vehicles = displayUser?.vehicles || [];
-  const vehicleText = vehicles.length ? `${vehicles.length} vehicle${vehicles.length > 1 ? 's' : ''} on file` : 'No vehicle on file';
+  const vehicleText = vehicles.length ? t('subscriptionUi.vehicleCount', { count: vehicles.length }) : t('subscriptionUi.noVehicleShort');
 
   if (isAdmin) return <tr ref={cardRef} data-package-type={packageType} className="admin-vip-row" onClick={() => onOpen(sub)}>
-    <td><button type="button" className="vip-open flex w-full items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onOpen(sub); }} aria-label={`View membership for ${displayUser?.username || 'Unknown User'}`}>
-      <span className="min-w-0"><span className="block truncate text-white" title={displayUser?.username}>{displayUser?.username || 'Unknown User'}</span><span className="vip-secondary block truncate" title={displayUser?.email}>{displayUser?.email || 'No email'}</span></span>
+    <td><button type="button" className="vip-open flex w-full items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onOpen(sub); }} aria-label={t('subscriptionUi.viewVehicles', { name: displayUser?.username || t('subscriptionUi.unknownUser') })}>
+      <span className="min-w-0"><span className="block truncate text-white" title={displayUser?.username}>{displayUser?.username || t('subscriptionUi.unknownUser')}</span><span className="vip-secondary block truncate" title={displayUser?.email}>{displayUser?.email || t('subscriptionUi.noEmailShort')}</span></span>
     </button></td>
-    <td><p className="truncate text-white" title={sub.ticketPackage?.name}>{sub.ticketPackage?.name || 'Unknown Package'}</p>{packageType && <span className={`vip-type inline-flex rounded-full border px-2 py-0.5 ${getPackageClass(packageType)}`}>{titleCase(packageType)}</span>}</td>
+    <td><p className="truncate text-white" title={sub.ticketPackage?.name}>{sub.ticketPackage?.name || t('subscriptionUi.unknownPackage')}</p>{packageType && <span className={`vip-type inline-flex rounded-full border px-2 py-0.5 ${getPackageClass(packageType)}`}>{t(`adminPages.ticketUi.types.${packageType}`, { defaultValue: titleCase(packageType) })}</span>}</td>
     <td><div className="flex flex-wrap gap-1">{sub.slots?.length ? sub.slots.map((slot) => <SlotBadge key={`${slot.floorId?._id || slot.floorId}-${slot.slotCode}`} slot={slot} />) : <SlotBadge />}</div></td>
-    <td><p className="text-[#e8d5ad]">{formatCurrency(sub.amount)}</p>{sub.paymentStatus && <p className="vip-secondary">{titleCase(sub.paymentStatus)}</p>}</td>
-    <td><p>{vipDate(sub.validFrom)} - {vipDate(sub.expireAt)}</p>{remaining !== null && remaining >= 0 && <p className="vip-secondary">{remaining === 0 ? 'Expires today' : `${remaining} days left`}</p>}</td>
+    <td><p className="text-[#e8d5ad]">{formatCurrency(sub.amount)}</p>{sub.paymentStatus && <p className="vip-secondary">{t(`walletPage.statuses.${sub.paymentStatus}`, { defaultValue: titleCase(sub.paymentStatus) })}</p>}</td>
+    <td><p>{vipDate(sub.validFrom)} - {vipDate(sub.expireAt)}</p>{remaining !== null && remaining >= 0 && <p className="vip-secondary">{remaining === 0 ? t('subscriptionUi.expiresToday') : t('subscriptionUi.daysLeft', { count: remaining })}</p>}</td>
     <td><StatusBadge status={sub.status} /></td>
     <td className="vip-vehicles"><div className="vip-vehicle-list">{vehicles.length ? vehicles.map((plate, index) => <span key={`${plate}-${index}`}>{plate}</span>) : <span>{vehicleText}</span>}</div></td>
   </tr>;
@@ -202,30 +206,30 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
               <UserRound size={17} />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-black text-white sm:text-base">{displayUser?.username || 'Unknown User'}</h3>
-              <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || 'No email'}</p>
+      <h3 className="truncate text-sm font-black text-white sm:text-base">{displayUser?.username || t('subscriptionUi.unknownUser')}</h3>
+              <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{displayUser?.email || t('subscriptionUi.noEmailShort')}</p>
             </div>
           </div>
-          <button type="button" onClick={() => onOpen(sub)} className="mt-2 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`View subscription details for ${displayUser?.username || 'Unknown User'}`}>
+          <button type="button" onClick={() => onOpen(sub)} className="mt-2 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={t('subscriptionUi.viewVehicles', { name: displayUser?.username || t('subscriptionUi.unknownUser') })}>
             <Car size={14} />
             {vehicleText}<ChevronRight size={13} />
           </button>
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Package</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.package')}</span>
           <div className="text-right md:text-left">
-            <p className="font-black text-slate-100">{sub.ticketPackage?.name || 'Unknown Package'}</p>
+            <p className="font-black text-slate-100">{sub.ticketPackage?.name || t('subscriptionUi.unknownPackage')}</p>
             {packageType && (
               <span className={`g3-package-badge mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getPackageClass(packageType)}`}>
-                {packageType}
+                {t(`adminPages.ticketUi.types.${packageType}`, { defaultValue: titleCase(packageType) })}
               </span>
             )}
           </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">VIP Slot</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.vipSlot')}</span>
           <div className="flex flex-wrap justify-end gap-1.5 md:justify-start">
             {sub.slots && sub.slots.length > 0 ? sub.slots.map((slot) => (
               <SlotBadge key={`${slot.floorId?._id || slot.floorId}-${slot.slotCode}`} slot={slot} />
@@ -236,28 +240,28 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Amount</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.amount')}</span>
           <div className="text-right md:text-left">
             <p className="g3-membership-amount font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
-            {sub.paymentStatus && <p className="mt-1 text-xs font-semibold text-slate-500">{titleCase(sub.paymentStatus)}</p>}
+            {sub.paymentStatus && <p className="mt-1 text-xs font-semibold text-slate-500">{t(`walletPage.statuses.${sub.paymentStatus}`, { defaultValue: titleCase(sub.paymentStatus) })}</p>}
           </div>
         </div>
 
         <div className="flex items-start justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Period</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.period')}</span>
           <div className="text-right text-xs font-semibold text-slate-400 md:text-left">
-            <p>{formatDate(sub.validFrom)}</p>
-            <p className="mt-1 text-slate-500">to {formatDate(sub.expireAt)}</p>
+            <p>{formatDate(sub.validFrom, t('subscriptionUi.unavailable'))}</p>
+            <p className="mt-1 text-slate-500">{t('subscriptionUi.to')} {formatDate(sub.expireAt, t('subscriptionUi.unavailable'))}</p>
             {remaining !== null && remaining >= 0 && (
               <p className={`mt-1 ${remaining <= 30 ? 'text-amber-300' : 'text-slate-500'}`}>
-                {remaining === 0 ? 'Expires today' : `${remaining} days left`}
+                {remaining === 0 ? t('subscriptionUi.expiresToday') : t('subscriptionUi.daysLeft', { count: remaining })}
               </p>
             )}
           </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 md:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">Status</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.status')}</span>
           <StatusBadge status={sub.status} />
         </div>
       </div>
@@ -266,6 +270,7 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
 }
 
 function TransferReviewSection({ transfers, onReview }) {
+  const { t } = useLanguage();
   const pendingTransfers = transfers.filter((item) => item.status === 'PENDING_ADMIN');
 
   if (!pendingTransfers.length) return null;
@@ -274,11 +279,11 @@ function TransferReviewSection({ transfers, onReview }) {
     <section className="mb-6 border-y border-amber-400/20 py-4">
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-black text-white">Transfer reviews</h2>
-          <p className="mt-1 text-sm font-medium text-slate-500">Review direct transfers and public marketplace listings.</p>
+          <h2 className="font-black text-white">{t('subscriptionUi.transferReviews')}</h2>
+          <p className="mt-1 text-sm font-medium text-slate-500">{t('subscriptionUi.reviewHint')}</p>
         </div>
         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs font-black text-amber-300">
-          <TimerReset size={14} /> {pendingTransfers.length} pending
+          <TimerReset size={14} /> {pendingTransfers.length} {t('subscriptionUi.pending')}
         </span>
       </div>
 
@@ -288,13 +293,13 @@ function TransferReviewSection({ transfers, onReview }) {
             <div className="min-w-0 flex-1">
               <span className={`mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${transfer.mode === 'PUBLIC' ? 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300' : 'border-violet-400/20 bg-violet-400/10 text-violet-300'}`}>
                 {transfer.mode === 'PUBLIC' ? <Globe2 size={12} /> : <UserCheck size={12} />}
-                {transfer.mode === 'PUBLIC' ? 'Public listing' : 'Direct transfer'}
+                {transfer.mode === 'PUBLIC' ? t('subscriptionUi.publicListing') : t('subscriptionUi.directTransfer')}
               </span>
               <p className="truncate text-sm font-black text-slate-100">
-                {transfer.entitlementId?.slotCode || 'Parking space'} · {transfer.fromUserId?.email || 'Sender'} → {transfer.mode === 'PUBLIC' ? 'Marketplace' : (transfer.toUserId?.email || 'Recipient')}
+                {transfer.entitlementId?.slotCode || t('subscriptionUi.parkingSpace')} · {transfer.fromUserId?.email || t('subscriptionUi.sender')} → {transfer.mode === 'PUBLIC' ? t('subscriptionUi.marketplace') : (transfer.toUserId?.email || t('subscriptionUi.recipient'))}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                Price {formatCurrency(transfer.askingPrice)} · Fee {formatCurrency(transfer.transferFee)}
+                {t('subscriptionUi.price')} {formatCurrency(transfer.askingPrice)} · {t('subscriptionUi.fee')} {formatCurrency(transfer.transferFee)}
               </p>
             </div>
             <div className="flex gap-2">
@@ -303,14 +308,14 @@ function TransferReviewSection({ transfers, onReview }) {
                 onClick={() => onReview(transfer._id, false)}
                 className="h-10 rounded-xl border border-rose-500/25 px-4 text-xs font-black text-rose-300 transition hover:bg-rose-500/10 focus:outline-none focus:ring-2 focus:ring-rose-300/50"
               >
-                Reject
+                {t('subscriptionUi.reject')}
               </button>
               <button
                 type="button"
                 onClick={() => onReview(transfer._id, true)}
                 className="h-10 rounded-xl bg-emerald-400 px-4 text-xs font-black text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200/70"
               >
-                {transfer.mode === 'PUBLIC' ? 'Approve & list 7d' : 'Approve & lock 24h'}
+                {transfer.mode === 'PUBLIC' ? t('subscriptionUi.approveList') : t('subscriptionUi.approveLock')}
               </button>
             </div>
           </div>
@@ -321,6 +326,7 @@ function TransferReviewSection({ transfers, onReview }) {
 }
 
 export default function SubscriptionManagement() {
+  const { t } = useLanguage();
   const isAdmin = useMemo(() => getStoredRole() === 'admin', []);
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -344,9 +350,9 @@ export default function SubscriptionManagement() {
     setLinkedState({ ...result, key: linkedKey });
     if (result.status !== 'loading') {
       setSubscriptions(result.subscriptions || []);
-      setSubscriptionError(result.status === 'error' ? 'Unable to load subscriptions. Please try again.' : result.status === 'unavailable' ? 'Subscription data is unavailable for this account.' : '');
+      setSubscriptionError(result.status === 'error' ? t('subscriptionUi.fetchError') : result.status === 'unavailable' ? t('subscriptionUi.subscriptionUnavailable') : '');
     }
-  }), [linkedKey, setLinkedState, setSubscriptions, setSubscriptionError]);
+  }), [linkedKey, setLinkedState, setSubscriptions, setSubscriptionError, t]);
   const currentLinkedState = linkedState.key === linkedKey ? linkedState : { status: 'loading' };
   const verifiedLinkedId = linkedId && currentLinkedState.status === 'ready' && !loading
     ? currentLinkedState.subscription._id : null;
@@ -384,7 +390,7 @@ export default function SubscriptionManagement() {
 
       const subscriptionResponse = linkedId ? null : getResponseAvailability(
         res,
-        'Failed to fetch subscriptions'
+        t('subscriptionUi.fetchError')
       );
       if (linkedId) {
         // The shared list request was already verified and published by lookup.
@@ -398,7 +404,7 @@ export default function SubscriptionManagement() {
       if (isAdmin) {
         const transferResponse = getResponseAvailability(
           transferRes,
-          'Membership transfer reviews are unavailable.'
+          t('subscriptionUi.transferUnavailable')
         );
         if (transferResponse.isAvailable) {
           setTransfers(transferResponse.data || []);
@@ -413,10 +419,10 @@ export default function SubscriptionManagement() {
       if (isAdmin && generation !== requestGeneration.current) return;
       console.error(err);
       setSubscriptions([]);
-      setSubscriptionError('An error occurred while fetching subscriptions');
+      setSubscriptionError(t('subscriptionUi.genericFetchError'));
       if (isAdmin) {
         setTransfers([]);
-        setTransferError('Membership transfer reviews are unavailable.');
+        setTransferError(t('subscriptionUi.transferUnavailable'));
       }
     } finally {
       if (!isAdmin || generation === requestGeneration.current) {
@@ -424,13 +430,13 @@ export default function SubscriptionManagement() {
         setTransferLoading(false);
       }
     }
-  }, [isAdmin, linkedId, lookup]);
+  }, [isAdmin, linkedId, lookup, t]);
 
   const reviewTransfer = async (transferId, approved) => {
     const token = localStorage.getItem('accessToken');
     const rejectionReason = approved
       ? ''
-      : window.prompt('Rejection reason:')?.trim();
+      : window.prompt(t('subscriptionUi.rejectReason'))?.trim();
     if (!approved && !rejectionReason) return;
     const response = await apiFetch(
       `/admin/membership-entitlement-transfers/${transferId}/${approved ? 'approve' : 'reject'}`,
@@ -441,7 +447,7 @@ export default function SubscriptionManagement() {
       }
     );
     if (!response.ok || !response.data?.success) {
-      setTransferError(response.data?.message || 'Unable to review transfer.');
+      setTransferError(response.data?.message || t('subscriptionUi.reviewError'));
       return;
     }
     await fetchSubscriptions();
@@ -549,10 +555,10 @@ export default function SubscriptionManagement() {
         <header className="g3-header mb-6 flex flex-col justify-between gap-4 border-b border-white/10 pb-5 md:flex-row md:items-end">
           <div>
             {isAdmin ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h1 className="text-3xl font-black tracking-tight text-white">VIP Memberships</h1>
-              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Crown size={12} /> VIP Subscriptions</div>
-            </div> : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">VIP Memberships</h1>}
-            <p className="g3-subtitle mt-2 text-sm font-medium text-slate-400">View and manage customer subscriptions and VIP parking slots.</p>
+              <h1 className="text-3xl font-black tracking-tight text-white">{t('subscriptionUiExtra.title', { defaultValue: 'VIP Memberships' })}</h1>
+              <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Crown size={12} /> {t('subscriptionUiExtra.badge', { defaultValue: 'VIP Subscriptions' })}</div>
+            </div> : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('subscriptionUiExtra.title', { defaultValue: 'VIP Memberships' })}</h1>}
+            <p className="g3-subtitle mt-2 text-sm font-medium text-slate-400">{t('subscriptionUiExtra.subtitle', { defaultValue: 'View and manage customer subscriptions and VIP parking slots.' })}</p>
           </div>
 
           <button
@@ -562,7 +568,7 @@ export default function SubscriptionManagement() {
             className="g3-action g3-header-action inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-black text-white transition hover:border-yellow-300/30 hover:bg-yellow-300/10 hover:text-yellow-100 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
           >
             <RefreshCw className={`h-4 w-4 ${loading || transferLoading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('subscriptionUi.retry')}
           </button>
         </header>
 
@@ -570,33 +576,33 @@ export default function SubscriptionManagement() {
           <SummaryItem
             isAdmin={isAdmin}
             icon={Crown}
-            label="Total VIP"
+            label={t('subscriptionUi.totalVip')}
             value={getOperationalValue(subscriptionState, summary.total.toLocaleString('vi-VN'))}
-            support={subscriptionState.isAvailable ? 'Loaded memberships' : 'Data unavailable'}
+            support={subscriptionState.isAvailable ? t('subscriptionUi.loaded') : t('subscriptionUi.unavailable')}
           />
           <SummaryItem
             isAdmin={isAdmin}
             icon={ShieldCheck}
-            label="Active"
+            label={t('subscriptionUi.active')}
             value={getOperationalValue(subscriptionState, summary.active.toLocaleString('vi-VN'))}
-            support={subscriptionState.isAvailable ? 'Current active status' : 'Data unavailable'}
+            support={subscriptionState.isAvailable ? t('subscriptionUi.activeStatus') : t('subscriptionUi.unavailable')}
             tone="text-emerald-300"
           />
           <SummaryItem
             isAdmin={isAdmin}
             icon={Clock3}
-            label="Expiring Soon"
+            label={t('subscriptionUi.expiringSoon')}
             value={getOperationalValue(subscriptionState, summary.expiringSoon.toLocaleString('vi-VN'))}
-            support={subscriptionState.isAvailable ? 'Within 30 days' : 'Data unavailable'}
+            support={subscriptionState.isAvailable ? t('subscriptionUi.within30') : t('subscriptionUi.unavailable')}
             tone="text-amber-300"
           />
           {isAdmin && (
             <SummaryItem
             isAdmin={isAdmin}
               icon={TimerReset}
-              label="Transfers"
+              label={t('subscriptionUi.transfers')}
               value={getOperationalValue(transferState, summary.pendingTransfers.toLocaleString('vi-VN'))}
-              support={transferState.isAvailable ? 'Pending admin review' : 'Data unavailable'}
+              support={transferState.isAvailable ? t('subscriptionUi.pendingReview') : t('subscriptionUi.unavailable')}
               tone="text-purple-300"
             />
           )}
@@ -607,7 +613,7 @@ export default function SubscriptionManagement() {
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
-              placeholder="Search by customer name, email, or vehicle..."
+              placeholder={t('subscriptionUi.search')}
               className="h-12 w-full rounded-xl border border-white/10 bg-black/70 pl-11 pr-11 text-sm font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-[#ffd555]/60 focus:ring-2 focus:ring-[#ffd555]/10"
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
@@ -616,7 +622,7 @@ export default function SubscriptionManagement() {
               <button
                 type="button"
                 onClick={() => { setSearchTerm(''); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
-                aria-label="Clear membership search"
+                aria-label={t('subscriptionUi.clearSearch')}
                 className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
               >
                 <X size={15} />
@@ -628,12 +634,12 @@ export default function SubscriptionManagement() {
             value={statusFilter}
             onChange={(value) => { setStatusFilter(value); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
             options={[
-              { value: 'all', label: 'All Statuses' },
-              ...statusOptions.map((status) => ({ value: status, label: titleCase(status) })),
+              { value: 'all', label: t('subscriptionUi.allStatuses') },
+              ...statusOptions.map((status) => ({ value: status, label: t(`subscriptionStatus.${status}`, { defaultValue: titleCase(status) }) })),
             ]}
             icon={Filter}
             className="lg:w-52"
-            ariaLabel="Filter subscriptions by status"
+            ariaLabel={t('subscriptionUi.filterStatus')}
           />
 
           {packageOptions.length > 0 && (
@@ -641,13 +647,13 @@ export default function SubscriptionManagement() {
               value={packageFilter}
               onChange={(value) => { setPackageFilter(value); if (!isAdmin) setStaffPage(1); else setAdminPage(1); }}
               options={[
-                { value: 'all', label: 'All packages' },
-                ...packageOptions.map((type) => ({ value: type, label: titleCase(type) })),
+                { value: 'all', label: t('subscriptionUi.allPackages') },
+                ...packageOptions.map((type) => ({ value: type, label: t(`adminPages.ticketUi.types.${type}`, { defaultValue: titleCase(type) }) })),
               ]}
               icon={Crown}
               className="lg:w-52"
               align="right"
-              ariaLabel="Filter subscriptions by package"
+              ariaLabel={t('subscriptionUi.filterPackage')}
             />
           )}
         </section>
@@ -664,21 +670,21 @@ export default function SubscriptionManagement() {
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/20 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-400/10 focus:outline-none focus:ring-2 focus:ring-red-300/50"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Retry
+              {t('subscriptionUi.retry')}
             </button>
           </div>
         )}
 
         {isAdmin && transferLoading && (
           <section className="mb-6 border-y border-white/10 py-5 text-sm font-semibold text-slate-400">
-            Loading membership transfer reviews...
+            {t('subscriptionUi.loadingTransfers')}
           </section>
         )}
         {isAdmin && !transferLoading && transferError && (
           <section className="mb-6 flex items-start gap-3 border-y border-red-500/25 py-4 text-sm text-red-300" role="alert">
             <AlertCircle size={17} className="mt-0.5 shrink-0" />
             <div>
-              <h2 className="font-black text-red-200">Transfer reviews unavailable</h2>
+              <h2 className="font-black text-red-200">{t('subscriptionUi.transferUnavailable')}</h2>
               <p className="mt-1 font-medium text-red-300/75">{transferError}</p>
             </div>
           </section>
@@ -689,21 +695,21 @@ export default function SubscriptionManagement() {
 
         <section className="g3-membership-list">
           {!isAdmin && <div className="g3-membership-columns hidden px-5 pb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:grid md:grid-cols-[minmax(220px,1.35fr)_minmax(145px,0.9fr)_minmax(150px,1fr)_minmax(130px,0.8fr)_minmax(150px,0.9fr)_110px]">
-            <span>Customer</span>
-            <span>Package</span>
-            <span>VIP Slot</span>
-            <span>Amount</span>
-            <span>Period</span>
-            <span>Status</span>
+            <span>{t('subscriptionUi.customer')}</span>
+            <span>{t('subscriptionUi.package')}</span>
+            <span>{t('subscriptionUi.vipSlot')}</span>
+            <span>{t('subscriptionUi.amount')}</span>
+            <span>{t('subscriptionUi.period')}</span>
+            <span>{t('subscriptionUi.status')}</span>
           </div>}
 
-          <div className={isAdmin ? 'admin-vip-scroll' : 'staff-membership-scroll'} ref={isAdmin ? adminRowsRef : staffRowsRef} tabIndex={isAdmin ? 0 : undefined} role={isAdmin ? 'region' : undefined} aria-label={isAdmin ? 'VIP membership list' : undefined}>
+          <div className={isAdmin ? 'admin-vip-scroll' : 'staff-membership-scroll'} ref={isAdmin ? adminRowsRef : staffRowsRef} tabIndex={isAdmin ? 0 : undefined} role={isAdmin ? 'region' : undefined} aria-label={isAdmin ? t('subscriptionUi.membershipList') : undefined}>
           {loading ? (
             <LoadingRows />
           ) : subscriptionError ? (
             <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-6 py-10 text-center" role="alert">
               <AlertCircle size={28} className="mx-auto text-red-400" />
-              <h2 className="mt-3 text-lg font-black text-red-200">Subscription data unavailable</h2>
+              <h2 className="mt-3 text-lg font-black text-red-200">{t('subscriptionUi.subscriptionUnavailable')}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-300/70">{subscriptionError}</p>
             </div>
           ) : visibleSubscriptions.length === 0 ? (
@@ -711,9 +717,9 @@ export default function SubscriptionManagement() {
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-yellow-300">
                 <Crown size={22} />
               </div>
-              <h2 className="text-lg font-black text-white">No VIP memberships found</h2>
+              <h2 className="text-lg font-black text-white">{t('subscriptionUi.noMemberships')}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-400">
-                {hasFilters ? 'Adjust the search or filters to see more memberships.' : 'No subscriptions are available from the current response.'}
+                {hasFilters ? t('subscriptionUi.adjustFilters') : t('subscriptionUi.noSubscriptions')}
               </p>
               {hasFilters && (
                 <button
@@ -726,13 +732,13 @@ export default function SubscriptionManagement() {
                   }}
                   className="g3-action mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-yellow-300/20 px-4 text-sm font-black text-yellow-200 transition hover:bg-yellow-300/10 focus:outline-none focus:ring-2 focus:ring-yellow-300/50"
                 >
-                  Clear filters
+                  {t('subscriptionUi.clearFilters')}
                 </button>
               )}
             </div>
           ) : (
             isAdmin ? <table className="admin-vip-table">
-              <thead><tr>{['Customer', 'Package', 'VIP Slot', 'Amount', 'Period', 'Status', 'Vehicles'].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+              <thead><tr>{[t('subscriptionUi.customer'), t('subscriptionUi.package'), t('subscriptionUi.vipSlot'), t('subscriptionUi.amount'), t('subscriptionUi.period'), t('subscriptionUi.status'), t('subscriptionUi.customerVehicles')].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
               <tbody>{adminVisibleSubscriptions.map((sub, index) => <MembershipRow key={sub._id} sub={sub} index={index} isAdmin onOpen={setDetailMembership} cardRef={sub._id === verifiedLinkedId ? cardRef : undefined} />)}</tbody>
             </table> : <div className="g3-membership-rows space-y-2">
               {(isAdmin ? visibleSubscriptions : staffVisibleSubscriptions).map((sub, index) => (
@@ -742,12 +748,12 @@ export default function SubscriptionManagement() {
           )}
           </div>
         </section>
-        {isAdmin && <nav className="admin-vip-pagination flex items-center justify-between border-t border-white/[0.05] bg-[#080808] flex-shrink-0" aria-label="VIP membership pages">
-          <span className="text-xs text-white/30">{loading || subscriptionError ? 'Membership results unavailable' : `Page ${adminCurrentPage} of ${adminTotalPages} \u00b7 ${visibleSubscriptions.length} results`}</span>
+        {isAdmin && <nav className="admin-vip-pagination flex items-center justify-between border-t border-white/[0.05] bg-[#080808] flex-shrink-0" aria-label={t('subscriptionPagination.pages')}>
+          <span className="text-xs text-white/30">{loading || subscriptionError ? t('subscriptionUi.subscriptionUnavailable') : t('subscriptionPagination.pageSummary', { current: adminCurrentPage, total: adminTotalPages, count: visibleSubscriptions.length })}</span>
           <div className="flex items-center gap-1">
-            <button type="button" aria-label="Previous membership page" className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === 1} onClick={() => setAdminPage(adminCurrentPage - 1)}>&larr; Prev</button>
+            <button type="button" aria-label={t('subscriptionPagination.previousPage')} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === 1} onClick={() => setAdminPage(adminCurrentPage - 1)}>&larr; {t('subscriptionPagination.previous')}</button>
             {getPaginationPages(adminCurrentPage, adminTotalPages).map((page) => typeof page === 'number' ? <button key={page} type="button" className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${page === adminCurrentPage ? 'bg-[#ffd555] text-black shadow-[0_0_12px_rgba(255,213,85,0.4)]' : 'text-white/40 hover:text-white hover:bg-white/6'}`} aria-current={page === adminCurrentPage ? 'page' : undefined} disabled={loading || Boolean(subscriptionError)} onClick={() => setAdminPage(page)}>{page}</button> : <span key={page} aria-hidden="true">...</span>)}
-            <button type="button" aria-label="Next membership page" className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === adminTotalPages} onClick={() => setAdminPage(adminCurrentPage + 1)}>Next &rarr;</button>
+            <button type="button" aria-label={t('subscriptionPagination.nextPage')} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === adminTotalPages} onClick={() => setAdminPage(adminCurrentPage + 1)}>{t('subscriptionPagination.next')} &rarr;</button>
           </div>
         </nav>}
         {detailMembership && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[80]">
@@ -756,26 +762,26 @@ export default function SubscriptionManagement() {
             <div className="flex min-h-full items-center justify-center">
               <DialogPanel className="w-full max-w-2xl overflow-hidden rounded-3xl border border-emerald-300/20 bg-[#0d1418] text-white shadow-2xl">
                 <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-gradient-to-br from-emerald-400/10 to-transparent p-6">
-                  <div><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300"><Crown size={15} /> VIP subscription</p><DialogTitle className="text-2xl font-bold">{detailMembership.ticketPackage?.name || 'Membership details'}</DialogTitle><div className="mt-3"><StatusBadge status={detailMembership.status} /></div></div>
-                  <button type="button" autoFocus onClick={() => setDetailMembership(null)} className="rounded-xl border border-white/10 p-2.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Close membership details"><X size={20} /></button>
+                  <div><p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300"><Crown size={15} /> {t('subscriptionUiExtra.badge', { defaultValue: 'VIP Subscriptions' })}</p><DialogTitle className="text-2xl font-bold">{detailMembership.ticketPackage?.name || t('subscriptionUi.unknownPackage')}</DialogTitle><div className="mt-3"><StatusBadge status={detailMembership.status} /></div></div>
+                  <button type="button" autoFocus onClick={() => setDetailMembership(null)} className="rounded-xl border border-white/10 p-2.5 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={t('subscriptionUi.close')}><X size={20} /></button>
                 </div>
                 <div className="space-y-6 p-6">
-                  <div className="flex items-center gap-3"><span className="rounded-xl bg-white/5 p-3 text-slate-400"><UserRound size={22} /></span><div className="min-w-0"><p className="break-words font-bold">{getDisplayUser(detailMembership)?.username || 'Unknown User'}</p><p className="break-all text-sm text-slate-400">{getDisplayUser(detailMembership)?.email || 'No email'}</p></div></div>
-                  <section className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.04] p-4" aria-label="Owner vehicles">
-                    <h3 className="flex items-center gap-2 font-bold text-emerald-200"><Car size={19} /> Vehicles on file <span className="ml-auto rounded-full bg-emerald-300/10 px-2.5 py-0.5 text-sm">{getDisplayUser(detailMembership)?.vehicles?.length || 0}</span></h3>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-400">Vehicles registered to the current owner(s). These are not individual vehicle assignments to this subscription.</p>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">{(getDisplayUser(detailMembership)?.vehicles || []).map((plate, index) => <div key={`${plate}-${index}`} className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#101c21] p-3"><Car size={20} className="shrink-0 text-emerald-300" /><span className="break-all font-mono text-lg font-bold tracking-wider">{plate}</span></div>)}</div>
-                    {!getDisplayUser(detailMembership)?.vehicles?.length && <p className="py-4 text-sm text-slate-400">No vehicle on file.</p>}
-                    {detailMembership.currentOwners?.length > 1 && <div className="mt-3 space-y-2 border-t border-white/10 pt-3">{detailMembership.currentOwners.map((owner, index) => <p key={owner._id || index} className="break-words text-xs text-slate-400">{owner.username || owner.email || 'Unknown owner'}: {owner.vehicles?.join(', ') || 'No vehicle on file'}</p>)}</div>}
+                  <div className="flex items-center gap-3"><span className="rounded-xl bg-white/5 p-3 text-slate-400"><UserRound size={22} /></span><div className="min-w-0"><p className="break-words font-bold">{getDisplayUser(detailMembership, t)?.username || t('subscriptionUi.unknownUser')}</p><p className="break-all text-sm text-slate-400">{getDisplayUser(detailMembership, t)?.email || t('subscriptionUi.noEmail')}</p></div></div>
+                  <section className="rounded-2xl border border-emerald-300/20 bg-emerald-300/[0.04] p-4" aria-label={t('subscriptionUi.customerVehicles')}>
+                    <h3 className="flex items-center gap-2 font-bold text-emerald-200"><Car size={19} /> {t('subscriptionUi.registeredPlates')} <span className="ml-auto rounded-full bg-emerald-300/10 px-2.5 py-0.5 text-sm">{getDisplayUser(detailMembership, t)?.vehicles?.length || 0}</span></h3>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-400">{t('subscriptionUi.customerVehicles')}</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">{(getDisplayUser(detailMembership, t)?.vehicles || []).map((plate, index) => <div key={`${plate}-${index}`} className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#101c21] p-3"><Car size={20} className="shrink-0 text-emerald-300" /><span className="break-all font-mono text-lg font-bold tracking-wider">{plate}</span></div>)}</div>
+                    {!getDisplayUser(detailMembership, t)?.vehicles?.length && <p className="py-4 text-sm text-slate-400">{t('subscriptionUi.noVehicle')}</p>}
+                    {detailMembership.currentOwners?.length > 1 && <div className="mt-3 space-y-2 border-t border-white/10 pt-3">{detailMembership.currentOwners.map((owner, index) => <p key={owner._id || index} className="break-words text-xs text-slate-400">{owner.username || owner.email || t('subscriptionUi.unknownCustomer')}: {owner.vehicles?.join(', ') || t('subscriptionUi.noVehicleShort')}</p>)}</div>}
                   </section>
                   <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                     {[
-                      ['Package type', titleCase(detailMembership.ticketPackage?.type)],
-                      ['VIP Slots', detailMembership.slots?.map((slot) => `${slot.floorId?.name || 'Floor'} ${slot.slotCode}`).join(', ') || 'Not assigned'],
-                      ['Amount', formatCurrency(detailMembership.amount)],
-                      ['Payment', titleCase(detailMembership.paymentStatus)],
-                      ['Valid from', vipDate(detailMembership.validFrom)],
-                      ['Expires (Vietnam)', vipDate(detailMembership.expireAt)],
+                      [t('subscriptionUi.package'), t(`adminPages.ticketUi.types.${detailMembership.ticketPackage?.type}`, { defaultValue: titleCase(detailMembership.ticketPackage?.type) })],
+                      [t('subscriptionUi.vipSlot'), detailMembership.slots?.map((slot) => `${slot.floorId?.name || t('subscriptionUi.floor')} ${slot.slotCode}`).join(', ') || t('subscriptionUi.notAssigned')],
+                      [t('subscriptionUi.amount'), formatCurrency(detailMembership.amount)],
+                      [t('walletPage.status'), t(`walletPage.statuses.${detailMembership.paymentStatus}`, { defaultValue: titleCase(detailMembership.paymentStatus) })],
+                      [t('subscriptionDetails.validFrom'), vipDate(detailMembership.validFrom)],
+                      [t('subscriptionDetails.expiresAt'), vipDate(detailMembership.expireAt)],
                     ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/5 bg-white/[0.02] p-3"><dt className="text-xs text-slate-400">{label}</dt><dd className="mt-1.5 break-words font-semibold">{value}</dd></div>)}
                   </dl>
                 </div>
@@ -783,14 +789,14 @@ export default function SubscriptionManagement() {
             </div>
           </div>
         </Dialog>}
-        {!isAdmin && <nav className="staff-membership-pagination g3-pagination" aria-label="Membership pages">
-          <span>{loading || subscriptionError ? 'Membership results unavailable' : `Page ${staffCurrentPage} of ${staffTotalPages} \u00b7 ${filteredSubscriptions.length} results`}</span>
+        {!isAdmin && <nav className="staff-membership-pagination g3-pagination" aria-label={t('subscriptionPagination.pages')}>
+          <span>{loading || subscriptionError ? t('subscriptionUi.subscriptionUnavailable') : t('subscriptionPagination.pageSummary', { current: staffCurrentPage, total: staffTotalPages, count: filteredSubscriptions.length })}</span>
           <div className="staff-membership-page-controls">
-            <button type="button" data-nav="prev" disabled={loading || Boolean(subscriptionError) || staffCurrentPage === 1} onClick={() => setStaffPage(staffCurrentPage - 1)}><ChevronLeft size={15} aria-hidden="true" />Prev</button>
+            <button type="button" data-nav="prev" aria-label={t('subscriptionPagination.previousPage')} disabled={loading || Boolean(subscriptionError) || staffCurrentPage === 1} onClick={() => setStaffPage(staffCurrentPage - 1)}><ChevronLeft size={15} aria-hidden="true" />{t('subscriptionPagination.previous')}</button>
             {!loading && !subscriptionError && getPaginationPages(staffCurrentPage, staffTotalPages).map(page => typeof page === 'number'
               ? <button type="button" key={page} aria-current={page === staffCurrentPage ? 'page' : undefined} onClick={() => setStaffPage(page)}>{page}</button>
               : <span key={page} aria-hidden="true">...</span>)}
-            <button type="button" data-nav="next" disabled={loading || Boolean(subscriptionError) || staffCurrentPage === staffTotalPages} onClick={() => setStaffPage(staffCurrentPage + 1)}>Next<ChevronRight size={15} aria-hidden="true" /></button>
+            <button type="button" data-nav="next" aria-label={t('subscriptionPagination.nextPage')} disabled={loading || Boolean(subscriptionError) || staffCurrentPage === staffTotalPages} onClick={() => setStaffPage(staffCurrentPage + 1)}>{t('subscriptionPagination.next')}<ChevronRight size={15} aria-hidden="true" /></button>
           </div>
         </nav>}
       </div>

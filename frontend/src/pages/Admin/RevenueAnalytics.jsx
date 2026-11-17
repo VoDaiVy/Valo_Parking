@@ -19,6 +19,7 @@ import { inspectRevenueResponse } from './revenueAnalyticsData';
 import './revenueAnalytics.css';
 import './adminPageConsistency.css';
 import { getAdminPlatformRevenueByMode } from '../../services/statisticsService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
@@ -43,12 +44,6 @@ const SOURCE_COLORS = {
   packageRevenue: '#FACC15', // yellow-400
   membershipTransferFees: '#10B981', // emerald-500
 };
-const SOURCE_LABELS = {
-  bookingRevenue: 'Booking',
-  serviceRevenue: 'Service',
-  packageRevenue: 'Package',
-  membershipTransferFees: 'Transfer Fees',
-};
 
 /* ── Utilities ────────────────────────────────────────────────────────── */
 
@@ -57,8 +52,8 @@ const safe = (v) => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
-const formatCurrency = (value) => safe(value) === null ? 'Unavailable' : `${safe(value).toLocaleString('vi-VN')} VND`;
-const formatNumber = (value) => safe(value) === null ? 'Unavailable' : safe(value).toLocaleString('vi-VN');
+const formatCurrency = (value, unavailable = 'Unavailable') => safe(value) === null ? unavailable : `${safe(value).toLocaleString('vi-VN')} VND`;
+const formatNumber = (value, unavailable = 'Unavailable') => safe(value) === null ? unavailable : safe(value).toLocaleString('vi-VN');
 
 const formatAxisCurrency = (value) => {
   const number = safe(value);
@@ -81,12 +76,13 @@ const pct = (value, total) => {
   return (safe(value) / t) * 100;
 };
 
-const formatPeriodLabel = (label, granularity) => {
+const formatPeriodLabel = (label, granularity, language = 'en') => {
   if (!label) return '';
   if (granularity === 'year') return label;
   if (granularity === 'month') {
     const [y, m] = label.split('-');
-    return `${MONTHS[Number(m) - 1]?.slice(0, 3) || m} ${y}`;
+    const month = new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-GB', { month: 'short' }).format(new Date(Date.UTC(Number(y), Number(m) - 1, 1)));
+    return `${month} ${y}`;
   }
   try {
     return new Date(`${label}T00:00:00+07:00`).toLocaleDateString('en-GB', {
@@ -165,6 +161,7 @@ function CustomSelect({ value, options, onChange }) {
 /* ── Main Component ───────────────────────────────────────────────────── */
 
 export default function RevenueAnalytics() {
+  const { t } = useLanguage();
   const { year: vnYear, month: vnMonth } = getCurrentVietnamDate();
   const [mode, setMode] = useState('7d');
   const [selectedYear, setSelectedYear] = useState(vnYear);
@@ -189,7 +186,7 @@ export default function RevenueAnalytics() {
     });
 
     if (mode === 'custom' && !validRange) {
-      queueMicrotask(() => { if (active) { setData(null); setLoading(false); setError('Choose a start and end time in order (maximum 10 years).'); } });
+      queueMicrotask(() => { if (active) { setData(null); setLoading(false); setError(t('adminPages.revenueUi.error')); } });
       return () => { active = false; };
     }
     const params = { mode, transactionPage };
@@ -209,18 +206,18 @@ export default function RevenueAnalytics() {
         setError('');
       } else {
         setData(null);
-        setError('Revenue data could not be loaded. Try again in a moment.');
+        setError(t('adminPages.revenueUi.error'));
       }
       setLoading(false);
     }).catch(() => {
       if (!active) return;
       setData(null);
-      setError('Revenue data could not be loaded. Try again in a moment.');
+      setError(t('adminPages.revenueUi.error'));
       setLoading(false);
     });
 
     return () => { active = false; };
-  }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey, transactionPage, customRange, validRange]);
+  }, [mode, selectedYear, selectedMonth, selectedQuarter, refreshKey, transactionPage, customRange, validRange, t]);
 
   const report = inspectRevenueResponse(data);
   const summary = report.summary;
@@ -241,13 +238,13 @@ export default function RevenueAnalytics() {
         <header className="c4-header ra-header mb-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
           <div>
             <div className="c4-title-line"><h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
-              Revenue Analytics
+              {t('adminPages.revenue.title')}
             </h1><div className="c4-badge">
               <BarChart3 size={11} strokeWidth={2.5} />
-              VALO / ADMIN ANALYTICS
+              {t('adminPages.revenueAnalyticsExtra.badge')}
             </div></div>
             <p className="mt-1 text-[13px] text-slate-400">
-              Track platform revenue, payment sources, and operational performance.
+              {t('adminPages.revenue.subtitle')}
             </p>
           </div>
 
@@ -265,9 +262,9 @@ export default function RevenueAnalytics() {
               />
             )}
             {mode === 'custom' && <>
-              <AdminDateTimePicker label="Revenue from (Vietnam time)" value={customRange.from} onChange={from => { setCustomRange(previous => ({ ...previous, from })); setTransactionPage(1); }} />
-              <span className="text-xs text-white/40">to</span>
-              <AdminDateTimePicker label="Revenue to (Vietnam time)" value={customRange.to} onChange={to => { setCustomRange(previous => ({ ...previous, to })); setTransactionPage(1); }} />
+              <AdminDateTimePicker label={t('adminPages.revenueAnalyticsExtra.customFrom')} value={customRange.from} onChange={from => { setCustomRange(previous => ({ ...previous, from })); setTransactionPage(1); }} />
+              <span className="text-xs text-white/40">{t('common.to', { defaultValue: 'to' })}</span>
+              <AdminDateTimePicker label={t('adminPages.revenueAnalyticsExtra.customTo')} value={customRange.to} onChange={to => { setCustomRange(previous => ({ ...previous, to })); setTransactionPage(1); }} />
             </>}
             <ModeMenu mode={mode} onChange={(m) => m !== mode && (setMode(m), setTransactionPage(1))} />
             <button
@@ -277,12 +274,12 @@ export default function RevenueAnalytics() {
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-yellow-400/25 bg-yellow-400/10 px-4 text-sm font-bold text-yellow-300 transition hover:bg-yellow-400/20 disabled:opacity-50"
             >
               <RefreshCw size={14} strokeWidth={2.5} className={loading ? 'animate-spin' : ''} />
-              Refresh
+              {t('adminPages.revenueUi.refresh')}
             </button>
 
           </div>
         </header>
-        <div className="ra-update"><span>{loading ? 'Updating...' : updatedAt ? `Last updated: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : 'Not updated'}</span><span>All amounts are in VND</span></div>
+        <div className="ra-update"><span>{loading ? t('adminPages.revenueAnalyticsExtra.updating') : updatedAt ? `${t('adminPages.revenueAnalyticsExtra.lastUpdated')}: ${updatedAt.toLocaleString('en-GB', {timeZone: 'Asia/Ho_Chi_Minh'})} ICT` : t('adminPages.revenueAnalyticsExtra.notUpdated')}</span><span>{t('adminPages.revenueAnalyticsExtra.allAmountsVnd')}</span></div>
 
         {error && (
           <div className="mb-5 flex flex-col gap-3 rounded-lg border-l-2 border-amber-400 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100 sm:flex-row sm:items-center">
@@ -296,7 +293,17 @@ export default function RevenueAnalytics() {
         ) : data ? (
           <div className="ra-content">
             <KPIStrip summary={summary} reduceMotion={reduceMotion} />
-            {report.issues.length > 0 && <div className="ra-integrity" role="status">{report.issues.map((issue) => <p key={issue}>{issue}</p>)}</div>}
+            {report.issues.length > 0 && <div className="ra-integrity" role="status">{report.issues.map((issue) => {
+              const issueKey = {
+                'Some revenue amounts are unavailable in the reporting response.': 'amountsUnavailable',
+                'Revenue totals do not reconcile with the reported sources. Total and composition are unavailable.': 'totalsMismatch',
+                'Revenue trend contains incomplete or inconsistent amounts.': 'trendIncomplete',
+                'Revenue trend does not reconcile with the selected-period totals.': 'trendMismatch',
+                'Package attribution is incomplete.': 'packageIncomplete',
+                'Package rows do not reconcile with Package Revenue.': 'packageMismatch',
+              }[issue];
+              return <p key={issue}>{issueKey ? t(`adminPages.revenueAnalyticsExtra.issues.${issueKey}`) : issue}</p>;
+            })}</div>}
             <div className="ra-row ra-primary">
               <RevenueTrendChart trend={trend} granularity={granularity} reduceMotion={reduceMotion} />
               <RevenueBySourceSection summary={summary} reduceMotion={reduceMotion} />
@@ -319,11 +326,20 @@ export default function RevenueAnalytics() {
 /* ── Mode Menu ────────────────────────────────────────────────────────── */
 
 function ModeMenu({ mode, onChange }) {
+  const { t } = useLanguage();
+  const labels = {
+    '7d': t('adminPages.revenueUi.periods.days7'),
+    month: t('adminPages.revenueUi.periods.month'),
+    quarter: t('adminPages.revenueUi.periods.quarter'),
+    year: t('adminPages.revenueUi.periods.year'),
+    years: t('adminPages.revenueAnalyticsExtra.years'),
+    custom: t('adminPages.revenueAnalyticsExtra.custom'),
+  };
   return (
     <Menu as="div" className="relative z-40 inline-block text-left">
       <Menu.Button className="inline-flex h-10 w-full min-w-[120px] items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 text-sm font-semibold text-white/80 transition hover:border-yellow-400/40 hover:text-white">
         <CalendarDays size={14} className="text-white/40" />
-        <span>{MODE_OPTIONS.find((o) => o.value === mode)?.label}</span>
+        <span>{labels[mode]}</span>
         <ChevronDown size={14} className="text-white/40" />
       </Menu.Button>
       <Transition
@@ -351,7 +367,7 @@ function ModeMenu({ mode, onChange }) {
                   ) : (
                     <span className="w-3.5" />
                   )}
-                  <span className="font-medium">{option.label}</span>
+                  <span className="font-medium">{labels[option.value]}</span>
                 </button>
               )}
             </Menu.Item>
@@ -368,9 +384,10 @@ function SecondarySelector({
   mode, year, month, quarter, availableYears,
   onYearChange, onMonthChange, onQuarterChange,
 }) {
+  const { t } = useLanguage();
   const yearOpts = availableYears.map(y => ({ label: String(y), value: y }));
-  const monthOpts = MONTHS.map((m, i) => ({ label: m, value: i + 1 }));
-  const quarterOpts = QUARTERS.map((q, i) => ({ label: q, value: i + 1 }));
+  const monthOpts = MONTHS.map((m, i) => ({ label: t(`common.months.${i + 1}`, { defaultValue: m }), value: i + 1 }));
+  const quarterOpts = QUARTERS.map((q, i) => ({ label: t(`common.quarters.${i + 1}`, { defaultValue: q }), value: i + 1 }));
 
   return (
     <div className="flex items-center gap-2">
@@ -388,11 +405,13 @@ function SecondarySelector({
 /* ── 4 KPI Cards ──────────────────────────────────────────────────────── */
 
 function KPIStrip({ summary, reduceMotion }) {
+  const { t } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
   const metrics = [
-    { icon: CircleDollarSign, label: 'Total Revenue', value: formatCurrency(summary.totalRevenue), colorClass: 'text-yellow-400' },
-    { icon: WalletCards, label: 'Booking Revenue', value: formatCurrency(summary.bookingRevenue), colorClass: 'text-blue-400' },
-    { icon: Crown, label: 'Package Revenue', value: formatCurrency(summary.packageRevenue), colorClass: 'text-yellow-400' },
-    { icon: ArrowDownRight, label: 'Refunds', value: formatCurrency(summary.refunds), colorClass: 'text-rose-400' },
+    { icon: CircleDollarSign, label: t('adminPages.revenueUi.cards.total'), value: formatCurrency(summary.totalRevenue, unavailable), colorClass: 'text-yellow-400' },
+    { icon: WalletCards, label: t('adminPages.revenueUi.cards.booking'), value: formatCurrency(summary.bookingRevenue, unavailable), colorClass: 'text-blue-400' },
+    { icon: Crown, label: t('adminPages.revenueUi.cards.package'), value: formatCurrency(summary.packageRevenue, unavailable), colorClass: 'text-yellow-400' },
+    { icon: ArrowDownRight, label: t('adminPages.revenueUi.cards.refunds'), value: formatCurrency(summary.refunds, unavailable), colorClass: 'text-rose-400' },
   ];
 
   return (
@@ -423,6 +442,13 @@ function KPIStrip({ summary, reduceMotion }) {
 /* ── Revenue Trend Chart ──────────────────────────────────────────────── */
 
 function RevenueTrendChart({ trend, granularity, reduceMotion }) {
+  const { t, language } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
+  const sourceLabel = (key) => key === 'totalRevenue'
+    ? t('adminPages.revenueUi.cards.total')
+    : key === 'refunds'
+      ? t('adminPages.revenueUi.refundsDeducted', { defaultValue: 'Refunds (already deducted)' })
+      : t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'}`);
   const [viewMode, setViewMode] = useState('total');
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const points = trend || [];
@@ -437,17 +463,17 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
   const y = (value) => pad.top + plotHeight * (1 - value / max);
   const active = hoveredIndex !== null ? points[hoveredIndex] : null;
   const tooltipKeys = viewMode === 'total' ? ['totalRevenue'] : [...Object.keys(SOURCE_COLORS), 'refunds', 'totalRevenue'];
-  const tooltipDate = active && /^\d{4}-\d{2}-\d{2}$/.test(active.period) ? new Date(`${active.period}T00:00:00Z`).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric', timeZone:'UTC'}) : active?.period;
+  const tooltipDate = active && /^\d{4}-\d{2}-\d{2}$/.test(active.period) ? new Date(`${active.period}T00:00:00Z`).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-GB', {day:'numeric', month:'short', year:'numeric', timeZone:'UTC'}) : active?.period;
   const hasActivity = points.some((point) => keys.some((key) => safe(point[key]) > 0));
   return <section className="ra-trend">
-    <div className="ra-section-heading"><div><h2><BarChart3 size={20} />Revenue Trend</h2><p>Net finalized booking and paid package income. Refunds are already deducted.</p></div>
-      <div className="ra-switch" aria-label="Revenue chart view">
-        <button type="button" aria-pressed={viewMode === 'total'} onClick={() => { setViewMode('total'); setHoveredIndex(null); }}>Total</button>
-        <button type="button" aria-pressed={viewMode === 'bySource'} onClick={() => { setViewMode('bySource'); setHoveredIndex(null); }}>By Source</button>
+    <div className="ra-section-heading"><div><h2><BarChart3 size={20} />{t('adminPages.revenueUi.trend.title')}</h2><p>{t('adminPages.revenueUi.trend.totalDescription')} {t('adminPages.revenueUi.trend.overPeriod')}</p></div>
+      <div className="ra-switch" aria-label={t('adminPages.revenueUi.trend.chartView', { defaultValue: 'Revenue chart view' })}>
+        <button type="button" aria-pressed={viewMode === 'total'} onClick={() => { setViewMode('total'); setHoveredIndex(null); }}>{t('adminPages.revenueUi.trend.total')}</button>
+        <button type="button" aria-pressed={viewMode === 'bySource'} onClick={() => { setViewMode('bySource'); setHoveredIndex(null); }}>{t('adminPages.revenueUi.trend.bySource')}</button>
       </div>
     </div>
-    {trend === null ? <EmptyState text="Revenue trend unavailable: the reporting data is missing or does not reconcile." /> : hasActivity ? <div className="ra-chart-scroll">
-      <svg className="ra-revenue-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={granularity === 'year' ? 'Annual revenue bar chart' : 'Revenue bar chart'}>
+    {trend === null ? <EmptyState text={t('adminPages.revenueUi.trend.unavailable', { defaultValue: 'Revenue trend unavailable: the reporting data is missing or does not reconcile.' })} /> : hasActivity ? <div className="ra-chart-scroll">
+      <svg className="ra-revenue-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={granularity === 'year' ? t('adminPages.revenueUi.trend.annualChart', { defaultValue: 'Annual revenue bar chart' }) : t('adminPages.revenueUi.trend.chart', { defaultValue: 'Revenue bar chart' })}>
         <defs>{keys.map((key) => <linearGradient key={key} id={`ra-revenue-${key}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={key === 'totalRevenue' ? '#FFE894' : SOURCE_COLORS[key]} stopOpacity="1" />
           <stop offset="15%" stopColor={key === 'totalRevenue' ? '#F5C84C' : SOURCE_COLORS[key]} stopOpacity=".95" />
@@ -463,40 +489,44 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
             const base = keys.slice(0,j).reduce((sum, source) => sum + safe(point[source]), 0);
             const top = y(base + amount);
             return amount > 0 ? <g key={key}>
-              <rect data-series={key} data-amount={amount} x={x(i)-barWidth/2} y={top} width={barWidth} height={y(base)-top} rx={viewMode === 'total' ? 3 : 0} fill={`url(#ra-revenue-${key})`} opacity={hoveredIndex===null || hoveredIndex===i ? 1 : .55}><title>{`${point.period} - ${SOURCE_LABELS[key] || 'Total'}: ${formatCurrency(amount)}`}</title></rect>
+              <rect data-series={key} data-amount={amount} x={x(i)-barWidth/2} y={top} width={barWidth} height={y(base)-top} rx={viewMode === 'total' ? 3 : 0} fill={`url(#ra-revenue-${key})`} opacity={hoveredIndex===null || hoveredIndex===i ? 1 : .55}><title>{`${point.period} - ${sourceLabel(key)}: ${formatCurrency(amount, unavailable)}`}</title></rect>
               <line x1={x(i)-barWidth/2+2} x2={x(i)+barWidth/2-2} y1={top+1} y2={top+1} stroke={key==='totalRevenue' ? '#FFF0B0' : SOURCE_COLORS[key]} opacity=".7" />
             </g> : null;
           })}
-          {(points.length<=8 || i===0 || i===points.length-1 || i%Math.ceil(points.length/6)===0) && <text x={x(i)} y={height-10} fill="#9AADC0" textAnchor="middle" fontSize="12">{formatPeriodLabel(point.period,granularity)}</text>}
-          <rect x={x(i)-band/2} y={pad.top} width={band} height={plotHeight} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: ${formatCurrency(point.totalRevenue)}`} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(i)} onBlur={() => setHoveredIndex(null)} onKeyDown={(event) => {if(event.key==='Escape') setHoveredIndex(null);}} />
+          {(points.length<=8 || i===0 || i===points.length-1 || i%Math.ceil(points.length/6)===0) && <text x={x(i)} y={height-10} fill="#9AADC0" textAnchor="middle" fontSize="12">{formatPeriodLabel(point.period,granularity,language)}</text>}
+          <rect x={x(i)-band/2} y={pad.top} width={band} height={plotHeight} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: ${formatCurrency(point.totalRevenue, unavailable)}`} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(i)} onBlur={() => setHoveredIndex(null)} onKeyDown={(event) => {if(event.key==='Escape') setHoveredIndex(null);}} />
         </g>)}
-        {active && <foreignObject x={Math.min(width-300,Math.max(pad.left,x(hoveredIndex)-140))} y={pad.top} width="285" height={viewMode === 'total' ? 100 : 245} pointerEvents="none"><div className="ra-tooltip" role="tooltip"><strong>{tooltipDate}</strong>{tooltipKeys.map((key) => <div key={key}><span>{SOURCE_LABELS[key] || (key==='refunds' ? 'Refunds (already deducted)' : 'Total Revenue')}</span><b>{formatCurrency(active[key])}</b></div>)}</div></foreignObject>}
+        {active && <foreignObject x={Math.min(width-300,Math.max(pad.left,x(hoveredIndex)-140))} y={pad.top} width="285" height={viewMode === 'total' ? 100 : 245} pointerEvents="none"><div className="ra-tooltip" role="tooltip"><strong>{tooltipDate}</strong>{tooltipKeys.map((key) => <div key={key}><span>{sourceLabel(key)}</span><b>{formatCurrency(active[key], unavailable)}</b></div>)}</div></foreignObject>}
       </svg>
-    </div> : <EmptyState text="No revenue recorded in this period." />}
-    {viewMode === 'bySource' && <div className="ra-chart-legend ra-trend-legend" aria-label="Revenue sources">{Object.keys(SOURCE_COLORS).map((key) => <span key={key}><i style={{background:SOURCE_COLORS[key]}} />{SOURCE_LABELS[key]}</span>)}</div>}
-    <span className="sr-only">{reduceMotion ? 'Reduced motion enabled.' : ''}</span>
+    </div> : <EmptyState text={t('adminPages.revenueUi.trend.empty')} />}
+    {viewMode === 'bySource' && <div className="ra-chart-legend ra-trend-legend" aria-label={t('adminPages.revenueUi.source.title')}>{Object.keys(SOURCE_COLORS).map((key) => <span key={key}><i style={{background:SOURCE_COLORS[key]}} />{t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'}`)}</span>)}</div>}
+    <span className="sr-only">{reduceMotion ? t('adminPages.revenueUi.reducedMotion', { defaultValue: 'Reduced motion enabled.' }) : ''}</span>
   </section>;
 }
 
 /* ── Revenue by Source ─────────────────────────────────────────────────── */
 
 function RevenueBySourceSection({ summary }) {
+  const { t } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
   const total = safe(summary.sourceCompositionTotal);
   const sources = Object.keys(SOURCE_COLORS);
   const valid = total !== null && sources.every((key) => safe(summary[key]) !== null);
 
-  return <section className="ra-sources"><div className="ra-section-heading"><div><h2><BarChart3 size={20} />Revenue by Source</h2><p>Same selected period; refunds already deducted from booking/service.</p></div></div>
+  return <section className="ra-sources"><div className="ra-section-heading"><div><h2><BarChart3 size={20} />{t('adminPages.revenueUi.source.title')}</h2><p>{t('adminPages.revenueUi.source.description', { defaultValue: 'Same selected period; refunds already deducted from booking/service.' })}</p></div></div>
     {valid && total > 0 ? <div className="ra-donut-layout"><div className="ra-donut">
-      <svg viewBox="0 0 200 200" role="img" aria-label="Revenue composition"><circle cx="100" cy="100" r="78" fill="none" stroke="#16212A" strokeWidth="26" />
-        {sources.map((key,index) => {const length=Number(summary[key])/total*100; const start=sources.slice(0,index).reduce((sum,item)=>sum+Number(summary[item])/total*100,0); return length>0 ? <circle key={key} cx="100" cy="100" r="78" fill="none" stroke={SOURCE_COLORS[key]} strokeWidth="26" pathLength="100" strokeDasharray={`${length} ${100-length}`} strokeDashoffset={-start} transform="rotate(-90 100 100)"><title>{`${SOURCE_LABELS[key]}: ${formatCurrency(summary[key])}`}</title></circle> : null;})}
-      </svg><div><strong>{formatNumber(total)}</strong><span>VND</span><small>Total Revenue</small></div>
-    </div><div className="ra-source-legend">{sources.map((key) => <div key={key}><span><i style={{background:SOURCE_COLORS[key]}} />{SOURCE_LABELS[key]}</span><span>{pct(summary[key],total).toFixed(1)}%</span><b>{formatCurrency(summary[key])}</b></div>)}</div></div> : <EmptyState text={valid ? 'No revenue recorded in this period.' : 'Revenue composition unavailable.'} />}
+      <svg viewBox="0 0 200 200" role="img" aria-label={t('adminPages.revenueUi.source.compositionAria', { defaultValue: 'Revenue composition' })}><circle cx="100" cy="100" r="78" fill="none" stroke="#16212A" strokeWidth="26" />
+        {sources.map((key,index) => {const length=Number(summary[key])/total*100; const start=sources.slice(0,index).reduce((sum,item)=>sum+Number(summary[item])/total*100,0); const sourceKey = key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'; return length>0 ? <circle key={key} cx="100" cy="100" r="78" fill="none" stroke={SOURCE_COLORS[key]} strokeWidth="26" pathLength="100" strokeDasharray={`${length} ${100-length}`} strokeDashoffset={-start} transform="rotate(-90 100 100)"><title>{`${t(`adminPages.revenueUi.source.${sourceKey}`)}: ${formatCurrency(summary[key], unavailable)}`}</title></circle> : null;})}
+      </svg><div><strong>{formatNumber(total, unavailable)}</strong><span>VND</span><small>{t('adminPages.revenueUi.cards.total')}</small></div>
+    </div><div className="ra-source-legend">{sources.map((key) => { const sourceKey = key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'; return <div key={key}><span><i style={{background:SOURCE_COLORS[key]}} />{t(`adminPages.revenueUi.source.${sourceKey}`)}</span><span>{pct(summary[key],total).toFixed(1)}%</span><b>{formatCurrency(summary[key], unavailable)}</b></div>; })}</div></div> : <EmptyState text={valid ? t('adminPages.revenueUi.trend.empty') : t('adminPages.revenueUi.source.empty', { defaultValue: 'Revenue composition unavailable.' })} />}
   </section>;
 }
 
 /* ── Vehicle Traffic ──────────────────────────────────────────────────── */
 
 function VehicleTrafficSection({ traffic, trafficSummary, granularity }) {
+  const { t, language } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
   const [activePeriod, setActivePeriod] = useState(null);
   const valid = Array.isArray(traffic) && traffic.every((point) => point.period && ['entries','exits'].every((key) => safe(point[key]) !== null && Number.isInteger(Number(point[key]))));
   const points = valid ? traffic : [];
@@ -507,30 +537,32 @@ function VehicleTrafficSection({ traffic, trafficSummary, granularity }) {
   const hasTraffic=points.some((point)=>point.entries>0 || point.exits>0);
   const activeIndex = points.findIndex((point) => point.period === activePeriod);
   const activePoint = points[activeIndex];
-  return <section className="ra-traffic"><div className="ra-section-heading"><div><h2><WalletCards size={20} />Vehicle Traffic</h2><p>Entry/exit events, not unique vehicles. Parked is the current snapshot.</p></div></div>
+  return <section className="ra-traffic"><div className="ra-section-heading"><div><h2><WalletCards size={20} />{t('adminPages.revenueUi.traffic.title')}</h2><p>{t('adminPages.revenueUi.traffic.subtitle')}</p></div></div>
     <div className="ra-traffic-toolbar">
-    <div className="ra-traffic-summary"><span>Entries <b>{formatNumber(trafficSummary.totalEntries)}</b></span><span>Exits <b>{formatNumber(trafficSummary.totalExits)}</b></span><span>Parked now <b>{formatNumber(trafficSummary.currentlyParked)}</b></span></div>
-    <div className="ra-chart-legend"><span><i style={{background:'#34D399'}} />Entries</span><span><i style={{background:'#FB7185'}} />Exits</span></div>
+    <div className="ra-traffic-summary"><span>{t('adminPages.revenueUi.traffic.entries')} <b>{formatNumber(trafficSummary.totalEntries, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}</b></span><span>{t('adminPages.revenueUi.traffic.exits')} <b>{formatNumber(trafficSummary.totalExits, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}</b></span><span>{t('adminPages.revenueUi.traffic.parked')} <b>{formatNumber(trafficSummary.currentlyParked, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}</b></span></div>
+    <div className="ra-chart-legend"><span><i style={{background:'#34D399'}} />{t('adminPages.revenueUi.traffic.entries')}</span><span><i style={{background:'#FB7185'}} />{t('adminPages.revenueUi.traffic.exits')}</span></div>
     </div>
-    {valid && hasTraffic ? <div className="ra-chart-scroll"><svg viewBox={`0 0 ${width} ${height}`} className="ra-traffic-chart" role="img" aria-label="Vehicle traffic chart">
+    {valid && hasTraffic ? <div className="ra-chart-scroll"><svg viewBox={`0 0 ${width} ${height}`} className="ra-traffic-chart" role="img" aria-label={t('adminPages.revenueUi.traffic.chartLabel')}>
       <defs>{[['entries','#34D399'],['exits','#FB7185']].map(([key,color])=><linearGradient key={key} id={`ra-traffic-${key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} /><stop offset="100%" stopColor={color} stopOpacity=".25" /></linearGradient>)}</defs>
-      {[0,.5,1].map((ratio)=><g key={ratio}><line x1={pad.left} x2={width-pad.right} y1={y(maxTraffic*ratio)} y2={y(maxTraffic*ratio)} stroke="#24313A" /><text x={pad.left-6} y={y(maxTraffic*ratio)+4} fill="#9AADC0" textAnchor="end" fontSize="11">{formatNumber(Math.round(maxTraffic*ratio))}</text></g>)}
+      {[0,.5,1].map((ratio)=><g key={ratio}><line x1={pad.left} x2={width-pad.right} y1={y(maxTraffic*ratio)} y2={y(maxTraffic*ratio)} stroke="#24313A" /><text x={pad.left-6} y={y(maxTraffic*ratio)+4} fill="#9AADC0" textAnchor="end" fontSize="11">{formatNumber(Math.round(maxTraffic*ratio), unavailable)}</text></g>)}
       {points.map((point, i) => {
         const center = pad.left + band * (i + .5);
         return <g key={point.period}>
           {['entries', 'exits'].map((key, j) => <rect key={key} data-series={key} data-count={point[key]} x={center + (j === 0 ? -bar - 1 : 1)} y={y(point[key])} width={bar} height={y(0) - y(point[key])} rx="2" fill={`url(#ra-traffic-${key})`} opacity={activePoint && activeIndex !== i ? .45 : 1} />)}
-          {(points.length <= 7 || i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 5) === 0) && <text x={center} y={height - 8} textAnchor="middle" fill="#9AADC0" fontSize="11">{formatPeriodLabel(point.period, granularity)}</text>}
-          <path d={`M ${center-band/2} ${pad.top} h ${band} v ${height-pad.top-pad.bottom} h ${-band} Z`} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: Entries: ${formatNumber(point.entries)}, Exits: ${formatNumber(point.exits)}`} onPointerEnter={() => setActivePeriod(point.period)} onPointerLeave={() => setActivePeriod(null)} onFocus={() => setActivePeriod(point.period)} onBlur={() => setActivePeriod(null)} onKeyDown={(event) => { if (event.key === 'Escape') setActivePeriod(null); }} />
+          {(points.length <= 7 || i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 5) === 0) && <text x={center} y={height - 8} textAnchor="middle" fill="#9AADC0" fontSize="11">{formatPeriodLabel(point.period, granularity, language)}</text>}
+          <path d={`M ${center-band/2} ${pad.top} h ${band} v ${height-pad.top-pad.bottom} h ${-band} Z`} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: ${t('adminPages.revenueUi.traffic.entries')}: ${formatNumber(point.entries, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}, ${t('adminPages.revenueUi.traffic.exits')}: ${formatNumber(point.exits, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}`} onPointerEnter={() => setActivePeriod(point.period)} onPointerLeave={() => setActivePeriod(null)} onFocus={() => setActivePeriod(point.period)} onBlur={() => setActivePeriod(null)} onKeyDown={(event) => { if (event.key === 'Escape') setActivePeriod(null); }} />
         </g>;
       })}
-      {activePoint && <foreignObject x={Math.min(width - 222, Math.max(pad.left, pad.left + band * (activeIndex + .5) - 105))} y={pad.top + 4} width="210" height="130" pointerEvents="none"><div className="ra-tooltip ra-traffic-tooltip" role="tooltip"><strong>{activePoint.period}</strong><div><span>Entries</span><b style={{color:'#34D399'}}>{formatNumber(activePoint.entries)}</b></div><div><span>Exits</span><b style={{color:'#FB7185'}}>{formatNumber(activePoint.exits)}</b></div></div></foreignObject>}
-    </svg></div> : <EmptyState text={valid ? 'No vehicle activity.' : 'Vehicle traffic unavailable.'} />}
+      {activePoint && <foreignObject x={Math.min(width - 222, Math.max(pad.left, pad.left + band * (activeIndex + .5) - 105))} y={pad.top + 4} width="210" height="130" pointerEvents="none"><div className="ra-tooltip ra-traffic-tooltip" role="tooltip"><strong>{activePoint.period}</strong><div><span>{t('adminPages.revenueUi.traffic.entries')}</span><b style={{color:'#34D399'}}>{formatNumber(activePoint.entries, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}</b></div><div><span>{t('adminPages.revenueUi.traffic.exits')}</span><b style={{color:'#FB7185'}}>{formatNumber(activePoint.exits, t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' }))}</b></div></div></foreignObject>}
+    </svg></div> : <EmptyState text={valid ? t('adminPages.revenueUi.traffic.empty') : t('adminPages.revenueUi.traffic.unavailable', { defaultValue: 'Vehicle traffic unavailable.' })} />}
   </section>;
 }
 
 /* ── Status Distribution ──────────────────────────────────────────────── */
 
 function StatusDistributionSection({ statusDistribution, reduceMotion }) {
+  const { t } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
   const statusRows = statusDistribution?.byStatus || [];
   const valid = statusDistribution && safe(statusDistribution.totalBookings) !== null && Array.isArray(statusDistribution.byStatus) && statusRows.every((row)=>safe(row.count)!==null) && statusRows.reduce((sum,row)=>sum+Number(row.count),0)===Number(statusDistribution.totalBookings);
   const totalBookings = safe(statusDistribution?.totalBookings);
@@ -543,8 +575,8 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
   return (
     <motion.section initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}>
       <div className="mb-5">
-        <h3 className="text-[16px] font-bold text-white">Status Distribution</h3>
-        <p className="mt-0.5 text-[12px] text-slate-400">Current status of bookings scheduled to start in the selected period.</p>
+        <h3 className="text-[16px] font-bold text-white">{t('adminPages.revenueUi.status.title')}</h3>
+        <p className="mt-0.5 text-[12px] text-slate-400">{t('adminPages.revenueUi.status.subtitle')}</p>
       </div>
       {valid && statusRows.length > 0 && totalBookings > 0 ? (
         <div className="flex flex-row items-center gap-8">
@@ -563,7 +595,7 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center pt-1">
               <span className="text-xl font-black leading-none text-white">{formatNumber(totalBookings)}</span>
-              <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-500">Bookings</span>
+              <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-500">{t('adminPages.revenueUi.status.bookings')}</span>
             </div>
           </div>
           <div className="flex-1 space-y-2.5">
@@ -574,10 +606,10 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
                 <div key={row.status} className="flex items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.color }} />
-                    <span className="font-bold text-slate-200">{tone.label}</span>
+                    <span className="font-bold text-slate-200">{t(`adminPages.revenueUi.statusLabels.${String(row.status).toLowerCase()}`, { defaultValue: tone.label })}</span>
                   </div>
                   <span className="font-semibold tabular-nums text-slate-400">
-                    <span className="mr-2 text-white">{formatNumber(row.count)}</span>{percent.toFixed(1)}%
+              <span className="mr-2 text-white">{formatNumber(row.count, unavailable)}</span>{percent.toFixed(1)}%
                   </span>
                 </div>
               );
@@ -585,7 +617,7 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
           </div>
         </div>
       ) : (
-        <EmptyState text={valid ? "No booking activity." : "Booking status distribution unavailable."} />
+        <EmptyState text={valid ? t('adminPages.revenueUi.status.empty') : t('adminPages.revenueUi.status.unavailable', { defaultValue: 'Booking status distribution unavailable.' })} />
       )}
     </motion.section>
   );
@@ -594,48 +626,54 @@ function StatusDistributionSection({ statusDistribution, reduceMotion }) {
 /* ── Package Value ────────────────────────────────────────────────────── */
 
 function PackageValueSection({ packageBreakdown }) {
+  const { t } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
   const rows = packageBreakdown ? [...packageBreakdown].sort((a,b)=>Number(b.totalAmount)-Number(a.totalAmount)) : null;
   const total = rows?.reduce((sum,row)=>sum+Number(row.totalAmount),0) || 0;
-  return <section className="ra-packages"><div className="ra-section-heading"><div><h2><Crown size={20} />Value by Package</h2><p>Paid purchases and supported renewals in the selected period.</p></div></div>
-    {rows?.length ? <div className="ra-table-scroll"><table><thead><tr>{['#','Package Name','Type','Purchases','Renewals','Revenue','Share'].map((label)=><th key={label}>{label}</th>)}</tr></thead><tbody>{rows.map((row,index)=>{const share=total>0?Number(row.totalAmount)/total*100:0; return <tr key={row.packageId || `${row.packageName}-${index}`}><td>{index+1}</td><td><strong>{row.packageName || 'Archived package'}</strong>{!row.isActive && <small>Archived</small>}</td><td>{row.packageType || 'Unavailable'}</td><td>{formatNumber(row.purchaseCount)}</td><td>{formatNumber(row.renewalCount)}</td><td>{formatCurrency(row.totalAmount)}</td><td><span>{share.toFixed(1)}%</span><div className="ra-share-track"><i style={{width:`${share}%`}} /></div></td></tr>;})}</tbody></table></div> : <EmptyState text={rows ? 'No package transactions.' : 'Package breakdown unavailable: reporting attribution is missing or does not reconcile.'} />}
+  const labels = ['#', t('adminPages.revenueUi.package.name', { defaultValue: 'Package Name' }), t('adminPages.revenueUi.package.type', { defaultValue: 'Type' }), t('adminPages.revenueUi.package.purchases'), t('adminPages.revenueUi.package.renewals'), t('adminPages.revenueUi.package.revenue', { defaultValue: 'Revenue' }), t('adminPages.revenueUi.package.share', { defaultValue: 'Share' })];
+  return <section className="ra-packages"><div className="ra-section-heading"><div><h2><Crown size={20} />{t('adminPages.revenueUi.package.title')}</h2><p>{t('adminPages.revenueUi.package.subtitle')}</p></div></div>
+    {rows?.length ? <div className="ra-table-scroll"><table><thead><tr>{labels.map((label)=><th key={label}>{label}</th>)}</tr></thead><tbody>{rows.map((row,index)=>{const share=total>0?Number(row.totalAmount)/total*100:0; return <tr key={row.packageId || `${row.packageName}-${index}`}><td>{index+1}</td><td><strong>{row.packageName || t('adminPages.revenueUi.package.archived')}</strong>{!row.isActive && <small>{t('adminPages.revenueUi.package.archivedSuffix')}</small>}</td><td>{row.packageType || unavailable}</td><td>{formatNumber(row.purchaseCount, unavailable)}</td><td>{formatNumber(row.renewalCount, unavailable)}</td><td>{formatCurrency(row.totalAmount, unavailable)}</td><td><span>{share.toFixed(1)}%</span><div className="ra-share-track"><i style={{width:`${share}%`}} /></div></td></tr>;})}</tbody></table></div> : <EmptyState text={rows ? t('adminPages.revenueUi.package.empty') : t('adminPages.revenueUi.package.unavailableBreakdown', { defaultValue: 'Package breakdown unavailable: reporting attribution is missing or does not reconcile.' })} />}
   </section>;
 }
 
 function RecentRevenueTransactions({ transactions, pagination, onPageChange, loading }) {
+  const { t, language } = useLanguage();
+  const unavailable = t('adminPages.revenueUi.unavailable', { defaultValue: 'Unavailable' });
   const valid = Array.isArray(transactions) && transactions.every(row => row.id && row.paidAt && !Number.isNaN(new Date(row.paidAt).getTime()) && safe(row.amount) !== null);
   const rows = valid ? transactions : [];
   const { page = 1, totalPages = 1, total = 0 } = pagination || {};
   const firstPage = Math.max(1, Math.min(page - 3, totalPages - 6));
-  const labels = ['Date & Time', 'Description', 'Amount', 'Status', 'Method'];
+  const labels = [t('adminPages.revenueAnalyticsExtra.transactions.dateTime'), t('adminPages.revenueAnalyticsExtra.transactions.description'), t('adminPages.revenueAnalyticsExtra.transactions.amount'), t('adminPages.revenueAnalyticsExtra.transactions.status'), t('adminPages.revenueAnalyticsExtra.transactions.method')];
   return <section className="ra-transactions" aria-busy={loading}>
-    <div className="ra-section-heading"><div><h2><WalletCards size={20} />Recent Revenue Transactions</h2><p>Booking wallet payments/refunds, package payments and transfer fees by payment date (Vietnam time). Payment activity differs from finalized revenue.</p></div></div>
+    <div className="ra-section-heading"><div><h2><WalletCards size={20} />{t('adminPages.revenueAnalyticsExtra.transactions.title')}</h2><p>{t('adminPages.revenueAnalyticsExtra.transactions.subtitle')}</p></div></div>
     <div className="ra-transaction-table"><table><colgroup>{['date', 'description', 'amount', 'status', 'method'].map(key => <col key={key} className={`ra-col-${key}`} />)}</colgroup><thead><tr>{labels.map(label => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>
       {rows.length ? rows.map(row => {
-        const fullDate = new Date(row.paidAt).toLocaleString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' });
-        const shortDate = new Date(row.paidAt).toLocaleString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const dateLocale = language === 'vi' ? 'vi-VN' : 'en-GB';
+        const fullDate = new Date(row.paidAt).toLocaleString(dateLocale, { timeZone: 'Asia/Ho_Chi_Minh' });
+        const shortDate = new Date(row.paidAt).toLocaleString(dateLocale, { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
         const typeLabel = {
-          PAYMENT: 'Payment', REFUND: 'Refund', TRANSFER_FEE: 'Transfer fee',
-          PACKAGE_PURCHASE: 'Package purchase', PACKAGE_RENEWAL: 'Package renewal',
+          PAYMENT: t('adminPages.revenueAnalyticsExtra.transactions.payment'), REFUND: t('adminPages.revenueAnalyticsExtra.transactions.refund'), TRANSFER_FEE: t('adminPages.revenueAnalyticsExtra.transactions.transferFee'),
+          PACKAGE_PURCHASE: t('adminPages.revenueAnalyticsExtra.transactions.packagePurchase'), PACKAGE_RENEWAL: t('adminPages.revenueAnalyticsExtra.transactions.packageRenewal'),
         }[row.type] || row.type?.replaceAll('_', ' ').toLowerCase();
         const detail = row.description || '';
         const description = typeLabel && !detail.toLowerCase().includes(typeLabel.toLowerCase())
           ? `${typeLabel}${detail ? `: ${detail}` : ''}`
-          : detail || typeLabel || 'Unavailable';
+          : detail || typeLabel || t('adminPages.revenueUi.package.unavailable', { defaultValue: 'Unavailable' });
         return <tr key={row.id}>
-          <td data-label={labels[0]}><time dateTime={row.paidAt} title={`${fullDate} ICT`}>{shortDate}</time>{row.dateBasis === 'legacy_created_at' && <small>Legacy creation date</small>}</td>
+          <td data-label={labels[0]}><time dateTime={row.paidAt} title={`${fullDate} ICT`}>{shortDate}</time>{row.dateBasis === 'legacy_created_at' && <small>{t('adminPages.revenueAnalyticsExtra.transactions.legacyDate')}</small>}</td>
           <td data-label={labels[1]}><span className="ra-transaction-description" title={description} tabIndex={0}>{description}</span></td>
-          <td data-label={labels[2]} className="ra-transaction-amount">{row.type === 'REFUND' ? '- ' : ''}{formatCurrency(row.amount)}</td>
-          <td data-label={labels[3]}><span className="ra-transaction-status" style={{ color: statusTone(row.status).color }}>{statusTone(row.status).label}</span></td>
-          <td className="ra-transaction-method" data-label={labels[4]}>{row.paymentMethod ? row.paymentMethod.toUpperCase() : 'Unavailable'}</td>
+          <td data-label={labels[2]} className="ra-transaction-amount">{row.type === 'REFUND' ? '- ' : ''}{formatCurrency(row.amount, unavailable)}</td>
+          <td data-label={labels[3]}><span className="ra-transaction-status" style={{ color: statusTone(row.status).color }}>{t(`adminPages.revenueUi.statusLabels.${String(row.status || '').toLowerCase()}`, { defaultValue: statusTone(row.status).label })}</span></td>
+          <td className="ra-transaction-method" data-label={labels[4]}>{row.paymentMethod ? row.paymentMethod.toUpperCase() : t('adminPages.revenueUi.package.unavailable', { defaultValue: 'Unavailable' })}</td>
         </tr>;
-      }) : <tr><td colSpan={5}>{valid ? 'No payment records in this period.' : 'Payment records unavailable.'}</td></tr>}
+      }) : <tr><td colSpan={5}>{valid ? t('adminPages.revenueAnalyticsExtra.transactions.empty') : t('adminPages.revenueAnalyticsExtra.transactions.unavailable')}</td></tr>}
     </tbody></table></div>
-    <nav className="ra-pagination" aria-label="Revenue transaction pagination">
-      <span>{pagination && valid ? `Page ${page} of ${totalPages} \u00b7 ${total} results` : 'Pagination unavailable'}</span>
+    <nav className="ra-pagination" aria-label={t('adminPages.revenueAnalyticsExtra.transactions.pagination')}>
+      <span>{pagination && valid ? t('adminPages.revenueAnalyticsExtra.transactions.pageOf', { page, totalPages, total }) : t('adminPages.revenueAnalyticsExtra.transactions.paginationUnavailable')}</span>
       <div>
-        <button disabled={loading || !pagination || !valid || page <= 1} onClick={() => onPageChange(page - 1)}>&larr; Prev</button>
+        <button disabled={loading || !pagination || !valid || page <= 1} onClick={() => onPageChange(page - 1)}>&larr; {t('common.previous', { defaultValue: 'Prev' })}</button>
         {pagination && valid && Array.from({ length: Math.min(totalPages, 7) }, (_, index) => firstPage + index).map(number => <button key={number} aria-label={`Page ${number}`} aria-current={number === page ? 'page' : undefined} disabled={loading} onClick={() => onPageChange(number)}>{number}</button>)}
-        <button disabled={loading || !pagination || !valid || page >= totalPages} onClick={() => onPageChange(page + 1)}>Next &rarr;</button>
+        <button disabled={loading || !pagination || !valid || page >= totalPages} onClick={() => onPageChange(page + 1)}>{t('common.next', { defaultValue: 'Next' })} &rarr;</button>
       </div>
     </nav>
   </section>;

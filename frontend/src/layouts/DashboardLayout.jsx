@@ -21,6 +21,8 @@ import '../styles/adminScrolling.css';
 import { scopeStaffTypography } from './staffTypography';
 import '../styles/staffTypography.css';
 import '../styles/staffPanel.css';
+import LanguageSwitch from '../i18n/components/LanguageSwitch';
+import { useLanguage } from '../i18n/hooks/useLanguage';
 import {
   LayoutDashboard,
   Users,
@@ -215,7 +217,33 @@ const getInitials = (name = "") =>
     .join("")
     .toUpperCase();
 
+const NAV_LABEL_KEYS = {
+  Overview: 'nav.overview',
+  'Parking Lots': 'nav.parkingLots',
+  'Account Management': 'nav.accountManagement',
+  'Session Management': 'nav.sessionManagement',
+  Pricing: 'nav.pricing',
+  'Ticket Packages': 'nav.ticketPackages',
+  Subscriptions: 'nav.subscriptions',
+  Services: 'nav.services',
+  Policies: 'nav.policies',
+  Vehicles: 'nav.vehicles',
+  'Vehicles & 3D': 'nav.vehicles',
+  'Revenue Analytics': 'nav.revenue',
+  Vouchers: 'nav.vouchers',
+  Home: 'nav.home',
+  Profile: 'nav.profile',
+  Membership: 'nav.membership',
+  'My Vehicles': 'nav.vehicles',
+  Bookings: 'nav.bookings',
+  History: 'nav.history',
+  Wallet: 'nav.wallet',
+  Rewards: 'nav.rewards',
+  Settings: 'nav.settings',
+};
+
 export default function DashboardLayout() {
+  const { t } = useLanguage();
   const copilotContentRef = useRef(null);
   const navigate = useNavigate();
   const [user, setUser] = useState(() =>
@@ -437,7 +465,7 @@ export default function DashboardLayout() {
               key={item.to}
               to={item.to}
               onClick={role === 'staff' ? () => setStaffDrawerOpen(false) : undefined}
-              aria-label={role === 'staff' ? item.label : undefined}
+              aria-label={role === 'staff' ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
               end={item.to.split("/").length === 2}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold
@@ -447,10 +475,10 @@ export default function DashboardLayout() {
                   : `text-gray-500 hover:text-gray-300 hover:bg-white/5 border border-transparent`
                 }`
               }
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
             >
               <span className="shrink-0">{item.icon}</span>
-              {(!collapsed || (role === 'staff' && staffDrawerOpen)) && <span className="staff-shell-nav-label truncate">{item.label}</span>}
+                {(!collapsed || (role === 'staff' && staffDrawerOpen)) && <span className="staff-shell-nav-label truncate">{t(NAV_LABEL_KEYS[item.label] || item.label)}</span>}
             </NavLink>
           ))}
         </nav>
@@ -495,6 +523,8 @@ export default function DashboardLayout() {
 
           {/* Right zone */}
           <div className="staff-shell-toolbar flex items-center gap-3">
+            <LanguageSwitch variant="dark" size="sm" />
+
             {/* Role badge */}
             <div
               className={`staff-shell-role-badge flex items-center gap-2 px-3 py-1.5 rounded-lg border ${theme.headerBadgeCls}`}
