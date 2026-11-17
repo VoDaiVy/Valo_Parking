@@ -1,4 +1,4 @@
-import { detectBookingInputLanguage } from './aiBookingLanguage.js';
+import { detectBookingInputLanguage, hasMixedBookingSpeech } from './aiBookingLanguage.js';
 
 const speechLocale = (language) => (language === 'en' || language === 'en-US' ? 'en-US' : 'vi-VN');
 
@@ -144,6 +144,7 @@ const selectPlateVoiceTranscript = (alternatives, language) => [...alternatives]
 export function createAiBookingRecognition(browser, {
   onTranscript, onError, onEnd, continuous = false, language = 'vi', expectLicensePlate = false,
   contextPhrases = [], automaticLanguage = false, onClarification = () => {},
+  onAudioStart, onSpeechStart,
 }) {
   const SpeechRecognition = browser?.SpeechRecognition || browser?.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
@@ -152,6 +153,8 @@ export function createAiBookingRecognition(browser, {
   recognition.continuous = continuous;
   recognition.interimResults = false;
   recognition.maxAlternatives = 5;
+  recognition.onaudiostart = onAudioStart;
+  recognition.onspeechstart = onSpeechStart;
   recognition.onresult = (event) => {
     for (let index = event.resultIndex || 0; index < (event.results?.length || 0); index += 1) {
       const result = event.results[index];
@@ -161,14 +164,20 @@ export function createAiBookingRecognition(browser, {
       ));
       const detectedLanguage = automaticLanguage
         ? detectBookingInputLanguage(rawAlternatives[0]?.transcript || '', language).language : language;
+      if (automaticLanguage && hasMixedBookingSpeech(rawAlternatives[0]?.transcript)) {
+        onClarification(); break;
+      }
       // Native alternatives may disagree on business data. Never choose the
       // alternative merely because it resembles a stored plate or booking.
       if (automaticLanguage && (!rawAlternatives.length || !Number.isFinite(Number(rawAlternatives[0].confidence)) || Number(rawAlternatives[0].confidence) < 0.8)) {
         onClarification(); break;
       }
       const numbers = (text) => String(text || '').match(/\d+(?:[.:/-]\d+)*/g)?.join('|') || '';
+      const plates = (text) => (String(text || '').match(/\b\d{2}[ .-]*[a-z]{1,2}[ .-]*\d{3,5}(?:\.\d{2})?\b/gi) || [])
+        .map((plate) => plate.replace(/[^a-z0-9]/gi, '').toUpperCase()).join('|');
       if (automaticLanguage && rawAlternatives.some((alternative) => Number(alternative.confidence) >= 0.8
-        && numbers(alternative.transcript) !== numbers(rawAlternatives[0]?.transcript))) {
+        && (numbers(alternative.transcript) !== numbers(rawAlternatives[0]?.transcript)
+          || plates(alternative.transcript) !== plates(rawAlternatives[0]?.transcript)))) {
         onClarification(); break;
       }
       const transcript = automaticLanguage ? String(rawAlternatives[0]?.transcript || '').trim() : expectLicensePlate
@@ -220,12 +229,12 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
       expectLicensePlate,
       contextPhrases,
       onClarification: () => {
-        if (!active || paused) return;
+        if (!active || paused || recognition !== next) return;
         paused = true; try { next.stop(); } catch { /* Already stopped. */ }
         onClarification();
       },
       onTranscript: (text) => {
-        if (!active || paused) return;
+        if (!active || paused || recognition !== next) return;
         const normalized = String(text).trim().toLowerCase();
         const now = Date.now();
         if (normalized === lastTranscript && now - lastTranscriptAt < 1500) return;
@@ -236,7 +245,7 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
         onTranscript(text);
       },
       onError: (message, code) => {
-        if (!active) return;
+        if (!active || paused || recognition !== next) return;
         if (code === 'aborted') return;
         if (['no-speech', 'network', 'bad-grammar'].includes(code)) {
           paused = true; onClarification(); return;
@@ -380,8 +389,8 @@ export function formatAiBookingSpeech(value, language = 'vi') {
       (_, day, month, year) => `ngày ${Number(day)} tháng ${Number(month)} năm ${year}`)
     .replace(/(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:đ|VND)(?=\s|[.,;!?]|$)/gi,
       (_, amount) => `${amount.replace(/[.,]/g, '')} đồng`)
-    .replace(/\b([Xx]e)\s+([0-9]{2}[A-Z]{1,2}[0-9]{4,6})\b/g,
-      (_, prefix, plate) => `${prefix} ${spokenCode(plate)}`)
+    .replace(/\b([0-9]{2}[ .-]*[A-Z]{1,2}[ .-]*[0-9]{3,5}(?:\.[0-9]{2})?)\b/gi,
+      (plate) => spokenCode(plate))
     .replace(/([Ôô])\s+([A-Z]{1,2}\d{1,4})\b/g,
       (_, prefix, code) => `${prefix} ${spokenCode(code)}`)
     .replace(/\s*[\u00b7•]\s*/g, ', ')
@@ -425,11 +434,27 @@ export function createConciseAiBookingSpeech(value, language = 'vi', maximumLeng
   return `${summary} ${suffix}`.trim();
 }
 
-// Kept as a public helper for tests and callers; every response uses one
-// language-specific utterance to avoid pauses caused by switching voices.
-export function splitAiBookingSpeechSegments(value, language = 'vi') {
+// Read the entire reply in bounded utterances. Keep grouped amounts, dates,
+// individual words and spelled plate/code sequences intact at boundaries.
+export function splitAiBookingSpeechSegments(value, language = 'vi', maximumLength = 240) {
   const text = formatAiBookingSpeech(value, language);
-  return text ? [{ text, lang: speechLocale(language) }] : [];
+  if (!text) return [];
+  const limit = Number.isFinite(maximumLength) ? Math.max(80, maximumLength) : 240;
+  const tokens = text.match(/\b(?:[A-Z0-9]\s+){2,}[A-Z0-9]\b|\S+(?:\s+(?:VND|USD|EUR|đồng|₫)\b)?/gi) || [];
+  const segments = [];
+  let current = '';
+  for (const token of tokens) {
+    if (current && current.length + 1 + token.length > limit) {
+      segments.push({ text: current, lang: speechLocale(language) }); current = '';
+    }
+    current = current ? `${current} ${token}` : token;
+    // Natural sentence endings also help the speech engine finish reliably.
+    if (/[.!?]$/.test(token)) {
+      segments.push({ text: current, lang: speechLocale(language) }); current = '';
+    }
+  }
+  if (current) segments.push({ text: current, lang: speechLocale(language) });
+  return segments;
 }
 
 export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}) {
@@ -437,6 +462,12 @@ export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}
   const Utterance = browser?.SpeechSynthesisUtterance;
   if (!synthesis || !Utterance) return null;
   let active = null;
+  let generation = 0;
+  let startTimer = null;
+  const clearStartTimer = () => {
+    if (startTimer !== null) browser.clearTimeout?.(startTimer);
+    startTimer = null;
+  };
   const matchingVoice = (language) => {
     const voices = synthesis.getVoices?.() || [];
     const locale = language === 'en' ? /^en[-_]/i : /^vi[-_]/i;
@@ -448,29 +479,53 @@ export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}
   };
   return {
     speak(value, language = 'vi') {
-      const message = String(value || '').trim();
+      const segments = splitAiBookingSpeechSegments(value, language);
+      const token = ++generation;
+      clearStartTimer();
       if (active) {
         active = null;
         synthesis.cancel();
       }
-      if (!message) return;
-      const utterance = new Utterance(formatAiBookingSpeech(message, language));
-      utterance.lang = speechLocale(language);
-      utterance.rate = language === 'en' ? 1.05 : 1.18;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-      const selectedVoice = matchingVoice(language);
-      if (selectedVoice) utterance.voice = selectedVoice;
-      active = utterance;
-      utterance.onstart = () => { if (active === utterance) onStart?.(); };
-      utterance.onend = () => { if (active === utterance) { active = null; onEnd?.(); } };
-      utterance.onerror = () => { if (active === utterance) { active = null; onError?.(); } };
-      try { synthesis.speak(utterance); }
-      catch { active = null; onError?.(); }
+      if (!segments.length) return;
+      let index = 0, started = false;
+      const next = () => {
+        if (token !== generation) return;
+        if (index >= segments.length) { active = null; onEnd?.(); return; }
+        const segment = segments[index++];
+        const utterance = new Utterance(segment.text);
+        utterance.lang = segment.lang;
+        utterance.rate = language === 'en' ? 1.05 : 1.18;
+        utterance.pitch = 1; utterance.volume = 1;
+        const selectedVoice = matchingVoice(language);
+        if (selectedVoice) utterance.voice = selectedVoice;
+        active = utterance;
+        const isCurrent = () => token === generation && active === utterance;
+        const fail = (error) => {
+          if (!isCurrent()) return;
+          clearStartTimer();
+          active = null; generation++;
+          synthesis.cancel();
+          onError?.(error, language);
+        };
+        utterance.onstart = () => {
+          if (!isCurrent()) return;
+          clearStartTimer();
+          if (!started) { started = true; onStart?.(); }
+        };
+        utterance.onend = () => { if (isCurrent()) { clearStartTimer(); next(); } };
+        utterance.onerror = fail;
+        try {
+          if (browser.setTimeout && browser.clearTimeout) startTimer = browser.setTimeout(() => fail({ error: 'start-timeout' }), 12000);
+          synthesis.speak(utterance);
+          if (synthesis.paused) synthesis.resume?.();
+        } catch (error) { fail(error); }
+      };
+      next();
     },
     cancel() {
       if (!active) return;
-      active = null;
+      active = null; generation++;
+      clearStartTimer();
       synthesis.cancel();
       onEnd?.();
     },

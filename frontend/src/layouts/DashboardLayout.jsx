@@ -12,7 +12,7 @@ import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
-import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
+import { getIssueReportLink, getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
 import { scopeAdminTypography } from './adminTypography';
@@ -111,6 +111,7 @@ const NAV_CONFIG = {
     },
     { label: "Vouchers", icon: <Gift size={18} />, to: "/admin/vouchers" },
     { label: "Customer Feedback", icon: <BookOpen size={18} />, to: "/admin/feedbacks" },
+    { label: "Notifications", icon: <Bell size={18} />, to: "/admin/notifications" },
   ],
   staff: [
     {
@@ -258,6 +259,8 @@ export default function DashboardLayout() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportContent, setReportContent] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportPriority, setReportPriority] = useState('WARNING');
+  const [reportError, setReportError] = useState('');
   const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
 
   // Hook for notifications
@@ -381,16 +384,21 @@ export default function DashboardLayout() {
   }, [user]);
 
   const handleSendReport = async () => {
-    if (!reportContent.trim()) return;
+    if (!reportContent.trim() || reportLoading) return;
     try {
       setReportLoading(true);
-      const res = await sendInternalReport(reportContent, 'WARNING');
-      if (res.ok) {
+      setReportError('');
+      const res = await sendInternalReport(reportContent, reportPriority);
+      if (res.ok && res.data?.data?._id) {
         setReportModalOpen(false);
         setReportContent("");
+        setReportPriority('WARNING');
+        navigate(`/staff/notifications?incident=${encodeURIComponent(res.data.data._id)}`, { state: { adminNotified: res.data.adminNotified } });
+      } else {
+        setReportError(res.data?.message || 'Unable to submit the report.');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setReportError('Unable to submit the report. Please try again.');
     } finally {
       setReportLoading(false);
     }
@@ -611,6 +619,8 @@ export default function DashboardLayout() {
                             let dest = null;
                             if (role === 'staff') {
                               dest = getSafeStaffDeepLink(n);
+                            } else if (role === 'admin') {
+                              dest = getIssueReportLink(n, role);
                             }
                             
                             if (dest) {
@@ -730,15 +740,27 @@ export default function DashboardLayout() {
 
             <div className="p-6">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Describe the issue you are experiencing in detail. This message will be sent directly to the Admin with high priority.
+                Include the location and what happened. Follow Admin instructions in Issue Reports.
               </p>
-
+              <label className="mb-3 block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                Priority
+                <select value={reportPriority} disabled={reportLoading} onChange={e => setReportPriority(e.target.value)}
+                  className="ml-3 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 dark:border-white/10 dark:bg-[#111111]">
+                  <option value="INFO">Normal</option>
+                  <option value="WARNING">High</option>
+                  <option value="ERROR">Urgent</option>
+                </select>
+              </label>
               <textarea
+                aria-label="Issue details"
                 value={reportContent}
                 onChange={(e) => setReportContent(e.target.value)}
+                maxLength={2000}
+                disabled={reportLoading}
                 placeholder="Type your report here..."
                 className="w-full h-32 px-4 py-3 bg-gray-50 dark:bg-[#111111] border border-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 text-gray-900 dark:text-white text-sm resize-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
               />
+              {reportError && <p role="alert" className="mt-2 text-sm text-red-500">{reportError}</p>}
             </div>
 
             <div className="px-6 py-4 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-[#111111] flex justify-end gap-3">

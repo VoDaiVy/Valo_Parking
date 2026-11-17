@@ -1,7 +1,7 @@
 const TicketPackage = require('../models/TicketPackage');
 const { getExplorePackages, getExplorePackage } = require('../services/ticketPackageExploreService');
 const {
-  MEMBERSHIP_PACKAGE_TYPES,
+  SELLABLE_PACKAGE_TYPES,
   getPackageDurationDays,
   getPackageBenefits,
 } = require('../utils/ticketPackageRules');
@@ -30,7 +30,7 @@ exports.getActivePackages = async (req, res) => {
     await require('../services/ticketPackageStockService').refreshAll();
     const packages = await TicketPackage.find({
       isActive: true,
-      type: { $in: MEMBERSHIP_PACKAGE_TYPES },
+      type: { $in: SELLABLE_PACKAGE_TYPES },
     }).sort({ type: -1, price: 1 });
     const pricedPackages = packages.map((pkg) => {
       const base = pkg.toObject();
@@ -69,7 +69,7 @@ exports.getAllPackages = async (req, res) => {
   try {
     const stockService = require('../services/ticketPackageStockService');
     await stockService.refreshAll();
-    const packages = await TicketPackage.find().sort({ createdAt: -1 });
+    const packages = await TicketPackage.find({ type: { $in: SELLABLE_PACKAGE_TYPES } }).sort({ createdAt: -1 });
     const data = await Promise.all(packages.map(async (pkg) => ({ ...pkg.toObject(), stock: await stockService.snapshot(pkg) })));
     res.status(200).json({ success: true, data });
   } catch (error) {
@@ -88,7 +88,7 @@ exports.getPackageBuyers = async (req, res, next) => {
 exports.getPackageById = async (req, res) => {
   try {
     const ticketPackage = await TicketPackage.findById(req.params.id);
-    if (!ticketPackage) return res.status(404).json({ success: false, message: 'Ticket package not found' });
+    if (!ticketPackage || !SELLABLE_PACKAGE_TYPES.includes(ticketPackage.type)) return res.status(404).json({ success: false, message: 'Ticket package not found' });
     res.status(200).json({ success: true, data: ticketPackage });
   } catch (error) {
     console.error('Error fetching ticket package:', error);

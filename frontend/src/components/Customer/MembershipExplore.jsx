@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ArrowRight, CalendarDays } from 'lucide-react';
-import { getPackageDurationLabel, getPackageTypeLabel } from '../../utils/ticketPackageRules';
+import { getPackageDurationLabel, getPackageTypeLabel, isSellablePackageType, SELLABLE_PACKAGE_TYPES } from '../../utils/ticketPackageRules';
 
-const FILTERS = ['all', 'daily', 'weekly', 'monthly', 'yearly', 'custom'];
+const FILTERS = ['all', ...SELLABLE_PACKAGE_TYPES];
 const PAGE_SIZE = 6;
 const TYPE_COLORS = {
   daily: 'bg-emerald-50 text-emerald-700',
@@ -15,7 +15,7 @@ const TYPE_COLORS = {
 export default function MembershipExplore({ packages, onSelectPackage, buttonState }) {
   const [type, setType] = useState('all');
   const [page, setPage] = useState(1);
-  const filteredPackages = packages.filter((pkg) => type === 'all' || pkg.type === type);
+  const filteredPackages = packages.filter((pkg) => isSellablePackageType(pkg.type) && (type === 'all' || pkg.type === type));
   const totalPages = Math.ceil(filteredPackages.length / PAGE_SIZE);
   const currentPage = Math.min(page, totalPages || 1);
   const visiblePackages = filteredPackages.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);

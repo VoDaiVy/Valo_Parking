@@ -4,6 +4,7 @@ import { Bell, CheckCheck, ExternalLink } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import NotificationItem from './NotificationItem';
 import { getSafeCustomerNotificationLink } from '../../utils/notificationLinks';
+import { getSafeStaffDeepLink } from '../../utils/staffDeepLink';
 
 export default function NotificationBell({ dark = false, contextRole }) {
   const navigate = useNavigate();
@@ -84,7 +85,7 @@ export default function NotificationBell({ dark = false, contextRole }) {
                     onClick={() => {
                       setOpen(false);
                       if (!contextRole || contextRole === 'customer') {
-                        const destination = getSafeCustomerNotificationLink(n);
+                        const destination = contextRole === 'staff' ? getSafeStaffDeepLink(n) : getSafeCustomerNotificationLink(n);
                         if (destination) navigate(destination);
                       }
                     }}
@@ -160,7 +161,7 @@ export default function NotificationBell({ dark = false, contextRole }) {
                     if (!n.isRead) markAsRead(n.notificationId || n._id);
                     setOpen(false);
                     if (!contextRole || contextRole === 'customer') {
-                      const destination = getSafeCustomerNotificationLink(n);
+                      const destination = contextRole === 'staff' ? getSafeStaffDeepLink(n) : getSafeCustomerNotificationLink(n);
                       if (destination) navigate(destination);
                     }
                   }}

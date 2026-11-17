@@ -20,8 +20,10 @@ export function getSafeCustomerNotificationLink(notification) {
   const validId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
   const eventType = String(metadata.eventType || '').trim().toUpperCase();
   if (eventType === 'MEMBERSHIP_SERVICE_STATUS_CHANGED') {
+    if (validId(metadata.sessionId) && metadata.deepLink?.startsWith('/customer/history')) return `/customer/history?sessionId=${metadata.sessionId}`;
     return '/customer/membership-transfers#membership-services';
   }
+  if (eventType === 'MEMBERSHIP_SERVICE_REQUESTED') return null;
   if (MEMBERSHIP_STATUS_EVENTS.has(eventType)) {
     if (validId(metadata.entitlementId)) return `/customer/membership-transfers?entitlementId=${metadata.entitlementId}`;
     if (validId(metadata.subscriptionId)) return `/customer/membership-transfers?subscriptionId=${metadata.subscriptionId}`;

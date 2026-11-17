@@ -2723,10 +2723,7 @@ exports.kioskCheckout = async (req, res, next) => {
 exports.getAllSessions = async (req, res, next) => {
   try {
     const sessions = await Session.find().sort({ checkInTime: -1 });
-    res.status(200).json({
-      success: true,
-      data: sessions,
-    });
+    res.status(200).json({ success: true, data: sessions });
   } catch (error) {
     console.error('Error getting sessions:', error);
     next(error);
@@ -2769,9 +2766,17 @@ exports.getMyHistory = async (req, res, next) => {
       $or: orConditions
     }).sort({ checkInTime: -1 });
 
+    const serviceRequests = await require('../models/MembershipServiceRequest').find({
+      sessionId: { $in: sessions.map((s) => s._id) }, requesterId: req.user._id,
+      status: { $in: ['pending', 'in_progress'] },
+    }).select('sessionId status').lean();
     res.status(200).json({
       success: true,
-      data: sessions,
+      data: sessions.map((s) => ({ ...s.toObject(),
+        canSelectServices: s.type === 'SUBSCRIPTION' && s.status === 'active' && String(s.userId) === String(req.user._id),
+        serviceSummary: { pending: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'pending').length,
+          inProgress: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'in_progress').length },
+      })),
     });
   } catch (error) {
     console.error('Error getting my history:', error);

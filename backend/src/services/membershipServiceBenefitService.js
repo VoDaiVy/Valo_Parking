@@ -53,7 +53,7 @@ async function assertNoOpenRequests(entitlementId, session) {
 
 async function expirePendingRequests() {
   const now = new Date();
-  const expired = await Request.find({ status: 'pending', expiresAt: { $lte: now } }).select('_id').limit(100).lean();
+  const expired = await Request.find({ accountingMode: { $ne: 'customer_reserved' }, status: 'pending', expiresAt: { $lte: now } }).select('_id').limit(100).lean();
   for (const item of expired) {
     await inTransaction(async (session) => {
       const request = await Request.findOneAndUpdate(
@@ -103,6 +103,12 @@ async function listRequests(userId, role, query) {
   const { page, limit } = parsePage(query);
   await expirePendingRequests();
   const filter = ['staff', 'admin'].includes(role) ? {} : { requesterId: userId };
+  if (query.sessionId) { requireId(query.sessionId); filter.sessionId = query.sessionId; }
+  if (query.status) {
+    if (!['pending', 'in_progress', 'done', 'cancelled'].includes(query.status)) throw fail('Invalid status.');
+    filter.status = query.status;
+  }
+  await require('./membershipServiceSelectionService').expirePending();
   const [items, total] = await Promise.all([
     Request.find(filter).select('-idempotencyKey -requestHash').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     Request.countDocuments(filter),
@@ -170,10 +176,12 @@ async function reserveService(userId, payload) {
 
 async function transitionRequest(actor, requestId, action, reason = '', app = null) {
   requireId(requestId);
+  if (await Request.exists({ _id: requestId, accountingMode: 'customer_reserved' })) return require('./membershipServiceSelectionService').transition(actor, requestId, action, reason, app);
   if (!['start', 'complete', 'cancel'].includes(action)) throw fail('Invalid action.');
   if (typeof reason !== 'string' || reason.length > 500) throw fail('Invalid reason.');
   const staff = ['staff', 'admin'].includes(actor.role);
   if (!staff && action !== 'cancel') throw fail('Staff permission required.', 403);
+  if (action === 'start') throw fail('Restart this legacy request from the parking session.', 409);
   return inTransaction(async (session, notifications) => {
     const now = new Date();
     const request = await Request.findOne({ _id: requestId, ...(!staff ? { requesterId: actor._id } : {}) }).session(session);
@@ -226,27 +234,10 @@ async function transitionRequest(actor, requestId, action, reason = '', app = nu
   }, app);
 }
 
-async function resolveSessionEntitlement(parking, session) {
-  const filter = { ownerId: parking.userId };
-  if (parking.entitlementId) filter._id = parking.entitlementId;
-  else {
-    if (!parking.subscriptionId || !parking.floorId || !parking.parkingSlot) throw fail('Session is missing membership space details.', 409);
-    Object.assign(filter, { sourceSubscriptionId: parking.subscriptionId, floorId: parking.floorId, slotCode: String(parking.parkingSlot).trim().toUpperCase() });
-  }
-  const matches = await Entitlement.find(filter).limit(2).session(session).lean();
-  if (matches.length !== 1) throw fail('Membership space could not be uniquely resolved.', 409);
-  const entitlement = matches[0];
-  if ((parking.floorId && String(parking.floorId) !== String(entitlement.floorId)) ||
-      (parking.parkingSlot && String(parking.parkingSlot).trim().toUpperCase() !== entitlement.slotCode)) {
-    throw fail('Session and membership space do not match.', 409);
-  }
-  return entitlement;
-}
-
 async function listStaffSessions(query = {}) {
   const { page, limit } = parsePage(query);
   if (query.search !== undefined && (typeof query.search !== 'string' || query.search.length > 40)) throw fail('Invalid search.');
-  const filter = { status: 'active', userId: { $ne: null }, $or: [{ entitlementId: { $ne: null } }, { subscriptionId: { $ne: null } }] };
+  const filter = { type: 'SUBSCRIPTION', status: 'active', userId: { $ne: null } };
   if (query.search?.trim()) filter.licensePlate = { $regex: query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
   const [items, total] = await Promise.all([
     ParkingSession.find(filter).select('licensePlate userId entitlementId subscriptionId parkingSlot floorId checkInTime activeServiceJobs').sort({ checkInTime: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
@@ -255,24 +246,8 @@ async function listStaffSessions(query = {}) {
   return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }
 
-async function sessionBenefits(sessionId) {
-  requireId(sessionId);
-  await expirePendingRequests();
-  const parking = await ParkingSession.findOne({ _id: sessionId, status: 'active' }).lean();
-  if (!parking) throw fail('Vehicle is not currently at the parking lot.', 409);
-  const entitlement = await resolveSessionEntitlement(parking);
-  const now = new Date();
-  const [grants, openRequests, recentHistory] = await Promise.all([
-    Grant.find({ entitlementId: entitlement._id, validFrom: { $lte: now }, expireAt: { $gt: now } }).populate('serviceId', 'isActive').sort({ expireAt: 1, _id: 1 }).lean(),
-    Request.find({ sessionId, status: 'in_progress' }).select('-idempotencyKey -requestHash').sort({ createdAt: -1, _id: -1 }).lean(),
-    Request.find({ sessionId, status: { $in: ['done', 'cancelled'] } }).select('-idempotencyKey -requestHash').sort({ createdAt: -1, _id: -1 }).limit(50).lean(),
-  ]);
-  return { session: parking, grants: grants.map((grant) => {
-    const available = Math.max(0, grant.total - grant.used - grant.reserved);
-    return { ...grant, slotCode: entitlement.slotCode, available,
-      canUse: entitlement.status === 'active' && entitlement.validFrom <= now && entitlement.expireAt > now && grant.validFrom <= now && grant.expireAt > now && available > 0 && grant.serviceId?.isActive === true,
-      serviceId: grant.serviceId?._id || null };
-  }), requests: [...openRequests, ...recentHistory], historyLimit: 50 };
+async function sessionBenefits(sessionId, requestId) {
+  return require('./membershipServiceSelectionService').benefits(sessionId, null, requestId);
 }
 
 async function startServices(actor, payload, app = null) {
@@ -301,32 +276,31 @@ async function startServices(actor, payload, app = null) {
       if (existing) return existing;
       const now = new Date();
       const parking = await ParkingSession.findOneAndUpdate(
-        { _id: sessionId, status: 'active' }, { $inc: { activeServiceJobs: ids.length } }, { new: true, session }
+        { _id: sessionId, type: 'SUBSCRIPTION', status: 'active' }, { $inc: { activeServiceJobs: ids.length, serviceSelectionRevision: 1 } }, { new: true, session }
       );
       if (!parking) throw fail('Vehicle is not currently at the parking lot.', 409);
-      const entitlement = await resolveSessionEntitlement(parking, session);
-      const owned = await Entitlement.findOneAndUpdate({ _id: entitlement._id, ownerId: parking.userId, status: 'active', validFrom: { $lte: now }, expireAt: { $gt: now } },
-        { $inc: { serviceUsageRevision: 1 } }, { new: true, session });
-      if (!owned) throw fail('This membership space is unavailable.', 409);
+      const owned = await Entitlement.find({ ownerId: parking.userId, status: 'active', validFrom: { $lte: now }, expireAt: { $gt: now } }).session(session);
       const vehicle = await Vehicle.findOne({ owner: parking.userId, licensePlate: parking.licensePlate, status: 'approved' }).session(session);
       if (!vehicle) throw fail('Session vehicle must be approved and belong to the membership owner.', 409);
-      const grants = await Grant.find({ _id: { $in: ids }, entitlementId: entitlement._id }).session(session);
+      const grants = await Grant.find({ _id: { $in: ids }, entitlementId: { $in: owned.map((e) => e._id) } }).session(session);
       if (grants.length !== ids.length) throw fail('A selected allowance does not belong to this membership space.', 409);
       const serviceIds = grants.map((grant) => String(grant.serviceId));
       if (new Set(serviceIds).size !== serviceIds.length) throw fail('Select each service only once.');
-      if (await Request.exists({ sessionId, serviceId: { $in: serviceIds }, status: 'in_progress' }).session(session)) throw fail('A selected service is already in progress for this vehicle.', 409);
+      if (await Request.exists({ sessionId, serviceId: { $in: serviceIds }, status: { $in: ['pending', 'in_progress'] } }).session(session)) throw fail('A selected service already has an open request.', 409);
       if (await Service.countDocuments({ _id: { $in: serviceIds }, isActive: true }).session(session) !== ids.length) throw fail('A selected service is temporarily unavailable.', 409);
       const requests = [];
       const updatedGrants = [];
       for (const grant of grants) {
+        const entitlement = await Entitlement.findOneAndUpdate({ _id: grant.entitlementId, ownerId: parking.userId, status: 'active', validFrom: { $lte: now }, expireAt: { $gt: now } }, { $inc: { serviceUsageRevision: 1 } }, { new: true, session });
+        if (!entitlement) throw fail('Membership changed.', 409);
         const updated = await Grant.findOneAndUpdate({ _id: grant._id, validFrom: { $lte: now }, expireAt: { $gt: now }, $expr: { $lt: [{ $add: ['$used', '$reserved'] }, '$total'] } },
           { $inc: { used: 1 } }, { new: true, session });
         if (!updated) throw fail(`No available uses remain for ${grant.serviceName}.`, 409);
         const [request] = await Request.create([{
           grantId: grant._id, entitlementId: entitlement._id, requesterId: parking.userId, vehicleId: vehicle._id,
           sessionId, serviceId: grant.serviceId, accountingMode: 'consumed_on_start', status: 'in_progress',
-          licensePlate: parking.licensePlate, serviceName: grant.serviceName, slotCode: entitlement.slotCode,
-          expiresAt: grant.expireAt, startedBy: actor._id, startedAt: now,
+          licensePlate: parking.licensePlate, serviceName: grant.serviceName, slotCode: parking.parkingSlot,
+          expiresAt: new Date(Math.min(+grant.expireAt, +entitlement.expireAt)), startedBy: actor._id, startedAt: now,
           // Keep the legacy requester/key unique index intact without colliding within a batch.
           idempotencyKey: `staff:${sessionId}:${idempotencyKey}:${grant.serviceId}`, requestHash,
           history: [{ status: 'in_progress', actorId: actor._id, at: now }],

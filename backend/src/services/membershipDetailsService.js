@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { isMembershipPackageType, getPackageBenefits } = require('../utils/ticketPackageRules');
+const { isSellablePackageType, getPackageBenefits } = require('../utils/ticketPackageRules');
 const { isEnabled, defaultForCurrentEnvironment } = require('../utils/featureFlags');
 
 const DAY_MS = 86400000;
@@ -26,7 +26,7 @@ function createMembershipDetailsService(deps = {}) {
     if (!(deps.renewalEnabled ?? isEnabled('SUBSCRIPTION_RENEWAL_ENABLED', defaultForCurrentEnvironment()))) return deny('RENEWAL_DISABLED', 'Renewal is currently unavailable.');
     if (entity.status === 'transfer_locked') return deny('TRANSFER_LOCKED', 'Renewal is unavailable while a transfer is awaiting payment.');
     if (entity.status !== 'active' || new Date(entity.expireAt) <= now) return deny('MEMBERSHIP_EXPIRED', 'This membership has expired and cannot be renewed under the current policy.');
-    if (!pkg || pkg.isRenewable === false || !isMembershipPackageType((entity.packageDurationSnapshot || pkg).type)) return deny('PACKAGE_NOT_RENEWABLE', 'This package does not support renewal.');
+    if (!pkg || pkg.isRenewable === false || !isSellablePackageType((entity.packageDurationSnapshot || pkg).type)) return deny('PACKAGE_NOT_RENEWABLE', 'This package does not support renewal.');
     const pending = await (kind === 'entitlement' ? Renewal : SubscriptionRenewal).findOne({
       [kind === 'entitlement' ? 'entitlementId' : 'subscriptionId']: entity._id,
       status: 'pending',

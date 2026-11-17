@@ -1,4 +1,4 @@
-const { PACKAGE_TYPES } = require('../../utils/ticketPackageRules');
+const { SELLABLE_PACKAGE_TYPES: PACKAGE_TYPES } = require('../../utils/ticketPackageRules');
 /**
  * readTools.js – Bounded, read-only query functions for VALO AI Copilot.
  *
@@ -509,7 +509,7 @@ async function searchNotificationRecipients(args = {}) {
 /* ── 14. search_ticket_packages ──────────────────────────────────────── */
 
 function ticketPackageFilter({ query, type, isActive, status } = {}) {
-  const filter = {};
+  const filter = { type: { $in: PACKAGE_TYPES } };
   if (query !== undefined && (typeof query !== 'string' || query.length > 150)) throw new Error('Package search text must contain at most 150 characters.');
   if (query?.trim()) {
     const pattern = new RegExp(escapeRegex(query.trim()), 'i');
@@ -545,7 +545,7 @@ async function searchTicketPackages({ limit, ...args } = {}) {
 async function getTicketPackageDetail({ packageId, name } = {}) {
   if (name !== undefined) {
     if (typeof name !== 'string' || !name.trim() || name.length > 150) throw new Error('Invalid package name.');
-    const matches = await TicketPackage.find({ name: new RegExp(`^${escapeRegex(name.trim())}$`, 'i') }).limit(2).select(TICKET_PACKAGE_SAFE_SELECT).lean();
+    const matches = await TicketPackage.find({ type: { $in: PACKAGE_TYPES }, name: new RegExp(`^${escapeRegex(name.trim())}$`, 'i') }).limit(2).select(TICKET_PACKAGE_SAFE_SELECT).lean();
     if (!matches.length) throw Object.assign(new Error('Ticket package not found.'), { code: 'PACKAGE_NOT_FOUND', publicMessage: 'Ticket package not found.' });
     if (matches.length > 1) throw Object.assign(new Error('Multiple ticket packages have this name. Please specify the package ID.'), { code: 'PACKAGE_AMBIGUOUS', publicMessage: 'Multiple ticket packages have this name. Please specify the package ID.' });
     if (packageId && String(matches[0]._id).toLowerCase() !== String(packageId).toLowerCase()) throw new Error('Package name and identifier do not match.');
@@ -553,7 +553,7 @@ async function getTicketPackageDetail({ packageId, name } = {}) {
   }
   if (!packageId || !isObjectId(packageId)) throw new Error('Invalid package identifier.');
   const item = await TicketPackage.findById(packageId).select(TICKET_PACKAGE_SAFE_SELECT).lean();
-  if (!item) throw Object.assign(new Error('Ticket package not found.'), { code: 'PACKAGE_NOT_FOUND', statusCode: 404, publicMessage: 'Ticket package not found.' });
+  if (!item || !PACKAGE_TYPES.includes(item.type)) throw Object.assign(new Error('Ticket package not found.'), { code: 'PACKAGE_NOT_FOUND', statusCode: 404, publicMessage: 'Ticket package not found.' });
   return item;
 }
 

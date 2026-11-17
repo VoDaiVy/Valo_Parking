@@ -1,5 +1,6 @@
 import TelegramReceiptModal from '../../components/TelegramReceiptModal';
-import TelegramReceiptButton from '../../components/TelegramReceiptButton';
+import BookingSuccessModal from '../../components/Customer/BookingSuccessModal';
+import { bookingConfirmationSummary } from '../../utils/bookingConfirmation';
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -784,7 +785,7 @@ export default function CreateBookingPage() {
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showVipModal, setShowVipModal] = useState(false);
   const [bookingInfo, setBookingInfo] = useState(null);
-  const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(4);
+  const [successRedirectCountdown, setSuccessRedirectCountdown] = useState(10);
 
   const [showGlobalPolicyModal, setShowGlobalPolicyModal] = useState(false);
   const [missingPolicies, setMissingPolicies] = useState([]);
@@ -1192,7 +1193,7 @@ export default function CreateBookingPage() {
     if (!showSuccessModal || !bookingInfo || telegramBookingId) return undefined;
 
     const resetTimer = setTimeout(() => {
-      setSuccessRedirectCountdown(4);
+      setSuccessRedirectCountdown(10);
     }, 0);
 
     const countdownTimer = setInterval(() => {
@@ -1209,7 +1210,7 @@ export default function CreateBookingPage() {
       setShowSuccessModal(false);
       setBookingInfo(null);
       window.location.href = '/customer/booking';
-    }, 4000);
+    }, 10000);
 
     return () => {
       clearTimeout(resetTimer);
@@ -1668,7 +1669,8 @@ export default function CreateBookingPage() {
       setBookingInfo(res.data?.data);
       setShowSuccessModal(true);
 
-      setSuccess(`Booking order created. Wallet charged ${formatMoney(res.data?.data?.grandTotal || cartGrandTotal)}.`);
+      const confirmedTotal = bookingConfirmationSummary(res.data?.data).total;
+      setSuccess(confirmedTotal === null ? 'Booking order created.' : `Booking order created. Wallet charged ${formatMoney(confirmedTotal)}.`);
       setCartItems([]);
       checkoutIdempotencyKeyRef.current = createClientItemId();
       setCartQuote(null);
@@ -1686,20 +1688,6 @@ export default function CreateBookingPage() {
   useEffect(() => {
     latestActions.current.handleCreateBooking = executeCheckoutCart;
   });
-
-  const successBookingCards = bookingInfo?.bookings || (
-    bookingInfo?._id
-      ? [{
-          bookingId: bookingInfo._id,
-          qrCode: bookingInfo.qrCode || null,
-          slotCode: bookingInfo.slotCode,
-          licensePlate: bookingInfo.licensePlate,
-          startTime: bookingInfo.startTime,
-          endTime: bookingInfo.endTime,
-          totalAmount: bookingInfo.finalAmount,
-        }]
-      : []
-  );
 
   if (loading) {
     return (
@@ -2319,80 +2307,13 @@ export default function CreateBookingPage() {
 
       {/* SUCCESS MODAL */}
       {showSuccessModal && bookingInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md">
-          <div className="relative bg-white border border-emerald-100 rounded-[32px] p-7 max-w-3xl w-full max-h-[90vh] flex flex-col items-center text-center shadow-[0_30px_90px_rgba(16,185,129,0.18)] overflow-y-auto">
-            <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-emerald-300 via-teal-300 to-cyan-300" />
-            <div className="absolute -top-16 -right-10 w-36 h-36 rounded-full bg-emerald-100/70 blur-2xl" />
-            <div className="absolute -bottom-14 -left-8 w-28 h-28 rounded-full bg-cyan-100/70 blur-2xl" />
-
-            <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-emerald-100 to-teal-50 flex items-center justify-center text-emerald-500 mb-4 shadow-sm border border-emerald-200/70">
-              <CheckCircle2 size={30} />
-            </div>
-            <div className="relative inline-flex items-center rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.24em] text-emerald-600 mb-3">
-              Sweet Success
-            </div>
-            <h2 className="text-[32px] leading-none font-black text-gray-900 mb-2">Booking Confirmed</h2>
-            <p className="text-gray-500 font-medium text-sm mb-5 max-w-[260px]">
-              Everything is ready. Each vehicle has its own QR for check-in.
-            </p>
-
-            <div className="w-full bg-[#f8fafc] border border-gray-100 rounded-[24px] p-4 text-left space-y-3 mb-5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 font-semibold">Order total</span>
-                <span className="font-black text-gray-900 text-lg">{formatMoney(bookingInfo.grandTotal || bookingInfo.finalAmount || 0)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 font-semibold">Bookings</span>
-                <span className="font-black text-gray-900">{successBookingCards.length}</span>
-              </div>
-            </div>
-
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-              {successBookingCards.map((booking, index) => (
-                <div key={booking.bookingId || booking._id || index} className="bg-white border border-gray-100 p-4 rounded-[24px] text-left shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Booking {index + 1}</div>
-                      <div className="font-black text-gray-900">{booking.licensePlate || 'Vehicle'}</div>
-                    </div>
-                    <div className="font-black text-gold">{booking.slotCode}</div>
-                  </div>
-                  <div className="flex justify-center bg-gray-50 border border-gray-100 rounded-2xl p-3 mb-3">
-                    {booking.qrCode ? (
-                      <QRCodeSVG value={String(booking.qrCode)} size={140} />
-                    ) : (
-                      <div className="flex min-h-36 items-center justify-center px-4 text-center text-xs font-bold text-amber-600">
-                        QR check-in is temporarily unavailable. Open My Bookings to reload it.
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between gap-3">
-                      <span className="text-gray-500 font-semibold">From</span>
-                      <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.startTime)}</span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="text-gray-500 font-semibold">Until</span>
-                      <span className="font-bold text-gray-900 text-right">{formatDateTime(booking.endTime)}</span>
-                    </div>
-                  </div>
-                  <TelegramReceiptButton bookingId={booking.bookingId || booking._id} refreshKey={telegramBookingId} onClick={() => setTelegramBookingId(booking.bookingId || booking._id)} className="mt-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800" />
-                </div>
-              ))}
-            </div>
-
-            <div className="w-full bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 text-emerald-700 font-bold py-3.5 px-4 rounded-[22px] text-sm leading-relaxed">
-              Your booking was successful. Automatically redirecting to My Bookings in{" "}
-              <span className="inline-flex min-w-8 justify-center rounded-full bg-white/80 px-2 py-0.5 text-emerald-600 shadow-sm">
-                {successRedirectCountdown}s
-              </span>
-            </div>
-
-            <p className="mt-3 text-[11px] text-gray-400 font-medium">
-              Booking status will sync automatically when the kiosk updates.
-            </p>
-          </div>
-        </div>
+        <BookingSuccessModal
+          key={bookingInfo.transaction?._id || bookingInfo.bookings?.[0]?.bookingId || bookingInfo._id || 'confirmed'}
+          bookingInfo={bookingInfo}
+          countdown={successRedirectCountdown}
+          telegramBookingId={telegramBookingId}
+          onReceipt={setTelegramBookingId}
+        />
       )}
 
       {telegramBookingId && <TelegramReceiptModal key={telegramBookingId} open onClose={() => setTelegramBookingId(null)} bookingId={telegramBookingId} />}

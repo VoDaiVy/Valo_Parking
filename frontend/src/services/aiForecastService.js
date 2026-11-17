@@ -9,6 +9,7 @@ import { apiFetch } from './api';
  * @param {string} [params.floorId] - Target floor ID
  * @param {string} [params.timeframe] - 'day' | 'week' | 'month' | 'year'
  * @param {number} [params.selectedIndex] - Selected index
+ * @param {AbortSignal} [params.signal] - Cancels a superseded request
  */
 export async function getOccupancyForecast({
   date,
@@ -17,6 +18,7 @@ export async function getOccupancyForecast({
   floorId,
   timeframe = 'day',
   selectedIndex,
+  signal,
 } = {}) {
   const query = new URLSearchParams();
   if (date) query.set('date', date);
@@ -28,7 +30,7 @@ export async function getOccupancyForecast({
     query.set('selectedIndex', String(selectedIndex));
   }
 
-  const res = await apiFetch(`/ai/occupancy-forecast?${query.toString()}`);
+  const res = await apiFetch(`/ai/occupancy-forecast?${query.toString()}`, { signal });
   if (!res.ok) {
     throw new Error(res.data?.message || 'Failed to fetch occupancy forecast');
   }

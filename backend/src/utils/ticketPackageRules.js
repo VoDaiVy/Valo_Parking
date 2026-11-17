@@ -1,3 +1,6 @@
+const SELLABLE_PACKAGE_TYPES = ['weekly', 'monthly', 'yearly', 'custom'];
+const isSellablePackageType = (type) => SELLABLE_PACKAGE_TYPES.includes(type);
+// Legacy types remain readable for paid memberships and their history.
 const PACKAGE_TYPES = ['hourly', 'daily', 'weekly', 'monthly', 'yearly', 'custom'];
 const MEMBERSHIP_PACKAGE_TYPES = PACKAGE_TYPES.filter((type) => type !== 'hourly');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,6 +57,8 @@ const getPackageBenefits = (pkg) => {
 
 module.exports = {
   PACKAGE_TYPES,
+  SELLABLE_PACKAGE_TYPES,
+  isSellablePackageType,
   MEMBERSHIP_PACKAGE_TYPES,
   isMembershipPackageType,
   getPackageDurationDays,

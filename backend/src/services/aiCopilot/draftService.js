@@ -135,6 +135,7 @@ function cleanPayload(type, input) {
     serviceBenefits = [],
     benefitsVersion = type === 'CREATE_TICKET_PACKAGE' ? 1 : 0,
   } = input;
+  if (['hourly', 'daily'].includes(packageType)) fail('Chỉ hỗ trợ loại gói weekly, monthly, yearly, custom.');
   if (
     typeof name !== 'string' || !name.trim() || name.length > 120 ||
     !PACKAGE_TYPES.includes(packageType) ||

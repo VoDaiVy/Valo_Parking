@@ -63,6 +63,7 @@ const sessionSchema = new mongoose.Schema(
     // Changed in the same transaction as membership service jobs. Checkout
     // matches zero atomically so it cannot race a service being started.
     activeServiceJobs: { type: Number, min: 0, default: 0 },
+    serviceSelectionRevision: { type: Number, min: 0, default: 0 },
     paymentStatus: {
       type: String,
       enum: ['unpaid', 'paid', 'refunded'],
@@ -167,6 +168,24 @@ sessionSchema.statics.checkoutFilter = function checkoutFilter(id) {
     $or: [{ activeServiceJobs: 0 }, { activeServiceJobs: { $exists: false } }],
   };
 };
+
+// All membership checkout paths share this hook, including staff manual exit.
+sessionSchema.pre('findOneAndUpdate', async function () {
+  const update = this.getUpdate();
+  if (['completed', 'cancelled'].includes(update?.$set?.status || update?.status)) {
+    const current = await this.model.findOne(this.getFilter()).session(this.getOptions().session);
+    if (current?.type === 'SUBSCRIPTION') {
+      if (!this.getOptions().session?.inTransaction()) throw Object.assign(new Error('Membership checkout requires a transaction.'), { statusCode: 409 });
+      this.setQuery({ $and: [this.getFilter(), this.model.checkoutFilter(current._id)] });
+      this.setOptions({ new: true });
+    }
+  }
+});
+sessionSchema.post('findOneAndUpdate', async function (doc) {
+  if (doc?.type === 'SUBSCRIPTION' && ['completed', 'cancelled'].includes(doc.status)) {
+    await require('../services/membershipServiceSelectionService').cancelForCheckout(doc, this.getOptions().session);
+  }
+});
 
 sessionSchema.statics.assertNoActiveServiceJobs = function assertNoActiveServiceJobs(parkingSession) {
   if (parkingSession.activeServiceJobs > 0) {
