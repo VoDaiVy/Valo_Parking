@@ -2,6 +2,7 @@
 import { apiFetch } from "../../services/api";
 import { useSearchParams } from 'react-router-dom';
 import { getMembershipStatus } from "../../services/subscriptionService";
+import { useTranslation } from "react-i18next";
 
 const emptyPage = { items: [], pagination: {} };
 const headers = () => ({
@@ -10,9 +11,11 @@ const headers = () => ({
 const pageData = (data) =>
   Array.isArray(data) ? { items: data, pagination: {} } : data || emptyPage;
 const id = (value) => value?._id || value;
-const formatDate = (value) => new Date(value).toLocaleString("vi-VN");
+const formatDate = (value, language = 'vi') => new Date(value).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US');
 
 export default function MembershipServices({ staff = false }) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.language;
   const [params] = useSearchParams();
   const [grants, setGrants] = useState(emptyPage);
   const [requests, setRequests] = useState(emptyPage);
@@ -42,7 +45,7 @@ export default function MembershipServices({ staff = false }) {
       });
       if (!response.ok || !response.data?.success)
         throw new Error(
-          response.data?.message || "Unable to load membership services.",
+          response.data?.message || t('membershipServicesUi.loadError'),
         );
       return response.data.data;
     };
@@ -91,7 +94,7 @@ export default function MembershipServices({ staff = false }) {
     return () => {
       active = false;
     };
-  }, [staff, grantPage, requestPage, sessionPage, sessionId, search, reload, status, params]);
+  }, [staff, grantPage, requestPage, sessionPage, sessionId, search, reload, status, params, t]);
 
   const mutate = async (path, payload) => {
     if (inFlight.current) return false;
@@ -106,7 +109,7 @@ export default function MembershipServices({ staff = false }) {
       });
       if (!response.ok || !response.data?.success)
         throw new Error(
-          response.data?.message || "Unable to update service work.",
+          response.data?.message || t('membershipServicesUi.updateError'),
         );
       setReload((value) => value + 1);
       return true;
@@ -132,10 +135,10 @@ export default function MembershipServices({ staff = false }) {
       delete keys.current[signature];
   };
   const cancel = (request) => {
-    const reason = window.prompt("Reason for cancellation");
+    const reason = window.prompt(t('membershipServicesUi.cancelReasonPrompt'));
     if (reason === null) return;
     if (request.status === "in_progress" && !reason.trim()) {
-      setError("Enter a reason to cancel work already started.");
+      setError(t('membershipServicesUi.cancelReasonRequired'));
       return;
     }
     void mutate(`requests/${request._id}/cancel`, { reason });
@@ -169,7 +172,7 @@ export default function MembershipServices({ staff = false }) {
           disabled={loading || busy || page <= 1}
           onClick={() => setPage(page - 1)}
         >
-          Previous
+          {t('membershipServicesUi.previous')}
         </button>
         <span>
           {page} / {pagination.totalPages}
@@ -179,21 +182,21 @@ export default function MembershipServices({ staff = false }) {
           disabled={loading || busy || page >= pagination.totalPages}
           onClick={() => setPage(page + 1)}
         >
-          Next
+          {t('membershipServicesUi.next')}
         </button>
       </div>
     );
   return (
     <section className="my-8 rounded-2xl border border-gray-200 bg-white p-5 text-slate-900">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">Membership services</h2>
+        <h2 className="text-xl font-bold">{t('membershipServicesUi.title')}</h2>
         <button
           type="button"
           disabled={loading || busy}
           onClick={() => setReload((value) => value + 1)}
           className="min-h-11 rounded-xl border px-4 font-semibold"
         >
-          Refresh
+          {t('membershipServicesUi.refresh')}
         </button>
       </div>
       {error && (
@@ -204,7 +207,7 @@ export default function MembershipServices({ staff = false }) {
       {staff && (
         <div className="mb-5 space-y-3">
           <label className="block text-sm font-semibold">
-            Find a parked vehicle
+            {t('membershipServicesUi.findVehicle')}
             <input
               value={search}
               disabled={busy}
@@ -212,12 +215,12 @@ export default function MembershipServices({ staff = false }) {
                 setSearch(event.target.value);
                 setSessionPage(1);
               }}
-              placeholder="License plate"
+              placeholder={t('membershipServicesUi.licensePlate')}
               className="ml-3 rounded-lg border p-3"
             />
           </label>
           <label className="block text-sm font-semibold">
-            Active parking session
+            {t('membershipServicesUi.activeSession')}
             <select
               value={sessionId}
               disabled={busy || loading}
@@ -227,7 +230,7 @@ export default function MembershipServices({ staff = false }) {
               }}
               className="ml-3 max-w-full rounded-lg border bg-white p-3"
             >
-              <option value="">Select vehicle / show service history</option>
+              <option value="">{t('membershipServicesUi.selectVehicle')}</option>
               {sessionId &&
                 !sessions.items.some(
                   (session) => session._id === sessionId,
@@ -241,21 +244,21 @@ export default function MembershipServices({ staff = false }) {
             </select>
           </label>
           {!loading && !sessions.items.length && (
-            <p>No matching vehicles currently parked.</p>
+            <p>{t('membershipServicesUi.noParkedVehicles')}</p>
           )}
           {pages(sessions.pagination, sessionPage, setSessionPage)}
         </div>
       )}
       {loading ? (
-        <p role="status">Loading services...</p>
+        <p role="status">{t('membershipServicesUi.loading')}</p>
       ) : (
         <>
           {(!staff || sessionId) && (
             <>
               <p className="mb-4 text-sm text-gray-600">
                 {staff
-                  ? "Select services to start. Each selected service uses 1 allowance; finish each service independently."
-                  : "Ask staff at the parking lot to start an included service. Your remaining uses and history update here."}
+                  ? t('membershipServicesUi.staffInstruction')
+                  : t('membershipServicesUi.customerInstruction')}
               </p>
               <div className="grid gap-4 md:grid-cols-2">
                 {grants.items.map((grant) => {
@@ -266,12 +269,10 @@ export default function MembershipServices({ staff = false }) {
                         {grant.serviceName} · {grant.slotCode}
                       </h3>
                       <p className="mt-2 text-sm">
-                        Granted {grant.total} · Used {grant.used} · Reserved{" "}
-                        {grant.reserved} · Remaining {grant.available}
+                        {t('membershipServicesUi.allowanceSummary', { total: grant.total, used: grant.used, reserved: grant.reserved, available: grant.available })}
                       </p>
                       <p className="mt-2 text-xs text-gray-500">
-                        {formatDate(grant.validFrom)} –{" "}
-                        {formatDate(grant.expireAt)}
+                        {formatDate(grant.validFrom, language)} – {formatDate(grant.expireAt, language)}
                       </p>
                       {staff && (
                         <label className="mt-4 flex min-h-11 items-center gap-3 font-semibold">
@@ -281,13 +282,12 @@ export default function MembershipServices({ staff = false }) {
                             disabled={busy || !grant.canUse || running}
                             onChange={() => toggle(grant)}
                           />
-                          {running ? "In progress" : "Select service"}
+                          {running ? t('membershipServicesUi.inProgress') : t('membershipServicesUi.selectService')}
                         </label>
                       )}
                       {!grant.canUse && (
                         <p className="mt-2 text-xs text-gray-500">
-                          Unavailable: check remaining uses, service period and
-                          membership status.
+                          {t('membershipServicesUi.unavailable')}
                         </p>
                       )}
                     </article>
@@ -295,12 +295,11 @@ export default function MembershipServices({ staff = false }) {
                 })}
               </div>
               {!grants.items.length && (
-                <p>No service allowances issued for these spaces.</p>
+                <p>{t('membershipServicesUi.noAllowances')}</p>
               )}
               {!staff && !grants.pagination.total && legacyUses > 0 && (
                 <p className="mt-3 rounded-xl bg-amber-50 p-4 text-sm">
-                  Your earlier membership records {legacyUses} service uses.
-                  Contact staff to identify the included services.
+                  {t('membershipServicesUi.legacyUses', { count: legacyUses })}
                 </p>
               )}
               {!staff && pages(grants.pagination, grantPage, setGrantPage)}
@@ -311,23 +310,23 @@ export default function MembershipServices({ staff = false }) {
                   onClick={start}
                   className="mt-4 min-h-11 rounded-xl bg-slate-900 px-4 font-bold text-white disabled:opacity-40"
                 >
-                  Start selected services ({selected.length})
+                  {t('membershipServicesUi.startSelected', { count: selected.length })}
                 </button>
               )}
             </>
           )}
           <h3 className="mb-3 mt-7 text-lg font-bold">
             {staff && sessionId
-              ? "Active work and recent history"
-              : "Service work and history"}
+              ? t('membershipServicesUi.activeHistory')
+              : t('membershipServicesUi.historyTitle')}
           </h3>
           {staff && sessionId && (
             <p className="mb-3 text-sm text-gray-500">
-              All active services and up to 50 completed or cancelled services.
+              {t('membershipServicesUi.historyDescription')}
             </p>
           )}
-          {!requests.items.length && <p>No service work yet.</p>}
-          {staff && <select aria-label="Filter requests" value={status} onChange={(e) => { setStatus(e.target.value); setRequestPage(1); }} className="mb-3 rounded-lg border p-2"><option value="">All</option><option value="pending">Pending</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="cancelled">Cancelled</option></select>}
+          {!requests.items.length && <p>{t('membershipServicesUi.noWork')}</p>}
+          {staff && <select aria-label={t('membershipServicesUi.filterRequests')} value={status} onChange={(e) => { setStatus(e.target.value); setRequestPage(1); }} className="mb-3 rounded-lg border p-2"><option value="">{t('membershipServicesUi.all')}</option><option value="pending">{t('membershipServicesUi.status.pending')}</option><option value="in_progress">{t('membershipServicesUi.status.in_progress')}</option><option value="done">{t('membershipServicesUi.status.done')}</option><option value="cancelled">{t('membershipServicesUi.status.cancelled')}</option></select>}
           <div className="space-y-3">
             {requests.items.filter((r) => !status || r.status === status).map((request) => (
               <article
@@ -340,16 +339,16 @@ export default function MembershipServices({ staff = false }) {
                     {request.serviceName} · {request.slotCode}
                   </h4>
                   <p className="text-sm">
-                    {request.licensePlate} · {request.status}
+                    {request.licensePlate} · {t(`membershipServicesUi.status.${request.status}`, { defaultValue: request.status })}
                   </p>
                   {request.startedAt && (
                     <p className="mt-1 text-xs text-gray-500">
-                      Started {formatDate(request.startedAt)}
+                      {t('membershipServicesUi.started', { date: formatDate(request.startedAt, language) })}
                     </p>
                   )}
                   {request.completedAt && (
                     <p className="mt-1 text-xs text-gray-500">
-                      Completed {formatDate(request.completedAt)}
+                      {t('membershipServicesUi.completed', { date: formatDate(request.completedAt, language) })}
                     </p>
                   )}
                   {request.history?.at(-1)?.reason && (
@@ -361,9 +360,8 @@ export default function MembershipServices({ staff = false }) {
                 {staff && (
                   <div className="flex gap-3">
                     {request.status === "pending" && (
-                      request.accountingMode === 'customer_reserved' ? <button disabled={busy} onClick={() => mutate(`requests/${request._id}/start`, {})} className="min-h-11 rounded-lg bg-blue-700 px-4 font-bold text-white">Start</button> : <p className="text-sm text-gray-600">
-                        Cancel this earlier request, then start the service from
-                        the active parking session.
+                      request.accountingMode === 'customer_reserved' ? <button disabled={busy} onClick={() => mutate(`requests/${request._id}/start`, {})} className="min-h-11 rounded-lg bg-blue-700 px-4 font-bold text-white">{t('membershipServicesUi.start')}</button> : <p className="text-sm text-gray-600">
+                        {t('membershipServicesUi.cancelEarlier')}
                       </p>
                     )}
                     {request.status === "in_progress" && (
@@ -375,7 +373,7 @@ export default function MembershipServices({ staff = false }) {
                         }
                         className="min-h-11 rounded-lg bg-emerald-700 px-4 font-bold text-white"
                       >
-                        Complete this service
+                        {t('membershipServicesUi.complete')}
                       </button>
                     )}
                     {["pending", "in_progress"].includes(request.status) && (
@@ -385,7 +383,7 @@ export default function MembershipServices({ staff = false }) {
                         onClick={() => cancel(request)}
                         className="min-h-11 rounded-lg border px-4 font-bold"
                       >
-                        Cancel
+                        {t('membershipServicesUi.cancel')}
                       </button>
                     )}
                   </div>

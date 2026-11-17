@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { format, addDays, subDays, startOfDay, differenceInMinutes } from 'date-fns';
 import {
   ChevronLeft, ChevronRight, Clock, MapPin, User, CheckCircle,
@@ -137,13 +138,13 @@ const formatExceededDuration = (minutes) => {
   return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 };
 
-const LicensePlate = ({ plate, size = 'sm' }) => (
+const LicensePlate = ({ plate, size = 'sm', unknownLabel = 'UNKNOWN' }) => (
   <div className={`inline-flex items-center justify-center border border-white/20 rounded-md bg-black/80 font-mono font-bold uppercase tracking-widest text-white shadow-inner ${size === 'sm' ? 'px-2 py-0.5 text-sm' : 'px-4 py-1.5 text-2xl'}`}>
-    {plate || 'UNKNOWN'}
+    {plate || unknownLabel}
   </div>
 );
 
-const ProgressBar = ({ start, end, now }) => {
+const ProgressBar = ({ start, end, now, t }) => {
   const startDate = new Date(start);
   const endDate = new Date(end);
   const hasValidSchedule =
@@ -169,13 +170,13 @@ const ProgressBar = ({ start, end, now }) => {
           {isOverdue
             ? <AlertTriangle size={10} />
             : <Activity size={10} className="animate-pulse" />}
-          {isOverdue ? 'Overdue' : 'Duration Progress'}
+          {isOverdue ? t('bookingManagementUi.overdue') : t('bookingManagementUi.durationProgress')}
         </span>
         <span>{progress}%</span>
       </div>
       {isOverdue && (
         <p className="mb-2 text-[10px] font-bold text-red-300/90">
-          Exceeded by {exceededDuration}
+          {t('bookingManagementUi.exceededBy', { duration: exceededDuration })}
         </p>
       )}
       <div className="h-1.5 w-full bg-[#0b0e14] rounded-full overflow-hidden border border-white/5 shadow-inner">
@@ -195,6 +196,7 @@ const ProgressBar = ({ start, end, now }) => {
 };
 
 export default function BookingManagement() {
+  const { t } = useTranslation();
   const isStaffPage = useLocation().pathname.startsWith('/staff/');
   const formatDetailAmount = isStaffPage ? formatDetailNumber : formatCurrency;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -418,18 +420,18 @@ export default function BookingManagement() {
 
         <div className="sbm-booking-identity flex justify-between items-center gap-3 mb-2 relative z-10">
           <div className="flex items-center gap-2">
-            <LicensePlate plate={booking.licensePlate} />
-            <p className="text-xs font-semibold text-white/80 line-clamp-1">{booking.userId?.fullName || 'Guest'}</p>
+            <LicensePlate plate={booking.licensePlate} unknownLabel={t('bookingManagementUi.unknown')} />
+            <p className="text-xs font-semibold text-white/80 line-clamp-1">{booking.userId?.fullName || t('bookingManagementUi.guest')}</p>
           </div>
           <span data-booking-status={displayStatus} className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${s.bg} ${s.text} ${s.border} ${s.glow}`}>
-            {displayStatus}
+            {t(`bookingManagementUi.status.${String(displayStatus).toLowerCase()}`, displayStatus)}
           </span>
         </div>
 
         <div className="sbm-booking-meta flex items-center justify-between text-[11px] relative z-10 mt-3 text-white/60">
           <div className="flex items-center gap-1.5">
             <MapPin size={12} className="text-amber-400" />
-            <span className="font-medium">{booking.floorId?.name || 'Floor'} - {booking.parkingSlot}</span>
+            <span className="font-medium">{booking.floorId?.name || t('bookingManagementUi.floor')} - {booking.parkingSlot}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Clock size={12} className="text-sky-400" />
@@ -442,6 +444,7 @@ export default function BookingManagement() {
             start={booking.scheduledStart}
             end={booking.scheduledEnd}
             now={clockNow}
+            t={t}
           />
         )}
       </div>
@@ -460,32 +463,32 @@ export default function BookingManagement() {
       <div className="sbm-header flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 shrink-0 relative z-10">
         <div>
           <div className="mb-2 flex items-center gap-3">
-            <h1 className={STAFF_THEME.title}>Booking Management</h1>
+            <h1 className={STAFF_THEME.title}>{t('bookingManagementUi.title')}</h1>
           </div>
-          <p className="text-white/50 text-sm max-w-xl font-medium">Monitor all reservations, active parking sessions, and historical data in real-time.</p>
+          <p className="text-white/50 text-sm max-w-xl font-medium">{t('bookingManagementUi.subtitle')}</p>
         </div>
 
         <div className="sbm-header-controls flex flex-wrap items-center gap-4">
           <div className="sbm-counts flex bg-[#121214] border border-white/10 rounded-2xl p-1.5 shadow-lg">
             <div className="flex flex-col items-center px-5 py-1">
-              <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Active</span>
+              <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">{t('bookingManagementUi.active')}</span>
               <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">{getOperationalValue(bookingState, active.length)}</span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
-              <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Upcoming</span>
+              <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">{t('bookingManagementUi.upcoming')}</span>
               <span className="text-amber-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]">{getOperationalValue(bookingState, upcoming.length)}</span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
-              <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">Total</span>
+              <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">{t('bookingManagementUi.total')}</span>
               <span className="text-white font-black text-xl leading-none">{getOperationalValue(bookingState, pagination?.total || 0)}</span>
             </div>
           </div>
 
           <div className="sbm-date flex items-center bg-[#121214] rounded-2xl border border-white/10 p-1.5 shadow-lg relative overflow-hidden">
             <button
-              aria-label={isStaffPage ? 'Previous booking day' : undefined}
+              aria-label={isStaffPage ? t('bookingManagementUi.previousDay') : undefined}
               onClick={() => setCurrentDate(subDays(currentDate, 1))}
               className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-white/50 hover:text-white"
             >
@@ -493,13 +496,13 @@ export default function BookingManagement() {
             </button>
             {isStaffPage ? <BookingDatePicker value={currentDate} onChange={setCurrentDate} /> : <label
               className="relative flex min-w-[140px] cursor-pointer flex-col items-center justify-center px-4"
-              title="Choose booking date"
+              title={t('bookingManagementUi.chooseDate')}
             >
               <span className="mb-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#d7b94a]">{format(currentDate, 'EEEE')}</span>
               <span className="text-lg font-bold leading-none text-white">{format(currentDate, 'MMM dd, yyyy')}</span>
               <input
                 type="date"
-                aria-label="Choose booking date"
+                aria-label={t('bookingManagementUi.chooseDate')}
                 value={selectedDateKey}
                 onChange={(event) => {
                   const selectedDate = parseDatePickerValue(event.target.value);
@@ -509,7 +512,7 @@ export default function BookingManagement() {
               />
             </label>}
             <button
-              aria-label={isStaffPage ? 'Next booking day' : undefined}
+              aria-label={isStaffPage ? t('bookingManagementUi.nextDay') : undefined}
               onClick={() => setCurrentDate(addDays(currentDate, 1))}
               className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-white/50 hover:text-white"
             >
@@ -531,15 +534,15 @@ export default function BookingManagement() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-extrabold tracking-tight text-white">
-                    Booking Performance
+                    {t('bookingManagementUi.performance')}
                   </h2>
                   <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-widest ${statisticsError ? 'border-red-400/20 bg-red-500/10 text-red-300' : statisticsLoading ? 'border-amber-400/20 bg-amber-500/10 text-amber-300' : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300'}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${statisticsError ? 'bg-red-400' : statisticsLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
-                    {statisticsError ? 'Data unavailable' : statisticsLoading ? 'Updating' : 'Live'}
+                    {statisticsError ? t('bookingManagementUi.dataUnavailable') : statisticsLoading ? t('bookingManagementUi.updating') : t('bookingManagementUi.live')}
                   </span>
                 </div>
                 <p className="mt-0.5 text-[11px] font-medium text-white/40">
-                  Completed booking outcomes and realized revenue only.
+                  {t('bookingManagementUi.performanceSubtitle')}
                 </p>
               </div>
             </div>
@@ -560,7 +563,7 @@ export default function BookingManagement() {
                     : 'border-white/[0.08] bg-white/[0.03] text-white/40 hover:border-white/15 hover:text-white/70'
                 }`}
               >
-                {option.label}
+                {option.value === 'daily' ? t('bookingManagementUi.daily') : t('bookingManagementUi.allTime')}
               </button>
             ))}
             <button
@@ -568,7 +571,7 @@ export default function BookingManagement() {
               onClick={() => setStatisticsRefreshKey((value) => value + 1)}
               disabled={statisticsLoading}
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-white/40 transition hover:border-[#ffd555]/25 hover:text-[#ffd555] disabled:cursor-wait disabled:opacity-50"
-              title="Refresh booking statistics"
+              title={t('bookingManagementUi.refreshStatistics')}
             >
               <RefreshCw size={14} className={statisticsLoading ? 'animate-spin' : ''} />
             </button>
@@ -585,37 +588,37 @@ export default function BookingManagement() {
         <div className={`sbm-metric-strip relative mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${statisticsLoading ? 'opacity-60' : ''}`}>
           <BookingStatCard
             icon={<CircleDollarSign size={17} />}
-            label="Completed Gross Revenue"
+            label={t('bookingManagementUi.completedGrossRevenue')}
             value={statistics ? (isStaffPage ? formatDetailNumber : formatCurrency)(completedStatistics.grossRevenue) : '—'}
             note={
               statistics
-                ? `${formatCurrency(completedStatistics.prepaidRevenue)} base + ${formatCurrency(completedStatistics.additionalRevenue)} additional`
-                : 'Base payments plus additional charges before refunds'
+                ? t('bookingManagementUi.grossRevenueBreakdown', { base: formatCurrency(completedStatistics.prepaidRevenue), additional: formatCurrency(completedStatistics.additionalRevenue) })
+                : t('bookingManagementUi.grossRevenueNote')
             }
             tone="emerald"
           />
           <BookingStatCard
             icon={<Ban size={17} />}
-            label="Cancelled Bookings"
+            label={t('bookingManagementUi.cancelledBookings')}
             value={statistics ? cancelledStatistics.count || 0 : '—'}
-            note="Excluded from all completed revenue totals"
+            note={t('bookingManagementUi.cancelledNote')}
             tone="red"
           />
           <BookingStatCard
             icon={<BadgeCheck size={17} />}
-            label="Completed Bookings"
+            label={t('bookingManagementUi.completedBookings')}
             value={statistics ? completedStatistics.count || 0 : '—'}
-            note="Completed bookings in the selected scope; other statuses excluded"
+            note={t('bookingManagementUi.completedNote')}
             tone="sky"
           />
           <BookingStatCard
             icon={<TrendingUp size={17} />}
-            label="Actual Completed Revenue"
+            label={t('bookingManagementUi.actualCompletedRevenue')}
             value={statistics ? (isStaffPage ? formatDetailNumber : formatCurrency)(completedStatistics.actualRevenue) : '—'}
             note={
               statistics
-                ? `${formatCurrency(completedStatistics.refundPaid)} refunded from Completed bookings`
-                : 'Completed gross revenue less paid refunds'
+                ? t('bookingManagementUi.refundNote', { amount: formatCurrency(completedStatistics.refundPaid) })
+                : t('bookingManagementUi.completedRevenueNote')
             }
             tone="gold"
           />
@@ -628,7 +631,7 @@ export default function BookingManagement() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 transition-colors group-focus-within:text-[#ffd555]" size={18} />
           <input
             type="text"
-            placeholder="Search plate, name, slot..."
+            placeholder={t('bookingManagementUi.searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full rounded-full border border-white/[0.08] bg-[#111] py-3.5 pl-12 pr-4 text-sm font-medium text-white shadow-inner outline-none transition-all placeholder:text-white/30 focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30"
@@ -639,10 +642,10 @@ export default function BookingManagement() {
           value={selectedFloor}
           onChange={setSelectedFloor}
           options={[
-            ['all', 'All Floors'],
+            ['all', t('bookingManagementUi.allFloors')],
             ...floors.map((floor) => [floor._id, floor.name]),
           ]}
-          ariaLabel="Filter bookings by floor"
+          ariaLabel={t('bookingManagementUi.filterFloor')}
           icon={Filter}
           align="right"
           className="min-w-[200px]"
@@ -659,18 +662,18 @@ export default function BookingManagement() {
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center text-white/30 gap-4">
               <Loader2 className="animate-spin text-emerald-500" size={32} />
-              <span className="font-medium tracking-wide">Syncing bookings...</span>
+              <span className="font-medium tracking-wide">{t('bookingManagementUi.syncing')}</span>
             </div>
           ) : dataError ? (
             <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-red-500/30 rounded-[32px] bg-red-500/[0.05] text-red-200 text-center px-6" role="alert">
               <AlertTriangle size={40} className="mb-4 text-red-400" />
-              <p className="font-medium">Booking data unavailable</p>
+              <p className="font-medium">{t('bookingManagementUi.dataUnavailableMessage')}</p>
               <p className="mt-2 text-sm text-red-200/70">{dataError}</p>
             </div>
           ) : filteredBookings.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[32px] bg-white/[0.02] text-white/40">
               <Car size={48} className="mb-4 opacity-30 text-white/50" />
-              <p className="font-medium">No bookings match the selected scope.</p>
+              <p className="font-medium">{t('bookingManagementUi.noMatches')}</p>
             </div>
           ) : (
             <>
@@ -680,7 +683,7 @@ export default function BookingManagement() {
                   <div className="sbm-group-heading border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-emerald-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                      Currently Parked ({active.length})
+                      {t('bookingManagementUi.currentlyParked', { count: active.length })}
                     </h2>
                   </div>
                   <div className="flex flex-col gap-4">
@@ -695,7 +698,7 @@ export default function BookingManagement() {
                   <div className="sbm-group-heading mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-amber-400 flex items-center gap-2">
                       <Clock size={14} />
-                      Arriving Soon ({upcoming.length})
+                      {t('bookingManagementUi.arrivingSoon', { count: upcoming.length })}
                     </h2>
                   </div>
                   <div className="flex flex-col gap-4">
@@ -710,7 +713,7 @@ export default function BookingManagement() {
                   <div className="sbm-group-heading mt-4 border-b border-white/5 bg-[#080808]/90 py-3 backdrop-blur-md">
                     <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-white/50 flex items-center gap-2">
                       <CheckCircle size={14} />
-                      History ({history.length})
+                      {t('bookingManagementUi.history', { count: history.length })}
                     </h2>
                   </div>
                   <div className="flex flex-col gap-4">
@@ -720,10 +723,10 @@ export default function BookingManagement() {
               )}
             </>
           )}
-          {!loading && !dataError && pagination && <nav aria-label="Booking pagination" className="sbm-list-pagination flex items-center justify-between gap-3 text-xs text-white/60">
-            <button type="button" disabled={page <= 1} onClick={() => setListPage({ scope: scopeKey, page: page - 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">Previous</button>
-            <span>Page {page} of {pagination.pages} / {pagination.total} bookings</span>
-            <button type="button" disabled={page >= pagination.pages} onClick={() => setListPage({ scope: scopeKey, page: page + 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">Next</button>
+          {!loading && !dataError && pagination && <nav aria-label={t('bookingManagementUi.paginationLabel')} className="sbm-list-pagination flex items-center justify-between gap-3 text-xs text-white/60">
+            <button type="button" disabled={page <= 1} onClick={() => setListPage({ scope: scopeKey, page: page - 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">{t('bookingManagementUi.previous')}</button>
+            <span>{t('bookingManagementUi.pageOf', { page, pages: pagination.pages, total: pagination.total })}</span>
+            <button type="button" disabled={page >= pagination.pages} onClick={() => setListPage({ scope: scopeKey, page: page + 1 })} className="rounded-lg border border-white/10 px-3 py-2 disabled:opacity-40">{t('bookingManagementUi.next')}</button>
           </nav>}
 
         </div>
@@ -735,7 +738,7 @@ export default function BookingManagement() {
               <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-[#080808] shadow-inner shadow-white/5">
                 <LayoutGrid size={32} className="text-white/40" />
               </div>
-              <p className="text-lg font-medium tracking-wide">Select a booking to view details</p>
+              <p className="text-lg font-medium tracking-wide">{t('bookingManagementUi.selectBooking')}</p>
             </div>
           ) : (
             <div className="h-full flex flex-col">
@@ -749,14 +752,14 @@ export default function BookingManagement() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/40 mb-3 flex items-center gap-2">
-                        <ShieldCheck size={14} className="text-emerald-400" /> Booking Reference
+                        <ShieldCheck size={14} className="text-emerald-400" /> {t('bookingManagementUi.bookingReference')}
                       </p>
                       <div className="sbm-reference flex items-end gap-5">
-                        <LicensePlate plate={currentBooking.licensePlate} size="lg" />
+                        <LicensePlate plate={currentBooking.licensePlate} size="lg" unknownLabel={t('bookingManagementUi.unknown')} />
                         <div className="mb-1">
-                          <p className="text-xs font-semibold text-white/50 mb-1">Internal Ref ID</p>
+                          <p className="text-xs font-semibold text-white/50 mb-1">{t('bookingManagementUi.internalRef')}</p>
                           <p className="text-sm font-mono text-white bg-black/40 px-3 py-1 rounded-lg border border-white/10">
-                            {currentBooking._id?.toUpperCase() || 'N/A'}
+                            {currentBooking._id?.toUpperCase() || t('bookingManagementUi.notAvailable')}
                           </p>
                         </div>
                       </div>
@@ -772,7 +775,7 @@ export default function BookingManagement() {
                         {!isStaffPage && currentBooking.status === 'COMPLETED' && <CheckCircle size={14} />}
                         {currentBookingDisplayStatus === 'ACTIVE' && <Activity size={14} className="animate-pulse" />}
                         {currentBookingDisplayStatus === 'OVERDUE' && <AlertTriangle size={14} />}
-                        {currentBookingDisplayStatus}
+                        {t(`bookingManagementUi.status.${String(currentBookingDisplayStatus).toLowerCase()}`, currentBookingDisplayStatus)}
                       </span>
                     </div>
                   </div>
@@ -792,7 +795,7 @@ export default function BookingManagement() {
 
                     <div className="sbm-schedule-endpoint group rounded-[32px] bg-gradient-to-br from-[#18181b] to-[#121214] border border-white/5 p-8 hover:border-white/10 transition-all shadow-xl">
                       <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/40 mb-6 flex items-center gap-2">
-                        <Clock size={14} className="text-sky-400" /> Start Schedule
+                        <Clock size={14} className="text-sky-400" /> {t('bookingManagementUi.startSchedule')}
                       </p>
                       <div className="flex items-baseline gap-3">
                         <p className="text-5xl font-extrabold text-white tracking-tight">{safeFormat(currentBooking.scheduledStart, 'HH:mm')}</p>
@@ -802,7 +805,7 @@ export default function BookingManagement() {
 
                     <div className="sbm-schedule-endpoint group rounded-[32px] bg-gradient-to-br from-[#18181b] to-[#121214] border border-white/5 p-8 hover:border-white/10 transition-all shadow-xl">
                       <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/40 mb-6 flex items-center gap-2">
-                        <Clock size={14} className="text-amber-400" /> End Schedule
+                        <Clock size={14} className="text-amber-400" /> {t('bookingManagementUi.endSchedule')}
                       </p>
                       <div className="flex items-baseline gap-3">
                         <p className="text-5xl font-extrabold text-white tracking-tight">{safeFormat(currentBooking.scheduledEnd, 'HH:mm')}</p>
@@ -820,18 +823,18 @@ export default function BookingManagement() {
                           <User size={20} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">Customer</p>
-                          <p className="text-lg font-bold text-white truncate" title={currentBooking.userId?.fullName}>{currentBooking.userId?.fullName || 'Guest User'}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">{t('bookingManagementUi.customer')}</p>
+                          <p className="text-lg font-bold text-white truncate" title={currentBooking.userId?.fullName}>{currentBooking.userId?.fullName || t('bookingManagementUi.guestUser')}</p>
                         </div>
                       </div>
                       <div className="space-y-4">
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Email</p>
-                          <p className="text-xs font-semibold text-white truncate max-w-[60%] text-right" title={currentBooking.userId?.email}>{currentBooking.userId?.email || 'N/A'}</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.email')}</p>
+                          <p className="text-xs font-semibold text-white truncate max-w-[60%] text-right" title={currentBooking.userId?.email}>{currentBooking.userId?.email || t('bookingManagementUi.notAvailable')}</p>
                         </div>
                         <div className="flex items-center justify-between pt-1">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Phone</p>
-                          <p className="text-xs font-semibold text-white truncate">{currentBooking.userId?.phone || (isStaffPage ? '---' : 'N/A')}</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.phone')}</p>
+                          <p className="text-xs font-semibold text-white truncate">{currentBooking.userId?.phone || (isStaffPage ? '---' : t('bookingManagementUi.notAvailable'))}</p>
                         </div>
                       </div>
                     </div>
@@ -843,19 +846,19 @@ export default function BookingManagement() {
                           <MapPin size={20} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">Location</p>
-                          <p className="text-lg font-bold text-white truncate" title={currentBooking.floorId?.name}>{currentBooking.floorId?.name || 'Unknown Floor'}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">{t('bookingManagementUi.location')}</p>
+                          <p className="text-lg font-bold text-white truncate" title={currentBooking.floorId?.name}>{currentBooking.floorId?.name || t('bookingManagementUi.unknownFloor')}</p>
                         </div>
                       </div>
                       <div className="space-y-4">
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Allocated Slot</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.allocatedSlot')}</p>
                           <p className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md border border-emerald-400/20">
                             {currentBooking.parkingSlot || '—'}
                           </p>
                         </div>
                         <div className="flex items-center justify-between pt-1">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Floor Level</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.floorLevel')}</p>
                           <p className="text-xs font-semibold text-white">{currentBooking.floorId?.floorNumber || '—'}</p>
                         </div>
                       </div>
@@ -868,7 +871,7 @@ export default function BookingManagement() {
                           <CreditCard size={20} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">Actual Revenue</p>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">{t('bookingManagementUi.actualRevenue')}</p>
                           <p className="text-lg font-bold text-white truncate">
                             {formatDetailAmount(
                               currentBooking.financialSummary?.actualRevenue ??
@@ -879,7 +882,7 @@ export default function BookingManagement() {
                       </div>
                       <div className="space-y-4">
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Base Payment</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.basePayment')}</p>
                           <p className="text-xs font-semibold text-white">
                             {formatDetailAmount(
                               currentBooking.financialSummary?.prepaidCollected ??
@@ -888,21 +891,21 @@ export default function BookingManagement() {
                           </p>
                         </div>
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Additional Charges</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.additionalCharges')}</p>
                           <p className="text-xs font-semibold text-amber-300">
                             {formatDetailAmount(currentBooking.financialSummary?.additionalCollected)}
                           </p>
                         </div>
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Refund Paid</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.refundPaid')}</p>
                           <p className="text-xs font-semibold text-red-300">
                             {formatDetailAmount(currentBooking.financialSummary?.refundPaid)}
                           </p>
                         </div>
                         <div className="flex items-center justify-between pt-1">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Method</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.method')}</p>
                           <p className="text-xs font-semibold text-white capitalize truncate">
-                            {currentBooking.paymentMethod || 'Wallet'}
+                            {currentBooking.paymentMethod || t('bookingManagementUi.wallet')}
                           </p>
                         </div>
                       </div>
@@ -915,19 +918,19 @@ export default function BookingManagement() {
                           <Activity size={20} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">Summary</p>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 mb-1">{t('bookingManagementUi.summary')}</p>
                           <p className="text-lg font-bold text-white truncate">
-                            {currentBooking.durationHours || Math.max(1, Math.round(differenceInMinutes(new Date(currentBooking.scheduledEnd), new Date(currentBooking.scheduledStart)) / 60))} Hours Total
+                            {t('bookingManagementUi.hoursTotal', { hours: currentBooking.durationHours || Math.max(1, Math.round(differenceInMinutes(new Date(currentBooking.scheduledEnd), new Date(currentBooking.scheduledStart)) / 60)) })}
                           </p>
                         </div>
                       </div>
                       <div className="space-y-4">
                         <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Created At</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.createdAt')}</p>
                           <p className="text-xs font-semibold text-white/80 truncate text-right">{safeFormat(currentBooking.createdAt, 'MMM dd, yyyy HH:mm')}</p>
                         </div>
                         <div className="flex items-center justify-between pt-1">
-                          <p className="text-xs font-medium text-white/40 shrink-0">Last Updated</p>
+                          <p className="text-xs font-medium text-white/40 shrink-0">{t('bookingManagementUi.lastUpdated')}</p>
                           <p className="text-xs font-semibold text-white/80 truncate text-right">{safeFormat(currentBooking.updatedAt, 'MMM dd, yyyy HH:mm')}</p>
                         </div>
                       </div>

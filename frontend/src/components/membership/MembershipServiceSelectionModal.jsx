@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { apiFetch } from '../../services/api';
+import { useTranslation } from 'react-i18next';
 
 export default function MembershipServiceSelectionModal({ session, onClose, onSaved }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState([]);
   const [error, setError] = useState('');
@@ -12,18 +14,18 @@ export default function MembershipServiceSelectionModal({ session, onClose, onSa
   const headers = { Authorization: `Bearer ${localStorage.getItem('accessToken')}` };
   const load = async () => {
     const response = await apiFetch(`/membership-services/sessions/${session._id}/benefits`, { headers });
-    if (!response.ok || !response.data?.success) throw new Error(response.data?.message || 'Unable to load services.');
+    if (!response.ok || !response.data?.success) throw new Error(response.data?.message || t('membershipServiceModal.loadError'));
     setData(response.data.data);
     setSelected(response.data.data.requests.filter((r) => r.status === 'pending').map((r) => r.serviceId));
   };
   useEffect(() => {
     let active = true;
     apiFetch(`/membership-services/sessions/${session._id}/benefits`, { headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` } })
-      .then((r) => { if (!active) return; if (!r.ok || !r.data?.success) throw new Error(r.data?.message || 'Unable to load services.');
+      .then((r) => { if (!active) return; if (!r.ok || !r.data?.success) throw new Error(r.data?.message || t('membershipServiceModal.loadError'));
         setData(r.data.data); setSelected(r.data.data.requests.filter((q) => q.status === 'pending').map((q) => q.serviceId)); })
       .catch((e) => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, [session._id]);
+  }, [session._id, t]);
   const save = async () => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setError('');
@@ -34,7 +36,7 @@ export default function MembershipServiceSelectionModal({ session, onClose, onSa
         body: JSON.stringify({ serviceIds: selected, revision: data.revision, idempotencyKey: key.current.value }) });
       if (!r.ok || !r.data?.success) {
         if (r.status === 409) await load();
-        throw new Error(r.data?.message || 'Unable to save.');
+        throw new Error(r.data?.message || t('membershipServiceModal.saveError'));
       }
       await onSaved(); onClose();
     } catch (e) { setError(e.message); } finally { inFlight.current = false; setBusy(false); }

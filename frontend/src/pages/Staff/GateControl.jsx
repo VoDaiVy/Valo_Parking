@@ -7,6 +7,7 @@ import {
   RotateCw, ArrowLeftRight, ScanLine, SlidersHorizontal, ZoomIn, ZoomOut, X
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { API_BASE, apiFetch } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
 import { useGateCameraConfig } from '../../hooks/useGateCameraConfig';
@@ -108,7 +109,7 @@ function classifyFloorSlot(slot, floorId, activeSessions, activeBookings, active
   };
 }
 
-function ViolationStatusRow({ violations, violationDetails, formatCurrency }) {
+function ViolationStatusRow({ violations, violationDetails, formatCurrency, t }) {
   const pendingCount = Number(violations?.pendingFineCount || 0);
   const totalFine = Number(violations?.totalPendingFine || 0);
   const slotViolations = Array.isArray(violations?.slotViolations) ? violations.slotViolations : [];
@@ -118,7 +119,7 @@ function ViolationStatusRow({ violations, violationDetails, formatCurrency }) {
     return (
       <div className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300">
         <CheckCircle2 size={12} className="shrink-0" />
-        <span>Violations: Clean (No pending fines or slot violations)</span>
+        <span>{t('gateControlUi.violationsClean')}</span>
       </div>
     );
   }
@@ -128,7 +129,7 @@ function ViolationStatusRow({ violations, violationDetails, formatCurrency }) {
       <div className="flex items-center gap-1.5 font-bold text-red-300">
         <AlertTriangle size={12} className="shrink-0" />
         <span>
-          Violations Detected
+          {t('gateControlUi.violationsDetected')}
           {pendingCount > 0 ? ` · ${pendingCount} Pending Fine(s) (${formatCurrency(totalFine)})` : ''}
           {slotViolations.length > 0 ? ` · ${slotViolations.length} Slot Issue(s)` : ''}
         </span>
@@ -146,6 +147,7 @@ function ViolationStatusRow({ violations, violationDetails, formatCurrency }) {
 }
 
 export default function GateControl() {
+  const { t } = useTranslation();
   const socket = useSocket();
 
   // ─── HARDWARE & BARRIER STATE ───
@@ -1133,15 +1135,15 @@ export default function GateControl() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-black tracking-tight text-[#ffd555]">
-                Gate Control & Camera Stations
+                {t('gateControlUi.title')}
               </h1>
               <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                LIVE
+                {t('gateControlUi.live')}
               </span>
             </div>
             <p className="mt-1 text-xs font-medium text-white/45">
-              Monitor entry and exit lanes in real time, verify license plates via AI OCR, and operate gate barriers.
+              {t('gateControlUi.subtitle')}
             </p>
           </div>
 
@@ -1169,7 +1171,7 @@ export default function GateControl() {
                 }
               />
               <div className="leading-tight">
-                <p className="text-[9px] font-black uppercase tracking-wider text-white/40">ESP32 Bridge</p>
+                <p className="text-[9px] font-black uppercase tracking-wider text-white/40">{t('gateControlUi.espBridge')}</p>
                 <p
                   className={`text-[11px] font-bold ${
                     isEspOnline
@@ -1179,7 +1181,7 @@ export default function GateControl() {
                         : 'text-red-300'
                   }`}
                 >
-                  {isEspOnline ? 'Online' : isBridgeRunning ? 'Offline (Sim)' : 'Offline'}
+                  {isEspOnline ? t('gateControlUi.online') : isBridgeRunning ? t('gateControlUi.offlineSim') : t('gateControlUi.offline')}
                 </p>
               </div>
             </div>
@@ -1191,7 +1193,7 @@ export default function GateControl() {
               className="flex items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3.5 py-2 font-bold text-xs text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50 transition"
             >
               <ScanLine size={14} />
-              <span>Scan Both Lanes</span>
+              <span>{t('gateControlUi.scanBothLanes')}</span>
             </button>
 
             <button
@@ -1199,7 +1201,7 @@ export default function GateControl() {
               onClick={() => {
                 const next = !autoScanDual;
                 setAutoScanDual(next);
-                toast(next ? 'Auto-Scan enabled (scans automatically on vehicle motion).' : 'Auto-Scan disabled.');
+                toast(next ? t('gateControlUi.autoScanEnabled') : t('gateControlUi.autoScanDisabled'));
               }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 font-bold text-xs transition ${autoScanDual
                 ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
@@ -1207,7 +1209,7 @@ export default function GateControl() {
                 }`}
             >
               <Activity size={14} />
-              <span>Auto-Scan: {autoScanDual ? 'ON' : 'OFF'}</span>
+              <span>{t('gateControlUi.autoScan', { state: autoScanDual ? t('gateControlUi.on') : t('gateControlUi.off') })}</span>
             </button>
 
             <button
@@ -1217,10 +1219,10 @@ export default function GateControl() {
                 ? 'border-sky-400/45 bg-sky-500/15 text-sky-300'
                 : 'border-white/10 bg-[#111111] text-white/65 hover:text-white'
                 }`}
-              title="Configure camera mode, split ratio, crop width, and orientation"
+              title={t('gateControlUi.cameraSetupTitle')}
             >
               <SlidersHorizontal size={14} />
-              <span>Camera Setup</span>
+              <span>{t('gateControlUi.cameraSetup')}</span>
             </button>
 
             <button
@@ -1228,12 +1230,12 @@ export default function GateControl() {
               onClick={() => {
                 triggerBarrier('open', 'ENTRY_1', 'EMERGENCY_OPEN');
                 triggerBarrier('open', 'EXIT_1', 'EMERGENCY_OPEN');
-                toast.success('Emergency Open sent to both Entry and Exit barriers.');
+                toast.success(t('gateControlUi.emergencySent'));
               }}
               className="flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2 font-bold text-xs text-red-300 hover:bg-red-500 hover:text-white transition"
             >
               <AlertTriangle size={14} />
-              <span>Emergency Open</span>
+              <span>{t('gateControlUi.emergencyOpen')}</span>
             </button>
           </div>
         </div>
@@ -1242,7 +1244,7 @@ export default function GateControl() {
         {showCameraSetup && (
           <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/10 bg-[#111111] px-3.5 py-2.5">
             <span className="text-[11px] font-bold uppercase tracking-wider text-white/45">
-              Camera Calibration (Synced to Kiosks)
+              {t('gateControlUi.cameraCalibration')}
             </span>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1262,7 +1264,7 @@ export default function GateControl() {
                 title="ON = split 1 shared camera into left/right halves for Entry & Exit; OFF = full frame per station"
               >
                 <Camera size={13} />
-                <span>Split 1 Cam: {dualLaneSplitMode ? 'ON' : 'OFF'}</span>
+                <span>{t('gateControlUi.splitCamera', { state: dualLaneSplitMode ? t('gateControlUi.on') : t('gateControlUi.off') })}</span>
               </button>
 
               <button
@@ -1307,7 +1309,7 @@ export default function GateControl() {
                 title="Swap camera feeds and rotation angles between Entry and Exit stations"
               >
                 <ArrowLeftRight size={13} />
-                <span>Swap Entry ↔ Exit Cam</span>
+                <span>{t('gateControlUi.swapCamera')}</span>
               </button>
 
               {dualLaneSplitMode && (
@@ -1362,7 +1364,7 @@ export default function GateControl() {
                 title="Invert all cameras 180° when mounted upside down"
               >
                 <RotateCw size={13} />
-                <span>Flip All 180°</span>
+                <span>{t('gateControlUi.flipAll')}</span>
               </button>
             </div>
           </div>
@@ -1388,10 +1390,10 @@ export default function GateControl() {
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm sm:text-base font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                  <span>Entry Gate</span>
+                  <span>{t('gateControlUi.entryGate')}</span>
                   <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">ENTRY_1</span>
                 </h2>
-                <p className="text-[11px] text-white/45 truncate">AI OCR plate scan & slot assignment</p>
+                <p className="text-[11px] text-white/45 truncate">{t('gateControlUi.entrySubtitle')}</p>
               </div>
             </div>
 
@@ -1419,7 +1421,7 @@ export default function GateControl() {
                 : 'bg-red-500/20 text-red-300 border-red-500/40'
                 }`}>
                 {gatesState.ENTRY_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
-                Barrier: {gatesState.ENTRY_1?.open ? 'OPEN' : 'CLOSED'}
+                {gatesState.ENTRY_1?.open ? t('gateControlUi.barrierOpen') : t('gateControlUi.barrierClosed')}
               </span>
             </div>
           </div>
@@ -1511,8 +1513,8 @@ export default function GateControl() {
                     setExpandedCamera('entry');
                   }}
                   className="flex items-center justify-center rounded border border-white/15 bg-white/5 p-1.5 text-white/80 hover:border-emerald-400/40 hover:text-emerald-300 transition"
-                  title="Expand Entry camera (100%)"
-                  aria-label="Expand Entry camera"
+                  title={t('gateControlUi.expandEntry')}
+                  aria-label={t('gateControlUi.expandEntry')}
                 >
                   <Maximize2 size={13} />
                 </button>
@@ -1526,7 +1528,7 @@ export default function GateControl() {
                     className="flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-[10px] font-bold text-white hover:bg-white/20"
                   >
                     <RefreshCw size={11} />
-                    <span>Live Camera</span>
+                    <span>{t('gateControlUi.liveCamera')}</span>
                   </button>
                 ) : (
                   <button
@@ -1536,7 +1538,7 @@ export default function GateControl() {
                     className="flex items-center gap-1 rounded bg-emerald-500 px-2.5 py-1 text-[10px] font-bold text-black hover:bg-emerald-400"
                   >
                     {isEntryScanning ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
-                    <span>Scan Plate (AI)</span>
+                    <span>{t('gateControlUi.scanPlateAi')}</span>
                   </button>
                 )}
               </div>
@@ -1545,10 +1547,10 @@ export default function GateControl() {
 
           {/* Quick Upload Test Option */}
           <div className="mt-2 flex items-center justify-between text-[11px] text-white/40 px-1">
-            <span>Or upload a vehicle photo:</span>
+            <span>{t('gateControlUi.uploadVehiclePhoto')}</span>
             <label className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 cursor-pointer font-semibold">
               <Upload size={12} />
-              <span>Upload Photo</span>
+              <span>{t('gateControlUi.uploadPhoto')}</span>
               <input
                 type="file"
                 accept="image/*"
@@ -1572,26 +1574,26 @@ export default function GateControl() {
           <div className="mt-4 space-y-3 rounded-xl border border-white/10 bg-[#161618] p-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-black uppercase text-white/40">Detected Plate</label>
+                <label className="text-[10px] font-black uppercase text-white/40">{t('gateControlUi.detectedPlate')}</label>
                 <div className="relative mt-1">
                   <input
                     type="text"
                     value={entryPlate}
                     onChange={(e) => setEntryPlate(e.target.value.toUpperCase())}
                     onBlur={() => entryPlate && verifyEntryPlate(entryPlate)}
-                    placeholder="e.g. 51K-889.99"
+                    placeholder={t('gateControlUi.platePlaceholder')}
                     className="w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm font-black tracking-wider text-emerald-400 placeholder:text-white/20 focus:border-emerald-400 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase text-white/40">Phone Number</label>
+                <label className="text-[10px] font-black uppercase text-white/40">{t('gateControlUi.phoneNumber')}</label>
                 <input
                   type="text"
                   value={entryPhone}
                   onChange={(e) => setEntryPhone(e.target.value)}
-                  placeholder="Customer phone (optional)"
+                  placeholder={t('gateControlUi.customerPhoneOptional')}
                   className="mt-1 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm font-medium text-white placeholder:text-white/20 focus:border-emerald-400 focus:outline-none"
                 />
               </div>
@@ -1653,6 +1655,7 @@ export default function GateControl() {
                   <ViolationStatusRow
                     violations={entryVerifyData.violations}
                     formatCurrency={formatCurrency}
+                    t={t}
                   />
                 </div>
               </div>
@@ -1684,7 +1687,7 @@ export default function GateControl() {
                   <>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[10px] font-black uppercase text-white/40">Parking Floor</label>
+                        <label className="text-[10px] font-black uppercase text-white/40">{t('gateControlUi.parkingFloor')}</label>
                         <select
                           value={entryFloorId}
                           onChange={(e) => {
@@ -1710,7 +1713,7 @@ export default function GateControl() {
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-black uppercase text-white/40">Parking Slot</label>
+                        <label className="text-[10px] font-black uppercase text-white/40">{t('gateControlUi.parkingSlot')}</label>
                         <button
                           type="button"
                           onClick={() => {
@@ -1745,7 +1748,7 @@ export default function GateControl() {
                               </>
                             ) : (
                               <span className="font-semibold text-white/40">
-                                Select slot ({availableSlotsList.length} free)
+                                {t('gateControlUi.selectSlot', { count: availableSlotsList.length })}
                               </span>
                             )}
                           </span>
@@ -1794,7 +1797,7 @@ export default function GateControl() {
                               title="Refresh live slot availability"
                             >
                               <RefreshCw size={11} className={isLoadingFloorSlots ? 'animate-spin' : ''} />
-                              <span>Refresh</span>
+                              <span>{t('gateControlUi.refresh')}</span>
                             </button>
                             <button
                               type="button"
@@ -1809,7 +1812,7 @@ export default function GateControl() {
                         {isLoadingFloorSlots && classifiedSlots.length === 0 ? (
                           <div className="flex items-center justify-center gap-2 py-6 text-xs text-white/50">
                             <Loader2 size={14} className="animate-spin text-emerald-400" />
-                            <span>Loading live parking slots...</span>
+                            <span>{t('gateControlUi.loadingSlots')}</span>
                           </div>
                         ) : visibleSlots.length === 0 ? (
                           <div className="rounded-lg border border-dashed border-white/10 py-5 px-3 text-center text-[11px] text-white/50">
@@ -1899,7 +1902,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-400 hover:text-black transition"
               >
                 <Sparkles size={14} className="text-amber-400" />
-                <span>AI Plate Assistant</span>
+                <span>{t('gateControlUi.aiAssistant')}</span>
               </button>
 
               <button
@@ -1909,7 +1912,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-xs font-black text-black hover:bg-emerald-400 disabled:opacity-50 transition shadow-lg shadow-emerald-500/20"
               >
                 {isEntryCheckingIn ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                <span>Check-in & Open Gate</span>
+                <span>{t('gateControlUi.checkinOpen')}</span>
               </button>
             </div>
 
@@ -1921,7 +1924,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Unlock size={12} className="text-emerald-400" />
-                <span>Open Entry</span>
+                <span>{t('gateControlUi.openEntry')}</span>
               </button>
 
               <button
@@ -1930,7 +1933,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Pause size={12} className="text-yellow-400" />
-                <span>Hold</span>
+                <span>{t('gateControlUi.hold')}</span>
               </button>
 
               <button
@@ -1939,7 +1942,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Lock size={12} className="text-red-400" />
-                <span>Close</span>
+                <span>{t('gateControlUi.close')}</span>
               </button>
             </div>
           </div>
@@ -1960,10 +1963,10 @@ export default function GateControl() {
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm sm:text-base font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
-                  <span>Exit Gate</span>
+                  <span>{t('gateControlUi.exitGate')}</span>
                   <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-300 border border-sky-500/30">EXIT_1</span>
                 </h2>
-                <p className="text-[11px] text-white/45 truncate">Security verification & fee collection</p>
+                <p className="text-[11px] text-white/45 truncate">{t('gateControlUi.exitSubtitle')}</p>
               </div>
             </div>
 
@@ -1991,7 +1994,7 @@ export default function GateControl() {
                 : 'bg-red-500/20 text-red-300 border-red-500/40'
                 }`}>
                 {gatesState.EXIT_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
-                Barrier: {gatesState.EXIT_1?.open ? 'OPEN' : 'CLOSED'}
+                {gatesState.EXIT_1?.open ? t('gateControlUi.barrierOpen') : t('gateControlUi.barrierClosed')}
               </span>
             </div>
           </div>
@@ -2083,8 +2086,8 @@ export default function GateControl() {
                     setExpandedCamera('exit');
                   }}
                   className="flex items-center justify-center rounded border border-white/15 bg-white/5 p-1.5 text-white/80 hover:border-sky-400/40 hover:text-sky-300 transition"
-                  title="Expand Exit camera (100%)"
-                  aria-label="Expand Exit camera"
+                  title={t('gateControlUi.expandExit')}
+                  aria-label={t('gateControlUi.expandExit')}
                 >
                   <Maximize2 size={13} />
                 </button>
@@ -2098,7 +2101,7 @@ export default function GateControl() {
                     className="flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-[10px] font-bold text-white hover:bg-white/20"
                   >
                     <RefreshCw size={11} />
-                    <span>Live Camera</span>
+                    <span>{t('gateControlUi.liveCamera')}</span>
                   </button>
                 ) : (
                   <button
@@ -2108,7 +2111,7 @@ export default function GateControl() {
                     className="flex items-center gap-1 rounded bg-sky-500 px-2.5 py-1 text-[10px] font-bold text-black hover:bg-sky-400"
                   >
                     {isExitScanning ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
-                    <span>Scan Plate (AI)</span>
+                    <span>{t('gateControlUi.scanPlateAi')}</span>
                   </button>
                 )}
               </div>
@@ -2118,7 +2121,7 @@ export default function GateControl() {
           {/* Quick Select from Active Sessions in Lot */}
           <div className="mt-2 space-y-2 px-1 text-[11px] text-white/40">
             <div className="flex items-center justify-between gap-2">
-              <span>Quick select active vehicle:</span>
+              <span>{t('gateControlUi.quickSelectVehicle')}</span>
               <select
                 onChange={(e) => {
                   const val = e.target.value;
@@ -2145,7 +2148,7 @@ export default function GateControl() {
               <input
                 value={exitPlate}
                 onChange={(event) => setExitPlate(event.target.value.toUpperCase())}
-                placeholder="Enter license plate to find session"
+                placeholder={t('gateControlUi.findSession')}
                 className="min-w-0 flex-1 rounded border border-white/15 bg-black/60 px-3 py-2 text-xs font-bold text-white outline-none placeholder:text-white/30 focus:border-sky-400"
               />
               <button
@@ -2214,6 +2217,7 @@ export default function GateControl() {
                   violations={exitStatusInfo.violations}
                   violationDetails={exitStatusInfo.violationDetails}
                   formatCurrency={formatCurrency}
+                  t={t}
                 />
               </div>
             );
@@ -2363,7 +2367,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/20 to-yellow-500/20 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-400 hover:text-black transition"
               >
                 <Sparkles size={14} className="text-amber-400" />
-                <span>AI Plate Assistant</span>
+                <span>{t('gateControlUi.aiAssistant')}</span>
               </button>
 
               <button
@@ -2378,7 +2382,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-xs font-black text-black hover:bg-sky-400 disabled:opacity-50 transition shadow-lg shadow-sky-500/20"
               >
                 {isExitCheckingOut ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                <span>Check-out & Open Gate</span>
+                <span>{t('gateControlUi.checkoutOpen')}</span>
               </button>
             </div>
 
@@ -2390,7 +2394,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Unlock size={12} className="text-sky-400" />
-                <span>Open Exit</span>
+                <span>{t('gateControlUi.openExit')}</span>
               </button>
 
               <button
@@ -2399,7 +2403,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Pause size={12} className="text-yellow-400" />
-                <span>Hold</span>
+                <span>{t('gateControlUi.hold')}</span>
               </button>
 
               <button
@@ -2408,7 +2412,7 @@ export default function GateControl() {
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Lock size={12} className="text-red-400" />
-                <span>Close</span>
+                <span>{t('gateControlUi.close')}</span>
               </button>
             </div>
           </div>
@@ -2501,7 +2505,7 @@ export default function GateControl() {
                   {(expandedCamera === 'entry' ? isEntryScanning : isExitScanning)
                     ? <Loader2 size={13} className="animate-spin" />
                     : <Camera size={13} />}
-                  <span>Scan Plate (AI)</span>
+                  <span>{t('gateControlUi.scanPlateAi')}</span>
                 </button>
 
                 <button
