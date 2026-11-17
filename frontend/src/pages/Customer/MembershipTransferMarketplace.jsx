@@ -23,6 +23,7 @@ import {
   settleEntitlementTransfer,
 } from "../../services/subscriptionService";
 import { getWalletInfo } from "../../services/walletService";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} VND`;
 const dateTime = (value) => {
@@ -45,6 +46,7 @@ const unwrapList = (response) => {
 const listingId = (listing) => String(listing?.transferId || listing?._id || "");
 
 export default function MembershipTransferMarketplace({ embedded = false }) {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const { transferId: routeTransferId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -226,8 +228,8 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
       <div className={embedded ? "" : "mx-auto max-w-7xl"}>
         {!embedded && <CustomerPageHeader
           icon={ShoppingBag}
-          title="Membership Marketplace"
-          description="Browse admin-approved membership spaces, reserve one safely, and pay with your wallet."
+          title={t('marketplacePage.title')}
+          description={t('marketplacePage.description')}
           className="border-b border-white/10 pb-6"
           action={
             <button
@@ -237,7 +239,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
               className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-              Refresh
+              {t('common.refresh')}
             </button>
           }
         />}
@@ -251,19 +253,19 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
               className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-              Refresh
+              {t('common.refresh')}
             </button>
           </div>
         )}
 
         <section className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-[#151515] p-4 md:grid-cols-[1fr_140px_140px_180px]">
           <label className="relative">
-            <span className="sr-only">Search marketplace</span>
+            <span className="sr-only">{t('marketplacePage.searchLabel')}</span>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={17} />
             <input
               value={filters.search}
               onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-              placeholder="Search space, parking lot, or package"
+              placeholder={t('marketplacePage.searchPlaceholder')}
               className="min-h-11 w-full rounded-xl border border-white/10 bg-black/30 pl-10 pr-3 text-sm outline-none transition placeholder:text-white/25 focus:border-[#DCA11D]/60"
             />
           </label>
@@ -272,8 +274,8 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
             min="0"
             value={filters.minPrice}
             onChange={(event) => setFilters((current) => ({ ...current, minPrice: event.target.value }))}
-            placeholder="Min price"
-            aria-label="Minimum price"
+            placeholder={t('marketplacePage.minPrice')}
+            aria-label={t('marketplacePage.minPrice')}
             className="min-h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm outline-none focus:border-[#DCA11D]/60"
           />
           <input
@@ -281,8 +283,8 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
             min="0"
             value={filters.maxPrice}
             onChange={(event) => setFilters((current) => ({ ...current, maxPrice: event.target.value }))}
-            placeholder="Max price"
-            aria-label="Maximum price"
+            placeholder={t('marketplacePage.maxPrice')}
+            aria-label={t('marketplacePage.maxPrice')}
             className="min-h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm outline-none focus:border-[#DCA11D]/60"
           />
           <label className="relative">
@@ -290,19 +292,19 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
             <select
               value={filters.sort}
               onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}
-              aria-label="Sort marketplace"
+              aria-label={t('marketplacePage.sortLabel')}
               className="min-h-11 w-full appearance-none rounded-xl border border-white/10 bg-black/30 pl-10 pr-3 text-sm outline-none focus:border-[#DCA11D]/60"
             >
-              <option value="newest">Newest</option>
-              <option value="price_asc">Lowest price</option>
-              <option value="expiry_asc">Expiring soon</option>
+              <option value="newest">{t('marketplacePage.newest')}</option>
+              <option value="price_asc">{t('marketplacePage.lowestPrice')}</option>
+              <option value="expiry_asc">{t('marketplacePage.expiringSoon')}</option>
             </select>
           </label>
         </section>
 
         <div className="mt-5 flex items-center justify-between text-xs text-white/35">
-          <span>{visibleListings.length} available listing{visibleListings.length === 1 ? "" : "s"}</span>
-          {pagination?.totalPages > 1 && <span>Page {pagination.page} of {pagination.totalPages}</span>}
+          <span>{t('marketplacePage.availableListings', { count: visibleListings.length })}</span>
+          {pagination?.totalPages > 1 && <span>{t('marketplacePage.pageOf', { page: pagination.page, total: pagination.totalPages })}</span>}
         </div>
 
         {loading ? (
@@ -312,8 +314,8 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
         ) : visibleListings.length === 0 ? (
           <div className="mt-5 rounded-3xl border border-dashed border-white/10 p-12 text-center">
             <ShoppingBag className="mx-auto text-white/20" size={34} />
-            <h2 className="mt-4 font-black">No matching listings</h2>
-            <p className="mt-2 text-sm text-white/40">Try changing your search or price range.</p>
+            <h2 className="mt-4 font-black">{t('marketplacePage.noMatches')}</h2>
+            <p className="mt-2 text-sm text-white/40">{t('marketplacePage.noMatchesHint')}</p>
           </div>
         ) : (
           <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -330,7 +332,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                     <h2 className="mt-2 text-2xl font-black">{item.slotCode || "VIP slot"}</h2>
                   </div>
                   <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-300">
-                    Available
+                    {t('marketplacePage.available')}
                   </span>
                 </div>
                 <div className="mt-5 space-y-2 text-sm text-white/50">
@@ -339,7 +341,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                   <p className="flex items-center gap-2"><CalendarClock size={15} /> Valid until {dateTime(item.expireAt)}</p>
                 </div>
                 <div className="mt-6 border-t border-white/10 pt-4">
-                  <p className="text-xs text-white/35">Total due</p>
+                  <p className="text-xs text-white/35">{t('marketplacePage.totalDue')}</p>
                   <p className="mt-1 text-xl font-black text-[#E8B63E]">{money(item.totalDue ?? Number(item.askingPrice || 0) + Number(item.transferFee || 0))}</p>
                 </div>
                 <button
@@ -347,7 +349,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                   onClick={() => openDetail(listingId(item))}
                   className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-[#F4D06F]"
                 >
-                  View details <ArrowRight size={16} />
+                  {t('marketplacePage.viewDetails')} <ArrowRight size={16} />
                 </button>
               </article>
             ))}
@@ -366,10 +368,10 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#DCA11D]">Verified listing</p>
-                <h2 id="marketplace-detail-title" className="mt-2 text-2xl font-black">Membership transfer</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#DCA11D]">{t('marketplacePage.verifiedListing')}</p>
+                <h2 id="marketplace-detail-title" className="mt-2 text-2xl font-black">{t('marketplacePage.membershipTransfer')}</h2>
               </div>
-              <button type="button" onClick={() => openDetail("")} aria-label="Close listing details" className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-white/50 hover:bg-white/5 hover:text-white">
+              <button type="button" onClick={() => openDetail("")} aria-label={t('common.close')} className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-white/50 hover:bg-white/5 hover:text-white">
                 <X size={18} />
               </button>
             </div>
@@ -386,26 +388,26 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                     </div>
                     <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-black text-emerald-300">
                       {selected.canSettle
-                        ? "Reserved by you"
+                        ? t('marketplacePage.reservedByYou')
                         : selected.status === "LISTED"
-                          ? "Available"
-                          : "Unavailable"}
+                          ? t('marketplacePage.available')
+                          : t('marketplacePage.unavailable')}
                     </span>
                   </div>
                   <div className="mt-5 grid gap-3 text-sm text-white/50 sm:grid-cols-2">
-                    <p><span className="block text-xs text-white/25">Parking lot</span>{selected.parkingLot?.name || "Not available"}</p>
-                    <p><span className="block text-xs text-white/25">Floor</span>{selected.floor?.name || "Not available"}</p>
-                    <p><span className="block text-xs text-white/25">Membership expires</span>{dateTime(selected.expireAt)}</p>
-                    <p><span className="block text-xs text-white/25">Listing expires</span>{dateTime(selected.listingExpiresAt)}</p>
+                    <p><span className="block text-xs text-white/25">{t('marketplacePage.parkingLot')}</span>{selected.parkingLot?.name || t('marketplacePage.notAvailable')}</p>
+                    <p><span className="block text-xs text-white/25">{t('marketplacePage.floor')}</span>{selected.floor?.name || t('marketplacePage.notAvailable')}</p>
+                    <p><span className="block text-xs text-white/25">{t('marketplacePage.membershipExpires')}</span>{dateTime(selected.expireAt)}</p>
+                    <p><span className="block text-xs text-white/25">{t('marketplacePage.listingExpires')}</span>{dateTime(selected.listingExpiresAt)}</p>
                   </div>
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-white/10 p-5">
-                  <div className="flex justify-between text-sm text-white/45"><span>Seller price</span><span>{money(selected.askingPrice)}</span></div>
-                  <div className="mt-3 flex justify-between text-sm text-white/45"><span>Transfer fee</span><span>{money(selected.transferFee)}</span></div>
+                  <div className="flex justify-between text-sm text-white/45"><span>{t('marketplacePage.sellerPrice')}</span><span>{money(selected.askingPrice)}</span></div>
+                  <div className="mt-3 flex justify-between text-sm text-white/45"><span>{t('marketplacePage.transferFee')}</span><span>{money(selected.transferFee)}</span></div>
                   <div className="mt-4 flex items-end justify-between border-t border-white/10 pt-4">
-                    <div><p className="text-xs text-white/35">Wallet balance</p><p className="mt-1 font-bold">{money(walletBalance)}</p></div>
-                    <div className="text-right"><p className="text-xs text-white/35">Total due</p><p className="mt-1 text-xl font-black text-[#E8B63E]">{money(selected.totalDue ?? Number(selected.askingPrice || 0) + Number(selected.transferFee || 0))}</p></div>
+                    <div><p className="text-xs text-white/35">{t('marketplacePage.walletBalance')}</p><p className="mt-1 font-bold">{money(walletBalance)}</p></div>
+                    <div className="text-right"><p className="text-xs text-white/35">{t('marketplacePage.totalDue')}</p><p className="mt-1 text-xl font-black text-[#E8B63E]">{money(selected.totalDue ?? Number(selected.askingPrice || 0) + Number(selected.transferFee || 0))}</p></div>
                   </div>
                 </div>
 
@@ -418,33 +420,33 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                 {selected.canSettle ? (
                   walletBalance >= Number(selected.totalDue ?? Number(selected.askingPrice || 0) + Number(selected.transferFee || 0)) ? (
                     <button type="button" onClick={handleSettle} disabled={Boolean(activeAction)} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-5 font-black text-[#16130B] disabled:opacity-50">
-                      {activeAction ? <Loader2 size={17} className="animate-spin" /> : <Wallet size={17} />} Pay from wallet
+                      {activeAction ? <Loader2 size={17} className="animate-spin" /> : <Wallet size={17} />} {t('marketplacePage.payFromWallet')}
                     </button>
                   ) : (
                     <div className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-200">
-                      <p>Your wallet does not have enough balance. Top up before the reservation expires.</p>
+                      <p>{t('marketplacePage.insufficientBalance')}</p>
                       <button
                         type="button"
                         onClick={() => navigate("/customer/wallet")}
                         className="mt-3 min-h-10 rounded-lg border border-rose-200/20 px-4 text-xs font-black text-rose-100 hover:bg-rose-100/10"
                       >
-                        Top up wallet
+                        {t('walletPage.topUp')}
                       </button>
                     </div>
                   )
                 ) : selected.status === "LISTED" ? (
                   <button type="button" onClick={handleClaim} disabled={Boolean(activeAction) || selected.status !== "LISTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 font-black text-black transition hover:bg-[#F4D06F] disabled:cursor-not-allowed disabled:opacity-50">
-                    {activeAction ? <Loader2 size={17} className="animate-spin" /> : <ShoppingBag size={17} />} Reserve for 15 minutes
+                    {activeAction ? <Loader2 size={17} className="animate-spin" /> : <ShoppingBag size={17} />} {t('marketplacePage.reserve15')}
                   </button>
                 ) : (
                   <p className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/50">
-                    This listing is no longer available.
+                    {t('marketplacePage.unavailable')}
                   </p>
                 )}
-                <p className="mt-3 text-center text-xs leading-5 text-white/30">Claiming reserves this listing only for you. Ownership changes after wallet payment succeeds.</p>
+                <p className="mt-3 text-center text-xs leading-5 text-white/30">{t('marketplacePage.claimHint')}</p>
               </>
             ) : (
-              <div className="py-12 text-center text-white/45">This listing is no longer available.</div>
+              <div className="py-12 text-center text-white/45">{t('marketplacePage.unavailable')}</div>
             )}
           </section>
         </div>

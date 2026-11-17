@@ -5,8 +5,10 @@ import ParkingMapGrid from '../../components/ParkingMapGrid';
 import { getLiveMapData, getAllFloors } from '../../services/parkingFloorService';
 import { Car, ChevronDown, X, LayoutDashboard, Sparkles } from 'lucide-react';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const MapFloorPicker = ({ floors, value, onChange }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedFloor = floors.find((floor) => floor._id === value);
@@ -43,7 +45,7 @@ const MapFloorPicker = ({ floors, value, onChange }) => {
         onClick={() => setIsOpen((current) => !current)}
         className="flex h-11 min-w-[116px] items-center justify-between rounded-xl border border-transparent bg-gray-100 px-3 text-left text-sm font-bold text-gray-800 outline-none transition hover:border-gold/40 hover:bg-white focus:border-gold focus:ring-1 focus:ring-gold"
       >
-        <span className="min-w-0 truncate">{selectedFloor?.name || 'Select floor'}</span>
+        <span className="min-w-0 truncate">{selectedFloor?.name || t('map.selectFloor')}</span>
         <ChevronDown
           size={15}
           className={`ml-3 shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -82,6 +84,7 @@ const MapFloorPicker = ({ floors, value, onChange }) => {
 };
 
 export default function ParkingMap() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   
   const [user, setUser] = useState(() => {
@@ -203,27 +206,27 @@ export default function ParkingMap() {
         <div className="mb-3 sm:mb-0">
           <h1 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
             <LayoutDashboard className="text-gold" size={24} />
-            INTERACTIVE MAP
+            {t('map.interactive')}
           </h1>
-          <p className="text-xs text-gray-500 font-medium">Live real-time updates</p>
+          <p className="text-xs text-gray-500 font-medium">{t('map.liveUpdates')}</p>
         </div>
         
         <div className="flex gap-2 sm:gap-4 items-center">
           <div className="flex flex-col items-center bg-gray-50 border border-gray-100 rounded-lg px-3 py-1.5 min-w-[80px]">
             <span className="text-sm font-black text-gray-900">{totalSlots}</span>
-            <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Total Slots</span>
+            <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{t('map.totalSlots')}</span>
           </div>
           <div className="flex flex-col items-center bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5 min-w-[80px]">
             <span className="text-sm font-black text-emerald-600">{availableSlotsCount}</span>
-            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest">Available</span>
+            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest">{t('map.available')}</span>
           </div>
           <div className="flex flex-col items-center bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5 min-w-[80px]">
             <span className="text-sm font-black text-rose-600">{occupiedSlotsCount}</span>
-            <span className="text-[9px] font-bold text-rose-600 uppercase tracking-widest">Occupied</span>
+            <span className="text-[9px] font-bold text-rose-600 uppercase tracking-widest">{t('map.occupied')}</span>
           </div>
           <div className="flex flex-col items-center bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5 min-w-[80px]">
             <span className="text-sm font-black text-amber-600">{maintenanceSlotsCount}</span>
-            <span className="text-[9px] font-bold text-amber-600 uppercase tracking-widest">Maintenance</span>
+            <span className="text-[9px] font-bold text-amber-600 uppercase tracking-widest">{t('map.maintenance')}</span>
           </div>
 
           {/* AI 24h Forecast Button */}
@@ -233,8 +236,8 @@ export default function ParkingMap() {
             className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-gold/20 to-amber-400/20 border border-gold/40 text-gray-900 font-bold text-xs hover:bg-gold hover:text-black transition shadow-sm ml-1"
           >
             <Sparkles size={15} className="text-gold" />
-            <span className="hidden sm:inline">AI 24h Forecast</span>
-            <span className="sm:hidden">AI 24h</span>
+            <span className="hidden sm:inline">{t('map.aiForecast')}</span>
+            <span className="sm:hidden">{t('map.aiShort')}</span>
           </button>
         </div>
       </div>
@@ -243,7 +246,7 @@ export default function ParkingMap() {
       <div className="flex-1 relative overflow-hidden bg-[#f8fafc]">
         {floors.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center text-gray-400 font-medium">
-            Loading map data...
+            {t('map.loading')}
           </div>
         ) : (
           <>
@@ -260,7 +263,7 @@ export default function ParkingMap() {
 
             {/* Floor Selector Floating */}
             <div className="absolute top-4 left-4 z-40 bg-white/90 backdrop-blur-md p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-2">
-               <span className="text-xs font-bold text-gray-500 ml-2">FLOOR:</span>
+               <span className="text-xs font-bold text-gray-500 ml-2">{t('map.floor').toUpperCase()}:</span>
                <MapFloorPicker
                  floors={floors}
                  value={currentFloorId || ""}
@@ -270,26 +273,26 @@ export default function ParkingMap() {
 
             {/* Status Legend Floating */}
             <div className="absolute bottom-4 left-4 z-40 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-gray-100 shadow-xl flex flex-col gap-2.5">
-               <h4 className="text-[10px] font-black text-gold tracking-widest uppercase mb-1">Status Legend</h4>
+               <h4 className="text-[10px] font-black text-gold tracking-widest uppercase mb-1">{t('map.statusLegend')}</h4>
                <div className="flex items-center gap-3">
                  <div className="w-5 h-5 rounded-md bg-white border-[2px] border-slate-300 shadow-sm"></div>
-                 <span className="text-xs font-bold text-gray-700">Available</span>
+                 <span className="text-xs font-bold text-gray-700">{t('map.available')}</span>
                </div>
                <div className="flex items-center gap-3">
                  <div className="w-5 h-5 rounded-md bg-red-100 border-[2px] border-red-500 shadow-sm"></div>
-                 <span className="text-xs font-bold text-red-600">Occupied</span>
+                 <span className="text-xs font-bold text-red-600">{t('map.occupied')}</span>
                </div>
                <div className="flex items-center gap-3">
                  <div className="w-5 h-5 rounded-md bg-cyan-100 border-[2px] border-cyan-500 shadow-sm"></div>
-                 <span className="text-xs font-bold text-cyan-600">Selected</span>
+                 <span className="text-xs font-bold text-cyan-600">{t('map.selected')}</span>
                </div>
                <div className="flex items-center gap-3">
                  <div className="w-5 h-5 rounded-md bg-yellow-100 border-[2px] border-yellow-500 shadow-sm"></div>
-                 <span className="text-xs font-bold text-yellow-600">VIP Pass</span>
+                 <span className="text-xs font-bold text-yellow-600">{t('map.vipPass')}</span>
                </div>
                <div className="flex items-center gap-3">
                  <div className="w-5 h-5 rounded-md bg-red-200 border-[2px] border-red-500 shadow-sm" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 4px, rgba(127, 29, 29, 0.3) 4px, rgba(127, 29, 29, 0.3) 8px)' }}></div>
-                 <span className="text-xs font-bold text-red-700">Maintenance</span>
+                 <span className="text-xs font-bold text-red-700">{t('map.maintenance')}</span>
                </div>
             </div>
           </>
@@ -315,16 +318,16 @@ export default function ParkingMap() {
             </div>
 
             <div className="p-8 pt-6 relative z-10">
-              <h3 className="text-2xl font-black text-gray-900 mb-2">Login to Book</h3>
+              <h3 className="text-2xl font-black text-gray-900 mb-2">{t('map.loginToBook')}</h3>
               <p className="text-gray-600 mb-6 font-medium leading-relaxed">
-                Slot <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded">{selectedSlot?.id}</span> is available. Please login to reserve your spot and proceed to payment.
+                {t('map.slotAvailable', { slot: selectedSlot?.id })}
               </p>
 
               <button
                 onClick={handleLoginRedirect}
                 className="w-full bg-gray-900 hover:bg-black text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
               >
-                Go to Login
+                {t('map.goToLogin')}
               </button>
             </div>
           </div>
@@ -345,9 +348,9 @@ export default function ParkingMap() {
                   <Sparkles size={18} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-gray-900 dark:text-white text-base">24h AI Occupancy &amp; Peak Times Forecast</h3>
+                  <h3 className="font-extrabold text-gray-900 dark:text-white text-base">{t('map.forecastTitle')}</h3>
                   <p className="text-[11px] font-semibold text-gray-400">
-                    Full parking lot overview
+                    {t('map.forecastOverview')}
                   </p>
                 </div>
               </div>

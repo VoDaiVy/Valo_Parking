@@ -1,5 +1,6 @@
 import { Calculator } from 'lucide-react';
 import { normalizeRefundRule } from '../../services/policyService';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const money = (value) =>
   new Intl.NumberFormat('vi-VN', {
@@ -11,6 +12,7 @@ const money = (value) =>
 const percentOf = (amount, percent) => (amount * Number(percent || 0)) / 100;
 
 export default function RefundRulePreview({ rule: rawRule, hasErrors = false }) {
+  const { t } = useLanguage();
   const rule = normalizeRefundRule(rawRule);
   const sortedTiers = [...rule.cancellationTiers].sort(
     (a, b) => Number(b.minimumMinutesBeforeStart) - Number(a.minimumMinutesBeforeStart)
@@ -31,7 +33,7 @@ export default function RefundRulePreview({ rule: rawRule, hasErrors = false }) 
     <aside className="rounded-3xl border border-white/10 bg-black/40 p-4 sm:p-5" aria-labelledby="refund-preview-title">
       <div className="mb-4 flex items-center gap-2">
         <Calculator size={17} className="text-yellow-300" />
-        <h4 id="refund-preview-title" className="font-black">Rule preview</h4>
+        <h4 id="refund-preview-title" className="font-black">{t('policyUi.refund.preview')}</h4>
       </div>
       {hasErrors && (
         <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">
@@ -41,7 +43,7 @@ export default function RefundRulePreview({ rule: rawRule, hasErrors = false }) 
 
       <div className="space-y-4 text-sm">
         <div>
-          <p className="font-bold text-gray-200">Cancellation example</p>
+          <p className="font-bold text-gray-200">{t('policyUi.refund.cancellationExample')}</p>
           <p className="mt-1 text-xs text-gray-500">Based on {money(prepaidParking)} prepaid parking.</p>
           <div className="mt-2 space-y-2">
             {sortedTiers.map((tier, index) => (
@@ -56,7 +58,7 @@ export default function RefundRulePreview({ rule: rawRule, hasErrors = false }) 
         </div>
 
         <div className="border-t border-white/10 pt-4">
-          <p className="font-bold text-gray-200">Early-checkout example</p>
+          <p className="font-bold text-gray-200">{t('policyUi.refund.checkoutExample')}</p>
           <p className="mt-1 text-xs leading-5 text-gray-500">
             {money(prepaidParking)} prepaid parking and {money(actualCharge)} actual parking charge.
           </p>

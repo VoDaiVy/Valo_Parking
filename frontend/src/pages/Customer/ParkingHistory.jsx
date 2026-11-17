@@ -1,6 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { useSearchParams } from 'react-router-dom';
-import MembershipServiceSelectionModal from '../../components/membership/MembershipServiceSelectionModal';
+import { useState, useEffect } from "react";
 import { apiFetch } from "../../services/api";
 import {
   History,
@@ -19,11 +17,10 @@ import {
 } from "lucide-react";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import { formatLicensePlateDisplay } from "../../utils/licensePlate";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 export default function ParkingHistory() {
-  const [params] = useSearchParams();
-  const [serviceSession, setServiceSession] = useState(null);
-  const openedLink = useRef(null);
+  const { t } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -33,7 +30,7 @@ export default function ParkingHistory() {
     setLoading(true);
     const token = localStorage.getItem("accessToken");
     if (!token) {
-      setError("Please login to view history");
+      setError(t('historyPage.loginRequired'));
       setLoading(false);
       return;
     }
@@ -45,10 +42,10 @@ export default function ParkingHistory() {
       if (ok && data?.success) {
         setSessions(data.data);
       } else {
-        setError(data?.message || "Failed to load history.");
+        setError(data?.message || t('historyPage.loadFailed'));
       }
     } catch {
-      setError("Network error occurred.");
+      setError(t('historyPage.networkError'));
     } finally {
       setLoading(false);
     }
@@ -61,13 +58,6 @@ export default function ParkingHistory() {
 
     return () => window.clearTimeout(timerId);
   }, []);
-  useEffect(() => {
-    const linked = sessions.find((s) => s._id === params.get('sessionId'));
-    if (linked?.type !== 'SUBSCRIPTION') return;
-    if (openedLink.current === params.toString()) return;
-    const timer = setTimeout(() => { openedLink.current = params.toString(); setServiceSession(linked); }, 0);
-    return () => clearTimeout(timer);
-  }, [params, sessions]);
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -170,8 +160,8 @@ export default function ParkingHistory() {
       {/* ── HEADER ── */}
       <CustomerPageHeader
         icon={History}
-        title="Parking History"
-        description="Review your past parking sessions and expenses."
+        title={t('historyPage.title')}
+        description={t('historyPage.description')}
         className="mb-8 md:mb-10"
       />
 
@@ -188,9 +178,9 @@ export default function ParkingHistory() {
       ) : sessions.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 px-4">
           <History size={64} className="text-gray-500 mb-4" />
-          <h3 className="text-xl font-bold text-gray-300">No History Found</h3>
+          <h3 className="text-xl font-bold text-gray-300">{t('historyPage.emptyTitle')}</h3>
           <p className="text-gray-500 mt-2 text-sm">
-            You don't have any parking sessions yet.
+            {t('historyPage.emptyDescription')}
           </p>
         </div>
       ) : (
@@ -213,9 +203,6 @@ export default function ParkingHistory() {
               ></div>
 
               <div className="p-5 md:p-6">
-                <span className="mb-3 inline-block rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-300">{({ BOOKING: 'Booking', SUBSCRIPTION: 'Membership', WALK_IN: 'Gửi xe thường' })[session.type] || 'Unknown'}</span>
-                {session.canSelectServices && <button onClick={() => setServiceSession(session)} className="mb-3 ml-3 min-h-11 rounded-lg border border-yellow-500 px-3 text-sm text-yellow-400">Chọn dịch vụ ưu đãi</button>}
-                {(session.serviceSummary?.pending > 0 || session.serviceSummary?.inProgress > 0) && <p className="mb-3 text-sm text-blue-300">{session.serviceSummary.pending} pending · {session.serviceSummary.inProgress} in progress</p>}
                 {/* Card Header */}
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
                   <div className="flex items-center gap-3 md:gap-4">
@@ -225,11 +212,11 @@ export default function ParkingHistory() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest">
-                          LICENSE PLATE
+                          {t('historyPage.licensePlate')}
                         </p>
                         {index === 0 && (
                           <span className="px-2 py-0.5 rounded text-[9px] font-black bg-yellow-500 text-black tracking-wider uppercase shadow-[0_0_10px_rgba(234,179,8,0.4)]">
-                            LATEST
+                            {t('historyPage.latest')}
                           </span>
                         )}
                       </div>
@@ -248,7 +235,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <Calendar size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">CHECK-IN</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.checkIn')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
                       {formatDate(session.checkInTime)}
@@ -258,7 +245,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <Clock size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">DURATION</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.duration')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
                       {calculateDuration(session.checkInTime, session.checkOutTime)}
@@ -268,7 +255,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <MapPin size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">SLOT</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.slot')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
                       {session.parkingSlot || "Unassigned"}
@@ -278,7 +265,7 @@ export default function ParkingHistory() {
                   <div>
                     <div className="flex items-center gap-1.5 text-gray-500 mb-1">
                       <CreditCard size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">TOTAL</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.total')}</span>
                     </div>
                     <p className="text-sm font-bold text-yellow-400">
                       {formatMoney(session.totalPrice)}
@@ -310,7 +297,6 @@ export default function ParkingHistory() {
         </div>
       )}
 
-      {serviceSession && <MembershipServiceSelectionModal key={serviceSession._id} session={serviceSession} onClose={() => setServiceSession(null)} onSaved={fetchHistory} />}
       {selectedSession && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-[#09090d] border border-yellow-500/20 rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.55)]">
