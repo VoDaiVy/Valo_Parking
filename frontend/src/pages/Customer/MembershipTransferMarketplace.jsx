@@ -118,6 +118,12 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
   }, []);
 
   useEffect(() => {
+    const refresh = () => { void loadListings(); };
+    window.addEventListener('membership:refresh', refresh);
+    return () => window.removeEventListener('membership:refresh', refresh);
+  }, [loadListings]);
+
+  useEffect(() => {
     const timerId = window.setTimeout(loadListings, 0);
     return () => window.clearTimeout(timerId);
   }, [loadListings]);

@@ -335,7 +335,7 @@ export default function MembershipOwnershipPanel({
       )}
 
       {membership?.package && (
-        <section className="mt-6 overflow-hidden rounded-3xl border border-[#DCA11D]/20 bg-[#111318] shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+        <section className="mt-6 overflow-hidden border-y border-white/10 bg-[#101113]">
           <div className="grid lg:grid-cols-[1.25fr_0.75fr]">
             <div className="relative p-6 sm:p-8">
               <div className="absolute inset-y-0 left-0 w-1 bg-[#DCA11D]" />
@@ -427,7 +427,7 @@ export default function MembershipOwnershipPanel({
       )}
 
       {membership?.reservedSlots?.length > 0 && (
-        <section className="mt-6 rounded-3xl border border-white/10 bg-[#151515] p-5 sm:p-6">
+        <section className="mt-6 border-t border-white/10 pt-6">
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-[#DCA11D]">
@@ -441,13 +441,13 @@ export default function MembershipOwnershipPanel({
               {membership.reservedSlots.length}/3 spaces
             </span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="membership-space-list mt-5">
             {membership.reservedSlots.map((slot, index) => (
               <article
                 key={slot.entitlementId || `${slot.floorId}-${slot.slotCode}`}
                 ref={(element) => { if (element) cardRefs.current.set(index, element); else cardRefs.current.delete(index); }}
                 onClick={() => openDetail(slot)}
-                className="membership-space-card rounded-2xl border border-white/10 bg-white/[0.025] p-4"
+                className="membership-space-card border-b border-white/10 py-5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>

@@ -172,6 +172,12 @@ export default function MembershipTransfers({ embedded = false }) {
     [loadData],
   );
 
+  useEffect(() => {
+    const refresh = () => { void refreshData(); };
+    window.addEventListener('membership:refresh', refresh);
+    return () => window.removeEventListener('membership:refresh', refresh);
+  }, [refreshData]);
+
   const filteredTransfers = useMemo(
     () =>
       transfers.filter((transfer) => {
@@ -309,19 +315,7 @@ export default function MembershipTransfers({ embedded = false }) {
           </div>}
         />}
 
-        {embedded && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={refreshData}
-              disabled={refreshing}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
-            >
-              <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-              Refresh
-            </button>
-          </div>
-        )}
+
 
         {membershipError && <div role="alert" className="mt-4 text-sm text-amber-200">{membershipError} <button type="button" onClick={() => loadData()} className="min-h-11 underline">Retry</button></div>}
         <MembershipOwnershipPanel
@@ -337,7 +331,7 @@ export default function MembershipTransfers({ embedded = false }) {
           }}
         />
 
-        <section className="mt-6 rounded-3xl border border-white/10 bg-[#151515] p-5 sm:p-6">
+        <section className="membership-requests mt-6 border-t border-white/10 pt-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-black">Requests and contracts</h2>
@@ -369,7 +363,7 @@ export default function MembershipTransfers({ embedded = false }) {
                 <Loader2 size={24} className="animate-spin" />
               </div>
             ) : filteredTransfers.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center">
+              <div className="py-10 text-center">
                 <FileText size={26} className="mx-auto text-white/20" />
                 <p className="mt-3 text-sm font-bold text-white/50">
                   No {filter === "all" ? "" : `${filter} `}transfer requests
@@ -394,7 +388,7 @@ export default function MembershipTransfers({ embedded = false }) {
                 return (
                   <article
                     key={transfer._id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-5"
+                    className="border-b border-white/10 py-4 sm:py-5"
                   >
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                       <div className="flex min-w-0 flex-1 gap-3">

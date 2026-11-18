@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import SocketContext from '../../contexts/SocketProvider';
+import { useContext, useEffect, useState } from 'react';
 import MembershipHistoryDrawer from '../../components/membership/MembershipHistoryDrawer';
-import { ArrowLeftRight, ShoppingBag, History } from "lucide-react";
+import { ArrowLeftRight, ShoppingBag, History, RefreshCw } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
@@ -22,6 +23,26 @@ const TABS = [
 ];
 
 export default function MembershipHub() {
+  const socket = useContext(SocketContext);
+  const refreshMembership = () => window.dispatchEvent(new Event('membership:refresh'));
+  useEffect(() => {
+    const refresh = () => window.dispatchEvent(new Event('membership:refresh'));
+    const notification = (payload) => {
+      const type = payload?.metadata?.eventType || payload?.notification?.metadata?.eventType || '';
+      if (/MEMBERSHIP|ENTITLEMENT|TRANSFER/.test(type)) refresh();
+    };
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    socket?.on('notification:new', notification);
+    socket?.on('connect', refresh);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      socket?.off('notification:new', notification);
+      socket?.off('connect', refresh);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [socket]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -70,7 +91,7 @@ export default function MembershipHub() {
           icon={ArrowLeftRight}
           title="Membership"
           description="Manage your membership spaces and transfers, or find an available space in the marketplace."
-          action={<button type="button" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10"><History size={17} aria-hidden="true" />History</button>}
+          action={<div className="flex gap-2"><button type="button" onClick={refreshMembership} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-white hover:bg-white/10"><RefreshCw size={17} />Refresh</button><button type="button" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10"><History size={17} aria-hidden="true" />History</button></div>}
           className="border-b border-white/10 pb-6"
         />
 

@@ -99,8 +99,11 @@ async function listGrants(userId, query) {
   }), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }
 
-async function listRequests(userId, role, query) {
-  const { page, limit } = parsePage(query);
+async function listRequests(userId, role, query = {}) {
+  const { page } = parsePage(query);
+  const limit = query.limit === undefined ? 20 : Number(query.limit);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50
+    || !['string', 'number', 'undefined'].includes(typeof query.limit)) throw fail('Invalid limit.');
   await expirePendingRequests();
   const filter = ['staff', 'admin'].includes(role) ? {} : { requesterId: userId };
   if (query.sessionId) { requireId(query.sessionId); filter.sessionId = query.sessionId; }

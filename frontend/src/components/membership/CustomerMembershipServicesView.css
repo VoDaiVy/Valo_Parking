@@ -1,0 +1,41 @@
+.cms-services { margin-top:28px; padding-top:24px; border-top:1px solid #ffffff1a; color:#f1f1f1; background:#0d0d0d; }
+.cms-header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+.cms-header h2 { display:flex; align-items:center; gap:10px; margin:0; font-size:22px; font-weight:700; }
+.cms-header h2 svg { color:#e5b94c; }
+.cms-header p { margin:8px 0 0; color:#a6a6a6; font-size:13px; line-height:1.7; max-width:780px; }
+.cms-services button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:9px 14px; color:#dedede; background:#171717; border:1px solid #ffffff24; border-radius:9px; font:inherit; font-size:13px; cursor:pointer; }
+.cms-services button:hover:not(:disabled) { background:#252116; border-color:#b38a32; color:#f1ce75; }
+.cms-services button:disabled { opacity:.45; cursor:not-allowed; }
+.cms-services button:focus-visible { outline:2px solid #e5b94c; outline-offset:3px; }
+.cms-tabs { display:flex; gap:22px; margin-top:20px; border-bottom:1px solid #ffffff1a; }
+.cms-tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; padding:12px 0; color:#9c9c9c; }
+.cms-tabs button[aria-selected=true] { color:#f0c55d; border-bottom-color:#e5b94c; }
+.cms-table-scroll { overflow:auto; border-bottom:1px solid #ffffff14; }
+.cms-services table { width:100%; min-width:690px; border-collapse:collapse; text-align:left; font-size:13px; }
+.cms-services th { padding:14px 16px; background:#151510; color:#b8b09c; font-size:10px; letter-spacing:.06em; font-weight:600; }
+.cms-services td { padding:17px 16px; border-top:1px solid #ffffff0e; color:#bcbcbc; vertical-align:middle; }
+.cms-services th:first-child { width:32%; }
+.cms-services tbody tr:hover { background:#ffffff03; }
+.cms-services strong { display:block; color:#eeeeeb; font-weight:600; }
+.cms-services small { display:block; max-width:380px; margin-top:5px; color:#92928d; font-size:11px; line-height:1.65; overflow-wrap:anywhere; }
+.cms-remaining { color:#f1cd75; font-size:20px; font-weight:650; }
+.cms-remaining>span { color:#8d8a80; font-size:13px; font-weight:400; }
+.cms-slot { padding:4px 9px; border:1px solid #ffffff21; border-radius:5px; color:#c6c0af; }
+.cms-status { display:inline-block; padding:4px 10px; border:1px solid #ffffff26; border-radius:20px; font-size:11px; white-space:nowrap; }
+.cms-status-done { color:#84d7af; background:#10251b; border-color:#29513a; }
+.cms-status-pending { color:#edcb75; background:#292211; border-color:#594a24; }
+.cms-status-in_progress { color:#8bcce7; background:#11232d; border-color:#28485a; }
+.cms-status-cancelled { color:#d8a0a7; background:#291b20; border-color:#53303a; }
+.cms-highlight { background:#b98b1420; outline:1px solid #a88234; outline-offset:-1px; }
+.cms-empty { padding:36px 16px; color:#999; text-align:center; font-size:13px; }
+.cms-error { color:#edaaaa; padding:12px; border:1px solid #713940; background:#28191c; border-radius:8px; }
+.cms-legacy { color:#dbc185; font-size:13px; padding:14px 0; }
+.cms-pagination>div { justify-content:flex-end; padding-bottom:12px; color:#aaa; font-size:12px; }
+.membership-space-list .membership-space-card { display:grid; grid-template-columns:minmax(220px,1.5fr) minmax(130px,1fr) minmax(170px,1.3fr) auto; gap:8px 24px; align-items:center; background:transparent; border-radius:0; }
+.membership-space-list .membership-space-card>div:first-child { grid-row:span 2; }
+.membership-space-list .membership-space-card>button { grid-column:4; grid-row:1; margin:0; }
+.membership-space-list .membership-space-card>div:last-child { grid-column:4; grid-row:2; margin:0; min-width:190px; }
+.membership-space-list .membership-space-card>p { margin:0; }
+@media(max-width:900px) { .membership-space-list .membership-space-card { grid-template-columns:1fr 1fr; } .membership-space-list .membership-space-card>button,.membership-space-list .membership-space-card>div:last-child { grid-column:auto; grid-row:auto; } }
+@media(max-width:540px) { .membership-space-list .membership-space-card { grid-template-columns:1fr; } }
+@media(max-width:640px) { .cms-header { gap:12px; } .cms-header h2 { font-size:19px; } .cms-header button { padding:9px; } .cms-tabs { gap:16px; } }
