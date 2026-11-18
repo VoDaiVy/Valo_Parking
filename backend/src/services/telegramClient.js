@@ -17,8 +17,8 @@ function classifyError(error, attempts = 1, now = Date.now()) {
   const delay = code === 429 ? Math.max(1, Number(body?.parameters?.retry_after) || 30) * 1000 : Math.min(300000, 2000 * 2 ** attempts) + Math.floor(Math.random() * 1000);
   return { status: uncertain ? 'uncertain' : 'pending', errorCode: uncertain ? 'SEND_UNCERTAIN' : code === 429 ? 'RATE_LIMIT' : 'BOT_UNAVAILABLE', nextAttemptAt: new Date(now + delay) };
 }
-async function call(method, data, headers) {
-  const response = await axios.post(`${botUrl()}/${method}`, data, { timeout: 15000, headers, maxContentLength: 2 * 1024 * 1024 });
+async function call(method, data, headers, { timeout = 15000, signal } = {}) {
+  const response = await axios.post(`${botUrl()}/${method}`, data, { timeout, signal, headers, maxContentLength: 2 * 1024 * 1024 });
   if (!response.data?.ok) throw Object.assign(new Error('Telegram API failure'), { response: { data: response.data } });
   return response.data.result;
 }
@@ -34,4 +34,8 @@ async function sendPhoto(chatId, png, caption) {
   form.append('photo', png, { filename: 'valo-ticket.png', contentType: 'image/png' });
   return call('sendPhoto', form, form.getHeaders());
 }
-module.exports = { enabled, sendMessage, sendPhoto, classifyError };
+const getWebhookInfo = () => call('getWebhookInfo');
+const getUpdates = (offset, { signal } = {}) => call('getUpdates', {
+  ...(offset != null ? { offset } : {}), timeout: 20, allowed_updates: ['message'],
+}, undefined, { timeout: 30000, signal });
+module.exports = { enabled, sendMessage, sendPhoto, classifyError, getWebhookInfo, getUpdates };

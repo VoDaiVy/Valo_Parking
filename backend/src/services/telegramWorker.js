@@ -123,6 +123,7 @@ async function runTelegramWorkerOnce() {
 }
 function startTelegramWorker() {
   if (!client.enabled()) return () => {};
+  const stopPolling = require('./telegramPollingService').startTelegramPolling();
   let stopped = false, running = false;
   let lastReconcile = 0;
   const tick = async () => {
@@ -147,6 +148,6 @@ function startTelegramWorker() {
   };
   const timer = setInterval(tick, 1000); timer.unref();
   tick();
-  return () => { stopped = true; clearInterval(timer); };
+  return () => { stopped = true; clearInterval(timer); stopPolling(); };
 }
 module.exports = { acquireLease, finish, processUpdate, processDelivery, runTelegramWorkerOnce, startTelegramWorker };
