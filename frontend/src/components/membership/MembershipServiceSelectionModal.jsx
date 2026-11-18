@@ -56,7 +56,7 @@ export default function MembershipServiceSelectionModal({ session, onClose, onSa
           {data && !data.selectionEnabled && <p className="mb-3">New selections are disabled; you can still remove pending services.</p>}
           {data && !choices.length && <p>No included uses available.</p>}
           {choices.map((g) => <label key={g.serviceId} className="mb-3 flex gap-3 rounded-lg border border-gray-700 p-3">
-            <input type="checkbox" checked={selected.includes(g.serviceId)} disabled={busy || inProgress.some((r) => r.serviceId === g.serviceId) || (!selected.includes(g.serviceId) && (!data.selectionEnabled || !g.available))}
+            <input type="checkbox" checked={selected.includes(g.serviceId)} disabled={busy || inProgress.some((r) => r.serviceId === g.serviceId) || (!selected.includes(g.serviceId) && !pending.some((r) => r.serviceId === g.serviceId) && (!data.selectionEnabled || !g.available))}
               onChange={(e) => setSelected((s) => e.target.checked ? [...s, g.serviceId] : s.filter((id) => id !== g.serviceId))} />
             <span><strong>{g.serviceName}</strong><span className="block text-sm text-gray-400">{g.available} available · {g.reserved} reserved{g.nearestExpiry ? ` · Expires ${new Date(g.nearestExpiry).toLocaleString('vi-VN')}` : ''}</span></span>
           </label>)}

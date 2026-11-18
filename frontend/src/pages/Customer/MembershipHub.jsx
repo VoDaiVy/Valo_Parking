@@ -1,5 +1,6 @@
 import SocketContext from '../../contexts/SocketProvider';
 import { useContext, useEffect, useState } from 'react';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import MembershipHistoryDrawer from '../../components/membership/MembershipHistoryDrawer';
 import { ArrowLeftRight, ShoppingBag, History, RefreshCw } from "lucide-react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -12,12 +13,12 @@ import MembershipServices from '../../components/membership/MembershipServices';
 const TABS = [
   {
     id: "transfers",
-    label: "My Membership",
+    label: 'membershipHub.myMembership',
     icon: ArrowLeftRight,
   },
   {
     id: "marketplace",
-    label: "Marketplace",
+    label: 'membershipHub.marketplace',
     icon: ShoppingBag,
   },
 ];
@@ -43,6 +44,7 @@ export default function MembershipHub() {
       document.removeEventListener('visibilitychange', visible);
     };
   }, [socket]);
+  const { t } = useLanguage();
   const [historyOpen, setHistoryOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -89,16 +91,16 @@ export default function MembershipHub() {
       <div className="mx-auto max-w-7xl">
         <CustomerPageHeader
           icon={ArrowLeftRight}
-          title="Membership"
-          description="Manage your membership spaces and transfers, or find an available space in the marketplace."
-          action={<div className="flex gap-2"><button type="button" onClick={refreshMembership} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-white hover:bg-white/10"><RefreshCw size={17} />Refresh</button><button type="button" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10"><History size={17} aria-hidden="true" />History</button></div>}
+          title={t('membershipHub.title')}
+          description={t('membershipHub.description')}
+          action={<div className="flex gap-2"><button type="button" onClick={refreshMembership} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-white hover:bg-white/10"><RefreshCw size={17} />{t('common.refresh')}</button><button type="button" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10"><History size={17} aria-hidden="true" />{t('membershipHub.history')}</button></div>}
           className="border-b border-white/10 pb-6"
         />
 
         {historyOpen && <MembershipHistoryDrawer onClose={() => setHistoryOpen(false)} />}
         <nav
           role="tablist"
-          aria-label="Membership sections"
+          aria-label={t('membershipHub.sections')}
           className="mt-6 grid rounded-2xl border border-white/10 bg-[#151515] p-1.5 sm:inline-grid sm:grid-cols-2"
         >
           {TABS.map((tab) => {
@@ -123,7 +125,7 @@ export default function MembershipHub() {
                 }`}
               >
                 <Icon size={16} />
-                {tab.label}
+                {t(tab.label)}
               </button>
             );
           })}

@@ -211,7 +211,8 @@ function GoldUnderlineField({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CustomerProfile() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-GB';
   const navigate = useNavigate();
   const avatarInputRef = useRef(null);
   const spotlightRef = useRef(null);
@@ -323,7 +324,7 @@ export default function CustomerProfile() {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get("membershipPayment") === "success") {
           setToast({
-            msg: "VIP package activated and your parking slot has been reserved.",
+            msgKey: 'profilePage.vipPackageActivatedAndYourParking',
             type: "success",
           });
           window.history.replaceState({}, document.title, window.location.pathname);
@@ -360,14 +361,12 @@ export default function CustomerProfile() {
           setMembershipQr(response.data.data.payload);
         } else {
           setMembershipQr("");
-          setMembershipQrError(
-            response.data?.message || "Membership QR is currently unavailable.",
-          );
+          setMembershipQrError('profilePage.membershipQrIsCurrentlyUnavailable');
         }
       } catch {
         if (!cancelled) {
           setMembershipQr("");
-          setMembershipQrError("Unable to load membership QR.");
+          setMembershipQrError('profilePage.unableToLoadMembershipQr');
         }
       } finally {
         if (!cancelled) setMembershipQrLoading(false);
@@ -399,11 +398,11 @@ export default function CustomerProfile() {
       updated.lastName = spaceIdx > 0 ? value.slice(spaceIdx + 1) : "";
     }
     setProfile(updated);
-    setToast({ msg: "Saving...", type: "saving" });
+    setToast({ msg: t('profilePage.saving'), type: "saving" });
 
     const token = localStorage.getItem("accessToken");
     if (!token) {
-      showToast("Not authenticated", "error");
+      showToast(t('profilePage.notAuthenticated'), "error");
       return;
     }
 
@@ -425,14 +424,14 @@ export default function CustomerProfile() {
       sessionStorage.setItem("valo_user", JSON.stringify(merged));
       window.dispatchEvent(new Event("valo_auth_change"));
       if (data.data.claimedSessions > 0) {
-        setToast({ msg: "🎉 Success! We've collected your full parking history!", type: "success" });
+        setToast({ msg: t('profilePage.successWeVeCollectedYourFull'), type: "success" });
       } else {
-        setToast({ msg: "Profile updated ✓", type: "success" });
+        setToast({ msg: t('profilePage.profileUpdated'), type: "success" });
       }
       setTimeout(() => setToast(null), 2000);
     } else {
       setProfile(profile);
-      showToast(data?.message || "Update failed", "error");
+      showToast(data?.message || t('profilePage.updateFailed'), "error");
     }
   };
 
@@ -442,7 +441,7 @@ export default function CustomerProfile() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      showToast("Image must be under 5 MB.", "error");
+      showToast(t('profilePage.imageMustBeUnder5Mb'), "error");
       return;
     }
 
@@ -477,14 +476,14 @@ export default function CustomerProfile() {
           );
         }
         window.dispatchEvent(new Event("valo_auth_change"));
-        showToast("Avatar updated ✓", "success");
+        showToast(t('profilePage.avatarUpdated'), "success");
       } else {
         setProfile((prev) => ({ ...prev, avatar: prevAvatar }));
-        showToast(data?.message || "Upload failed.", "error");
+        showToast(data?.message || t('profilePage.uploadFailed'), "error");
       }
     } catch {
       setProfile((prev) => ({ ...prev, avatar: prevAvatar }));
-      showToast("Could not connect to server.", "error");
+      showToast(t('profilePage.couldNotConnectToServer'), "error");
     } finally {
       setAvatarLoading(false);
       URL.revokeObjectURL(previewUrl);
@@ -509,12 +508,12 @@ export default function CustomerProfile() {
     const trimName = formDraft.name.trim();
     const trimPhone = formDraft.phone.trim();
 
-    if (!trimName) errors.name = "Name is required.";
+    if (!trimName) errors.name = t('profilePage.nameIsRequired');
     else if (trimName.length < 2)
-      errors.name = "Name must be at least 2 characters.";
-    if (!trimPhone) errors.phone = "Phone number is required.";
+      errors.name = t('profilePage.nameMustBeAtLeast2');
+    if (!trimPhone) errors.phone = t('profilePage.phoneNumberIsRequired');
     else if (!/^0[0-9]{9}$/.test(trimPhone))
-      errors.phone = "Invalid phone (e.g. 0905414132).";
+      errors.phone = t('profilePage.invalidPhoneEG0905414132');
 
     if (errors.name || errors.phone) {
       setFormErrors(errors);
@@ -534,11 +533,11 @@ export default function CustomerProfile() {
     };
     setProfile(updated);
     setEditMode(false);
-    setToast({ msg: "Saving...", type: "saving" });
+    setToast({ msg: t('profilePage.saving'), type: "saving" });
 
     const token = localStorage.getItem("accessToken");
     if (!token) {
-      showToast("Not authenticated", "error");
+      showToast(t('profilePage.notAuthenticated'), "error");
       return;
     }
 
@@ -556,14 +555,14 @@ export default function CustomerProfile() {
       sessionStorage.setItem("valo_user", JSON.stringify(merged));
       window.dispatchEvent(new Event("valo_auth_change"));
       if (data.data.claimedSessions > 0) {
-        setToast({ msg: "🎉 Success! We've collected your full parking history!", type: "success" });
+        setToast({ msg: t('profilePage.successWeVeCollectedYourFull'), type: "success" });
       } else {
-        setToast({ msg: "Profile updated ✓", type: "success" });
+        setToast({ msg: t('profilePage.profileUpdated'), type: "success" });
       }
       setTimeout(() => setToast(null), 2000);
     } else {
       setProfile(profile);
-      showToast(data?.message || "Update failed", "error");
+      showToast(data?.message || t('profilePage.updateFailed'), "error");
     }
   };
 
@@ -592,7 +591,7 @@ export default function CustomerProfile() {
     const { ok, data } = await apiForgotPassword(profile.email);
     setFpLoading(false);
     if (!ok) {
-      setFpError(data?.message || "Could not send OTP. Please try again.");
+      setFpError(data?.message || t('profilePage.couldNotSendOtpPleaseTry'));
       return;
     }
     setFpOtpDigits(Array(6).fill(""));
@@ -605,17 +604,17 @@ export default function CustomerProfile() {
     const { ok, data } = await apiForgotPassword(profile.email);
     setFpLoading(false);
     if (!ok) {
-      setFpError(data?.message || "Could not resend OTP.");
+      setFpError(data?.message || t('profilePage.couldNotResendOtp'));
       return;
     }
     setFpOtpDigits(Array(6).fill(""));
-    showToast("New OTP sent ✓", "success");
+    showToast(t('profilePage.newOtpSent'), "success");
   };
 
   const handleFpVerifyOTP = async () => {
     const code = fpOtpDigits.join("");
     if (code.length !== 6) {
-      setFpError("Please enter all 6 digits.");
+      setFpError(t('profilePage.pleaseEnterAll6Digits'));
       return;
     }
     setFpError("");
@@ -623,7 +622,7 @@ export default function CustomerProfile() {
     const { ok, data } = await apiVerifyResetOTP(profile.email, code);
     setFpLoading(false);
     if (!ok) {
-      setFpError(data?.message || "Invalid OTP. Please try again.");
+      setFpError(data?.message || t('profilePage.invalidOtpPleaseTryAgain'));
       return;
     }
     setFpVerifiedOTP(code);
@@ -640,11 +639,11 @@ export default function CustomerProfile() {
       checks.special,
     ].filter(Boolean).length;
     if (strength < 4) {
-      setFpError("Password does not meet all requirements.");
+      setFpError(t('profilePage.passwordDoesNotMeetAllRequirements'));
       return;
     }
     if (fpNewPwd !== fpConfirmPwd) {
-      setFpError("Passwords do not match.");
+      setFpError(t('profilePage.passwordsDoNotMatch'));
       return;
     }
     setFpError("");
@@ -656,10 +655,10 @@ export default function CustomerProfile() {
     );
     setFpLoading(false);
     if (!ok) {
-      setFpError(data?.message || "Reset failed. Please try again.");
+      setFpError(data?.message || t('profilePage.resetFailedPleaseTryAgain'));
       return;
     }
-    showToast("Password reset ✓", "success");
+    showToast(t('profilePage.passwordReset'), "success");
     closeCpModal();
   };
 
@@ -670,23 +669,23 @@ export default function CustomerProfile() {
 
     // Only validate current password for non-Google users
     if (!isGoogleUser && !current.trim())
-      errs.current = "Current password is required.";
+      errs.current = t('profilePage.currentPasswordIsRequired');
 
-    if (!newPwd) errs.newPwd = "New password is required.";
-    else if (newPwd.length < 8) errs.newPwd = "Minimum 8 characters required.";
+    if (!newPwd) errs.newPwd = t('profilePage.newPasswordIsRequired');
+    else if (newPwd.length < 8) errs.newPwd = t('profilePage.minimum8CharactersRequired');
     else if (!/[A-Z]/.test(newPwd) || !/[a-z]/.test(newPwd))
-      errs.newPwd = "Must contain both uppercase and lowercase letters.";
+      errs.newPwd = t('profilePage.mustContainBothUppercaseAndLowercase');
     else if (!/[0-9]/.test(newPwd))
-      errs.newPwd = "Must contain at least 1 number.";
+      errs.newPwd = t('profilePage.mustContainAtLeast1Number');
     else if (!/[^a-zA-Z0-9]/.test(newPwd))
-      errs.newPwd = "Must contain at least 1 special character.";
+      errs.newPwd = t('profilePage.mustContainAtLeast1Special');
     else if (!isGoogleUser && newPwd === current.trim())
-      errs.newPwd = "New password must differ from current password.";
+      errs.newPwd = t('profilePage.newPasswordMustDifferFromCurrent');
 
     const strength = getPwdStrength(newPwd);
     if (strength === 4) {
-      if (!confirm) errs.confirm = "Please confirm your new password.";
-      else if (confirm !== newPwd) errs.confirm = "Passwords do not match.";
+      if (!confirm) errs.confirm = t('profilePage.pleaseConfirmYourNewPassword');
+      else if (confirm !== newPwd) errs.confirm = t('profilePage.passwordsDoNotMatch');
     }
     if (errs.current || errs.newPwd || errs.confirm) {
       setCpErrors(errs);
@@ -716,12 +715,12 @@ export default function CustomerProfile() {
     setCpLoading(false);
 
     if (ok && data?.success) {
-      showToast("Password updated ✓", "success");
+      showToast(t('profilePage.passwordUpdated'), "success");
       closeCpModal();
     } else {
       setCpErrors((p) => ({
         ...p,
-        current: data?.message || "Incorrect current password.",
+        current: data?.message || t('profilePage.incorrectCurrentPassword'),
       }));
     }
   };
@@ -906,7 +905,7 @@ export default function CustomerProfile() {
                     className="text-yellow-400 opacity-0 group-hover:opacity-100 transition-opacity"
                   />
                   <span className="text-yellow-400 text-[9px] font-bold tracking-wider uppercase opacity-0 group-hover:opacity-100 transition-opacity">
-                    Change
+                    {t('profilePage.change')}
                   </span>
                 </>
               )}
@@ -961,7 +960,7 @@ export default function CustomerProfile() {
               className="mt-1.5 tracking-[0.15em] text-xs font-semibold uppercase"
               style={{ color: "rgba(234,179,8,0.65)" }}
             >
-              {profile.role}
+              {t('customer.role')}
             </p>
           </div>
         </div>
@@ -1024,7 +1023,7 @@ export default function CustomerProfile() {
                 </button>
                 {membershipQrError && (
                   <p className="max-w-52 text-center text-[10px] leading-4 text-red-300 md:text-right">
-                    {membershipQrError}
+                    {t(membershipQrError)}
                   </p>
                 )}
                 {profile.membership.expireAt && (
@@ -1057,7 +1056,7 @@ export default function CustomerProfile() {
                 <div>
                   <h4 className="text-yellow-400 font-bold text-[0px] mb-1">
                     <span className="text-base">{t('profilePage.parkingPrompt')}</span>
-                    🎁 Have you parked at ValoParking before?
+
                   </h4>
                   <p className="text-sm text-yellow-500/80 leading-relaxed">
                     {t('profilePage.parkingPromptHint')}
@@ -1151,7 +1150,7 @@ export default function CustomerProfile() {
                 icon={CalendarDays}
                 value={
                   profile.createdAt
-                    ? new Date(profile.createdAt).toLocaleDateString("vi-VN", {
+                    ? new Date(profile.createdAt).toLocaleDateString(locale, {
                       day: "2-digit",
                       month: "2-digit",
                       year: "numeric",
@@ -1167,14 +1166,14 @@ export default function CustomerProfile() {
               <div className="grid grid-cols-2 gap-6">
                 <GoldUnderlineField
                   field="name"
-                  label="NAME"
+                  label={t('profilePage.name')}
                   icon={User}
                   value={profile.name}
                   onSave={handleSaveProfile}
                 />
                 <GoldUnderlineField
                   field="phone"
-                  label="PHONE"
+                  label={t('profilePage.phone')}
                   icon={Phone}
                   value={profile.phone}
                   onSave={handleSaveProfile}
@@ -1182,7 +1181,7 @@ export default function CustomerProfile() {
               </div>
               <GoldUnderlineField
                 field="email"
-                label="EMAIL"
+                label={t('profilePage.email')}
                 icon={Mail}
                 value={profile.email}
                 readOnly
@@ -1190,11 +1189,11 @@ export default function CustomerProfile() {
               />
               <GoldUnderlineField
                 field="createdAt"
-                label="MEMBER SINCE"
+                label={t('profilePage.memberSince')}
                 icon={CalendarDays}
                 value={
                   profile.createdAt
-                    ? new Date(profile.createdAt).toLocaleDateString("vi-VN", {
+                    ? new Date(profile.createdAt).toLocaleDateString(locale, {
                       day: "2-digit",
                       month: "2-digit",
                       year: "numeric",
@@ -1360,7 +1359,7 @@ export default function CustomerProfile() {
                         className="font-bold mb-1"
                         style={{ color: "#ffdea8", fontSize: "14px" }}
                       >
-                        Enter OTP
+                        {t('profilePage.enterOtp')}
                       </p>
                       <p
                         style={{
@@ -1368,7 +1367,7 @@ export default function CustomerProfile() {
                           fontSize: "11px",
                         }}
                       >
-                        Code sent to{" "}
+                        {t('profilePage.codeSentTo')}{" "}
                         <span style={{ color: "#EAB308" }}>
                           {profile.email}
                         </span>
@@ -1472,7 +1471,7 @@ export default function CustomerProfile() {
                             : "pointer",
                       }}
                     >
-                      {fpLoading ? "Verifying…" : "Verify OTP"}
+                      {fpLoading ? t('profilePage.verifying') : t('auth.verifyOtp')}
                     </button>
                     {/* Actions row */}
                     <div className="flex items-center justify-between">
@@ -1490,7 +1489,7 @@ export default function CustomerProfile() {
                           "rgba(255,255,255,0.3)")
                         }
                       >
-                        <ArrowLeft size={11} /> Back
+                        <ArrowLeft size={11} /> {t('common.back')}
                       </button>
                       <button
                         type="button"
@@ -1506,7 +1505,7 @@ export default function CustomerProfile() {
                         }
                       >
                         <RotateCw size={10} className="inline mr-1" />
-                        Resend OTP
+                        {t('profilePage.resendOtp')}
                       </button>
                     </div>
                   </div>
@@ -1562,7 +1561,7 @@ export default function CustomerProfile() {
                         className="font-bold mb-1"
                         style={{ color: "#ffdea8", fontSize: "14px" }}
                       >
-                        Set New Password
+                        {t('profilePage.setNewPassword')}
                       </p>
                       <p
                         style={{
@@ -1570,7 +1569,7 @@ export default function CustomerProfile() {
                           fontSize: "11px",
                         }}
                       >
-                        OTP verified. Choose a strong password.
+                        {t('profilePage.otpVerifiedChooseAStrongPassword')}
                       </p>
                     </div>
                     {/* New password */}
@@ -1583,7 +1582,7 @@ export default function CustomerProfile() {
                           letterSpacing: "0.22em",
                         }}
                       >
-                        NEW PASSWORD
+                        {t('auth.newPassword')}
                       </label>
                       <div className="relative mt-1.5">
                         <input
@@ -1652,19 +1651,19 @@ export default function CustomerProfile() {
                         {[
                           {
                             ok: fpChecks.length,
-                            label: "At least 8 characters",
+                            label: t('profilePage.atLeast8Characters'),
                           },
                           {
                             ok: fpChecks.cases,
-                            label: "Uppercase & lowercase letters",
+                            label: t('profilePage.uppercaseLowercaseLetters'),
                           },
                           {
                             ok: fpChecks.number,
-                            label: "At least 1 number (0-9)",
+                            label: t('profilePage.atLeast1Number09'),
                           },
                           {
                             ok: fpChecks.special,
-                            label: "At least 1 special character (!@#$...)",
+                            label: t('profilePage.atLeast1SpecialCharacter'),
                           },
                         ].map(({ ok, label }) => (
                           <li
@@ -1710,7 +1709,7 @@ export default function CustomerProfile() {
                             letterSpacing: "0.22em",
                           }}
                         >
-                          CONFIRM NEW PASSWORD
+                          {t('auth.confirmPasswordLabel')}
                         </label>
                         <div className="relative mt-1.5">
                           <input
@@ -1749,7 +1748,7 @@ export default function CustomerProfile() {
                         </div>
                         {fpConfirmPwd && fpConfirmPwd === fpNewPwd && (
                           <p className="mt-1 text-[10px] text-green-400 flex items-center gap-1">
-                            <Check size={9} /> Passwords match
+                            <Check size={9} /> {t('profilePage.passwordsMatch')}
                           </p>
                         )}
                       </div>
@@ -1803,7 +1802,7 @@ export default function CustomerProfile() {
                       >
                         <Lock size={13} />
                         <span>
-                          {fpLoading ? "Resetting…" : "Reset Password"}
+                          {fpLoading ? t('profilePage.resetting') : t('auth.resetPassword')}
                         </span>
                       </button>
                       <button
@@ -1826,7 +1825,7 @@ export default function CustomerProfile() {
                             "rgba(255,255,255,0.35)";
                         }}
                       >
-                        Cancel
+                        {t('common.cancel')}
                       </button>
                     </div>
                   </div>
@@ -1860,8 +1859,7 @@ export default function CustomerProfile() {
                           lineHeight: "1.5",
                         }}
                       >
-                        Your account is linked to Google. You can set a password
-                        below to also enable standard login.
+                        {t('profilePage.yourAccountIsLinkedToGoogle')}
                       </p>
                     </div>
                   )}
@@ -1877,7 +1875,7 @@ export default function CustomerProfile() {
                           letterSpacing: "0.22em",
                         }}
                       >
-                        CURRENT PASSWORD
+                        {t('profilePage.currentPassword')}
                       </label>
                       <div className="relative mt-1.5">
                         <input
@@ -1930,8 +1928,8 @@ export default function CustomerProfile() {
                         }
                       >
                         {fpLoading
-                          ? "Sending OTP…"
-                          : "Forgot current password?"}
+                          ? t('profilePage.sendingOtp')
+                          : t('profilePage.forgotCurrentPassword')}
                       </button>
                     </div>
                   )}
@@ -1945,7 +1943,7 @@ export default function CustomerProfile() {
                         letterSpacing: "0.22em",
                       }}
                     >
-                      NEW PASSWORD
+                      {t('auth.newPassword')}
                     </label>
                     <div className="relative mt-1.5">
                       <input
@@ -2021,15 +2019,15 @@ export default function CustomerProfile() {
                     {/* Interactive checklist */}
                     <ul className="mt-2.5 space-y-1">
                       {[
-                        { ok: checks.length, label: "At least 8 characters" },
+                        { ok: checks.length, label: t('profilePage.atLeast8Characters') },
                         {
                           ok: checks.cases,
-                          label: "Uppercase & lowercase letters",
+                          label: t('profilePage.uppercaseLowercaseLetters'),
                         },
-                        { ok: checks.number, label: "At least 1 number (0-9)" },
+                        { ok: checks.number, label: t('profilePage.atLeast1Number09') },
                         {
                           ok: checks.special,
-                          label: "At least 1 special character (!@#$...)",
+                          label: t('profilePage.atLeast1SpecialCharacter'),
                         },
                       ].map(({ ok, label }) => (
                         <li
@@ -2069,7 +2067,7 @@ export default function CustomerProfile() {
                             }}
                           >
                             <X size={9} style={{ flexShrink: 0 }} />
-                            Must differ from current password
+                            {t('profilePage.mustDifferFromCurrentPassword')}
                           </li>
                         )}
                     </ul>
@@ -2095,7 +2093,7 @@ export default function CustomerProfile() {
                           letterSpacing: "0.22em",
                         }}
                       >
-                        CONFIRM NEW PASSWORD
+                        {t('auth.confirmPasswordLabel')}
                       </label>
                       <div className="relative mt-1.5">
                         <input
@@ -2136,7 +2134,7 @@ export default function CustomerProfile() {
                       )}
                       {cpForm.confirm && cpForm.confirm === cpForm.newPwd && (
                         <p className="mt-1 text-[10px] text-green-400 flex items-center gap-1">
-                          <Check size={9} /> Passwords match
+                          <Check size={9} /> {t('profilePage.passwordsMatch')}
                         </p>
                       )}
                     </div>
@@ -2174,7 +2172,7 @@ export default function CustomerProfile() {
                         />
                       )}
                       {cpLockOpen ? <LockOpen size={13} /> : <Lock size={13} />}
-                      <span>{cpLoading ? "Updating…" : "Update Password"}</span>
+                      <span>{cpLoading ? t('profilePage.updating') : t('profilePage.updatePassword')}</span>
                     </button>
                     <button
                       onClick={closeCpModal}
@@ -2194,7 +2192,7 @@ export default function CustomerProfile() {
                         e.currentTarget.style.color = "rgba(255,255,255,0.35)";
                       }}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </button>
                   </div>
                 </div>
@@ -2218,20 +2216,20 @@ export default function CustomerProfile() {
             <div className="flex items-start justify-between text-left">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500/65">
-                  Kiosk fallback access
+                  {t('profilePage.kioskFallbackAccess')}
                 </p>
                 <h3
                   id="profile-membership-qr-title"
                   className="mt-1 text-xl font-black text-yellow-300"
                 >
-                  Membership QR
+                  {t('profilePage.membershipQr')}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setMembershipQrOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-xl text-white/40 transition hover:bg-white/5 hover:text-white"
-                aria-label="Close membership QR"
+                aria-label={t('profilePage.closeMembershipQr')}
               >
                 <X size={18} />
               </button>
@@ -2241,13 +2239,12 @@ export default function CustomerProfile() {
               <QRCodeSVG value={membershipQr} size={230} level="M" includeMargin />
             </div>
             <p className="mt-5 text-sm leading-6 text-white/55">
-              Show this code to staff when the kiosk is unavailable. Staff will verify the
-              vehicle and capture a check-in or check-out photo.
+              {t('profilePage.showThisCodeToStaffWhen')}
             </p>
             <p className="mt-2 text-xs font-semibold text-yellow-500/70">
-              Valid until{" "}
+              {t('profilePage.validUntil')}{" "}
               {profile.membership.expireAt
-                ? new Date(profile.membership.expireAt).toLocaleDateString("en-US", {
+                ? new Date(profile.membership.expireAt).toLocaleDateString(locale, {
                     month: "short",
                     day: "2-digit",
                     year: "numeric",
@@ -2277,7 +2274,7 @@ export default function CustomerProfile() {
           {toast.type === "saving" && (
             <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0" />
           )}
-          {toast.msg}
+          {toast.msgKey ? t(toast.msgKey) : toast.msg}
         </div>
       )}
     </div>

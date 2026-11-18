@@ -37,6 +37,12 @@ export interface ReservedSlot {
   unitAmount?: number;
   transferCount?: number;
   canTransfer?: boolean;
+  transferUnavailableReason?: string;
+  daysRemaining?: number;
+  expiringSoon?: boolean;
+  package?: { id: string; name: string; type: SubscriptionPackageType } | null;
+  benefits?: string[];
+  renewal?: { canRenew: boolean; message?: string; renewalWindowDays?: number };
 }
 
 export interface MembershipStatus {

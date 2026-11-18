@@ -52,7 +52,7 @@ export const getScheduleStatus = (timeBlocks) => {
     return {
       tone: 'warning',
       label: 'Schedule coverage incomplete.',
-      detail: 'No time blocks configured.',
+      detailKey: 'pricingUi.noTimeBlocks',
     };
   }
 
@@ -80,7 +80,8 @@ export const getScheduleStatus = (timeBlocks) => {
       return {
         tone: 'danger',
         label: 'Schedule coverage incomplete.',
-        detail: error.message,
+        detailKey: 'pricingUi.overlapDetected',
+        hour: error.message.replace('Overlap detected at ', ''),
       };
     }
   }
@@ -90,7 +91,8 @@ export const getScheduleStatus = (timeBlocks) => {
     return {
       tone: 'warning',
       label: 'Schedule coverage incomplete.',
-      detail: `Gap detected around ${formatHour(missingHour)}`,
+      detailKey: 'pricingUi.coverageGap',
+      hour: formatHour(missingHour),
     };
   }
 

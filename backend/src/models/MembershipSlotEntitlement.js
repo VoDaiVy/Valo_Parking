@@ -67,6 +67,8 @@ const membershipSlotEntitlementSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    packageTermsSnapshot: { type: mongoose.Schema.Types.Mixed },
+    packageDurationSnapshot: { type: mongoose.Schema.Types.Mixed },
     packageSnapshot: { type: mongoose.Schema.Types.Mixed, immutable: true },
     lineageRootId: {
       type: mongoose.Schema.Types.ObjectId,
