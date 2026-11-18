@@ -41,7 +41,7 @@ test('program rejects invalid money, duplicate tiers, over-discounts and malform
 test('program accepts percentage milestones and validates their range', () => {
   const input = { enabled: true, revision: 0, tiers: [{ threshold: 700000, rewardType: 'PERCENT_DISCOUNT', discountPercent: 20, minimumAmount: 50000 }] };
   const normalized = validateProgram(input);
-  assert.deepEqual(normalized.tiers[0], { threshold: 700000, rewardType: 'PERCENT_DISCOUNT', discountPercent: 20, discountAmount: 0, minimumAmount: 50000 });
+  assert.deepEqual(normalized.tiers[0], { threshold: 700000, rewardType: 'PERCENT_DISCOUNT', discountPercent: 20, discountAmount: 0, minimumAmount: 50000, recipientLimit: null });
   for (const value of [0, 101, 1.5, '20', null]) {
     assert.throws(() => validateProgram({ ...input, tiers: [{ ...input.tiers[0], discountPercent: value }] }));
   }

@@ -21,5 +21,5 @@ export interface SpendingProgress {
   total: number;
   enabled: boolean;
   highestAwardedThreshold: number;
-  tiers: Array<{ threshold: number; discountAmount: number; minimumAmount: number }>;
+  tiers: Array<{ threshold: number; discountAmount: number; minimumAmount: number; remainingRecipients?: number | null }>;
 }

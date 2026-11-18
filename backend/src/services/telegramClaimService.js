@@ -8,6 +8,7 @@ const Delivery = require('../models/TelegramDelivery');
 const { normalizePhone } = require('../utils/phoneUtils');
 const client = require('./telegramClient');
 const profileService = require('./telegramProfileService');
+const { issueWelcomeVoucher } = require('./welcomeRewardService');
 
 const hashToken = token => crypto.createHash('sha256').update(token).digest('hex');
 function validateOwnContact(message) {
@@ -63,6 +64,7 @@ async function consumeContact(message) {
       const claim = await Claim.findOne({ ...identity, consumedAt: null, revokedAt: null, expiresAt: { $gt: new Date() } }).select('+recipientPhone').sort({ createdAt: -1 }).session(dbSession);
       if (!claim) { outcome = { ok: false, text: 'Link đã hết hạn hoặc đã sử dụng. Vui lòng tạo link mới.' }; return; }
       const phone = normalizePhone(message.contact.phone_number);
+      let welcomeVoucher = null;
       if (claim.purpose === 'guest') {
         if (claim.receiptId) {
           if (!require('./telegramReceiptService').enabled()) { outcome = { ok: false, text: 'Nhận vé theo SĐT hiện chưa được bật.' }; return; }
@@ -111,6 +113,7 @@ async function consumeContact(message) {
           telegramUserId: identity.boundTelegramUserId, chatId: identity.boundChatId, username: message.from.username || '',
           phone, notificationsEnabled: true, linkedAt: new Date(), revokedAt: null, blockedAt: null,
         } }, { upsert: true, session: dbSession });
+        welcomeVoucher = await issueWelcomeVoucher(claim.userId, dbSession);
         if (claim.bookingId) {
           const booking = await require('../models/Booking').findOne({ _id: claim.bookingId, userId: claim.userId, status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] } }).session(dbSession);
           if (booking) await require('./telegramDeliveryService').enqueueBookingTicket(booking, { session: dbSession });
@@ -119,6 +122,7 @@ async function consumeContact(message) {
       const consumed = await Claim.updateOne({ _id: claim._id, consumedAt: null }, { $set: { consumedAt: new Date() } }, { session: dbSession });
       if (consumed.modifiedCount !== 1) throw Object.assign(new Error('Claim conflict'), { code: 'CLAIM_CONFLICT' });
       outcome = { ok: true, text: claim.purpose === 'guest' ? 'Đã xác nhận. VALO sẽ gửi QR vé của lượt gửi xe này.' : 'Đã liên kết Telegram với VALO. Các booking mới sẽ được gửi khi thanh toán thành công.' };
+      if (welcomeVoucher) outcome.text += ' Voucher WELCOME giảm 3.000 đồng đã có trong mục Ưu đãi.';
     });
   } finally { await dbSession.endSession(); }
   return outcome;

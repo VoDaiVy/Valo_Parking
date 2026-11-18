@@ -1,0 +1,7 @@
+.admin-grid-background {
+  background-color: #090909;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.021) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.021) 1px, transparent 1px);
+  background-size: 46px 46px;
+}

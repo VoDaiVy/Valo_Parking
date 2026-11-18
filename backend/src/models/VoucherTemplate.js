@@ -53,6 +53,7 @@ const voucherTemplateSchema = new mongoose.Schema(
       validate: { validator: Number.isInteger, message: 'redeemedCount must be an integer' },
     },
     isActive: { type: Boolean, default: true },
+    archivedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

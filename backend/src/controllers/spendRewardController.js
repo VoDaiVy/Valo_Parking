@@ -3,20 +3,30 @@ const Month = require('../models/SpendRewardMonth');
 const UserVoucher = require('../models/UserVoucher');
 const EmailJob = require('../models/RewardEmailJob');
 const { monthOf } = require('../services/spendRewardRules');
+const autoAndManual = { source: { $in: ['spending', 'welcome', 'manual'] } };
+async function getTierUsage(month) {
+  const counts = await UserVoucher.aggregate([
+    { $match: { source: 'spending', rewardMonth: month } },
+    { $group: { _id: '$rewardThreshold', issued: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(counts.map(({ _id, issued }) => [_id, issued]));
+}
 const endpoint = (work) => async (req, res, next) => {
   try { res.json({ success: true, data: await work(req) }); } catch (error) { next(error); }
 };
 exports.getProgram = endpoint(async () => {
   const program = await service.getProgram();
-  const issued = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] } });
-  const used = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] }, status: 'used' });
-  const available = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] }, status: 'available', expiresAt: { $gt: new Date() }, usedAt: null });
-  const expired = await UserVoucher.countDocuments({ source: { $in: ['spending', 'manual'] }, status: 'expired' });
+  const month = monthOf(new Date());
+  const tierUsage = await getTierUsage(month);
+  const issued = await UserVoucher.countDocuments(autoAndManual);
+  const used = await UserVoucher.countDocuments({ ...autoAndManual, status: 'used' });
+  const available = await UserVoucher.countDocuments({ ...autoAndManual, status: 'available', expiresAt: { $gt: new Date() }, usedAt: null });
+  const expired = await UserVoucher.countDocuments({ ...autoAndManual, status: 'expired' });
   const pendingEmails = await EmailJob.countDocuments({ status: { $in: ['pending', 'sending'] } });
   const retryingEmails = await EmailJob.countDocuments({ status: 'pending', attempts: { $gt: 0 } });
-  const vouchers = await UserVoucher.find({ source: { $in: ['spending', 'manual'] } })
+  const vouchers = await UserVoucher.find(autoAndManual)
     .populate('userId', 'username email').sort({ redeemedAt: -1 }).limit(100).lean();
-  return { program, stats: { issued, used, available, expired, pendingEmails, retryingEmails }, vouchers };
+  return { program, month, tierUsage, stats: { issued, used, available, expired, pendingEmails, retryingEmails }, vouchers };
 });
 
 exports.updateVoucherExpiry = endpoint(async (req) => {
@@ -44,7 +54,12 @@ exports.getProgress = endpoint(async (req) => {
   const program = await service.getProgram();
   const month = monthOf(new Date());
   const state = await Month.findOne({ userId: req.user._id, month }).lean();
-  return { month, total: state?.total || 0, highestAwardedThreshold: state?.highestAwardedThreshold || 0, enabled: program.enabled, tiers: program.tiers, validityDays: program.validityDays || 7 };
+  const tierUsage = program.tiers.some((tier) => tier.recipientLimit != null) ? await getTierUsage(month) : {};
+  const tiers = program.tiers.map((tier) => ({
+    ...tier.toObject(),
+    remainingRecipients: tier.recipientLimit == null ? null : Math.max(0, tier.recipientLimit - (tierUsage[tier.threshold] || 0)),
+  }));
+  return { month, total: state?.total || 0, highestAwardedThreshold: state?.highestAwardedThreshold || 0, enabled: program.enabled, tiers, validityDays: program.validityDays || 7 };
 });
 exports.getLeaderboard = endpoint((req) => require('../services/quarterlyLeaderboardService').getLeaderboard({
   quarter: req.query.quarter,

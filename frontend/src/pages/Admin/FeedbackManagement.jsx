@@ -1,3 +1,4 @@
+import '../../components/Admin/adminGridBackground.css';
 import { useEffect, useRef, useState } from "react";
 import {
   getAdminFeedback,
@@ -15,7 +16,7 @@ const initialFilters = {
   to: "",
 };
 const inputClass =
-  "rounded-xl border border-white/15 bg-[#171d1a] px-3 py-2 text-sm text-white";
+  "rounded-xl border border-white/15 bg-[#171717] px-3 py-2 text-sm text-white";
 const date = (value) =>
   value
     ? new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Ho_Chi_Minh" })
@@ -124,7 +125,7 @@ export default function FeedbackManagement() {
   };
 
   return (
-    <div className="p-4 text-white sm:p-6 lg:p-8">
+    <div className="admin-grid-background min-h-full p-4 text-white sm:p-6 lg:p-8">
       <header className="mb-7">
         <p className="text-xs font-bold uppercase tracking-widest text-yellow-300/70">
           Customer experience
@@ -149,7 +150,7 @@ export default function FeedbackManagement() {
         ].map(([label, value]) => (
           <div
             key={label}
-            className="rounded-2xl border border-white/10 bg-[#111915] p-4"
+            className="rounded-2xl border border-white/10 bg-[#111111] p-4"
           >
             <p className="text-xs text-white/50">{label}</p>
             <p className="mt-3 text-2xl font-bold text-yellow-200">
@@ -375,7 +376,7 @@ export default function FeedbackManagement() {
           e.preventDefault();
           close();
         }}
-        className="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#111915] p-6 text-white backdrop:bg-black/75"
+        className="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#111111] p-6 text-white backdrop:bg-black/75"
       >
         <div className="flex items-center justify-between gap-3">
           <h2 id="admin-feedback-title" className="text-xl font-bold">
