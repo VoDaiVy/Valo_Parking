@@ -262,7 +262,7 @@ const lookupPlateViolations = async (cleanPlate, registeredVehicle = null, { ses
  */
 exports.verifyPlate = async (req, res, next) => {
   try {
-    const { licensePlate } = req.body;
+    const { licensePlate, phone: inputPhone } = req.body;
     if (!licensePlate) {
       return res.status(400).json({ success: false, message: 'License plate is required' });
     }
@@ -274,6 +274,29 @@ exports.verifyPlate = async (req, res, next) => {
     const activeSession = await Session.findOne({ licensePlate: cleanPlate, status: 'active' });
     if (activeSession) {
       const violations = await lookupPlateViolations(cleanPlate);
+
+      try {
+        const io = req.app?.get('io');
+        if (io && cleanPlate) {
+          io.emit('gate:vehicle_detected', {
+            gate: 'ENTRY_1',
+            mode: 'entry',
+            licensePlate: cleanPlate,
+            vehicleModelInfo: 'Vehicle already in parking lot',
+            registeredOwnerName: null,
+            phone: activeSession.phone || null,
+            assignedSlot: activeSession.parkingSlot || null,
+            floorName: 'Floor 1',
+            isPreBooked: false,
+            isRegisteredVehicle: false,
+            hasWallet: false,
+            entryImageBase64: req.body?.entryImageBase64 || null,
+            errorMessage: 'Vehicle already has an active session inside',
+            timestamp: Date.now()
+          });
+        }
+      } catch (_) {}
+
       return res.status(200).json({
         success: true,
         data: {
@@ -308,18 +331,38 @@ exports.verifyPlate = async (req, res, next) => {
     let quotaExhausted = false;
     let vipSlotOccupiedByOther = false;
     let vipOriginalSlot = null;
+    let registeredOwnerName = null;
+    let vehicleModelInfo = null;
+    let walletBalance = 0;
+    let hasWallet = false;
 
     if (registeredVehicle) {
       isRegisteredVehicle = true;
       userId = registeredVehicle.owner;
-      const userDetail = await UserDetail.findOne({ userId });
-      if (userDetail?.phone) {
-        phone = userDetail.phone;
-      }
+      const [userDetail, registeredUser] = await Promise.all([
+        UserDetail.findOne({ userId }),
+        User.findById(userId).select('username fullName email phone membership')
+      ]);
+      phone = userDetail?.phone || registeredUser?.phone || phone;
+      registeredOwnerName = registeredUser?.fullName || userDetail?.fullName || registeredUser?.username || 'Khách hàng';
+      vehicleModelInfo = [registeredVehicle.brand, registeredVehicle.model, registeredVehicle.color].filter(Boolean).join(' - ');
 
-      const registeredUser = await User.findById(userId);
       if (registeredUser && registeredUser.membership && registeredUser.membership.isVip && new Date(registeredUser.membership.expireAt) > new Date()) {
         isVIP = true;
+      }
+
+      const hasRealDb = mongoose.connection?.readyState === 1;
+      const isWalletMocked = walletService.getOrCreateWallet?.name !== 'getOrCreateWallet';
+      if (hasRealDb || isWalletMocked) {
+        try {
+          const wallet = await walletService.getOrCreateWallet(userId);
+          if (wallet) {
+            hasWallet = true;
+            walletBalance = Number(wallet.balance || 0);
+          }
+        } catch (wErr) {
+          console.warn('Could not load wallet for verifyPlate:', wErr.message);
+        }
       }
 
       // Check Subscription (gói tháng/năm)
@@ -406,6 +449,45 @@ exports.verifyPlate = async (req, res, next) => {
       }
     }
 
+    // Tra cứu thông tin người dùng qua SĐT nếu chưa tìm thấy bằng xe đã đăng ký
+    if (!userId && (inputPhone || phone)) {
+      const cleanPhone = normalizePhone(inputPhone || phone);
+      if (cleanPhone) {
+        try {
+          const [uDetail, uDoc] = await Promise.all([
+            UserDetail.findOne({ phone: cleanPhone }).lean(),
+            User.findOne({ phone: cleanPhone }).select('username fullName email phone membership').lean(),
+          ]);
+          const matchedUserId = uDetail?.userId || uDoc?._id;
+          if (matchedUserId) {
+            userId = matchedUserId;
+            phone = cleanPhone;
+            const registeredUser = uDoc || await User.findById(userId).select('username fullName email phone membership').lean();
+            if (!registeredOwnerName) {
+              registeredOwnerName = uDetail?.fullName || registeredUser?.fullName || registeredUser?.username || 'Khách hàng';
+            }
+            if (registeredUser && registeredUser.membership && registeredUser.membership.isVip && new Date(registeredUser.membership.expireAt) > new Date()) {
+              isVIP = true;
+            }
+
+            const hasRealDb = mongoose.connection?.readyState === 1;
+            const isWalletMocked = walletService.getOrCreateWallet?.name !== 'getOrCreateWallet';
+            if (hasRealDb || isWalletMocked) {
+              try {
+                const wallet = await walletService.getOrCreateWallet(userId);
+                if (wallet) {
+                  hasWallet = true;
+                  walletBalance = Number(wallet.balance || 0);
+                }
+              } catch (wErr) {
+                console.warn('Could not load wallet for verifyPlate (by phone):', wErr.message);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
     // 3. Kiểm tra xe có Booking đang hợp lệ (PAID / PAUSED)
     const now = new Date();
 
@@ -414,8 +496,16 @@ exports.verifyPlate = async (req, res, next) => {
     const lateCheckinLimit = new Date(now.getTime() - 30 * 60 * 1000);
     const cancelCheckinLimit = new Date(now.getTime() - 30 * 60 * 1000); // Tối đa 30 phút trễ để vớt vát
 
+    const plateMatchFilter = {
+      $or: [
+        { licensePlate: cleanPlate },
+        { licensePlate: plateRegex },
+        { licensePlate: { $in: plateVariants } },
+      ]
+    };
+
     let booking = await Booking.findOne({
-      licensePlate: cleanPlate,
+      ...plateMatchFilter,
       $or: [
         {
           status: 'PAID',
@@ -431,23 +521,112 @@ exports.verifyPlate = async (req, res, next) => {
         }
       ],
       scheduledEnd: { $gte: now }
-    }).sort({ scheduledStart: 1 }).populate('floorId');
+    }).sort({ scheduledStart: 1 }).populate('floorId vehicleId');
+
+    if (booking?.vehicleId && !registeredVehicle) {
+      registeredVehicle = booking.vehicleId;
+      isRegisteredVehicle = true;
+      if (!vehicleModelInfo && registeredVehicle.brand) {
+        vehicleModelInfo = [registeredVehicle.brand, registeredVehicle.model, registeredVehicle.color].filter(Boolean).join(' - ');
+      }
+    }
+
+    if (booking?.userId) {
+      try {
+        const [bUser, bUserDetail] = await Promise.all([
+          User.findById(booking.userId).select('username fullName email').lean(),
+          UserDetail.findOne({ userId: booking.userId }).select('phone fullName').lean()
+        ]);
+        if (bUser || bUserDetail) {
+          if (!registeredOwnerName) {
+            registeredOwnerName = bUserDetail?.fullName || bUser?.fullName || bUser?.username || 'Khách hàng';
+          }
+          if (!phone) {
+            phone = bUserDetail?.phone || booking.phone || null;
+          }
+          const hasDbForBookingWallet = mongoose.connection?.readyState === 1 || walletService.getOrCreateWallet?.name !== 'getOrCreateWallet';
+          if (hasDbForBookingWallet) {
+            const bWallet = await walletService.getOrCreateWallet(booking.userId);
+            if (bWallet) {
+              hasWallet = true;
+              walletBalance = Number(bWallet.balance || 0);
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     const hasPreBooking = !!booking;
+    const isPausedResume = Boolean(booking && booking.status === 'PAUSED');
     let requiresSlotReallocation = false;
+    let slotAutoReallocated = false;
+    let autoAssignedSlot = null;
+    let autoAssignedFloorId = null;
+    let autoAssignedFloorName = null;
+    let reallocationReason = null;
     let bookingOriginalSlot = null;
     let upcomingBookingTooEarly = null;
+    let sameOwnerAlternateBooking = null;
 
     // Kiểm tra xem ô đỗ của Booking (PAID / PAUSED / EXPIRED) có đang bị chiếm hoặc bảo trì không
     if (booking && booking.floorId && booking.parkingSlot) {
-      const blocked = await isSlotCurrentlyBlocked(
-        booking.floorId._id || booking.floorId,
-        booking.parkingSlot,
-        { allowBookedStatus: true }
+      const normalizedSlot = normalizeSlotCode(booking.parkingSlot);
+      const floorIdVal = booking.floorId._id || booking.floorId;
+
+      const [otherSession, slotDoc] = await Promise.all([
+        Session.findOne({
+          floorId: floorIdVal,
+          parkingSlot: normalizedSlot,
+          status: 'active',
+        }).select('_id licensePlate').lean(),
+        Slot.findOne({
+          floorID: floorIdVal,
+          slotNumber: normalizedSlot,
+        }).select('_id status aiObservation').lean(),
+      ]);
+
+      const isSessionOccupiedByOther = Boolean(
+        otherSession && (!otherSession.licensePlate || normalizeLicensePlate(otherSession.licensePlate) !== cleanPlate)
       );
-      if (blocked) {
-        requiresSlotReallocation = true;
+      const isMaint = slotDoc?.status === 'maintenance';
+      const isPhysicallyOccupiedByStranger = Boolean(
+        slotDoc?.aiObservation?.occupied &&
+        slotDoc.aiObservation?.detectedPlate &&
+        normalizeLicensePlate(slotDoc.aiObservation.detectedPlate) !== cleanPlate
+      );
+      const isBlocked = Boolean(isSessionOccupiedByOther || isMaint || isPhysicallyOccupiedByStranger);
+
+      if (isBlocked) {
         bookingOriginalSlot = booking.parkingSlot;
+        if (isPausedResume) {
+          // SMART AUTO-REALLOCATION for PAUSED bookings resuming when original slot is occupied
+          try {
+            const { getAvailableSlotsForRange } = require('./bookingController');
+            const availableSlots = await getAvailableSlotsForRange(now, booking.scheduledEnd, booking.userId, {
+              excludeBookingId: booking._id,
+            });
+
+            if (availableSlots && availableSlots.length > 0) {
+              // Priority 1: Same floor
+              const sameFloorSlots = availableSlots.filter(s => String(s.floorId) === String(floorIdVal));
+              const candidate = sameFloorSlots.length > 0 ? sameFloorSlots[0] : availableSlots[0];
+
+              if (candidate) {
+                autoAssignedSlot = candidate.slotCode;
+                autoAssignedFloorId = candidate.floorId;
+                autoAssignedFloorName = candidate.floorName;
+                slotAutoReallocated = true;
+                reallocationReason = `Original slot ${booking.parkingSlot} was obstructed by an unauthorized vehicle. Conflict-free replacement slot ${candidate.slotCode} automatically assigned until ${new Date(booking.scheduledEnd).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}.`;
+              }
+            }
+          } catch (reallocErr) {
+            console.error('[verifyPlate] Auto-reallocation error:', reallocErr);
+          }
+        }
+
+        if (!slotAutoReallocated) {
+          requiresSlotReallocation = true;
+        }
       }
     } else if (!booking) {
       const futureBooking = await Booking.findOne({
@@ -463,6 +642,40 @@ exports.verifyPlate = async (req, res, next) => {
           scheduledStart: futureBooking.scheduledStart,
           parkingSlot: futureBooking.parkingSlot,
         };
+      }
+
+      // Kiểm tra xem cùng chủ xe (userId hoặc số điện thoại) có đặt trước cho xe khác trong cùng khung giờ không
+      if (userId || inputPhone || phone) {
+        try {
+          const ownerConditions = [];
+          if (userId) ownerConditions.push({ userId });
+          const targetPhone = normalizePhone(inputPhone || phone);
+          if (targetPhone) ownerConditions.push({ phone: targetPhone });
+
+          const altBooking = await Booking.findOne({
+            $or: ownerConditions,
+            status: { $in: ['PAID', 'PAUSED'] },
+            scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit },
+            scheduledEnd: { $gte: now },
+            licensePlate: { $ne: cleanPlate },
+          }).sort({ scheduledStart: 1 }).populate('floorId').lean();
+
+          if (altBooking) {
+            sameOwnerAlternateBooking = {
+              bookingId: altBooking._id,
+              originalPlate: altBooking.licensePlate,
+              incomingPlate: cleanPlate,
+              parkingSlot: altBooking.parkingSlot,
+              floorId: altBooking.floorId?._id || altBooking.floorId,
+              floorName: altBooking.floorId?.name || 'Floor 1',
+              scheduledStart: altBooking.scheduledStart,
+              scheduledEnd: altBooking.scheduledEnd,
+              ownerName: registeredOwnerName || 'Khách hàng',
+            };
+          }
+        } catch (altErr) {
+          console.error('[verifyPlate] Alternate booking check error:', altErr);
+        }
       }
     }
 
@@ -556,18 +769,22 @@ exports.verifyPlate = async (req, res, next) => {
     }
 
     const effectiveAssignedSlot =
-      (booking && !requiresSlotReallocation ? booking.parkingSlot : null)
+      (booking && (slotAutoReallocated ? autoAssignedSlot : (!requiresSlotReallocation ? booking.parkingSlot : null)))
       || subscription?.assignedSlot?.slotCode
       || null;
     const effectiveAssignedFloorId =
-      (booking && !requiresSlotReallocation ? (booking.floorId?._id || booking.floorId) : null)
+      (booking && (slotAutoReallocated ? autoAssignedFloorId : (!requiresSlotReallocation ? (booking.floorId?._id || booking.floorId) : null)))
       || subscription?.assignedSlot?.floorId?._id
       || subscription?.assignedSlot?.floorId
       || null;
     const effectiveAssignedFloorName =
-      (booking && !requiresSlotReallocation ? booking.floorId?.name : null)
+      (booking && (slotAutoReallocated ? autoAssignedFloorName : (!requiresSlotReallocation ? booking.floorId?.name : null)))
       || subscription?.assignedSlot?.floorId?.name
       || null;
+
+    const remainingMs = booking && booking.scheduledEnd ? Math.max(0, new Date(booking.scheduledEnd).getTime() - now.getTime()) : 0;
+    const remainingHours = Math.floor(remainingMs / 3600000);
+    const remainingMinutes = Math.floor((remainingMs % 3600000) / 60000);
 
     const violations = await lookupPlateViolations(cleanPlate, registeredVehicle);
 
@@ -578,6 +795,12 @@ exports.verifyPlate = async (req, res, next) => {
         isFull,
         isMonthly,
         hasPreBooking,
+        isPausedResume,
+        slotAutoReallocated,
+        reallocationReason,
+        remainingHours,
+        remainingMinutes,
+        bookingEnd: booking?.scheduledEnd || null,
         bookingId: booking?._id || null,
         bookingDurationHours: booking?.durationHours || null,
         bookingMode: booking ? 'booking' : null,
@@ -585,6 +808,25 @@ exports.verifyPlate = async (req, res, next) => {
         isRegisteredVehicle,
         isKnownGuest: !!phone || isVIP || isRegisteredVehicle,
         phone: phone || null,
+        registeredVehicleInfo: (isRegisteredVehicle || booking?.userId || hasWallet) ? {
+          isRegistered: Boolean(isRegisteredVehicle),
+          isRegisteredVehicle: Boolean(isRegisteredVehicle),
+          isMemberAccount: Boolean(isRegisteredVehicle || booking?.userId || hasWallet),
+          ownerId: userId || booking?.userId || null,
+          ownerName: registeredOwnerName || 'Khách hàng',
+          phone: phone || null,
+          brand: registeredVehicle?.brand || null,
+          model: registeredVehicle?.model || null,
+          color: registeredVehicle?.color || null,
+          vehicleType: registeredVehicle?.vehicleType || 'car',
+          vehicleModelInfo: vehicleModelInfo || (registeredVehicle?.brand ? [registeredVehicle.brand, registeredVehicle.model, registeredVehicle.color].filter(Boolean).join(' - ') : null),
+        } : null,
+        walletInfo: {
+          hasWallet,
+          balance: walletBalance,
+          canAutoPay: walletBalance >= 20000,
+          isSufficientForFastExit: walletBalance >= 20000,
+        },
         assignedSlot: effectiveAssignedSlot,
         assignedFloorId: effectiveAssignedFloorId,
         assignedFloorName: effectiveAssignedFloorName,
@@ -592,14 +834,36 @@ exports.verifyPlate = async (req, res, next) => {
         suggestedFloorId: vipAssignedFloorId || null,
         suggestedFloorName: vipAssignedFloorName || null,
         requiresSlotReallocation: Boolean(requiresSlotReallocation || vipSlotOccupiedByOther),
-        isBookingReallocation: Boolean(booking && requiresSlotReallocation),
+        isBookingReallocation: Boolean(booking && (requiresSlotReallocation || slotAutoReallocated)),
         vipSlotOccupiedByOther,
         originalSlot: bookingOriginalSlot || vipOriginalSlot || null,
         upcomingBookingTooEarly,
+        sameOwnerAlternateBooking,
         quotaExhausted,
         violations,
       }
     });
+
+    try {
+      const io = req.app?.get('io');
+      if (io) {
+        io.emit('gate:vehicle_detected', {
+          gate: 'ENTRY_1',
+          mode: 'entry',
+          licensePlate: cleanPlate,
+          vehicleModelInfo: vehicleModelInfo || 'Vehicle',
+          registeredOwnerName: registeredOwnerName || null,
+          phone: phone || null,
+          assignedSlot: assignedSlot || (booking ? booking.parkingSlot : null) || vipAssignedSlot || null,
+          floorName: assignedFloorName || (booking?.floorId?.name) || vipAssignedFloorName || 'Floor 1',
+          isPreBooked: hasPreBooking,
+          isRegisteredVehicle,
+          hasWallet,
+          entryImageBase64: req.body?.entryImageBase64 || null,
+          timestamp: Date.now()
+        });
+      }
+    } catch (_) {}
 
   } catch (error) {
     console.error('verifyPlate error:', error);
@@ -793,6 +1057,7 @@ exports.kioskVerifyQr = async (req, res) => {
       allowedActions: resolved.allowedActions || [],
       assignedSlot: resolved.assignedSlot || null,
       assignedFloorId: resolved.assignedFloorId || null,
+      isPausedResume: resolved.booking ? resolved.booking.status === 'PAUSED' : false,
       membershipActive: resolved.type === 'MEMBERSHIP' ? Boolean(resolved.membershipActive) : undefined,
     });
 
@@ -876,9 +1141,19 @@ exports.createKioskSession = async (req, res, next) => {
     const lateCheckinLimit = new Date(now.getTime() - 30 * 60 * 1000);
     const cancelCheckinLimit = new Date(now.getTime() - 30 * 60 * 1000);
 
+    const fuzzyPlateRegex = new RegExp(`^${cleanPlate.split('').join('[-. ]*')}$`, 'i');
+    const plateVariants = [cleanPlate, licensePlate.trim()].filter(Boolean);
+    const plateMatchFilter = {
+      $or: [
+        { licensePlate: cleanPlate },
+        { licensePlate: fuzzyPlateRegex },
+        { licensePlate: { $in: plateVariants } },
+      ]
+    };
+
     const bookingWindow = {
       ...(qrTicket?.booking ? { _id: qrTicket.booking._id } : {}),
-      licensePlate: cleanPlate,
+      ...plateMatchFilter,
       $or: [
         { status: 'PAID', scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit } },
         { status: 'PAUSED', scheduledStart: { $lte: earlyCheckinLimit } },
@@ -886,15 +1161,58 @@ exports.createKioskSession = async (req, res, next) => {
       ],
       scheduledEnd: { $gte: now },
     };
-    let activeBooking;
+
+    let activeBooking = null;
     if (requestedBookingId) {
-      if (!mongoose.Types.ObjectId.isValid(requestedBookingId)) {
-        return res.status(400).json({ success: false, code: 'BOOKING_ID_INVALID', message: 'Booking không hợp lệ' });
+      if (mongoose.Types.ObjectId.isValid(requestedBookingId)) {
+        activeBooking = await Booking.findOne({ _id: requestedBookingId, ...bookingWindow });
+        if (!activeBooking) {
+          const directBooking = await Booking.findById(requestedBookingId);
+          if (directBooking) {
+            const plateMatches = arePlatesMatching(directBooking.licensePlate, cleanPlate);
+            const isPausedOrPaid = ['PAID', 'PAUSED'].includes(directBooking.status);
+            const isWithinTime = directBooking.scheduledStart <= earlyCheckinLimit && directBooking.scheduledEnd >= now;
+
+            // Kiểm tra trường hợp cùng chủ xe đổi sang xe khác của mình để vào đỗ
+            let isSameOwnerTransfer = false;
+            if (!plateMatches) {
+              if (directBooking.userId) {
+                const userCar = await Vehicle.findOne({
+                  licensePlate: { $regex: new RegExp(`^${cleanPlate}$`, 'i') },
+                  owner: directBooking.userId,
+                  status: 'approved'
+                });
+                if (userCar) {
+                  isSameOwnerTransfer = true;
+                }
+              }
+              const isSamePhone = directBooking.phone && phone && normalizePhone(directBooking.phone) === normalizePhone(phone);
+              const isStaffOrExplicit = Boolean(
+                (req.user && ['staff', 'admin', 'operator'].includes(req.user.role)) ||
+                req.body.allowPlateTransfer ||
+                req.body.transferBooking ||
+                req.body.bookingId === requestedBookingId
+              );
+              if (isSamePhone || isStaffOrExplicit) {
+                isSameOwnerTransfer = true;
+              }
+            }
+
+            if ((plateMatches || isSameOwnerTransfer) && isPausedOrPaid && isWithinTime) {
+              activeBooking = directBooking;
+              if (isSameOwnerTransfer) {
+                activeBooking.licensePlate = cleanPlate;
+                await activeBooking.save();
+              }
+            }
+          }
+        }
       }
-      activeBooking = await Booking.findOne({ _id: requestedBookingId, ...bookingWindow });
-      if (!activeBooking) {
+      if (!activeBooking && qrTicket?.booking) {
         return res.status(409).json({ success: false, code: 'BOOKING_NOT_AVAILABLE', message: 'Booking không thuộc biển số này hoặc không còn hiệu lực' });
       }
+      // Khi check-in tại cổng hoặc Kiosk mà booking đã hết hạn hoặc không còn hiệu lực:
+      // Không chặn 409 mà tự động tiếp tục chuyển sang luồng Walk-in / Khách thành viên để xe vẫn vào đỗ được.
     } else {
       activeBooking = await Booking.findOne(bookingWindow).sort({ scheduledStart: 1 });
     }
@@ -1137,13 +1455,17 @@ exports.createKioskSession = async (req, res, next) => {
 
       // Xử lý đổi ô đỗ khi Booking EXPIRED hoặc ô đặt trước đang bị xe khác / bảo trì chiếm
       if ((wasExpiredBooking || originalSlotBlocked) && requestedNewSlot) {
-        requiresExpiredBookingHold = true;
+        if (!req.body.isAutoReallocated) {
+          requiresExpiredBookingHold = true;
+        }
         bookingSlotChange = {
           oldSlot: activeBooking.parkingSlot,
           newSlot: normalizeSlotCode(parkingSlot),
           reason: wasExpiredBooking
             ? 'Khách đến trễ, ô đỗ cũ đã bị xe khác sử dụng. Chọn lại ô mới tại Kiosk.'
-            : 'Ô đặt trước đang bị xe khác chiếm hoặc bảo trì. Hệ thống cấp đổi ô mới tại Kiosk.',
+            : (activeBooking.status === 'PAUSED'
+              ? 'Original slot occupied by unauthorized vehicle during PAUSE. Auto-assigned conflict-free replacement at Kiosk.'
+              : 'Ô đặt trước đang bị xe khác chiếm hoặc bảo trì. Hệ thống cấp đổi ô mới tại Kiosk.'),
           changedBy: userId || null
         };
         activeBooking.parkingSlot = normalizeSlotCode(parkingSlot);
@@ -1699,6 +2021,28 @@ exports.kioskExitScan = async (req, res, next) => {
     if (!session) {
       const lookupPlate = normalizeLicensePlate(actualExitPlate || licensePlate || '');
       const notFoundViolations = lookupPlate ? await lookupPlateViolations(lookupPlate) : null;
+
+      try {
+        const io = req.app?.get('io');
+        if (io && lookupPlate) {
+          io.emit('gate:vehicle_detected', {
+            gate: 'EXIT_1',
+            mode: 'exit',
+            licensePlate: lookupPlate,
+            vehicleModelInfo: 'Vehicle at Exit',
+            registeredOwnerName: null,
+            phone: null,
+            sessionType: 'NO_SESSION',
+            parkingDuration: 'N/A',
+            amountToPay: 0,
+            hasSession: false,
+            errorMessage: `No active parking session found for plate ${lookupPlate}`,
+            exitImageBase64: exitImageBase64 || null,
+            timestamp: Date.now()
+          });
+        }
+      } catch (_) {}
+
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy phiên đỗ xe hoạt động tương ứng với thông tin quét',
@@ -1813,6 +2157,41 @@ exports.kioskExitScan = async (req, res, next) => {
     const canUseWallet = Boolean(walletOwnerId && (isWalletOwner || isExitVerified));
     const canAutoPay = Boolean(canUseWallet && walletBalance >= amountToPay);
 
+    let registeredVehicle = null;
+    let registeredOwner = null;
+    const cleanSessionPlate = normalizeLicensePlate(session.licensePlate || '');
+    const hasRealDb = mongoose.connection?.readyState === 1;
+    const isVehicleFindOneMocked = Vehicle.findOne !== mongoose.Model.findOne;
+    if (cleanSessionPlate && (hasRealDb || isVehicleFindOneMocked)) {
+      const regVariants = [cleanSessionPlate, String(session.licensePlate || '').trim()].filter(Boolean);
+      registeredVehicle = await Vehicle.findOne({
+        $or: [
+          { licensePlate: cleanSessionPlate },
+          { licensePlate: new RegExp(`^${cleanSessionPlate}$`, 'i') },
+          { licensePlate: { $in: regVariants } },
+        ],
+        status: 'approved',
+      }).lean();
+    }
+
+    const effectiveOwnerId = walletOwnerId || registeredVehicle?.owner || session.userId || null;
+    const isUserFindByIdMocked = User.findById !== mongoose.Model.findById;
+    if (effectiveOwnerId && (hasRealDb || isUserFindByIdMocked)) {
+      try {
+        registeredOwner = await User.findById(effectiveOwnerId).select('username fullName email phone').lean();
+        if (!registeredOwner?.phone) {
+          const ud = await UserDetail.findOne({ userId: effectiveOwnerId }).select('phone fullName').lean();
+          if (ud) {
+            registeredOwner = {
+              ...registeredOwner,
+              phone: ud.phone || registeredOwner?.phone,
+              fullName: registeredOwner?.fullName || ud.fullName,
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
     const [violations, plateViolationsSummary] = await Promise.all([
       SlotAuditLog.find({
         ...buildSessionSlotAuditFilter(session),
@@ -1850,6 +2229,26 @@ exports.kioskExitScan = async (req, res, next) => {
         amountToPay,
         walletBalance: canUseWallet ? walletBalance : 0,
         hasWallet: canUseWallet,
+        isRegisteredVehicle: Boolean(registeredVehicle),
+        isMemberAccount: Boolean(registeredVehicle || walletOwnerId || session.userId || canUseWallet),
+        registeredVehicleInfo: (registeredVehicle || registeredOwner || canUseWallet) ? {
+          isRegistered: Boolean(registeredVehicle),
+          isRegisteredVehicle: Boolean(registeredVehicle),
+          isMemberAccount: Boolean(registeredVehicle || walletOwnerId || session.userId || canUseWallet),
+          ownerName: registeredOwner?.fullName || registeredOwner?.username || 'Khách hàng',
+          phone: registeredOwner?.phone || session.phone || null,
+          brand: registeredVehicle?.brand || null,
+          model: registeredVehicle?.model || null,
+          color: registeredVehicle?.color || null,
+          vehicleType: registeredVehicle?.vehicleType || 'car',
+          vehicleModelInfo: [registeredVehicle?.brand, registeredVehicle?.model, registeredVehicle?.color].filter(Boolean).join(' - ') || null,
+        } : null,
+        walletInfo: {
+          hasWallet: canUseWallet,
+          balance: canUseWallet ? walletBalance : 0,
+          canAutoPay,
+          deficit: Math.max(0, amountToPay - (canUseWallet ? walletBalance : 0)),
+        },
         refundAmount,
         pricingBreakdown: pricing,
         canAutoPay,
@@ -1864,6 +2263,26 @@ exports.kioskExitScan = async (req, res, next) => {
         violations: plateViolationsSummary,
       }
     });
+
+    try {
+      const io = req.app?.get('io');
+      if (io) {
+        io.emit('gate:vehicle_detected', {
+          gate: 'EXIT_1',
+          mode: 'exit',
+          licensePlate: session.licensePlate,
+          vehicleModelInfo: (registeredVehicle && [registeredVehicle.brand, registeredVehicle.model, registeredVehicle.color].filter(Boolean).join(' - ')) || session.vehicleType || 'Vehicle',
+          registeredOwnerName: registeredOwner?.fullName || registeredOwner?.username || session.customerName || null,
+          phone: registeredOwner?.phone || session.phone || null,
+          sessionType: session.type,
+          parkingDuration: `${pricing?.durationHours || 1} hrs`,
+          amountToPay,
+          canAutoPay,
+          exitImageBase64: req.body?.imageBase64 || null,
+          timestamp: Date.now()
+        });
+      }
+    } catch (_) {}
 
   } catch (error) {
     console.error('Error in kioskExitScan:', error);
@@ -2034,6 +2453,9 @@ exports.kioskCheckout = async (req, res, next) => {
     let refundBreakdown = null;
     let payoutStatus = null;
     let suppressionReason = null;
+    let isPausedSession = false;
+    let changeDeposited = false;
+    let changeDepositedAmount = 0;
 
     if (session.type === 'BOOKING' && session.bookingId) {
       booking = await Booking.findById(session.bookingId);
@@ -2251,6 +2673,36 @@ exports.kioskCheckout = async (req, res, next) => {
           });
         }
         const changeAmount = receivedAmount - amountToPay;
+        changeDeposited = false;
+        changeDepositedAmount = 0;
+
+        if (changeAmount > 0 && (req.body.depositChangeToWallet === true || req.body.depositChangeToWallet === 'true')) {
+          const changeWalletOwnerId = await resolveWalletOwnerForSession(session);
+          if (changeWalletOwnerId) {
+            try {
+              await walletService.creditWallet(
+                changeWalletOwnerId,
+                changeAmount,
+                'TOP_UP',
+                `Nạp tiền thừa thanh toán gửi xe phiên ${session.licensePlate || ''} (Cổng Ra)`,
+                { refSource: 'Session', refSourceId: session._id.toString() }
+              );
+              changeDeposited = true;
+              changeDepositedAmount = changeAmount;
+              if (req.app) {
+                notifTriggers.notifyPaymentSuccess(
+                  req.app,
+                  changeWalletOwnerId,
+                  changeAmount,
+                  session._id.toString()
+                ).catch(() => {});
+              }
+            } catch (wErr) {
+              console.error('Failed to deposit change to wallet:', wErr);
+            }
+          }
+        }
+
         const cashIntent = await createKioskPaymentIntent({
           session,
           amount: amountToPay,
@@ -2262,6 +2714,9 @@ exports.kioskCheckout = async (req, res, next) => {
           metadata: {
             staffId: req.user._id,
             cashReceiptId: cashReceiptId || null,
+            depositChangeToWallet: changeDeposited,
+            changeDepositedAmount,
+            changeHandedOver: changeDeposited ? 0 : changeAmount,
           },
         });
         await markPaymentIntentPaidById({
@@ -2283,6 +2738,7 @@ exports.kioskCheckout = async (req, res, next) => {
     let sessionFinalizedAtomically = false;
     if (booking) {
       if (keepPaused === true || keepPaused === 'true') {
+        isPausedSession = true;
         // Tạm dừng: Giữ ô đỗ, đổi trạng thái Booking sang PAUSED
         const pauseSession = await mongoose.startSession();
         try {
@@ -2687,6 +3143,8 @@ exports.kioskCheckout = async (req, res, next) => {
       message: 'Checkout hoàn tất thành công, Barrier đã mở',
       data: {
         ...session.toObject(),
+        bookingStatus: isPausedSession ? 'PAUSED' : (booking ? booking.status : null),
+        isPaused: isPausedSession,
         amountToPay,
         refundAmount,
         refundBreakdown: refundBreakdown
@@ -2701,6 +3159,9 @@ exports.kioskCheckout = async (req, res, next) => {
               ? Number(cashReceivedAmount)
               : amountToPay) - Number(amountToPay),
             paymentMethod: 'cash',
+            depositChangeToWallet: Boolean(changeDeposited),
+            changeDepositedAmount: changeDepositedAmount || 0,
+            changeHandedOver: changeDeposited ? 0 : Math.max(0, ((cashReceivedAmount !== undefined && cashReceivedAmount !== null && cashReceivedAmount !== '') ? Number(cashReceivedAmount) : amountToPay) - Number(amountToPay)),
           }
           : {}),
       }

@@ -232,7 +232,7 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   return (
     <div className="flex flex-col flex-1 min-h-0 items-center overflow-hidden">
       <div className="w-full max-w-[1040px] flex flex-col gap-3 flex-1 min-h-0">
-        {vipRedirectInfo && (
+        {(formData.slotAutoReallocated || vipRedirectInfo) && (
           <div className="bg-amber-50 border-2 border-amber-400 text-amber-900 rounded-[18px] shadow-sm px-4 py-2.5 flex items-center gap-3 animate-fade-in shrink-0">
             <div className="w-9 h-9 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -240,8 +240,12 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
               </svg>
             </div>
             <div>
-              <h3 className="font-black text-sm uppercase tracking-tight text-amber-800">Sự cố ô đỗ VIP</h3>
-              <p className="font-semibold text-xs leading-tight text-amber-700">{vipRedirectInfo.message}</p>
+              <h3 className="font-black text-sm uppercase tracking-tight text-amber-800">
+                {formData.slotAutoReallocated ? 'Slot Automatically Reassigned' : 'VIP Slot Notice'}
+              </h3>
+              <p className="font-semibold text-xs leading-tight text-amber-700">
+                {formData.reallocationReason || vipRedirectInfo?.message || 'A replacement slot has been assigned at no extra charge.'}
+              </p>
             </div>
           </div>
         )}
@@ -252,6 +256,11 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
               Parking Access
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {formData.isPausedResume && (
+                <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                  Resumed · {formData.remainingHours || 0}h {formData.remainingMinutes || 0}m left
+                </span>
+              )}
               {checkInTimeLabel && (
                 <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-bold text-gray-600">
                   In at {checkInTimeLabel}

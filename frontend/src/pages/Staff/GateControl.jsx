@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Camera, Car, ShieldCheck, Sparkles, RefreshCw, CheckCircle2,
   AlertTriangle, ArrowRight, DollarSign, QrCode, Lock, Unlock,
-  Pause, Play, Activity, Radio, Clock, User, Zap, ChevronRight,
+  Pause, PauseCircle, Play, Activity, Radio, Clock, User, Zap, ChevronRight,
   Upload, Eye, AlertCircle, Check, Loader2, Maximize2,
-  RotateCw, ArrowLeftRight, ScanLine, SlidersHorizontal, ZoomIn, ZoomOut, X
+  RotateCw, ArrowLeftRight, ScanLine, SlidersHorizontal, ZoomIn, ZoomOut, X,
+  Wallet, Banknote, CreditCard
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { API_BASE, apiFetch } from '../../services/api';
@@ -17,6 +19,7 @@ import {
   getActiveMapBookings,
   releaseBookingHold,
 } from '../../services/bookingService';
+import { getAllSessions, getActiveSessions } from '../../services/sessionService';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
 import {
   captureVideoLaneBase64,
@@ -30,6 +33,35 @@ import AIPlateResolutionModal from './components/AIPlateResolutionModal';
 import { STAFF_THEME } from './components/staffTheme';
 
 const normalizeSlotCodeLocal = (code) => String(code || '').replace(/[^A-Z0-9-]/gi, '').trim().toUpperCase();
+
+const formatFloorName = (name) => {
+  if (!name) return 'Floor 1';
+  const str = String(name).trim();
+  return /^(floor|tầng)\b/i.test(str) ? str : `Floor ${str}`;
+};
+
+const formatShortCurrency = (val) => {
+  const num = Number(val);
+  if (isNaN(num)) return '';
+  if (num >= 1000000) return `${(num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1)}tr`;
+  if (num >= 1000) return `${(num / 1000).toFixed(0)}k`;
+  return `${num}`;
+};
+
+const getQuickCashSuggestions = (amount) => {
+  const num = Number(amount);
+  if (!num || num <= 0) return [];
+  const suggestions = [];
+  const next50k = Math.ceil(num / 50000) * 50000;
+  if (next50k > num) suggestions.push(next50k);
+
+  [100000, 200000, 500000].forEach((bill) => {
+    if (bill > num && !suggestions.includes(bill)) {
+      suggestions.push(bill);
+    }
+  });
+  return suggestions.slice(0, 3);
+};
 
 function classifyFloorSlot(slot, floorId, activeSessions, activeBookings, activeHolds, entryVerifyData) {
   const code = normalizeSlotCodeLocal(slot.slotNumber);
@@ -90,8 +122,8 @@ function classifyFloorSlot(slot, floorId, activeSessions, activeBookings, active
     selectable = false;
   } else if (isAssignedMatch) {
     state = 'assigned';
-    statusLabel = entryVerifyData?.isMonthly ? 'VIP Match' : 'Booked Spot';
-    detail = 'Assigned to vehicle';
+    statusLabel = entryVerifyData?.isMonthly ? 'VIP Match' : entryVerifyData?.isPausedResume ? 'Resumed Spot' : 'Booked Spot';
+    detail = entryVerifyData?.isPausedResume ? 'Resumed session spot' : 'Assigned to vehicle';
     selectable = true;
   }
 
@@ -115,12 +147,7 @@ function ViolationStatusRow({ violations, violationDetails, formatCurrency }) {
   const hasViolation = Boolean(violations?.hasViolations || violationDetails || pendingCount > 0 || slotViolations.length > 0);
 
   if (!hasViolation) {
-    return (
-      <div className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300">
-        <CheckCircle2 size={12} className="shrink-0" />
-        <span>Violations: Clean (No pending fines or slot violations)</span>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -188,6 +215,13 @@ export default function GateControl() {
   const [isExitCheckingOut, setIsExitCheckingOut] = useState(false);
   const [exitCameraActive, setExitCameraActive] = useState(true);
   const [cashReceivedAmount, setCashReceivedAmount] = useState('');
+  const [depositChangeToWallet, setDepositChangeToWallet] = useState(false);
+  const [dismissSameOwnerBooking, setDismissSameOwnerBooking] = useState(false);
+
+  // ─── BARRIER OVERRIDE AUDIT MODAL ───
+  const [overrideModal, setOverrideModal] = useState(null); // { action, gate, plate, slot }
+  const [overrideReason, setOverrideReason] = useState('OCR_ERROR');
+  const [overrideNotes, setOverrideNotes] = useState('');
 
   // ─── AI RESOLUTION MODAL STATE ───
   const [showAiModal, setShowAiModal] = useState(false);
@@ -233,6 +267,31 @@ export default function GateControl() {
     }
   }, []);
 
+  const refreshActiveSessions = useCallback(async () => {
+    try {
+      const res = await getAllSessions({ cache: 'no-store' });
+      let list = [];
+      if (res?.ok && res.data?.success && Array.isArray(res.data.data)) {
+        list = res.data.data;
+      } else {
+        const fallbackRes = await getActiveSessions();
+        if (fallbackRes?.ok && fallbackRes.data?.success && Array.isArray(fallbackRes.data.data)) {
+          list = fallbackRes.data.data;
+        }
+      }
+
+      if (Array.isArray(list)) {
+        const active = list.filter((s) => {
+          const st = String(s.status || '').toLowerCase();
+          return st === 'active' || (!s.checkOutTime && st !== 'completed' && st !== 'cancelled');
+        });
+        setActiveSessionsList(active);
+      }
+    } catch (e) {
+      console.error('Error refreshing active sessions:', e);
+    }
+  }, []);
+
   const fetchFloorsAndSessions = useCallback(async () => {
     try {
       const floorRes = await getAllFloors();
@@ -246,19 +305,8 @@ export default function GateControl() {
       console.error('Error fetching floors:', e);
     }
 
-    try {
-      const token = localStorage.getItem('accessToken');
-      const sessRes = await fetch(`${API_BASE}/sessions`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await sessRes.json();
-      if (data.success && Array.isArray(data.data)) {
-        setActiveSessionsList(data.data.filter(s => s.status === 'active'));
-      }
-    } catch (e) {
-      console.error('Error fetching sessions:', e);
-    }
-  }, [entryFloorId]);
+    await refreshActiveSessions();
+  }, [entryFloorId, refreshActiveSessions]);
 
   const fetchFloorSlotOptions = useCallback(async (targetFloorId) => {
     if (!targetFloorId) {
@@ -267,16 +315,10 @@ export default function GateControl() {
     }
     setIsLoadingFloorSlots(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const [slotsRes, holdsRes, bookingsRes, sessRes] = await Promise.all([
+      const [slotsRes, holdsRes, bookingsRes] = await Promise.all([
         getFloorSlots(targetFloorId),
         getActiveHolds().catch(() => ({ ok: false })),
         getActiveMapBookings().catch(() => ({ ok: false })),
-        fetch(`${API_BASE}/sessions`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-          .then((r) => r.json())
-          .catch(() => null),
       ]);
       if (slotsRes?.ok && Array.isArray(slotsRes.data?.data)) {
         setFloorSlotsData(slotsRes.data.data);
@@ -287,15 +329,13 @@ export default function GateControl() {
       if (bookingsRes?.ok && Array.isArray(bookingsRes.data?.data)) {
         setActiveMapBookings(bookingsRes.data.data);
       }
-      if (sessRes?.success && Array.isArray(sessRes.data)) {
-        setActiveSessionsList(sessRes.data.filter((s) => s.status === 'active'));
-      }
+      await refreshActiveSessions();
     } catch (e) {
       console.error('Error fetching floor slots:', e);
     } finally {
       setIsLoadingFloorSlots(false);
     }
-  }, []);
+  }, [refreshActiveSessions]);
 
   useEffect(() => {
     if (!entryFloorId) return;
@@ -308,9 +348,12 @@ export default function GateControl() {
   useEffect(() => {
     fetchBarrierStatus();
     fetchFloorsAndSessions();
-    const interval = setInterval(fetchBarrierStatus, 2000);
+    const interval = setInterval(() => {
+      fetchBarrierStatus();
+      refreshActiveSessions();
+    }, 3000);
     return () => clearInterval(interval);
-  }, [fetchBarrierStatus, fetchFloorsAndSessions]);
+  }, [fetchBarrierStatus, fetchFloorsAndSessions, refreshActiveSessions]);
 
   useEffect(() => {
     if (!socket) return;
@@ -645,24 +688,29 @@ export default function GateControl() {
     });
   };
 
-  const verifyEntryPlate = async (plateToCheck, imageOverride = null) => {
+  const verifyEntryPlate = async (plateToCheck, imageOverride = null, isSilent = false, phoneToCheck = null) => {
     const cleanPlate = normalizeLicensePlate(plateToCheck || entryPlate);
     if (!cleanPlate) return;
 
     try {
+      const activePhone = phoneToCheck !== null ? phoneToCheck : entryPhone;
       const res = await fetch(`${API_BASE}/sessions/verify-plate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
         },
-        body: JSON.stringify({ licensePlate: cleanPlate })
+        body: JSON.stringify({
+          licensePlate: cleanPlate,
+          phone: activePhone || undefined,
+        })
       });
       const data = await res.json();
       if (data.success && data.data) {
         const v = data.data;
         setEntryVerifyData(v);
-        if (v.phone) setEntryPhone(v.phone);
+        const resolvedPhone = v.phone || v.registeredVehicleInfo?.phone || '';
+        if (resolvedPhone) setEntryPhone(resolvedPhone);
         if (v.assignedSlot) setEntrySlotCode(v.assignedSlot);
         if (v.assignedFloorId) setEntryFloorId(v.assignedFloorId);
 
@@ -672,13 +720,19 @@ export default function GateControl() {
 
         if (v.isActive) {
           toast.error('Warning: Vehicle already has an active session in the lot.');
+        } else if (v.isPausedResume) {
+          if (v.slotAutoReallocated) {
+            toast.success(`Paused booking resumed! Replacement slot ${v.assignedSlot} auto-assigned (${v.remainingHours || 0}h ${v.remainingMinutes || 0}m left).`);
+          } else {
+            toast.success(`Paused booking resumed! Slot ${v.assignedSlot} retained (${v.remainingHours || 0}h ${v.remainingMinutes || 0}m left).`);
+          }
         } else if (v.isMonthly) {
           toast.success(`VIP Member (${v.membershipType || 'Monthly Pass'}) verified — synced to Entry Kiosk.`);
         } else if (v.hasPreBooking) {
           toast.success(`Pre-booking found (Slot: ${v.assignedSlot || 'Reallocate'}) — synced to Entry Kiosk.`);
         } else if (v.isVIP) {
           toast.success('VIP Member verified — synced to Entry Kiosk.');
-        } else {
+        } else if (!isSilent) {
           toast('Valid walk-in vehicle (No booking). Ready to assign slot.');
         }
       }
@@ -749,7 +803,8 @@ export default function GateControl() {
           entryCamera: 'CAM_GATE_ENTRY_01',
           entryGate: 'ENTRY_1',
           ...(holdId ? { bookingHoldId: holdId } : {}),
-          ...(verify?.requiresSlotReallocation && verify?.bookingId ? { bookingId: verify.bookingId } : {}),
+          ...(verify?.bookingId ? { bookingId: verify.bookingId } : {}),
+          ...(verify?.slotAutoReallocated ? { isAutoReallocated: true } : {}),
         })
       });
       return res.json();
@@ -802,6 +857,33 @@ export default function GateControl() {
           verify?.requiresSlotReallocation ? verify?.bookingId : null
         );
         data = await callKioskEntry(acquiredHoldId);
+      }
+
+      if (!data.success && data.code === 'BOOKING_NOT_AVAILABLE' && targetFloorId && targetSlotCode) {
+        if (!acquiredHoldId) {
+          acquiredHoldId = await acquireSlotHold('KIOSK_WALK_IN', null);
+        }
+        const retryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
+            'Idempotency-Key': `staff-entry-walkin:${plate}:${Date.now()}`,
+          },
+          body: JSON.stringify({
+            licensePlate: plate,
+            phone: entryPhone || verify?.phone || '',
+            vehicleType: entryVehicleType,
+            parkingSlot: targetSlotCode,
+            floorId: targetFloorId,
+            durationHours: 2,
+            entryImageBase64: entrySnapshot || null,
+            entryCamera: 'CAM_GATE_ENTRY_01',
+            entryGate: 'ENTRY_1',
+            ...(acquiredHoldId ? { bookingHoldId: acquiredHoldId } : {}),
+          })
+        });
+        data = await retryRes.json();
       }
 
       if (data.success) {
@@ -1018,10 +1100,93 @@ export default function GateControl() {
     }
   };
 
-  const handleExitCheckOut = async (overrideInvoice = null) => {
+  // Auto-verify entry plate on typing (debounced)
+  useEffect(() => {
+    setDismissSameOwnerBooking(false);
+    const clean = normalizeLicensePlate(entryPlate);
+    if (!clean || clean.length < 5) {
+      if (!clean) {
+        setEntryVerifyData(null);
+        setEntryPhone('');
+      }
+      return;
+    }
+    const timer = setTimeout(() => {
+      verifyEntryPlate(clean, null, true);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [entryPlate]);
+
+  // Auto-lookup exit session on typing (debounced)
+  useEffect(() => {
+    const clean = normalizeLicensePlate(exitPlate);
+    if (!clean || clean.length < 5) {
+      if (!clean) {
+        setExitInvoiceData(null);
+        setExitStatusInfo(null);
+      }
+      return;
+    }
+    const timer = setTimeout(() => {
+      lookupExitSession(clean);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [exitPlate]);
+
+  // Read query parameters from URL (e.g. from Realtime Gate Spotlight Modal)
+  const [searchParams] = useSearchParams();
+  const searchHandledRef = useRef('');
+
+  useEffect(() => {
+    const lane = searchParams.get('lane');
+    const plate = searchParams.get('plate');
+    const phone = searchParams.get('phone');
+    const slot = searchParams.get('slot');
+
+    const multiEntryPlate = searchParams.get('entryPlate') || (lane === 'entry' ? plate : null);
+    const multiExitPlate = searchParams.get('exitPlate') || (lane === 'exit' ? plate : null);
+    const entryPhoneParam = searchParams.get('entryPhone') || (lane === 'entry' ? phone : null);
+    const entrySlotParam = searchParams.get('entrySlot') || (lane === 'entry' ? slot : null);
+
+    const key = `${multiEntryPlate || ''}_${multiExitPlate || ''}`;
+    if (!key || key === '_' || searchHandledRef.current === key) return;
+    searchHandledRef.current = key;
+
+    // 1. Pre-fill & verify Entry lane if present
+    if (multiEntryPlate) {
+      const cleanEntry = normalizeLicensePlate(multiEntryPlate);
+      if (cleanEntry) {
+        setEntryPlate(cleanEntry);
+        if (entryPhoneParam) setEntryPhone(entryPhoneParam);
+        if (entrySlotParam) setEntrySlotCode(entrySlotParam);
+        verifyEntryPlate(cleanEntry, null, false, entryPhoneParam || null);
+      }
+    }
+
+    // 2. Pre-fill & look up Exit lane if present
+    if (multiExitPlate) {
+      const cleanExit = normalizeLicensePlate(multiExitPlate);
+      if (cleanExit) {
+        setExitPlate(cleanExit);
+        lookupExitSession(cleanExit);
+      }
+    }
+  }, [searchParams]);
+
+  const handleExitCheckOut = async (overrideInvoice = null, keepPausedChoice = false, paymentMethodChoice = null) => {
     const inv = overrideInvoice || exitInvoiceData;
     if (!inv || !inv.session) {
       toast.error('No active parking session selected for check-out.');
+      return;
+    }
+
+    const dueAmount = Number(inv.totalAmount || 0);
+    const chosenMethod = paymentMethodChoice || (cashReceivedAmount ? 'cash' : dueAmount === 0 ? 'cash' : (inv.canAutoPay ? 'wallet' : 'vietqr'));
+    const isCash = chosenMethod === 'cash';
+    const isWallet = chosenMethod === 'wallet';
+
+    if (isCash && dueAmount > 0 && Number(cashReceivedAmount) < dueAmount) {
+      toast.error(`Please collect at least ${formatCurrency(dueAmount)} in cash.`);
       return;
     }
 
@@ -1033,30 +1198,40 @@ export default function GateControl() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-          'Idempotency-Key': `staff-checkout:${inv.session._id}:${cashReceivedAmount || 'payos'}`,
+          'Idempotency-Key': `staff-checkout:${inv.session._id}:${chosenMethod}:${cashReceivedAmount || 'auto'}:${keepPausedChoice ? 'paused' : 'ended'}`,
         },
         body: JSON.stringify({
           sessionId: inv.session._id,
           exitImageBase64: exitSnapshot || null,
-          paymentMethod: cashReceivedAmount ? 'CASH' : 'PAYOS',
-          cashReceivedAmount: cashReceivedAmount ? Number(cashReceivedAmount) : null,
+          paymentMethod: chosenMethod,
+          cashReceivedAmount: isCash && dueAmount > 0 ? Number(cashReceivedAmount) : null,
+          depositChangeToWallet: isCash && depositChangeToWallet,
           checkoutToken: inv.checkoutToken || null,
           exitCamera: 'CAM_GATE_EXIT_01',
-          exitGate: 'EXIT_1'
+          exitGate: 'EXIT_1',
+          keepPaused: keepPausedChoice,
         })
       });
       const data = await res.json();
       if (data.success) {
-        const changeMessage = data.data?.changeAmount != null
-          ? ` Change: ${formatCurrency(data.data.changeAmount)}.`
-          : '';
-        toast.success(`Checked out ${inv.session.licensePlate}.${changeMessage} Opening exit barrier...`);
-        await triggerBarrier('open', 'EXIT_1', inv.session.licensePlate);
+        const changeMessage = data.data?.depositChangeToWallet
+          ? ` Deposited ${formatCurrency(data.data.changeDepositedAmount)} change into customer's Valo Wallet.`
+          : data.data?.changeAmount != null
+            ? ` Change: ${formatCurrency(data.data.changeAmount)}.`
+            : '';
+        const paymentMethodNote = isWallet ? ' (Paid via Valo Wallet)' : '';
+        if (keepPausedChoice) {
+          toast.success(`Session PAUSED for ${inv.session.licensePlate}. Slot ${inv.session.parkingSlot} retained!${paymentMethodNote}${changeMessage} Opening exit barrier...`);
+        } else {
+          toast.success(`Checked out ${inv.session.licensePlate}.${paymentMethodNote}${changeMessage} Opening exit barrier...`);
+        }
+        await triggerBarrier('open', 'EXIT_1', inv.session.licensePlate, '', 'CHECKOUT_SUCCESS', 'Checkout completed');
         setExitPlate('');
         setExitInvoiceData(null);
         setExitStatusInfo(null);
         setExitSnapshot(null);
         setCashReceivedAmount('');
+        setDepositChangeToWallet(false);
         fetchFloorsAndSessions();
       } else {
         toast.error(data.message || 'Check-out failed.');
@@ -1070,14 +1245,25 @@ export default function GateControl() {
   };
 
   // ─── 5. BARRIER DIRECT CONTROLS ───
-  const triggerBarrier = async (action, gate = 'ENTRY_1', plate = '', slot = '') => {
+  const triggerBarrier = async (action, gate = 'ENTRY_1', plate = '', slot = '', reason = '', notes = '') => {
     try {
       let endpoint = '/iot/open-barrier';
-      let payload = { gate, licensePlate: plate || 'STAFF-OVERRIDE', slotCode: slot };
+      let payload = {
+        gate,
+        licensePlate: plate || 'STAFF-OVERRIDE',
+        slotCode: slot,
+        reason: reason || undefined,
+        notes: notes || undefined,
+      };
 
       if (action === 'hold') {
         endpoint = '/iot/hold-barrier';
-        payload = { gate, hold: !gatesState[gate]?.holdOpen };
+        payload = {
+          gate,
+          hold: !gatesState[gate]?.holdOpen,
+          reason: reason || undefined,
+          notes: notes || undefined,
+        };
       } else if (action === 'close') {
         endpoint = '/iot/close-barrier';
         payload = { gate };
@@ -1377,21 +1563,21 @@ export default function GateControl() {
         {/* ──────────────────────────────────────────────────────────────────
             LEFT COLUMN: ENTRY STATION (ENTRY_1)
         ────────────────────────────────────────────────────────────────── */}
-        <div className="flex flex-col rounded-2xl border border-emerald-500/20 bg-[#111111] p-5 shadow-2xl relative overflow-hidden">
+        <div className="flex flex-col rounded-2xl border border-emerald-500/20 bg-[#111111] p-4 shadow-2xl relative overflow-hidden">
           <div className="pointer-events-none absolute -top-12 -left-12 h-36 w-36 rounded-full bg-emerald-500/10 blur-3xl" />
 
           {/* Lane Header */}
-          <div className="mb-4 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+          <div className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 <Car size={18} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-sm sm:text-base font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                <h2 className="text-sm font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
                   <span>Entry Gate</span>
                   <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">ENTRY_1</span>
                 </h2>
-                <p className="text-[11px] text-white/45 truncate">AI OCR plate scan & slot assignment</p>
+                <p className="text-[10px] text-white/45 truncate">AI OCR plate scan & slot assignment</p>
               </div>
             </div>
 
@@ -1426,7 +1612,7 @@ export default function GateControl() {
 
           {/* Live Camera Feed or Snapshot Preview */}
           <div className="overflow-hidden rounded-xl border border-white/15 bg-black">
-            <div className={`relative w-full overflow-hidden bg-black ${dualLaneSplitMode ? 'h-[310px] sm:h-[340px]' : 'aspect-video'}`}>
+            <div className="relative w-full overflow-hidden bg-black h-[175px] sm:h-[195px]">
               <video
                 ref={entryVideoRef}
                 autoPlay
@@ -1461,17 +1647,17 @@ export default function GateControl() {
                 <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-2">
                   <div className="flex justify-end">
                     <span className="rounded bg-emerald-500/90 px-2 py-0.5 text-[9px] font-black uppercase text-black">
-                      ENTRY · {entryTransform.side === 'left' ? 'LEFT HALF' : 'RIGHT HALF'} ({entryTransform.rotation}°)
+                      ENTRY · {entryTransform.side === 'left' ? 'LEFT' : 'RIGHT'} ({entryTransform.rotation}°)
                     </span>
                   </div>
-                  <div className="mx-auto my-auto h-28 w-52 rounded-lg border-2 border-dashed border-emerald-400/60 bg-emerald-400/5" />
+                  <div className="mx-auto my-auto h-20 w-44 rounded-lg border-2 border-dashed border-emerald-400/60 bg-emerald-400/5" />
                   <div />
                 </div>
               ) : (
                 <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-                  <div className="h-28 w-64 rounded-lg border-2 border-dashed border-emerald-400/50 bg-emerald-400/5 flex flex-col items-center justify-center text-center p-2">
-                    <span className="text-[10px] font-bold uppercase text-emerald-300 drop-shadow">
-                      ENTRY PLATE SCAN ZONE {entryTransform.rotation !== 0 ? `(${entryTransform.rotation}°)` : ''}
+                  <div className="h-20 w-52 rounded-lg border-2 border-dashed border-emerald-400/50 bg-emerald-400/5 flex flex-col items-center justify-center text-center p-1">
+                    <span className="text-[9px] font-bold uppercase text-emerald-300 drop-shadow">
+                      ENTRY SCAN ZONE {entryTransform.rotation !== 0 ? `(${entryTransform.rotation}°)` : ''}
                     </span>
                   </div>
                 </div>
@@ -1590,7 +1776,14 @@ export default function GateControl() {
                 <input
                   type="text"
                   value={entryPhone}
-                  onChange={(e) => setEntryPhone(e.target.value)}
+                  onChange={(e) => {
+                    const nextPhone = e.target.value;
+                    setEntryPhone(nextPhone);
+                    if (entryPlate && nextPhone.trim().length >= 10) {
+                      verifyEntryPlate(entryPlate, null, true, nextPhone.trim());
+                    }
+                  }}
+                  onBlur={() => entryPlate && entryPhone && verifyEntryPlate(entryPlate, null, true, entryPhone.trim())}
                   placeholder="Customer phone (optional)"
                   className="mt-1 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm font-medium text-white placeholder:text-white/20 focus:border-emerald-400 focus:outline-none"
                 />
@@ -1599,62 +1792,149 @@ export default function GateControl() {
 
             {/* Classification & Verification Alert */}
             {entryVerifyData && (
-              <div className={`p-3 rounded-lg border flex items-start gap-2.5 ${entryVerifyData.isActive || entryVerifyData.tooEarly
-                ? 'bg-red-500/10 border-red-500/30 text-red-300'
-                : entryVerifyData.isMonthly
-                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
-                  : entryVerifyData.hasPreBooking
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                }`}>
-                <ShieldCheck size={16} className="mt-0.5 shrink-0" />
-                <div className="flex-1 min-w-0 text-xs">
-                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                    <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-black/30 border border-current/25">
+              <div className={`p-3 rounded-xl border space-y-2 text-xs ${
+                entryVerifyData.isActive || entryVerifyData.tooEarly
+                  ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                  : entryVerifyData.isPausedResume
+                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
+                    : entryVerifyData.isMonthly
+                      ? 'bg-purple-500/10 border-purple-500/30 text-purple-200'
+                      : entryVerifyData.hasPreBooking
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                        : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+              }`}>
+                {/* Header: Primary Status + Membership tag */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <ShieldCheck size={14} className="shrink-0" />
+                    <span className="font-bold text-[11px] truncate uppercase tracking-wider">
                       {entryVerifyData.isActive
-                        ? 'Already Inside'
+                        ? 'Vehicle Already Inside Lot'
                         : entryVerifyData.tooEarly
-                          ? 'Booking Too Early'
-                          : entryVerifyData.isMonthly
-                            ? 'VIP Member'
+                          ? (entryVerifyData.message || 'Arrived Before Booking Window')
+                          : entryVerifyData.isPausedResume
+                            ? `Paused Booking Resumed (${entryVerifyData.remainingHours || 0}h ${entryVerifyData.remainingMinutes || 0}m left)`
                             : entryVerifyData.hasPreBooking
-                              ? 'Pre-booked'
-                              : 'Walk-in (No Booking)'}
-                    </span>
-                    {(entryVerifyData.hasPreBooking || entryVerifyData.isMonthly) && !entryVerifyData.isActive && !entryVerifyData.tooEarly && (
-                      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-400/30">
-                        Synced to Entry Kiosk
-                      </span>
-                    )}
-                    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border ${
-                      entryVerifyData.violations?.hasViolations
-                        ? 'bg-red-500/20 text-red-200 border-red-400/40'
-                        : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
-                    }`}>
-                      {entryVerifyData.violations?.hasViolations ? 'Has Violations' : 'No Violations'}
+                              ? 'Pre-booked Customer'
+                              : entryVerifyData.isMonthly
+                                ? `VIP Member (${entryVerifyData.membershipType || 'Monthly Pass'})`
+                                : 'Walk-in Guest'}
                     </span>
                   </div>
-                  <p className="font-bold">
-                    {entryVerifyData.isActive
-                      ? 'Warning: Vehicle is already inside the lot!'
-                      : entryVerifyData.tooEarly
-                        ? (entryVerifyData.message || 'Customer arrived before booking check-in window.')
-                        : entryVerifyData.isMonthly
-                          ? `VIP Member: ${entryVerifyData.membershipType || 'Monthly Pass'}`
-                          : entryVerifyData.hasPreBooking
-                            ? `Pre-booked Vehicle${entryVerifyData.bookingId ? ` (Booking ${entryVerifyData.bookingId})` : ''}`
-                            : 'Walk-in Guest (No Pre-Booking)'}
-                  </p>
-                  <p className="text-[10px] opacity-80 mt-0.5">
-                    {entryVerifyData.assignedSlot
-                      ? `Assigned Spot: Floor ${entryVerifyData.assignedFloorName || '1'} · Slot ${entryVerifyData.assignedSlot}`
-                      : 'No fixed slot assigned; the system will assign an optimal slot.'}
-                  </p>
-                  <ViolationStatusRow
-                    violations={entryVerifyData.violations}
-                    formatCurrency={formatCurrency}
-                  />
+
+                  <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold uppercase shrink-0 border ${
+                    entryVerifyData.registeredVehicleInfo?.isRegisteredVehicle || entryVerifyData.isRegisteredVehicle
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                      : entryVerifyData.registeredVehicleInfo?.isMemberAccount || entryVerifyData.hasPreBooking || entryVerifyData.walletInfo?.hasWallet
+                        ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
+                        : 'bg-white/10 text-white/60 border-white/15'
+                  }`}>
+                    {entryVerifyData.registeredVehicleInfo?.isRegisteredVehicle || entryVerifyData.isRegisteredVehicle ? (
+                      <><CheckCircle2 size={10} /> Registered Vehicle</>
+                    ) : entryVerifyData.registeredVehicleInfo?.isMemberAccount || entryVerifyData.hasPreBooking || entryVerifyData.walletInfo?.hasWallet ? (
+                      <><User size={10} /> Valo Member</>
+                    ) : (
+                      'Walk-in'
+                    )}
+                  </span>
                 </div>
+
+                {/* Auto Reassigned Notice (Only when original slot was blocked) */}
+                {entryVerifyData.isPausedResume && entryVerifyData.slotAutoReallocated && (
+                  <div className="rounded-lg bg-amber-500/20 border border-amber-400/40 p-2 text-[11px] text-amber-200 font-medium">
+                    Original slot {entryVerifyData.originalSlot || 'reserved'} was blocked. Auto-reassigned conflict-free slot {entryVerifyData.assignedSlot} on {formatFloorName(entryVerifyData.assignedFloorName)}.
+                  </div>
+                )}
+
+                {/* Same-Owner Vehicle Transfer Alert */}
+                {entryVerifyData.sameOwnerAlternateBooking && !dismissSameOwnerBooking && (
+                  <div className="rounded-xl bg-gradient-to-r from-sky-950/80 to-blue-950/80 border border-sky-400/50 p-2.5 text-xs space-y-1.5 text-sky-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-sky-300">
+                        <Sparkles size={13} className="text-sky-400 animate-pulse" />
+                        <span>Alternate Booking Found</span>
+                      </div>
+                      <span className="rounded bg-sky-400/20 px-1.5 py-0.5 text-[9px] font-mono text-sky-300 border border-sky-400/40">
+                        Transfer
+                      </span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-sky-100/90">
+                      Customer <strong>{entryVerifyData.sameOwnerAlternateBooking.ownerName}</strong> has pre-booked slot <strong>{entryVerifyData.sameOwnerAlternateBooking.parkingSlot}</strong> for vehicle <strong>{entryVerifyData.sameOwnerAlternateBooking.originalPlate}</strong>.
+                    </p>
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEntrySlotCode(entryVerifyData.sameOwnerAlternateBooking.parkingSlot);
+                          if (entryVerifyData.sameOwnerAlternateBooking.floorId) {
+                            setEntryFloorId(entryVerifyData.sameOwnerAlternateBooking.floorId);
+                          }
+                          handleEntryCheckIn(entryPlate, {
+                            ...entryVerifyData,
+                            bookingId: entryVerifyData.sameOwnerAlternateBooking.bookingId,
+                            assignedSlot: entryVerifyData.sameOwnerAlternateBooking.parkingSlot,
+                            assignedFloorId: entryVerifyData.sameOwnerAlternateBooking.floorId,
+                          });
+                        }}
+                        className="flex-1 rounded-lg bg-sky-500 py-1.5 text-center text-xs font-bold text-black hover:bg-sky-400 transition shadow-md shadow-sky-500/20"
+                      >
+                        Transfer Booking to this Vehicle & Check-in
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDismissSameOwnerBooking(true)}
+                        className="rounded-lg border border-white/20 bg-white/5 px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"
+                      >
+                        Walk-in Instead
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Customer Details & Vehicle (Only when available) */}
+                {entryVerifyData.registeredVehicleInfo && (
+                  <div className="rounded-lg bg-black/40 border border-white/10 p-2 text-[11px] flex items-center justify-between text-white">
+                    <div className="min-w-0">
+                      <span className="text-white/40 block text-[9px] uppercase font-bold">Customer</span>
+                      <span className="font-bold text-white truncate block">{entryVerifyData.registeredVehicleInfo.ownerName || 'Customer'}</span>
+                    </div>
+                    {entryVerifyData.registeredVehicleInfo.vehicleModelInfo && (
+                      <div className="text-right min-w-0">
+                        <span className="text-white/40 block text-[9px] uppercase font-bold">Vehicle</span>
+                        <span className="font-medium text-white/80 truncate block">{entryVerifyData.registeredVehicleInfo.vehicleModelInfo}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Wallet Status (Privacy Masked) */}
+                {entryVerifyData.walletInfo?.hasWallet ? (
+                  <div className="rounded-lg bg-black/40 border border-emerald-500/20 p-2 flex items-center justify-between text-[11px]">
+                    <div className="flex items-center gap-1.5">
+                      <Wallet size={13} className="text-emerald-400" />
+                      <span className="text-white/60">Valo Wallet:</span>
+                      <span className="text-emerald-300 font-semibold">Linked Account</span>
+                    </div>
+                    <span className={`text-[9px] font-bold uppercase rounded px-2 py-0.5 border ${
+                      entryVerifyData.walletInfo.balance >= 20000
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                    }`}>
+                      {entryVerifyData.walletInfo.balance >= 20000 ? 'Auto-Pay Ready' : 'Low Balance'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-black/40 border border-white/5 px-2.5 py-1.5 flex items-center justify-between text-[11px] text-white/50">
+                    <span>Payment on Exit:</span>
+                    <span className="text-white/80 font-medium">Cash / VietQR</span>
+                  </div>
+                )}
+
+                {/* Violations (Only rendered if actual violations exist) */}
+                <ViolationStatusRow
+                  violations={entryVerifyData.violations}
+                  formatCurrency={formatCurrency}
+                />
               </div>
             )}
 
@@ -1704,7 +1984,7 @@ export default function GateControl() {
                           className="mt-1 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-xs font-semibold text-white focus:outline-none"
                         >
                           {floors.map(f => (
-                            <option key={f._id} value={f._id}>Floor {f.floorNumber} - {f.name}</option>
+                            <option key={f._id} value={f._id}>{formatFloorName(f.name || f.floorNumber)}</option>
                           ))}
                         </select>
                       </div>
@@ -1917,7 +2197,7 @@ export default function GateControl() {
             <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-white/10">
               <button
                 type="button"
-                onClick={() => triggerBarrier('open', 'ENTRY_1', entryPlate || 'MANUAL_ENTRY')}
+                onClick={() => setOverrideModal({ action: 'open', gate: 'ENTRY_1', plate: entryPlate || 'MANUAL_ENTRY', slot: entrySlotCode || '' })}
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Unlock size={12} className="text-emerald-400" />
@@ -1926,7 +2206,7 @@ export default function GateControl() {
 
               <button
                 type="button"
-                onClick={() => triggerBarrier('hold', 'ENTRY_1')}
+                onClick={() => setOverrideModal({ action: 'hold', gate: 'ENTRY_1', plate: entryPlate || 'MANUAL_HOLD', slot: '' })}
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Pause size={12} className="text-yellow-400" />
@@ -1935,7 +2215,7 @@ export default function GateControl() {
 
               <button
                 type="button"
-                onClick={() => triggerBarrier('close', 'ENTRY_1')}
+                onClick={() => triggerBarrier('close', 'ENTRY_1', entryPlate || 'MANUAL_ENTRY', '', 'MANUAL_CLOSE', 'Gate closed')}
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Lock size={12} className="text-red-400" />
@@ -1949,21 +2229,21 @@ export default function GateControl() {
         {/* ──────────────────────────────────────────────────────────────────
             RIGHT COLUMN: EXIT STATION (EXIT_1)
         ────────────────────────────────────────────────────────────────── */}
-        <div className="flex flex-col rounded-2xl border border-sky-500/20 bg-[#111111] p-5 shadow-2xl relative overflow-hidden">
+        <div className="flex flex-col rounded-2xl border border-sky-500/20 bg-[#111111] p-4 shadow-2xl relative overflow-hidden">
           <div className="pointer-events-none absolute -top-12 -right-12 h-36 w-36 rounded-full bg-sky-500/10 blur-3xl" />
 
           {/* Lane Header */}
-          <div className="mb-4 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+          <div className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30">
                 <Car size={18} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-sm sm:text-base font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                <h2 className="text-sm font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
                   <span>Exit Gate</span>
                   <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-300 border border-sky-500/30">EXIT_1</span>
                 </h2>
-                <p className="text-[11px] text-white/45 truncate">Security verification & fee collection</p>
+                <p className="text-[10px] text-white/45 truncate">Security verification & fee collection</p>
               </div>
             </div>
 
@@ -1998,7 +2278,7 @@ export default function GateControl() {
 
           {/* Live Camera Feed or Snapshot Preview */}
           <div className="overflow-hidden rounded-xl border border-white/15 bg-black">
-            <div className={`relative w-full overflow-hidden bg-black ${dualLaneSplitMode ? 'h-[310px] sm:h-[340px]' : 'aspect-video'}`}>
+            <div className="relative w-full overflow-hidden bg-black h-[175px] sm:h-[195px]">
               <video
                 ref={exitVideoRef}
                 autoPlay
@@ -2033,17 +2313,17 @@ export default function GateControl() {
                 <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-2">
                   <div className="flex justify-start">
                     <span className="rounded bg-sky-400/90 px-2 py-0.5 text-[9px] font-black uppercase text-black">
-                      EXIT · {exitTransform.side === 'left' ? 'LEFT HALF' : 'RIGHT HALF'} ({exitTransform.rotation}°)
+                      EXIT · {exitTransform.side === 'left' ? 'LEFT' : 'RIGHT'} ({exitTransform.rotation}°)
                     </span>
                   </div>
-                  <div className="mx-auto my-auto h-28 w-52 rounded-lg border-2 border-dashed border-sky-400/60 bg-sky-400/5" />
+                  <div className="mx-auto my-auto h-20 w-44 rounded-lg border-2 border-dashed border-sky-400/60 bg-sky-400/5" />
                   <div />
                 </div>
               ) : (
                 <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-                  <div className="h-28 w-64 rounded-lg border-2 border-dashed border-sky-400/50 bg-sky-400/5 flex flex-col items-center justify-center text-center p-2">
-                    <span className="text-[10px] font-bold uppercase text-sky-300 drop-shadow">
-                      EXIT PLATE SCAN ZONE {exitTransform.rotation !== 0 ? `(${exitTransform.rotation}°)` : ''}
+                  <div className="h-20 w-52 rounded-lg border-2 border-dashed border-sky-400/50 bg-sky-400/5 flex flex-col items-center justify-center text-center p-1">
+                    <span className="text-[9px] font-bold uppercase text-sky-300 drop-shadow">
+                      EXIT SCAN ZONE {exitTransform.rotation !== 0 ? `(${exitTransform.rotation}°)` : ''}
                     </span>
                   </div>
                 </div>
@@ -2304,46 +2584,227 @@ export default function GateControl() {
                 </div>
               )}
 
-              {/* Invoice Breakdown */}
-              <div className="rounded-lg bg-black/60 p-3 text-xs space-y-1.5 border border-white/5">
-                <div className="flex justify-between text-white/60">
-                  <span>Parking Duration:</span>
-                  <span className="font-bold text-white">{exitInvoiceData.durationFormatted || '2 hrs'}</span>
+              {/* Registration & Account Status */}
+              {(exitInvoiceData.isRegisteredVehicle || exitInvoiceData.registeredVehicleInfo?.isRegisteredVehicle) ? (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-300">
+                      <CheckCircle2 size={15} className="text-emerald-400" />
+                      <span>Registered Vehicle</span>
+                    </div>
+                    <span className="rounded bg-emerald-400/20 px-2 py-0.5 text-[9px] font-black uppercase text-emerald-300 border border-emerald-400/30">
+                      Valo Account Verified
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-black/40 border border-white/5 rounded-lg p-2 text-white">
+                    <div>
+                      <span className="text-white/40 block text-[9px] uppercase font-bold">Customer</span>
+                      <span className="font-bold block">{exitInvoiceData.registeredVehicleInfo?.ownerName || 'Customer'}</span>
+                      {exitInvoiceData.registeredVehicleInfo?.phone && (
+                        <span className="text-white/60 block text-[10px] font-mono">{exitInvoiceData.registeredVehicleInfo.phone}</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-white/40 block text-[9px] uppercase font-bold">Vehicle Model</span>
+                      <span className="font-bold block">{exitInvoiceData.registeredVehicleInfo?.vehicleModelInfo || exitInvoiceData.registeredVehicleInfo?.brand || 'Automobile'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between text-white/60">
-                  <span>Session Type:</span>
-                  <span className="font-bold text-white">{exitInvoiceData.session?.type || 'STANDARD'}</span>
+              ) : (exitInvoiceData.registeredVehicleInfo?.isMemberAccount || exitInvoiceData.session?.type === 'BOOKING' || exitInvoiceData.hasWallet) ? (
+                <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-sky-300">
+                      <User size={15} className="text-sky-400" />
+                      <span>Valo Member Account</span>
+                    </div>
+                    <span className="rounded bg-sky-400/20 px-2 py-0.5 text-[9px] font-black uppercase text-sky-300 border border-sky-400/30">
+                      Linked Member
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-black/40 border border-white/5 rounded-lg p-2 text-white">
+                    <div>
+                      <span className="text-white/40 block text-[9px] uppercase font-bold">Customer</span>
+                      <span className="font-bold block">{exitInvoiceData.registeredVehicleInfo?.ownerName || 'Customer'}</span>
+                      {exitInvoiceData.registeredVehicleInfo?.phone && (
+                        <span className="text-white/60 block text-[10px] font-mono">{exitInvoiceData.registeredVehicleInfo.phone}</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-white/40 block text-[9px] uppercase font-bold">Vehicle Info</span>
+                      <span className="font-bold block">{exitInvoiceData.registeredVehicleInfo?.vehicleModelInfo || 'Pre-booked Vehicle'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between text-white/60">
-                  <span>Parking Fee:</span>
-                  <span className="font-mono text-white">{formatCurrency(exitInvoiceData.parkingFee || 0)}</span>
+              ) : (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                      <AlertCircle size={15} className="text-amber-400" />
+                      <span>Unregistered Vehicle / Guest</span>
+                    </div>
+                    <span className="rounded bg-amber-400/20 px-2 py-0.5 text-[9px] font-black uppercase text-amber-300 border border-amber-400/30">
+                      No Valo Account
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-100/70 mt-1">
+                    Vehicle is not linked to any registered user. Staff must collect payment via Cash or VietQR.
+                  </p>
                 </div>
-                <div className="border-t border-white/10 pt-1.5 flex justify-between items-center">
-                  <span className="font-black text-white">Total Due:</span>
+              )}
+
+              {/* Invoice Summary (Compact Horizontal Row) */}
+              <div className="rounded-lg bg-black/60 px-3 py-2 text-xs border border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3 text-white/70 text-[11px]">
+                  <div>
+                    <span className="text-white/40 block text-[9px] uppercase font-bold">Duration</span>
+                    <span className="font-bold text-white">{exitInvoiceData.durationFormatted || '2 hrs'}</span>
+                  </div>
+                  <div className="h-6 w-px bg-white/10" />
+                  <div>
+                    <span className="text-white/40 block text-[9px] uppercase font-bold">Type</span>
+                    <span className="font-bold text-white">{exitInvoiceData.session?.type || 'STANDARD'}</span>
+                  </div>
+                  <div className="h-6 w-px bg-white/10" />
+                  <div>
+                    <span className="text-white/40 block text-[9px] uppercase font-bold">Fee</span>
+                    <span className="font-mono font-semibold text-white">{formatCurrency(exitInvoiceData.parkingFee || 0)}</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-white/40 block text-[9px] uppercase font-black">Total Due</span>
                   <span className="text-base font-black text-[#ffd555] font-mono">
                     {formatCurrency(exitInvoiceData.totalAmount || 0)}
                   </span>
                 </div>
               </div>
 
-              {/* Cash Collection */}
-              {exitInvoiceData.totalAmount > 0 && (
-                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
-                  <label className="font-bold">Cash Received</label>
-                  <input
-                    type="number"
-                    min={exitInvoiceData.totalAmount}
-                    step="1000"
-                    value={cashReceivedAmount}
-                    onChange={(e) => setCashReceivedAmount(e.target.value)}
-                    placeholder={`Minimum ${formatCurrency(exitInvoiceData.totalAmount)}`}
-                    className="mt-2 w-full rounded-lg border border-yellow-500/40 bg-black/60 px-3 py-2 font-mono text-white outline-none"
-                  />
-                  {Number(cashReceivedAmount) >= Number(exitInvoiceData.totalAmount) && (
-                    <p className="mt-2 font-bold text-emerald-300">
-                      Change: {formatCurrency(Number(cashReceivedAmount) - Number(exitInvoiceData.totalAmount))}
-                    </p>
+              {/* Payment Methods & Wallet Auto-Pay (Compact & English) */}
+              {exitInvoiceData.totalAmount > 0 ? (
+                <div className="space-y-2">
+                  {/* Valo Wallet Auto-Pay Option */}
+                  {exitInvoiceData.canAutoPay && (
+                    <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-2 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 font-bold text-cyan-300">
+                          <Wallet size={14} className="text-cyan-400" />
+                          <span>Valo Wallet Auto-Pay</span>
+                        </div>
+                        <span className="rounded bg-cyan-400/20 px-1.5 py-0.5 text-[9px] font-bold text-cyan-300 border border-cyan-400/30">
+                          ✓ Auto-Pay Ready
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleExitCheckOut(null, false, 'wallet')}
+                        disabled={isExitCheckingOut}
+                        className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-400 to-sky-500 py-1.5 text-xs font-black text-black hover:from-cyan-300 hover:to-sky-400 transition shadow-md shadow-cyan-500/20"
+                      >
+                        {isExitCheckingOut ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+                        <span>Auto-Debit Wallet & Open Gate ({formatCurrency(exitInvoiceData.totalAmount)})</span>
+                      </button>
+                    </div>
                   )}
+
+                  {/* Cash Collection Section */}
+                  <div className="rounded-xl border border-white/10 bg-[#16161a] p-2 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-300 text-xs">
+                        <Banknote size={14} className="text-amber-400" />
+                        <span>{exitInvoiceData.canAutoPay ? 'Or Collect Cash / VietQR' : 'Collect Cash / VietQR'}</span>
+                      </div>
+                      {exitInvoiceData.hasWallet && !exitInvoiceData.canAutoPay && (
+                        <span className="rounded bg-red-400/20 px-1.5 py-0.5 text-[9px] font-bold text-red-300 border border-red-400/30">
+                          Insufficient Balance
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick bill selection chips + input on unified row */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          min={exitInvoiceData.totalAmount}
+                          step="1000"
+                          value={cashReceivedAmount}
+                          onChange={(e) => setCashReceivedAmount(e.target.value)}
+                          placeholder={`Min ${formatCurrency(exitInvoiceData.totalAmount)}`}
+                          className="w-full rounded-lg border border-white/15 bg-black/60 px-2.5 py-1.5 pr-7 font-mono text-xs font-semibold text-white placeholder:text-white/20 outline-none focus:border-amber-400"
+                        />
+                        <span className="absolute right-2.5 top-1.5 text-[10px] font-bold text-white/40 font-mono">đ</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setCashReceivedAmount(String(exitInvoiceData.totalAmount))}
+                        className={`shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-bold transition border ${
+                          Number(cashReceivedAmount) === Number(exitInvoiceData.totalAmount)
+                            ? 'bg-amber-400 text-black border-amber-400'
+                            : 'bg-amber-400/10 text-amber-300 border-amber-400/30 hover:bg-amber-400/20'
+                        }`}
+                      >
+                        Exact ({formatShortCurrency(exitInvoiceData.totalAmount)})
+                      </button>
+
+                      {getQuickCashSuggestions(exitInvoiceData.totalAmount).map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setCashReceivedAmount(String(val))}
+                          className={`shrink-0 rounded-lg px-1.5 py-1.5 text-[10px] font-mono font-medium transition border ${
+                            Number(cashReceivedAmount) === val
+                              ? 'bg-amber-400 text-black border-amber-400 font-bold'
+                              : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          {formatShortCurrency(val)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Change Due Row */}
+                    {Number(cashReceivedAmount) >= Number(exitInvoiceData.totalAmount) && (
+                      <div className="rounded-lg bg-emerald-950/30 border border-emerald-500/30 px-2.5 py-1.5 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 text-emerald-200 text-[11px]">
+                          <span>Change Due:</span>
+                          <span className="font-mono font-black text-emerald-300 text-sm">
+                            {formatCurrency(Number(cashReceivedAmount) - Number(exitInvoiceData.totalAmount))}
+                          </span>
+                        </div>
+
+                        {Number(cashReceivedAmount) > Number(exitInvoiceData.totalAmount) && (
+                          exitInvoiceData.hasWallet ? (
+                            <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-cyan-200">
+                              <input
+                                type="checkbox"
+                                checked={depositChangeToWallet}
+                                onChange={(e) => setDepositChangeToWallet(e.target.checked)}
+                                className="rounded border-cyan-400 bg-black/60 text-cyan-500 focus:ring-0 scale-90"
+                              />
+                              <span>Deposit change into Valo Wallet</span>
+                            </label>
+                          ) : (
+                            <span className="text-[10px] text-white/40 italic">
+                              (No linked wallet for deposit)
+                            </span>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-400" />
+                    <div>
+                      <span className="font-bold text-emerald-300 block text-xs">No Parking Fee Due (0 VND)</span>
+                      <span className="text-[10px] text-emerald-200/70">Covered by active Booking or VIP pass.</span>
+                    </div>
+                  </div>
+                  <span className="rounded bg-emerald-400/20 px-1.5 py-0.5 text-[9px] font-black uppercase text-emerald-300 border border-emerald-400/40 font-mono">
+                    PAID
+                  </span>
                 </div>
               )}
             </div>
@@ -2351,6 +2812,51 @@ export default function GateControl() {
 
           {/* Exit Action Buttons */}
           <div className="mt-4 flex flex-col gap-2">
+            {exitInvoiceData?.isEarlyExit && (
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-200">
+                <div className="flex items-center gap-1.5 font-bold mb-1 text-cyan-300">
+                  <PauseCircle size={15} className="text-cyan-400" />
+                  <span>Early Departure Choice</span>
+                  <span className="ml-auto rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-400/30">
+                    {exitInvoiceData.remainingHours || 0}h Left
+                  </span>
+                </div>
+                <p className="text-[11px] text-cyan-100/70 mb-2.5">
+                  Pre-booking remains valid until {exitInvoiceData.bookingEnd ? new Date(exitInvoiceData.bookingEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'end time'}. Choose whether customer will return or is ending their visit now.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExitCheckOut(null, true, exitInvoiceData.canAutoPay && !cashReceivedAmount ? 'wallet' : 'cash')}
+                    disabled={
+                      isExitCheckingOut
+                      || (Number(exitInvoiceData.totalAmount || 0) > 0
+                        && !exitInvoiceData.canAutoPay
+                        && Number(cashReceivedAmount) < Number(exitInvoiceData.totalAmount))
+                    }
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500 py-2 text-xs font-black text-black hover:bg-cyan-400 disabled:opacity-50 transition shadow-lg shadow-cyan-500/20"
+                  >
+                    {isExitCheckingOut ? <Loader2 size={13} className="animate-spin" /> : <PauseCircle size={13} />}
+                    <span>Pause (Keep Slot)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExitCheckOut(null, false, exitInvoiceData.canAutoPay && !cashReceivedAmount ? 'wallet' : 'cash')}
+                    disabled={
+                      isExitCheckingOut
+                      || (Number(exitInvoiceData.totalAmount || 0) > 0
+                        && !exitInvoiceData.canAutoPay
+                        && Number(cashReceivedAmount) < Number(exitInvoiceData.totalAmount))
+                    }
+                    className="flex items-center justify-center gap-1.5 rounded-lg border border-white/20 bg-white/10 py-2 text-xs font-bold text-white hover:bg-white/20 disabled:opacity-50 transition"
+                  >
+                    {isExitCheckingOut ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                    <span>End Session</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -2366,27 +2872,40 @@ export default function GateControl() {
                 <span>AI Plate Assistant</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => handleExitCheckOut()}
-                disabled={
-                  isExitCheckingOut
-                  || !exitInvoiceData
-                  || (Number(exitInvoiceData.totalAmount || 0) > 0
-                    && Number(cashReceivedAmount) < Number(exitInvoiceData.totalAmount))
-                }
-                className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-xs font-black text-black hover:bg-sky-400 disabled:opacity-50 transition shadow-lg shadow-sky-500/20"
-              >
-                {isExitCheckingOut ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                <span>Check-out & Open Gate</span>
-              </button>
+              {!exitInvoiceData?.isEarlyExit ? (
+                <button
+                  type="button"
+                  onClick={() => handleExitCheckOut(null, false, exitInvoiceData?.canAutoPay && !cashReceivedAmount ? 'wallet' : 'cash')}
+                  disabled={
+                    isExitCheckingOut
+                    || !exitInvoiceData
+                    || (Number(exitInvoiceData.totalAmount || 0) > 0
+                      && !exitInvoiceData.canAutoPay
+                      && Number(cashReceivedAmount) < Number(exitInvoiceData.totalAmount))
+                  }
+                  className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-2.5 text-xs font-black text-black hover:bg-sky-400 disabled:opacity-50 transition shadow-lg shadow-sky-500/20"
+                >
+                  {isExitCheckingOut ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  <span>
+                    {Number(cashReceivedAmount) >= Number(exitInvoiceData?.totalAmount || 0) && Number(exitInvoiceData?.totalAmount || 0) > 0
+                      ? 'Collect Cash & Open Gate'
+                      : Number(exitInvoiceData?.totalAmount || 0) === 0
+                        ? 'Free Pass & Open Gate'
+                        : 'Check-out & Open Gate'}
+                  </span>
+                </button>
+              ) : (
+                <div className="flex items-center justify-center rounded-xl bg-white/5 border border-white/10 px-2 py-2 text-[11px] font-semibold text-white/50 text-center">
+                  Select Pause or End above
+                </div>
+              )}
             </div>
 
             {/* Manual Barrier Override (Exit) */}
             <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-white/10">
               <button
                 type="button"
-                onClick={() => triggerBarrier('open', 'EXIT_1', exitPlate || 'MANUAL_EXIT')}
+                onClick={() => setOverrideModal({ action: 'open', gate: 'EXIT_1', plate: exitPlate || 'MANUAL_EXIT', slot: '' })}
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Unlock size={12} className="text-sky-400" />
@@ -2395,7 +2914,7 @@ export default function GateControl() {
 
               <button
                 type="button"
-                onClick={() => triggerBarrier('hold', 'EXIT_1')}
+                onClick={() => setOverrideModal({ action: 'hold', gate: 'EXIT_1', plate: exitPlate || 'MANUAL_HOLD', slot: '' })}
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Pause size={12} className="text-yellow-400" />
@@ -2404,7 +2923,7 @@ export default function GateControl() {
 
               <button
                 type="button"
-                onClick={() => triggerBarrier('close', 'EXIT_1')}
+                onClick={() => triggerBarrier('close', 'EXIT_1', exitPlate || 'MANUAL_EXIT', '', 'MANUAL_CLOSE', 'Gate closed')}
                 className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 py-2 text-[11px] font-bold text-white hover:bg-white/10"
               >
                 <Lock size={12} className="text-red-400" />
@@ -2555,6 +3074,113 @@ export default function GateControl() {
               <span className="text-[11px] text-white/40">
                 Tip: Use +/- to zoom up to 250% without affecting AI scan accuracy.
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          BARRIER MANUAL OVERRIDE AUDIT MODAL
+      ═══════════════════════════════════════════════════════════════════════ */}
+      {overrideModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setOverrideModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-amber-400/30 bg-[#16161a] p-5 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} className="text-amber-400" />
+                <h3 className="text-sm font-black uppercase text-amber-300">
+                  Manual Barrier Override Audit
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverrideModal(null)}
+                className="text-white/40 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-200">
+              This action will be logged in the <strong>Barrier Audit Log</strong> under your staff account to ensure transparency and accountability.
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] font-bold uppercase text-white/50 block mb-1">
+                  Gate & License Plate
+                </label>
+                <div className="rounded-lg bg-black/50 border border-white/10 px-3 py-2 flex justify-between font-mono text-white">
+                  <span>{overrideModal.gate === 'ENTRY_1' ? 'Entry Gate (ENTRY_1)' : 'Exit Gate (EXIT_1)'}</span>
+                  <span className="font-bold text-amber-300">{overrideModal.plate || 'NO_PLATE'}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-white/50 block mb-1">
+                  Override Reason <span className="text-red-400">*</span>
+                </label>
+                <select
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-xs font-semibold text-white focus:border-amber-400 focus:outline-none"
+                >
+                  <option value="OCR_ERROR">OCR Recognition Error / Obscured Plate</option>
+                  <option value="EMERGENCY">Emergency Vehicle (Fire, Ambulance, Police)</option>
+                  <option value="CASH_PAID_EXTERNAL">Cash Collected Manually / Offline</option>
+                  <option value="TRAFFIC_JAM">Traffic Congestion Relief</option>
+                  <option value="SYSTEM_MAINTENANCE">Hardware Maintenance / Equipment Test</option>
+                  <option value="OTHER">Other Reason</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase text-white/50 block mb-1">
+                  Detailed Notes (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={overrideNotes}
+                  onChange={(e) => setOverrideNotes(e.target.value)}
+                  placeholder="Enter incident details (e.g. mud on plate, regular visitor, sensor glitch...)"
+                  className="w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-xs text-white placeholder:text-white/20 focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setOverrideModal(null)}
+                className="flex-1 rounded-xl border border-white/15 bg-white/5 py-2.5 text-xs font-bold text-white hover:bg-white/10 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const modal = overrideModal;
+                  setOverrideModal(null);
+                  await triggerBarrier(
+                    modal.action,
+                    modal.gate,
+                    modal.plate,
+                    modal.slot,
+                    overrideReason,
+                    overrideNotes
+                  );
+                  setOverrideNotes('');
+                }}
+                className="flex-1 rounded-xl bg-amber-400 py-2.5 text-xs font-black text-black hover:bg-amber-300 transition shadow-lg shadow-amber-400/20"
+              >
+                Confirm & Open Barrier
+              </button>
             </div>
           </div>
         </div>

@@ -197,6 +197,8 @@ router.get('/barrier-status', softProtect, async (req, res) => {
 });
 
 // API chuyên dụng lấy công suất bãi xe (Dùng cho Bảng hiển thị LCD ngoài cổng & Kiosk)
+const BarrierAuditLog = require('../models/BarrierAuditLog');
+
 router.get('/capacity', softProtect, async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   const capacity = await fetchCapacitySafe();
@@ -207,11 +209,34 @@ router.get('/capacity', softProtect, async (req, res) => {
 });
 
 // API kích hoạt mở Barrier (Dùng cho Kiosk hoặc nút bấm test)
-router.post('/open-barrier', protect, authorize('staff', 'admin'), (req, res) => {
-  const { licensePlate = 'TEST-VEHICLE', slotCode = 'A-01', gate = 'ENTRY_1', hold = false } = req.body;
+router.post('/open-barrier', protect, authorize('staff', 'admin'), async (req, res) => {
+  const {
+    licensePlate = 'TEST-VEHICLE',
+    slotCode = 'A-01',
+    gate = 'ENTRY_1',
+    hold = false,
+    reason = 'MANUAL_OVERRIDE',
+    notes = '',
+  } = req.body;
   const normGate = (gate || 'ENTRY_1').toUpperCase();
 
-  console.log(`[BACKEND IOT] 🚀 NHẬN LỆNH MỞ CỔNG từ Web: ${normGate} | Biển số: ${licensePlate} | Ô: ${slotCode}`);
+  console.log(`[BACKEND IOT] 🚀 NHẬN LỆNH MỞ CỔNG từ Web: ${normGate} | Biển số: ${licensePlate} | Ô: ${slotCode} | Lý do: ${reason}`);
+
+  if (req.user) {
+    try {
+      await BarrierAuditLog.create({
+        gate: normGate,
+        action: 'open',
+        reason: reason || 'MANUAL_OVERRIDE',
+        notes: notes || '',
+        licensePlate: licensePlate || '',
+        staffId: req.user._id,
+        staffName: req.user.fullName || req.user.username || 'Staff',
+      });
+    } catch (auditErr) {
+      console.error('[BarrierAuditLog] Failed to record open audit:', auditErr.message);
+    }
+  }
 
   const newState = {
     open: true,
@@ -236,10 +261,25 @@ router.post('/open-barrier', protect, authorize('staff', 'admin'), (req, res) =>
 });
 
 // Chế độ Tạm dừng Barrier (Vô hiệu hóa cảm biến & Giữ nguyên vị trí)
-router.post('/hold-barrier', protect, authorize('staff', 'admin'), (req, res) => {
-  const { hold = true, gate = 'ENTRY_1' } = req.body;
+router.post('/hold-barrier', protect, authorize('staff', 'admin'), async (req, res) => {
+  const { hold = true, gate = 'ENTRY_1', reason = '', notes = '' } = req.body;
   const normGate = (gate || 'ENTRY_1').toUpperCase();
   const current = getGateState(normGate);
+
+  if (req.user) {
+    try {
+      await BarrierAuditLog.create({
+        gate: normGate,
+        action: hold ? 'hold' : 'close',
+        reason: reason || (hold ? 'HOLD_PAUSE' : 'RESUME_NORMAL'),
+        notes: notes || '',
+        staffId: req.user._id,
+        staffName: req.user.fullName || req.user.username || 'Staff',
+      });
+    } catch (auditErr) {
+      console.error('[BarrierAuditLog] Failed to record hold audit:', auditErr.message);
+    }
+  }
 
   const newState = {
     ...current,
@@ -266,6 +306,21 @@ router.post('/hold-barrier', protect, authorize('staff', 'admin'), (req, res) =>
   });
 });
 
+// Xem lịch sử mở cổng cưỡng bức (Audit Trail)
+router.get('/barrier-audit-logs', protect, authorize('staff', 'admin'), async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const logs = await BarrierAuditLog.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('staffId', 'username fullName role email')
+      .lean();
+    return res.json({ success: true, data: logs });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 const closeBarrierHandler = (req, res) => {
   const { gate = 'ENTRY_1', fromBridge = false } = req.body || {};
   const normGate = (gate || 'ENTRY_1').toUpperCase();
@@ -278,9 +333,10 @@ const closeBarrierHandler = (req, res) => {
     holdOpen: false,
     forceClose: !fromBridge,
     triggerId: fromBridge ? current.triggerId : Date.now(),
-    licensePlate: '',
-    slotCode: '',
+    licensePlate: current.licensePlate || '',
+    slotCode: current.slotCode || '',
     gate: normGate,
+    isVehiclePassed: true,
     timestamp: Date.now()
   };
 
@@ -294,6 +350,91 @@ const closeBarrierHandler = (req, res) => {
 
   return res.json({ success: true, message: `Barrier ${normGate} closed`, data: newState });
 };
+
+// Phát sự kiện nhận diện xe cho toàn hệ thống Staff theo dõi realtime
+router.post('/vehicle-detected', async (req, res) => {
+  const {
+    gate = 'ENTRY_1',
+    mode,
+    cleared = false,
+    licensePlate = '43B-204.08',
+    vehicleModelInfo = 'Peugeot 3008',
+    registeredOwnerName = 'Khách hàng',
+    phone = '0839404432',
+    assignedSlot = 'C1',
+    floorName = 'Floor 1',
+    isPreBooked = true,
+    isRegisteredVehicle = true,
+    hasWallet = true,
+    canAutoPay = true,
+    amountToPay = 0,
+    parkingDuration = '1 hrs',
+    entryImageBase64 = null,
+    exitImageBase64 = null,
+  } = req.body || {};
+
+  const normGate = (gate || 'ENTRY_1').toUpperCase();
+  const io = req.app.get('io');
+
+  if (cleared || mode === 'cleared') {
+    const payload = {
+      gate: normGate,
+      reason: req.body.reason || 'VEHICLE_BACKED_OUT',
+      timestamp: Date.now(),
+    };
+    if (io) {
+      io.emit('gate:vehicle_cleared', payload);
+    }
+    return res.json({ success: true, message: `Gate ${normGate} cleared`, data: payload });
+  }
+
+  const normMode = mode || (normGate.includes('EXIT') ? 'exit' : 'entry');
+
+  const payload = {
+    gate: normGate,
+    mode: normMode,
+    licensePlate,
+    vehicleModelInfo,
+    registeredOwnerName,
+    phone,
+    assignedSlot,
+    floorName,
+    isPreBooked,
+    isRegisteredVehicle,
+    hasWallet,
+    canAutoPay,
+    amountToPay,
+    parkingDuration,
+    entryImageBase64,
+    exitImageBase64,
+    timestamp: Date.now(),
+  };
+
+  if (io) {
+    io.emit('gate:vehicle_detected', payload);
+  }
+
+  return res.json({ success: true, data: payload });
+});
+
+// Phát sự kiện xe rời khỏi khu vực quét (lùi xe, không vào/ra nữa)
+router.post('/vehicle-cleared', async (req, res) => {
+  const { gate = 'EXIT_1', reason = 'VEHICLE_BACKED_OUT' } = req.body || {};
+  const normGate = (gate || 'EXIT_1').toUpperCase();
+
+  const payload = {
+    gate: normGate,
+    reason,
+    timestamp: Date.now(),
+  };
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('gate:vehicle_cleared', payload);
+  }
+
+  return res.json({ success: true, message: `Gate ${normGate} cleared`, data: payload });
+});
 
 // Đóng Barrier thủ công từ Staff/Admin
 router.post('/close-barrier', protect, authorize('staff', 'admin'), closeBarrierHandler);
