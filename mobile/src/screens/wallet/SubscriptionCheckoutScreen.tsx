@@ -28,6 +28,7 @@ import type { ParkingFloor, Slot } from '@/types/booking.types';
 import type { Wallet } from '@/types/models';
 import type { MembershipStatus, SubscriptionPackage, SubscriptionPaymentMethod, SubscriptionSlotSelection } from '@/types/subscription.types';
 import { formatCurrency } from '@/utils/formatters';
+import { isSellablePackageType } from '@/utils/ticketPackageRules';
 import { isPolicyAcceptanceRequired } from '@/utils/policyErrors';
 import {
   calculateExpirationDate,
@@ -77,7 +78,7 @@ export const SubscriptionCheckoutScreen = ({ navigation, route }: Props) => {
         parkingFloorService.getParkingFloors(),
         subscriptionsService.getMembership(),
       ]);
-      setPackages(packageResponse.data || []);
+      setPackages((packageResponse.data || []).filter((item) => item.isActive && isSellablePackageType(item.type)));
       setVehicleCount(
         (vehicleResponse.data || []).filter((vehicle) => vehicle.status === 'approved').length,
       );

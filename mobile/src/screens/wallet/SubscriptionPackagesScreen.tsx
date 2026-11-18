@@ -19,7 +19,7 @@ import type { WalletStackParamList } from '@/navigation/types';
 import { subscriptionsService } from '@/services/api/subscriptions';
 import type { SubscriptionPackage } from '@/types/subscription.types';
 import { formatCurrency } from '@/utils/formatters';
-import { getPackageDurationLabel, isMembershipPackageType } from '@/utils/ticketPackageRules';
+import { getPackageDurationLabel, isSellablePackageType } from '@/utils/ticketPackageRules';
 
 type Props = NativeStackScreenProps<WalletStackParamList, 'SubscriptionPackages'>;
 
@@ -45,7 +45,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
     setError('');
     try {
       const response = await subscriptionsService.getPackages();
-      setPackages((response.data || []).filter((pkg) => pkg.isActive && isMembershipPackageType(pkg.type)));
+      setPackages((response.data || []).filter((pkg) => pkg.isActive && isSellablePackageType(pkg.type)));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load membership plans.');
       setPackages([]);

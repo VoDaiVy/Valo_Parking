@@ -360,7 +360,10 @@ exports.transitionMembershipByQr = async (req, res, next) => {
         credentialId,
         input.action
       );
-      const updatedSession = await Session.findOneAndUpdate(
+      const checkoutDb = await mongoose.startSession();
+      let updatedSession;
+      try { await checkoutDb.withTransaction(async () => {
+      updatedSession = await Session.findOneAndUpdate(
         Session.checkoutFilter(session._id),
         {
           status: 'completed',
@@ -371,8 +374,9 @@ exports.transitionMembershipByQr = async (req, res, next) => {
           exitCamera: 'staff_mobile',
           exitGate: 'manual_override',
         },
-        { new: true }
+        { new: true, session: checkoutDb }
       );
+      }); } finally { await checkoutDb.endSession(); }
       if (!updatedSession) {
         return res.status(409).json({
           success: false,

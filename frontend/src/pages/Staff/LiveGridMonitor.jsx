@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import { getAllFloors, getFloorSlots } from "../../services/parkingFloorService";
 import { getActiveSessions } from "../../services/sessionService";
@@ -33,6 +33,7 @@ import { getSlotLogs, clearAllViolationsApi } from "../../services/aiSurveillanc
 import toast from "react-hot-toast";
 
 export default function LiveGridMonitor() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const rawUser = sessionStorage.getItem('valo_user');
   const currentUser = rawUser ? JSON.parse(rawUser) : null;
@@ -85,28 +86,23 @@ export default function LiveGridMonitor() {
         s.aiObservation && (
           s.aiObservation.occupied ||
           s.aiObservation.isViolation ||
-          s.aiObservation.violationType === 'CHECKED_IN_PENDING_PARK' ||
-          s.aiObservation.violationType === 'EXITING_TO_GATE'
+          s.aiObservation.violationType === 'CHECKED_IN_PENDING_PARK'
         )
       ))
       .map((s) => {
         const vType = s.aiObservation.violationType || null;
         const isPending = vType === 'CHECKED_IN_PENDING_PARK';
-        const isExiting = vType === 'EXITING_TO_GATE';
-        const isTransit = isPending || isExiting;
         return {
           slotCode: s.slotNumber,
           floorId: String(s.floorID?._id || s.floorID || ''),
           occupied: Boolean(s.aiObservation.occupied),
           plate: s.aiObservation.detectedPlate,
           detectedPlate: s.aiObservation.detectedPlate,
-          isViolation: Boolean(s.aiObservation.isViolation && !isTransit),
+          isViolation: Boolean(s.aiObservation.isViolation && !isPending),
           violationType: vType,
           status: isPending
             ? 'CHECKED_IN_PENDING_PARK'
-            : isExiting
-              ? 'EXITING_TO_GATE'
-              : (s.aiObservation.isViolation ? (vType || 'WRONG_SLOT_VIOLATION') : 'OCCUPIED_VALID'),
+            : (s.aiObservation.isViolation ? (vType || 'WRONG_SLOT_VIOLATION') : 'OCCUPIED_VALID'),
           expectedSlot: s.aiObservation.expectedSlot,
           expectedPlate: s.aiObservation.expectedPlate,
           evidenceSnapshot: s.aiObservation.evidenceSnapshot,
@@ -227,7 +223,7 @@ export default function LiveGridMonitor() {
     if (!Array.isArray(aiSlotStatuses)) return [];
     return aiSlotStatuses.filter((s) => {
       const vType = s.violationType || s.status;
-      if (vType === 'CHECKED_IN_PENDING_PARK' || vType === 'EXITING_TO_GATE') return false;
+      if (vType === 'CHECKED_IN_PENDING_PARK') return false;
       const isWrongSlot = vType === 'WRONG_SLOT_VIOLATION';
       const isUnauth = vType === 'UNAUTHORIZED_PARKING' || vType === 'UNAUTHORIZED_OCCUPANCY';
       const isDoubleParking = vType === 'DOUBLE_PARKING_VIOLATION' || Boolean(s.occupiedByOverlap);
@@ -243,14 +239,14 @@ export default function LiveGridMonitor() {
     try {
       const res = await clearAllViolationsApi(currentFloorId || null);
       if (res.success) {
-        toast.success(res.message || 'Alerts cleared and safely locked!');
+        toast.success(res.message || t('parkingLotsUi.dismissReset', { defaultValue: 'Alerts cleared and safely locked!' }));
         setFloorAiStatusesMap({});
         fetchLiveStatus();
       } else {
-        toast.error(res.message || 'Unable to reset alerts');
+        toast.error(res.message || t('parkingLotsUi.dismissReset', { defaultValue: 'Unable to reset alerts' }));
       }
-    } catch (err) {
-      toast.error('Error resetting alerts');
+    } catch {
+      toast.error(t('parkingLotsUi.dismissReset', { defaultValue: 'Error resetting alerts' }));
     }
   };
 
@@ -296,14 +292,14 @@ export default function LiveGridMonitor() {
   };
 
   return (
-    <div className={`${STAFF_THEME.page} staff-live-monitor relative flex h-[calc(100vh-70px)] flex-col overflow-hidden font-sans`}
+    <div className={`${STAFF_THEME.page} staff-live-grid relative flex h-[calc(100vh-70px)] flex-col overflow-hidden font-sans`}
       style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }}>
 
       {/* Top Toolbar: Minimal, Clean, Focused */}
-      <div className="staff-live-toolbar absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
+      <div className="staff-live-grid-toolbar absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
         <div className="flex items-center gap-2 px-3 border-r border-white/10">
           <MonitorCheck size={18} className="text-[#ffd555]" />
-          <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">Live Monitor</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">{t('parkingLotsUi.liveMonitor', { defaultValue: 'LIVE MONITOR' })}</span>
         </div>
 
         <StaffDropdown
@@ -311,11 +307,11 @@ export default function LiveGridMonitor() {
           onChange={(value) => setCurrentFloorId(value === "" ? null : value)}
           options={floors.length > 0
             ? [
-              ["", "Overview (All Floors)"],
+              ["", t('parkingLotsUi.overviewAllFloors', { defaultValue: 'Overview (All Floors)' })],
               ...floors.map((floor) => [floor._id, floor.name]),
             ]
-            : [{ value: "", label: "No floors available", disabled: true }]}
-          ariaLabel="Select parking floor"
+            : [{ value: "", label: t('parkingLotsUi.noFloors', { defaultValue: 'No floors available' }), disabled: true }]}
+          ariaLabel={t('parkingLotsUi.selectFloor', { defaultValue: 'Select parking floor' })}
           disabled={floors.length === 0}
           className="min-w-[190px]"
           buttonClassName="bg-black/40 text-xs font-bold uppercase tracking-wide"
@@ -325,7 +321,7 @@ export default function LiveGridMonitor() {
         <div className="flex items-center gap-1.5 px-3 border-r border-white/10">
           <div className={`w-2 h-2 rounded-full ${liveDataAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
           <span className={`text-[10px] font-mono ${liveDataAvailable ? 'text-gray-400' : 'text-red-400'}`}>
-            {liveDataAvailable ? 'LIVE UPDATE' : 'LIVE DATA UNAVAILABLE'}
+            {liveDataAvailable ? t('parkingLotsUi.liveUpdate', { defaultValue: 'LIVE UPDATE' }) : t('staffDashboard.metrics.dataUnavailable', { defaultValue: 'LIVE DATA UNAVAILABLE' })}
           </span>
         </div>
 
@@ -334,13 +330,13 @@ export default function LiveGridMonitor() {
           type="button"
           onClick={() => setShowSurveillanceModal(true)}
           className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95"
-          title="Open AI Slot Surveillance Camera"
+          title={t('parkingLotsUi.openCamera', { defaultValue: 'Open Camera AI slot surveillance' })}
         >
           <Camera size={14} className="text-cyan-400" />
-          <span>Camera AI</span>
+          <span>{t('parkingLotsUi.cameraAi', { defaultValue: 'Camera AI' })}</span>
           {violations.length > 0 && (
             <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
-              {violations.length} {violations.length === 1 ? 'Violation' : 'Violations'}
+              {violations.length} {t('parkingLotsUi.violation', { defaultValue: 'Violation' })}
             </span>
           )}
         </button>
@@ -350,10 +346,10 @@ export default function LiveGridMonitor() {
           type="button"
           onClick={() => setShowHistoryModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-sm active:scale-95"
-          title="View parking violation history and resolution audit logs"
+          title={t('parkingLotsUi.violationHistory', { defaultValue: 'View parking violation history and resolution audit logs' })}
         >
           <History size={14} className="text-amber-400" />
-          <span>Violation History</span>
+          <span>{t('parkingLotsUi.violationHistory', { defaultValue: 'Violation History' })}</span>
         </button>
 
         {/* Admin Action: Chuyển sang thiết kế sơ đồ bãi đỗ */}
@@ -433,10 +429,10 @@ export default function LiveGridMonitor() {
               type="button"
               onClick={handleResetAlerts}
               className="px-3.5 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-extrabold text-xs uppercase tracking-wider transition border border-red-500/30 flex items-center gap-1.5 shadow-sm active:scale-95"
-              title="Reset / clear active violation alerts"
+              title={t('parkingLotsUi.dismissReset', { defaultValue: 'Reset / clear active violation alerts' })}
             >
               <RotateCcw size={14} />
-              <span>Reset Alerts</span>
+              <span>{t('parkingLotsUi.dismissReset', { defaultValue: 'Reset Alerts' })}</span>
             </button>
             <button
               type="button"
@@ -444,7 +440,7 @@ export default function LiveGridMonitor() {
               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs uppercase tracking-wider transition border border-white/10 flex items-center gap-1.5 shadow-sm active:scale-95"
             >
               <History size={14} className="text-amber-400" />
-              <span>View History & Resolve</span>
+              <span>{t('parkingLotsUi.violationHistory', { defaultValue: 'View History & Resolve' })}</span>
             </button>
           </div>
         </div>
@@ -486,7 +482,7 @@ export default function LiveGridMonitor() {
               <div>
                 <span className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-[#d7b94a]">{selectedSlot.type} TICKET</span>
                 <h2 className="text-3xl font-extrabold text-white flex items-center gap-2">
-                  Slot <span className="text-[#ffd555]">{selectedSlot.id}</span>
+                  Ô <span className="text-[#ffd555]">{selectedSlot.id}</span>
                 </h2>
               </div>
               <button onClick={() => setSelectedSlot(null)} className="text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 w-8 h-8 rounded-full flex items-center justify-center transition-all border border-white/5 flex-shrink-0">
@@ -505,7 +501,7 @@ export default function LiveGridMonitor() {
                     : 'text-slate-400 hover:text-white bg-white/5'
                 }`}
               >
-                Current Details
+                Chi Tiết Hiện Tại
               </button>
               <button
                 type="button"
@@ -517,7 +513,7 @@ export default function LiveGridMonitor() {
                 }`}
               >
                 <History size={13} />
-                <span>Slot History ({slotLogs.length})</span>
+                <span>Lịch Sử Ô Này ({slotLogs.length})</span>
               </button>
             </div>
 
@@ -528,26 +524,19 @@ export default function LiveGridMonitor() {
                   const dbSlotInfo = dbSlots.find(s => s.slotNumber === selectedSlot.id && (s.floorID === selectedSlot.floorId || s.floorID?._id === selectedSlot.floorId));
                   const isMaintenance = dbSlotInfo?.status === 'maintenance';
                   const aiObs = dbSlotInfo?.aiObservation;
-                  const obsVType = aiObs?.violationType || selectedSlot.aiStatus?.violationType || null;
-                  const isExitingSlot = Boolean(
-                    selectedSlot.isExiting ||
-                    obsVType === 'EXITING_TO_GATE'
-                  );
                   const isPendingSlot = Boolean(
-                    !isExitingSlot && (
-                      selectedSlot.isPendingPark ||
-                      obsVType === 'CHECKED_IN_PENDING_PARK' ||
-                      (!aiObs?.occupied && !selectedSlot.aiStatus?.occupied && selectedSlot.session)
-                    )
+                    selectedSlot.isPendingPark ||
+                    aiObs?.violationType === 'CHECKED_IN_PENDING_PARK' ||
+                    selectedSlot.aiStatus?.violationType === 'CHECKED_IN_PENDING_PARK'
                   );
                   const isViolation = Boolean(
-                    (aiObs?.isViolation && obsVType !== 'CHECKED_IN_PENDING_PARK' && obsVType !== 'EXITING_TO_GATE') ||
+                    (aiObs?.isViolation && aiObs?.violationType !== 'CHECKED_IN_PENDING_PARK') ||
                     selectedSlot.isWrongSlot
                   );
 
                   return (
                     <div className="space-y-4">
-                      {/* In-Transit Info Box (Arriving from Gate) */}
+                      {/* In-Transit Info Box */}
                       {isPendingSlot && !isViolation && !aiObs?.occupied && (
                         <div className="p-3.5 rounded-xl bg-purple-950/60 border border-purple-500/50 space-y-2">
                           <div className="flex items-center justify-between text-xs font-bold text-purple-300">
@@ -555,18 +544,6 @@ export default function LiveGridMonitor() {
                           </div>
                           <div className="text-xs text-purple-200">
                             {aiObs?.violationMessage || selectedSlot.aiStatus?.violationMessage || 'Vehicle has checked in at the gate and is moving toward its assigned slot.'}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Exiting Info Box (Left Slot, Heading to Gate) */}
-                      {isExitingSlot && !isViolation && !aiObs?.occupied && (
-                        <div className="p-3.5 rounded-xl bg-cyan-950/60 border border-cyan-500/50 space-y-2">
-                          <div className="flex items-center justify-between text-xs font-bold text-cyan-300">
-                            <span>↗ VEHICLE EXITING TO GATE (PENDING CHECKOUT)</span>
-                          </div>
-                          <div className="text-xs text-cyan-200">
-                            {aiObs?.violationMessage || selectedSlot.aiStatus?.violationMessage || 'Vehicle left this parking slot and is moving toward the exit gate for checkout.'}
                           </div>
                         </div>
                       )}
@@ -618,22 +595,10 @@ export default function LiveGridMonitor() {
                         </div>
                       ) : selectedSlot.session ? (
                         <div className="flex flex-col gap-3">
-                          {isExitingSlot && !aiObs?.occupied ? (
-                            <div className="bg-cyan-900/25 border border-cyan-500/40 rounded-xl p-3 flex flex-col items-center justify-center">
-                              <span className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
-                              <span className="text-base text-white font-black uppercase">Exiting (Pending Checkout)</span>
-                            </div>
-                          ) : isPendingSlot && !aiObs?.occupied ? (
-                            <div className="bg-purple-900/25 border border-purple-500/40 rounded-xl p-3 flex flex-col items-center justify-center">
-                              <span className="text-[10px] text-purple-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
-                              <span className="text-base text-white font-black uppercase">In Transit (Checked In)</span>
-                            </div>
-                          ) : (
-                            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
-                              <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
-                              <span className="text-base text-white font-black uppercase">Occupied (Parked)</span>
-                            </div>
-                          )}
+                          <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-3 flex flex-col items-center justify-center">
+                            <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold mb-0.5">Status</span>
+                            <span className="text-base text-white font-black uppercase">Occupied</span>
+                          </div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">License Plate</span><span className="font-mono text-sm font-semibold text-white bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/50">{selectedSlot.session.licensePlate}</span></div>
                           <div className="flex justify-between items-center pb-2 border-b border-white/5"><span className="text-slate-400 text-xs">Phone</span><span className="font-medium text-white">{selectedSlot.session.phone || <span className="text-slate-500 italic">Walk-in</span>}</span></div>
                           {selectedSlot.session.userId?.email && (
@@ -807,7 +772,6 @@ export default function LiveGridMonitor() {
       </div>
 
       {/* Staff Checkout Modal */}
-      {createPortal(<div className="staff-overlay-root">
       {showCheckoutModal && selectedSlot?.session && (
         <StaffCheckoutModal
           isOpen={showCheckoutModal}
@@ -932,7 +896,6 @@ export default function LiveGridMonitor() {
           fetchLiveStatus(false);
         }}
       />
-      </div>, document.body)}
     </div>
   );
 }

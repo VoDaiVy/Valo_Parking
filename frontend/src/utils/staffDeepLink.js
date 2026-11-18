@@ -1,6 +1,17 @@
+export const getIssueReportLink = (notification, role) => {
+  const { eventType, incidentId } = notification?.metadata || {};
+  if (!['admin', 'staff'].includes(role) || eventType !== 'STAFF_INCIDENT'
+    || !/^[a-f0-9]{24}$/i.test(incidentId || '')) return null;
+  return `/${role}/notifications?incident=${incidentId}`;
+};
+
 export const getSafeStaffDeepLink = (notification) => {
   if (!notification) return null;
-
+  if (notification.metadata?.eventType === 'MEMBERSHIP_SERVICE_REQUESTED') {
+    const { sessionId, serviceRequestId } = notification.metadata;
+    return /^[a-f\d]{24}$/i.test(sessionId || '') && /^[a-f\d]{24}$/i.test(serviceRequestId || '')
+      ? `/staff/membership-services?sessionId=${sessionId}&requestId=${serviceRequestId}` : null;
+  }
   const rawLink = notification?.metadata?.deepLink;
   if (typeof rawLink === 'string' && rawLink.startsWith('/') && !rawLink.startsWith('//')) {
     try {

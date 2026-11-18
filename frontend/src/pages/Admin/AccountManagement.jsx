@@ -8,6 +8,7 @@ import {
   RefreshCw, Layers, Eye
 } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useSearchParams } from 'react-router-dom';
 import './accountManagement.css';
 
@@ -69,32 +70,34 @@ function AnimatedCounter({ target, duration = 1200 }) {
 
 // --- Role Badge --------------------------------------------------
 function RoleBadge({ role }) {
+  const { t } = useLanguage();
   const cfg = ROLES[role] || ROLES.customer;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.border} ${cfg.text} select-none`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
+      {t(`accountManagement.roles.${role}`, { defaultValue: cfg.label })}
     </span>
   );
 }
 
 // --- Status Badge -------------------------------------------------------------
 function StatusBadge({ status }) {
+  const { t } = useLanguage();
   if (status === true || status === 'active')
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Active
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />{t('accountManagement.status.active', { defaultValue: 'Active' })}
       </span>
     );
   if (status === 'pending')
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 border border-amber-400/30 text-amber-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />Pending
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />{t('accountManagement.status.pending', { defaultValue: 'Pending' })}
       </span>
     );
   return (
     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/15 border border-red-500/30 text-red-300">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />Blocked
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />{t('accountManagement.status.blocked', { defaultValue: 'Blocked' })}
     </span>
   );
 }
@@ -151,6 +154,7 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 }
 
 export default function AccountManagement() {
+  const { t } = useLanguage();
   const authHeader = { Authorization: `Bearer ${localStorage.getItem('accessToken')}` };
 
   // -- State --
@@ -292,31 +296,31 @@ export default function AccountManagement() {
     const fn = editForm.fullName?.trim() || '';
 
     if (!fn) {
-      showToast('Full Name is required', 'error');
+      showToast(t('accountManagementExtra.validationFullNameRequired', { defaultValue: 'Full Name is required' }), 'error');
       return;
     }
     
     if (fn.length > 50) {
-      showToast('Name cannot exceed 50 characters', 'error');
+      showToast(t('accountManagementExtra.validationNameLength', { defaultValue: 'Name cannot exceed 50 characters' }), 'error');
       return;
     }
     
     const nameRegex = /^[\p{L}\s]+$/u;
     if (!nameRegex.test(fn)) {
-      showToast('Name cannot contain numbers or special characters', 'error');
+      showToast(t('accountManagementExtra.validationNameChars', { defaultValue: 'Name cannot contain numbers or special characters' }), 'error');
       return;
     }
 
     if (editForm.phone) {
       const cleanPhone = editForm.phone.replace(/[\s-]/g, '');
       if (!/^(03|05|07|08|09)\d{8}$/.test(cleanPhone)) {
-        showToast('Please enter a valid Vietnamese phone number', 'error');
+        showToast(t('accountManagementExtra.validationPhone', { defaultValue: 'Please enter a valid Vietnamese phone number' }), 'error');
         return;
       }
     }
 
     if (!editForm.role) {
-      showToast('User Role is required', 'error');
+      showToast(t('accountManagementExtra.validationRole', { defaultValue: 'User Role is required' }), 'error');
       return;
     }
 
@@ -461,25 +465,25 @@ export default function AccountManagement() {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Account Management</h1>
+                <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{t('accountManagement.title', { defaultValue: 'Account Management' })}</h1>
                 <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-                  <Users size={12} /> User Management
+                  <Users size={12} /> {t('accountManagementExtra.badge', { defaultValue: 'User Management' })}
                 </div>
               </div>
-              <p className="text-gray-400 text-sm mt-1">Manage user accounts, roles, and access permissions</p>
+              <p className="text-gray-400 text-sm mt-1">{t('accountManagement.subtitle')}</p>
             </div>
             <button onClick={fetchUsers} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> {t('accountManagementExtra.refresh', { defaultValue: 'Refresh' })}
             </button>
           </div>
 
           {/* -- Stat Cards -- */}
           <div className="account-metrics mt-6 border-y border-white/10 bg-[#080808]">
             <div className="grid grid-cols-2 lg:grid-cols-4">
-              <StatCard index={0} icon={Users} label="Total Accounts" value={totalAccounts} sub="Managed users" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
-              <StatCard index={1} icon={UserPlus} label="New This Month" value={newThisMonth} sub="Recently joined" toneClass="bg-purple-500/10 text-purple-300" loading={loading} />
-              <StatCard index={2} icon={UserX} label="Blocked Accounts" value={blockedCount} sub={blockedCount > 0 ? "Requires review" : "All users are active"} toneClass="bg-red-500/10 text-red-300" subTone={blockedCount > 0 ? "text-red-400" : "text-emerald-300"} loading={loading} />
-              <StatCard index={3} icon={Clock} label="Pending Verify" value={pendingCount} sub={pendingCount > 0 ? "Awaiting action" : "Fully verified"} toneClass="bg-yellow-500/10 text-yellow-300" subTone={pendingCount > 0 ? "text-amber-400" : "text-emerald-300"} loading={loading} />
+              <StatCard index={0} icon={Users} label={t('accountManagement.stats.totalAccounts')} value={totalAccounts} sub={t('accountManagement.stats.managedUsers')} toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
+              <StatCard index={1} icon={UserPlus} label={t('accountManagement.stats.newThisMonth')} value={newThisMonth} sub={t('accountManagement.stats.recentlyJoined')} toneClass="bg-purple-500/10 text-purple-300" loading={loading} />
+              <StatCard index={2} icon={UserX} label={t('accountManagement.stats.blockedAccounts')} value={blockedCount} sub={blockedCount > 0 ? t('accountManagement.stats.requiresReview') : t('accountManagement.stats.allUsersActive')} toneClass="bg-red-500/10 text-red-300" subTone={blockedCount > 0 ? "text-red-400" : "text-emerald-300"} loading={loading} />
+              <StatCard index={3} icon={Clock} label={t('accountManagement.stats.pendingVerify')} value={pendingCount} sub={pendingCount > 0 ? t('accountManagement.stats.awaitingAction') : t('accountManagement.stats.fullyVerified')} toneClass="bg-yellow-500/10 text-yellow-300" subTone={pendingCount > 0 ? "text-amber-400" : "text-emerald-300"} loading={loading} />
             </div>
           </div>
         </div>
@@ -490,7 +494,7 @@ export default function AccountManagement() {
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
               value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
-              placeholder="Search name, email, phone..."
+              placeholder={t('accountManagement.searchPlaceholder')}
               className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
             />
           </div>
@@ -500,7 +504,7 @@ export default function AccountManagement() {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Layers size={14} className="text-white/40" />
-                <span className="font-medium">{filterRole === 'all' ? 'All Roles' : ROLES[filterRole]?.label}</span>
+                <span className="font-medium">{filterRole === 'all' ? t('accountManagement.filters.allRoles') : t(`accountManagement.roles.${filterRole}`, { defaultValue: ROLES[filterRole]?.label })}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
@@ -512,7 +516,7 @@ export default function AccountManagement() {
                           <button onClick={() => { setFilterRole(r); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterRole === r ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {r === 'all' ? 'All Roles' : ROLES[r]?.label}
+                            {r === 'all' ? t('accountManagement.filters.allRoles') : t(`accountManagement.roles.${r}`, { defaultValue: ROLES[r]?.label })}
                           </button>
                         )}
                       </Menu.Item>
@@ -526,19 +530,19 @@ export default function AccountManagement() {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Eye size={14} className="text-white/40" />
-                <span className="font-medium">{filterStatus === 'all' ? 'All Status' : filterStatus === 'active' ? 'Active' : 'Blocked'}</span>
+                <span className="font-medium">{filterStatus === 'all' ? t('accountManagement.status.all') : t(`accountManagement.status.${filterStatus}`)}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => (
+                    {['all', 'active', 'blocked'].map((v) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { setFilterStatus(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterStatus === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
+                            {t(`accountManagement.status.${v}`)}
                           </button>
                         )}
                       </Menu.Item>
@@ -552,19 +556,19 @@ export default function AccountManagement() {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Clock size={14} className="text-white/40" />
-                <span className="font-medium"> {sortOrder === 'newest' ? 'Newest' : 'Oldest'}</span>
+                <span className="font-medium"> {t(`accountManagement.sort.${sortOrder}`)}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => (
+                    {[['newest','newestFirst'],['oldest','oldestFirst']].map(([v,key]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { setSortOrder(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {sortOrder === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
+                            {t(`accountManagement.sort.${key}`)}
                           </button>
                         )}
                       </Menu.Item>
@@ -578,17 +582,17 @@ export default function AccountManagement() {
         </div>
 
         {/* -- Table -- */}
-        <div className="account-table-scroll flex-1 overflow-auto min-h-0" tabIndex={0} role="region" aria-label="Account list">
+        <div className="account-table-scroll flex-1 overflow-auto min-h-0" tabIndex={0} role="region" aria-label={t('accountManagementExtra.accountList', { defaultValue: 'Account list' })}>
           <table className="w-full min-w-[800px] border-collapse">
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#171717] border-b border-white/10">
                 <th className="w-6"></th>
-                {['Account','Email','Phone','Role','Status','Joined Date'].map(label => (
-                  <th key={label} className="px-4 py-2.5 text-left">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{label}</span>
+                {['account','email','phone','role','status','joinedDate'].map(key => (
+                  <th key={key} className="px-4 py-2.5 text-left">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{t(`accountManagement.columns.${key}`)}</span>
                   </th>
                 ))}
-                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{t('accountManagement.columns.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -597,7 +601,7 @@ export default function AccountManagement() {
                 <tr><td colSpan="8" className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3 text-white/30">
                     <UserX size={36} />
-                    <span className="text-sm">No accounts match your filters</span>
+                    <span className="text-sm">{t('accountManagement.empty')}</span>
                   </div>
                 </td></tr>
               )}
@@ -630,7 +634,7 @@ export default function AccountManagement() {
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" className="w-8 h-8 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ffd555]/60">
+                          title={t('accountManagement.actions.editAccount')} className="w-8 h-8 hover:text-[#ffd555] text-[#ffd555]/70 flex items-center justify-center transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ffd555]/60">
                           <Edit3 size={14} />
                         </button>
                       </div>
@@ -644,10 +648,10 @@ export default function AccountManagement() {
 
         {/* -- Pagination -- */}
         <div className="account-pagination flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
-          <span className="text-xs text-white/30">Page {page} of {totalPages} · {filtered.length} results</span>
+          <span className="text-xs text-white/30">{t('accountManagementExtra.pageOf', { defaultValue: 'Page {{page}} of {{totalPages}} · {{results}} results', page, totalPages, results: filtered.length })}</span>
           <div className="flex items-center gap-1">
             <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; {t('accountManagementExtra.previous', { defaultValue: 'Prev' })}</button>
             {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
               const p = i + 1;
               return (
@@ -658,7 +662,7 @@ export default function AccountManagement() {
               );
             })}
             <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">Next &rarr;</button>
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">{t('accountManagementExtra.next', { defaultValue: 'Next' })} &rarr;</button>
           </div>
         </div>
       </div>
@@ -685,7 +689,7 @@ export default function AccountManagement() {
               {/* Panel Header */}
               <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.05] flex-shrink-0">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  {isEditing ? 'Edit User' : 'User Detail'}
+                  {isEditing ? t('accountManagementExtra.editUser', { defaultValue: 'Edit User' }) : t('accountManagementExtra.userDetail', { defaultValue: 'User Detail' })}
                 </h3>
                 <button onClick={closePanel} className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-all">
                   <X size={15} />
@@ -716,11 +720,11 @@ export default function AccountManagement() {
                   {!isEditing ? (
                     <div className="space-y-4">
                       <div className="bg-[#171717] rounded-2xl p-4 border border-white/10 space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Basic Info</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('accountManagementExtra.basicInfo', { defaultValue: 'Basic Info' })}</h4>
                         {[
-                          { icon: Mail, label: 'Email Address', val: panelUser.email },
-                          { icon: Phone, label: 'Phone Number', val: panelUser.profile?.phone || 'Not provided' },
-                          { icon: Calendar, label: 'Join Date', val: formatDate(panelUser.createdAt) },
+                          { icon: Mail, label: t('accountManagementExtra.emailAddress', { defaultValue: 'Email Address' }), val: panelUser.email },
+                          { icon: Phone, label: t('accountManagementExtra.phoneNumber', { defaultValue: 'Phone Number' }), val: panelUser.profile?.phone || t('accountManagementExtra.notProvided', { defaultValue: 'Not provided' }) },
+                          { icon: Calendar, label: t('accountManagementExtra.joinDate', { defaultValue: 'Join Date' }), val: formatDate(panelUser.createdAt) },
                         ].map(({ icon: Ic, label, val }) => (
                           <div key={label} className="flex items-center gap-3 group">
                             <div className="w-8 h-8 rounded-lg bg-white/[0.03] flex items-center justify-center text-white/40 group-hover:bg-[#ffd555]/10 group-hover:text-[#ffd555] transition-colors">
@@ -735,11 +739,11 @@ export default function AccountManagement() {
                       </div>
 
                       <div className="bg-[#171717] rounded-2xl p-4 border border-white/10">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-3">Account Activity</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-3">{t('accountManagementExtra.accountActivity', { defaultValue: 'Account Activity' })}</h4>
                         <div className="relative pl-3 border-l border-white/10 space-y-4">
                           {[
-                            { label: 'Account Created', date: panelUser.createdAt, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-                            { label: 'Last Updated', date: panelUser.updatedAt, color: 'text-[#ffd555]', bg: 'bg-[#ffd555]/10' },
+                            { label: t('accountManagementExtra.accountCreated', { defaultValue: 'Account Created' }), date: panelUser.createdAt, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+                            { label: t('accountManagementExtra.lastUpdated', { defaultValue: 'Last Updated' }), date: panelUser.updatedAt, color: 'text-[#ffd555]', bg: 'bg-[#ffd555]/10' },
                           ].map(({ label, date, color, bg }, i) => (
                             <div key={i} className="relative">
                               <div className={`absolute -left-[21px] w-6 h-6 rounded-full border-[3px] border-[#1B2027] flex items-center justify-center ${bg}`}>
@@ -757,31 +761,31 @@ export default function AccountManagement() {
                   ) : (
                     <div className="space-y-4">
                       <div className="space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Edit Basic Info</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('accountManagementExtra.editBasicInfo', { defaultValue: 'Edit Basic Info' })}</h4>
                         <div className="grid grid-cols-1 gap-3">
                           <div>
-                            <label className="block text-[10px] font-medium text-white/50 mb-1">Full Name</label>
+                            <label className="block text-[10px] font-medium text-white/50 mb-1">{t('accountManagementExtra.fullName', { defaultValue: 'Full Name' })}</label>
                             <div className="relative group">
                               <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#ffd555] transition-colors" />
-                              <input type="text" value={editForm.fullName || ''} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} placeholder="e.g. John Doe"
+                              <input type="text" value={editForm.fullName || ''} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} placeholder={t('accountManagementExtra.fullNamePlaceholder', { defaultValue: 'e.g. John Doe' })}
                                 className="w-full bg-black border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all" />
                             </div>
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[10px] font-medium text-white/50 mb-1">Phone Number</label>
+                          <label className="block text-[10px] font-medium text-white/50 mb-1">{t('accountManagementExtra.phoneNumber', { defaultValue: 'Phone Number' })}</label>
                           <div className="relative group">
                             <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#ffd555] transition-colors" />
-                            <input type="text" value={editForm.phone || ''} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="e.g. 0901234567"
+                            <input type="text" value={editForm.phone || ''} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder={t('accountManagementExtra.phonePlaceholder', { defaultValue: 'e.g. 0901234567' })}
                               className="w-full bg-black border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all" />
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-3 pt-3 border-t border-white/[0.05]">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Role & Access</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('accountManagementExtra.roleAccess', { defaultValue: 'Role & Access' })}</h4>
                         <div>
-                          <label className="block text-[10px] font-medium text-white/50 mb-1">User Role</label>
+                          <label className="block text-[10px] font-medium text-white/50 mb-1">{t('accountManagementExtra.userRole', { defaultValue: 'User Role' })}</label>
                           <Menu as="div" className="relative">
                             <Menu.Button className="w-full bg-black border border-white/10 rounded-xl px-3 py-2.5 flex items-center justify-between text-sm text-white focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all cursor-pointer">
                               <div className="flex items-center gap-2">
@@ -801,7 +805,7 @@ export default function AccountManagement() {
                                       const isSelected = editForm.role === r;
                                       return (
                                         <button onClick={() => setEditForm(f => ({ ...f, role: r }))} className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium capitalize transition-all duration-200 ${isSelected || active ? 'bg-[#ffd555]/10 text-[#ffd555]' : 'text-white/70 hover:bg-white/5'}`}>
-                                          {r}
+                                          {t(`accountManagement.roles.${r}`, { defaultValue: r })}
                                           {isSelected && <Check size={16} className="text-[#ffd555]" />}
                                         </button>
                                       );
@@ -822,12 +826,12 @@ export default function AccountManagement() {
               <div className="p-4 border-t border-white/[0.05] bg-[#171B20]/50 backdrop-blur-md flex-shrink-0">
                 {saveState === 'success' && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-2 text-emerald-400 text-sm font-medium mb-3 bg-emerald-400/10 py-1.5 rounded-lg">
-                    <Check size={16} /> Changes saved successfully!
+                    <Check size={16} /> {t('accountManagementExtra.saveSuccess', { defaultValue: 'Changes saved successfully!' })}
                   </motion.div>
                 )}
                 {saveState === 'error' && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-2 text-rose-400 text-sm font-medium mb-3 bg-rose-500/10 py-1.5 rounded-lg">
-                    <AlertTriangle size={16} /> Failed to save changes.
+                    <AlertTriangle size={16} /> {t('accountManagementExtra.saveError', { defaultValue: 'Failed to save changes.' })}
                   </motion.div>
                 )}
 
@@ -837,16 +841,16 @@ export default function AccountManagement() {
                       <>
                         <button onClick={() => { setIsEditing(false); setSaveState('idle'); }}
                           className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/70 text-sm font-medium hover:bg-white/5 hover:text-white transition-all active:scale-95">
-                          Cancel
+                          {t('accountManagementExtra.cancel', { defaultValue: 'Cancel' })}
                         </button>
                         <button onClick={handleSave} disabled={saveState === 'saving'}
                           className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#ffd555] to-[#f59e0b] text-black text-sm font-bold shadow-[0_0_20px_rgba(255,213,85,0.2)] hover:shadow-[0_0_25px_rgba(255,213,85,0.4)] transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 relative overflow-hidden group">
                           {saveState === 'saving' ? (
-                            <><RefreshCw size={16} className="animate-spin" /> Saving...</>
+                            <><RefreshCw size={16} className="animate-spin" /> {t('accountManagementExtra.saving', { defaultValue: 'Saving...' })}</>
                           ) : (
                             <>
                               <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-                              <span className="relative z-10 flex items-center gap-2">Save Changes <Check size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" /></span>
+                              <span className="relative z-10 flex items-center gap-2">{t('accountManagementExtra.saveChanges', { defaultValue: 'Save Changes' })} <Check size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" /></span>
                             </>
                           )}
                         </button>
@@ -855,17 +859,17 @@ export default function AccountManagement() {
                       <>
                         <button onClick={startEdit}
                           className="flex-1 py-2.5 rounded-xl border border-[#ffd555]/30 text-[#ffd555] text-sm font-medium hover:bg-[#ffd555]/10 hover:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all active:scale-95">
-                          Edit User
+                          {t('accountManagementExtra.editUser', { defaultValue: 'Edit User' })}
                         </button>
                         {panelUser.status ? (
                           <button onClick={() => setBlockConfirm(true)}
                             className="flex-1 py-2.5 rounded-xl border border-rose-500/30 text-rose-400 text-sm font-medium hover:bg-rose-500/10 hover:shadow-[0_0_15px_rgba(244,63,94,0.2)] transition-all active:scale-95">
-                            Block User
+                            {t('accountManagementExtra.blockUser', { defaultValue: 'Block User' })}
                           </button>
                         ) : (
                           <button onClick={() => handleBlockToggle(panelUser._id, panelUser.status)}
                             className="flex-1 py-2.5 rounded-xl border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/10 hover:shadow-[0_0_15px_rgba(52,211,153,0.2)] transition-all active:scale-95">
-                            Unblock User
+                            {t('accountManagementExtra.unblockUser', { defaultValue: 'Unblock User' })}
                           </button>
                         )}
                         <button onClick={() => setDeleteConfirm(true)}
@@ -880,12 +884,12 @@ export default function AccountManagement() {
                     <div className="flex items-start gap-3 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20">
                       <AlertTriangle size={18} className="text-rose-400 mt-0.5 flex-shrink-0" />
                       <p className="text-xs text-rose-200/80 leading-relaxed">
-                        Are you sure you want to block <strong className="text-white">{displayName(panelUser)}</strong>? They will lose access to their account.
+                        {t('accountManagementExtra.blockWarning', { defaultValue: 'Are you sure you want to block {{name}}? They will lose access to their account.', name: displayName(panelUser) })}
                       </p>
                     </div>
                     <div className="flex gap-3">
-                      <button onClick={() => setBlockConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">Cancel</button>
-                      <button onClick={() => { handleBlockToggle(panelUser._id, panelUser.status); setBlockConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all">Confirm Block</button>
+                      <button onClick={() => setBlockConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">{t('accountManagementExtra.cancel', { defaultValue: 'Cancel' })}</button>
+                      <button onClick={() => { handleBlockToggle(panelUser._id, panelUser.status); setBlockConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all">{t('accountManagementExtra.confirmBlock', { defaultValue: 'Confirm Block' })}</button>
                     </div>
                   </motion.div>
                 ) : (
@@ -893,13 +897,13 @@ export default function AccountManagement() {
                     <div className="flex items-start gap-3 p-3 bg-red-600/10 rounded-xl border border-red-600/20">
                       <AlertTriangle size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
                       <p className="text-xs text-red-300/80 leading-relaxed">
-                        Are you absolutely sure you want to <strong className="text-red-400">PERMANENTLY DELETE</strong> <strong className="text-white">{displayName(panelUser)}</strong>? This will wipe all their data and cannot be undone.
+                        {t('accountManagementExtra.deleteWarning', { defaultValue: 'Are you absolutely sure you want to permanently delete {{name}}? This will wipe all their data and cannot be undone.', name: displayName(panelUser) })}
                       </p>
                     </div>
                     <div className="flex gap-3">
-                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">Cancel</button>
+                      <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">{t('accountManagementExtra.cancel', { defaultValue: 'Cancel' })}</button>
                       <button onClick={() => { handleDeleteUser(panelUser._id); setDeleteConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all flex items-center justify-center gap-2">
-                        <Trash2 size={16} /> Delete User
+                        <Trash2 size={16} /> {t('accountManagementExtra.deleteUser', { defaultValue: 'Delete User' })}
                       </button>
                     </div>
                   </motion.div>

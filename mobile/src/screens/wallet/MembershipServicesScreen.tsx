@@ -1,4 +1,4 @@
-﻿import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
@@ -32,6 +32,7 @@ interface Grant {
   expireAt: string;
 }
 interface ServiceRequest {
+  accountingMode?: string;
   startedAt?: string;
   completedAt?: string;
   _id: string;
@@ -59,13 +60,13 @@ interface Benefits {
 const pageData = <T,>(data?: T[] | Page<T>): Page<T> =>
   Array.isArray(data) ? { items: data, pagination: {} } : data || { items: [], pagination: {} };
 
-export function MembershipServicesScreen({ navigation }: { navigation: { goBack: () => void } }) {
+export function MembershipServicesScreen({ navigation, route }: { navigation: { goBack: () => void }; route?: { params?: { sessionId?: string; requestId?: string } } }) {
   const { user } = useAuth();
   const staff = user?.role === 'staff' || user?.role === 'admin';
   const [grants, setGrants] = useState<Page<Grant>>(pageData());
   const [requests, setRequests] = useState<Page<ServiceRequest>>(pageData());
   const [sessions, setSessions] = useState<Page<ParkingSession>>(pageData());
-  const [sessionId, setSessionId] = useState('');
+  const [sessionId, setSessionId] = useState(route?.params?.sessionId || '');
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [sessionPage, setSessionPage] = useState(1);
@@ -79,6 +80,7 @@ export function MembershipServicesScreen({ navigation }: { navigation: { goBack:
   const [legacyUses, setLegacyUses] = useState(0);
   const keys = useRef<Record<string, string>>({});
   const inFlight = useRef(false);
+  useEffect(() => { setSessionId(route?.params?.sessionId || ''); }, [route?.params?.sessionId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,7 +100,7 @@ export function MembershipServicesScreen({ navigation }: { navigation: { goBack:
               get<ParkingSession[] | Page<ParkingSession>>(
                 `staff/sessions?page=${sessionPage}&search=${encodeURIComponent(search)}`,
               ),
-              sessionId ? get<Benefits>(`staff/sessions/${sessionId}/benefits`) : null,
+              sessionId ? get<Benefits>(`staff/sessions/${sessionId}/benefits${route?.params?.requestId ? `?requestId=${encodeURIComponent(route.params.requestId)}` : ''}`) : null,
               sessionId ? null : get<Page<ServiceRequest>>(`requests?page=${requestPage}`),
             ]);
             if (!active) return;
@@ -133,7 +135,7 @@ export function MembershipServicesScreen({ navigation }: { navigation: { goBack:
       return () => {
         active = false;
       };
-    }, [staff, grantPage, requestPage, sessionPage, sessionId, search, reload]),
+    }, [staff, grantPage, requestPage, sessionPage, sessionId, search, reload, route?.params?.requestId]),
   );
 
   const mutate = async (path: string, payload: Record<string, string | string[]>) => {
@@ -286,7 +288,7 @@ export function MembershipServicesScreen({ navigation }: { navigation: { goBack:
                 {grants.items.map((grant) => {
                   const running = requests.items.some(
                     (request) =>
-                      request.status === 'in_progress' &&
+                      ['pending', 'in_progress'].includes(request.status) &&
                       (request.serviceId === grant.serviceId || request.grantId === grant._id),
                   );
                   return (
@@ -389,7 +391,7 @@ export function MembershipServicesScreen({ navigation }: { navigation: { goBack:
                 {staff && (
                   <View style={styles.row}>
                     {request.status === 'pending' && (
-                      <Text style={styles.text}>
+                      request.accountingMode === 'customer_reserved' ? <Pressable disabled={busy} onPress={() => void mutate(`requests/${request._id}/start`, {})}><Text style={styles.text}>Start service</Text></Pressable> : <Text style={styles.text}>
                         Cancel this earlier request, then start the service from the active parking
                         session.
                       </Text>

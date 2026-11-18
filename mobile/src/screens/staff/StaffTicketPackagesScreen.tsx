@@ -17,6 +17,7 @@ import {
 import { COLORS, SPACING } from '@/constants/theme';
 import type { StaffManagementStackParamList } from '@/navigation/StaffNavigator';
 import { staffService, type TicketPackage } from '@/services/api/staff';
+import { isSellablePackageType } from '@/utils/ticketPackageRules';
 
 type Props = NativeStackScreenProps<StaffManagementStackParamList>;
 
@@ -40,7 +41,7 @@ export function StaffTicketPackagesScreen({ navigation }: Props) {
     setError('');
     try {
       const response = await staffService.getTicketPackages();
-      setItems(response.data ?? []);
+      setItems((response.data ?? []).filter((pkg) => isSellablePackageType(pkg.type)));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load ticket packages.');
     } finally {

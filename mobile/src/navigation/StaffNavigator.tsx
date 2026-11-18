@@ -33,7 +33,7 @@ const SessionStack = createNativeStackNavigator<StaffSessionStackParamList>();
 
 export type StaffManagementStackParamList = {
   ManagementHome: undefined;
-  MembershipServices: undefined;
+  MembershipServices: { sessionId: string; requestId: string } | undefined;
   Customers: undefined;
   Bookings: undefined;
   BookingScanner: undefined;

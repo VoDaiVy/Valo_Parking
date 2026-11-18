@@ -15,7 +15,7 @@ import { notifyAuthChange } from '../../services/authStorage';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import MembershipExplore from '../../components/Customer/MembershipExplore';
 import { getExplorePackages } from '../../services/ticketPackageService';
-import { isMembershipPackageType, getPackageDurationLabel, getPackageTypeLabel } from '../../utils/ticketPackageRules';
+import { isSellablePackageType, getPackageDurationLabel, getPackageTypeLabel } from '../../utils/ticketPackageRules';
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import toast, { Toaster } from 'react-hot-toast';
@@ -137,7 +137,7 @@ export default function Membership() {
   });
   const basicPackageIds = new Set(subscriptionPackages.map((pkg) => pkg._id));
   const explorePackages = packages
-    .filter((pkg) => pkg.isActive && isMembershipPackageType(pkg.type) && !basicPackageIds.has(pkg._id))
+    .filter((pkg) => pkg.isActive && isSellablePackageType(pkg.type) && !basicPackageIds.has(pkg._id))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt) || a._id.localeCompare(b._id));
 
   const isVipActive = Boolean(membership?.isVip ?? user?.membership?.isVip);
@@ -261,13 +261,13 @@ export default function Membership() {
         if (!pkgRes.ok || !pkgRes.data?.success || !catalogRes.ok || !catalogRes.data?.success) {
           throw new Error('Unable to load membership packages. Please try again.');
         }
-        setFeaturedPackages(catalogRes.data.data.featured);
+        setFeaturedPackages(catalogRes.data.data.featured.filter((pkg) => isSellablePackageType(pkg.type)));
         
         if (pkgRes.ok && pkgRes.data?.data) {
           const pkgs = pkgRes.data.data;
-          setPackages(pkgs);
+          setPackages(pkgs.filter((pkg) => isSellablePackageType(pkg.type)));
           if (requestedPackageId) {
-            const requestedPackage = pkgs.find((pkg) => pkg._id === requestedPackageId && pkg.isActive && isMembershipPackageType(pkg.type));
+            const requestedPackage = pkgs.find((pkg) => pkg._id === requestedPackageId && pkg.isActive && isSellablePackageType(pkg.type));
             if (requestedPackage) {
               setSelectedPackage(requestedPackage);
               setSelectedSlots([]);
@@ -544,7 +544,7 @@ export default function Membership() {
               </li>
             </ul>
             <button disabled className="relative w-full py-3 rounded-2xl font-bold text-gray-500 bg-gray-100 text-sm">
-              In use
+              Included
             </button>
           </div>
 

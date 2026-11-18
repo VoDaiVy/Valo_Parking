@@ -29,6 +29,8 @@ body[data-valo-typography="staff"] .staff-ticket-packages .stp-rows { margin-top
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-rows > * + * { margin-top: 10px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row { border: 1px solid var(--g3-border, var(--staff-border, #222D36)); border-radius: 10px; background: var(--g3-surface, var(--staff-surface, #0D1117)); background-image: none; transform: none; box-shadow: none; transition: border-color 180ms, background-color 180ms; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row:hover { border-color: #256C55; background: #0F191B; box-shadow: none; transform: none; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row[role="button"] { cursor: pointer; }
+body[data-valo-typography="staff"] .staff-ticket-packages .stp-row[role="button"]:focus-visible { outline: 2px solid #54E3B0; outline-offset: -2px; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row > .absolute { display: block; width: 3px; top: 0; bottom: 0; height: auto; background: #10B981; opacity: 0; pointer-events: none; transition: opacity 180ms; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row:hover > .absolute { opacity: 1; }
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { min-height: 90px; padding: 18px 20px; min-width: 0; gap: 16px; }
@@ -93,3 +95,13 @@ body[data-valo-typography="staff"] .staff-ticket-packages .stp-row span.uppercas
 }
 
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns { text-transform: uppercase; }
+
+/* Dialogs render in a portal, outside the staff catalog container. */
+body[data-valo-typography="staff"] .package-detail { background: #0D1719; border-color: #28414A; }
+body[data-valo-typography="staff"] .package-detail-ticket { color: #54E3B0; background: #10B98126; }
+body[data-valo-typography="staff"] .package-detail-summary dd,
+body[data-valo-typography="staff"] .package-detail-fields h3 svg { color: #54E3B0; }
+body[data-valo-typography="staff"] .package-detail-status-switch.is-active { background: #54E3B0; }
+body[data-valo-typography="staff"] .package-detail-status-switch.is-active::after { background: #102A25; }
+body[data-valo-typography="staff"] .package-detail-actions button:last-child { background: #54E3B0; color: #08251C; }
+body[data-valo-typography="staff"] .package-detail button:focus-visible { outline-color: #54E3B0; }

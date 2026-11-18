@@ -170,14 +170,10 @@ async function emitUnreadCountsToUser(io, userId) {
 }
 
 /**
- * Emit an event to all connected admin/staff sockets.
+ * Emit global history events only to verified administrators.
  */
 function emitToAdmins(io, event, data) {
-  for (const socket of io.sockets.sockets.values()) {
-    if (['admin', 'staff'].includes(socket.userRole)) {
-      socket.emit(event, data);
-    }
-  }
+  io.to('valo-ai-admins').emit(event, data);
 }
 
 /**

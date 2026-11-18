@@ -1,5 +1,31 @@
 import { detectBookingInputLanguage } from './aiBookingLanguage.js';
 
+// These are complete API responses with a known meaning. They must remain
+// readable during booking confirmation even if the translation API is down.
+const vietnameseSystemReplies = [
+  [/^New bookings are restricted for this account\. Please contact support\.?$/i,
+    'Tài khoản này đang bị hạn chế tạo lượt đặt chỗ mới. Bạn vui lòng liên hệ hỗ trợ.'],
+  [/^Please accept the latest required policies before continuing\.?$/i,
+    'Bạn cần chấp nhận các chính sách bắt buộc mới nhất trong hộp thông báo trước khi đặt chỗ. Sau đó, hãy xác nhận đặt chỗ lại.'],
+  [/^This slot is temporarily held\. Please select another slot\.?$/i,
+    'Ô đỗ này đang được giữ chỗ tạm thời. Vui lòng chọn ô khác rồi kiểm tra giá và xác nhận lại.'],
+  [/^This slot is currently occupied(?: by another vehicle| or unavailable on the physical parking lot)\.?$/i,
+    'Ô đỗ này đang có xe hoặc chưa thể sử dụng tại bãi. Vui lòng chọn ô khác rồi kiểm tra lại.'],
+  [/^This slot is already booked(?: for your selected time)?(?:\. Please select another slot)?\.?$/i,
+    'Ô đỗ này đã có người đặt trong khung giờ đã chọn. Vui lòng chọn ô khác hoặc đổi thời gian.'],
+  [/^The booking item being edited no longer has a valid hold\.?$/i,
+    'Phiên giữ chỗ của lượt đặt đang sửa không còn hiệu lực. Vui lòng kiểm tra chỗ và giá lại trước khi xác nhận.'],
+  [/^Your valid vehicle not found\.?$/i,
+    'Không tìm thấy xe hợp lệ trong tài khoản của bạn. Vui lòng chọn xe đã được duyệt hoặc kiểm tra lại biển số.'],
+  [/^You can only hold a maximum of 5 slots at a time\. Please pay or cancel some of your selected slots\.?$/i,
+    'Bạn chỉ có thể giữ tối đa 5 ô đỗ cùng lúc. Vui lòng hoàn tất hoặc hủy bớt các lượt đang giữ trước khi đặt thêm.'],
+  [/^This license plate is holding too many slots\. Please try again later\.?$/i,
+    'Biển số này đang giữ quá nhiều ô đỗ. Vui lòng kiểm tra các lượt đang giữ và thử lại sau.'],
+  [/^Cannot connect to the server\. Please check that the backend is running\.?$/i,
+    'Không thể kết nối với máy chủ. Hãy kiểm tra kết nối và xem trạng thái trong trang đặt chỗ của bạn trước khi thử lại.'],
+];
+const knownVietnameseReply = value => vietnameseSystemReplies.find(([pattern]) => pattern.test(String(value || '').trim()))?.[1];
+
 export const needsBookingReplyTranslation = (value, language) => {
   const text = String(value || '').trim();
   if (!text) return false;
@@ -135,6 +161,8 @@ export function localizeAiBookingMessage(value, language = 'vi') {
   let text = String(value || '').trim();
   if (!text) return '';
   if (language === 'en') return vietnameseToEnglish(text);
+  const knownReply = knownVietnameseReply(text);
+  if (knownReply) return knownReply;
 
   text = text
     .replace(/VIP restriction/gi, 'Hạn chế đối với xe có gói ưu tiên')
@@ -187,4 +215,14 @@ export function localizeAiBookingMessage(value, language = 'vi') {
     .trim();
 
   return text;
+}
+
+export function prepareAiBookingReply(value, language = 'vi') {
+  const text = localizeAiBookingMessage(value, language);
+  const fullyTranslated = language === 'vi' && Boolean(knownVietnameseReply(value));
+  return {
+    text,
+    needsTranslation: !fullyTranslated && (needsBookingReplyTranslation(text, language)
+      || (language === 'vi' && needsBookingReplyTranslation(value, language))),
+  };
 }

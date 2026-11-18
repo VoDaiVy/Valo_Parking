@@ -15,8 +15,8 @@ const {
   getAutoRules,
   updateAutoRule,
   testAutoRule,
-  createInternalReport,
 } = require('../controllers/notificationController');
+const incidents = require('../controllers/staffIncidentController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
 const {
   createNotificationValidator,
@@ -34,17 +34,20 @@ router.put('/:id/read', markAsRead);
 router.delete('/:id', deleteUserNotification);
 
 // ── Admin/Staff routes ──
-router.post('/internal-report', authorize('staff', 'admin'), createInternalReport);
+router.post('/internal-report', authorize('staff'), incidents.create);
+router.get('/internal-reports', authorize('staff', 'admin'), incidents.list);
+router.get('/internal-reports/:id', authorize('staff', 'admin'), incidents.get);
+router.patch('/internal-reports/:id', authorize('staff', 'admin'), incidents.update);
 router.post('/', authorize('admin', 'staff'), createNotificationValidator, createNotification);
 router.get('/admin/history', authorize('admin', 'staff'), queryNotificationValidator, getAdminHistory);
-router.put('/admin/history/read-all', authorize('admin', 'staff'), markAllAdminHistoryAsRead);
-router.put('/admin/history/:id/read', authorize('admin', 'staff'), markAdminHistoryAsRead);
-router.delete('/admin/history/:id', authorize('admin', 'staff'), deleteAdminHistoryNotification);
-router.put('/:id/revoke', authorize('admin', 'staff'), revokeNotification);
+router.put('/admin/history/read-all', authorize('admin'), markAllAdminHistoryAsRead);
+router.put('/admin/history/:id/read', authorize('admin'), markAdminHistoryAsRead);
+router.delete('/admin/history/:id', authorize('admin'), deleteAdminHistoryNotification);
+router.put('/:id/revoke', authorize('admin'), revokeNotification);
 
 // ── Auto Rules routes (admin/staff) ──
-router.get('/admin/rules', authorize('admin', 'staff'), getAutoRules);
-router.put('/admin/rules/:eventKey', authorize('admin', 'staff'), updateAutoRule);
-router.post('/admin/rules/:eventKey/test', authorize('admin', 'staff'), testAutoRule);
+router.get('/admin/rules', authorize('admin'), getAutoRules);
+router.put('/admin/rules/:eventKey', authorize('admin'), updateAutoRule);
+router.post('/admin/rules/:eventKey/test', authorize('admin'), testAutoRule);
 
 module.exports = router;

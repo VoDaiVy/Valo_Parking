@@ -31,6 +31,7 @@ import type { ProfileStackParamList } from '@/navigation/types';
 type Props = NativeStackScreenProps<ProfileStackParamList, 'ParkingHistory'>;
 
 export interface HistorySession {
+  type?: 'BOOKING' | 'SUBSCRIPTION' | 'WALK_IN';
   _id: string;
   licensePlate: string;
   parkingSlot?: string;
@@ -128,7 +129,7 @@ function HistoryCard({ session, index, onPress }: { session: HistorySession; ind
             </View>
           )}
           {session.source && (
-            <Text style={styles.sourceText}>{SOURCE_LABELS[session.source] ?? session.source}</Text>
+            <Text style={styles.sourceText}>{session.type ? ({ BOOKING: 'Booking', SUBSCRIPTION: 'Membership', WALK_IN: 'Gửi xe thường' })[session.type] : 'Unknown'}</Text>
           )}
         </View>
       </View>
