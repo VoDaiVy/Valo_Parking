@@ -413,7 +413,9 @@ const getUnavailableSlotKeys = async (
     ? Slot.find({
       $or: [
         { status: 'occupied' },
-        { 'aiObservation.occupied': true }
+        { 'aiObservation.occupied': true },
+        { 'aiObservation.sessionId': { $ne: null } },
+        { 'aiObservation.violationType': { $in: ['CHECKED_IN_PENDING_PARK', 'EXITING_TO_GATE'] } },
       ]
     })
       .select('floorID slotNumber status aiObservation')
@@ -480,8 +482,11 @@ const getUnavailableSlotKeys = async (
       const expectedCheckout = allowExpectedSessionCheckout && parkingSession
         ? expectedSessionCheckout(parkingSession, now)
         : null;
-      if ((slot.status === 'occupied' || slot.aiObservation?.occupied)
-        && (!expectedCheckout || expectedCheckout > start)) {
+      const isSlotActiveOrTransit = slot.status === 'occupied'
+        || slot.aiObservation?.occupied
+        || Boolean(slot.aiObservation?.sessionId)
+        || ['CHECKED_IN_PENDING_PARK', 'EXITING_TO_GATE'].includes(slot.aiObservation?.violationType);
+      if (isSlotActiveOrTransit && (!expectedCheckout || expectedCheckout > start)) {
         unavailable.add(buildSlotKey(slot.floorID, slot.slotNumber));
       }
     });
