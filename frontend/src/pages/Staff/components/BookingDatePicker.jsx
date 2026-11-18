@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { addDays, addMonths, addYears, endOfWeek, format, isSameDay, isSameMonth, startOfDay, startOfMonth, startOfWeek } from 'date-fns';
 import './staffBookingDatePicker.css';
 
-function BookingCalendar({ value, onChange, close, anchorOffset }) {
+function BookingCalendar({ value, onChange, close, anchorOffset, t }) {
   const [month, setMonth] = useState(() => startOfMonth(value));
   const [focusedDate, setFocusedDate] = useState(value);
   const days = useRef(new Map());
@@ -33,14 +34,14 @@ function BookingCalendar({ value, onChange, close, anchorOffset }) {
   // close on trigger focus before its click toggles, reopening the calendar.
   // Initial day focus remains handled above; outside focus/click and Escape
   // remain managed by Popover across both elements.
-  return <PopoverPanel portal focus={false} anchor={{ to: 'bottom end', gap: 8, offset: anchorOffset, padding: 8 }} className="sbm-booking-calendar" role="dialog" aria-label="Choose booking date">
+  return <PopoverPanel portal focus={false} anchor={{ to: 'bottom end', gap: 8, offset: anchorOffset, padding: 8 }} className="sbm-booking-calendar" role="dialog" aria-label={t('bookingManagementUi.chooseDate')}>
     <header className="sbm-calendar-heading">
-      <button type="button" aria-label="Previous month" onClick={() => moveFocus(addMonths(focusedDate, -1))}><ChevronLeft size={17} aria-hidden="true" /></button>
+      <button type="button" aria-label={t('bookingManagementUi.previousMonth')} onClick={() => moveFocus(addMonths(focusedDate, -1))}><ChevronLeft size={17} aria-hidden="true" /></button>
       <h2 aria-live="polite">{format(month, 'MMMM yyyy')}</h2>
-      <button type="button" aria-label="Next month" onClick={() => moveFocus(addMonths(focusedDate, 1))}><ChevronRight size={17} aria-hidden="true" /></button>
+      <button type="button" aria-label={t('bookingManagementUi.nextMonth')} onClick={() => moveFocus(addMonths(focusedDate, 1))}><ChevronRight size={17} aria-hidden="true" /></button>
     </header>
     <div role="grid" aria-label={format(month, 'MMMM yyyy')}>
-      <div role="row" className="sbm-calendar-weekdays">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <span role="columnheader" key={day}>{day}</span>)}</div>
+      <div role="row" className="sbm-calendar-weekdays">{t('bookingManagementUi.weekdays', { returnObjects: true }).map(day => <span role="columnheader" key={day}>{day}</span>)}</div>
       {Array.from({ length: 6 }, (_, week) => <div role="row" className="sbm-calendar-week" key={week}>
         {Array.from({ length: 7 }, (_, day) => {
           const date = addDays(firstDay, week * 7 + day);
@@ -56,24 +57,25 @@ function BookingCalendar({ value, onChange, close, anchorOffset }) {
       </div>)}
     </div>
     <footer className="sbm-calendar-footer">
-      <button type="button" onClick={() => select(startOfDay(new Date()))}>Today</button>
-      <button type="button" onClick={() => close()}>Cancel</button>
+      <button type="button" onClick={() => select(startOfDay(new Date()))}>{t('bookingManagementUi.today')}</button>
+      <button type="button" onClick={() => close()}>{t('bookingManagementUi.cancel')}</button>
     </footer>
   </PopoverPanel>;
 }
 
 export default function BookingDatePicker({ value, onChange }) {
+  const { t } = useTranslation();
   const [anchorOffset, setAnchorOffset] = useState(0);
   return <Popover className="sbm-date-popover">
     {({ open, close }) => <>
-      <PopoverButton className="sbm-date-trigger" aria-label="Choose booking date" title="Choose booking date" onClick={event => {
+      <PopoverButton className="sbm-date-trigger" aria-label={t('bookingManagementUi.chooseDate')} title={t('bookingManagementUi.chooseDate')} onClick={event => {
         const button = event.currentTarget;
         const selector = button.closest('.sbm-date');
         if (selector) setAnchorOffset(selector.getBoundingClientRect().right - button.getBoundingClientRect().right);
       }}>
         <span>{format(value, 'EEEE')}</span><span>{format(value, 'MMM dd, yyyy')}</span>
       </PopoverButton>
-      {open && <BookingCalendar value={value} onChange={onChange} close={close} anchorOffset={anchorOffset} />}
+      {open && <BookingCalendar value={value} onChange={onChange} close={close} anchorOffset={anchorOffset} t={t} />}
     </>}
   </Popover>;
 }

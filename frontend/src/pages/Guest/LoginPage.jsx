@@ -7,6 +7,8 @@ import {
   getSafeReturnUrl,
   resolvePostLoginDestination,
 } from '../../utils/bookingNavigation';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
+import LanguageSwitch from '../../i18n/components/LanguageSwitch';
 
 // ─── Google Icon SVG ───────────────────────────────────────────────────────────
 const GoogleIcon = () => (
@@ -47,6 +49,7 @@ const FeaturePill = ({ icon, text }) => (
 );
 
 export default function LoginPage() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const returnUrl = getSafeReturnUrl(location.search);
@@ -91,7 +94,7 @@ export default function LoginPage() {
         const { ok, data } = await loginUser(form.email, form.password);
 
         if (!ok) {
-          showToast('error', data.message || 'Email or password is incorrect. Please try again.');
+          showToast('error', data.message || t('auth.invalidCredentials'));
           return;
         }
 
@@ -109,7 +112,7 @@ export default function LoginPage() {
 
         // Notify Navbar to update immediately
         window.dispatchEvent(new Event('valo_auth_change'));
-        showToast('success', `Welcome back, ${user.fullName || user.username}!`);
+        showToast('success', t('auth.welcomeUser', { name: user.fullName || user.username }));
 
         // ── Redirect theo role ──
         const dest = resolvePostLoginDestination(user.role, returnUrl);
@@ -117,11 +120,11 @@ export default function LoginPage() {
       } else {
         // ── SIGNUP: basic client-side validation ──
         if (!form.name.trim()) {
-          showToast('error', 'Please enter an account name.');
+          showToast('error', t('auth.enterAccountName'));
           return;
         }
         if (form.password !== form.confirm) {
-          showToast('error', 'Password confirmation does not match.');
+          showToast('error', t('auth.passwordMismatch'));
           return;
         }
 
@@ -129,7 +132,7 @@ export default function LoginPage() {
         const { ok, data } = await registerUser(form.name, form.email, form.password, form.confirm);
 
         if (!ok) {
-          const msg = data.errors?.length ? data.errors[0].message : data.message || 'Registration failed. Please try again.';
+          const msg = data.errors?.length ? data.errors[0].message : data.message || t('auth.serverUnavailable');
           showToast('error', msg);
           return;
         }
@@ -138,16 +141,16 @@ export default function LoginPage() {
         const { ok: otpOk, data: otpData } = await sendOTP(form.email);
 
         if (!otpOk) {
-          showToast('error', otpData.message || 'Could not send the verification code.');
+          showToast('error', otpData.message || t('auth.sendCodeFailed'));
           return;
         }
 
         setRegisteredEmail(form.email);
         setSignupStep('otp');
-        showToast('success', `Verification code was sent to ${form.email}`);
+        showToast('success', t('auth.verificationSent', { email: form.email }));
       }
     } catch {
-      showToast('error', 'Could not connect to the server. Please try again later.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setLoading(false);
     }
@@ -179,15 +182,15 @@ export default function LoginPage() {
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
     const code = otpDigits.join('');
-    if (code.length !== 6) { showToast('error', 'Please enter all 6 digits.'); return; }
+    if (code.length !== 6) { showToast('error', t('auth.enterSixDigits')); return; }
     setOtpLoading(true);
     try {
       const { ok, data } = await verifyOTP(registeredEmail, code);
       if (!ok) {
-        showToast('error', data.message || 'Verification code is incorrect.');
+        showToast('error', data.message || t('auth.verificationFailed'));
         return;
       }
-      showToast('success', 'Email verified! Please log in.');
+      showToast('success', t('auth.emailVerified'));
       setTimeout(() => {
         setSignupStep('form');
         setOtpDigits(Array(6).fill(''));
@@ -195,7 +198,7 @@ export default function LoginPage() {
         setForm({ name: '', email: '', password: '', confirm: '' });
       }, 1500);
     } catch {
-      showToast('error', 'Could not connect to the server. Please try again later.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setOtpLoading(false);
     }
@@ -205,11 +208,11 @@ export default function LoginPage() {
     setOtpLoading(true);
     try {
       const { ok, data } = await sendOTP(registeredEmail);
-      if (!ok) { showToast('error', data.message || 'Could not send the code.'); return; }
-      showToast('success', 'A new verification code was sent!');
+      if (!ok) { showToast('error', data.message || t('auth.codeFailed')); return; }
+      showToast('success', t('auth.verificationSent', { email: registeredEmail }));
       setOtpDigits(Array(6).fill(''));
     } catch {
-      showToast('error', 'Could not connect to the server.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setOtpLoading(false);
     }
@@ -240,17 +243,17 @@ export default function LoginPage() {
 
   const handleForgotSendOTP = async (e) => {
     e.preventDefault();
-    if (!forgotEmail) { showToast('error', 'Please enter your email.'); return; }
+    if (!forgotEmail) { showToast('error', t('common.required')); return; }
     setForgotLoading(true);
     try {
       const { ok, data } = await forgotPassword(forgotEmail);
-      if (!ok) { showToast('error', data.message || 'Could not send the code.'); return; }
+      if (!ok) { showToast('error', data.message || t('auth.codeFailed')); return; }
       setForgotStep('otp');
       setForgotVerifiedOTP('');
       setForgotOtpDigits(Array(6).fill(''));
-      showToast('success', `OTP code was sent to ${forgotEmail}`);
+      showToast('success', t('auth.otpSent', { email: forgotEmail }));
     } catch {
-      showToast('error', 'Could not connect to the server.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setForgotLoading(false);
     }
@@ -259,17 +262,17 @@ export default function LoginPage() {
   const handleForgotVerifyOTP = async (e) => {
     e.preventDefault();
     const code = forgotOtpDigits.join('');
-    if (code.length !== 6) { showToast('error', 'Please enter all 6 digits.'); return; }
+    if (code.length !== 6) { showToast('error', t('auth.enterSixDigits')); return; }
     setForgotLoading(true);
     try {
       const { ok, data } = await verifyResetPasswordOTP(forgotEmail, code);
-      if (!ok) { showToast('error', data.message || 'Invalid OTP code.'); return; }
+      if (!ok) { showToast('error', data.message || t('auth.invalidOtp')); return; }
       setForgotVerifiedOTP(code);
       setForgotOtpDigits(Array(6).fill(''));
       setForgotStep('password');
-      showToast('success', 'OTP is valid. You can enter a new password.');
+      showToast('success', t('auth.otpValid'));
     } catch {
-      showToast('error', 'Could not connect to the server.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setForgotLoading(false);
     }
@@ -277,14 +280,14 @@ export default function LoginPage() {
 
   const handleForgotReset = async (e) => {
     e.preventDefault();
-    if (!forgotVerifiedOTP) { showToast('error', 'Please verify the OTP first.'); return; }
-    if (forgotNewPass.length < 6) { showToast('error', 'Password must be at least 6 characters.'); return; }
-    if (forgotNewPass !== forgotConfirmPass) { showToast('error', 'Password confirmation does not match.'); return; }
+    if (!forgotVerifiedOTP) { showToast('error', t('auth.verifyOtpFirst')); return; }
+    if (forgotNewPass.length < 6) { showToast('error', t('auth.passwordLength')); return; }
+    if (forgotNewPass !== forgotConfirmPass) { showToast('error', t('auth.passwordMismatch')); return; }
     setForgotLoading(true);
     try {
       const { ok, data } = await resetPassword(forgotEmail, forgotVerifiedOTP, forgotNewPass);
-      if (!ok) { showToast('error', data.message || 'Password reset failed.'); return; }
-      showToast('success', 'Password reset successful! Please log in.');
+      if (!ok) { showToast('error', data.message || t('auth.passwordResetFailed')); return; }
+      showToast('success', t('auth.passwordResetSuccess'));
       setTimeout(() => {
         setForgotStep(null);
         setForgotEmail('');
@@ -294,7 +297,7 @@ export default function LoginPage() {
         setForgotConfirmPass('');
       }, 1500);
     } catch {
-      showToast('error', 'Could not connect to the server.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setForgotLoading(false);
     }
@@ -304,11 +307,11 @@ export default function LoginPage() {
     setForgotLoading(true);
     try {
       const { ok, data } = await forgotPassword(forgotEmail);
-      if (!ok) { showToast('error', data.message || 'Could not send the code.'); return; }
-      showToast('success', 'A new OTP code was sent!');
+      if (!ok) { showToast('error', data.message || t('auth.codeFailed')); return; }
+      showToast('success', t('auth.otpSent', { email: forgotEmail }));
       setForgotOtpDigits(Array(6).fill(''));
     } catch {
-      showToast('error', 'Could not connect to the server.');
+      showToast('error', t('auth.serverUnavailable'));
     } finally {
       setForgotLoading(false);
     }
@@ -351,7 +354,7 @@ export default function LoginPage() {
 
       const { idToken, error } = event.data;
       if (error || !idToken) {
-        showToast('error', 'Google login was cancelled or failed.');
+        showToast('error', t('auth.googleCancelled'));
         return;
       }
 
@@ -359,7 +362,7 @@ export default function LoginPage() {
       try {
         const { ok, data } = await loginWithGoogle(idToken);
         if (!ok) {
-          showToast('error', data.message || 'Google login failed.');
+          showToast('error', data.message || t('auth.googleFailed'));
           return;
         }
         const { user, accessToken, refreshToken } = data.data;
@@ -369,11 +372,11 @@ export default function LoginPage() {
           id: user.id, name: user.fullName || user.username, email: user.email, role: user.role,
         }));
         window.dispatchEvent(new Event('valo_auth_change'));
-        showToast('success', `Welcome, ${user.fullName || user.username}!`);
+        showToast('success', t('auth.welcomeUserShort', { name: user.fullName || user.username }));
         const dest = resolvePostLoginDestination(user.role, returnUrl);
         setTimeout(() => navigate(dest), 1000);
       } catch {
-        showToast('error', 'Could not connect to the server.');
+        showToast('error', t('auth.serverUnavailable'));
       } finally {
         setLoading(false);
       }
@@ -393,6 +396,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-charcoal flex overflow-hidden relative font-sans">
+      <div className="fixed right-5 top-5 z-50">
+        <LanguageSwitch size="sm" />
+      </div>
 
       {/* ── Toast notification ── */}
       {toast && (
@@ -440,28 +446,28 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="relative z-10 flex items-center gap-3">
           <img src={Logo} alt="VALO Logo" className="h-10 object-contain" />
-          <span className="text-xs font-bold tracking-widest text-gray-400 uppercase">Valo Parking</span>
+          <span className="text-xs font-bold tracking-widest text-gray-400 uppercase">VALO PARKING</span>
         </div>
 
         {/* Centre hero text */}
         <div className="relative z-10 flex-1 flex flex-col justify-center">
           <div className="inline-flex items-center gap-2 py-1.5 px-4 rounded-full bg-gold/10 border border-gold/20 text-gold text-xs font-bold tracking-wider mb-8 uppercase w-fit">
-            <Zap size={13} /> Smart Parking System
+            <Zap size={13} /> {t('auth.smartParkingSystem')}
           </div>
 
           <h2 className="text-5xl font-extrabold text-white leading-tight mb-6">
-            Park Smarter.<br />
-            <span className="text-gold-gradient">Drive Faster.</span>
+            {t('auth.parkSmarter')}<br />
+            <span className="text-gold-gradient">{t('auth.driveFaster')}</span>
           </h2>
 
           <p className="text-gray-400 text-lg leading-relaxed max-w-sm mb-10">
-            AI-powered license plate recognition. Real-time slot availability. One-touch payment.
+            {t('auth.heroDescription')}
           </p>
 
           <div className="flex flex-col gap-3">
-            <FeaturePill icon={<ShieldCheck size={14} />} text="Touchless AI Gate Check-in" />
-            <FeaturePill icon={<Car size={14} />} text="Real-time Parking Grid Map" />
-            <FeaturePill icon={<Zap size={14} />} text="Sub-second Plate Recognition" />
+            <FeaturePill icon={<ShieldCheck size={14} />} text={t('auth.touchlessGate')} />
+            <FeaturePill icon={<Car size={14} />} text={t('auth.realtimeMap')} />
+            <FeaturePill icon={<Zap size={14} />} text={t('auth.fastPlate')} />
           </div>
         </div>
 
@@ -471,8 +477,8 @@ export default function LoginPage() {
             V
           </div>
           <div>
-            <p className="text-white font-bold text-sm">VALO Enterprise</p>
-            <p className="text-gray-500 text-xs">Next-gen parking infrastructure</p>
+            <p className="text-white font-bold text-sm">{t('auth.enterprise')}</p>
+            <p className="text-gray-500 text-xs">{t('auth.enterpriseDescription')}</p>
           </div>
         </div>
       </div>
@@ -490,7 +496,7 @@ export default function LoginPage() {
           {/* Mobile logo */}
           <div className="flex lg:hidden items-center gap-3 mb-8 justify-center">
             <img src={Logo} alt="VALO Logo" className="h-8 object-contain" />
-            <span className="text-xs font-bold tracking-widest text-gray-400 uppercase">Valo Parking</span>
+            <span className="text-xs font-bold tracking-widest text-gray-400 uppercase">VALO PARKING</span>
           </div>
 
           {/* ── Mode Toggle ── */}
@@ -506,7 +512,7 @@ export default function LoginPage() {
                     : 'text-gray-400 hover:text-white'
                   }`}
               >
-                {m === 'login' ? 'Log In' : 'Sign Up'}
+                {m === 'login' ? t('auth.login') : t('auth.signUp')}
               </button>
             ))}
           </div>
@@ -515,12 +521,12 @@ export default function LoginPage() {
           {!(isLogin && forgotStep) && (
             <div className="mb-8">
               <h1 className="text-3xl font-extrabold text-white mb-2">
-                {isLogin ? 'Welcome back' : 'Create account'}
+                {isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}
               </h1>
               <p className="text-gray-500 text-sm">
                 {isLogin
-                  ? 'Sign in to access your VALO dashboard'
-                  : 'Join VALO and experience smart parking'}
+                  ? t('auth.loginSubtitle')
+                  : t('auth.signupSubtitle')}
               </p>
             </div>
           )}
@@ -535,13 +541,13 @@ export default function LoginPage() {
                 className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-800 font-bold py-3.5 rounded-xl transition-all duration-200 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 active:scale-95 border border-gray-200 mb-6"
               >
                 <GoogleIcon />
-                <span>{isLogin ? 'Continue with Google' : 'Sign up with Google'}</span>
+                <span>{isLogin ? t('auth.googleLogin') : t('auth.googleSignup')}</span>
               </button>
 
               {/* ── Divider ── */}
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex-1 h-px bg-white/10" />
-                <span className="text-gray-600 text-xs font-semibold uppercase tracking-wider">or continue with email</span>
+                <span className="text-gray-600 text-xs font-semibold uppercase tracking-wider">{t('auth.orEmail')}</span>
                 <div className="flex-1 h-px bg-white/10" />
               </div>
             </>
@@ -554,17 +560,17 @@ export default function LoginPage() {
                 <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center mx-auto mb-4">
                   <Lock size={28} className="text-gold" />
                 </div>
-                <h2 className="text-xl font-bold text-white mb-2">Forgot password?</h2>
-                <p className="text-gray-400 text-sm">Enter your account email to receive a password reset OTP.</p>
+                <h2 className="text-xl font-bold text-white mb-2">{t('auth.forgotPasswordTitle')}</h2>
+                <p className="text-gray-400 text-sm">{t('auth.forgotPasswordHint')}</p>
               </div>
               <div className="group">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Email</label>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t('auth.email')}</label>
                 <div className="relative">
                   <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
                   <input
                     type="email"
                     required
-                    placeholder="you@example.com"
+                    placeholder={t('auth.emailPlaceholder')}
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 focus:border-gold/60 rounded-xl pl-11 pr-4 py-3.5 text-white placeholder-gray-600 text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(212,175,55,0.1)]"
@@ -577,11 +583,11 @@ export default function LoginPage() {
                 className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold-dark text-charcoal font-extrabold py-4 rounded-xl transition-all duration-200 hover:shadow-xl hover:shadow-gold/25 hover:-translate-y-0.5 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed text-sm tracking-wide"
               >
                 {forgotLoading ? (
-                  <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Sending...</>
-                ) : (<>Send OTP <ArrowRight size={16} /></>)}
+                  <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>{t('auth.sending')}</>
+                ) : (<>{t('auth.sendOtp')} <ArrowRight size={16} /></>)}
               </button>
               <button type="button" onClick={resetForgot} className="w-full text-sm text-gray-500 hover:text-gray-300 transition-colors text-center">
-                ← Back to login
+                ← {t('auth.backToLogin')}
               </button>
             </form>
           ) : isLogin && forgotStep === 'otp' ? (
@@ -590,9 +596,9 @@ export default function LoginPage() {
                 <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center mx-auto mb-4">
                   <Mail size={28} className="text-gold" />
                 </div>
-                <h2 className="text-xl font-bold text-white mb-2">Enter OTP</h2>
+                <h2 className="text-xl font-bold text-white mb-2">{t('auth.enterOtp')}</h2>
                 <p className="text-gray-400 text-sm leading-relaxed">
-                  Code sent to<br /><span className="text-gold font-semibold">{forgotEmail}</span>
+                  {t('auth.codeSentTo')}<br /><span className="text-gold font-semibold">{forgotEmail}</span>
                 </p>
               </div>
               <div className="flex gap-2 justify-center">
@@ -616,15 +622,15 @@ export default function LoginPage() {
                 className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold-dark text-charcoal font-extrabold py-4 rounded-xl transition-all duration-200 hover:shadow-xl hover:shadow-gold/25 hover:-translate-y-0.5 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed text-sm tracking-wide"
               >
                 {forgotLoading ? (
-                  <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Verifying...</>
-                ) : (<>Verify OTP <ArrowRight size={16} /></>)}
+                  <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>{t('auth.verifying')}</>
+                ) : (<>{t('auth.verifyOtp')} <ArrowRight size={16} /></>)}
               </button>
               <div className="flex items-center justify-between text-sm">
                 <button type="button" onClick={() => setForgotStep('email')} className="text-gray-500 hover:text-gray-300 transition-colors">
-                  ← Back
+                  ← {t('auth.back')}
                 </button>
                 <button type="button" onClick={handleForgotResendOTP} disabled={forgotLoading} className="text-gold hover:text-gold-light font-semibold transition-colors disabled:opacity-50">
-                  Resend code
+                  {t('auth.resendCode')}
                 </button>
               </div>
             </form>
@@ -634,11 +640,11 @@ export default function LoginPage() {
                 <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center mx-auto mb-4">
                   <Lock size={28} className="text-gold" />
                 </div>
-                <h2 className="text-xl font-bold text-white mb-2">Create a new password</h2>
-                <p className="text-gray-400 text-sm">OTP verified. Enter a new password for your account.</p>
+                <h2 className="text-xl font-bold text-white mb-2">{t('auth.newPasswordTitle')}</h2>
+                <p className="text-gray-400 text-sm">{t('auth.newPasswordHint')}</p>
               </div>
               <div className="group">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">New password</label>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t('auth.newPassword')}</label>
                 <div className="relative">
                   <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
                   <input
@@ -655,7 +661,7 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="group">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Confirm password</label>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t('auth.confirmPasswordLabel')}</label>
                 <div className="relative">
                   <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
                   <input
@@ -677,12 +683,12 @@ export default function LoginPage() {
                 className="w-full flex items-center justify-center gap-2 bg-gold hover:bg-gold-dark text-charcoal font-extrabold py-4 rounded-xl transition-all duration-200 hover:shadow-xl hover:shadow-gold/25 hover:-translate-y-0.5 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed text-sm tracking-wide"
               >
                 {forgotLoading ? (
-                  <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Resetting...</>
-                ) : (<>Reset password <ArrowRight size={16} /></>)}
+                  <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>{t('auth.resetting')}</>
+                ) : (<>{t('auth.resetPassword')} <ArrowRight size={16} /></>)}
               </button>
               <div className="flex items-center justify-between text-sm">
                 <button type="button" onClick={() => { setForgotStep('otp'); setForgotVerifiedOTP(''); }} className="text-gray-500 hover:text-gray-300 transition-colors">
-                  ← Back
+                  ← {t('auth.back')}
                 </button>
               </div>
             </form>
@@ -692,9 +698,9 @@ export default function LoginPage() {
                 <div className="w-16 h-16 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center mx-auto mb-4">
                   <Mail size={28} className="text-gold" />
                 </div>
-                <h2 className="text-xl font-bold text-white mb-2">Verify Email</h2>
+                <h2 className="text-xl font-bold text-white mb-2">{t('auth.verifyEmail')}</h2>
                 <p className="text-gray-400 text-sm leading-relaxed">
-                  Enter the 6-digit code sent to<br />
+                  {t('auth.verifyEmailHint')}<br />
                   <span className="text-gold font-semibold">{registeredEmail}</span>
                 </p>
               </div>
@@ -726,10 +732,10 @@ export default function LoginPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Verifying...
+                    {t('auth.verifying')}
                   </>
                 ) : (
-                  <>Verify Email <ArrowRight size={16} /></>
+                  <>{t('auth.verifyEmail')} <ArrowRight size={16} /></>
                 )}
               </button>
 
@@ -739,7 +745,7 @@ export default function LoginPage() {
                   onClick={() => { setSignupStep('form'); setOtpDigits(Array(6).fill('')); }}
                   className="text-gray-500 hover:text-gray-300 transition-colors"
                 >
-                  ← Back
+                  ← {t('auth.back')}
                 </button>
                 <button
                   type="button"
@@ -747,7 +753,7 @@ export default function LoginPage() {
                   disabled={otpLoading}
                   className="text-gold hover:text-gold-light font-semibold transition-colors disabled:opacity-50"
                 >
-                  Resend code
+                  {t('auth.resendCode')}
                 </button>
               </div>
             </form>
@@ -758,7 +764,7 @@ export default function LoginPage() {
             {!isLogin && (
               <div className="group">
                 <label htmlFor="name" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Full Name
+                  {t('auth.fullName')}
                 </label>
                 <div className="relative">
                   <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
@@ -767,7 +773,7 @@ export default function LoginPage() {
                     name="name"
                     type="text"
                     required={!isLogin}
-                    placeholder="Nguyen Van A"
+                    placeholder={t('auth.namePlaceholder')}
                     value={form.name}
                     onChange={handleChange}
                     className="w-full bg-white/5 border border-white/10 focus:border-gold/60 focus:bg-white/8 rounded-xl pl-11 pr-4 py-3.5 text-white placeholder-gray-600 text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(212,175,55,0.1)]"
@@ -779,7 +785,7 @@ export default function LoginPage() {
             {/* Email */}
             <div className="group">
               <label htmlFor="email" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                Email
+              {t('auth.email')}
               </label>
               <div className="relative">
                 <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
@@ -788,7 +794,7 @@ export default function LoginPage() {
                   name="email"
                   type="email"
                   required
-                  placeholder="you@example.com"
+                  placeholder={t('auth.emailPlaceholder')}
                   value={form.email}
                   onChange={handleChange}
                   className="w-full bg-white/5 border border-white/10 focus:border-gold/60 focus:bg-white/8 rounded-xl pl-11 pr-4 py-3.5 text-white placeholder-gray-600 text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(212,175,55,0.1)]"
@@ -799,7 +805,7 @@ export default function LoginPage() {
             {/* Password */}
             <div className="group">
               <label htmlFor="password" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                Password
+              {t('auth.password')}
               </label>
               <div className="relative">
                 <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
@@ -817,7 +823,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors"
-                  aria-label="Toggle password visibility"
+                  aria-label={t('auth.togglePassword')}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -828,7 +834,7 @@ export default function LoginPage() {
             {!isLogin && (
               <div className="group">
                 <label htmlFor="confirm" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Confirm Password
+                  {t('auth.confirmPassword')}
                 </label>
                 <div className="relative">
                   <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 group-focus-within:text-gold transition-colors" />
@@ -846,7 +852,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowConfirm(!showConfirm)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors"
-                    aria-label="Toggle confirm password visibility"
+                    aria-label={t('auth.toggleConfirmPassword')}
                   >
                     {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -862,7 +868,7 @@ export default function LoginPage() {
                   onClick={() => { setForgotStep('email'); setForgotEmail(form.email); }}
                   className="text-xs text-gray-500 hover:text-gold transition-colors font-medium"
                 >
-                  Forgot password?
+                  {t('auth.forgotPassword')}
                 </button>
               </div>
             )}
@@ -880,11 +886,11 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  {isLogin ? 'Signing in…' : 'Creating account…'}
+                  {isLogin ? t('auth.signingIn') : t('auth.creatingAccount')}
                 </>
               ) : (
                 <>
-                  {isLogin ? 'Sign In' : 'Create Account'}
+                  {isLogin ? t('auth.login') : t('auth.createAccountButton')}
                   <ArrowRight size={16} />
                 </>
               )}
@@ -895,28 +901,28 @@ export default function LoginPage() {
           {/* ── Terms (signup only) ── */}
           {!isLogin && signupStep === 'form' && (
             <p className="text-center text-xs text-gray-600 mt-4 leading-relaxed">
-              By creating an account you agree to our{' '}
-              <button className="text-gold hover:underline">Terms of Service</button>{' '}
-              and{' '}
-              <button className="text-gold hover:underline">Privacy Policy</button>.
+              {t('auth.termsIntro')}{' '}
+              <button className="text-gold hover:underline">{t('auth.termsOfService')}</button>{' '}
+              {t('common.and')}{' '}
+              <button className="text-gold hover:underline">{t('common.privacy')}</button>.
             </p>
           )}
 
           {/* ── Switch mode ── */}
           <p className="text-center text-sm text-gray-500 mt-6">
-            {isLogin ? "Don't have an account? " : 'Already have an account? '}
+            {isLogin ? t('auth.noAccount') : t('auth.alreadyAccount')}{' '}
             <button
               onClick={() => { setMode(isLogin ? 'signup' : 'login'); setShowPassword(false); setShowConfirm(false); setSignupStep('form'); setOtpDigits(Array(6).fill('')); }}
               className="text-gold hover:text-gold-light font-bold transition-colors"
             >
-              {isLogin ? 'Sign up' : 'Log in'}
+              {isLogin ? t('auth.signUp') : t('auth.login')}
             </button>
           </p>
 
           {/* ── Back to home ── */}
           <div className="flex justify-center mt-8">
             <Link to="/" className="text-xs text-gray-600 hover:text-gray-400 transition-colors flex items-center gap-1.5">
-              ← Back to VALO Home
+              ← {t('auth.backHome')}
             </Link>
           </div>
         </div>

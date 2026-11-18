@@ -13,9 +13,10 @@ import './adminServices.css';
 import { getPaginationPages } from '../Staff/sessionPagination.js';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { serviceLinkState, includeLinkedService, serviceRowPage, highlightServiceRow } from './serviceDeepLink.js';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // --- Animated Counter ---------------------------------------------------------
-function AnimatedCounter({ target, duration = 1200, isCurrency, isTime }) {
+function AnimatedCounter({ target, duration = 1200, isCurrency, isTime, timeUnit = 'min' }) {
   const [count, setCount] = useState(0);
   useEffect(() => {
     if (target === undefined || target === null) return;
@@ -46,7 +47,7 @@ function AnimatedCounter({ target, duration = 1200, isCurrency, isTime }) {
     return (
       <span className="flex items-baseline gap-1.5">
         <span>{Math.round(count).toLocaleString('en-US')}</span>
-        <span className="text-[13px] text-white/60 font-semibold tracking-wide uppercase">min</span>
+        <span className="text-[13px] text-white/60 font-semibold tracking-wide uppercase">{timeUnit}</span>
       </span>
     );
   }
@@ -54,7 +55,7 @@ function AnimatedCounter({ target, duration = 1200, isCurrency, isTime }) {
 }
 
 // --- Stat Card ----------------------------------------------------------------
-function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-emerald-300', loading, index, isCurrency, isTime }) {
+function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-emerald-300', loading, index, isCurrency, isTime, timeUnit }) {
   const dividerClass = [
     index > 0 ? 'border-t border-white/10' : '',
     index % 2 === 1 ? 'sm:border-l sm:border-white/10' : '',
@@ -77,7 +78,7 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
             ) : (
               <div className="mt-1 flex items-baseline gap-1.5">
                 <p className="truncate font-mono text-xl font-black leading-none text-white">
-                  <AnimatedCounter target={value} isCurrency={isCurrency} isTime={isTime} />
+                  <AnimatedCounter target={value} isCurrency={isCurrency} isTime={isTime} timeUnit={timeUnit} />
                 </p>
                 <p className={`truncate text-[10px] font-bold ${subTone}`}>
                   {sub}
@@ -93,6 +94,7 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
 // --- Main Component -----------------------------------------------------------
 const AdminServiceManager = () => {
+  const { t } = useLanguage();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const serviceIdQuery = searchParams.get('serviceId');
@@ -147,12 +149,12 @@ const AdminServiceManager = () => {
       if (res.ok && res.data.success) {
         setServices(res.data.data);
       } else {
-        toast.error(res.data.message || 'Failed to fetch services');
+        toast.error(res.data.message || t('serviceUi.fetchFailed'));
       }
     } catch (err) {
       if (generation !== aiRefreshGeneration.current) return;
       if (linkKey) setServiceLink({ status: 'error', key: linkKey });
-      toast.error(err.message || 'Failed to fetch services');
+      toast.error(err.message || t('serviceUi.fetchFailed'));
     } finally {
       if (generation === aiRefreshGeneration.current) setLoading(false);
     }
@@ -218,11 +220,11 @@ const AdminServiceManager = () => {
   };
 
   const validateForm = () => {
-    if (!formData.name || formData.name.length < 3) return "Service name must be at least 3 characters.";
-    if (!formData.description || formData.description.length < 5) return "Description must be at least 5 characters.";
-    if (!formData.price || Number(formData.price) <= 0) return "Price must be greater than 0.";
-    if (!formData.timeCost || Number(formData.timeCost) <= 0) return "Time cost must be greater than 0 minutes.";
-    if (!editingService && !imageFile) return "Image is required for new services.";
+    if (!formData.name || formData.name.length < 3) return t('serviceUi.invalidName');
+    if (!formData.description || formData.description.length < 5) return t('serviceUi.invalidDescription');
+    if (!formData.price || Number(formData.price) <= 0) return t('serviceUi.invalidPrice');
+    if (!formData.timeCost || Number(formData.timeCost) <= 0) return t('serviceUi.invalidDuration');
+    if (!editingService && !imageFile) return t('serviceUi.imageRequired');
     return null;
   };
 
@@ -230,11 +232,11 @@ const AdminServiceManager = () => {
     if (!file) return;
     const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      setFormError("Invalid file type. Please upload JPEG, PNG, or WebP.");
+      setFormError(t('serviceUi.invalidFileType'));
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setFormError("File size exceeds 5MB limit.");
+      setFormError(t('serviceUi.fileTooLarge'));
       return;
     }
     setFormError('');
@@ -321,11 +323,11 @@ const AdminServiceManager = () => {
         : await createService(submitData);
 
       if (res.ok && res.data.success) {
-        toast.success(`Service ${editingService ? 'updated' : 'created'} successfully`);
+        toast.success(t('serviceUi.saveSuccess', { action: t(editingService ? 'serviceUi.updated' : 'serviceUi.created') }));
         fetchServices();
         closeModal();
       } else {
-        throw new Error(res.data.message || 'Action failed');
+        throw new Error(res.data.message || t('serviceUi.actionFailed'));
       }
     } catch (err) {
       setFormError(err.message);
@@ -344,13 +346,13 @@ const AdminServiceManager = () => {
     try {
       const res = await deleteService(editingService._id);
       if (res.ok && res.data.success) {
-        toast.success('Service deleted successfully');
+        toast.success(t('serviceUi.deleteSuccess'));
         fetchServices();
         setIsDeleteModalOpen(false);
         setEditingService(null);
         if (viewingService?._id === editingService._id) setIsViewModalOpen(false);
       } else {
-        throw new Error(res.data.message || 'Failed to delete service');
+        throw new Error(res.data.message || t('serviceUi.deleteFailed'));
       }
     } catch (err) {
       toast.error(err.message);
@@ -366,7 +368,9 @@ const AdminServiceManager = () => {
   const visibleServices = useMemo(() => includeLinkedService(filteredAndSortedServices, services, verifiedServiceId), [filteredAndSortedServices, services, verifiedServiceId]);
   useEffect(() => {
     const targetPage = verifiedServiceId && serviceRowPage(visibleServices, verifiedServiceId);
-    if (targetPage) setPage(targetPage);
+    if (!targetPage) return undefined;
+    const timer = setTimeout(() => setPage(targetPage), 0);
+    return () => clearTimeout(timer);
   }, [verifiedServiceId, visibleServices, linkKey]);
   const totalPages = Math.max(1, Math.ceil(visibleServices.length / 10));
   const currentPage = Math.min(page, totalPages);
@@ -410,27 +414,27 @@ const AdminServiceManager = () => {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <h1 className="text-3xl font-black tracking-tight text-white">Services</h1>
-                <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Wrench size={12} /> Service Manager</div>
+                <h1 className="text-3xl font-black tracking-tight text-white">{t('serviceUiExtra.title', { defaultValue: 'Services' })}</h1>
+                <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black text-yellow-300"><Wrench size={12} /> {t('serviceUiExtra.manager', { defaultValue: 'Service Manager' })}</div>
               </div>
-              <p className="text-sm text-gray-400 mt-1">Manage extra parking services, pricing, time cost, and availability.</p>
+              <p className="text-sm text-gray-400 mt-1">{t('serviceUiExtra.subtitle', { defaultValue: 'Manage extra parking services, pricing, time cost, and availability.' })}</p>
             </div>
             <button
               onClick={() => openModal()}
               className="services-add inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold"
             >
               <Plus size={16} />
-              Add New Service
+              {t('serviceUi.add')}
             </button>
           </div>
 
           {/* ── KPI Cards ── */}
           <div className="services-metrics mt-6 border-y border-white/10 bg-[#080808]">
             <div className="grid grid-cols-2 lg:grid-cols-4">
-              <StatCard index={0} icon={Package} label="Total Services" value={totalServices} sub="All created services" toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
-              <StatCard index={1} icon={CheckCircle} label="Active Services" value={activeServices} sub="Currently available" toneClass="bg-emerald-500/10 text-emerald-300" loading={loading} />
-              <StatCard index={2} icon={Eye} label="Inactive Services" value={inactiveServices} sub="Hidden from customers" toneClass="bg-red-500/10 text-red-300" loading={loading} />
-              <StatCard index={3} icon={DollarSign} label="Average Price" value={avgPrice} sub="Per service" toneClass="bg-purple-500/10 text-purple-300" loading={loading} isCurrency />
+              <StatCard index={0} icon={Package} label={t('serviceUi.total')} value={totalServices} sub={t('serviceUi.allCreated')} toneClass="bg-blue-500/10 text-blue-300" loading={loading} />
+              <StatCard index={1} icon={CheckCircle} label={t('serviceUi.active')} value={activeServices} sub={t('serviceUi.available')} toneClass="bg-emerald-500/10 text-emerald-300" loading={loading} />
+              <StatCard index={2} icon={Eye} label={t('serviceUiExtra.inactiveServices', { defaultValue: 'Inactive Services' })} value={inactiveServices} sub={t('serviceUi.hiddenCustomers')} toneClass="bg-red-500/10 text-red-300" loading={loading} />
+              <StatCard index={3} icon={DollarSign} label={t('serviceUi.averagePrice')} value={avgPrice} sub={t('serviceUi.perService')} toneClass="bg-purple-500/10 text-purple-300" loading={loading} isCurrency />
             </div>
           </div>
         </div>
@@ -441,7 +445,7 @@ const AdminServiceManager = () => {
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#ffe083]/75 pointer-events-none" />
             <input 
               type="text" 
-              placeholder="Search extra services..." 
+              placeholder={t('serviceUi.search')}
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
               className="w-full bg-white/[0.07] border border-white/[0.14] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/[0.38] focus:outline-none focus:border-[#ffd555]/[0.65] focus:ring-2 focus:ring-[#ffd555]/20 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_30px_rgba(0,0,0,0.12)]"
@@ -452,13 +456,13 @@ const AdminServiceManager = () => {
             <Menu as="div" className="relative inline-block text-left z-30">
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.07] border border-white/[0.14] text-sm text-white/[0.78] hover:border-[#ffd555]/40 hover:text-white hover:bg-white/[0.11] transition-all shadow-sm">
                 <Eye size={14} className="text-[#ffe083]/[0.65]" />
-                <span className="font-medium">{statusFilter === 'all' ? 'All Status' : statusFilter === 'active' ? 'Active' : 'Inactive'}</span>
+                <span className="font-medium">{statusFilter === 'all' ? t('serviceUi.allStatus') : statusFilter === 'active' ? t('serviceUi.activeOnly') : t('serviceUi.inactiveOnly')}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#171b1f]/95 border border-white/[0.15] shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden z-50">
                   <div className="p-1.5">
-                    {[['all','All Status'],['active','Active Only'],['inactive','Inactive Only']].map(([v,l]) => (
+                    {[['all',t('serviceUi.allStatus')],['active',t('serviceUi.activeOnly')],['inactive',t('serviceUi.inactiveOnly')]].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { setStatusFilter(v); setPage(1); }}
@@ -478,14 +482,14 @@ const AdminServiceManager = () => {
               <Menu.Button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.07] border border-white/[0.14] text-sm text-white/[0.78] hover:border-[#ffd555]/40 hover:text-white hover:bg-white/[0.11] transition-all shadow-sm">
                 <Clock size={14} className="text-sky-200/[0.65]" />
                 <span className="font-medium">
-                  {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : sortBy === 'price_desc' ? 'Price: High' : sortBy === 'price_asc' ? 'Price: Low' : 'Name: A-Z'}
+                  {sortBy === 'newest' ? t('serviceUi.newest') : sortBy === 'oldest' ? t('serviceUi.oldest') : sortBy === 'price_desc' ? t('serviceUi.priceHigh') : sortBy === 'price_asc' ? t('serviceUi.priceLow') : t('serviceUi.nameAz')}
                 </span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute right-0 mt-2 w-48 origin-top-right rounded-xl bg-[#171b1f]/95 border border-white/[0.15] shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden z-50">
                   <div className="p-1.5">
-                    {[['newest','Newest First'],['oldest','Oldest First'],['price_desc','Price: High to Low'],['price_asc','Price: Low to High'],['name_asc','Name: A-Z']].map(([v,l]) => (
+                    {[['newest',t('serviceUi.newest')],['oldest',t('serviceUi.oldest')],['price_desc',t('serviceUi.priceHigh')],['price_asc',t('serviceUi.priceLow')],['name_asc',t('serviceUi.nameAz')]].map(([v,l]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { setSortBy(v); setPage(1); }}
@@ -506,37 +510,37 @@ const AdminServiceManager = () => {
         </div>
 
         {/* ── Main Layout: Split ── */}
-        <div ref={tableRef} className="services-table-scroll" tabIndex={0} role="region" aria-label="Services list">
-          {linkKey && serviceLink.key === linkKey && ['missing', 'error', 'unavailable'].includes(serviceLink.status) && <p role="status" className="px-4 py-3 text-sm text-amber-200">{serviceLink.status === 'missing' ? 'Service not found.' : 'Unable to load the requested service.'}</p>}
+        <div ref={tableRef} className="services-table-scroll" tabIndex={0} role="region" aria-label={t('serviceUi.tableService')}>
+          {linkKey && serviceLink.key === linkKey && ['missing', 'error', 'unavailable'].includes(serviceLink.status) && <p role="status" className="px-4 py-3 text-sm text-amber-200">{serviceLink.status === 'missing' ? t('serviceUi.serviceNotFound') : t('serviceUi.loadRequestedError')}</p>}
           <table>
-            <thead><tr>{['Service', 'Price', 'Duration', 'Status', 'Actions'].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+            <thead><tr>{[t('serviceUi.tableService'), t('serviceUi.price'), t('serviceUi.duration'), t('serviceUi.status'), t('serviceUi.actions')].map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
             <tbody>
-              {loading && services.length === 0 ? <tr><td colSpan={5} className="services-empty" role="status">Loading services...</td></tr> : pageServices.length === 0 ? <tr><td colSpan={5} className="services-empty">
-                <p>{services.length ? 'No matching services' : 'No extra services yet'}</p>
-                <button type="button" onClick={() => openModal()} className="mt-3 text-[#e8d5ad]">Add New Service</button>
+              {loading && services.length === 0 ? <tr><td colSpan={5} className="services-empty" role="status">{t('common.loading', { defaultValue: 'Loading...' })}</td></tr> : pageServices.length === 0 ? <tr><td colSpan={5} className="services-empty">
+                <p>{services.length ? t('serviceUi.noMatching') : t('serviceUi.noServices')}</p>
+                <button type="button" onClick={() => openModal()} className="mt-3 text-[#e8d5ad]">{t('serviceUi.add')}</button>
               </td></tr> : pageServices.map((service) => <tr key={service._id} ref={String(service._id).toLowerCase() === verifiedServiceId?.toLowerCase() ? linkedRowRef : undefined} className="services-row" onClick={() => openViewModal(service)}>
                 <td><div className="flex min-w-0 items-center gap-3">
                   {service.imageUrl ? <img src={service.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <Package size={20} className="shrink-0 text-white/40" aria-hidden="true" />}
                   <span className="truncate text-white" title={service.name}>{service.name}</span>
                 </div></td>
                 <td className="text-[#e8d5ad]">{service.price.toLocaleString('vi-VN')} VND</td>
-                <td>{service.timeCost} min</td>
-                <td><span className={`services-status inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${service.isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-white/50'}`}><span className={`h-1.5 w-1.5 rounded-full ${service.isActive ? 'bg-emerald-400' : 'bg-white/30'}`} />{service.isActive ? 'Active' : 'Inactive'}</span></td>
+                <td>{service.timeCost} {t('serviceMinuteShort', { defaultValue: 'min' })}</td>
+                <td><span className={`services-status inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${service.isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-white/50'}`}><span className={`h-1.5 w-1.5 rounded-full ${service.isActive ? 'bg-emerald-400' : 'bg-white/30'}`} />{service.isActive ? t('serviceUi.activeStatus') : t('serviceUi.inactiveStatus')}</span></td>
                 <td onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-end gap-2">
-                  <button type="button" onClick={() => openViewModal(service)} className="services-view" aria-label={`View Panel for ${service.name}`}><Eye size={14} aria-hidden="true" /></button>
-                  <button type="button" onClick={() => openModal(service)} title="Edit" aria-label={`Edit ${service.name}`} className="services-icon text-[#e8d5ad]"><Pencil size={14} /></button>
-                  <button type="button" onClick={() => confirmDelete(service)} title="Delete" aria-label={`Delete ${service.name}`} className="services-icon text-red-400"><Trash2 size={14} /></button>
+                  <button type="button" onClick={() => openViewModal(service)} className="services-view" aria-label={t('serviceUi.viewPanel', { name: service.name })}><Eye size={14} aria-hidden="true" /></button>
+                  <button type="button" onClick={() => openModal(service)} title={t('serviceUi.edit')} aria-label={`${t('serviceUi.edit')} ${service.name}`} className="services-icon text-[#e8d5ad]"><Pencil size={14} /></button>
+                  <button type="button" onClick={() => confirmDelete(service)} title={t('serviceUi.delete')} aria-label={`${t('serviceUi.delete')} ${service.name}`} className="services-icon text-red-400"><Trash2 size={14} /></button>
                 </div></td>
               </tr>)}
             </tbody>
           </table>
         </div>
-        <nav className="services-pagination" aria-label="Service pages">
-          <span className="text-xs text-white/30">Page {currentPage} of {totalPages} {'\u00b7'} {visibleServices.length} results</span>
+        <nav className="services-pagination" aria-label={t('serviceUi.servicePages')}>
+          <span className="text-xs text-white/30">{t('serviceUi.pageSummary', { current: currentPage, total: totalPages, count: visibleServices.length })}</span>
           <div className="flex items-center gap-1">
-            <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
+            <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; {t('serviceUi.previous')}</button>
             {getPaginationPages(currentPage, totalPages).map((nextPage) => typeof nextPage === 'number' ? <button type="button" key={nextPage} onClick={() => setPage(nextPage)} aria-current={nextPage === currentPage ? 'page' : undefined} className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${nextPage === currentPage ? 'bg-[#ffd555] text-black' : 'text-white/40 hover:text-white hover:bg-white/6'}`}>{nextPage}</button> : <span key={nextPage} aria-hidden="true">...</span>)}
-            <button type="button" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">Next &rarr;</button>
+            <button type="button" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">{t('serviceUi.next')} &rarr;</button>
           </div>
         </nav>
       </div>
@@ -556,8 +560,8 @@ const AdminServiceManager = () => {
               role="dialog" aria-modal="true" aria-labelledby="service-profile-title"
             >
               <header className="service-profile-header">
-                <h3 id="service-profile-title">Service Profile</h3>
-                <button type="button" onClick={() => setIsViewModalOpen(false)} className="service-profile-close" aria-label="Close Service Profile"><X size={18} aria-hidden="true" /></button>
+                <h3 id="service-profile-title">{t('serviceUi.serviceProfile')}</h3>
+                <button type="button" onClick={() => setIsViewModalOpen(false)} className="service-profile-close" aria-label={t('serviceUi.closeProfile')}><X size={18} aria-hidden="true" /></button>
               </header>
               <div className="service-profile-content">
                 <div className="service-profile-identity">
@@ -565,31 +569,31 @@ const AdminServiceManager = () => {
                   <div className="min-w-0">
                     <h2>{viewingService.name}</h2>
                     {viewingService.isActive ? (
-                      <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Active Status</span>
+                      <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{t('serviceUi.activeService')}</span>
                     ) : (
-                      <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-white/50"><span className="h-1.5 w-1.5 rounded-full bg-white/30" />Inactive</span>
+                      <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-white/50"><span className="h-1.5 w-1.5 rounded-full bg-white/30" />{t('serviceUi.inactiveService')}</span>
                     )}
                   </div>
                 </div>
                 <div className="service-profile-facts">
-                  <div><p className="service-profile-label"><DollarSign size={15} className="text-[#e8d5ad]" aria-hidden="true" />Pricing</p><p className="service-profile-price">{viewingService.price.toLocaleString('vi-VN')} VND</p></div>
-                  <div><p className="service-profile-label"><Clock size={15} className="text-slate-400" aria-hidden="true" />Duration</p><p className="service-profile-duration">{viewingService.timeCost}<span>min</span></p></div>
+                  <div><p className="service-profile-label"><DollarSign size={15} className="text-[#e8d5ad]" aria-hidden="true" />{t('serviceUi.pricing')}</p><p className="service-profile-price">{viewingService.price.toLocaleString('vi-VN')} VND</p></div>
+                  <div><p className="service-profile-label"><Clock size={15} className="text-slate-400" aria-hidden="true" />{t('serviceUi.duration')}</p><p className="service-profile-duration">{viewingService.timeCost}<span>{t('serviceMinuteShort', { defaultValue: 'min' })}</span></p></div>
                 </div>
                 <section className="service-profile-description">
-                  <h4>Service Description</h4>
+                  <h4>{t('serviceUi.serviceDescription')}</h4>
                   <div><p>{viewingService.description}</p></div>
                 </section>
                 <section className="service-profile-system">
-                  <h4>System Info</h4>
+                  <h4>{t('serviceUi.systemInfo')}</h4>
                   <div className="service-profile-system-rows">
-                    <div><span><Calendar size={14} aria-hidden="true" />Added Date</span><time dateTime={viewingService.createdAt}>{new Date(viewingService.createdAt).toLocaleDateString()}</time></div>
-                    {viewingService.updatedAt && <div><span><Pencil size={14} aria-hidden="true" />Last Updated</span><time dateTime={viewingService.updatedAt}>{new Date(viewingService.updatedAt).toLocaleDateString()}</time></div>}
+                    <div><span><Calendar size={14} aria-hidden="true" />{t('serviceUi.addedDate')}</span><time dateTime={viewingService.createdAt}>{new Date(viewingService.createdAt).toLocaleDateString()}</time></div>
+                    {viewingService.updatedAt && <div><span><Pencil size={14} aria-hidden="true" />{t('serviceUi.lastUpdated')}</span><time dateTime={viewingService.updatedAt}>{new Date(viewingService.updatedAt).toLocaleDateString()}</time></div>}
                   </div>
                 </section>
               </div>
               <footer className="service-profile-footer">
-                <button type="button" onClick={() => { setIsViewModalOpen(false); openModal(viewingService); }} className="service-profile-edit"><Pencil size={16} aria-hidden="true" />Edit Settings</button>
-                <button type="button" onClick={() => confirmDelete(viewingService)} className="service-profile-delete"><Trash2 size={16} aria-hidden="true" />Delete</button>
+                <button type="button" onClick={() => { setIsViewModalOpen(false); openModal(viewingService); }} className="service-profile-edit"><Pencil size={16} aria-hidden="true" />{t('serviceUi.editSettings')}</button>
+                <button type="button" onClick={() => confirmDelete(viewingService)} className="service-profile-delete"><Trash2 size={16} aria-hidden="true" />{t('serviceUi.delete')}</button>
               </footer>
             </motion.div>
           </motion.div>
@@ -613,7 +617,7 @@ const AdminServiceManager = () => {
               <div className="flex justify-between items-center px-6 py-4 border-b border-white/10 bg-white/[0.04] rounded-t-2xl shrink-0 relative">
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   {editingService ? <Pencil className="text-[#ffd555]" size={16} /> : <Sparkles className="text-[#ffd555]" size={16} />}
-                  {editingService ? 'Edit Service' : 'Create Premium Service'}
+                  {editingService ? t('serviceUi.editTitle') : t('serviceUi.createTitle')}
                 </h2>
                 <button onClick={closeModal} className="w-8 h-8 rounded-full flex items-center justify-center text-white/[0.55] hover:text-white hover:bg-white/[0.12] transition-colors border border-white/10">
                   <X size={16} />
@@ -632,7 +636,7 @@ const AdminServiceManager = () => {
                   {/* Left Col: Upload & Live Preview */}
                   <div className="lg:col-span-5 space-y-6">
                     <div>
-                      <label className={labelClass}>Service Thumbnail</label>
+                      <label className={labelClass}>{t('serviceUi.thumbnail')}</label>
                       <div 
                         className={`relative group rounded-xl border border-dashed h-[180px] flex flex-col items-center justify-center overflow-hidden transition-all duration-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]
                           ${isDragging ? 'border-[#ffd555] bg-[#ffd555]/[0.14] shadow-[0_0_32px_rgba(255,213,85,0.16)]' : 'border-white/[0.24] bg-white/[0.055] hover:border-[#ffd555]/60 hover:bg-white/[0.08]'}
@@ -655,7 +659,7 @@ const AdminServiceManager = () => {
                             <img src={imagePreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-95 group-hover:opacity-45 transition-opacity" />
                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/45 backdrop-blur-[2px]">
                               <span className="flex items-center gap-1.5 bg-[#ffd555]/20 text-[#ffe083] px-3 py-1.5 rounded-lg font-bold text-xs border border-[#ffd555]/[0.35]">
-                                <UploadCloud size={14} /> Change
+                                <UploadCloud size={14} /> {t('serviceUi.change')}
                               </span>
                             </div>
                           </>
@@ -664,22 +668,22 @@ const AdminServiceManager = () => {
                             <div className="w-12 h-12 rounded-full bg-[#ffd555]/[0.12] border border-[#ffd555]/25 flex items-center justify-center mx-auto mb-3 text-[#ffe083] shadow-[0_0_28px_rgba(255,213,85,0.12)]">
                               <ImagePlus size={18} />
                             </div>
-                            <p className="text-xs font-bold text-white mb-1">Drag & Drop</p>
-                            <p className="text-[10px] text-white/[0.55]">max 5MB (JPG/PNG)</p>
+                            <p className="text-xs font-bold text-white mb-1">{t('serviceUi.dragDrop')}</p>
+                            <p className="text-[10px] text-white/[0.55]">{t('serviceUi.maxFile')}</p>
                           </div>
                         )}
                       </div>
                     </div>
 
                     <div>
-                      <label className={labelClass}>Live Preview</label>
+                      <label className={labelClass}>{t('serviceUi.preview')}</label>
                       <div className="bg-white/[0.06] border border-white/[0.14] rounded-2xl p-4 pointer-events-none shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                         <div className="flex gap-3 items-center">
                           <div className="w-12 h-12 rounded-lg bg-[#202832] border border-white/[0.15] shrink-0 overflow-hidden shadow-lg">
                             {imagePreview ? <img src={imagePreview} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-white/[0.06]" />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-bold text-white truncate">{formData.name || 'Service Name'}</h4>
+                            <h4 className="text-sm font-bold text-white truncate">{formData.name || t('serviceUi.serviceName')}</h4>
                             <div className="flex gap-2 mt-1.5">
                               <span className="text-[10px] font-bold text-[#ffd555] bg-[#ffd555]/10 px-1.5 py-0.5 rounded border border-[#ffd555]/20">{Number(formData.price || 0).toLocaleString('vi-VN')} ₫</span>
                               <span className="text-[10px] font-medium text-sky-100/75 bg-sky-400/10 px-1.5 py-0.5 rounded border border-sky-300/15">{formData.timeCost || 0}m</span>
@@ -693,20 +697,20 @@ const AdminServiceManager = () => {
                   {/* Right Col: Form Fields */}
                   <div className="lg:col-span-7 space-y-4">
                     <div>
-                      <label className={labelClass}>Service Name</label>
-                      <input type="text" name="name" value={formData.name} onChange={handleInputChange} className={inputClass} placeholder="e.g. Premium Interior Detail" required />
+                      <label className={labelClass}>{t('serviceUi.serviceName')}</label>
+                      <input type="text" name="name" value={formData.name} onChange={handleInputChange} className={inputClass} placeholder={t('serviceUi.serviceNamePlaceholder')} required />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className={labelClass}>Price (VND)</label>
+                        <label className={labelClass}>{t('serviceUi.priceVnd')}</label>
                         <div className="relative">
                           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#ffe083]/70 font-bold text-sm">₫</span>
                           <input type="number" name="price" value={formData.price} onChange={handleInputChange} min="0" step="1000" className={`${inputClass} pl-9`} placeholder="0" required />
                         </div>
                       </div>
                       <div>
-                        <label className={labelClass}>Duration (Min)</label>
+                        <label className={labelClass}>{t('serviceUi.durationInput')}</label>
                         <div className="relative">
                           <Clock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sky-100/[0.65]" />
                           <input type="number" name="timeCost" value={formData.timeCost} onChange={handleInputChange} min="1" step="1" className={`${inputClass} pl-9`} placeholder="30" required />
@@ -715,12 +719,12 @@ const AdminServiceManager = () => {
                     </div>
 
                     <div>
-                      <label className={labelClass}>Description</label>
-                      <textarea name="description" value={formData.description} onChange={handleInputChange} rows="4" className={`${inputClass} resize-none`} placeholder="Write a clear description for customers..." required />
+                      <label className={labelClass}>{t('serviceUi.description')}</label>
+                      <textarea name="description" value={formData.description} onChange={handleInputChange} rows="4" className={`${inputClass} resize-none`} placeholder={t('serviceUi.descriptionPlaceholder')} required />
                     </div>
 
                     <div>
-                      <label className={labelClass}>Visibility Status</label>
+                      <label className={labelClass}>{t('serviceUi.visibility')}</label>
                       <div 
                         className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
                           formData.isActive ? 'bg-emerald-400/[0.14] border-emerald-300/[0.35] shadow-[0_0_30px_rgba(52,211,153,0.08)]' : 'bg-white/[0.055] border-white/[0.14]'
@@ -729,10 +733,10 @@ const AdminServiceManager = () => {
                       >
                         <div>
                           <p className={`font-bold text-[13px] ${formData.isActive ? 'text-emerald-400' : 'text-white/[0.60]'}`}>
-                            {formData.isActive ? 'Active Service' : 'Inactive Service'}
+                            {formData.isActive ? t('serviceUi.activeService') : t('serviceUi.inactiveService')}
                           </p>
                           <p className="text-[11px] text-white/[0.56] mt-0.5">
-                            {formData.isActive ? 'Available in booking catalog.' : 'Hidden from customers.'}
+                            {formData.isActive ? t('serviceUi.availableCatalog') : t('serviceUi.hiddenCatalog')}
                           </p>
                         </div>
                         <div className={`relative w-10 h-5 rounded-full transition-colors duration-300 ${formData.isActive ? 'bg-emerald-500' : 'bg-white/20'}`}>
@@ -746,7 +750,7 @@ const AdminServiceManager = () => {
 
               <div className="px-6 py-4 border-t border-white/10 bg-white/[0.04] rounded-b-2xl flex justify-end gap-3 shrink-0 sticky bottom-0 relative">
                 <button type="button" onClick={closeModal} className="px-5 py-2.5 rounded-xl text-sm font-medium bg-white/[0.08] text-white/[0.84] hover:bg-white/[0.14] transition-colors border border-white/[0.14]">
-                  Cancel
+                  {t('serviceUi.cancel')}
                 </button>
                 <button 
                   type="submit" 
@@ -755,7 +759,7 @@ const AdminServiceManager = () => {
                   className="px-6 py-2.5 rounded-xl text-sm font-bold text-black flex items-center gap-2 hover:-translate-y-0.5 transition-transform disabled:opacity-70 disabled:hover:translate-y-0 shadow-[0_10px_30px_rgba(255,213,85,0.25)]"
                   style={{ background: goldGrad }}
                 >
-                  {loading ? <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Save Service'}
+                  {loading ? <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : t('serviceUi.save')}
                 </button>
               </div>
             </motion.div>
@@ -785,9 +789,9 @@ const AdminServiceManager = () => {
                   </div>
                 </div>
 
-                <h3 className="text-lg font-bold text-white mb-2">Delete Service?</h3>
+                <h3 className="text-lg font-bold text-white mb-2">{t('serviceUi.deleteConfirmTitle')}</h3>
                 <p className="text-[13px] text-white/50 mb-6 leading-relaxed px-4">
-                  You are about to permanently delete <span className="text-white font-semibold">{editingService.name}</span>. This action cannot be undone.
+                  {t('serviceUi.deleteConfirm', { name: editingService.name })}
                 </p>
 
                 <div className="flex gap-3 w-full">
@@ -796,14 +800,14 @@ const AdminServiceManager = () => {
                     disabled={loading}
                     className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-white/5 text-white/[0.80] hover:bg-white/10 transition-colors border border-white/10"
                   >
-                    Cancel
+                    {t('serviceUi.cancel')}
                   </button>
                   <button 
                     onClick={handleDelete}
                     disabled={loading}
                     className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-[0_4px_12px_rgba(239,68,68,0.3)] flex items-center justify-center gap-2"
                   >
-                    {loading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Delete'}
+                    {loading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : t('serviceUi.delete')}
                   </button>
                 </div>
               </div>

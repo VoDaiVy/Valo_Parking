@@ -14,8 +14,10 @@ import './components/sessionDetails.css';
 import AIPlateResolutionModal from './components/AIPlateResolutionModal.jsx';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { createSessionVerification, verifiedSessionForQuery, sessionRowTarget, highlightSessionRow } from './sessionDeepLink.js';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 export default function SessionManagement() {
+  const { t, language } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -24,10 +26,7 @@ export default function SessionManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [timeFilter, setTimeFilter] = useState({ mode: 'all', value: '', from: '', to: '' });
-  const updateTimeFilter = (patch) => {
-    setTimeFilter((previous) => ({ ...previous, ...patch }));
-    setCurrentPage(1);
-  };
+  const updateTimeFilter = (patch) => { setTimeFilter(previous => ({ ...previous, ...patch })); setCurrentPage(1); };
   const invalidTimeRange = timeFilter.mode === 'range' && timeFilter.from && timeFilter.to && timeFilter.from > timeFilter.to;
   const [sortBy, setSortBy] = useState('newest');
   const [showAiModal, setShowAiModal] = useState(false);
@@ -49,9 +48,9 @@ export default function SessionManagement() {
       setLoading(false);
     } else if (result.status !== 'loading') {
       setLoading(false);
-      setError('Không thể tải danh sách phiên đỗ xe. Vui lòng thử lại.');
+      setError(t('sessionManagementUi.fetchErrorVi', { defaultValue: 'Unable to load parking sessions. Please try again.' }));
     }
-  }), [setVerification, setSessions, setError, setLoading]);
+  }), [setVerification, setSessions, setError, setLoading, t]);
   const adminDeepLink = isAdminPage && Boolean(sessionIdQuery);
   const verificationKey = `${location.key}:${verificationAttempt}`;
   const linkedSession = adminDeepLink ? verifiedSessionForQuery(verification, sessionIdQuery, verificationKey) : null;
@@ -77,15 +76,15 @@ export default function SessionManagement() {
         setCurrentPage(1);
         setError('');
       } else {
-        setError(response.data?.message || 'Failed to load sessions. Please try again.');
+        setError(response.data?.message || t('sessionManagementUi.fetchError', { defaultValue: 'Failed to load sessions. Please try again.' }));
       }
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
-      setError('Failed to load sessions. Please try again.');
+      setError(t('sessionManagementUi.fetchError', { defaultValue: 'Failed to load sessions. Please try again.' }));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (adminDeepLink) return;
@@ -124,19 +123,17 @@ export default function SessionManagement() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    return new Date(dateString).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
   };
 
-  const formatPrice = (price) => new Intl.NumberFormat('vi-VN', {
+  const formatPrice = (price) => new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US', {
     style: 'currency',
     currency: 'VND',
     maximumFractionDigits: 0,
   }).format(Number(price) || 0);
 
   const filteredSessions = useMemo(
-    () => filterAndSortSessions(isAdminPage
-      ? sessions.filter((session) => matchesSessionTime(session.checkInTime, timeFilter))
-      : sessions, {
+    () => filterAndSortSessions(isAdminPage ? sessions.filter(session => matchesSessionTime(session.checkInTime, timeFilter)) : sessions, {
       searchQuery,
       status: statusFilter,
       sortBy,
@@ -186,27 +183,27 @@ export default function SessionManagement() {
       {isAdminPage && <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.6)_1px,transparent_1px)] [background-size:46px_46px]" />}
       {adminDeepLink && verificationStatus !== 'verified' && (
         <div role={verificationStatus === 'loading' ? 'status' : 'alert'} className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-200">
-          {verificationStatus === 'loading' ? 'Verifying the linked session...'
-            : verificationStatus === 'missing' ? 'Session not found.'
-              : verificationStatus === 'unavailable' ? 'Session access is unavailable. Check your sign-in and permissions.'
-                : 'Unable to verify this session. Please try again.'}
+          {verificationStatus === 'loading' ? t('sessionManagementUi.verifying', { defaultValue: 'Verifying the linked session...' })
+            : verificationStatus === 'missing' ? t('sessionManagementUi.sessionNotFound', { defaultValue: 'Session not found.' })
+              : verificationStatus === 'unavailable' ? t('sessionManagementUi.accessUnavailable', { defaultValue: 'Session access is unavailable. Check your sign-in and permissions.' })
+                : t('sessionManagementUi.verifyFailed', { defaultValue: 'Unable to verify this session. Please try again.' })}
           {verificationStatus !== 'loading' && <button type="button" className="ml-3 underline" onClick={() => {
             setVerification({ sessionId: sessionIdQuery, status: 'loading', session: null });
             setVerificationAttempt((attempt) => attempt + 1);
-          }}>Retry</button>}
+          }}>{t('sessionManagementUi.retry', { defaultValue: 'Retry' })}</button>}
         </div>
       )}
       <div className="g3-management-content g3-header mb-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           {isAdminPage ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Session Management</h1>
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">{t('sessionManagementUi.title', { defaultValue: 'Session Management' })}</h1>
               <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-                <MonitorCheck size={12} /> Session Manager
+                <MonitorCheck size={12} /> {t('sessionManagementUi.badge', { defaultValue: 'Session Manager' })}
               </div>
             </div>
-          ) : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Session Management</h1>}
-          <p className="g3-subtitle mt-0.5 text-sm font-medium text-blue-200/60">Monitor vehicle entry/exit and security images.</p>
+          ) : <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('sessionManagementUi.title', { defaultValue: 'Session Management' })}</h1>}
+          <p className="g3-subtitle mt-0.5 text-sm font-medium text-blue-200/60">{t('sessionManagementUi.subtitle', { defaultValue: 'Monitor vehicle entry/exit and security images.' })}</p>
         </div>
 
         <div className={isAdminPage ? 'admin-session-header-actions' : 'staff-session-header-actions'}>
@@ -218,10 +215,10 @@ export default function SessionManagement() {
           } else {
             fetchSessions();
           }
-        }} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" aria-busy={loading} className="admin-session-refresh">
+        }} disabled={loading} title={t('sessionManagementUi.refresh', { defaultValue: 'Refresh sessions' })} aria-label={t('sessionManagementUi.refresh', { defaultValue: 'Refresh sessions' })} aria-busy={loading} className="admin-session-refresh">
           <RefreshCw size={14} aria-hidden="true" className={loading ? 'animate-spin motion-reduce:animate-none' : ''} />
         </button>}
-        {!isAdminPage && <button type="button" onClick={fetchSessions} disabled={loading} title="Refresh sessions" aria-label="Refresh sessions" className="staff-session-refresh">
+        {!isAdminPage && <button type="button" onClick={fetchSessions} disabled={loading} title={t('sessionManagementUi.refresh', { defaultValue: 'Refresh sessions' })} aria-label={t('sessionManagementUi.refresh', { defaultValue: 'Refresh sessions' })} className="staff-session-refresh">
           <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
         </button>}
         {/* AI Blurred Plate Assistant Button */}
@@ -235,27 +232,27 @@ export default function SessionManagement() {
           className="g4-ai-plate-trigger g3-header-action flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/20 to-violet-500/20 border border-violet-400/40 text-violet-300 font-bold text-xs hover:bg-violet-400 hover:text-white transition shadow-lg shadow-violet-500/10 shrink-0"
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
-          <span>AI Plate Assistant</span>
+          <span>{t('sessionManagementUi.aiAssistant', { defaultValue: 'AI Plate Assistant' })}</span>
         </button>
         </div>
       </div>
 
       {isAdminPage && (
-        <section aria-label="Admin session summary" aria-busy={loading} className="admin-session-metrics">
+        <section aria-label={t('sessionManagementUi.adminSummary', { defaultValue: 'Admin session summary' })} aria-busy={loading} className="admin-session-metrics">
           {[
-            { label: 'Total Sessions', value: metrics.total, Icon: MonitorCheck, note: 'All recorded sessions', tone: 'text-blue-300' },
-            { label: 'Currently Parked', value: metrics.parked, Icon: Car, note: 'Active sessions', tone: 'text-cyan-300' },
-            { label: 'Completed Today', value: metrics.completedToday, Icon: CheckCircle2, note: 'Checkouts in Vietnam time', tone: 'text-emerald-300' },
-            { label: 'Completed Sessions', value: sessions.filter((session) => session.status === 'completed').length, Icon: CheckCircle2, note: 'Finished parking sessions', tone: 'text-emerald-300' },
+            { label: t('sessionManagementUi.totalSessions', { defaultValue: 'Total Sessions' }), value: metrics.total, Icon: MonitorCheck, note: t('sessionManagementUi.allRecorded', { defaultValue: 'All recorded sessions' }), tone: 'text-blue-300' },
+            { label: t('sessionManagementUi.currentlyParked', { defaultValue: 'Currently Parked' }), value: metrics.parked, Icon: Car, note: t('sessionManagementUi.activeSessions', { defaultValue: 'Active sessions' }), tone: 'text-cyan-300' },
+            { label: t('sessionManagementUi.completedToday', { defaultValue: 'Completed Today' }), value: metrics.completedToday, Icon: CheckCircle2, note: t('sessionManagementUi.checkoutsVietnam', { defaultValue: 'Checkouts in Vietnam time' }), tone: 'text-emerald-300' },
+            { label: t('sessionManagementUi.completedSessions', { defaultValue: 'Completed Sessions' }), value: sessions.filter((session) => session.status === 'completed').length, Icon: CheckCircle2, note: t('sessionManagementUi.finishedSessions', { defaultValue: 'Finished parking sessions' }), tone: 'text-emerald-300' },
           ].map(({ label, value, Icon, note, tone }) => (
-            <div key={label} className="admin-session-metric" title={loading ? 'Loading sessions' : error ? 'Session API unavailable' : note}>
+            <div key={label} className="admin-session-metric" title={loading ? t('sessionManagementUi.loadingShort', { defaultValue: 'Loading sessions' }) : error ? t('sessionManagementUi.apiUnavailable', { defaultValue: 'Session API unavailable' }) : note}>
               <Icon size={18} className={`shrink-0 ${tone}`} aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-blue-200/55">{label}</p>
-                {loading ? <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" aria-label="Loading" /> : (
+                {loading ? <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" aria-label={t('sessionManagementUi.loadingShort', { defaultValue: 'Loading' })} /> : (
                   <div className="mt-1.5 flex items-baseline gap-2">
-                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? 'N/A' : value.toLocaleString('vi-VN')}</p>
-                    <span className="truncate text-xs text-emerald-300">{error ? 'Unavailable' : note}</span>
+                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? t('sessionManagementUi.unavailable', { defaultValue: 'N/A' }) : value.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')}</p>
+                    <span className="truncate text-xs text-emerald-300">{error ? t('sessionManagementUi.unavailable', { defaultValue: 'Unavailable' }) : note}</span>
                   </div>
                 )}
               </div>
@@ -264,15 +261,15 @@ export default function SessionManagement() {
         </section>
       )}
 
-      {!isAdminPage && <section aria-label="Session summary" className="g3-management-content staff-session-metrics">
+      {!isAdminPage && <section aria-label={t('sessionManagementUi.summary', { defaultValue: 'Session summary' })} className="g3-management-content staff-session-metrics">
         {[
-          { label: 'Total Sessions', value: metrics.total, Icon: MonitorCheck, note: 'All sessions returned by the authorized session API; independent of table filters.' },
-          { label: 'Currently Parked', value: metrics.parked, Icon: Car, note: 'All sessions with active status.' },
-          { label: 'Completed Today', value: metrics.completedToday, Icon: CheckCircle2, note: 'Completed sessions checked out today in Asia/Ho_Chi_Minh.' },
-          { label: 'Needs Attention', value: metrics.needsAttention, Icon: Clock, note: metrics.needsAttention == null ? 'Unavailable: an active session has missing or invalid expected timing.' : 'Active sessions past their recorded expected duration, matching Staff diagnostics.' },
-        ].map(({ label, value, Icon, note }) => <article key={label} aria-label={label} title={loading ? 'Loading session data' : error ? 'Session data unavailable' : note} className="staff-session-metric">
+          { label: t('sessionManagementUi.totalSessions', { defaultValue: 'Total Sessions' }), value: metrics.total, Icon: MonitorCheck, note: t('sessionManagementUi.staffTotalNote', { defaultValue: 'All sessions returned by the authorized session API; independent of table filters.' }) },
+          { label: t('sessionManagementUi.currentlyParked', { defaultValue: 'Currently Parked' }), value: metrics.parked, Icon: Car, note: t('sessionManagementUi.activeSessions', { defaultValue: 'All sessions with active status.' }) },
+          { label: t('sessionManagementUi.completedToday', { defaultValue: 'Completed Today' }), value: metrics.completedToday, Icon: CheckCircle2, note: t('sessionManagementUi.completedTodayNote', { defaultValue: 'Completed sessions checked out today in Vietnam time.' }) },
+          { label: t('sessionManagementUi.needsAttention', { defaultValue: 'Needs Attention' }), value: metrics.needsAttention, Icon: Clock, note: metrics.needsAttention == null ? t('sessionManagementUi.unavailableTiming', { defaultValue: 'Unavailable: an active session has missing or invalid expected timing.' }) : t('sessionManagementUi.attentionNote', { defaultValue: 'Active sessions past their recorded expected duration.' }) },
+        ].map(({ label, value, Icon, note }) => <article key={label} aria-label={label} title={loading ? t('sessionManagementUi.loadingData', { defaultValue: 'Loading session data' }) : error ? t('sessionManagementUi.unavailable', { defaultValue: 'Session data unavailable' }) : note} className="staff-session-metric">
           <Icon size={19} aria-hidden="true" />
-          <div><p className="staff-session-metric-label">{label}</p><p className="staff-session-metric-value">{loading ? '...' : error ? '\u2014' : value == null ? <span className="staff-session-unavailable">Unavailable</span> : value}</p></div>
+          <div><p className="staff-session-metric-label">{label}</p><p className="staff-session-metric-value">{loading ? '...' : error ? '\u2014' : value == null ? <span className="staff-session-unavailable">{t('sessionManagementUi.unavailable', { defaultValue: 'Unavailable' })}</span> : value}</p></div>
         </article>)}
       </section>}
 
@@ -280,7 +277,7 @@ export default function SessionManagement() {
         {!loading && !error && (
           <div className="g3-toolbar flex flex-col gap-3 border-b border-white/[0.07] bg-[#0d0d0d] p-4 lg:flex-row lg:items-center">
             <label className="g3-search relative min-w-0 flex-1 lg:max-w-md">
-              <span className="sr-only">Search sessions</span>
+              <span className="sr-only">{t('sessionManagementUi.searchSessions', { defaultValue: 'Search sessions' })}</span>
               <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-600" />
               <input
                 type="search"
@@ -289,7 +286,7 @@ export default function SessionManagement() {
                   setSearchQuery(event.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="Search license plate or phone..."
+                placeholder={t('sessionManagementUi.searchPlaceholder', { defaultValue: 'Search license plate or phone...' })}
                 className="h-11 w-full rounded-xl border border-white/10 bg-[#080808] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors placeholder:text-slate-700 focus:border-[#ffd555]/40 focus:ring-2 focus:ring-[#ffd555]/10"
               />
             </label>
@@ -302,12 +299,12 @@ export default function SessionManagement() {
                     setCurrentPage(1);
                 }}
                 options={[
-                  ['all', 'All statuses'],
-                  ['active', 'Active'],
-                  ['completed', 'Completed'],
-                  ['cancelled', 'Cancelled'],
+                  ['all', t('sessionManagementUi.allStatuses', { defaultValue: 'All statuses' })],
+                  ['active', t('sessionManagementUi.active', { defaultValue: 'Active' })],
+                  ['completed', t('sessionManagementUi.completed', { defaultValue: 'Completed' })],
+                  ['cancelled', t('sessionManagementUi.cancelled', { defaultValue: 'Cancelled' })],
                 ]}
-                ariaLabel="Filter sessions by status"
+                ariaLabel={t('sessionManagementUi.filterStatus', { defaultValue: 'Filter sessions by status' })}
                 className="w-full sm:min-w-40"
                 buttonClassName="text-xs font-black uppercase tracking-[0.08em]"
               />
@@ -319,85 +316,39 @@ export default function SessionManagement() {
                     setCurrentPage(1);
                 }}
                 options={[
-                  ['newest', 'Newest first'],
-                  ['oldest', 'Oldest first'],
-                  ['price-high', 'Price: high to low'],
-                  ['price-low', 'Price: low to high'],
+                  ['newest', t('sessionManagementUi.newest', { defaultValue: 'Newest first' })],
+                  ['oldest', t('sessionManagementUi.oldest', { defaultValue: 'Oldest first' })],
+                  ['price-high', t('sessionManagementUi.priceHigh', { defaultValue: 'Price: high to low' })],
+                  ['price-low', t('sessionManagementUi.priceLow', { defaultValue: 'Price: low to high' })],
                 ]}
-                ariaLabel="Sort sessions"
+                ariaLabel={t('sessionManagementUi.sortSessions', { defaultValue: 'Sort sessions' })}
                 align="right"
                 className="w-full sm:min-w-48"
                 buttonClassName="text-xs font-black uppercase tracking-[0.08em]"
                 menuClassName="w-52"
               />
             </div>
-            {isAdminPage && (
-              <section aria-label="Filter by check-in time" className="admin-session-time-filter">
-                <div className="admin-session-time-controls">
-                  <div className="admin-session-time-mode">
-                    <StaffDropdown
-                      value={timeFilter.mode}
-                      onChange={(mode) => updateTimeFilter({ mode, value: '', from: '', to: '' })}
-                      options={[
-                        ['all', 'All time'],
-                        ['day', 'By day'],
-                        ['month', 'By month'],
-                        ['year', 'By year'],
-                        ['range', 'Date & time range'],
-                      ]}
-                      ariaLabel="Time filter mode"
-                    />
-                  </div>
-                  {['day', 'month', 'year'].includes(timeFilter.mode) && (
-                    <label className="flex flex-col gap-2 text-xs text-slate-400">
-                      <span className="sr-only">
-                        {timeFilter.mode === 'day' ? 'Date' : timeFilter.mode === 'month' ? 'Month' : 'Year'}
-                      </span>
-                      <input
-                        type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'}
-                        min={timeFilter.mode === 'year' ? '1000' : undefined}
-                        max={timeFilter.mode === 'year' ? '9999' : undefined}
-                        placeholder="YYYY"
-                        value={timeFilter.value}
-                        onChange={(event) => updateTimeFilter({ value: event.target.value })}
-                        className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]"
-                      />
-                    </label>
-                  )}
-                  {timeFilter.mode === 'range' && (
-                    <>
-                      <div>
-                        <p className="sr-only">From</p>
-                        <AdminDateTimePicker label="Check-in from (Vietnam time)" value={timeFilter.from} onChange={(from) => updateTimeFilter({ from })} />
-                      </div>
-                      <div>
-                        <p className="sr-only">To</p>
-                        <AdminDateTimePicker label="Check-in to (Vietnam time)" value={timeFilter.to} onChange={(to) => updateTimeFilter({ to })} />
-                      </div>
-                    </>
-                  )}
-                  {timeFilter.mode !== 'all' && (
-                    <button
-                      type="button"
-                      onClick={() => updateTimeFilter({ mode: 'all', value: '', from: '', to: '' })}
-                      title="Clear time filter"
-                      aria-label="Clear time filter"
-                      className="inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/5 hover:text-white"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-                {invalidTimeRange && <p role="alert" className="mt-3 text-xs text-rose-300">End time must be on or after start time.</p>}
-              </section>
-            )}
+            {isAdminPage && <section aria-label={t('sessionManagementUi.filterByTime', { defaultValue: 'Filter by check-in time' })} className="admin-session-time-filter">
+          <div className="admin-session-time-controls">
+            <div className="admin-session-time-mode"><StaffDropdown value={timeFilter.mode} onChange={mode => updateTimeFilter({ mode, value: '', from: '', to: '' })} options={[[ 'all', t('sessionManagementUi.allTime', { defaultValue: 'All time' }) ], ['day', t('sessionManagementUi.byDay', { defaultValue: 'By day' })], ['month', t('sessionManagementUi.byMonth', { defaultValue: 'By month' })], ['year', t('sessionManagementUi.byYear', { defaultValue: 'By year' })], ['range', t('sessionManagementUi.dateRange', { defaultValue: 'Date & time range' })]]} ariaLabel={t('sessionManagementUi.timeFilter', { defaultValue: 'Time filter mode' })} /></div>
+            {['day', 'month', 'year'].includes(timeFilter.mode) && <label className="flex flex-col gap-2 text-xs text-slate-400"><span className="sr-only">{timeFilter.mode === 'day' ? t('sessionManagementUi.date', { defaultValue: 'Date' }) : timeFilter.mode === 'month' ? t('sessionManagementUi.month', { defaultValue: 'Month' }) : t('sessionManagementUi.year', { defaultValue: 'Year' })}</span><input type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'} min={timeFilter.mode === 'year' ? '1000' : undefined} max={timeFilter.mode === 'year' ? '9999' : undefined} placeholder={t('sessionManagementUi.yearPlaceholder', { defaultValue: 'YYYY' })} value={timeFilter.value} onChange={event => updateTimeFilter({ value: event.target.value })} className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]" /></label>}
+            {timeFilter.mode === 'range' && <>
+              <div><p className="sr-only">{t('sessionManagementUi.from', { defaultValue: 'From' })}</p><AdminDateTimePicker label={t('sessionManagementUi.checkInFrom', { defaultValue: 'Check-in from (Vietnam time)' })} value={timeFilter.from} onChange={from => updateTimeFilter({ from })} /></div>
+              <div><p className="sr-only">{t('sessionManagementUi.to', { defaultValue: 'To' })}</p><AdminDateTimePicker label={t('sessionManagementUi.checkInTo', { defaultValue: 'Check-in to (Vietnam time)' })} value={timeFilter.to} onChange={to => updateTimeFilter({ to })} /></div>
+            </>}
+            {timeFilter.mode !== 'all' && <button type="button" onClick={() => updateTimeFilter({ mode: 'all', value: '', from: '', to: '' })} title={t('sessionManagementUi.clearTime', { defaultValue: 'Clear time filter' })} aria-label={t('sessionManagementUi.clearTime', { defaultValue: 'Clear time filter' })} className="inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/5 hover:text-white"><X size={16} /></button>}
+          </div>
+          {invalidTimeRange && <p role="alert" className="mt-3 text-xs text-rose-300">{t('sessionManagementUi.invalidTimeRange', { defaultValue: 'End time must be on or after start time.' })}</p>}
+        </section>}
           </div>
         )}
+
+
 
         {loading ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-14 text-center text-slate-500">
             <Loader2 size={24} className="animate-spin text-[#d7b94a]" />
-            <p className="text-sm font-semibold">Loading sessions...</p>
+            <p className="text-sm font-semibold">{t('sessionManagementUi.loading', { defaultValue: 'Loading sessions...' })}</p>
           </div>
         ) : error ? (
           <div className="flex min-h-64 flex-col items-center justify-center gap-3 border border-red-500/10 bg-red-500/[0.04] px-6 py-14 text-center" role="alert">
@@ -405,7 +356,7 @@ export default function SessionManagement() {
               <AlertTriangle size={20} />
             </div>
             <div>
-              <p className="text-sm font-black text-red-200">Session data unavailable</p>
+              <p className="text-sm font-black text-red-200">{t('sessionManagementUi.unavailable', { defaultValue: 'Session data unavailable' })}</p>
               <p className="mt-1 text-xs font-medium text-red-300/65">{error}</p>
             </div>
           </div>
@@ -415,13 +366,13 @@ export default function SessionManagement() {
               <table className="w-full border-collapse text-left text-sm whitespace-nowrap">
               <thead className="bg-[#14120c]">
                 <tr>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">License Plate</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Phone</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Status</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check In</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Check Out</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Price</th>
-                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">Actions</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.licensePlate', { defaultValue: 'License Plate' })}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.phone', { defaultValue: 'Phone' })}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.status', { defaultValue: 'Status' })}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.checkIn', { defaultValue: 'Check In' })}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.checkOut', { defaultValue: 'Check Out' })}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.price', { defaultValue: 'Price' })}</th>
+                  <th className="border-b border-[#ffd555]/20 px-4 py-3 text-right text-[10px] font-black uppercase tracking-[0.1em] text-[#d7b94a]">{t('sessionManagementUi.actions', { defaultValue: 'Actions' })}</th>
                 </tr>
               </thead>
                 <tbody>
@@ -436,7 +387,7 @@ export default function SessionManagement() {
                         'border-white/10 bg-white/5 text-slate-400'
                       }`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${session.status === 'active' ? 'bg-blue-400' : session.status === 'completed' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                        {session.status}
+                        {t(`sessionManagementUi.${session.status}`, { defaultValue: session.status })}
                       </span>
                     </td>
                     <td className="px-4 py-3 font-medium tabular-nums text-slate-400">{formatDate(session.checkInTime)}</td>
@@ -447,7 +398,7 @@ export default function SessionManagement() {
                         onClick={() => selectManualSession(session)}
                         className="g3-action inline-flex items-center gap-1.5 rounded-lg border border-[#ffd555]/15 bg-[#ffd555]/[0.04] px-3 py-1.5 text-xs font-black text-[#e4c957] transition-all duration-200 hover:border-[#ffd555]/35 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 active:scale-[0.98]"
                       >
-                        <ShieldCheck size={14} /> View Details
+                        <ShieldCheck size={14} /> {t('sessionManagementUi.viewDetails', { defaultValue: 'View Details' })}
                       </button>
                     </td>
                   </tr>
@@ -457,12 +408,12 @@ export default function SessionManagement() {
                     <td colSpan="7" className="px-6 py-16 text-center">
                       <Camera size={28} className="mx-auto text-slate-700" />
                       <p className="mt-3 text-sm font-bold text-slate-400">
-                        {sessions.length === 0 ? 'No sessions found.' : 'No matching sessions.'}
+                        {sessions.length === 0 ? t('sessionManagementUi.noSessions', { defaultValue: 'No sessions found.' }) : t('sessionManagementUi.noMatching', { defaultValue: 'No matching sessions.' })}
                       </p>
                       <p className="mt-1 text-xs text-slate-600">
                         {sessions.length === 0
-                          ? 'Vehicle entry and exit records will appear here.'
-                          : 'Try changing your search or filters.'}
+                          ? t('sessionManagementUi.noSessionsHint', { defaultValue: 'Vehicle entry and exit records will appear here.' })
+                          : t('sessionManagementUi.noMatchingHint', { defaultValue: 'Try changing your search or filters.' })}
                       </p>
                     </td>
                   </tr>
@@ -474,22 +425,22 @@ export default function SessionManagement() {
             {(!isAdminPage || pagination.totalItems > 0) && (
               <div className="g3-pagination flex flex-col gap-4 border-t border-white/[0.07] bg-[#0d0d0d] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p className="text-xs font-semibold text-slate-500">
-                  {!isAdminPage ? `Page ${pagination.currentPage} of ${pagination.totalPages} \u00b7 ${pagination.totalItems} results` : <>Showing{' '}
+                  {!isAdminPage ? t('sessionManagementUi.pageOf', { defaultValue: 'Page {{page}} of {{totalPages}} · {{results}} results', page: pagination.currentPage, totalPages: pagination.totalPages, results: pagination.totalItems }) : <>{t('sessionManagementUi.showing', { defaultValue: 'Showing' })}{' '}
                   <span className="text-slate-300">{pagination.startIndex + 1}-{pagination.endIndex}</span>
-                  {' '}of <span className="text-slate-300">{pagination.totalItems}</span> sessions
+                  {' '}{t('sessionManagementUi.of', { defaultValue: 'of' })} <span className="text-slate-300">{pagination.totalItems}</span> {t('sessionManagementUi.sessions', { defaultValue: 'sessions' })}
                   {pagination.totalItems !== sessions.length && (
-                    <span className="ml-1 text-slate-600">({sessions.length} total)</span>
+                    <span className="ml-1 text-slate-600">({sessions.length} {t('sessionManagementUi.total', { defaultValue: 'total' })})</span>
                   )}
-                  <span className="ml-2 text-[#d7b94a]/70">15 per page</span></>}
+                  <span className="ml-2 text-[#d7b94a]/70">{t('sessionManagementUi.perPage', { defaultValue: '15 per page' })}</span></>}
                 </p>
 
-                <nav className="flex items-center gap-1.5" aria-label="Session pagination">
+                <nav className="flex items-center gap-1.5" aria-label={t('sessionManagementUi.pagination', { defaultValue: 'Session pagination' })}>
                   <button
                     type="button"
                     onClick={() => setCurrentPage(pagination.currentPage - 1)}
                     disabled={pagination.currentPage === 1}
                     className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-white/10 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                    aria-label="Previous page"
+                    aria-label={t('sessionManagementUi.previousPage', { defaultValue: 'Previous page' })}
                   >
                     <ChevronLeft size={16} />
                   </button>
@@ -506,7 +457,7 @@ export default function SessionManagement() {
                             : 'border-white/10 text-slate-400 hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a]'
                         }`}
                         aria-current={page === pagination.currentPage ? 'page' : undefined}
-                        aria-label={`Page ${page}`}
+                        aria-label={t('sessionManagementUi.pageLabel', { defaultValue: 'Page {{page}}', page })}
                       >
                         {page}
                       </button>
@@ -522,7 +473,7 @@ export default function SessionManagement() {
                     onClick={() => setCurrentPage(pagination.currentPage + 1)}
                     disabled={pagination.currentPage === pagination.totalPages}
                     className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-[#ffd555]/30 hover:bg-[#ffd555]/10 hover:text-[#ffe58a] focus:outline-none focus:ring-2 focus:ring-[#ffd555]/30 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-white/10 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                    aria-label="Next page"
+                    aria-label={t('sessionManagementUi.nextPage', { defaultValue: 'Next page' })}
                   >
                     <ChevronRight size={16} />
                   </button>
@@ -539,14 +490,18 @@ export default function SessionManagement() {
           <div className="g4-session-dialog flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#ffd555]/15 bg-[#111111] text-white shadow-2xl">
             <div className="g4-session-header flex items-center justify-between border-b border-[#ffd555]/15 bg-[#14120c] p-6">
               <div>
-                <h3 className="g4-session-title text-xl font-bold text-[#ffd555]">Session Details</h3>
-                <p className="g4-session-subtitle text-sm text-white/40">Vehicle {selectedSession.licensePlate}</p>
-                {selectedSession.packageContext && <div className="mt-2 text-xs text-blue-100">
-                  <p>{selectedSession.packageContext.terms?.name || 'Purchased package'} / Space {selectedSession.packageContext.slotCode}</p>
-                  <p>{selectedSession.packageContext.terms?.service === 'RESERVED_PAID' ? 'Standard parking fees apply' : 'Base parking covered until expiration'}</p>
-                  <p>Expires {formatDate(selectedSession.packageContext.expireAt)}</p>
-                  {new Date(selectedSession.packageContext.expireAt) <= new Date() && <p className="mt-1 text-amber-200">Package coverage has ended. Review additional fees before checkout.</p>}
-                </div>}
+                <h3 className="g4-session-title text-xl font-bold text-[#ffd555]">{t('sessionManagementUi.sessionDetails', { defaultValue: 'Session Details' })}</h3>
+                <p className="g4-session-subtitle text-sm text-white/40">{t('sessionManagementUi.vehicleLabel', { defaultValue: 'Vehicle {{plate}}', plate: selectedSession.licensePlate })}</p>
+                {selectedSession.packageContext && (
+                  <div className="mt-2 text-xs text-blue-100">
+                    <p>{selectedSession.packageContext.terms?.name || 'Purchased package'} / Space {selectedSession.packageContext.slotCode}</p>
+                    <p>{selectedSession.packageContext.terms?.service === 'RESERVED_PAID' ? 'Standard parking fees apply' : 'Base parking covered until expiration'}</p>
+                    <p>Expires {formatDate(selectedSession.packageContext.expireAt)}</p>
+                    {new Date(selectedSession.packageContext.expireAt) <= new Date() && (
+                      <p className="mt-1 text-amber-200">Package coverage has ended. Review additional fees before checkout.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <button 
                 onClick={() => selectManualSession(null)}
@@ -557,36 +512,38 @@ export default function SessionManagement() {
             </div>
             
             <div className="g4-session-body p-6 grid grid-cols-2 gap-8">
-              <div className="col-span-2"><PackageParkingBreakdown pricing={selectedSession.pricingBreakdown} paymentStatus={selectedSession.paymentStatus} /></div>
+              <div className="col-span-2">
+                <PackageParkingBreakdown pricing={selectedSession.pricingBreakdown} paymentStatus={selectedSession.paymentStatus} />
+              </div>
               {/* Entry Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <div className="g4-session-icon flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
-                  <h4 className="font-bold text-lg">Entry Record</h4>
+                  <h4 className="font-bold text-lg">{t('sessionManagementUi.entryRecord', { defaultValue: 'Entry Record' })}</h4>
                 </div>
                 <div className="g4-session-time rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
-                  <p className="mb-1 text-sm text-white/40">Check In Time</p>
+                  <p className="mb-1 text-sm text-white/40">{t('sessionManagementUi.checkInTime', { defaultValue: 'Check In Time' })}</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkInTime)}</p>
                 </div>
                 <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.entryImage_url ? (
                     <button
                       type="button"
-                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `Entry Photo — ${selectedSession.licensePlate}` })}
-                      className="relative flex h-full w-full cursor-zoom-in items-center justify-center"
-                      title="Click to view full-size image"
+                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `${t('sessionManagementUi.entryRecord', { defaultValue: 'Entry Record' })} — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title={t('sessionManagementUi.viewImage', { defaultValue: 'Click to view full-size image' })}
                     >
-                      <img src={selectedSession.entryImage_url} alt="Entry" className="max-h-[280px] w-full object-contain" />
-                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg border border-white/15 bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100">
-                        <ZoomIn size={12} /> Full View
+                      <img src={selectedSession.entryImage_url} alt={t('sessionManagementUi.entryImageAlt', { defaultValue: 'Entry' })} className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> {t('sessionManagementUi.fullView', { defaultValue: 'Full View' })}
                       </span>
                     </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
-                      <span className="text-sm font-medium">No Entry Image</span>
+                      <span className="text-sm font-medium">{t('sessionManagementUi.noEntryImage', { defaultValue: 'No Entry Image' })}</span>
                     </div>
                   )}
                 </div>
@@ -598,29 +555,29 @@ export default function SessionManagement() {
                   <div className="g4-session-icon flex h-8 w-8 items-center justify-center rounded-full bg-[#ffd555]/15 text-[#ffd555]">
                     <Camera size={16} />
                   </div>
-                  <h4 className="font-bold text-lg">Exit Record</h4>
+                  <h4 className="font-bold text-lg">{t('sessionManagementUi.exitRecord', { defaultValue: 'Exit Record' })}</h4>
                 </div>
                 <div className="g4-session-time rounded-xl border border-white/[0.08] bg-[#0b0b0b] p-4">
-                  <p className="mb-1 text-sm text-white/40">Check Out Time</p>
+                  <p className="mb-1 text-sm text-white/40">{t('sessionManagementUi.checkOutTime', { defaultValue: 'Check Out Time' })}</p>
                   <p className="font-bold text-white">{formatDate(selectedSession.checkOutTime)}</p>
                 </div>
                 <div className="g4-session-image group relative flex min-h-[200px] max-h-[280px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-black/95">
                   {selectedSession.exitImage_url ? (
                     <button
                       type="button"
-                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `Exit Photo — ${selectedSession.licensePlate}` })}
-                      className="relative flex h-full w-full cursor-zoom-in items-center justify-center"
-                      title="Click to view full-size image"
+                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `${t('sessionManagementUi.exitRecord', { defaultValue: 'Exit Record' })} — ${selectedSession.licensePlate}` })}
+                      className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
+                      title={t('sessionManagementUi.viewImage', { defaultValue: 'Click to view full-size image' })}
                     >
-                      <img src={selectedSession.exitImage_url} alt="Exit" className="max-h-[280px] w-full object-contain" />
-                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg border border-white/15 bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100">
-                        <ZoomIn size={12} /> Full View
+                      <img src={selectedSession.exitImage_url} alt={t('sessionManagementUi.exitImageAlt', { defaultValue: 'Exit' })} className="max-h-[280px] w-full object-contain" />
+                      <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
+                        <ZoomIn size={12} /> {t('sessionManagementUi.fullView', { defaultValue: 'Full View' })}
                       </span>
                     </button>
                   ) : (
                     <div className="flex flex-col items-center text-white/30">
                       <Camera size={32} className="mb-2 opacity-50" />
-                      <span className="text-sm font-medium">No Exit Image</span>
+                      <span className="text-sm font-medium">{t('sessionManagementUi.noExitImage', { defaultValue: 'No Exit Image' })}</span>
                     </div>
                   )}
                 </div>
@@ -632,7 +589,7 @@ export default function SessionManagement() {
                 onClick={() => selectManualSession(null)}
                 className="g4-session-close rounded-xl bg-[#ffd555] px-6 py-2.5 font-bold text-[#080808] transition-colors hover:bg-[#ffe58a]"
               >
-                Close
+                {t('sessionManagementUi.close', { defaultValue: 'Close' })}
               </button>
             </div>
           </div>

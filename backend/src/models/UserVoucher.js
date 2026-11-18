@@ -17,7 +17,7 @@ const userVoucherSchema = new mongoose.Schema(
       pointCost: { type: Number, required: true, min: 0 },
       discountAmount: { type: Number, min: 0, default: 0 },
       minimumAmount: { type: Number, min: 0, default: 0 },
-      discountPercent: { type: Number, default: null },
+      discountPercent: { type: Number, default: null, min: 1, max: 100, validate: Number.isInteger },
       serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', default: null },
     },
     status: {

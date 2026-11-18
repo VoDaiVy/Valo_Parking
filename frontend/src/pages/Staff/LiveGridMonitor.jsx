@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import ParkingMapGrid from "../../components/ParkingMapGrid";
 import { getAllFloors, getFloorSlots } from "../../services/parkingFloorService";
 import { getActiveSessions } from "../../services/sessionService";
@@ -32,6 +33,7 @@ import { getSlotLogs, clearAllViolationsApi } from "../../services/aiSurveillanc
 import toast from "react-hot-toast";
 
 export default function LiveGridMonitor() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const rawUser = sessionStorage.getItem('valo_user');
   const currentUser = rawUser ? JSON.parse(rawUser) : null;
@@ -237,14 +239,14 @@ export default function LiveGridMonitor() {
     try {
       const res = await clearAllViolationsApi(currentFloorId || null);
       if (res.success) {
-        toast.success(res.message || 'Alerts cleared and safely locked!');
+        toast.success(res.message || t('parkingLotsUi.dismissReset', { defaultValue: 'Alerts cleared and safely locked!' }));
         setFloorAiStatusesMap({});
         fetchLiveStatus();
       } else {
-        toast.error(res.message || 'Unable to reset alerts');
+        toast.error(res.message || t('parkingLotsUi.dismissReset', { defaultValue: 'Unable to reset alerts' }));
       }
-    } catch (err) {
-      toast.error('Error resetting alerts');
+    } catch {
+      toast.error(t('parkingLotsUi.dismissReset', { defaultValue: 'Error resetting alerts' }));
     }
   };
 
@@ -297,7 +299,7 @@ export default function LiveGridMonitor() {
       <div className="staff-live-grid-toolbar absolute left-8 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#ffd555]/15 bg-[#111111]/95 p-2 shadow-[0_18px_45px_rgba(0,0,0,0.35)] backdrop-blur flex-wrap">
         <div className="flex items-center gap-2 px-3 border-r border-white/10">
           <MonitorCheck size={18} className="text-[#ffd555]" />
-          <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">Live Monitor</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-[#ffd555]">{t('parkingLotsUi.liveMonitor', { defaultValue: 'LIVE MONITOR' })}</span>
         </div>
 
         <StaffDropdown
@@ -305,11 +307,11 @@ export default function LiveGridMonitor() {
           onChange={(value) => setCurrentFloorId(value === "" ? null : value)}
           options={floors.length > 0
             ? [
-              ["", "Overview (All Floors)"],
+              ["", t('parkingLotsUi.overviewAllFloors', { defaultValue: 'Overview (All Floors)' })],
               ...floors.map((floor) => [floor._id, floor.name]),
             ]
-            : [{ value: "", label: "No floors available", disabled: true }]}
-          ariaLabel="Select parking floor"
+            : [{ value: "", label: t('parkingLotsUi.noFloors', { defaultValue: 'No floors available' }), disabled: true }]}
+          ariaLabel={t('parkingLotsUi.selectFloor', { defaultValue: 'Select parking floor' })}
           disabled={floors.length === 0}
           className="min-w-[190px]"
           buttonClassName="bg-black/40 text-xs font-bold uppercase tracking-wide"
@@ -319,7 +321,7 @@ export default function LiveGridMonitor() {
         <div className="flex items-center gap-1.5 px-3 border-r border-white/10">
           <div className={`w-2 h-2 rounded-full ${liveDataAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
           <span className={`text-[10px] font-mono ${liveDataAvailable ? 'text-gray-400' : 'text-red-400'}`}>
-            {liveDataAvailable ? 'LIVE UPDATE' : 'LIVE DATA UNAVAILABLE'}
+            {liveDataAvailable ? t('parkingLotsUi.liveUpdate', { defaultValue: 'LIVE UPDATE' }) : t('staffDashboard.metrics.dataUnavailable', { defaultValue: 'LIVE DATA UNAVAILABLE' })}
           </span>
         </div>
 
@@ -328,13 +330,13 @@ export default function LiveGridMonitor() {
           type="button"
           onClick={() => setShowSurveillanceModal(true)}
           className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95"
-          title="Open AI Slot Surveillance Camera"
+          title={t('parkingLotsUi.openCamera', { defaultValue: 'Open Camera AI slot surveillance' })}
         >
           <Camera size={14} className="text-cyan-400" />
-          <span>Camera AI</span>
+          <span>{t('parkingLotsUi.cameraAi', { defaultValue: 'Camera AI' })}</span>
           {violations.length > 0 && (
             <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
-              {violations.length} {violations.length === 1 ? 'Violation' : 'Violations'}
+              {violations.length} {t('parkingLotsUi.violation', { defaultValue: 'Violation' })}
             </span>
           )}
         </button>
@@ -344,10 +346,10 @@ export default function LiveGridMonitor() {
           type="button"
           onClick={() => setShowHistoryModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-yellow-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400 hover:text-black transition shadow-sm active:scale-95"
-          title="View parking violation history and resolution audit logs"
+          title={t('parkingLotsUi.violationHistory', { defaultValue: 'View parking violation history and resolution audit logs' })}
         >
           <History size={14} className="text-amber-400" />
-          <span>Violation History</span>
+          <span>{t('parkingLotsUi.violationHistory', { defaultValue: 'Violation History' })}</span>
         </button>
 
         {/* Admin Action: Chuyển sang thiết kế sơ đồ bãi đỗ */}
@@ -427,10 +429,10 @@ export default function LiveGridMonitor() {
               type="button"
               onClick={handleResetAlerts}
               className="px-3.5 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-extrabold text-xs uppercase tracking-wider transition border border-red-500/30 flex items-center gap-1.5 shadow-sm active:scale-95"
-              title="Reset / clear active violation alerts"
+              title={t('parkingLotsUi.dismissReset', { defaultValue: 'Reset / clear active violation alerts' })}
             >
               <RotateCcw size={14} />
-              <span>Reset Alerts</span>
+              <span>{t('parkingLotsUi.dismissReset', { defaultValue: 'Reset Alerts' })}</span>
             </button>
             <button
               type="button"
@@ -438,7 +440,7 @@ export default function LiveGridMonitor() {
               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-extrabold text-xs uppercase tracking-wider transition border border-white/10 flex items-center gap-1.5 shadow-sm active:scale-95"
             >
               <History size={14} className="text-amber-400" />
-              <span>View History & Resolve</span>
+              <span>{t('parkingLotsUi.violationHistory', { defaultValue: 'View History & Resolve' })}</span>
             </button>
           </div>
         </div>

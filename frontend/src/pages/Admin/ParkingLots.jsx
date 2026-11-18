@@ -35,8 +35,9 @@ import GlobalViolationHistoryModal from "../Staff/components/GlobalViolationHist
 import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 import { getSlotLogs, clearAllViolationsApi } from "../../services/aiSurveillanceService";
 import toast from "react-hot-toast";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
-const LiveDuration = ({ checkInTime, expectedDurationHours }) => {
+const LiveDuration = ({ checkInTime, expectedDurationHours, overdueLabel = 'Overdue' }) => {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -58,12 +59,13 @@ const LiveDuration = ({ checkInTime, expectedDurationHours }) => {
       <span className={`font-mono text-base font-black ${isOverdue ? 'text-red-400' : 'text-emerald-400'}`}>
         {hours}h {minutes.toString().padStart(2, '0')}m {seconds.toString().padStart(2, '0')}s
       </span>
-      {isOverdue && <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-0.5 rounded border border-red-500/30 font-bold uppercase tracking-wider animate-pulse">Overdue</span>}
+      {isOverdue && <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-0.5 rounded border border-red-500/30 font-bold uppercase tracking-wider animate-pulse">{overdueLabel}</span>}
     </div>
   );
 };
 
 export default function ParkingLots() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [floors, setFloors] = useState([]);
   const [currentFloorId, setCurrentFloorId] = useState(null);
@@ -622,7 +624,7 @@ export default function ParkingLots() {
           {/* Title Badge */}
           <div className="flex items-center gap-1.5 px-2 border-r border-white/10 shrink-0">
             <MonitorCheck size={16} className="text-cyan-400" />
-            <span className="text-xs font-black uppercase tracking-wider text-cyan-400 hidden sm:inline">LIVE MONITOR</span>
+            <span className="text-xs font-black uppercase tracking-wider text-cyan-400 hidden sm:inline">{t('parkingLotsUi.liveMonitor', { defaultValue: 'LIVE MONITOR' })}</span>
           </div>
 
           {/* Floor Selector Dropdown */}
@@ -632,13 +634,13 @@ export default function ParkingLots() {
             options={
               floors.length > 0
                 ? [
-                    { value: "", label: "Overview (All Floors)" },
+                    { value: "", label: t('parkingLotsUi.overviewAllFloors', { defaultValue: 'Overview (All Floors)' }) },
                     ...floors.map((floor) => ({ value: floor._id, label: floor.name })),
                   ]
-                : [{ value: "", label: "No floors available" }]
+                : [{ value: "", label: t('parkingLotsUi.noFloors', { defaultValue: 'No floors available' }) }]
             }
             className="min-w-[150px] max-w-[190px]"
-            ariaLabel="Select parking floor"
+            ariaLabel={t('parkingLotsUi.selectFloor', { defaultValue: 'Select parking floor' })}
           />
 
           {/* Admin Quick Action: [+] Add New Floor */}
@@ -663,13 +665,13 @@ export default function ParkingLots() {
                 title={`Edit visual layout for ${currentFloor.name}`}
               >
                 <Edit size={13} className="text-cyan-400" />
-                <span>Edit Layout</span>
+                <span>{t('parkingLotsUi.editLayout', { defaultValue: 'Edit Layout' })}</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleDuplicateFloor(currentFloor)}
                 className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition active:scale-95 shrink-0"
-                title="Duplicate this floor"
+                title={t('parkingLotsUi.duplicateFloor', { defaultValue: 'Duplicate this floor' })}
               >
                 <Copy size={14} />
               </button>
@@ -677,7 +679,7 @@ export default function ParkingLots() {
                 type="button"
                 onClick={handleDeleteFloor}
                 className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition active:scale-95 shrink-0"
-                title="Delete this floor"
+                title={t('parkingLotsUi.deleteFloor', { defaultValue: 'Delete this floor' })}
               >
                 <Trash2 size={14} />
               </button>
@@ -691,7 +693,7 @@ export default function ParkingLots() {
           <div className="flex items-center gap-1.5 px-2 shrink-0">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider hidden md:inline">
-              LIVE UPDATE
+              {t('parkingLotsUi.liveUpdate', { defaultValue: 'LIVE UPDATE' })}
             </span>
           </div>
 
@@ -700,10 +702,10 @@ export default function ParkingLots() {
             type="button"
             onClick={() => setShowSurveillanceModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/40 text-cyan-300 font-extrabold text-xs hover:bg-cyan-500 hover:text-black transition shadow-sm active:scale-95 shrink-0"
-            title="Open Camera AI Slot Surveillance"
+            title={t('parkingLotsUi.openCamera', { defaultValue: 'Open Camera AI slot surveillance' })}
           >
             <Camera size={14} className="text-cyan-400" />
-            <span>Camera AI</span>
+            <span>{t('parkingLotsUi.cameraAi', { defaultValue: 'Camera AI' })}</span>
             {violations.length > 0 && (
               <span className="px-1.5 py-0.2 text-[10px] font-black bg-red-500 text-white rounded-full animate-bounce">
                 {violations.length}
@@ -719,7 +721,7 @@ export default function ParkingLots() {
             title="View violation history and audit logs"
           >
             <History size={14} className="text-amber-400" />
-            <span>Violation History</span>
+            <span>{t('parkingLotsUi.violationHistory', { defaultValue: 'Violation History' })}</span>
           </button>
         </div>
       </div>
@@ -734,14 +736,14 @@ export default function ParkingLots() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-black text-xs text-red-300 uppercase tracking-wider">
-                  Real-Time Violation Alert
+                  {t('parkingLotsUi.realtimeViolationAlert', { defaultValue: 'Real-Time Violation Alert' })}
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-500 text-white">
                   {violations.length} wrongly parked {violations.length === 1 ? 'car' : 'cars'}
                 </span>
               </div>
               <p className="text-xs text-red-100/90 mt-0.5">
-                Camera AI detected violation: {violations.map((v) => `${v.detectedPlate || v.plate || 'Vehicle'} at slot ${v.slotCode || v.actualSlot}`).join(', ')}
+                  {t('parkingLotsUi.violationDetected', { defaultValue: 'Camera AI detected violation: {{details}}', details: violations.map((v) => `${v.detectedPlate || v.plate || t('parkingLotsUi.vehicle', { defaultValue: 'Vehicle' })} at slot ${v.slotCode || v.actualSlot}`).join(', ') })}
               </p>
             </div>
           </div>
@@ -751,14 +753,14 @@ export default function ParkingLots() {
               onClick={() => setSelectedViolation(violations[0])}
               className="px-3.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-400 text-white text-xs font-black uppercase tracking-wider transition shadow"
             >
-              Resolve Violation
+              {t('parkingLotsUi.resolveViolation', { defaultValue: 'Resolve Violation' })}
             </button>
             <button
               type="button"
               onClick={handleResetAlerts}
               className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold transition"
             >
-              Dismiss & Reset
+              {t('parkingLotsUi.dismissReset', { defaultValue: 'Dismiss & Reset' })}
             </button>
           </div>
         </div>
@@ -836,7 +838,7 @@ export default function ParkingLots() {
               <div className="flex justify-between items-start mb-4 flex-shrink-0">
                 <div>
                   <span className="text-cyan-400 text-xs font-bold uppercase tracking-[0.2em] mb-1 block">
-                    {isZone ? "Maintenance Zone" : `${selectedItem.type || 'Parking'} Slot`}
+                    {isZone ? t('parkingLotsUi.maintenanceZone', { defaultValue: 'Maintenance Zone' }) : `${selectedItem.type || t('parkingLotsUi.parkingSlot', { defaultValue: 'Parking' })} ${t('parkingLotsUi.parkingSlot', { defaultValue: 'Slot' })}`}
                   </span>
                   <h2 className="text-3xl font-extrabold text-white flex items-center gap-2">
                     {isZone ? "ZONE" : "SLOT"} <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">{isZone ? selectedItem.name : selectedItem.id}</span>
@@ -926,7 +928,7 @@ export default function ParkingLots() {
                         onClick={handleToggleMaintenance}
                         className={`w-full py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all ${isMaintenance ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'}`}
                       >
-                        {isMaintenance ? "End Maintenance" : "Start Maintenance"}
+                        {isMaintenance ? t('parkingLotsUi.endMaintenance', { defaultValue: 'End Maintenance' }) : t('parkingLotsUi.startMaintenance', { defaultValue: 'Start Maintenance' })}
                       </button>
                     </div>
                   )}
@@ -939,7 +941,7 @@ export default function ParkingLots() {
                         <span className="font-bold text-white">{zoneSlots.length}</span>
                       </div>
                       <div className="flex justify-between pt-1">
-                        <span className="text-slate-400">Maintenance Slots</span>
+                        <span className="text-slate-400">{t('parkingLotsUi.maintenanceSlots', { defaultValue: 'Maintenance Slots' })}</span>
                         <span className="font-bold text-red-400">{zoneSlots.filter(s => s.status === 'maintenance').length}</span>
                       </div>
                     </div>
@@ -1010,16 +1012,16 @@ export default function ParkingLots() {
                             {dbSlotInfo.maintenanceReason}
                           </h3>
                           <span className="bg-red-500/20 text-red-400 text-[10px] px-3 py-1 rounded-full border border-red-500/30 font-bold uppercase tracking-widest mt-1">
-                            Under Maintenance
+                            {t('parkingLotsUi.underMaintenance', { defaultValue: 'Under Maintenance' })}
                           </span>
                         </>
                       ) : (
                         <>
                           <h3 className="text-lg font-bold text-white max-w-[280px] break-words leading-relaxed">
-                            System Maintenance
+                            {t('parkingLotsUi.systemMaintenance', { defaultValue: 'System Maintenance' })}
                           </h3>
                           <span className="bg-red-500/20 text-red-400 text-[10px] px-3 py-1 rounded-full border border-red-500/30 font-bold uppercase tracking-widest mt-1">
-                            Under Maintenance
+                            {t('parkingLotsUi.underMaintenance', { defaultValue: 'Under Maintenance' })}
                           </span>
                           <p className="text-xs text-slate-400 max-w-[250px] mt-2">
                             This {isZone ? "zone" : "slot"} is temporarily locked for maintenance.
@@ -1070,7 +1072,7 @@ export default function ParkingLots() {
                       </div>
                       <div className="flex justify-between items-center mt-2 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
                         <span className="text-cyan-400 text-xs font-bold tracking-wide uppercase">Parked Duration</span>
-                        <LiveDuration checkInTime={currentSession.checkInTime} expectedDurationHours={currentSession.expectedDurationHours} />
+                        <LiveDuration checkInTime={currentSession.checkInTime} expectedDurationHours={currentSession.expectedDurationHours} overdueLabel={t('parkingLotsUi.overdue', { defaultValue: 'Overdue' })} />
                       </div>
                     </div>
                   ) : !isZone && (aiObs?.occupied || dbSlotInfo?.status === 'occupied' || selectedItem.isOccupied) ? (
@@ -1182,11 +1184,11 @@ export default function ParkingLots() {
                   {loadingSlotLogs ? (
                     <div className="p-8 text-center text-slate-500 text-xs">
                       <RefreshCw size={18} className="animate-spin mx-auto mb-2 text-amber-400" />
-                      Loading slot logs...
+                      {t('parkingLotsUi.loadingLogs', { defaultValue: 'Loading slot logs...' })}
                     </div>
                   ) : slotLogs.length === 0 ? (
                     <div className="p-8 text-center text-slate-500 text-xs">
-                      No activity logs recorded for this slot yet.
+                      {t('parkingLotsUi.noLogs', { defaultValue: 'No activity logs recorded for this slot yet.' })}
                     </div>
                   ) : (
                     slotLogs.map((log) => {
@@ -1197,25 +1199,25 @@ export default function ParkingLots() {
                       const isVehicleLeft = log.resolutionAction === 'VEHICLE_LEFT';
                       const isVehicleParked = log.resolutionAction === 'VEHICLE_PARKED';
 
-                      let badgeText = 'Slot Activity';
+                      let badgeText = t('parkingLotsUi.slotActivity', { defaultValue: 'Slot Activity' });
                       let badgeClass = 'bg-slate-700/40 text-slate-300';
                       if (isViol) {
-                        badgeText = 'Violation Detected';
+                        badgeText = t('parkingLotsUi.violation', { defaultValue: 'Violation Detected' });
                         badgeClass = 'bg-red-500/20 text-red-400 border border-red-500/30';
                       } else if (isMaintenance) {
-                        badgeText = 'Maintenance';
+                        badgeText = t('parkingLotsUi.maintenance', { defaultValue: 'Maintenance' });
                         badgeClass = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
                       } else if (isCheckout) {
-                        badgeText = 'Checkout - Released';
+                        badgeText = t('parkingLotsUi.checkoutReleased', { defaultValue: 'Checkout - Released' });
                         badgeClass = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
                       } else if (isVehicleLeft) {
-                        badgeText = 'Vehicle Left - Empty';
+                        badgeText = t('parkingLotsUi.vehicleLeft', { defaultValue: 'Vehicle Left - Empty' });
                         badgeClass = 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
                       } else if (isVehicleParked) {
-                        badgeText = 'Vehicle Parked';
+                        badgeText = t('parkingLotsUi.vehicleParked', { defaultValue: 'Vehicle Parked' });
                         badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
                       } else if (isReassigned) {
-                        badgeText = 'Slot Reassigned';
+                        badgeText = t('parkingLotsUi.slotReassigned', { defaultValue: 'Slot Reassigned' });
                         badgeClass = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
                       }
 

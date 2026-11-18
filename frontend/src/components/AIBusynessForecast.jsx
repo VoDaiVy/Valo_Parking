@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, Info, Sparkles, TrendingUp } from 'lucide-react';
 import { getOccupancyForecast } from '../services/aiForecastService';
 import { readOccupancyChart } from '../utils/occupancyChart.mjs';
+import { useLanguage } from '../i18n/hooks/useLanguage';
 
 const PERIODS = [['day', '24 hours'], ['week', '7 days'], ['month', '1 month']];
 const DAY_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' });
@@ -38,6 +39,7 @@ function describePoint(point, isRange, historicalArrivals) {
 }
 
 export default function AIBusynessForecast({ selectedDate, selectedHour, vehicleType = 'car', floorId }) {
+  const { t } = useLanguage();
   const [result, setResult] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [timeframe, setTimeframe] = useState('day');
@@ -98,7 +100,7 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
           <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-gold/15 text-yellow-700 dark:text-gold"><Sparkles size={16} /></span>
           <div className="min-w-0 flex-1">
             <h4 className="text-sm font-extrabold text-gray-900 dark:text-white">
-              {historicalArrivals ? 'Historical vehicle arrivals' : 'AI Occupancy & Peak Times Forecast'}
+              {historicalArrivals ? 'Historical vehicle arrivals' : t('forecast.title', { defaultValue: 'AI Occupancy & Peak Times Forecast' })}
             </h4>
             {chart && (
               <p className="mt-0.5 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={subtitle()}>
@@ -125,7 +127,7 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
           <p className="text-sm text-gray-500 dark:text-gray-400" role="status">
             {data ? 'No recorded data is available for this selection.' : 'Occupancy data is temporarily unavailable.'} Check the booking map for availability.
           </p>
-          <button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-2 text-sm font-semibold text-yellow-800 underline dark:text-gold">Retry</button>
+          <button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-2 text-sm font-semibold text-yellow-800 underline dark:text-gold">{t('common.retry', { defaultValue: 'Retry' })}</button>
         </div>
       ) : !historicalArrivals && !data.totalCapacity ? (
         <p className="rounded-xl border border-gray-200 p-4 text-sm text-gray-500 dark:border-white/10" role="status">
@@ -135,13 +137,13 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
         <>
           {!historicalArrivals && !isRange && data.peakWindows?.length > 0 && (
             <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-300">
-              <TrendingUp size={13} /> {recordedDay ? 'Recorded peaks' : 'Peak hours'} · {data.peakWindows.join(' & ')}
+              <TrendingUp size={13} /> {recordedDay ? 'Recorded peaks' : t('forecast.peak', { windows: data.peakWindows.join(' & '), defaultValue: `Peak: ${data.peakWindows.join(' & ')}` })}
             </div>
           )}
           {!historicalArrivals && !isRange && !recordedDay && data.isReferenceOnly && (
             <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
               <AlertTriangle size={15} className="shrink-0" />
-              <span>This date is outside the {data.forecastHorizonHours || 24}-hour forecast horizon. Use the chart for planning.</span>
+              <span>{t('forecast.referenceOnly', { defaultValue: 'Reference forecast only' })}: This date is outside the {data.forecastHorizonHours || 24}-hour forecast horizon. Use the chart for planning.</span>
             </div>
           )}
           <div className="mb-3.5 rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-white/5 dark:bg-black/30 sm:p-4">
@@ -182,7 +184,7 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
                 </div>
               </div>
               {!historicalArrivals && !isRange && active.estimatedAvailableSlots != null && (
-                <p className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">Estimated available <strong className="ml-1 text-yellow-700 dark:text-gold">~{active.estimatedAvailableSlots} / {data.totalCapacity} slots</strong></p>
+                <p className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('forecast.estimatedAvailable', { defaultValue: 'Estimated available' })} <strong className="ml-1 text-yellow-700 dark:text-gold">~{t('forecast.slots', { available: active.estimatedAvailableSlots, total: data.totalCapacity, defaultValue: `${active.estimatedAvailableSlots} / ${data.totalCapacity} slots` })}</strong></p>
               )}
             </div>
           )}
