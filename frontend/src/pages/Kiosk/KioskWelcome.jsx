@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Pointer } from 'lucide-react';
+import { Loader2, Pointer, AlertTriangle, Ban, QrCode } from 'lucide-react';
 import backgroundImage from '../../assets/images/Kiosk/BackgroundWelcomeKiosk.png';
 import logoImage from '../../assets/images/Kiosk/LogoKiosk.png';
 import ParkingFullModal from './ParkingFullModal';
@@ -35,6 +35,7 @@ const plateFingerprint = (plate) => {
 export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass }) {
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
+  const [isParkingFull, setIsParkingFull] = useState(false);
   const [, setScanMessage] = useState('Scanning Plate...');
   const [showFullModal, setShowFullModal] = useState(false);
   const [showAlreadyInsideModal, setShowAlreadyInsideModal] = useState(false);
@@ -139,6 +140,30 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       console.info('[Kiosk scan] Camera track tuning skipped', error?.message || error);
     }
   };
+
+  useEffect(() => {
+    let isSubscribed = true;
+    const checkFullStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/sessions/check-full`);
+        const fullData = await res.json();
+        const isFull = Boolean(fullData.success && fullData.data && fullData.data.isFull);
+        if (isSubscribed) {
+          isParkingFullRef.current = isFull;
+          setIsParkingFull(isFull);
+        }
+      } catch (e) {
+        console.warn('Failed to check full status:', e);
+      }
+    };
+
+    checkFullStatus();
+    const interval = setInterval(checkFullStatus, 4000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -513,6 +538,10 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               stopCamera();
               setIsScanning(false);
               if (handled) return;
+              if (isParkingFullRef.current) {
+                setShowFullModal(true);
+                return;
+              }
               onStart(1);
               return;
             }
@@ -531,6 +560,13 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         });
         ch.close();
       } catch (_) {}
+      if (isParkingFullRef.current) {
+        setShowFullModal(true);
+        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
+        stopCamera();
+        setIsScanning(false);
+        return;
+      }
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
       stopCamera();
       setIsScanning(false);
@@ -538,6 +574,13 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     } catch (error) {
       console.error('Welcome camera scan error:', error);
 
+      if (isParkingFullRef.current) {
+        setShowFullModal(true);
+        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
+        stopCamera();
+        setIsScanning(false);
+        return;
+      }
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
       stopCamera();
       setIsScanning(false);
@@ -744,7 +787,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           <img src={logoImage} alt="Valo Parking" className="w-full h-auto object-contain" />
         </div>
 
-        <div className="w-full text-left mt-8 mb-10">
+        <div className="w-full text-left mt-8 mb-6">
           <h2 className="text-4xl font-extrabold text-[#0f172a] tracking-tight mb-2">WELCOME TO</h2>
           <h1
             className="text-[100px] font-black tracking-tight leading-none text-[#FFEB00]"
@@ -752,23 +795,59 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           >
             VALO PARKING
           </h1>
-          <p className="text-2xl font-bold text-gray-600 mt-6 tracking-wide">
+          <p className="text-2xl font-bold text-gray-600 mt-4 tracking-wide">
             Fast, Secure, and Fully Automated Experience
           </p>
         </div>
 
-        <button
-          onClick={handleStart}
-          disabled={isScanning}
-          className="mt-12 bg-[#FFEB00] hover:bg-[#FFE000] text-[#0f172a] font-black text-3xl px-16 py-6 rounded-full flex items-center gap-4 transition-all shadow-[0_15px_30px_rgba(255,235,0,0.4)] border border-[#F2D600] group min-w-[400px] justify-center hover:shadow-[0_20px_40px_rgba(255,235,0,0.6)] active:scale-95 active:shadow-md cursor-pointer"
-        >
-          {isScanning ? 'Scanning...' : 'Click to start'}
-          {isScanning ? (
-            <Loader2 size={36} className="animate-spin" strokeWidth={2.5} />
-          ) : (
-            <Pointer size={36} className="transform -rotate-12 group-hover:scale-110 transition-transform" strokeWidth={2.5} />
-          )}
-        </button>
+        {/* Parking Full Live Notice Banner */}
+        {isParkingFull && (
+          <div className="w-full bg-red-50 border-2 border-red-500/50 rounded-2xl p-5 mb-6 flex items-center gap-5 shadow-sm animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-red-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-red-500/30">
+              <AlertTriangle size={32} className="animate-pulse" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="inline-block bg-red-600 text-white text-xs font-black uppercase px-3 py-1 rounded-full tracking-wider mb-1 shadow-sm">
+                BÃI ĐỖ ĐÃ ĐẦY • LOT FULL
+              </div>
+              <h3 className="text-2xl font-black text-red-600 leading-tight">
+                Rất tiếc, hiện tại bãi đỗ xe đã hết chỗ!
+              </h3>
+              <p className="text-gray-700 text-base font-semibold mt-1">
+                Tất cả vị trí đỗ xe vãng lai đã kín. Tạm thời ngừng nhận khách vãng lai mới.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isParkingFull ? (
+          <div className="mt-4 flex flex-col items-center gap-4 w-full">
+            <div
+              className="bg-red-50 border-2 border-red-500 text-red-600 font-black text-2xl px-12 py-5 rounded-full flex items-center gap-4 shadow-md min-w-[440px] justify-center cursor-not-allowed select-none opacity-90"
+            >
+              <Ban size={30} className="text-red-600" strokeWidth={2.5} />
+              <span>BÃI XE ĐÃ ĐẦY (LOT FULL)</span>
+            </div>
+
+            <div className="flex items-center gap-2 text-gray-700 text-base font-bold bg-gray-100/90 px-6 py-2.5 rounded-full border border-gray-300 shadow-sm mt-1">
+              <QrCode size={20} className="text-blue-600" />
+              <span>Khách có <strong className="text-blue-600">Vé Tháng (VIP)</strong> hoặc <strong className="text-blue-600">Đặt Trước</strong>: Vui lòng quét mã QR trước máy đọc</span>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={handleStart}
+            disabled={isScanning}
+            className="mt-8 bg-[#FFEB00] hover:bg-[#FFE000] text-[#0f172a] font-black text-3xl px-16 py-6 rounded-full flex items-center gap-4 transition-all shadow-[0_15px_30px_rgba(255,235,0,0.4)] border border-[#F2D600] group min-w-[400px] justify-center hover:shadow-[0_20px_40px_rgba(255,235,0,0.6)] active:scale-95 active:shadow-md cursor-pointer"
+          >
+            {isScanning ? 'Scanning...' : 'Click to start'}
+            {isScanning ? (
+              <Loader2 size={36} className="animate-spin" strokeWidth={2.5} />
+            ) : (
+              <Pointer size={36} className="transform -rotate-12 group-hover:scale-110 transition-transform" strokeWidth={2.5} />
+            )}
+          </button>
+        )}
 
       </div>
 
