@@ -40,8 +40,9 @@ exports.scanPlate = async (req, res, next) => {
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
 
     // -------------------------------------------------------------
-    // Use Local Python AI Service (YOLO + EasyOCR)
+    // ATTEMPT 1: Local Python AI Service (YOLO + EasyOCR)
     // -------------------------------------------------------------
+    let detectedRawPlate = null;
     try {
       console.log('[AI Scan] Attempting Local Python AI for License Plate...', normalizedLane ? `(lane=${normalizedLane})` : '');
       const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
@@ -49,7 +50,7 @@ exports.scanPlate = async (req, res, next) => {
         image: base64Data,
         ...(normalizedLane ? { lane: normalizedLane } : {}),
       }, {
-        timeout: 15000 // 15 seconds timeout (supports Cloud AI CPU)
+        timeout: 4000 // Quick 4s timeout to fail over seamlessly if offline on cloud
       });
 
       const rawPlate = pythonRes.data?.plate || pythonRes.data?.licensePlate;
@@ -66,20 +67,80 @@ exports.scanPlate = async (req, res, next) => {
           model: 'local_yolo'
         });
       }
-
-      return res.status(200).json({
-        success: false,
-        message: 'No license plate found in the image by Local AI',
-        model: 'local_yolo'
-      });
-
+      console.log('[AI Scan] Local AI did not find plate, falling back to Gemini Vision...');
     } catch (localErr) {
-      console.error('[AI Scan] Local Python AI failed or not running:', localErr.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Local AI service is offline or failed to process the image.'
-      });
+      console.warn('[AI Scan] Local Python AI unavailable/timed out, falling back to Gemini Vision:', localErr.message);
     }
+
+    // -------------------------------------------------------------
+    // ATTEMPT 2: Google Gemini Vision AI Fallback (Cloud Resilience)
+    // -------------------------------------------------------------
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        console.log('[AI Scan] Running Gemini Vision ALPR Fallback...');
+        const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const fallbackModels = ['gemini-2.5-flash', 'gemini-3.5-flash-lite'];
+
+        for (const modelName of fallbackModels) {
+          try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const prompt = `You are an expert Automatic License Plate Recognition (ALPR) system for Vietnamese parking gates.
+Examine this image of a vehicle at an entry or exit parking gate carefully. Find and read the vehicle license plate (biển số xe).
+Return ONLY a valid JSON object without markdown or code fences in this exact format:
+{
+  "detected": true,
+  "plate": "<Only uppercase alphanumeric letters without spaces or dots, e.g. 51F88812, 77C14399, 29A12345, 66E177421>",
+  "confidence": 95
+}
+If no license plate is present or readable, return:
+{ "detected": false, "plate": null }`;
+
+            const result = await model.generateContent([
+              prompt,
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
+                },
+              },
+            ]);
+
+            const text = result.response.text().trim();
+            const clean = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+            const parsed = JSON.parse(clean);
+            if (parsed && parsed.detected && parsed.plate) {
+              const normalized = normalizeLicensePlate(parsed.plate);
+              if (normalized && normalized.length >= 5) {
+                console.log(`[AI Scan] Gemini Vision (${modelName}) Success:`, normalized);
+                return res.status(200).json({
+                  success: true,
+                  plate: normalized,
+                  licensePlate: normalized,
+                  data: {
+                    plate: normalized,
+                    licensePlate: normalized,
+                  },
+                  model: `gemini_vision_${modelName}`
+                });
+              }
+            }
+          } catch (modelErr) {
+            console.warn(`[AI Scan] Gemini fallback (${modelName}) failed:`, modelErr.message);
+          }
+        }
+      } catch (geminiErr) {
+        console.error('[AI Scan] Gemini Vision ALPR general error:', geminiErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: false,
+      message: 'No license plate found in the image by AI',
+      model: 'none'
+    });
 
   } catch (error) {
     const detail = error?.message || 'Unknown error';
