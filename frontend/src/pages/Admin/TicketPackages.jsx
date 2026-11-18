@@ -27,6 +27,7 @@ import './ticketPackages.css';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker';
 import { apiFetch } from '../../services/api';
+import { isSellablePackageType, SELLABLE_PACKAGE_TYPES } from '../../utils/ticketPackageRules';
 import ConfirmModal from '../../components/Admin/ConfirmModal';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { useTranslation } from 'react-i18next';
@@ -88,7 +89,7 @@ const TYPE_META = {
   },
 };
 
-const KNOWN_TYPES = ['hourly', 'daily', 'weekly', 'monthly', 'yearly', 'custom'];
+const KNOWN_TYPES = SELLABLE_PACKAGE_TYPES;
 
 const toLocalDateTime = (date) => {
   const pad = (value) => String(value).padStart(2, '0');
@@ -335,7 +336,7 @@ export default function TicketPackages() {
 
   const [formData, setFormData] = useState({
     name: '',
-    type: 'hourly',
+    type: 'monthly',
     price: '',
     description: '',
     isActive: true,
@@ -387,6 +388,7 @@ export default function TicketPackages() {
         ...(packageLinkKey ? { cache: 'no-store' } : {}),
       });
       const data = await res.json();
+      if (Array.isArray(data.data)) data.data = data.data.filter((pkg) => isSellablePackageType(pkg.type));
       if (generation !== aiRefreshGeneration.current) return;
       if (packageLinkKey) setPackageLink({ ...ticketPackageLinkState({ ok: res.ok, status: res.status, data }, packageIdQuery), key: packageLinkKey });
       if (res.ok && data.success && Array.isArray(data.data)) {
@@ -448,7 +450,7 @@ export default function TicketPackages() {
       setEditingPackage(null);
       setFormData({
         name: '',
-        type: 'hourly',
+        type: 'monthly',
         price: '',
         description: '',
         isActive: true,
@@ -574,7 +576,7 @@ export default function TicketPackages() {
   }, [packages, t, language]);
 
   const typeOptions = useMemo(() => {
-    const actualTypes = packages.map((pkg) => pkg.type).filter(Boolean);
+    const actualTypes = packages.map((pkg) => pkg.type).filter(isSellablePackageType);
     return Array.from(new Set([...KNOWN_TYPES, ...actualTypes]));
   }, [packages]);
 
@@ -872,8 +874,6 @@ export default function TicketPackages() {
                       value={formData.type}
                       onChange={(nextType) => setFormData({ ...formData, type: nextType })}
                       options={[
-                        { value: 'hourly', label: t('adminPages.ticketUi.types.hourly') },
-                        { value: 'daily', label: t('adminPages.ticketUi.types.daily') },
                         { value: 'weekly', label: t('adminPages.ticketUi.types.weekly') },
                         { value: 'monthly', label: t('adminPages.ticketUi.types.monthly') },
                         { value: 'yearly', label: t('adminPages.ticketUi.types.yearly') },

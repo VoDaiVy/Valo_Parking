@@ -11,6 +11,7 @@ const User = require('../../models/User');
 const Vehicle = require('../../models/Vehicle');
 const Policy = require('../../models/Policy');
 const catalogWrites = require('../adminCatalogWriteService');
+const { isSellablePackageType, getPackageDurationMinutes } = require('../../utils/ticketPackageRules');
 const policyService = require('../policyService');
 const notificationDispatch = require('../notificationDispatchService');
 
@@ -126,11 +127,18 @@ function cleanPayload(type, input) {
     isActive = true,
     renewalWindowDays = 7,
     isRenewable = true,
+    saleLimit = null,
+    manualPause,
+    durationDays,
+    durationMinutes,
+    displayBenefits = [],
+    serviceBenefits = [],
+    benefitsVersion = type === 'CREATE_TICKET_PACKAGE' ? 1 : 0,
   } = input;
   if (['hourly', 'daily'].includes(packageType)) fail('Chỉ hỗ trợ loại gói weekly, monthly, yearly, custom.');
   if (
     typeof name !== 'string' || !name.trim() || name.length > 120 ||
-    !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) ||
+    !isSellablePackageType(packageType) ||
     !Number.isSafeInteger(price) || price < 0 ||
     typeof description !== 'string' || description.length > 1000 ||
     !Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 10 ||
@@ -142,10 +150,30 @@ function cleanPayload(type, input) {
     fail('Allow renewal must be true or false.');
   if (input.service !== undefined && !['RESERVED_FREE', 'RESERVED_PAID'].includes(input.service))
     fail('Select a supported parking service: RESERVED_FREE or RESERVED_PAID.');
-  if (type === 'CREATE_TICKET_PACKAGE' && ['hourly', 'monthly', 'yearly'].includes(packageType) && !input.service)
+  if (type === 'CREATE_TICKET_PACKAGE' && !input.service)
     fail('A parking service must be selected.');
+  if (saleLimit !== null && (!Number.isSafeInteger(saleLimit) || saleLimit < 0)) fail('Sale limit must be a non-negative whole number or null.');
+  if (manualPause !== undefined && typeof manualPause !== 'boolean') fail('manualPause must be boolean.');
+  const customMinutes = getPackageDurationMinutes({ type: packageType, durationDays, durationMinutes });
+  if (packageType === 'custom' && !input.duration && !customMinutes) fail('Custom duration must be whole minutes, from 1 minute to 3650 days.');
+  if (![0, 1].includes(benefitsVersion)) fail('Invalid benefits version.');
+  if (!Array.isArray(displayBenefits) || displayBenefits.length > 20 || displayBenefits.some((value) => typeof value !== 'string' || !value.trim() || value.length > 250)) fail('Provide up to 20 benefit descriptions, each at most 250 characters.');
+  if (!Array.isArray(serviceBenefits) || serviceBenefits.length > 30 || serviceBenefits.some((benefit) => !mongoose.isObjectIdOrHexString(benefit?.serviceId) || !Number.isInteger(benefit.quantityPerSlot) || benefit.quantityPerSlot < 1 || benefit.quantityPerSlot > 10000)) fail('Select valid services with 1-10000 whole uses per space.');
+  if (new Set(serviceBenefits.map((benefit) => String(benefit.serviceId).toLowerCase())).size !== serviceBenefits.length) fail('Each service may only appear once.');
+  const configuration = require('../ticketPackageTerms').validatePackageConfiguration(input);
+  const configuredMinutes = configuration.duration.value * ({ minutes: 1, hours: 60, days: 1440 }[configuration.duration.unit] || 0);
+  const normalizedCustomMinutes = packageType === 'custom'
+    ? getPackageDurationMinutes({ type: packageType, durationMinutes: configuredMinutes }) : null;
+  if (packageType === 'custom' && !normalizedCustomMinutes) fail('Custom duration must be whole minutes, from 1 minute to 3650 days.');
   return {
-    ...require('../ticketPackageTerms').validatePackageConfiguration(input),
+    ...configuration,
+    ...(type === 'UPDATE_TICKET_PACKAGE' && !Object.hasOwn(input, 'saleLimit') ? {} : { saleLimit }),
+    ...(manualPause !== undefined ? { manualPause } : {}),
+    durationDays: packageType === 'custom' && durationMinutes == null ? durationDays : null,
+    durationMinutes: normalizedCustomMinutes,
+    benefitsVersion: type === 'CREATE_TICKET_PACKAGE' || displayBenefits.length || serviceBenefits.length ? 1 : benefitsVersion,
+    displayBenefits: displayBenefits.map((value) => value.trim()),
+    serviceBenefits: serviceBenefits.map((benefit) => ({ serviceId: benefit.serviceId, quantityPerSlot: benefit.quantityPerSlot })),
     ...(input.service ? { service: input.service } : {}),
     name: name.trim(),
     type: packageType,
