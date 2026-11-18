@@ -1,5 +1,6 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { bookingClarification } from '../../utils/aiBookingClarification';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Bot, CalendarDays, CheckCircle2, Loader2, MapPin, Mic, MicOff, RefreshCw, Send, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -143,23 +144,23 @@ const vehicleSelectionPrompt = (draft, vehicles, fallback, language = 'vi') => {
   }
   return `${fallback}${choices}`;
 };
-const englishPhaseLabels = {
-  IDLE: 'Ready', LISTENING: 'Listening...', PROCESSING: 'Processing...',
-  WAITING_CONFIRMATION: 'WAITING FOR CONFIRMATION', CONFIRMING: 'Checking again...',
-  WAITING_PAYMENT: 'WAITING FOR PAYMENT', BOOKING: 'Creating booking...',
-  SUCCESS: 'Booking completed', ERROR: 'Something went wrong. Please try again',
+const phaseLabelKeys = {
+  IDLE: "aiBookingUi.ready", LISTENING: "aiBookingUi.listening", PROCESSING: "aiBookingUi.processing",
+  WAITING_CONFIRMATION: "aiBookingUi.waitingForConfirmation", CONFIRMING: "aiBookingUi.checkingAgain",
+  WAITING_PAYMENT: "aiBookingUi.waitingForPayment", BOOKING: "aiBookingUi.creatingBooking",
+  SUCCESS: "aiBookingUi.bookingCompleted", ERROR: "aiBookingUi.somethingWentWrongPleaseTryAgain",
 };
-const englishAssistantIntentLabels = {
-  CHECK_VEHICLE_PARKING_STATUS: 'Vehicle status', CHECK_VEHICLE_ENTRY_TIME: 'Entry time',
-  CHECK_VEHICLE_EXIT_TIME: 'Exit time', CHECK_VEHICLE_LOCATION: 'Vehicle location',
-  CHECK_VEHICLE_DURATION: 'Parking duration', CHECK_PARKING_FEE: 'Parking fee',
-  CHECK_BOOKING_STATUS: 'Booking status', CHECK_UPCOMING_BOOKING: 'Upcoming booking',
-  CHECK_PARKING_AVAILABILITY: 'Availability', CHECK_SLOT_STATUS: 'Slot status',
-  CHECK_WALLET_BALANCE: 'Wallet balance', CHECK_PAYMENT_STATUS: 'Payment',
-  CHECK_TRANSACTION_HISTORY: 'Transactions', LIST_MY_VEHICLES: 'Your vehicles',
-  ADD_VEHICLE: 'Add vehicle', UPDATE_VEHICLE: 'Update vehicle', REMOVE_VEHICLE: 'Remove vehicle',
-  CHECK_SERVICES: 'Services', BOOK_SERVICE: 'Book service', CHECK_VOUCHERS: 'Vouchers', USE_VOUCHER: 'Apply voucher',
-  CHECK_PARKING_POLICY: 'Policies', CHECK_TICKET_PACKAGES: 'VIP packages', HELP: 'Help',
+const assistantIntentLabelKeys = {
+  CHECK_VEHICLE_PARKING_STATUS: "aiBookingUi.vehicleStatus", CHECK_VEHICLE_ENTRY_TIME: "aiBookingUi.entryTime",
+  CHECK_VEHICLE_EXIT_TIME: "aiBookingUi.exitTime", CHECK_VEHICLE_LOCATION: "aiBookingUi.vehicleLocation",
+  CHECK_VEHICLE_DURATION: "aiBookingUi.parkingDuration", CHECK_PARKING_FEE: "aiBookingUi.parkingFee",
+  CHECK_BOOKING_STATUS: "aiBookingUi.bookingStatus", CHECK_UPCOMING_BOOKING: "aiBookingUi.upcomingBooking",
+  CHECK_PARKING_AVAILABILITY: "aiBookingUi.availability", CHECK_SLOT_STATUS: "aiBookingUi.slotStatus",
+  CHECK_WALLET_BALANCE: "aiBookingUi.walletBalance", CHECK_PAYMENT_STATUS: "aiBookingUi.payment",
+  CHECK_TRANSACTION_HISTORY: "aiBookingUi.transactions", LIST_MY_VEHICLES: "aiBookingUi.yourVehicles",
+  ADD_VEHICLE: "aiBookingUi.addVehicle", UPDATE_VEHICLE: "aiBookingUi.updateVehicle", REMOVE_VEHICLE: "aiBookingUi.removeVehicle",
+  CHECK_SERVICES: "aiBookingUi.services", BOOK_SERVICE: "aiBookingUi.bookService", CHECK_VOUCHERS: "aiBookingUi.vouchers", USE_VOUCHER: "aiBookingUi.applyVoucher",
+  CHECK_PARKING_POLICY: "aiBookingUi.policies", CHECK_TICKET_PACKAGES: "aiBookingUi.vipPackages", HELP: "aiBookingUi.help",
 };
 const welcomeMessage = {
   role: 'assistant',
@@ -211,6 +212,7 @@ export default function AiBookingPanel({
   mapFloors = [], mapFloorId = null, onMapFloorSelect,
   mapActiveSessions = [], mapDbSlots = [], mapActiveHolds = [],
 }) {
+  const { language: uiLanguage, t } = useLanguage();
   const [prompt, setPrompt] = useState('');
   const [language, setLanguage] = useState(initialLanguage);
   const [draft, setDraft] = useState({ __language: initialLanguage, __languageLocked: false });
@@ -469,6 +471,12 @@ export default function AiBookingPanel({
     voiceSessionRef.current?.setLanguage(next);
     voiceSessionRef.current?.setExpectLicensePlate(expectsLicensePlateInput());
   };
+  const syncAppLanguage = useEffectEvent((next) => updateLanguage(next));
+  useEffect(() => {
+    const timer = setTimeout(() => syncAppLanguage(initialLanguage), 0);
+    return () => clearTimeout(timer);
+  }, [initialLanguage]);
+
   const updateDraft = (value) => {
     const next = typeof value === 'function' ? value(draftRef.current) : value;
     draftRef.current = next;
@@ -2178,8 +2186,6 @@ export default function AiBookingPanel({
   const mapRangeEnd = mapEndTime ? vnParts(mapEndTime) : null;
   const mapRefreshing = showLiveMap ? liveMapLoading : mapLoading;
   const displayedMapError = showLiveMap ? liveMapError : mapError;
-  const selectedPhaseLabels = englishPhaseLabels;
-  const selectedAssistantIntentLabels = englishAssistantIntentLabels;
   const serviceVehicleCount = Math.max(
     Number(preview?.items?.length || 0),
     Number(draft.requestedVehicleCount || 0),
@@ -2193,26 +2199,26 @@ export default function AiBookingPanel({
     return sum + Number(service?.price || 0);
   }, 0);
   const conversationUi = {
-    title: 'VALO Parking Assistant', subtitle: 'Book and search by voice or text',
-    speaking: 'Speaking a short reply... Press the microphone to interrupt.',
-    listening: 'Listening... You can continue speaking.', microphone: 'Microphone is on...',
-    processing: 'Processing...', placeholder: 'Book a space or ask about vehicles, wallet, or availability...',
-    preparing: 'Preparing microphone... You can speak when “Listening” appears.',
-    inputLabel: 'Request for the AI parking assistant', stopVoice: 'Stop voice conversation',
-    startVoice: 'Start voice conversation', stopTitle: 'Microphone is on; click to stop',
-    startTitle: 'Start voice microphone', interruptVoice: 'Interrupt and speak',
-    interruptTitle: 'Stop the AI voice and start listening', send: 'Send request', confirm: 'Confirm', cancel: 'Cancel',
-    insufficient: 'Insufficient Balance', topUpPrefix: 'You need to top up', topUpSuffix: 'to complete this checkout.',
-    noQr: 'No QR data', scanQr: 'Scan with your banking app or e-wallet to pay.', alternatively: 'Alternatively,',
-    checkout: 'click here to checkout', received: 'Payment received! Processing checkout...',
-    waitingPayment: 'Waiting for your payment...', cancelling: 'Cancelling...',
-    sessionLoading: 'Checking saved booking session...',
+    title: t('aiBookingUi.valoParkingAssistant'), subtitle: t('aiBookingUi.bookAndSearchByVoiceOr'),
+    speaking: t('aiBookingUi.speakingAShortReplyPressThe'),
+    listening: t('aiBookingUi.listeningYouCanContinueSpeaking'), microphone: t('aiBookingUi.microphoneIsOn'),
+    processing: t('aiBookingUi.processing'), placeholder: t('aiBookingUi.bookASpaceOrAskAbout'),
+    preparing: t('aiBookingUi.preparingMicrophoneYouCanSpeakWhen'),
+    inputLabel: t('aiBookingUi.requestForTheAiParkingAssistant'), stopVoice: t('aiBookingUi.stopVoiceConversation'),
+    startVoice: t('aiBookingUi.startVoiceConversation'), stopTitle: t('aiBookingUi.microphoneIsOnClickToStop'),
+    startTitle: t('aiBookingUi.startVoiceMicrophone'), interruptVoice: t('aiBookingUi.interruptAndSpeak'),
+    interruptTitle: t('aiBookingUi.stopTheAiVoiceAndStart'), send: t('aiBookingUi.sendRequest'), confirm: t('aiBookingUi.confirm'), cancel: t('aiBookingUi.cancel'),
+    insufficient: t('aiBookingUi.insufficientBalance'), topUpPrefix: t('aiBookingUi.youNeedToTopUp'), topUpSuffix: t('aiBookingUi.toCompleteThisCheckout'),
+    noQr: t('aiBookingUi.noQrData'), scanQr: t('aiBookingUi.scanWithYourBankingAppOr'), alternatively: t('aiBookingUi.alternatively'),
+    checkout: t('aiBookingUi.clickHereToCheckout'), received: t('aiBookingUi.paymentReceivedProcessingCheckout'),
+    waitingPayment: t('aiBookingUi.waitingForYourPayment'), cancelling: t('aiBookingUi.cancelling'),
+    sessionLoading: t('aiBookingUi.checkingSavedBookingSession'),
   };
 
   return (
     <div className="valo-assistant-page">
-      <ResizableAssistantShell historyCollapsed={historyCollapsed} language="en">
-      <AiChatHistorySidebar language="en" items={historyItems} loading={historyLoading} error={historyError}
+      <ResizableAssistantShell historyCollapsed={historyCollapsed}>
+      <AiChatHistorySidebar items={historyItems} loading={historyLoading} error={historyError}
         search={historySearch} onSearch={(value) => { setHistorySearch(value); setHistoryPage(1); setHistoryItems([]); }}
         onNew={handleNewBooking} onOpen={openHistoryChat} onRename={renameHistoryChat} onDelete={deleteHistoryChat}
         selectedId={selectedHistoryId} disabled={sessionLoading || busy || turnProcessing || queuedTurns > 0 || replyPending || topUpLoading || showTopUpModal}
@@ -2225,11 +2231,11 @@ export default function AiBookingPanel({
             voiceEnabledRef.current = !voiceEnabledRef.current;
             setVoiceEnabled(voiceEnabledRef.current);
             if (!voiceEnabledRef.current) { speakerRef.current?.cancel(); setVoicePlaybackError(''); }
-          }} className="valo-assistant-audio" aria-label={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'} title={voiceEnabled ? 'Turn off AI voice' : 'Turn on AI voice'}>{voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
+          }} className="valo-assistant-audio" aria-label={voiceEnabled ? t('aiBookingUi.turnOffAiVoice') : t('aiBookingUi.turnOnAiVoice')} title={voiceEnabled ? t('aiBookingUi.turnOffAiVoice') : t('aiBookingUi.turnOnAiVoice')}>{voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
         </div>
         <div role="status" aria-live="polite" className="valo-assistant-status">
-          {speaking ? conversationUi.speaking : voicePreparing ? conversationUi.preparing : voiceTranscribing || turnProcessing ? conversationUi.processing : busy ? selectedPhaseLabels[phase] : listening ? conversationUi.listening : voiceActive ? conversationUi.microphone : selectedPhaseLabels[phase]}
-          {queuedTurns > 0 && <span> · {`Queued messages: ${queuedTurns}`}</span>}
+          {speaking ? conversationUi.speaking : voicePreparing ? conversationUi.preparing : voiceTranscribing || turnProcessing ? conversationUi.processing : busy ? t(phaseLabelKeys[phase] || phaseLabelKeys.IDLE) : listening ? conversationUi.listening : voiceActive ? conversationUi.microphone : t(phaseLabelKeys[phase] || phaseLabelKeys.IDLE)}
+          {queuedTurns > 0 && <span> · {t('aiBookingUi.queued', { count: queuedTurns })}</span>}
         </div>
         {sessionLoading && <div className="mx-5 mt-4 flex items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"><Loader2 size={16} className="animate-spin" /> {conversationUi.sessionLoading}</div>}
         {!sessionLoading && resumeCandidate && (
@@ -2237,9 +2243,9 @@ export default function AiBookingPanel({
             <div className="flex items-start gap-2.5">
               <div className="rounded-xl bg-yellow-400 p-2 text-gray-900"><Bot size={17} /></div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-black text-gray-900">{resumeExpired ? 'Conversation expired' : resumeIsBooking ? 'Continue booking' : 'Continue conversation'}</h3>
+                <h3 className="text-sm font-black text-gray-900">{resumeExpired ? t('aiBookingUi.conversationExpired') : resumeIsBooking ? t('aiBookingUi.continueBooking') : t('aiBookingUi.continueConversation')}</h3>
                 {resumeExpired ? (
-                  <p className="mt-1 text-xs leading-5 text-amber-900">The previous session is over 30 minutes old. Start a new booking.</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-900">{t('aiBookingUi.thePreviousSessionIsOver30')}</p>
                 ) : (
                   <div className="mt-1.5 space-y-1 text-xs text-gray-700">
                     {(resumeDate || resumeStartTime || resumeEndTime) && (
@@ -2249,17 +2255,17 @@ export default function AiBookingPanel({
                         {(resumeStartTime || resumeEndTime) && `${resumeStartTime || '--:--'}–${resumeEndTime || '--:--'}`}
                       </p>
                     )}
-                    <p className="truncate"><span className="font-semibold">Vehicle:</span> {resumeVehicle}</p>
-                    {resumeIsBooking && <p><span className="font-semibold">Current step:</span> {aiBookingStepLabel(resumeCandidate.currentStep)}</p>}
+                    <p className="truncate"><span className="font-semibold">{t('aiBookingUi.vehicle')}</span> {resumeVehicle}</p>
+                    {resumeIsBooking && <p><span className="font-semibold">{t('aiBookingUi.currentStep')}</span> {aiBookingStepLabel(resumeCandidate.currentStep)}</p>}
                     {resumeIsBooking && <div className="pt-0.5">
-                      <div className="mb-1 flex justify-between text-[11px] font-bold text-gray-600"><span>Progress</span><span>{resumeCandidate.completionPercent || 0}%</span></div>
+                      <div className="mb-1 flex justify-between text-[11px] font-bold text-gray-600"><span>{t('aiBookingUi.progress')}</span><span>{resumeCandidate.completionPercent || 0}%</span></div>
                       <div className="h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-yellow-400 transition-all" style={{ width: `${resumeCandidate.completionPercent || 0}%` }} /></div>
                     </div>}
                   </div>
                 )}
                 <div className="mt-2.5 flex flex-wrap gap-2">
-                  {!resumeExpired && <button type="button" onClick={continueBooking} className="rounded-xl bg-gray-900 px-3.5 py-1.5 text-xs font-black text-white">Continue</button>}
-                  <button type="button" onClick={handleNewBooking} className="rounded-xl border border-yellow-400 bg-white px-3.5 py-1.5 text-xs font-black text-yellow-900">Start new</button>
+                  {!resumeExpired && <button type="button" onClick={continueBooking} className="rounded-xl bg-gray-900 px-3.5 py-1.5 text-xs font-black text-white">{t('aiBookingUi.continue')}</button>}
+                  <button type="button" onClick={handleNewBooking} className="rounded-xl border border-yellow-400 bg-white px-3.5 py-1.5 text-xs font-black text-yellow-900">{t('aiBookingUi.startNew')}</button>
                 </div>
               </div>
             </div>
@@ -2269,8 +2275,8 @@ export default function AiBookingPanel({
           {messages.map((message, index) => (
             <div key={message.id || `${message.role}-${index}`} className={`valo-assistant-message-row ${message.role === 'user' ? 'is-user' : ''}`}>
               {message.role === 'assistant' && <img className="valo-assistant-avatar" src="/assets/notification-mascots/success.png" alt="VALO AI" />}
-              <div className={`valo-assistant-bubble ${message.services?.length ? 'has-services' : ''}`} lang={message.language === 'vi' ? 'vi' : message.language === 'en' ? 'en' : undefined}>
-              <div>{message.pending ? <span className="valo-assistant-typing" role="status" aria-label={conversationUi.processing}><i /><i /><i /></span> : message.text ?? message.content}</div>
+              <div className={`valo-assistant-bubble ${message.services?.length ? 'has-services' : ''}`} lang={message.role === 'assistant' && (message.text ?? message.content) === welcomeMessage.text ? uiLanguage : message.language === 'vi' ? 'vi' : message.language === 'en' ? 'en' : undefined}>
+              <div>{message.pending ? <span className="valo-assistant-typing" role="status" aria-label={conversationUi.processing}><i /><i /><i /></span> : (message.role === 'assistant' && (message.text ?? message.content) === welcomeMessage.text ? t('aiBookingUi.welcome') : message.text ?? message.content)}</div>
               {message.services && Array.isArray(message.services) && message.services.length > 0 && (
                 <div className="valo-assistant-service-list">
                   {message.services.map((service) => {
@@ -2288,7 +2294,7 @@ export default function AiBookingPanel({
                         <span className="valo-assistant-service-name">{service.name}</span>
                         <span className="valo-assistant-service-price">{money(service.price)}</span>
                         <span className="valo-assistant-service-action">
-                          {isSelected ? ('Selected') : ('+ Add')}
+                          {isSelected ? (t('aiBookingUi.selected')) : (t('aiBookingUi.add'))}
                         </span>
                       </button>
                     );
@@ -2303,11 +2309,11 @@ export default function AiBookingPanel({
         {error && <div role="alert" className="mx-5 mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
         {voicePlaybackError && <div role="status" className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{voicePlaybackError}</div>}
         {historyReadOnly && <div className="mx-5 mb-3 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-          <span>{'You are viewing chat history. Start a new chat to continue.'}</span>
-          <button type="button" disabled={sessionLoading} onClick={handleNewBooking} className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 font-bold text-gray-900">{'New chat'}</button>
+          <span>{t('aiBookingUi.youAreViewingChatHistoryStart')}</span>
+          <button type="button" disabled={sessionLoading} onClick={handleNewBooking} className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 font-bold text-gray-900">{t('aiBookingUi.newChat')}</button>
         </div>}
-        {sessionSaving === 'offline' && hasStarted && <div className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">This conversation is safely stored on this device and will sync automatically.</div>}
-        {manualSuggestion && onSwitchToManual && <button type="button" onClick={onSwitchToManual} className="mx-5 mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-2 text-sm font-bold text-yellow-900">Switch to manual booking</button>}
+        {sessionSaving === 'offline' && hasStarted && <div className="mx-5 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{t('aiBookingUi.thisConversationIsSafelyStoredOn')}</div>}
+        {manualSuggestion && onSwitchToManual && <button type="button" onClick={onSwitchToManual} className="mx-5 mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-2 text-sm font-bold text-yellow-900">{t('aiBookingUi.switchToManualBooking')}</button>}
         <form className="valo-assistant-composer" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
           <button type="button" disabled={historyReadOnly || sessionLoading || (replyPending && !speaking) || (busy && !voiceActive && !speaking)} onClick={handleVoiceControl} className={`valo-assistant-mic disabled:opacity-50 ${voiceActive ? "bg-rose-50 text-rose-600" : ""}`} aria-label={speaking ? conversationUi.interruptVoice : voiceActive ? conversationUi.stopVoice : conversationUi.startVoice} title={speaking ? conversationUi.interruptTitle : voiceActive ? conversationUi.stopTitle : conversationUi.startTitle}>{speaking ? <Mic size={19} /> : voiceActive ? <MicOff size={19} /> : <Mic size={19} />}</button>
           <input disabled={historyReadOnly || sessionLoading} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={conversationUi.placeholder} className="disabled:opacity-50" aria-label={conversationUi.inputLabel} />
@@ -2316,25 +2322,25 @@ export default function AiBookingPanel({
       </section>
 
       <section className="valo-assistant-preview">
-        <div className="mb-5 flex items-center gap-3"><Sparkles size={21} className="text-yellow-500" /><div><h2 className="text-lg font-black text-gray-900">{assistantInfo ? 'Information from VALO' : intent === 'CHECK_AVAILABILITY' ? 'Available spaces' : intent === 'VIEW_BOOKING' ? 'Your booking' : intent === 'CANCEL_BOOKING' ? 'Confirm cancellation' : intent === 'MODIFY_BOOKING' ? 'Edit booking' : 'Booking preview'}</h2><p className="text-xs text-gray-500">Changes are applied only after you confirm.</p></div></div>
-        {preview?.items && <div className="mb-4 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">WAITING FOR CONFIRMATION · Booking not created</div><span className="text-xs font-semibold text-gray-500">The space will be rechecked and held when you confirm.</span></div>}
+        <div className="mb-5 flex items-center gap-3"><Sparkles size={21} className="text-yellow-500" /><div><h2 className="text-lg font-black text-gray-900">{assistantInfo ? t('aiBookingUi.informationFromValo') : intent === 'CHECK_AVAILABILITY' ? t('aiBookingUi.availableSpaces') : intent === 'VIEW_BOOKING' ? t('aiBookingUi.yourBooking') : intent === 'CANCEL_BOOKING' ? t('aiBookingUi.confirmCancellation') : intent === 'MODIFY_BOOKING' ? t('aiBookingUi.editBooking') : t('aiBookingUi.bookingPreview')}</h2><p className="text-xs text-gray-500">{t('aiBookingUi.changesAreAppliedOnlyAfterYou')}</p></div></div>
+        {preview?.items && <div className="mb-4 flex flex-wrap items-center gap-2"><div className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">{t('aiBookingUi.waitingForConfirmationBookingNotCreated')}</div><span className="text-xs font-semibold text-gray-500">{t('aiBookingUi.theSpaceWillBeRecheckedAnd')}</span></div>}
 
-        {success && <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800"><div className="flex items-center gap-2 font-black"><CheckCircle2 size={20} /> Action completed</div><Link to="/customer/booking" className="mt-2 inline-block text-sm font-bold underline">View My Bookings</Link></div>}
+        {success && <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800"><div className="flex items-center gap-2 font-black"><CheckCircle2 size={20} /> {t('aiBookingUi.actionCompleted')}</div><Link to="/customer/booking" className="mt-2 inline-block text-sm font-bold underline">{t('aiBookingUi.viewMyBookings')}</Link></div>}
 
-        {assistantInfo && <div className="mb-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-5 text-sm leading-6 text-gray-800 whitespace-pre-line"><div className="mb-2 text-xs font-black uppercase tracking-wide text-yellow-800">{assistantInfo.intents.map((item) => selectedAssistantIntentLabels[item] || item).join(' · ')}</div>{localizeAiBookingMessage(assistantInfo.message, language)}{pendingAssistantAction && <div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmAssistantAction} className="rounded-xl bg-gray-900 px-4 py-2.5 font-black text-white">{pendingAssistantAction.type === 'APPLY_VOUCHER' ? ('Apply voucher') : conversationUi.confirm}</button><button type="button" disabled={busy || replyPending} onClick={cancelAssistantAction} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 font-bold">{pendingAssistantAction.type === 'APPLY_VOUCHER' ? ('Skip') : conversationUi.cancel}</button></div>}</div>}
+        {assistantInfo && <div className="mb-5 rounded-2xl border border-yellow-200 bg-yellow-50 p-5 text-sm leading-6 text-gray-800 whitespace-pre-line"><div className="mb-2 text-xs font-black uppercase tracking-wide text-yellow-800">{assistantInfo.intents.map((item) => assistantIntentLabelKeys[item] ? t(assistantIntentLabelKeys[item]) : item).join(' · ')}</div>{localizeAiBookingMessage(assistantInfo.message, language)}{pendingAssistantAction && <div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmAssistantAction} className="rounded-xl bg-gray-900 px-4 py-2.5 font-black text-white">{pendingAssistantAction.type === 'APPLY_VOUCHER' ? (t('aiBookingUi.applyVoucher')) : conversationUi.confirm}</button><button type="button" disabled={busy || replyPending} onClick={cancelAssistantAction} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 font-bold">{pendingAssistantAction.type === 'APPLY_VOUCHER' ? (t('aiBookingUi.skip')) : conversationUi.cancel}</button></div>}</div>}
 
         {!historyReadOnly && !success && !assistantInfo && !target && (
           <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {mapSelectionTargetCount > 1 && <div className="sm:col-span-2 flex flex-wrap gap-2 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><span className="w-full text-xs font-black text-cyan-900">Editing each vehicle separately:</span>{mapSelectionTargets.map((item) => <button key={item.index} type="button" onClick={() => setMapTargetIndex(item.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${activeMapTargetIndex === item.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>{item.licensePlate || `Vehicle ${item.index + 1}`}</button>)}</div>}
-            <label className="text-xs font-bold text-gray-500">Start date<input type="date" min={currentVietnam.today} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">End date<input type="date" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || currentVietnam.today} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endDate : (draft.endDate || draft.startDate)) || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Arrival time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Departure time<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
-            <label className="text-xs font-bold text-gray-500">Vehicle<select disabled={busy || replyPending || mapSelectionTargetCount > 1} value={mapSelectionTargetCount > 1 ? '' : (draft.vehicleId || '')} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); requestRef.current += 1; confirmationPendingRef.current = false; confirmationKeyRef.current = null; setConversationPhase('IDLE'); updateDraft((current) => applySingleVehicleSelectionToDraft(current, vehicle)); updatePreview(null); setConflicts([]); setMapTargetIndex(0); }} className={fieldClass}><option value="">{mapSelectionTargetCount > 1 ? 'Edit the list in the license plate field' : 'Select a vehicle or enter a license plate'}</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
-            <label className="text-xs font-bold text-gray-500">License plates (comma-separated for multiple vehicles)<input disabled={busy || replyPending} value={(draft.licensePlates?.length > 1 ? draft.licensePlates.join(', ') : draft.licensePlate) || ''} onChange={(event) => changePlateInput(event.target.value)} className={fieldClass} placeholder="43A12345, 43B20404" /></label>
-            <label className="text-xs font-bold text-gray-500">Floor (optional)<input disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.floorName : draft.floorName) || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder="Floor 2" /></label>
-            <label className="text-xs font-bold text-gray-500">Parking space (optional)<input disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.slotCode : draft.slotCode) || ''} onChange={(event) => changeDraft('slotCode', event.target.value)} className={fieldClass} placeholder="A-015" /></label>
-            <button type="button" onClick={refreshPreview} disabled={busy || replyPending} className="sm:col-span-2 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3 font-black text-yellow-900 disabled:opacity-50">Check availability and price again</button>
+            {mapSelectionTargetCount > 1 && <div className="sm:col-span-2 flex flex-wrap gap-2 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><span className="w-full text-xs font-black text-cyan-900">{t('aiBookingUi.editingEachVehicleSeparately')}</span>{mapSelectionTargets.map((item) => <button key={item.index} type="button" onClick={() => setMapTargetIndex(item.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${activeMapTargetIndex === item.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>{item.licensePlate || `Vehicle ${item.index + 1}`}</button>)}</div>}
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.startDate')}<input type="date" min={currentVietnam.today} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || ''} onChange={(event) => changeDraft('startDate', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.endDate')}<input type="date" min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) || currentVietnam.today} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endDate : (draft.endDate || draft.startDate)) || ''} onChange={(event) => changeDraft('endDate', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.arrivalTime')}<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} min={(mapSelectionTargetCount > 1 ? activeMapTarget?.startDate : draft.startDate) === currentVietnam.today ? currentVietnam.currentTime : undefined} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.startTime : draft.startTime) || ''} onChange={(event) => changeDraft('startTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.departureTime')}<input type="time" step={BOOKING_TIME_STEP_MINUTES * 60} disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.endTime : draft.endTime) || ''} onChange={(event) => changeDraft('endTime', event.target.value)} className={fieldClass} /></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.vehicle2')}<select disabled={busy || replyPending || mapSelectionTargetCount > 1} value={mapSelectionTargetCount > 1 ? '' : (draft.vehicleId || '')} onChange={(event) => { const vehicle = vehicles.find((item) => item._id === event.target.value); requestRef.current += 1; confirmationPendingRef.current = false; confirmationKeyRef.current = null; setConversationPhase('IDLE'); updateDraft((current) => applySingleVehicleSelectionToDraft(current, vehicle)); updatePreview(null); setConflicts([]); setMapTargetIndex(0); }} className={fieldClass}><option value="">{mapSelectionTargetCount > 1 ? t('aiBookingUi.editTheListInTheLicense') : t('aiBookingUi.selectAVehicleOrEnterA')}</option>{vehicles.filter((item) => item.status === 'approved' && (!draft.vehicleType || item.vehicleType === draft.vehicleType)).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.licensePlate}</option>)}</select></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.licensePlatesCommaSeparatedForMultiple')}<input disabled={busy || replyPending} value={(draft.licensePlates?.length > 1 ? draft.licensePlates.join(', ') : draft.licensePlate) || ''} onChange={(event) => changePlateInput(event.target.value)} className={fieldClass} placeholder="43A12345, 43B20404" /></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.floorOptional')}<input disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.floorName : draft.floorName) || ''} onChange={(event) => changeDraft('floorName', event.target.value)} className={fieldClass} placeholder={t('aiBookingUi.floor2')} /></label>
+            <label className="text-xs font-bold text-gray-500">{t('aiBookingUi.parkingSpaceOptional')}<input disabled={busy || replyPending} value={(mapSelectionTargetCount > 1 ? activeMapTarget?.slotCode : draft.slotCode) || ''} onChange={(event) => changeDraft('slotCode', event.target.value)} className={fieldClass} placeholder="A-015" /></label>
+            <button type="button" onClick={refreshPreview} disabled={busy || replyPending} className="sm:col-span-2 rounded-xl border border-yellow-300 bg-yellow-50 px-4 py-3 font-black text-yellow-900 disabled:opacity-50">{t('aiBookingUi.checkAvailabilityAndPriceAgain')}</button>
           </div>
         )}
 
@@ -2345,7 +2351,7 @@ export default function AiBookingPanel({
               <div className="flex items-center gap-1.5">
                 <Sparkles size={16} className="text-yellow-500" />
                 <span className="text-xs font-black uppercase tracking-wider text-gray-900">
-                  Extra services
+                  {t('aiBookingUi.extraServices')}
                 </span>
               </div>
               <span className="text-xs font-black text-yellow-700">
@@ -2355,7 +2361,7 @@ export default function AiBookingPanel({
             <p className="text-[11px] text-gray-500 mb-2.5">
               {serviceVehicleCount > 1
                 ? `Selected services apply to each vehicle (${serviceVehicleCount} vehicles); the displayed total includes every vehicle.`
-                : 'Add vehicle-care services to be performed during the parking period.'}
+                : t('aiBookingUi.addVehicleCareServicesToBe')}
             </p>
             <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-hidden pr-1">
               {services.map((service) => {
@@ -2381,7 +2387,7 @@ export default function AiBookingPanel({
                       <div className="min-w-0">
                         <div className="font-bold text-xs text-gray-900 leading-tight">{service.name}</div>
                         <div className="text-[10px] text-gray-400 leading-tight">
-                          {service.timeCost || 30} minutes {service.description ? `· ${service.description}` : ''}
+                          {service.timeCost || 30} {t('aiBookingUi.minutes')} {service.description ? `· ${service.description}` : ''}
                         </div>
                       </div>
                     </div>
@@ -2393,7 +2399,7 @@ export default function AiBookingPanel({
           </div>
         )}
 
-        {conflicts.length > 0 && <div role="alert" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><div className="mb-2 font-black">Unable to book</div>{conflicts.map((conflict, index) => <p key={index} className="mb-1">{localizeAiBookingMessage(conflict, language)}</p>)}</div>}
+        {conflicts.length > 0 && <div role="alert" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><div className="mb-2 font-black">{t('aiBookingUi.unableToBook')}</div>{conflicts.map((conflict, index) => <p key={index} className="mb-1">{localizeAiBookingMessage(conflict, language)}</p>)}</div>}
 
         {preview?.items && <div className="space-y-3">
           {preview.suggestVipPackage && (
@@ -2401,9 +2407,9 @@ export default function AiBookingPanel({
               <div className="flex items-start gap-2.5">
                 <Sparkles size={20} className="text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-black text-amber-900">Long-stay option: Review VIP packages</div>
+                  <div className="font-black text-amber-900">{t('aiBookingUi.longStayOptionReviewVipPackages')}</div>
                   <div className="text-xs text-amber-800 mt-0.5">
-                    This booking is longer than 7 days. Review the current VIP package rates, benefits, and conditions.
+                    {t('aiBookingUi.thisBookingIsLongerThan7')}
                   </div>
                 </div>
               </div>
@@ -2412,7 +2418,7 @@ export default function AiBookingPanel({
                 onClick={() => setShowVipModal(true)}
                 className="inline-flex items-center justify-center whitespace-nowrap rounded-xl bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 transition shadow-sm active:scale-[0.98]"
               >
-                View VIP Packages
+                {t('aiBookingUi.viewVipPackages')}
               </button>
             </div>
           )}
@@ -2425,16 +2431,16 @@ export default function AiBookingPanel({
               <div key={item.clientItemId} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="font-black text-gray-900">{dayText(start.date)} {start.time} → {dayText(end.date)} {end.time}</div>
-                  <div className="text-sm text-gray-500">{item.licensePlate} · Continuous reservation · {item.floorName} · {item.slotCode}</div>
+                  <div className="text-sm text-gray-500">{item.licensePlate} {t('aiBookingUi.continuousReservation')} {item.floorName} · {item.slotCode}</div>
                   {serviceNames.length > 0 && (
                     <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
                       <Sparkles size={12} className="text-amber-600" />
-                      Services: {serviceNames.join(', ')}
+                      {t('aiBookingUi.services2')} {serviceNames.join(', ')}
                     </div>
                   )}
                   {voucherName && (
                     <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800">
-                      Voucher: {voucherName}
+                      {t('aiBookingUi.voucher')} {voucherName}
                     </div>
                   )}
                 </div>
@@ -2444,28 +2450,28 @@ export default function AiBookingPanel({
           })}
           <div className="rounded-2xl bg-gray-900 p-5 text-white flex justify-between items-center">
             <div>
-              <span>Continuous reservation{preview.durationMinutes ? ` · ${durationText(preview.durationMinutes)}` : ''}</span>
+              <span>{t('aiBookingUi.continuousReservation2')}{preview.durationMinutes ? ` · ${durationText(preview.durationMinutes)}` : ''}</span>
               {Array.isArray(draft.serviceNames) && draft.serviceNames.length > 0 && (
                 <div className="text-xs text-yellow-300/80 font-normal mt-0.5">
-                  Includes services: {draft.serviceNames.join(', ')}
+                  {t('aiBookingUi.includesServices')} {draft.serviceNames.join(', ')}
                 </div>
               )}
             </div>
             <strong className="text-xl text-yellow-300">{money(preview.total)}</strong>
           </div>
-          {preview.walletBalance < preview.total && <p className="text-sm text-rose-600">Your wallet balance is {money(preview.walletBalance)}. You can scan a QR code to pay the remaining {money(preview.total - preview.walletBalance)} when you confirm.</p>}
-          <div className="flex gap-3"><button type="button" onClick={() => confirmCreation()} disabled={busy || replyPending || topUpLoading || pendingAssistantAction?.type === 'APPLY_VOUCHER'} className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-gray-900 disabled:opacity-50">{preview.walletBalance < preview.total ? 'Confirm & pay by QR' : 'Confirm booking'}</button><button type="button" onClick={cancelPreview} disabled={busy || topUpLoading} className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 disabled:opacity-50">Cancel</button></div>
+          {preview.walletBalance < preview.total && <p className="text-sm text-rose-600">{t('aiBookingUi.yourWalletBalanceIs')} {money(preview.walletBalance)}{t('aiBookingUi.youCanScanAQrCode')} {money(preview.total - preview.walletBalance)} {t('aiBookingUi.whenYouConfirm')}</p>}
+          <div className="flex gap-3"><button type="button" onClick={() => confirmCreation()} disabled={busy || replyPending || topUpLoading || pendingAssistantAction?.type === 'APPLY_VOUCHER'} className="flex-1 rounded-xl bg-yellow-400 px-4 py-3 font-black text-gray-900 disabled:opacity-50">{preview.walletBalance < preview.total ? t('aiBookingUi.confirmPayByQr') : t('aiBookingUi.confirmBooking')}</button><button type="button" onClick={cancelPreview} disabled={busy || topUpLoading} className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 disabled:opacity-50">{t('aiBookingUi.cancel')}</button></div>
         </div>}
 
         {availability && <p className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-600 whitespace-pre-line">{aiAvailabilityReply(availability, 'en')}</p>}
 
         {choices.length > 0 && <div className="space-y-2 mb-5">{choices.map((booking) => <button key={booking._id} type="button" onClick={() => selectTarget(booking).catch((caught) => setError(caught.message))} className={`block w-full rounded-xl border p-4 text-left text-sm font-bold ${target?._id === booking._id ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200 hover:border-yellow-300'}`}>{labelBooking(booking)} <span className="ml-2 text-gray-400">{booking.status}</span></button>)}</div>}
 
-        {target && intent === 'VIEW_BOOKING' && <div className="rounded-2xl bg-gray-50 p-5 text-sm"><p className="font-black">{labelBooking(target)}</p><p>Status: {target.status}</p><p>Amount paid: {money(target.prepaidAmount)}</p></div>}
-        {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">Estimated refund: {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">Confirm cancellation</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Keep booking</button></div></div>}
-        {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">Arrival date<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startDate: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Arrival time<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startTime: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">Departure date<input type="date" value={edit.endDate} onChange={(event) => { setEdit((current) => ({ ...current, endDate: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label><label className="text-xs font-bold">Departure time<input type="time" value={edit.endTime} onChange={(event) => { setEdit((current) => ({ ...current, endTime: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? 'The system will check availability and show the price difference before applying the change.' : 'The vehicle has entered the parking lot, so only the departure time can be changed. The price difference will be shown before the change is applied.'}</p>{actionQuote?.editKey && <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><div className="flex justify-between"><span>New total</span><strong>{money(actionQuote.newPrice)}</strong></div><div className="mt-1 flex justify-between"><span>{actionQuote.extraAmount > 0 ? 'Additional payment' : 'Refund'}</span><strong>{money(actionQuote.extraAmount || actionQuote.refundAmount || 0)}</strong></div></div>}<div className="flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">{actionQuote?.editKey ? 'Confirm changes' : 'Check price difference'}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">Cancel</button></div></div>}
+        {target && intent === 'VIEW_BOOKING' && <div className="rounded-2xl bg-gray-50 p-5 text-sm"><p className="font-black">{labelBooking(target)}</p><p>{t('aiBookingUi.status')} {target.status}</p><p>{t('aiBookingUi.amountPaid')} {money(target.prepaidAmount)}</p></div>}
+        {target && intent === 'CANCEL_BOOKING' && actionQuote && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5"><p className="font-black text-gray-900">{labelBooking(target)}</p><p className="mt-2 text-sm text-gray-700">{t('aiBookingUi.estimatedRefund')} {money(actionQuote.refundAmount)}</p><div className="mt-4 flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white">{t('aiBookingUi.confirmCancellation')}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">{t('aiBookingUi.keepBooking')}</button></div></div>}
+        {target && intent === 'MODIFY_BOOKING' && edit && <div className="rounded-2xl bg-gray-50 p-5 space-y-3"><p className="font-black">{labelBooking(target)}</p><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold">{t('aiBookingUi.arrivalDate')}<input type="date" value={edit.startDate} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startDate: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">{t('aiBookingUi.arrivalTime')}<input type="time" value={edit.startTime} disabled={target.status !== 'PAID'} onChange={(event) => { setEdit((current) => ({ ...current, startTime: event.target.value })); setActionQuote(null); }} className={`${fieldClass} disabled:opacity-50`} /></label><label className="text-xs font-bold">{t('aiBookingUi.departureDate')}<input type="date" value={edit.endDate} onChange={(event) => { setEdit((current) => ({ ...current, endDate: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label><label className="text-xs font-bold">{t('aiBookingUi.departureTime')}<input type="time" value={edit.endTime} onChange={(event) => { setEdit((current) => ({ ...current, endTime: event.target.value })); setActionQuote(null); }} className={fieldClass} /></label></div><p className="text-xs text-gray-500">{target.status === 'PAID' ? t('aiBookingUi.theSystemWillCheckAvailabilityAnd') : t('aiBookingUi.theVehicleHasEnteredTheParking')}</p>{actionQuote?.editKey && <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900"><div className="flex justify-between"><span>{t('aiBookingUi.newTotal')}</span><strong>{money(actionQuote.newPrice)}</strong></div><div className="mt-1 flex justify-between"><span>{actionQuote.extraAmount > 0 ? t('aiBookingUi.additionalPayment') : 'Refund'}</span><strong>{money(actionQuote.extraAmount || actionQuote.refundAmount || 0)}</strong></div></div>}<div className="flex gap-3"><button type="button" disabled={busy || replyPending} onClick={confirmExistingAction} className="rounded-xl bg-yellow-400 px-4 py-3 font-black">{actionQuote?.editKey ? t('aiBookingUi.confirmChanges') : t('aiBookingUi.checkPriceDifference')}</button><button type="button" onClick={cancelExistingSelection} className="rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold">{t('aiBookingUi.cancel')}</button></div></div>}
 
-        {historyReadOnly && !preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">{'Your saved conversation is displayed alongside.'}</p></div>}
+        {historyReadOnly && !preview && !availability && !choices.length && !success && !conflicts.length && !assistantInfo && <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center text-gray-400"><CalendarDays size={32} className="mb-3" /><p className="text-sm">{t('aiBookingUi.yourSavedConversationIsDisplayedAlongside')}</p></div>}
       </section>
       </ResizableAssistantShell>
 
@@ -2474,21 +2480,21 @@ export default function AiBookingPanel({
           <div>
             <div className="flex items-center gap-2">
               <MapPin size={20} className="text-cyan-500" />
-              <h2 className="text-lg font-black text-gray-900">{showLiveMap ? 'Live parking map' : 'Parking map for your booking'}</h2>
+              <h2 className="text-lg font-black text-gray-900">{showLiveMap ? t('aiBookingUi.liveParkingMap') : t('aiBookingUi.parkingMapForYourBooking')}</h2>
             </div>
             <p className="mt-1 text-sm font-medium text-gray-500">
               {!showLiveMap && mapRangeStart && mapRangeEnd
-                ? `Availability from ${dayText(mapRangeStart.date)} ${mapRangeStart.time} to ${dayText(mapRangeEnd.date)} ${mapRangeEnd.time}. Select an available space; your selection is highlighted in blue.`
-                : 'Current availability on the selected floor.'}
+                ? t('aiBookingUi.mapRange', { start: dayText(mapRangeStart.date) + ' ' + mapRangeStart.time, end: dayText(mapRangeEnd.date) + ' ' + mapRangeEnd.time })
+                : t('aiBookingUi.currentAvailabilityOnTheSelectedFloor')}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {mapFloorAvailableCount !== null && (
               <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-600">
-                {mapFloorAvailableCount} spaces available on this floor
+                {t('aiBookingUi.availableOnFloor', { count: mapFloorAvailableCount })}
               </div>
             )}
-            <button type="button" onClick={() => showLiveMap ? refreshLiveMap().catch(() => {}) : refreshMapAvailability()} disabled={mapRefreshing || !mapFloorId} className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-600 transition hover:border-cyan-300 hover:text-cyan-600 disabled:opacity-40" aria-label="Refresh parking map">
+            <button type="button" onClick={() => showLiveMap ? refreshLiveMap().catch(() => {}) : refreshMapAvailability()} disabled={mapRefreshing || !mapFloorId} className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-600 transition hover:border-cyan-300 hover:text-cyan-600 disabled:opacity-40" aria-label={t('aiBookingUi.refreshParkingMap')}>
               <RefreshCw size={17} className={mapRefreshing ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -2496,7 +2502,7 @@ export default function AiBookingPanel({
 
         {mapSelectionTargetCount > 1 && (
           <div className="mx-2 mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
-            <span className="mr-1 text-xs font-black text-cyan-900">Selecting a space for:</span>
+            <span className="mr-1 text-xs font-black text-cyan-900">{t('aiBookingUi.selectingASpaceFor')}</span>
             {mapSelectionTargets.map((target) => (
               <button key={target.index} type="button" onClick={() => setMapTargetIndex(target.index)} className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${activeMapTargetIndex === target.index ? 'bg-cyan-600 text-white' : 'border border-cyan-200 bg-white text-cyan-800'}`}>
                 {target.licensePlate || `Vehicle ${target.index + 1}`}{target.slotCode ? ` · ${target.slotCode}` : ''}
@@ -2521,7 +2527,7 @@ export default function AiBookingPanel({
           {mapRefreshing && (!showLiveMap || liveMapSlots === null) && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0b0e16]/70 text-center backdrop-blur-sm">
               <Loader2 size={36} className="mb-3 animate-spin text-cyan-400" />
-              <p className="font-black text-white">Updating availability...</p>
+              <p className="font-black text-white">{t('aiBookingUi.updatingAvailability')}</p>
             </div>
           )}
 
@@ -2548,19 +2554,19 @@ export default function AiBookingPanel({
           ) : (
             <div className="flex h-full flex-col items-center justify-center text-center text-gray-400">
               <MapPin size={36} className="mb-3 text-cyan-500" />
-              <p className="font-bold text-white">No parking map available</p>
+              <p className="font-bold text-white">{t('aiBookingUi.noParkingMapAvailable')}</p>
             </div>
           )}
 
           <div className="pointer-events-none absolute bottom-4 left-0 right-0 z-30 flex justify-center px-4">
             <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-4 rounded-full border border-white/10 bg-[#181c23]/80 px-5 py-2.5 shadow-lg backdrop-blur">
-              <span className="hidden text-[10px] font-black uppercase tracking-widest text-cyan-400 sm:block">Legend</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-gray-300 bg-white" />Available</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-rose-600 bg-rose-200" />Occupied</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-cyan-400 bg-cyan-500" />Selected</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500"><i className="h-3.5 w-3.5 rounded-sm border border-yellow-500 bg-yellow-100" />VIP</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-orange-500"><i className="h-3.5 w-3.5 rounded-sm border border-orange-500 bg-orange-100" />Held/booked</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-red-500 bg-red-200" />Maintenance</span>
+              <span className="hidden text-[10px] font-black uppercase tracking-widest text-cyan-400 sm:block">{t('aiBookingUi.legend')}</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-gray-300 bg-white" />{t('aiBookingUi.available')}</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-rose-600 bg-rose-200" />{t('aiBookingUi.occupied')}</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-cyan-400 bg-cyan-500" />{t('aiBookingUi.selected')}</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500"><i className="h-3.5 w-3.5 rounded-sm border border-yellow-500 bg-yellow-100" />{t('aiBookingUi.vip')}</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-orange-500"><i className="h-3.5 w-3.5 rounded-sm border border-orange-500 bg-orange-100" />{t('aiBookingUi.heldBooked')}</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300"><i className="h-3.5 w-3.5 rounded-sm border border-red-500 bg-red-200" />{t('aiBookingUi.maintenance')}</span>
             </div>
           </div>
         </div>

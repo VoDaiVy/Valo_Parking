@@ -1,3 +1,4 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -34,44 +35,46 @@ import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 
 const STATUS_META = {
   PENDING_RECIPIENT: {
-    label: "Waiting for recipient",
+    label: 'membershipTransfer.waitingForRecipient',
     className: "border-amber-400/20 bg-amber-400/10 text-amber-300",
   },
   PENDING_ADMIN: {
-    label: "Waiting for admin",
+    label: 'membershipTransfer.waitingForAdmin',
     className: "border-blue-400/20 bg-blue-400/10 text-blue-300",
   },
   AWAITING_PAYMENT: {
-    label: "Payment required",
+    label: 'membershipTransfer.paymentRequired',
     className: "border-violet-400/20 bg-violet-400/10 text-violet-300",
   },
   LISTED: {
-    label: "Live marketplace listing",
+    label: 'membershipTransfer.liveMarketplaceListing',
     className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
   },
   COMPLETED: {
-    label: "Completed",
+    label: 'membershipTransfer.completed',
     className: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
   },
   REJECTED: {
-    label: "Rejected",
+    label: 'membershipTransfer.rejected',
     className: "border-rose-400/20 bg-rose-400/10 text-rose-300",
   },
   CANCELLED: {
-    label: "Cancelled",
+    label: 'membershipTransfer.cancelled',
     className: "border-white/10 bg-white/5 text-white/45",
   },
   EXPIRED: {
-    label: "Expired",
+    label: 'customer.expired',
     className: "border-white/10 bg-white/5 text-white/45",
   },
 };
 
 const EMPTY_FORM = { mode: "DIRECT", toUserEmail: "", askingPrice: "", reason: "" };
-const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} VND`;
+const TRANSFER_FILTERS = ['all', 'incoming', 'outgoing'];
 const entityId = (entity) => String(entity?._id || entity || "");
 
 export default function MembershipTransfers({ embedded = false }) {
+  const { language, t } = useLanguage();
+  const money = (value) => `${Number(value || 0).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} ${t('common.currency')}`;
   const navigate = useNavigate();
   const currentUser = useMemo(
     () => JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
@@ -113,23 +116,23 @@ export default function MembershipTransfers({ embedded = false }) {
         setMembershipError('');
       } else {
         setMembership(null);
-        setMembershipError(membershipRes.data?.message || "Unable to load membership.");
+        setMembershipError(membershipRes.data?.message || t('membershipTransfer.unableToLoadMembership'));
       }
       if (walletRes.ok && walletRes.data?.success) {
         setWalletBalance(Number(walletRes.data.data?.balance || 0));
       }
       if (!transferRes.ok || !transferRes.data?.success) {
-        throw new Error(transferRes.data?.message || "Unable to load transfer requests.");
+        throw new Error(transferRes.data?.message || t('membershipTransfer.unableToLoadTransferRequests'));
       }
       setTransfers(transferRes.data.data || []);
     } catch (error) {
       if (sequence !== loadSequence.current) return;
-      setMembershipError("Unable to load membership. Please retry.");
-      toast.error(error.message || "Unable to load membership transfers.");
+      setMembershipError(t('membershipTransfer.unableToLoadMembershipPleaseRetry'));
+      toast.error(error.message || t('membershipTransfer.unableToLoadMembershipTransfers'));
     } finally {
       if (sequence === loadSequence.current) { setLoading(false); setRefreshing(false); }
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => loadData(), 0);
@@ -197,13 +200,13 @@ export default function MembershipTransfers({ embedded = false }) {
         reason: form.reason.trim(),
       });
       if (!response.ok || !response.data?.success) {
-        toast.error(response.data?.message || "Unable to create transfer request.");
+        toast.error(response.data?.message || t('membershipTransfer.unableToCreateTransferRequest'));
         return;
       }
       toast.success(
         form.mode === "PUBLIC"
-          ? "Public listing submitted for admin review."
-          : "Transfer invitation sent to the recipient.",
+          ? t('membershipTransfer.publicListingSubmittedForAdminReview')
+          : t('membershipTransfer.transferInvitationSentToTheRecipient'),
       );
       setSelectedSlot(null);
       setForm(EMPTY_FORM);
@@ -211,7 +214,7 @@ export default function MembershipTransfers({ embedded = false }) {
       setRecipientOptions([]);
       await loadData({ silent: true });
     } catch (error) {
-      toast.error(error.message || "Unable to create transfer request.");
+      toast.error(error.message || t('membershipTransfer.unableToCreateTransferRequest'));
     } finally {
       setActiveAction("");
     }
@@ -233,7 +236,7 @@ export default function MembershipTransfers({ embedded = false }) {
               );
 
       if (!response.ok || !response.data?.success) {
-        toast.error(response.data?.message || "Unable to update this transfer.");
+        toast.error(response.data?.message || t('membershipTransfer.unableToUpdateThisTransfer'));
         return;
       }
 
@@ -246,7 +249,7 @@ export default function MembershipTransfers({ embedded = false }) {
       toast.success(messages[action]);
       await loadData({ silent: true });
     } catch (error) {
-      toast.error(error.message || "Unable to update this transfer.");
+      toast.error(error.message || t('membershipTransfer.unableToUpdateThisTransfer'));
     } finally {
       setActiveAction("");
     }
@@ -260,7 +263,7 @@ export default function MembershipTransfers({ embedded = false }) {
         { headers: { Authorization: `Bearer ${localStorage.getItem("accessToken")}` } },
       );
       if (!response.ok) {
-        toast.error("Unable to download the transfer contract.");
+        toast.error(t('membershipTransfer.unableToDownloadTheTransferContract'));
         return;
       }
       const url = URL.createObjectURL(await response.blob());
@@ -272,7 +275,7 @@ export default function MembershipTransfers({ embedded = false }) {
       link.remove();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error("Unable to download the transfer contract.");
+      toast.error(t('membershipTransfer.unableToDownloadTheTransferContract'));
     } finally {
       setActiveAction("");
     }
@@ -290,12 +293,12 @@ export default function MembershipTransfers({ embedded = false }) {
       <div className={embedded ? "" : "mx-auto max-w-6xl"}>
         {!embedded && <CustomerPageHeader
           icon={ArrowLeftRight}
-          title="Membership"
-          description="Send a parking-space entitlement, respond to invitations, pay after admin approval, and keep the signed PDF contract."
+          title={t('membershipHub.title')}
+          description={t('membershipTransfer.description')}
           className="border-b border-white/10 pb-6"
           action={<div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => navigate("/customer/membership-transfer-marketplace")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#DCA11D] px-4 text-sm font-black text-[#16130B]">
-              <ShoppingBag size={16} /> Marketplace
+              <ShoppingBag size={16} /> {t('membershipHub.marketplace')}
             </button>
             <button
               type="button"
@@ -304,7 +307,7 @@ export default function MembershipTransfers({ embedded = false }) {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
             >
               <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-              Refresh
+              {t('common.refresh')}
             </button>
           </div>}
         />}
@@ -318,12 +321,12 @@ export default function MembershipTransfers({ embedded = false }) {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
             >
               <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-              Refresh
+              {t('common.refresh')}
             </button>
           </div>
         )}
 
-        {membershipError && <div role="alert" className="mt-4 text-sm text-amber-200">{membershipError} <button type="button" onClick={() => loadData()} className="min-h-11 underline">Retry</button></div>}
+        {membershipError && <div role="alert" className="mt-4 text-sm text-amber-200">{membershipError} <button type="button" onClick={() => loadData()} className="min-h-11 underline">{t('common.retry')}</button></div>}
         <MembershipOwnershipPanel
           membership={membership}
           membershipLoading={loading}
@@ -340,16 +343,17 @@ export default function MembershipTransfers({ embedded = false }) {
         <section className="mt-6 rounded-3xl border border-white/10 bg-[#151515] p-5 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-black">Requests and contracts</h2>
+              <h2 className="text-xl font-black">{t('membershipTransfer.requestsAndContracts')}</h2>
               <p className="mt-1 text-sm text-white/40">
-                Incoming invitations require your confirmation before admin can see them.
+                {t('membershipTransfer.incomingInvitationsRequireYourConfirmationBefore')}
               </p>
             </div>
             <div className="flex rounded-xl bg-black/25 p-1">
-              {["all", "incoming", "outgoing"].map((item) => (
+              {TRANSFER_FILTERS.map((item) => (
                 <button
                   type="button"
                   key={item}
+                  aria-pressed={filter === item}
                   onClick={() => setFilter(item)}
                   className={`rounded-lg px-3 py-2 text-xs font-bold capitalize transition ${
                     filter === item
@@ -357,7 +361,7 @@ export default function MembershipTransfers({ embedded = false }) {
                       : "text-white/35 hover:text-white/65"
                   }`}
                 >
-                  {item}
+                  {t(`membershipTransfer.filters.${item}`)}
                 </button>
               ))}
             </div>
@@ -372,7 +376,7 @@ export default function MembershipTransfers({ embedded = false }) {
               <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center">
                 <FileText size={26} className="mx-auto text-white/20" />
                 <p className="mt-3 text-sm font-bold text-white/50">
-                  No {filter === "all" ? "" : `${filter} `}transfer requests
+                  {t(`membershipTransfer.empty.${filter}`)}
                 </p>
               </div>
             ) : (
@@ -384,7 +388,7 @@ export default function MembershipTransfers({ embedded = false }) {
                 const isRecipient = isCurrentUser(transfer.toUserId);
                 const isSender = isCurrentUser(transfer.fromUserId);
                 const status = STATUS_META[transfer.status] || {
-                  label: transfer.status,
+                  label: 'membershipTransfer.unknownStatus',
                   className: "border-white/10 bg-white/5 text-white/50",
                 };
                 const totalDue =
@@ -404,28 +408,28 @@ export default function MembershipTransfers({ embedded = false }) {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <strong>
-                              Space {transfer.entitlementId?.slotCode || "—"}
+                              {t('membershipHub.space')} {transfer.entitlementId?.slotCode || "—"}
                             </strong>
                             <span
                               className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${status.className}`}
                             >
-                              {status.label}
+                              {t(status.label)}
                             </span>
                             <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase text-white/45">
                               {transfer.mode || "DIRECT"}
                             </span>
                           </div>
                           <p className="mt-2 truncate text-xs text-white/40">
-                            {transfer.fromUserId?.email || "Unknown"} →{" "}
-                            {transfer.toUserId?.email || (transfer.mode === "PUBLIC" ? "Public marketplace" : "Unknown")}
+                            {transfer.fromUserId?.email || t('membershipTransfer.unknownUser')} →{" "}
+                            {transfer.toUserId?.email || t(transfer.mode === "PUBLIC" ? 'membershipTransfer.publicMarketplace' : 'membershipTransfer.unknownUser')}
                           </p>
                           <p className="mt-1 text-xs text-white/40">
-                            Price {money(transfer.askingPrice)} · Fee{" "}
+                            {t('membershipTransfer.price')} {money(transfer.askingPrice)} {t('membershipTransfer.fee')}{" "}
                             {money(transfer.transferFee)}
                           </p>
                           {transfer.rejectionReason && (
                             <p className="mt-2 text-xs text-rose-300/80">
-                              Reason: {transfer.rejectionReason}
+                              {t('membershipTransfer.reason')} {transfer.rejectionReason}
                             </p>
                           )}
                         </div>
@@ -440,7 +444,7 @@ export default function MembershipTransfers({ embedded = false }) {
                               onClick={() => handleAction(transfer, "reject")}
                               className="min-h-10 rounded-xl border border-white/10 px-4 text-xs font-bold text-white/55 hover:bg-white/5 disabled:opacity-40"
                             >
-                              Decline
+                              {t('membershipTransfer.decline')}
                             </button>
                             <button
                               type="button"
@@ -449,7 +453,7 @@ export default function MembershipTransfers({ embedded = false }) {
                               className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-white px-4 text-xs font-black text-black disabled:opacity-40"
                             >
                               {processing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                              Accept
+                              {t('membershipTransfer.accept')}
                             </button>
                           </>
                         )}
@@ -461,19 +465,19 @@ export default function MembershipTransfers({ embedded = false }) {
                               onClick={() => handleAction(transfer, "cancel")}
                               className="min-h-10 rounded-xl border border-rose-400/20 px-4 text-xs font-bold text-rose-300 hover:bg-rose-400/10 disabled:opacity-40"
                             >
-                              Cancel request
+                              {t('membershipTransfer.cancelRequest')}
                             </button>
                           )}
                         {isRecipient && transfer.status === "PENDING_ADMIN" && (
                           <span className="inline-flex min-h-10 items-center gap-2 px-2 text-xs text-white/40">
                             <Clock3 size={15} />
-                            Admin review
+                            {t('membershipTransfer.adminReview')}
                           </span>
                         )}
                         {isRecipient && transfer.status === "AWAITING_PAYMENT" && (
                           <>
                             <div className="mr-2 text-right text-xs">
-                              <p className="text-white/35">Total due</p>
+                              <p className="text-white/35">{t('membershipTransfer.totalDue')}</p>
                               <p className="mt-1 font-black text-[#E8B63E]">
                                 {money(totalDue)}
                               </p>
@@ -486,7 +490,7 @@ export default function MembershipTransfers({ embedded = false }) {
                                 className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#DCA11D] px-4 text-xs font-black text-[#16130B] disabled:opacity-40"
                               >
                                 {processing ? <Loader2 size={14} className="animate-spin" /> : <Wallet size={14} />}
-                                Pay from wallet
+                                {t('membershipTransfer.payFromWallet')}
                               </button>
                             ) : (
                               <button
@@ -494,7 +498,7 @@ export default function MembershipTransfers({ embedded = false }) {
                                 onClick={() => navigate("/customer/wallet")}
                                 className="min-h-10 rounded-xl bg-rose-400/10 px-4 text-xs font-black text-rose-300"
                               >
-                                Top up {money(totalDue - walletBalance)}
+                                {t('membershipTransfer.topUp')} {money(totalDue - walletBalance)}
                               </button>
                             )}
                           </>
@@ -507,7 +511,7 @@ export default function MembershipTransfers({ embedded = false }) {
                             className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-black text-white/70 hover:bg-white/5 disabled:opacity-40"
                           >
                             {processing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                            Download PDF
+                            {t('membershipTransfer.downloadPdf')}
                           </button>
                         )}
                       </div>
@@ -526,13 +530,13 @@ export default function MembershipTransfers({ embedded = false }) {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-[#DCA11D]">
-                  New transfer
+                  {t('membershipTransfer.newTransfer')}
                 </p>
                 <h2 className="mt-1 text-xl font-black">
-                  Transfer space {selectedSlot.slotCode}
+                  {t('membershipTransfer.transferSpace')} {selectedSlot.slotCode}
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-white/40">
-                  Choose a specific recipient or publish an admin-reviewed marketplace listing.
+                  {t('membershipTransfer.chooseASpecificRecipientOrPublish')}
                 </p>
               </div>
               <button
@@ -543,7 +547,7 @@ export default function MembershipTransfers({ embedded = false }) {
                   setRecipientOptions([]);
                 }}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white/40 hover:bg-white/5 hover:text-white"
-                aria-label="Close transfer form"
+                aria-label={t('membershipTransfer.closeTransferForm')}
               >
                 <X size={18} />
               </button>
@@ -551,11 +555,11 @@ export default function MembershipTransfers({ embedded = false }) {
 
             <div className="mt-4 space-y-3">
               <fieldset>
-                <legend className="text-xs font-bold text-white/50">Transfer method</legend>
+                <legend className="text-xs font-bold text-white/50">{t('membershipTransfer.transferMethod')}</legend>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   {[
-                    { value: "DIRECT", label: "Direct", support: "Choose one customer" },
-                    { value: "PUBLIC", label: "Marketplace", support: "Open to customers" },
+                    { value: "DIRECT", label: t('membershipTransfer.direct'), support: t('membershipTransfer.directHint') },
+                    { value: "PUBLIC", label: t('membershipHub.marketplace'), support: t('membershipTransfer.publicHint') },
                   ].map((option) => (
                     <button
                       type="button"
@@ -584,7 +588,7 @@ export default function MembershipTransfers({ embedded = false }) {
               </fieldset>
               {form.mode === "DIRECT" && (
                 <label className="relative block">
-                  <span className="text-xs font-bold text-white/50">Recipient email</span>
+                  <span className="text-xs font-bold text-white/50">{t('membershipTransfer.recipientEmail')}</span>
                   <div className="relative mt-1.5">
                     <Search
                       size={16}
@@ -610,7 +614,7 @@ export default function MembershipTransfers({ embedded = false }) {
                         setRecipientOpen(true);
                       }}
                       className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-10 text-sm outline-none focus:border-[#DCA11D]"
-                      placeholder="Search customer email..."
+                      placeholder={t('membershipTransfer.searchCustomerEmail')}
                     />
                     {recipientLoading && (
                       <Loader2
@@ -627,7 +631,7 @@ export default function MembershipTransfers({ embedded = false }) {
                     >
                       {!recipientLoading && recipientOptions.length === 0 ? (
                         <p className="px-3 py-3 text-xs text-white/40">
-                          No active customer email found.
+                          {t('membershipTransfer.noActiveCustomerEmailFound')}
                         </p>
                       ) : (
                         recipientOptions.map((recipient) => (
@@ -667,7 +671,7 @@ export default function MembershipTransfers({ embedded = false }) {
                 </label>
               )}
               <label className="block">
-                <span className="text-xs font-bold text-white/50">Transfer price (VND)</span>
+                <span className="text-xs font-bold text-white/50">{t('membershipTransfer.transferPriceVnd')}</span>
                 <input
                   type="number"
                   min="0"
@@ -677,11 +681,11 @@ export default function MembershipTransfers({ embedded = false }) {
                     setForm((current) => ({ ...current, askingPrice: event.target.value }))
                   }
                   className="mt-1.5 w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm outline-none focus:border-[#DCA11D] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                  placeholder="0 for a free transfer"
+                  placeholder={t('membershipTransfer.0ForAFreeTransfer')}
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-bold text-white/50">Reason</span>
+                <span className="text-xs font-bold text-white/50">{t('membershipTransfer.reason2')}</span>
                 <textarea
                   rows="2"
                   maxLength="500"
@@ -690,14 +694,14 @@ export default function MembershipTransfers({ embedded = false }) {
                     setForm((current) => ({ ...current, reason: event.target.value }))
                   }
                   className="mt-1.5 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm outline-none focus:border-[#DCA11D]"
-                  placeholder="Why are you transferring this parking space?"
+                  placeholder={t('membershipTransfer.whyAreYouTransferringThisParking')}
                 />
               </label>
               <p className="rounded-xl bg-white/5 px-3 py-2.5 text-xs leading-5 text-white/40">
                 {form.mode === "PUBLIC"
-                  ? "Admin reviews the listing before it appears in Marketplace. The first eligible customer to claim it gets a 15-minute payment window."
-                  : "The recipient accepts first, then admin reviews the request before wallet payment."}{" "}
-                The price cannot exceed the prorated remaining value and the buyer pays the transfer fee.
+                  ? t('membershipTransfer.adminReviewsTheListingBeforeIt')
+                  : t('membershipTransfer.theRecipientAcceptsFirstThenAdmin')}{" "}
+                {t('membershipTransfer.thePriceCannotExceedTheProrated')}
               </p>
               <button
                 type="button"
@@ -712,7 +716,7 @@ export default function MembershipTransfers({ embedded = false }) {
                 {activeAction.startsWith("create:") && (
                   <Loader2 size={17} className="animate-spin" />
                 )}
-                {form.mode === "PUBLIC" ? "Submit marketplace listing" : "Send transfer invitation"}
+                {form.mode === "PUBLIC" ? t('membershipTransfer.submitMarketplaceListing') : t('membershipTransfer.sendTransferInvitation')}
               </button>
             </div>
           </div>

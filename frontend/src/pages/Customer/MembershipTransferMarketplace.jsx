@@ -25,15 +25,6 @@ import {
 import { getWalletInfo } from "../../services/walletService";
 import { useLanguage } from "../../i18n/hooks/useLanguage";
 
-const money = (value) => `${Number(value || 0).toLocaleString("vi-VN")} VND`;
-const dateTime = (value) => {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Not available"
-    : date.toLocaleString("vi-VN", { dateStyle: "medium", timeStyle: "short" });
-};
-
 const unwrapList = (response) => {
   const payload = response?.data?.data;
   if (Array.isArray(payload)) return { items: payload, pagination: null };
@@ -46,7 +37,15 @@ const unwrapList = (response) => {
 const listingId = (listing) => String(listing?.transferId || listing?._id || "");
 
 export default function MembershipTransferMarketplace({ embedded = false }) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  const money = (value) => `${Number(value || 0).toLocaleString(locale)} ${t('common.currency')}`;
+  const dateTime = (value) => {
+    const date = value ? new Date(value) : null;
+    return date && Number.isFinite(date.getTime())
+      ? date.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+      : t('marketplacePage.notAvailable');
+  };
   const navigate = useNavigate();
   const { transferId: routeTransferId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -327,7 +326,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#DCA11D]">
-                      {item.package?.name || "Membership space"}
+                      {item.package?.name || t('membershipHub.space')}
                     </p>
                     <h2 className="mt-2 text-2xl font-black">{item.slotCode || "VIP slot"}</h2>
                   </div>
@@ -337,7 +336,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
                 </div>
                 <div className="mt-5 space-y-2 text-sm text-white/50">
                   <p className="flex items-center gap-2"><Building2 size={15} /> {item.parkingLot?.name || "Parking lot"}</p>
-                  <p className="flex items-center gap-2"><MapPin size={15} /> {item.floor?.name || item.parkingLot?.address || "Floor details unavailable"}</p>
+                  <p className="flex items-center gap-2"><MapPin size={15} /> {item.floor?.name || item.parkingLot?.address || t('marketplacePage.notAvailable')}</p>
                   <p className="flex items-center gap-2"><CalendarClock size={15} /> Valid until {dateTime(item.expireAt)}</p>
                 </div>
                 <div className="mt-6 border-t border-white/10 pt-4">

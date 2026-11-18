@@ -1,3 +1,4 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import NotificationDropdownItem from '../../components/notifications/NotificationDropdownItem';
 import NotificationDetailModal from '../../components/notifications/NotificationDetailModal';
 import { useNotificationDetails } from '../../hooks/useNotificationDetails';
@@ -9,16 +10,17 @@ import NotificationItem from '../../components/notifications/NotificationItem';
 import { getIssueReportLink, getSafeStaffDeepLink } from '../../utils/staffDeepLink';
 
 const TYPE_FILTERS = [
-  { value: '', label: 'All' },
-  { value: 'PARKING', label: 'Parking' },
-  { value: 'WALLET', label: 'Wallet' },
-  { value: 'PAYMENT', label: 'Payment' },
-  { value: 'BOOKING', label: 'Booking' },
-  { value: 'ACCOUNT', label: 'Account' },
-  { value: 'SYSTEM', label: 'System' },
+  { value: '', label: 'customer.all' },
+  { value: 'PARKING', label: 'booking.parking' },
+  { value: 'WALLET', label: 'notificationInbox.wallet' },
+  { value: 'PAYMENT', label: 'notificationInbox.payment' },
+  { value: 'BOOKING', label: 'booking.bookingAction' },
+  { value: 'ACCOUNT', label: 'notificationInbox.account' },
+  { value: 'SYSTEM', label: 'notificationInbox.system' },
 ];
 
 export default function CustomerNotifications({ contextRole = 'customer' }) {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const {
     notifications,
@@ -48,21 +50,21 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
       <NotificationDetailModal notification={selectedNotification} onClose={closeNotification} />
       <div className="customer-notifications-page__container">
         <header className="customer-notifications-page__header">
-          <div><h1>Notifications</h1><p>{error ? 'Notifications unavailable' : unreadCount > 0 ? `${unreadCount} unread notifications` : 'You?re all caught up'}</p></div>
-          {unreadCount > 0 && <button type="button" onClick={markAllAsRead} className="customer-notifications-page__read-all"><CheckCheck size={16} aria-hidden="true" />Mark all as read</button>}
+          <div><h1>{t('notificationInbox.notifications')}</h1><p>{error ? t('notificationInbox.notificationsUnavailable') : unreadCount > 0 ? t('notificationInbox.unread', { count: unreadCount }) : t('notificationInbox.youReAllCaughtUp')}</p></div>
+          {unreadCount > 0 && <button type="button" onClick={markAllAsRead} className="customer-notifications-page__read-all"><CheckCheck size={16} aria-hidden="true" />{t('notificationInbox.markAllAsRead')}</button>}
         </header>
-        <section className="customer-notifications-page__list" aria-label="Your notifications">
+        <section className="customer-notifications-page__list" aria-label={t('notificationInbox.yourNotifications')}>
           <div className="customer-notifications-page__toolbar">
-            <div className="customer-notifications-page__filters" aria-label="Notification categories">{TYPE_FILTERS.map((f) => <button type="button" key={f.value} aria-pressed={(filters.type || '') === f.value} onClick={() => updateFilters({ type: f.value || null })}>{f.label}</button>)}</div>
+            <div className="customer-notifications-page__filters" aria-label={t('notificationInbox.notificationCategories')}>{TYPE_FILTERS.map((f) => <button type="button" key={f.value} aria-pressed={(filters.type || '') === f.value} onClick={() => updateFilters({ type: f.value || null })}>{t(f.label)}</button>)}</div>
             <form onSubmit={handleSearch} className="customer-notifications-page__search" role="search">
-              <Search size={16} aria-hidden="true" /><input aria-label="Search notifications" placeholder="Search notifications?" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+              <Search size={16} aria-hidden="true" /><input aria-label={t('notificationInbox.searchNotifications')} placeholder={t('notificationInbox.searchNotifications2')} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
             </form>
           </div>
-          {error ? <div className="customer-notification-state" role="alert"><p>Unable to load notifications</p><p>{error}</p><button type="button" onClick={refresh}>Try again</button></div>
-            : loading && notifications.length === 0 ? <div className="customer-notification-state" role="status">Loading notifications?</div>
-              : notifications.length === 0 ? <div className="customer-notification-state" role="status"><Bell size={28} className="mx-auto mb-3" aria-hidden="true" /><p>No notifications</p><p>New notifications will appear here.</p></div>
+          {error ? <div className="customer-notification-state" role="alert"><p>{t('notificationInbox.unableToLoadNotifications')}</p><p>{error}</p><button type="button" onClick={refresh}>{t('notificationInbox.tryAgain')}</button></div>
+            : loading && notifications.length === 0 ? <div className="customer-notification-state" role="status">{t('notificationInbox.loadingNotifications')}</div>
+              : notifications.length === 0 ? <div className="customer-notification-state" role="status"><Bell size={28} className="mx-auto mb-3" aria-hidden="true" /><p>{t('notificationInbox.noNotifications')}</p><p>{t('notificationInbox.newNotificationsWillAppearHere')}</p></div>
                 : <>{notifications.map((n) => <NotificationDropdownItem key={n.notificationId || n._id} notification={n} onRead={markAsRead} onOpen={() => openNotification(n)} onDelete={deleteNotification} />)}
-                  {hasMore && <button type="button" onClick={fetchMore} disabled={loading} className="customer-notifications-page__more">{loading ? 'Loading earlier notifications?' : 'Load more'}</button>}</>}
+                  {hasMore && <button type="button" onClick={fetchMore} disabled={loading} className="customer-notifications-page__more">{loading ? t('notificationInbox.loadingEarlierNotifications') : t('notificationInbox.loadMore')}</button>}</>}
         </section>
       </div>
     </div>
@@ -74,9 +76,9 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Notifications</h1>
+            <h1 className="text-2xl font-bold text-white">{t('notificationInbox.notifications')}</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {error ? 'Notifications unavailable' : unreadCount > 0 ? `${unreadCount} unread notifications` : 'All caught up'}
+              {error ? t('notificationInbox.notificationsUnavailable') : unreadCount > 0 ? t('notificationInbox.unread', { count: unreadCount }) : t('notificationInbox.allCaughtUp')}
             </p>
           </div>
           {unreadCount > 0 && (
@@ -85,7 +87,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-yellow-500/10 text-yellow-400 text-sm font-semibold hover:bg-yellow-500/20 transition-colors"
             >
               <CheckCheck size={16} />
-              Mark all as read
+              {t('notificationInbox.markAllAsRead')}
             </button>
           )}
         </div>
@@ -102,7 +104,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
                     : 'bg-white/5 text-gray-400 hover:bg-white/10'
                 }`}
               >
-                {f.label}
+                {t(f.label)}
               </button>
             ))}
           </div>
@@ -111,7 +113,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
               <input
                 type="text"
-                placeholder="Search notifications..."
+                placeholder={t('notificationInbox.searchNotifications3')}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-200 placeholder-gray-500 outline-none focus:border-yellow-500/30 transition-colors"
@@ -126,21 +128,21 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
               <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
                 <Bell size={28} className="text-red-400" />
               </div>
-              <p className="text-red-300 font-medium">Unable to load notifications</p>
+              <p className="text-red-300 font-medium">{t('notificationInbox.unableToLoadNotifications')}</p>
               <p className="text-red-200/60 text-sm mt-1">{error}</p>
             </div>
           ) : loading && notifications.length === 0 ? (
             <div className="flex flex-col items-center py-16">
               <div className="w-8 h-8 border-2 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin" />
-              <p className="text-gray-500 text-sm mt-4">Loading notifications...</p>
+              <p className="text-gray-500 text-sm mt-4">{t('notificationInbox.loadingNotifications2')}</p>
             </div>
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center py-16">
               <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
                 <Bell size={28} className="text-gray-600" />
               </div>
-              <p className="text-gray-400 font-medium">No notifications</p>
-              <p className="text-gray-600 text-sm mt-1">New notifications will appear here</p>
+              <p className="text-gray-400 font-medium">{t('notificationInbox.noNotifications')}</p>
+              <p className="text-gray-600 text-sm mt-1">{t('notificationInbox.newNotificationsWillAppearHere2')}</p>
             </div>
           ) : (
             <>
@@ -175,7 +177,7 @@ export default function CustomerNotifications({ contextRole = 'customer' }) {
                   ) : (
                     <>
                       <ChevronDown size={16} />
-                      Load more
+                      {t('notificationInbox.loadMore')}
                     </>
                   )}
                 </button>

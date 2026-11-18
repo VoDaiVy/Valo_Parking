@@ -1,3 +1,4 @@
+import { useLanguage } from '../i18n/hooks/useLanguage';
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Maximize, Car, Zap, Accessibility, Bike, TreePine, ArrowRight, Navigation, Layers, MonitorSmartphone } from 'lucide-react';
 import { isLiveParkingSlotBookable } from '../utils/aiParkingLookup';
@@ -129,6 +130,7 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
 });
 
 export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect, activeSessions = [], dbSlots = [], availableSlots = null, activeHolds = [], liveSlots = null, onSelectSlot, selectedSlotId, vehicleType = '', allowScheduledAvailabilityOverride = false, is2DMode = false, hideUI = false, theme = 'dark', initialZoom, staticFit = false, readOnly = false }) {
+  const { t } = useLanguage();
   const isLight = theme === 'light';
 
   const [camera, setCamera] = useState(
@@ -559,12 +561,12 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       {/* Legend */}
       {!hideUI && (
         <div className={`absolute bottom-4 left-4 z-[40] flex flex-col gap-2 backdrop-blur border p-4 rounded-xl text-xs ${panelBg} ${textColor}`}>
-          <h4 className={`font-black mb-2 uppercase tracking-wider text-[10px] ${headingColor}`}>Status Legend</h4>
-          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-white border-2 border-slate-400"></div> Available</div>
-          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-red-100 border-2 border-red-500"></div> Occupied</div>
-          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-cyan-100 border-2 border-cyan-500"></div> Selected</div>
-          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-yellow-100 border-2 border-yellow-500"></div> VIP Pass</div>
-          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-red-200 border-2 border-red-500" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 4px, rgba(127, 29, 29, 0.3) 4px, rgba(127, 29, 29, 0.3) 8px)' }}></div> Maintenance</div>
+          <h4 className={`font-black mb-2 uppercase tracking-wider text-[10px] ${headingColor}`}>{t('map.statusLegend')}</h4>
+          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-white border-2 border-slate-400"></div> {t('map.available')}</div>
+          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-red-100 border-2 border-red-500"></div> {t('map.occupied')}</div>
+          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-cyan-100 border-2 border-cyan-500"></div> {t('map.selected')}</div>
+          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-yellow-100 border-2 border-yellow-500"></div> {t('map.vipPass')}</div>
+          <div className="flex items-center gap-2 font-semibold"><div className="w-4 h-4 rounded-md bg-red-200 border-2 border-red-500" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 4px, rgba(127, 29, 29, 0.3) 4px, rgba(127, 29, 29, 0.3) 8px)' }}></div> {t('map.maintenance')}</div>
         </div>
       )}
 

@@ -61,8 +61,25 @@ const customStyles = `
 `;
 
 /* ── Helpers ──────────────────────────────────────────────── */
-const formatMoney = (value = 0) =>
-  `${Number(value || 0).toLocaleString('vi-VN')} VND`;
+const catalogKeys = new Map([
+  ['paint polishing & scratch removal', 'paintPolishing'],
+  ['glass water spot removal & coating', 'glassCoating'],
+  ['car wash & interior vacuuming', 'carWash'],
+]);
+
+const localizeService = (service, t) => {
+  const key = catalogKeys.get(service.name?.trim().toLowerCase().replace(/\s+/g, ' ').replace(/ and /g, ' & '));
+  if (!key) return service;
+
+  return {
+    ...service,
+    name: t(`servicesPage.catalog.${key}.name`),
+    description: t(`servicesPage.catalog.${key}.description`),
+  };
+};
+
+const formatMoney = (value, locale) =>
+  `${Number(value || 0).toLocaleString(locale)} VND`;
 
 const formatServiceTime = (timeCost, t) => {
   const minutes = Number(timeCost);
@@ -76,7 +93,7 @@ const formatServiceTime = (timeCost, t) => {
 /* ── Sub-components ───────────────────────────────────────── */
 
 /** Compact right-column service navigation card */
-const ServiceNavCard = ({ service, isActive, onClick, style, t }) => (
+const ServiceNavCard = ({ service, isActive, onClick, style, t, locale }) => (
   <button
     onClick={onClick}
     id={`service-nav-${service._id}`}
@@ -139,7 +156,7 @@ const ServiceNavCard = ({ service, isActive, onClick, style, t }) => (
         style={{ background: '#F5C542' }}
       >
         <span className="text-[13px] font-bold tracking-tight text-[#111111]">
-          {formatMoney(service.price)}
+          {formatMoney(service.price, locale)}
         </span>
       </div>
 
@@ -157,13 +174,15 @@ const ServiceNavCard = ({ service, isActive, onClick, style, t }) => (
 
 /* ── Main Page ────────────────────────────────────────────── */
 const ServiceList = () => {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
   const navigate = useNavigate();
   const location = useLocation();
+  const [initialServiceId] = useState(() => location.state?.selectedServiceId);
   const [services, setServices] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
 
   /* Fetch services */
@@ -175,26 +194,26 @@ const ServiceList = () => {
           const list = res.data.data;
           setServices(list);
           if (list.length > 0) {
-            const initialId = location.state?.selectedServiceId;
-            if (initialId && list.some(s => s._id === initialId)) {
-              setSelectedId(initialId);
+            if (initialServiceId && list.some(s => s._id === initialServiceId)) {
+              setSelectedId(initialServiceId);
             } else {
               setSelectedId(list[0]._id);
             }
           }
         } else {
-          throw new Error(res.data.message || 'Failed to fetch services');
+          setError(true);
         }
-      } catch (err) {
-        setError(err.message);
+      } catch {
+        setError(true);
       } finally {
         setLoading(false);
       }
     };
     fetchServices();
-  }, []);
+  }, [initialServiceId]);
 
-  const selectedService = services.find((s) => s._id === selectedId) || null;
+  const localizedServices = services.map((service) => localizeService(service, t));
+  const selectedService = localizedServices.find((service) => service._id === selectedId);
 
   /* Smooth transition when switching service */
   const handleSelectService = (id) => {
@@ -244,7 +263,7 @@ const ServiceList = () => {
             <span className="text-xl font-bold text-red-400">!</span>
           </div>
           <p className="font-bold text-lg text-white mb-2">{t('servicesPage.errorTitle')}</p>
-          <p className="text-gray-400 text-sm">{error}</p>
+          <p className="text-gray-400 text-sm">{t('servicesPage.loadError')}</p>
         </div>
       </div>
     );
@@ -440,7 +459,7 @@ const ServiceList = () => {
                                   backgroundClip: 'text',
                                 }}
                               >
-                                {formatMoney(selectedService.price)}
+                                {formatMoney(selectedService.price, locale)}
                               </span>
                             </div>
                             {/* Duration */}
@@ -489,7 +508,7 @@ const ServiceList = () => {
                   className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto scrollbar-hidden pr-1 pb-4"
                   style={{ maxHeight: 'calc(100vh - 280px)' }}
                 >
-                  {services.map((service, idx) => (
+                  {localizedServices.map((service, idx) => (
                     <div 
                       key={service._id} 
                       className="flex-shrink-0 lg:flex-shrink lg:w-full list-entrance" 
@@ -498,6 +517,7 @@ const ServiceList = () => {
                       <ServiceNavCard
                         service={service}
                         t={t}
+                        locale={locale}
                         isActive={service._id === selectedId}
                         onClick={() => handleSelectService(service._id)}
                       />

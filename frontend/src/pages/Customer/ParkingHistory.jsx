@@ -20,38 +20,39 @@ import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 export default function ParkingHistory() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
-
-  const fetchHistory = async () => {
-    setLoading(true);
-    const token = localStorage.getItem("accessToken");
-    if (!token) {
-      setError(t('historyPage.loginRequired'));
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const { ok, data } = await apiFetch("/sessions/my-history", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (ok && data?.success) {
-        setSessions(data.data);
-      } else {
-        setError(data?.message || t('historyPage.loadFailed'));
-      }
-    } catch {
-      setError(t('historyPage.networkError'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
+    const fetchHistory = async () => {
+      const token = localStorage.getItem("accessToken");
+      if (!token) {
+        setError('historyPage.loginRequired');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { ok, data } = await apiFetch("/sessions/my-history", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (ok && data?.success) {
+          setSessions(data.data);
+          setNow(Date.now());
+        } else {
+          setError('historyPage.loadFailed');
+        }
+      } catch {
+        setError('historyPage.networkError');
+      } finally {
+        setLoading(false);
+      }
+    };
     const timerId = window.setTimeout(() => {
       fetchHistory();
     }, 0);
@@ -59,25 +60,32 @@ export default function ParkingHistory() {
     return () => window.clearTimeout(timerId);
   }, []);
 
+  const hasActiveSession = sessions.some((session) => session.status === 'active' && !session.checkOutTime);
+  useEffect(() => {
+    if (!hasActiveSession) return undefined;
+    const timerId = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timerId);
+  }, [hasActiveSession]);
+
   const getStatusBadge = (status) => {
     switch (status) {
       case "active":
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]">
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
-            PARKING NOW
+            {t('historyPage.active')}
           </span>
         );
       case "completed":
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-            <CheckCircle2 size={12} /> COMPLETED
+            <CheckCircle2 size={12} /> {t('myBookings.status.COMPLETED')}
           </span>
         );
       case "cancelled":
         return (
           <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30">
-            <AlertCircle size={12} /> CANCELLED
+            <AlertCircle size={12} /> {t('myBookings.status.CANCELLED')}
           </span>
         );
       default:
@@ -86,23 +94,29 @@ export default function ParkingHistory() {
   };
 
   const calculateDuration = (checkIn, checkOut) => {
-    const start = new Date(checkIn);
-    const end = checkOut ? new Date(checkOut) : new Date();
-    const diffMs = end - start;
-    const diffHrs = Math.floor(diffMs / 3600000);
-    const diffMins = Math.floor((diffMs % 3600000) / 60000);
-    
-    if (diffHrs === 0) return `${diffMins} mins`;
-    return `${diffHrs}h ${diffMins}m`;
+    if (!checkIn) return "—";
+    const start = new Date(checkIn).getTime();
+    const end = checkOut ? new Date(checkOut).getTime() : now;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "—";
+
+    const totalMinutes = Math.floor((end - start) / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return t('servicesPage.minutes', { value: minutes });
+    if (minutes === 0) return t('servicesPage.hours', { value: hours });
+    return t('servicesPage.hoursMinutes', { hours, minutes });
   };
 
   const formatMoney = (value) => {
     if (value === undefined || value === null) return "—";
-    return `${Number(value || 0).toLocaleString("vi-VN")} VND`;
+    return `${Number(value || 0).toLocaleString(locale)} ${t('common.currency')}`;
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString("en-US", {
+    if (!dateString) return "—";
+    const date = new Date(dateString);
+    if (!Number.isFinite(date.getTime())) return "—";
+    return date.toLocaleString(locale, {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -126,7 +140,7 @@ export default function ParkingHistory() {
 
       <div className="mb-4">
         <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-2">
-          Time
+          {t('historyPage.time')}
         </p>
         <p className="text-lg font-bold text-gray-100">
           {time ? formatDate(time) : emptyLabel}
@@ -173,7 +187,7 @@ export default function ParkingHistory() {
       ) : error ? (
         <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-2xl text-center">
           <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <p className="text-red-400 font-medium">{error}</p>
+          <p className="text-red-400 font-medium">{t(error)}</p>
         </div>
       ) : sessions.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60 px-4">
@@ -258,7 +272,7 @@ export default function ParkingHistory() {
                       <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.slot')}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-200">
-                      {session.parkingSlot || "Unassigned"}
+                      {session.parkingSlot || t('historyPage.unassigned')}
                     </p>
                   </div>
 
@@ -277,7 +291,7 @@ export default function ParkingHistory() {
                 {session.entryImage_url && (
                   <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span className="text-[11px] md:text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                      <ImageIcon size={14} className="shrink-0" /> Entry Snapshot Captured
+                      <ImageIcon size={14} className="shrink-0" /> {t('historyPage.entrySnapshot')}
                     </span>
                     <a
                       href="#"
@@ -287,7 +301,7 @@ export default function ParkingHistory() {
                       }}
                       className="text-[11px] md:text-xs font-bold text-yellow-500 hover:text-yellow-400 transition-colors w-fit border border-yellow-500/30 px-3 py-1.5 rounded-lg hover:bg-yellow-500/10"
                     >
-                      View Details
+                      {t('common.viewDetails')}
                     </a>
                   </div>
                 )}
@@ -303,21 +317,22 @@ export default function ParkingHistory() {
             <div className="flex items-start justify-between gap-4 p-6 md:p-7 border-b border-gray-800/70">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-yellow-500 mb-2">
-                  Session Details
+                  {t('historyPage.sessionDetails')}
                 </p>
                 <h2 className="text-2xl md:text-3xl font-black text-white">
                   {formatLicensePlateDisplay(selectedSession.licensePlate)}
                 </h2>
                 <p className="text-sm text-gray-400 mt-2">
-                  Slot {selectedSession.parkingSlot || "Unassigned"} •{" "}
+                  {t('historyPage.slot')}: {selectedSession.parkingSlot || t('historyPage.unassigned')} •{" "}
                   {selectedSession.totalPrice !== undefined && selectedSession.totalPrice !== null
                     ? formatMoney(selectedSession.totalPrice)
-                    : "No charge"}
+                    : t('historyPage.noCharge')}
                 </p>
               </div>
 
               <button
                 onClick={() => setSelectedSession(null)}
+                aria-label={t('common.close')}
                 className="shrink-0 w-11 h-11 rounded-xl border border-gray-800 text-gray-400 hover:text-white hover:border-gray-700 hover:bg-white/5 transition-colors flex items-center justify-center"
               >
                 <X size={20} />
@@ -327,22 +342,22 @@ export default function ParkingHistory() {
             <div className="p-6 md:p-7">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {renderSnapshotPanel({
-                  title: "Check-In",
+                  title: t('historyPage.checkIn'),
                   icon: <LogIn size={18} className="text-emerald-400" />,
                   time: selectedSession.checkInTime,
                   imageUrl: selectedSession.entryImage_url,
-                  emptyLabel: "No check-in image captured",
+                  emptyLabel: t('historyPage.noEntryImage'),
                 })}
 
                 {renderSnapshotPanel({
-                  title: "Check-Out",
+                  title: t('historyPage.checkOut'),
                   icon: <LogOut size={18} className="text-sky-400" />,
                   time: selectedSession.checkOutTime,
                   imageUrl: selectedSession.exitImage_url,
                   emptyLabel:
                     selectedSession.status === "active"
-                      ? "Vehicle has not checked out yet"
-                      : "No check-out image captured",
+                      ? t('historyPage.notCheckedOut')
+                      : t('historyPage.noExitImage'),
                 })}
               </div>
             </div>

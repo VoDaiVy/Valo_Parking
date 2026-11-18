@@ -1,3 +1,4 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import TelegramReceiptModal from '../../components/TelegramReceiptModal';
 import BookingSuccessModal from '../../components/Customer/BookingSuccessModal';
 import { bookingConfirmationSummary } from '../../utils/bookingConfirmation';
@@ -66,7 +67,7 @@ import {
   roundUpToBookingStep,
 } from '../../utils/bookingTimePolicy';
 
-const formatMoney = (value = 0) => `${Number(value || 0).toLocaleString('en-US')} VND`;
+const formatMoneyWithLocale = (value = 0, locale) => `${Number(value || 0).toLocaleString(locale)} VND`;
 
 const toDateTimeLocal = (date) => {
   const pad = (value) => String(value).padStart(2, '0');
@@ -110,8 +111,8 @@ const getInitialTimeRange = () => {
   };
 };
 
-const formatDateTime = (value) =>
-  new Date(value).toLocaleString('en-US', {
+const formatDateTime = (value, locale) =>
+  new Date(value).toLocaleString(locale, {
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -171,15 +172,15 @@ const formatLocalDateValue = (date) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
 
-const formatDateButtonLabel = (value) => {
+const formatDateButtonLabel = (value, locale) => {
   const date = parseLocalDate(value);
   return date
-    ? date.toLocaleDateString('en-US', {
+    ? date.toLocaleDateString(locale, {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
       })
-    : 'Select date';
+    : '—';
 };
 
 const isSameCalendarDay = (left, right) =>
@@ -192,6 +193,8 @@ const isSameCalendarDay = (left, right) =>
   );
 
 const CustomDatePicker = ({ value, minDate, onChange }) => {
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
   const [isOpen, setIsOpen] = useState(false);
   const selectedDate = parseLocalDate(value);
   const minimumDate = parseLocalDate(minDate);
@@ -269,7 +272,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
         className="flex h-full w-full items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-left text-sm font-semibold text-gray-800 outline-none transition hover:border-gold/50 focus:border-gold focus:ring-1 focus:ring-gold"
       >
         <Calendar size={15} className="shrink-0 text-gray-400" />
-        <span className="min-w-0 flex-1 truncate">{formatDateButtonLabel(value)}</span>
+        <span className="min-w-0 flex-1 truncate">{formatDateButtonLabel(value, locale)}</span>
         <ChevronDown
           size={14}
           className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -279,16 +282,16 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
       {isOpen && (
         <div
           role="dialog"
-          aria-label="Choose date"
+          aria-label={t('booking.chooseDate')}
           className="absolute left-0 top-full z-[60] mt-2 w-[292px] rounded-3xl border border-gray-100 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-100"
         >
           <div className="mb-4 flex items-center justify-between">
             <div>
               <div className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-                Select date
+                {t('booking.chooseDate')}
               </div>
               <div className="mt-0.5 text-base font-black text-gray-900">
-                {viewDate.toLocaleDateString('en-US', {
+                {viewDate.toLocaleDateString(locale, {
                   month: 'long',
                   year: 'numeric',
                 })}
@@ -297,7 +300,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
             <div className="flex gap-1">
               <button
                 type="button"
-                aria-label="Previous month"
+                aria-label={t('booking.previousMonth')}
                 disabled={previousDisabled}
                 onClick={() => changeMonth(-1)}
                 className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-30"
@@ -306,7 +309,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
               </button>
               <button
                 type="button"
-                aria-label="Next month"
+                aria-label={t('booking.nextMonth')}
                 onClick={() => changeMonth(1)}
                 className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
               >
@@ -316,12 +319,12 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
           </div>
 
           <div className="mb-1 grid grid-cols-7">
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((weekday) => (
+            {Array.from({ length: 7 }, (_, index) => (
               <div
-                key={weekday}
+                key={index}
                 className="py-1 text-center text-[10px] font-black uppercase tracking-wider text-gray-400"
               >
-                {weekday}
+                {new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(Date.UTC(2024, 0, 7 + index))}
               </div>
             ))}
           </div>
@@ -338,7 +341,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
                   key={formatLocalDateValue(date)}
                   type="button"
                   disabled={isDisabled}
-                  aria-label={date.toLocaleDateString('en-US')}
+                  aria-label={date.toLocaleDateString(locale)}
                   aria-pressed={isSelected}
                   onClick={() => selectDate(date)}
                   className={`mx-auto flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold transition ${
@@ -359,7 +362,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
 
           <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
             <span className="text-[10px] font-semibold text-gray-400">
-              {minimumDate ? `From ${formatDateButtonLabel(minDate)}` : ''}
+              {minimumDate ? t('booking.dateFrom', { date: formatDateButtonLabel(minDate, locale) }) : ''}
             </span>
             <button
               type="button"
@@ -367,7 +370,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
               onClick={() => selectDate(today)}
               className="rounded-xl px-3 py-2 text-xs font-black text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              Today
+              {t('booking.today')}
             </button>
           </div>
         </div>
@@ -377,6 +380,7 @@ const CustomDatePicker = ({ value, minDate, onChange }) => {
 };
 
 const CustomTimePicker = ({ value, onChange, options, minTime }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -417,7 +421,7 @@ const CustomTimePicker = ({ value, onChange, options, minTime }) => {
       {isOpen && (
         <div className="absolute top-full right-0 mt-2 w-36 max-h-64 overflow-y-auto bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 py-2 time-scrollbar animate-in fade-in zoom-in-95 duration-100">
           <div className="px-3 pb-2 mb-2 border-b border-gray-100">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Select Time</span>
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('booking.selectTime')}</span>
           </div>
           {options.map((time) => {
             const isActive = value === time;
@@ -449,16 +453,17 @@ const CustomTimePicker = ({ value, onChange, options, minTime }) => {
   );
 };
 
-const getVehicleOptionLabel = (vehicle) =>
-  `${vehicle.licensePlate} - ${vehicle.brand || 'Vehicle'} ${vehicle.model || ''}`.trim();
+const getVehicleOptionLabel = (vehicle, fallback) =>
+  [vehicle.licensePlate, [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || fallback].filter(Boolean).join(' - ');
 
 const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedVehicle = vehicles.find((vehicle) => vehicle._id === value);
   const selectedLabel = selectedVehicle
-    ? getVehicleOptionLabel(selectedVehicle)
-    : 'Manual plate';
+    ? getVehicleOptionLabel(selectedVehicle, t('booking.vehicle'))
+    : t('booking.manualPlate');
 
   useEffect(() => {
     const handlePointerDown = (event) => {
@@ -506,7 +511,7 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
         >
           <div className="mb-2 border-b border-gray-100 px-4 pb-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              Select vehicle
+              {t('booking.selectVehicle')}
             </span>
           </div>
 
@@ -525,7 +530,7 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
                     : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                <span className="min-w-0 truncate">{getVehicleOptionLabel(vehicle)}</span>
+                <span className="min-w-0 truncate">{getVehicleOptionLabel(vehicle, t('booking.vehicle'))}</span>
                 {isActive && <span className="ml-3 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />}
               </button>
             );
@@ -542,7 +547,7 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
                 : 'font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900'
             }`}
           >
-            <span>Manual plate</span>
+            <span>{t('booking.manualPlate')}</span>
             {value === '' && <span className="ml-3 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />}
           </button>
         </div>
@@ -551,25 +556,28 @@ const CustomVehiclePicker = ({ value, vehicles, onChange }) => {
   );
 };
 
-const getVoucherBenefitLabel = (voucher) => {
+const getVoucherBenefitLabel = (voucher, t, formatMoney) => {
   const benefit = voucher?.benefitSnapshot || {};
   if (benefit.type === 'FIXED_DISCOUNT') return `${formatMoney(benefit.discountAmount)} off - minimum ${formatMoney(benefit.minimumAmount)}`;
   if (benefit.type === 'PERCENT_DISCOUNT') {
     return `${Number(benefit.discountPercent || 0)}% off this booking`;
   }
   if (benefit.type === 'FREE_SERVICE') {
-    return `Free ${benefit.serviceId?.name || 'included service'}`;
+    return t('booking.freeService', { name: benefit.serviceId?.name || t('booking.includedService') });
   }
-  return benefit.description || 'Voucher reward';
+  return benefit.description || t('booking.voucherReward');
 };
 
-const getVoucherExpiryLabel = (voucher) => {
+const getVoucherExpiryLabel = (voucher, t, locale) => {
   const expiresAt = new Date(voucher?.expiresAt);
-  if (Number.isNaN(expiresAt.getTime())) return 'No expiry date';
-  return `Expires ${expiresAt.toLocaleDateString('en-US')}`;
+  if (Number.isNaN(expiresAt.getTime())) return t('booking.noExpiry');
+  return t('booking.expires', { date: expiresAt.toLocaleDateString(locale) });
 };
 
 const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  const formatMoney = (value) => formatMoneyWithLocale(value, locale);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedVoucher = vouchers.find((voucher) => voucher._id === value);
@@ -612,17 +620,17 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-extrabold text-gray-900">
-            {selectedVoucher?.benefitSnapshot?.name || 'No voucher'}
+            {selectedVoucher?.benefitSnapshot?.name || t('booking.noVoucher')}
           </span>
           <span className="mt-0.5 block truncate text-[11px] font-medium text-gray-500">
             {selectedVoucher
-              ? `${getVoucherBenefitLabel(selectedVoucher)} · ${getVoucherExpiryLabel(selectedVoucher)}`
-              : vouchers.length > 0 ? `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'} available` : 'No available rewards'}
+              ? `${getVoucherBenefitLabel(selectedVoucher, t, formatMoney)} · ${getVoucherExpiryLabel(selectedVoucher, t, locale)}`
+              : vouchers.length > 0 ? t('booking.voucherCount', { count: vouchers.length }) : t('booking.noRewards')}
           </span>
         </span>
         {selectedVoucher && (
           <span className="hidden rounded-md bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 sm:inline-flex">
-            Applied
+            {t('booking.applied')}
           </span>
         )}
         <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold' : 'group-hover:text-gray-600'}`} />
@@ -632,10 +640,10 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
         <div role="listbox" className="time-scrollbar absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_24px_60px_rgba(31,41,55,0.18)]">
           <div className="flex items-center justify-between px-2 pb-2 pt-1">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">Choose a reward</p>
-              <p className="mt-0.5 text-[11px] font-medium text-gray-500">One voucher per booking</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-gray-400">{t('booking.chooseReward')}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-gray-500">{t('booking.oneVoucher')}</p>
             </div>
-            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{vouchers.length} available</span>
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-extrabold tabular-nums text-amber-700">{t('booking.availableCount', { count: vouchers.length })}</span>
           </div>
 
           <button
@@ -646,7 +654,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
             className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition duration-150 active:scale-[0.99] ${!value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
           >
             <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${!value ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-500'}`}><Ticket size={15} /></span>
-            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">No voucher</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>Continue without a reward</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-sm font-bold">{t('booking.noVoucher')}</span><span className={`block text-[11px] ${!value ? 'text-white/55' : 'text-gray-400'}`}>{t('booking.withoutReward')}</span></span>
             {!value && <Check size={16} className="shrink-0 text-gold" strokeWidth={3} />}
           </button>
 
@@ -668,9 +676,9 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
               >
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isSelected ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}><Ticket size={17} strokeWidth={2.2} /></span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || 'Voucher'}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">Selected</span>}</span>
-                  <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher)}</span>
-                  <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher)}</span>
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-black text-gray-900">{voucher.benefitSnapshot?.name || t('booking.voucher')}</span>{isSelected && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">{t('booking.selected')}</span>}</span>
+                  <span className="mt-1 block truncate text-[11px] font-semibold text-emerald-700">{getVoucherBenefitLabel(voucher, t, formatMoney)}</span>
+                  <span className="mt-0.5 block text-[10px] font-medium tabular-nums text-gray-400">{getVoucherExpiryLabel(voucher, t, locale)}</span>
                 </span>
                 {isSelected && <Check size={17} className="shrink-0 text-emerald-600" strokeWidth={3} />}
               </button>
@@ -678,7 +686,7 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
           })}
 
           {vouchers.length === 0 && (
-            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">No vouchers available</p><p className="mt-1 text-xs text-gray-400">Rewards are issued automatically after eligible spending or sent by VALO.</p></div>
+            <div className="px-4 py-6 text-center"><p className="text-sm font-bold text-gray-700">{t('booking.noVouchers')}</p><p className="mt-1 text-xs text-gray-400">{t('booking.rewardsHint')}</p></div>
           )}
         </div>
       )}
@@ -687,6 +695,9 @@ const CustomVoucherPicker = ({ value, vouchers, onChange }) => {
 };
 
 export default function CreateBookingPage() {
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  const formatMoney = (value) => formatMoneyWithLocale(value, locale);
   const [bookingMode, setBookingMode] = useState('manual');
   const location = useLocation();
   const requestedServiceId = useMemo(
@@ -719,22 +730,22 @@ export default function CreateBookingPage() {
     const now = new Date();
     const horizonEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-      return { allowed: false, reason: 'Choose a valid end time after the start time.' };
+      return { allowed: false, reason: t('booking.chooseAValidEndTimeAfterThe') };
     }
     if (end <= now) {
       return {
         allowed: false,
-        reason: 'This booking range has already ended. Choose a future end time to select from the chart.',
+        reason: t('booking.forecastEnded'),
       };
     }
     if (start > horizonEnd || end > horizonEnd) {
       return {
         allowed: false,
-        reason: 'Both start and end must be within the next 24 hours to select an hour from this chart.',
+        reason: t('booking.forecastHorizon'),
       };
     }
     return { allowed: true, reason: '' };
-  }, [endDate, endTime, startDate, startTime]);
+  }, [endDate, endTime, startDate, startTime, t]);
   const isForecastHourSelectable = useCallback((hour) => {
     if (!forecastHourSelection.allowed) return false;
     const candidateStart = new Date(`${startDate}T${String(hour).padStart(2, '0')}:00`);
@@ -1150,7 +1161,7 @@ export default function CreateBookingPage() {
     const timer = window.setTimeout(() => {
       if (!requestedService) {
         setSuccess('');
-        setError('The selected service is no longer available. Please choose another active service.');
+        setError(t('booking.theSelectedServiceIsNoLongerAvailable'));
         return;
       }
 
@@ -1164,7 +1175,7 @@ export default function CreateBookingPage() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loading, requestedServiceId, services]);
+  }, [loading, requestedServiceId, services, t]);
 
   useEffect(() => {
     const refreshLiveMap = () => {
@@ -1208,7 +1219,7 @@ export default function CreateBookingPage() {
           setShowTopUpModal(false);
           setTopUpData(null);
           setTopUpSuccess(false);
-          setError("Payment was cancelled or failed.");
+          setError(t('booking.paymentWasCancelledOrFailed'));
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -1216,7 +1227,7 @@ export default function CreateBookingPage() {
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [showTopUpModal, topUpData?.orderCode]);
+  }, [showTopUpModal, topUpData?.orderCode, t]);
 
   useEffect(() => {
     if (!showSuccessModal || !bookingInfo || telegramBookingId) return undefined;
@@ -1269,7 +1280,7 @@ export default function CreateBookingPage() {
           setPendingPolicyAction(() => handleFindSlots);
           setShowGlobalPolicyModal(true);
         }
-        setError(res.data?.message || 'Could not check available slots.');
+        setError(res.data?.message || t('booking.couldNotCheckAvailableSlots'));
         setSelectedSlotKey('');
         return;
       }
@@ -1293,7 +1304,7 @@ export default function CreateBookingPage() {
     } catch (err) {
       if (requestId !== slotsRequestIdRef.current) return;
       console.error('Error finding slots:', err);
-      setError(`Network error while checking slots: ${err.message}`);
+      setError(t('booking.networkSlots'));
       setSelectedSlotKey('');
     } finally {
       if (requestId === slotsRequestIdRef.current) {
@@ -1316,17 +1327,17 @@ export default function CreateBookingPage() {
     const now = new Date();
 
     if (startObj < now) {
-      setError('Start time cannot be in the past.');
+      setError(t('booking.startTimeCannotBeInThePast'));
       return;
     }
 
     if ((endObj.getTime() - startObj.getTime()) / 60000 < MIN_BOOKING_DURATION_MINUTES) {
-      setError(`Minimum booking duration is ${MIN_BOOKING_DURATION_MINUTES} minutes.`);
+      setError(t('booking.minimumDuration', { minutes: MIN_BOOKING_DURATION_MINUTES }));
       return;
     }
 
     if (!selectedSlot) {
-      setError('Please select an available slot first.');
+      setError(t('booking.pleaseSelectAnAvailableSlotFirst'));
       return;
     }
 
@@ -1335,29 +1346,29 @@ export default function CreateBookingPage() {
 
     if (!vehicleId) {
       if (!rawManualPlate) {
-        setError('Please select a vehicle or enter a license plate.');
+        setError(t('booking.pleaseSelectAVehicleOrEnterA'));
         return;
       }
       if (!isValidLicensePlate(rawManualPlate)) {
-        setError('Invalid Vietnamese license plate format. Please check again.');
+        setError(t('booking.invalidVietnameseLicensePlateFormatPleaseCheck'));
         return;
       }
     }
 
     if (selectedRegisteredVehicleBlockedByVip) {
-      setError('Your VIP pass only covers assigned slots during its valid period. Choose an assigned slot within the pass dates or renew your pass.');
+      setError(t('booking.vipLimit'));
       return;
     }
 
     if (!editingClientItemId && cartItems.length >= 5) {
-      setError('You can add up to 5 vehicles in one checkout.');
+      setError(t('booking.youCanAddUpTo5Vehicles'));
       return;
     }
 
     if (selectedVoucherId && cartItems.some((item) => (
       item.clientItemId !== editingClientItemId && item.voucherId === selectedVoucherId
     ))) {
-      setError('This voucher is already assigned to another booking item.');
+      setError(t('booking.thisVoucherIsAlreadyAssignedToAnother'));
       return;
     }
 
@@ -1373,7 +1384,7 @@ export default function CreateBookingPage() {
         const isSameVehicle = (vehicleId && item.vehicleId === vehicleId) || 
                               (!vehicleId && rawManualPlate === itemPlateClean);
         if (isSameVehicle) {
-          setError(`This vehicle is already in the booking list for an overlapping time.`);
+          setError(t('booking.thisVehicleIsAlreadyInTheBooking'));
           return true;
         }
         
@@ -1403,7 +1414,7 @@ export default function CreateBookingPage() {
       });
 
       if (!holdRes.ok) {
-        setError(holdRes.data?.message || 'Cannot hold this slot. Someone else might have taken it!');
+        setError(holdRes.data?.message || t('booking.cannotHoldThisSlotSomeoneElseMight'));
         return;
       }
 
@@ -1412,7 +1423,7 @@ export default function CreateBookingPage() {
       vehicleId: vehicleId || '',
       licensePlate: vehicleId ? selectedVehicle?.licensePlate : rawManualPlate,
       vehicleLabel: vehicleId
-        ? `${selectedVehicle?.licensePlate || 'Vehicle'} - ${selectedVehicle?.brand || 'Vehicle'} ${selectedVehicle?.model || ''}`.trim()
+        ? `${selectedVehicle?.licensePlate || t('booking.vehicle')} - ${selectedVehicle?.brand || t('booking.vehicle')} ${selectedVehicle?.model || ''}`.trim()
         : formattedManualPlate,
       floorId: selectedSlot.floorId,
       floorName: selectedSlot.floorName,
@@ -1446,7 +1457,7 @@ export default function CreateBookingPage() {
 
     setCartItemErrors({});
     setEditingClientItemId(null);
-    setSuccess(editingClientItemId ? 'Booking item updated.' : 'Booking item added to the list.');
+    setSuccess(editingClientItemId ? t('booking.bookingItemUpdated') : t('booking.bookingItemAddedToTheList'));
     fetchActiveHoldsData();
 
     setSelectedServices([]);
@@ -1505,7 +1516,7 @@ export default function CreateBookingPage() {
     }
     
     if (!Number.isFinite(amountToTopUp) || amountToTopUp <= 0) {
-      setError('Could not determine the remaining amount required for this booking.');
+      setError(t('booking.couldNotDetermineTheRemainingAmountRequired'));
       return;
     }
 
@@ -1526,7 +1537,7 @@ export default function CreateBookingPage() {
         setError(msg);
       }
     } catch {
-      setError('Insufficient balance. Network error while generating top-up QR.');
+      setError(t('booking.insufficientBalanceNetworkErrorWhileGeneratingTopup'));
     } finally {
       setTopUpLoading(false);
     }
@@ -1540,11 +1551,11 @@ export default function CreateBookingPage() {
       if (orderCode) {
         const cancelRes = await getTopUpStatus(orderCode, true);
         if (!cancelRes.ok) {
-          setError(cancelRes.data?.message || 'Could not cancel the pending top-up.');
+          setError(cancelRes.data?.message || t('booking.couldNotCancelThePendingTopup'));
         }
       }
     } catch {
-      setError('Network error while cancelling the pending top-up.');
+      setError(t('booking.networkErrorWhileCancellingThePendingTopup'));
     } finally {
       setShowTopUpModal(false);
       setTopUpData(null);
@@ -1588,7 +1599,7 @@ export default function CreateBookingPage() {
 
         if (!res.ok) {
           setCartQuote(null);
-          const quoteMessage = res.data?.message || 'Could not refresh the booking quote.';
+          const quoteMessage = res.data?.message || t('booking.slotsQuote');
           const nextErrors = toItemErrorMap(res.data?.data?.itemErrors || []);
           setCartItemErrors(Object.keys(nextErrors).length > 0
             ? nextErrors
@@ -1611,7 +1622,7 @@ export default function CreateBookingPage() {
         if (requestId !== quoteRequestIdRef.current) return;
         console.error('Bulk quote failed', err);
         setCartQuote(null);
-        const quoteMessage = 'Network error while refreshing the booking quote.';
+        const quoteMessage = t('booking.networkQuote');
         setCartItemErrors({ __quote: { message: quoteMessage } });
         setError(quoteMessage);
       }
@@ -1623,7 +1634,7 @@ export default function CreateBookingPage() {
         quoteRequestIdRef.current += 1;
       }
     };
-  }, [cartApiItems, cartItems.length]);
+  }, [cartApiItems, cartItems.length, t]);
 
 
   const toggleService = (serviceId) => {
@@ -1636,7 +1647,7 @@ export default function CreateBookingPage() {
 
   const handleBookingClick = () => {
     if (Object.keys(cartItemErrors).length > 0) {
-      setError('Fix highlighted booking items before checkout.');
+      setError(t('booking.fixHighlightedBookingItemsBeforeCheckout'));
       return;
     }
     setShowCheckoutConfirm(true);
@@ -1649,12 +1660,12 @@ export default function CreateBookingPage() {
 
     try {
       if (cartItems.length === 0) {
-        setError('Add at least one vehicle to the booking list before checkout.');
+        setError(t('booking.addAtLeastOneVehicleToThe'));
         return;
       }
 
       if (Object.keys(cartItemErrors).length > 0) {
-        setError('Fix highlighted booking items before checkout.');
+        setError(t('booking.fixHighlightedBookingItemsBeforeCheckout'));
         return;
       }
 
@@ -1691,7 +1702,7 @@ export default function CreateBookingPage() {
 
         if (itemErrors.length > 0) {
           setCartItemErrors(toItemErrorMap(itemErrors));
-          setError(errorMessage || 'One or more booking items need attention.');
+          setError(errorMessage || t('booking.oneOrMoreBookingItemsNeedAttention'));
           return;
         }
 
@@ -1701,7 +1712,7 @@ export default function CreateBookingPage() {
           return;
         }
 
-        setError(errorMessage || 'Could not create booking.');
+        setError(errorMessage || t('booking.couldNotCreateBooking'));
         return;
       }
 
@@ -1709,7 +1720,7 @@ export default function CreateBookingPage() {
       setShowSuccessModal(true);
 
       const confirmedTotal = bookingConfirmationSummary(res.data?.data).total;
-      setSuccess(confirmedTotal === null ? 'Booking order created.' : `Booking order created. Wallet charged ${formatMoney(confirmedTotal)}.`);
+      setSuccess(confirmedTotal === null ? t('booking.bookingOrderCreated') : t('booking.walletCharged', { amount: formatMoney(confirmedTotal) }));
       setCartItems([]);
       checkoutIdempotencyKeyRef.current = createClientItemId();
       setCartQuote(null);
@@ -1718,7 +1729,7 @@ export default function CreateBookingPage() {
       setSelectedSlotKey('');
       await loadData(true);
     } catch {
-      setError('Network error while creating booking order.');
+      setError(t('booking.networkErrorWhileCreatingBookingOrder'));
     } finally {
       setSubmitting(false);
     }
@@ -1756,13 +1767,13 @@ export default function CreateBookingPage() {
       <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-4">
           <div>
-            <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">Book Parking</h1>
-            <p className="text-gray-500 font-medium mt-1">Reserve your spot and check live availability.</p>
+            <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">{t('booking.title')}</h1>
+            <p className="text-gray-500 font-medium mt-1">{t('booking.description')}</p>
           </div>
           <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
             <div>
               <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-0.5">
-                <Wallet size={12} /> Wallet Balance
+                <Wallet size={12} /> {t('booking.walletBalance')}
               </div>
               <div className="text-xl font-black text-gray-900">
                 {wallet ? formatMoney(wallet.balance) : '0 VND'}
@@ -1778,9 +1789,9 @@ export default function CreateBookingPage() {
           </div>
         </div>
 
-        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label="Booking mode">
-          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>Choose a space</button>
-          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>AI Parking Assistant</button>
+        <div className="mb-5 inline-flex w-full max-w-md rounded-2xl border border-gray-200 bg-white p-1.5 shadow-sm" role="tablist" aria-label={t('booking.bookingMode')}>
+          <button type="button" role="tab" aria-selected={bookingMode === 'manual'} onClick={() => setBookingMode('manual')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'manual' ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{t('booking.manualMode')}</button>
+          <button type="button" role="tab" aria-selected={bookingMode === 'ai'} onClick={() => setBookingMode('ai')} className={`flex-1 rounded-xl px-4 py-3 text-sm font-black transition ${bookingMode === 'ai' ? 'bg-gradient-to-r from-yellow-400 to-amber-300 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>{t('booking.aiMode')}</button>
         </div>
 
         {(error || success) && (
@@ -1794,6 +1805,7 @@ export default function CreateBookingPage() {
         )}
 
         {bookingMode === 'ai' ? <AiBookingPanel
+          initialLanguage={language}
           vehicles={vehicles}
           onVehiclesChanged={loadData}
           onSwitchToManual={() => setBookingMode('manual')}
@@ -1806,11 +1818,11 @@ export default function CreateBookingPage() {
         /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
             <div ref={bookingEditorRef} className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0 scroll-mt-28">
-              <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
+              <h2 className="text-lg font-black mb-3 text-gray-900">{t('booking.details')}</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
                 <div className="block">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">Start time</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">{t('booking.startTime')}</span>
                   <div className="flex gap-2 h-11">
                     <CustomDatePicker
                       value={startDate}
@@ -1826,7 +1838,7 @@ export default function CreateBookingPage() {
                   </div>
                 </div>
                 <div className="block">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">End time</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold mb-1.5 block">{t('booking.endTime')}</span>
                   <div className="flex gap-2 h-11">
                     <CustomDatePicker
                       value={endDate}
@@ -1850,7 +1862,7 @@ export default function CreateBookingPage() {
                   <div className="flex items-center gap-2">
                     <Sparkles size={16} className="text-amber-600 shrink-0" />
                     <span>
-                      <strong>Tip:</strong> This is a long-stay booking ({Math.floor(durationHours / 24)} days {durationHours % 24} hours). Review the available <strong>VIP monthly packages</strong> for their current rates, benefits, and conditions.
+                      {t('booking.longStay', { days: Math.floor(durationHours / 24), hours: durationHours % 24 })}
                     </span>
                   </div>
                   <button
@@ -1858,12 +1870,12 @@ export default function CreateBookingPage() {
                     onClick={() => setShowVipModal(true)}
                     className="inline-flex items-center justify-center whitespace-nowrap rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-black text-white hover:bg-amber-600 transition shadow-sm self-start sm:self-auto"
                   >
-                    View VIP Packages
+                    {t('booking.viewVip')}
                   </button>
                 </div>
               )}
 
-                <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Vehicle</span>
+                <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">{t('booking.vehicle')}</span>
                 {vehicles.length > 0 ? (
                   <CustomVehiclePicker
                     value={vehicleId}
@@ -1874,7 +1886,7 @@ export default function CreateBookingPage() {
                   <input
                     value={manualPlate}
                     onChange={handleManualPlateChange}
-                    placeholder="License plate"
+                    placeholder={t('booking.licensePlate')}
                     className="mt-1 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
@@ -1883,7 +1895,7 @@ export default function CreateBookingPage() {
                   <input
                     value={manualPlate}
                     onChange={handleManualPlateChange}
-                    placeholder="License plate"
+                    placeholder={t('booking.licensePlate')}
                     className="mt-2 w-full rounded-xl bg-gray-50 border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold transition uppercase font-mono tracking-wider"
                   />
                 )}
@@ -1895,21 +1907,21 @@ export default function CreateBookingPage() {
                       : 'border-amber-200 bg-amber-50 text-amber-700'
                   }`}>
                     {selectedSlotIsOwnVipSlot
-                      ? 'This is your assigned VIP slot, so this registered vehicle can use it while your membership is active.'
-                      : 'Your VIP pass only covers assigned slots during its valid period. Choose an assigned slot within the pass dates or renew your pass.'}
+                      ? t('booking.ownVip')
+                      : t('booking.vipLimit')}
                   </div>
                 )}
               </div>
 
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">Extra services</span>
+                  <span className="text-[11px] text-gray-400 uppercase tracking-widest font-bold">{t('booking.extraServices')}</span>
                   <span className="text-xs font-black text-gray-900">{formatMoney(serviceTotal)}</span>
                 </div>
                 <div className="space-y-1.5 max-h-32 overflow-auto pr-1 time-scrollbar">
                   {services.length === 0 ? (
                     <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-400 font-medium">
-                      No active services.
+                      {t('booking.noActiveServices')}
                     </div>
                   ) : (
                     services.map((service) => (
@@ -1933,7 +1945,7 @@ export default function CreateBookingPage() {
                           </div>
                           <div>
                             <div className="font-bold text-[13px] text-gray-900 leading-tight">{service.name}</div>
-                            <div className="text-[10px] font-medium text-gray-400 leading-tight">{service.timeCost || 30} mins</div>
+                            <div className="text-[10px] font-medium text-gray-400 leading-tight">{t('booking.serviceMinutes', { count: service.timeCost || 30 })}</div>
                           </div>
                         </div>
                         {String(service._id) === freeServiceId ? (
@@ -1952,8 +1964,8 @@ export default function CreateBookingPage() {
 
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Voucher</span>
-                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? 'Applied' : 'Minimum not met'}</span>}
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('booking.voucher')}</span>
+                  {selectedVoucher && <span className={`text-xs font-black ${meetsVoucherMinimum ? 'text-emerald-600' : 'text-red-600'}`}>{meetsVoucherMinimum ? t('booking.applied') : 'Minimum not met'}</span>}
                 </div>
                 <CustomVoucherPicker
                   value={selectedVoucherId}
@@ -1964,42 +1976,42 @@ export default function CreateBookingPage() {
                   <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
                     {!meetsVoucherMinimum ? `Minimum booking: ${formatMoney(selectedVoucher.benefitSnapshot.minimumAmount)}` : selectedVoucher.benefitSnapshot?.type === 'PERCENT_DISCOUNT'
                       ? `Discount ${selectedVoucher.benefitSnapshot.discountPercent}%: -${formatMoney(baseGrandTotal - grandTotal)}`
-                      : selectedVoucher.benefitSnapshot?.type === 'FIXED_DISCOUNT' ? `Discount: -${formatMoney(baseGrandTotal - grandTotal)} (minimum ${formatMoney(selectedVoucher.benefitSnapshot.minimumAmount)})` : `Free service: ${selectedVoucher.benefitSnapshot?.serviceId?.name || 'included service'}`}
+                      : selectedVoucher.benefitSnapshot?.type === 'FIXED_DISCOUNT' ? `Discount: -${formatMoney(baseGrandTotal - grandTotal)} (minimum ${formatMoney(selectedVoucher.benefitSnapshot.minimumAmount)})` : `Free service: ${selectedVoucher.benefitSnapshot?.serviceId?.name || t('booking.includedService')}`}
                   </p>
                 )}
               </div>
 
               <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2 shadow-inner">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> Duration</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Clock size={15} /> {t('booking.duration')}</span>
                   <span className="text-right font-bold text-gray-900">
-                    {pricePreview.durationMinutes || 0} mins ({pricePreview.paidHours || 0} billable h)
+                    {t('booking.billableDuration', { minutes: pricePreview.durationMinutes || 0, hours: pricePreview.paidHours || 0 })}
                     {pricePreview.durationMinutes > 0 && pricePreview.durationMinutes < 60 && (
-                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">Discounts apply from 60 minutes</span>
+                      <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">{t('booking.discountDuration')}</span>
                     )}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> Parking</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><CreditCard size={15} /> {t('booking.parking')}</span>
                   <span className="font-bold text-gray-900 text-right">
                     {formatMoney(parkingTotal)}
                     {pricePreview.capApplied && (
-                      <span className="block text-[10px] text-emerald-600">Cap {pricePreview.capHours}h applied</span>
+                      <span className="block text-[10px] text-emerald-600">{t('booking.capApplied', { hours: pricePreview.capHours })}</span>
                     )}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Sparkles size={15} /> Services</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Sparkles size={15} /> {t('booking.services')}</span>
                   <span className="font-bold text-gray-900">{formatMoney(serviceTotal)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500 font-medium flex items-center gap-2"><Wallet size={15} /> Wallet balance</span>
+                  <span className="text-gray-500 font-medium flex items-center gap-2"><Wallet size={15} /> {t('booking.walletBalance')}</span>
                   <span className={`font-bold ${hasEnoughWallet ? 'text-emerald-600' : 'text-rose-600'}`}>{formatMoney(walletBalance)}</span>
                 </div>
                 <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
                   <span className="flex items-center gap-2 font-black text-gray-900">
-                    Wallet charge
+                    {t('booking.walletCharge')}
                     {pricePreview.appliedPolicies?.length > 0 && (
                       <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-700">
                         {pricePreview.appliedPolicies.map((policy) => policy.name).join(', ')}
@@ -2014,7 +2026,7 @@ export default function CreateBookingPage() {
                 {selectedSlot && hasEnoughWallet && (
                   <div className="rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-bold flex items-center gap-2 text-cyan-700">
                     <Lock size={14} />
-                    This slot will be locked when you review checkout.
+                    {t('booking.slotHoldHint')}
                   </div>
                 )}
               </div>
@@ -2028,15 +2040,15 @@ export default function CreateBookingPage() {
                 className="w-full rounded-2xl bg-gradient-to-r from-gold to-yellow-500 hover:from-yellow-500 hover:to-gold disabled:opacity-50 text-black px-4 py-4 font-black transition flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(212,175,55,0.4)] hover:shadow-[0_8px_25px_rgba(212,175,55,0.5)] active:scale-[0.98]"
               >
                 <Plus size={18} />
-                {editingClientItemId ? 'Update Booking Item' : 'Add to Booking List'}
+                {editingClientItemId ? t('booking.updateItem') : t('booking.addToList')}
               </button>
             </div>
 
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <h2 className="text-lg font-black text-gray-900">Booking List</h2>
-                  <p className="text-xs text-gray-500 font-medium">Checkout one or many vehicles together.</p>
+                  <h2 className="text-lg font-black text-gray-900">{t('booking.bookingList')}</h2>
+                  <p className="text-xs text-gray-500 font-medium">{t('booking.checkoutMany')}</p>
                 </div>
                 <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-black text-gray-700">
                   {cartItems.length}/5
@@ -2045,7 +2057,7 @@ export default function CreateBookingPage() {
 
               {cartItems.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
-                  <p className="text-sm font-bold text-gray-500">No vehicles added yet.</p>
+                  <p className="text-sm font-bold text-gray-500">{t('booking.noVehiclesAdded')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2066,11 +2078,11 @@ export default function CreateBookingPage() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
-                              Vehicle {index + 1}
+                              {t('booking.vehicleNumber', { number: index + 1 })}
                             </div>
                             <div className="font-black text-gray-900 truncate">{item.vehicleLabel}</div>
                             <div className="text-xs font-semibold text-gray-500 mt-1">
-                              Slot {item.slotCode} {item.floorName ? `- ${item.floorName}` : ''}
+                              {t('booking.cartSlot', { code: item.slotCode })} {item.floorName ? `- ${item.floorName}` : ''}
                             </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -2079,7 +2091,7 @@ export default function CreateBookingPage() {
                               onClick={() => handleEditCartItem(item)}
                               className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-black transition"
                             >
-                              Edit
+                              {t('booking.edit')}
                             </button>
                             <button
                               type="button"
@@ -2092,22 +2104,22 @@ export default function CreateBookingPage() {
                         </div>
 
                         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-semibold text-gray-500">
-                          <div>{formatDateTime(item.startTime)}</div>
-                          <div>{formatDateTime(item.endTime)}</div>
+                          <div>{formatDateTime(item.startTime, locale)}</div>
+                          <div>{formatDateTime(item.endTime, locale)}</div>
                         </div>
 
                         {item.serviceNames.length > 0 && (
                           <div className="mt-2 text-xs font-semibold text-gray-500">
-                            Services: {item.serviceNames.join(', ')}
+                            {t('booking.cartServices', { names: item.serviceNames.join(', ') })}
                           </div>
                         )}
                         {item.voucherName && (
-                          <div className="mt-2 text-xs font-bold text-emerald-600">Voucher: {item.voucherName}</div>
+                          <div className="mt-2 text-xs font-bold text-emerald-600">{t('booking.cartVoucher', { name: item.voucherName })}</div>
                         )}
 
                         <div className="mt-3 flex items-center justify-between">
                           <span className={`text-xs font-black ${itemError ? 'text-rose-600' : 'text-emerald-600'}`}>
-                            {itemError ? itemError.message : 'Ready'}
+                            {itemError ? itemError.message : t('booking.ready')}
                           </span>
                           <span className="flex flex-col items-end gap-1 text-sm font-black text-gray-900">
                             {itemVoucherDiscount > 0 && <span className="text-[11px] text-gray-400 line-through">{formatMoney(baseItemTotal)}</span>}
@@ -2124,11 +2136,11 @@ export default function CreateBookingPage() {
 
                   <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500 font-semibold">Wallet balance</span>
+                      <span className="text-gray-500 font-semibold">{t('booking.walletBalance')}</span>
                       <span className="font-black text-gray-900">{formatMoney(walletBalance)}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500 font-semibold">Cart total</span>
+                      <span className="text-gray-500 font-semibold">{t('booking.cartTotal')}</span>
                       <span className="text-right">
                         {cartHasVoucher && cartBaseGrandTotal !== cartGrandTotal && (
                           <span className="block text-xs font-bold text-gray-400 line-through">{formatMoney(cartBaseGrandTotal)}</span>
@@ -2138,7 +2150,7 @@ export default function CreateBookingPage() {
                     </div>
                     {cartWalletShortfall > 0 && (
                       <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">
-                        Top up {formatMoney(cartWalletShortfall)} before checkout. No bookings will be created until the full cart is covered.
+                        {t('booking.shortfallHint', { amount: formatMoney(cartWalletShortfall) })}
                       </div>
                     )}
                   </div>
@@ -2150,7 +2162,7 @@ export default function CreateBookingPage() {
                     className="w-full rounded-2xl bg-gray-900 hover:bg-black disabled:opacity-50 text-white px-4 py-4 font-black transition flex items-center justify-center gap-2 shadow-sm active:scale-[0.98]"
                   >
                     {(submitting || topUpLoading ) ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-                    {cartWalletShortfall > 0 ? `Top Up ${formatMoney(cartWalletShortfall)}` : hasActiveCheckoutHold ? `Pay ${formatMoney(cartGrandTotal)}` : 'Booking'}
+                    {cartWalletShortfall > 0 ? t('booking.topUpAmount', { amount: formatMoney(cartWalletShortfall) }) : hasActiveCheckoutHold ? t('booking.payAmount', { amount: formatMoney(cartGrandTotal) }) : t('booking.bookingAction')}
                   </button>
                 </div>
               )}
@@ -2163,25 +2175,23 @@ export default function CreateBookingPage() {
               <div>
                 <div className="flex items-center gap-2">
                   <MapPin size={20} className="text-cyan-500" />
-                  <h2 className="text-lg font-black text-gray-900">{showLiveMap ? 'Live Parking Map' : 'Available Slots Map'}</h2>
+                  <h2 className="text-lg font-black text-gray-900">{t(showLiveMap ? 'aiBookingUi.liveParkingMap' : 'booking.availableSlots')}</h2>
                 </div>
                 <p className="text-sm font-medium text-gray-500">
-                  {showLiveMap
-                    ? 'Current availability on the selected floor.'
-                    : 'Select an available slot on the map. Occupied slots are shown live in red.'}
+                  {t(showLiveMap ? 'aiBookingUi.currentAvailabilityOnTheSelectedFloor' : 'booking.availableSlotsHint')}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="text-sm text-emerald-600 font-bold px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
                   {showLiveMap && liveMapSlots
-                    ? `${liveMapSlots.filter(s => String(s.floorId) === String(currentFloorId) && isLiveParkingSlotBookable(s, (vehicles.find(v => v._id === vehicleId)?.type === 'electric_car'))).length} spaces available on this floor`
-                    : `${slots.length} slot(s) available`}
+                    ? t('aiBookingUi.availableOnFloor', { count: liveMapSlots.filter(s => String(s.floorId) === String(currentFloorId) && isLiveParkingSlotBookable(s, (vehicles.find(v => v._id === vehicleId)?.type === 'electric_car'))).length })
+                    : t('booking.slotsAvailable', { count: slots.length })}
                 </div>
                 <button
                   type="button"
                   onClick={() => { fetchLiveMapData(); handleFindSlots(); }}
                   className="rounded-xl border border-gray-200 bg-white p-2 text-gray-600 hover:border-cyan-300 transition"
-                  title="Refresh map"
+                  title={t('aiBookingUi.refreshParkingMap')}
                 >
                   <RefreshCw size={15} />
                 </button>
@@ -2212,7 +2222,7 @@ export default function CreateBookingPage() {
               {checkingSlots && (
                 <div className="absolute inset-0 z-20 bg-[#0b0e16]/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-8">
                   <Loader2 size={40} className="text-cyan-400 animate-spin mb-4" />
-                  <p className="font-black text-white">Finding available slots...</p>
+                  <p className="font-black text-white">{t('booking.findingSlots')}</p>
                 </div>
               )}
 
@@ -2221,8 +2231,8 @@ export default function CreateBookingPage() {
                   <div className="w-16 h-16 bg-[#181c23] shadow-xl shadow-black/50 border border-white/10 rounded-full flex items-center justify-center mb-4">
                     <MapPin className="w-8 h-8 text-cyan-500" />
                   </div>
-                  <p className="font-black text-white text-xl">Select a valid time range</p>
-                  <p className="text-sm font-medium text-gray-400 mt-2 max-w-xs mx-auto">Please adjust your start and end time to view available parking spaces.</p>
+                  <p className="font-black text-white text-xl">{t('booking.validTime')}</p>
+                  <p className="text-sm font-medium text-gray-400 mt-2 max-w-xs mx-auto">{t('booking.validTimeHint')}</p>
                 </div>
               )}
 
@@ -2252,30 +2262,30 @@ export default function CreateBookingPage() {
               {!checkingSlots && (slots.length > 0 || showLiveMap) && (
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center z-30 pointer-events-none px-4">
                   <div className="bg-[#181c23]/80 backdrop-blur border border-white/10 px-5 py-2.5 rounded-full flex items-center gap-4 shadow-lg pointer-events-auto">
-                    <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">Status Legend</p>
+                    <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">{t('booking.statusLegend')}</p>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-white border border-gray-300"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Available</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.available')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-rose-200 border border-rose-600"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Occupied</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.occupied')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-cyan-500 border border-cyan-400"></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Selected</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.selected')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-yellow-100 border border-yellow-500"></div>
-                      <span className="text-[10px] text-yellow-500 font-bold tracking-wide">VIP Pass</span>
+                      <span className="text-[10px] text-yellow-500 font-bold tracking-wide">{t('booking.vipPass')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-red-200 border border-red-500" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.2) 4px, rgba(127, 29, 29, 0.3) 4px, rgba(127, 29, 29, 0.3) 8px)' }}></div>
-                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">Maintenance</span>
+                      <span className="text-[10px] text-gray-300 font-bold tracking-wide">{t('booking.maintenance')}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3.5 h-3.5 rounded-sm bg-orange-100 border border-orange-500"></div>
-                      <span className="text-[10px] text-orange-500 font-bold tracking-wide">Hold/Booked</span>
+                      <span className="text-[10px] text-orange-500 font-bold tracking-wide">{t('booking.holdBooked')}</span>
                     </div>
                   </div>
                 </div>
@@ -2343,24 +2353,24 @@ export default function CreateBookingPage() {
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
               <Wallet size={22} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900">Confirm booking payment</h2>
+            <h2 className="text-2xl font-black text-gray-900">{t('booking.confirmPayment')}</h2>
             <p className="mt-2 text-sm font-medium text-gray-500">
-              Review the final amount before booking {cartItems.length} vehicle{cartItems.length === 1 ? '' : 's'}.
+              {t('booking.reviewTotal', { count: cartItems.length })}
             </p>
             <div className="my-5 rounded-2xl border border-gray-100 bg-gray-50 p-4">
               {cartHasVoucher && cartBaseGrandTotal !== cartGrandTotal && (
                 <div className="mb-1 flex items-center justify-between text-sm text-gray-400">
-                  <span>Base total</span><span className="font-bold line-through">{formatMoney(cartBaseGrandTotal)}</span>
+                  <span>{t('booking.baseTotal')}</span><span className="font-bold line-through">{formatMoney(cartBaseGrandTotal)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-600">Final wallet charge</span>
+                <span className="font-bold text-gray-600">{t('booking.finalCharge')}</span>
                 <span className="text-2xl font-black text-gold">{formatMoney(cartGrandTotal)}</span>
               </div>
             </div>
             <div className="flex gap-3">
-              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">Confirm & pay</button>
+              <button type="button" onClick={() => setShowCheckoutConfirm(false)} className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-black text-gray-700 hover:bg-gray-50">{t('booking.cancel')}</button>
+              <button type="button" onClick={() => { setShowCheckoutConfirm(false); executeCheckoutCart(); }} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 font-black text-white hover:bg-black">{t('booking.confirmPay')}</button>
             </div>
           </div>
         </div>
@@ -2386,9 +2396,9 @@ export default function CreateBookingPage() {
             <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 mb-4 shadow-sm">
               <AlertCircle size={32} />
             </div>
-            <h2 className="text-2xl font-black text-gray-900 mb-1">Insufficient Balance</h2>
+            <h2 className="text-2xl font-black text-gray-900 mb-1">{t('booking.insufficientBalance')}</h2>
             <p className="text-gray-500 font-medium text-sm mb-6">
-              You need to top up <span className="font-bold text-gray-900">{formatMoney(topUpData.amount)}</span> to complete this checkout.
+              {t('booking.topUpRequired', { amount: formatMoney(topUpData.amount) })}
             </p>
 
             <div className="bg-gray-50 border border-gray-100 p-4 rounded-2xl mb-4 shadow-inner">
@@ -2396,19 +2406,19 @@ export default function CreateBookingPage() {
                 <QRCodeSVG value={topUpData.qrCode} size={200} />
               ) : (
                 <div className="w-[200px] h-[200px] flex items-center justify-center text-gray-400 font-medium text-sm">
-                  No QR data
+                  {t('booking.noQr')}
                 </div>
               )}
             </div>
 
             <p className="text-xs text-gray-500 font-medium mb-6">
-              Scan with your banking app or e-wallet to pay.<br />
-              Alternatively, <a href={topUpData.checkoutUrl} target="_blank" rel="noreferrer" className="text-blue-500 font-bold hover:underline">click here to checkout</a>.
+              {t('booking.scanToPay')}<br />
+              Alternatively, <a href={topUpData.checkoutUrl} target="_blank" rel="noreferrer" className="text-blue-500 font-bold hover:underline">{t('booking.checkoutLink')}</a>.
             </p>
 
             <div className="flex items-center justify-center gap-2 mb-6 text-sm text-gold font-black">
               <Loader2 size={16} className="animate-spin" />
-              {topUpSuccess ? "Payment received! Processing checkout..." : "Waiting for your payment..."}
+              {topUpSuccess ? t('booking.paymentReceived') : t('booking.waitingPayment')}
             </div>
 
             <div className="flex gap-3 w-full">
@@ -2417,7 +2427,7 @@ export default function CreateBookingPage() {
                 onClick={cancelPendingBookingTopUp}
                 className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3.5 rounded-2xl transition disabled:opacity-50 active:scale-[0.98]"
               >
-                {topUpLoading ? 'Cancelling...' : 'Cancel'}
+                {topUpLoading ? t('booking.cancelling') : t('booking.cancel')}
               </button>
             </div>
           </div>

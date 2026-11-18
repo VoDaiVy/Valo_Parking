@@ -1,3 +1,4 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Crown, Sparkles, Check, Loader2, ArrowRight, AlertCircle, ChevronDown, QrCode, Wallet } from 'lucide-react';
@@ -15,12 +16,13 @@ import { notifyAuthChange } from '../../services/authStorage';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import MembershipExplore from '../../components/Customer/MembershipExplore';
 import { getExplorePackages } from '../../services/ticketPackageService';
-import { isSellablePackageType, getPackageDurationLabel, getPackageTypeLabel } from '../../utils/ticketPackageRules';
+import { isSellablePackageType, getPackageDurationLabel, getPackageTypeLabel, localizePackageCopy } from '../../utils/ticketPackageRules';
 import PolicyAcceptancePrompt from '../../components/policies/PolicyAcceptancePrompt';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
 import toast, { Toaster } from 'react-hot-toast';
 
 const CustomFloorPicker = ({ floors, value, onChange }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedFloor = floors.find((floor) => floor._id === value);
@@ -57,7 +59,7 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
         onClick={() => setIsOpen((current) => !current)}
         className="flex h-12 w-full items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 text-left text-sm font-semibold text-gray-800 outline-none transition hover:border-gold/50 focus:border-gold focus:ring-1 focus:ring-gold"
       >
-        <span className="min-w-0 truncate">{selectedFloor?.name || 'Select floor'}</span>
+        <span className="min-w-0 truncate">{selectedFloor?.name || t('map.selectFloor')}</span>
         <ChevronDown
           size={15}
           className={`ml-3 shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -71,7 +73,7 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
         >
           <div className="mb-2 border-b border-gray-100 px-4 pb-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              Select floor
+              {t('map.selectFloor')}
             </span>
           </div>
 
@@ -102,6 +104,8 @@ const CustomFloorPicker = ({ floors, value, onChange }) => {
 };
 
 export default function Membership() {
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedPackageId = searchParams.get('packageId');
@@ -180,7 +184,7 @@ export default function Membership() {
 
     if (orderCode) {
       if (cancel === 'true') {
-        toast.error('Payment transaction was cancelled.');
+        toast.error(t('membershipPage.paymentTransactionWasCancelled'));
         window.history.replaceState({}, document.title, window.location.pathname);
       } else {
         const verifyingTimerId = window.setTimeout(() => setVerifying(true), 0);
@@ -199,13 +203,13 @@ export default function Membership() {
             } else if (attempts >= 100) { // Timeout after 5 minutes (3s * 100)
               clearInterval(intervalId);
               setVerifying(false);
-              toast.error('Payment verification timed out. Please contact support if you have paid.');
+              toast.error(t('membershipPage.paymentVerificationTimedOutPleaseContact'));
               window.history.replaceState({}, document.title, window.location.pathname);
             } else if (res.data?.message !== 'Payment not completed.') {
               // If it's a hard error (not just pending), stop polling
               clearInterval(intervalId);
               setVerifying(false);
-              toast.error(res.data?.message || 'The transaction failed');
+              toast.error(res.data?.message || t('membershipPage.theTransactionFailed'));
               window.history.replaceState({}, document.title, window.location.pathname);
             }
           } catch (err) {
@@ -295,7 +299,7 @@ export default function Membership() {
               setSelectedSlots([]);
               setShowSlotModal(true);
             } else {
-              toast.error('This package is no longer available. Please choose another package.');
+              toast.error(t('membershipPage.thisPackageIsNoLongerAvailable'));
             }
           }
         }
@@ -318,14 +322,14 @@ export default function Membership() {
           setMembership(membershipRes.data.data);
         }
       } catch (err) {
-        if (active) setCatalogError(err.message || 'Unable to load membership packages. Please try again.');
+        if (active) setCatalogError(err.message || t('membershipPage.unableToLoadMembershipPackagesPlease'));
       } finally {
         if (active) setLoading(false);
       }
     };
     fetchData();
     return () => { active = false; };
-  }, [requestedPackageId, catalogReload]);
+  }, [requestedPackageId, catalogReload, t]);
 
   const handleBuyPackage = (pkg) => {
     if (!pkg) return;
@@ -360,9 +364,9 @@ export default function Membership() {
     if (isYearly) {
       return {
         Icon: Sparkles,
-        title: pkg.name || 'Yearly VIP',
-        subtitle: 'for 1 year',
-        badge: 'Yearly',
+        title: localizePackageCopy(pkg.name, t) || t('membershipPage.yearlyVip'),
+        subtitle: t('membershipPage.perYear'),
+        badge: t('membershipPage.yearly'),
         border: 'border border-purple-100/80 hover:border-purple-200',
         glow: 'from-purple-500/20 via-fuchsia-400/10 to-transparent',
         softWash: 'from-purple-50/90 via-white to-fuchsia-50/70',
@@ -372,19 +376,19 @@ export default function Membership() {
         checkText: 'text-purple-500',
         button: 'bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-fuchsia-600 shadow-lg shadow-purple-500/20',
         popular: false,
-        features: pkg.benefitsVersion >= 1 ? (pkg.benefits || []) : [
-          'All Monthly VIP benefits',
-          'Includes 12 free washes / maintenance services',
-          'Priority support',
+        features: pkg.benefitsVersion >= 1 ? (pkg.benefits || []).map((benefit) => localizePackageCopy(benefit, t)) : [
+          t('membershipPage.monthlyBenefits'),
+          t('membershipPage.yearlyWashes'),
+          t('membershipPage.prioritySupport'),
         ],
       };
     }
 
     return {
       Icon: Crown,
-      title: pkg.name || `${pkg.type.charAt(0).toUpperCase()}${pkg.type.slice(1)} VIP`,
-      subtitle: `for ${getPackageDurationLabel(pkg)} / space`,
-      badge: getPackageTypeLabel(pkg),
+      title: localizePackageCopy(pkg.name, t) || t('membershipPage.premiumMonthly'),
+      subtitle: t('membershipPage.durationPerSpace', { duration: getPackageDurationLabel(pkg, t) }),
+      badge: getPackageTypeLabel(pkg, t),
       border: isPopular ? 'border-2 border-gold/80 hover:border-gold' : 'border border-gold/25 hover:border-gold/50',
       glow: 'from-gold/25 via-yellow-300/10 to-transparent',
       softWash: 'from-yellow-50/80 via-white to-amber-50/70',
@@ -394,23 +398,23 @@ export default function Membership() {
       checkText: 'text-gold',
       button: 'bg-gradient-to-r from-yellow-500 to-gold hover:from-amber-500 hover:to-yellow-400 shadow-lg shadow-gold/20',
       popular: isPopular,
-      features: pkg.benefitsVersion >= 1 ? (pkg.benefits || []) : [
-        'All Member benefits',
-        'Own a fixed parking slot under your name',
-        'Free 24/7 automatic check-in',
-        'No need to book before arrival',
+      features: pkg.benefitsVersion >= 1 ? (pkg.benefits || []).map((benefit) => localizePackageCopy(benefit, t)) : [
+        t('membershipPage.memberBenefits'),
+        t('membershipPage.ownSlot'),
+        t('membershipPage.automaticCheckin'),
+        t('membershipPage.noAdvanceBooking'),
       ],
     };
   };
 
   const getPackageButton = () => {
     if (availablePurchaseSlots <= 0) {
-      return { disabled: true, label: 'No available entitlement capacity' };
+      return { disabled: true, label: t('membershipPage.noCapacity') };
     }
 
     return {
       disabled: false,
-      label: isVipActive ? 'Add another space' : 'Upgrade now',
+      label: t(isVipActive ? 'membershipPage.addSpace' : 'membershipPage.upgrade'),
     };
   };
 
@@ -423,11 +427,11 @@ export default function Membership() {
       // Add
       const maxSlots = selectedPackageSlotLimit;
       if (approvedVehicleCount === 0) {
-        toast.error("You need to add a vehicle before buying a VIP pass.");
+        toast.error(t('membershipPage.youNeedToAddAVehicle'));
         return;
       }
       if (selectedSlots.length >= maxSlots) {
-        toast.error(`You can select at most ${maxSlots} parking slots (matching your number of vehicles).`);
+        toast.error(t('membershipPage.maxSlots', { count: maxSlots }));
         return;
       }
       setSelectedSlots(prev => [...prev, { floorId, slotCode: slotData.slotNumber }]);
@@ -436,7 +440,7 @@ export default function Membership() {
 
   const handleConfirmSlots = async () => {
     if (selectedSlots.length === 0 || selectedSlots.length > selectedPackageSlotLimit) {
-      toast.error("Please select at least one parking slot to reserve.");
+      toast.error(t('membershipPage.pleaseSelectAtLeastOneParking'));
       return;
     }
 
@@ -444,7 +448,7 @@ export default function Membership() {
     const totalPrice = effectivePackagePrice * Math.max(1, selectedSlots.length);
 
     if (paymentMethod === 'wallet' && selectedPackage && walletBalance < totalPrice) {
-      toast.error("Số dư ví không đủ. Hệ thống sẽ chuyển hướng bạn đến trang Nạp Tiền.");
+      toast.error(t('membershipPage.yourWalletBalanceIsInsufficientRedirecting'));
       setTimeout(() => {
         setShowSlotModal(false);
         navigate('/wallet');
@@ -467,7 +471,7 @@ export default function Membership() {
             missingPolicies: extractMissingPolicies(res.data),
           });
         } else {
-          toast.error(res.data?.message || "Error while paying with Valo Wallet");
+          toast.error(res.data?.message || t('membershipPage.errorWhilePayingWithValoWallet'));
         }
         setVerifying(false);
       } else {
@@ -482,12 +486,12 @@ export default function Membership() {
           });
           setVerifying(false);
         } else {
-          toast.error(res.data?.message || "Error creating PayOS transaction");
+          toast.error(res.data?.message || t('membershipPage.errorCreatingPayosTransaction'));
           setVerifying(false);
         }
       }
     } catch {
-      toast.error("Network error");
+      toast.error(t('membershipPage.networkError'));
       setVerifying(false);
     }
   };
@@ -496,7 +500,7 @@ export default function Membership() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
         <Loader2 className="w-12 h-12 animate-spin text-gold mb-4" />
-        <p className="text-gray-500 font-medium">Processing transaction, please wait...</p>
+        <p className="text-gray-500 font-medium">{t('membershipPage.processing')}</p>
       </div>
     );
   }
@@ -520,8 +524,8 @@ export default function Membership() {
               <Sparkles size={14} />
             </div>
           </div>
-          <h1 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">Unlock <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-gold">Premium</span></h1>
-          <p className="text-gray-400 text-sm md:text-base">Choose the right plan and upgrade your experience</p>
+          <h1 className="text-3xl md:text-4xl font-black mb-2 tracking-tight">{t('membershipPage.unlock2')} <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-gold">{t('membershipPage.premium')}</span></h1>
+          <p className="text-gray-400 text-sm md:text-base">{t('membershipPage.choosePlan')}</p>
         </div>
       </div>
 
@@ -530,10 +534,10 @@ export default function Membership() {
         {catalogError && (
           <div role="alert" className="relative z-10 mb-5 rounded-2xl border border-red-200 bg-white p-5 text-sm text-red-700">
             <p>{catalogError}</p>
-            <button type="button" onClick={() => setCatalogReload((value) => value + 1)} className="mt-3 rounded-xl bg-gray-900 px-4 py-3 font-bold text-white">Try again</button>
+            <button type="button" onClick={() => setCatalogReload((value) => value + 1)} className="mt-3 rounded-xl bg-gray-900 px-4 py-3 font-bold text-white">{t('membershipPage.tryAgain')}</button>
           </div>
         )}
-        <div role="group" aria-label="Basic membership plans" className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
+        <div role="group" aria-label={t('membershipPage.basicMembershipPlans')} className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:gap-6">
           
           {/* Member Card */}
           <div className={`${cardShellClass} ${getDesktopGridBalanceClass(0)} border border-gray-100 hover:border-gray-200`}>
@@ -543,30 +547,30 @@ export default function Membership() {
             <div className="relative mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-[20px] bg-gray-100 text-gray-500 ring-8 ring-gray-50 transition duration-300 group-hover:rotate-3 group-hover:scale-105">
               <span className="font-black text-lg">M</span>
             </div>
-            <h3 className="relative text-center font-black text-gray-900 tracking-widest text-xs mb-4">MEMBER</h3>
+            <h3 className="relative text-center font-black text-gray-900 tracking-widest text-xs mb-4">{t('membershipPage.member2')}</h3>
             <div className="relative text-center py-3.5 rounded-2xl bg-white/80 border border-gray-100 mb-5 shadow-inner backdrop-blur">
-              <div className="text-xl font-black text-gray-900">Default</div>
+              <div className="text-xl font-black text-gray-900">{t('membershipPage.default')}</div>
             </div>
             <ul className="relative space-y-3 mb-5 flex-1">
               <li className="flex gap-2.5 text-gray-600 text-xs">
                 <Check size={15} className="text-gray-400 shrink-0" />
-                <span>Book parking by hour or day</span>
+                <span>{t('membershipPage.bookByHour')}</span>
               </li>
               <li className="flex gap-2.5 text-gray-600 text-xs">
                 <Check size={15} className="text-gray-400 shrink-0" />
-                <span>Use add-on services (paid)</span>
+                <span>{t('membershipPage.paidServices')}</span>
               </li>
               <li className="flex gap-2.5 text-gray-400 text-xs">
                 <div className="w-3.5 h-3.5 rounded-full border border-gray-300 shrink-0 mt-0.5"></div>
-                <span>Dedicated fixed parking slot</span>
+                <span>{t('membershipPage.fixedSlot')}</span>
               </li>
               <li className="flex gap-2.5 text-gray-400 text-xs">
                 <div className="w-3.5 h-3.5 rounded-full border border-gray-300 shrink-0 mt-0.5"></div>
-                <span>Free check-in / No reservation required</span>
+                <span>{t('membershipPage.freeCheckin')}</span>
               </li>
             </ul>
             <button disabled className="relative w-full py-3 rounded-2xl font-bold text-gray-500 bg-gray-100 text-sm">
-              Included
+              {t('membershipPage.included')}
             </button>
           </div>
 
@@ -587,7 +591,7 @@ export default function Membership() {
               >
                 {presentation.popular && (
                   <div className="absolute top-3 right-3 z-20 bg-gold text-white text-[9px] font-black tracking-widest py-1 px-3 rounded-full uppercase shadow-lg shadow-gold/20">
-                    Popular
+                    {t('membershipPage.popular')}
                   </div>
                 )}
                 <div className={`absolute inset-0 bg-gradient-to-br ${presentation.softWash}`}></div>
@@ -609,16 +613,16 @@ export default function Membership() {
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                         : 'border-orange-200 bg-orange-50 text-orange-700'
                     }`}>
-                      {dynamicEntry.priceLabel || (effectivePrice < Number(pkg.price) ? 'Giá ưu đãi' : 'Giá cao điểm')}
+                      {dynamicEntry.priceLabel || (effectivePrice < Number(pkg.price) ? t('membershipPage.discountedPrice') : t('membershipPage.peakPrice'))}
                     </div>
                   )}
                   {hasAdjustedPrice && (
                     <div className="text-xs font-bold text-gray-400 line-through">
-                      {(pkg.price || 0).toLocaleString('vi-VN')} VND
+                      {(pkg.price || 0).toLocaleString(locale)} {t('common.currency')}
                     </div>
                   )}
                   <div className={`text-xl font-black ${presentation.priceText}`}>
-                    {effectivePrice.toLocaleString('vi-VN')} VND
+                    {effectivePrice.toLocaleString(locale)} {t('common.currency')}
                   </div>
                   <div className="text-xs font-medium text-gray-500 mt-1">{presentation.subtitle}</div>
                 </div>
@@ -637,7 +641,7 @@ export default function Membership() {
                   {pkg.description && (
                     <li className="flex gap-2.5 text-gray-500 text-xs">
                       <Check size={15} className={`${presentation.checkText} shrink-0`} />
-                      <span>{pkg.description}</span>
+                      <span>{localizePackageCopy(pkg.description, t)}</span>
                     </li>
                   )}
                 </ul>
@@ -657,13 +661,13 @@ export default function Membership() {
             );
           })}
 
-          {loading && <div role="status" className={`${cardShellClass} items-center justify-center text-gray-500`}><Loader2 size={28} className="animate-spin" /><span className="mt-3 text-sm">Loading packages...</span></div>}
+          {loading && <div role="status" className={`${cardShellClass} items-center justify-center text-gray-500`}><Loader2 size={28} className="animate-spin" /><span className="mt-3 text-sm">{t('membershipPage.loadingPackages')}</span></div>}
 
           {!loading && !catalogError && subscriptionPackages.length === 0 && (
             <div className={`${cardShellClass} min-h-[300px] justify-center border border-gray-100 text-center text-gray-500`}>
               <Crown size={32} className="mx-auto mb-3 text-gray-300" />
-              <h3 className="font-black text-gray-900 mb-2">No monthly or yearly plans available</h3>
-              <p className="text-sm">Browse the available packages in Explore more below.</p>
+              <h3 className="font-black text-gray-900 mb-2">{t('membershipPage.noMonthlyOrYearlyPlansAvailable')}</h3>
+              <p className="text-sm">{t('membershipPage.browseTheAvailablePackagesInExplore')}</p>
             </div>
           )}
 
@@ -683,13 +687,12 @@ export default function Membership() {
           <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-black text-gray-900">Choose Fixed Parking Slots</h3>
+                <h3 className="text-xl font-black text-gray-900">{t('membershipPage.chooseSlots')}</h3>
                 <p className="text-gray-500 mt-1">
-                You currently have <span className="font-bold text-gray-900">{approvedVehicleCount}</span> approved vehicles.
-                This package allows up to <span className="font-bold text-gray-900">{selectedPackageSlotLimit}</span> additional parking slots.
+                {t('membershipPage.vehicleSlotsHint', { vehicles: approvedVehicleCount, slots: selectedPackageSlotLimit })}
                 {approvedVehicleCount > 1 && (
                   <span className="block mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md">
-                    Tip: You can select fewer slots than vehicles to share slots among your vehicles.
+                    {t('membershipPage.slotTip')}
                   </span>
                 )}
               </p>
@@ -721,7 +724,7 @@ export default function Membership() {
               
               <div className="w-full md:w-80 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm flex flex-col">
                 <div className="mb-6">
-                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Parking floor</label>
+                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">{t('membershipPage.parkingFloor')}</label>
                   <CustomFloorPicker
                     floors={floors}
                     value={currentFloorId || ''}
@@ -731,7 +734,7 @@ export default function Membership() {
                 
                 <div className="mb-6 flex-1">
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
-                    Payment method
+                    {t('membershipPage.paymentMethod')}
                   </label>
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     <button 
@@ -752,7 +755,7 @@ export default function Membership() {
                       </div>
                       <div className="text-center">
                         <div className={`font-black text-xs mb-0.5 ${paymentMethod === 'payos' ? 'text-cyan-400' : 'text-gray-300'}`}>PayOS</div>
-                        <div className="text-[9px] text-gray-500 font-medium">QR code / Bank transfer</div>
+                        <div className="text-[9px] text-gray-500 font-medium">{t('membershipPage.qrBankTransfer')}</div>
                       </div>
                     </button>
                     
@@ -773,8 +776,8 @@ export default function Membership() {
                         <Wallet size={16} />
                       </div>
                       <div className="text-center">
-                        <div className={`font-black text-xs mb-0.5 ${paymentMethod === 'wallet' ? 'text-gold' : 'text-gray-300'}`}>Wallet Valo</div>
-                        <div className="text-[9px] text-gray-500 font-medium">Balance: {walletBalance.toLocaleString('vi-VN')} VND</div>
+                        <div className={`font-black text-xs mb-0.5 ${paymentMethod === 'wallet' ? 'text-gold' : 'text-gray-300'}`}>{t('membershipPage.walletValo')}</div>
+                        <div className="text-[9px] text-gray-500 font-medium">{t('membershipPage.balance2')} {walletBalance.toLocaleString(locale)} {t('common.currency')}</div>
                       </div>
                     </button>
                   </div>
@@ -782,23 +785,23 @@ export default function Membership() {
                   {paymentMethod === 'wallet' && selectedPackage && walletBalance < (getEffectivePackagePrice(selectedPackage) * Math.max(1, selectedSlots.length)) && (
                     <div className="bg-rose-50 text-rose-600 text-xs p-3 rounded-xl border border-rose-100 flex gap-2 mt-4 font-medium items-start">
                       <AlertCircle className="shrink-0 w-4 h-4" />
-                      <p>Insufficient balance. Please top up or use PayOS.</p>
+                      <p>{t('membershipPage.insufficientBalance')}</p>
                     </div>
                   )}
 
                   <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3 mt-4">
-                    Selected ({selectedSlots.length} / {selectedPackageSlotLimit})
+                    {t('membershipPage.selected', { selected: selectedSlots.length, total: selectedPackageSlotLimit })}
                   </label>
                   <div className="space-y-2">
                     {selectedSlots.map(s => (
                       <div key={`${s.floorId}-${s.slotCode}`} className="flex items-center justify-between p-3 rounded-xl bg-gold/10 border border-gold/20 text-gold font-bold">
-                        <span>Slot: {s.slotCode}</span>
+                        <span>{t('membershipPage.slot2')} {s.slotCode}</span>
                         <Check size={18} />
                       </div>
                     ))}
                     {selectedSlots.length === 0 && (
                       <div className="text-center py-8 text-gray-400 text-sm">
-                        Click the map to choose a parking slot.
+                        {t('membershipPage.clickMap')}
                       </div>
                     )}
                   </div>
@@ -812,14 +815,14 @@ export default function Membership() {
                   {verifying ? (
                     <span className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
+                      {t('membershipPage.processingShort')}
                     </span>
                   ) : (
                     <>
-                      Pay now {selectedPackage && selectedSlots.length > 0 ? `(${(getEffectivePackagePrice(selectedPackage) * selectedSlots.length).toLocaleString('vi-VN')} VND)` : ''} <ArrowRight size={18} />
+                      {t('membershipPage.payNow')} {selectedPackage && selectedSlots.length > 0 ? `(${(getEffectivePackagePrice(selectedPackage) * selectedSlots.length).toLocaleString(locale)} ${t('common.currency')})` : ''} <ArrowRight size={18} />
                     </>
                   )}
-                  {selectedPackage?.serviceBenefits?.map((benefit) => <p key={benefit.serviceId} className="mt-3 text-sm font-semibold text-gray-700">{benefit.serviceName}: {benefit.quantityPerSlot} uses/space × {selectedSlots.length} spaces = {benefit.quantityPerSlot * selectedSlots.length} uses</p>)}
+                  {selectedPackage?.serviceBenefits?.map((benefit) => <p key={benefit.serviceId} className="mt-3 text-sm font-semibold text-gray-700">{t('membershipPage.serviceUses', { name: benefit.serviceName, uses: benefit.quantityPerSlot, spaces: selectedSlots.length, total: benefit.quantityPerSlot * selectedSlots.length })}</p>)}
                 </button>
               </div>
             </div>
@@ -834,14 +837,14 @@ export default function Membership() {
             <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-green-500 mx-auto mb-6">
               <Crown size={40} />
             </div>
-            <h3 className="text-2xl font-black text-gray-900 mb-2">Welcome, VIP!</h3>
-            <p className="text-gray-500 mb-8">Transaction successful. Your benefits are active and your slot has been reserved.</p>
+            <h3 className="text-2xl font-black text-gray-900 mb-2">{t('membershipPage.welcomeVip')}</h3>
+            <p className="text-gray-500 mb-8">{t('membershipPage.successMessage')}</p>
             
             <button 
               onClick={() => window.location.href = '/'}
               className="w-full py-4 rounded-xl font-bold text-white bg-gray-900 hover:bg-black transition"
             >
-              Back to home
+              {t('membershipPage.backHome')}
             </button>
           </div>
         </div>

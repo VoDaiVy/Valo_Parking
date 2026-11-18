@@ -17,8 +17,8 @@ import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const VEHICLE_TYPES = [
-  { value: 'car', label: 'Car', icon: <Car size={15} /> },
-  { value: 'electric_car', label: 'Electric car', icon: <Zap size={15} /> },
+  { value: 'car', label: "vehiclesPage.car", icon: <Car size={15} /> },
+  { value: 'electric_car', label: "vehiclesPage.electricCar", icon: <Zap size={15} /> },
 ];
 
 const EMPTY_FORM = {
@@ -33,8 +33,9 @@ const EMPTY_FORM = {
 
 // ─── Vehicle Card ─────────────────────────────────────────────────────────────
 export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
-  const typeObj = VEHICLE_TYPES.find((t) => t.value === vehicle.vehicleType);
+  const typeObj = VEHICLE_TYPES.find((type) => type.value === vehicle.vehicleType);
 
   const handleDelete = async () => {
     setLoading(true);
@@ -63,7 +64,7 @@ export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
         <span className="absolute top-3 right-3 text-[10px] font-bold
           bg-yellow-500/15 text-yellow-500 dark:text-yellow-400
           border border-yellow-500/30 rounded-full px-2 py-0.5 select-none">
-          Default
+          {t('vehiclesPage.default')}
         </span>
       )}
 
@@ -114,7 +115,7 @@ export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
           bg-yellow-500/10 text-yellow-600 dark:text-yellow-400
           border border-yellow-500/20 rounded-full px-2.5 py-0.5">
           {typeObj?.icon}
-          {typeObj?.label ?? vehicle.vehicleType}
+          {typeObj ? t(typeObj.label) : vehicle.vehicleType}
         </span>
       </div>
 
@@ -127,10 +128,10 @@ export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
             className="flex items-center gap-1.5 text-[11px] font-semibold
               text-gray-500 dark:text-gray-400 hover:text-yellow-500 dark:hover:text-yellow-400
               transition-colors disabled:opacity-50"
-            title="Set as default vehicle"
+            title={t('vehiclesPage.setAsDefaultVehicle')}
           >
             <Star size={13} />
-            Default
+            {t('vehiclesPage.default')}
           </button>
         )}
         <div className="flex-1" />
@@ -139,7 +140,7 @@ export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
           disabled={loading}
           className="p-1.5 rounded-lg text-gray-400 hover:text-yellow-500 dark:hover:text-yellow-400
             hover:bg-yellow-500/10 transition-all disabled:opacity-50"
-          title="Edit"
+          title={t('common.edit')}
         >
           <Pencil size={14} />
         </button>
@@ -148,7 +149,7 @@ export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
           disabled={loading}
           className="p-1.5 rounded-lg text-gray-400 hover:text-red-500
             hover:bg-red-500/10 transition-all disabled:opacity-50"
-          title="Delete vehicle"
+          title={t('vehiclesPage.delete')}
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
         </button>
@@ -159,10 +160,11 @@ export function VehicleCard({ vehicle, onDelete, onSetDefault, onEdit }) {
 
 // ─── Vehicle Modal (Add / Edit) ───────────────────────────────────────────────
 function DeleteVehicleModal({ vehicle, deleting, onCancel, onConfirm }) {
+  const { t } = useLanguage();
   if (!vehicle) return null;
 
   const plate = formatLicensePlateDisplay(vehicle.licensePlateDisplay || vehicle.licensePlate);
-  const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || 'This vehicle';
+  const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || t('vehiclesPage.thisVehicle');
 
   return (
     <div className="fixed inset-0 z-[180] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
@@ -175,7 +177,7 @@ function DeleteVehicleModal({ vehicle, deleting, onCancel, onConfirm }) {
           disabled={deleting}
           className="absolute right-4 top-4 rounded-xl p-2 text-white/45
             hover:bg-white/10 hover:text-white transition-all disabled:opacity-40"
-          title="Close"
+          title={t('common.close')}
         >
           <X size={18} />
         </button>
@@ -187,16 +189,16 @@ function DeleteVehicleModal({ vehicle, deleting, onCancel, onConfirm }) {
               <AlertTriangle size={24} />
             </div>
             <div className="min-w-0 pr-8">
-              <p className="text-lg font-black tracking-tight">Delete vehicle?</p>
+              <p className="text-lg font-black tracking-tight">{t('vehiclesPage.deleteVehicle')}</p>
               <p className="mt-1 text-sm leading-6 text-white/55">
-                This vehicle will be removed from your garage. This action cannot be undone.
+                {t('vehiclesPage.thisVehicleWillBeRemovedFrom')}
               </p>
             </div>
           </div>
 
           <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-white/35">
-              Selected vehicle
+              {t('vehiclesPage.selectedVehicle')}
             </p>
             <div className="mt-2 flex items-center gap-3">
               <div
@@ -221,7 +223,7 @@ function DeleteVehicleModal({ vehicle, deleting, onCancel, onConfirm }) {
                 text-sm font-bold text-white/65 transition-all hover:bg-white/10 hover:text-white
                 disabled:opacity-50"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -232,7 +234,7 @@ function DeleteVehicleModal({ vehicle, deleting, onCancel, onConfirm }) {
                 transition-all hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              Delete
+              {t('common.delete')}
             </button>
           </div>
         </div>
@@ -242,6 +244,7 @@ function DeleteVehicleModal({ vehicle, deleting, onCancel, onConfirm }) {
 }
 
 function VehicleModal({ editVehicle, onClose, onSaved }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState(editVehicle
     ? {
         licensePlate: editVehicle.licensePlateDisplay || editVehicle.licensePlate,
@@ -311,10 +314,10 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
           hexColor: aiHex || f.hexColor,
         }));
       } else {
-        setError(res.data?.message || 'Could not read the information. Please enter it manually.');
+        setError(res.data?.message || t('vehiclesPage.couldNotReadTheInformationPlease'));
       }
     } catch {
-      setError('Image processing error.');
+      setError(t('vehiclesPage.imageProcessingError'));
     }
     setScanning(false);
   };
@@ -323,7 +326,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isEdit && !scanPreview) {
-      setError('Vehicle registration card image is required when adding a new vehicle.');
+      setError(t('vehiclesPage.vehicleRegistrationCardImageIsRequired'));
       return;
     }
     setSaving(true);
@@ -338,7 +341,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
     if (res.ok) {
       onSaved(res.data.data, isEdit ? 'updated' : 'added');
     } else {
-      const msg = res.data?.errors?.[0]?.message || res.data?.message || 'An error occurred.';
+      const msg = res.data?.errors?.[0]?.message || res.data?.message || t('vehiclesPage.anErrorOccurred');
       setError(msg);
     }
   };
@@ -360,7 +363,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
         <div className="flex items-center justify-between px-6 py-4
           border-b border-gray-200 dark:border-white/10">
           <h2 className="font-bold text-base text-gray-900 dark:text-white">
-            {isEdit ? 'Edit vehicle' : 'Add new vehicle'}
+            {isEdit ? t('vehiclesPage.editVehicle') : t('vehiclesPage.addNewVehicle')}
           </h2>
           <button onClick={onClose}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors p-1">
@@ -378,12 +381,12 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
               <div className="flex items-center gap-2 mb-1">
                 <ScanLine size={15} className="text-yellow-500 dark:text-yellow-400" />
                 <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400 uppercase tracking-wider">
-                  Scan vehicle registration card with AI
+                  {t('vehiclesPage.scanVehicleRegistrationCardWithAi')}
                 </span>
-                <span className="text-[10px] text-red-400 font-semibold ml-auto">* Required</span>
+                <span className="text-[10px] text-red-400 font-semibold ml-auto">{t('vehiclesPage.required')}</span>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                Upload the registration image to automatically fill vehicle information and color
+                {t('vehiclesPage.uploadTheRegistrationImageToAutomatically')}
               </p>
 
               {scanPreview && (
@@ -394,7 +397,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                     bg-green-500/20 border border-green-500/40 text-green-400
                     text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
                     <Check size={10} />
-                    Scanned
+                    {t('vehiclesPage.scanned')}
                   </div>
                 </div>
               )}
@@ -411,7 +414,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                   {scanning
                     ? <Loader2 size={13} className="animate-spin" />
                     : <Upload size={13} />}
-                  {scanning ? 'Scanning...' : scanPreview ? 'Scan again' : 'Upload vehicle registration card'}
+                  {scanning ? t('vehiclesPage.scanning') : scanPreview ? t('vehiclesPage.scanAgain') : t('vehiclesPage.uploadVehicleRegistrationCard')}
                 </button>
 
                 {/* Auto-detected color preview */}
@@ -421,7 +424,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                       className="inline-block w-5 h-5 rounded-full border-2 border-white/30 shadow"
                       style={{ backgroundColor: form.hexColor }}
                     />
-                    Auto color: <span className="font-mono">{form.hexColor}</span>
+                    {t('vehiclesPage.autoColor')} <span className="font-mono">{form.hexColor}</span>
                   </div>
                 )}
               </div>
@@ -443,31 +446,31 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
             {/* License plate */}
             <div>
               <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-                License plate *
+                {t('vehiclesPage.licensePlate')}
               </label>
               <input name="licensePlate" value={form.licensePlate}
                 onChange={handleChange} required
-                placeholder="VD: 51A-123.45"
+                placeholder={t('vehiclesPage.vd51a12345')}
                 className={inputCls} />
             </div>
 
             {/* Vehicle type */}
             <div>
               <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1.5 block">
-                Vehicle type *
+                {t('vehiclesPage.vehicleType')}
               </label>
               <div className="flex gap-2">
-                {VEHICLE_TYPES.map((t) => (
-                  <button key={t.value} type="button"
-                    onClick={() => setForm((f) => ({ ...f, vehicleType: t.value }))}
+                {VEHICLE_TYPES.map((type) => (
+                  <button key={type.value} type="button"
+                    onClick={() => setForm((f) => ({ ...f, vehicleType: type.value }))}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold
                       border transition-all duration-200
-                      ${form.vehicleType === t.value
+                      ${form.vehicleType === type.value
                         ? 'bg-yellow-500/15 border-yellow-500/40 text-yellow-600 dark:text-yellow-400'
                         : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:border-yellow-500/30'
                       }`}>
-                    {t.icon}
-                    {t.label}
+                    {type.icon}
+                    {t(type.label)}
                   </button>
                 ))}
               </div>
@@ -477,7 +480,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-                  Brand
+                  {t('vehiclesPage.brand')}
                 </label>
                 <input name="brand" value={form.brand} onChange={handleChange}
                   placeholder="Toyota, Honda..."
@@ -485,7 +488,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
               </div>
               <div>
                 <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-                  Model
+                  {t('vehiclesPage.model')}
                 </label>
                 <input name="model" value={form.model} onChange={handleChange}
                   placeholder="Orangery, Civic..."
@@ -495,27 +498,27 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
 
             <div>
               <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-                Paint color on registration
+                {t('vehiclesPage.paintColorOnRegistration')}
               </label>
               <input name="color" value={form.color} onChange={handleChange}
-                placeholder="As written on the registration card"
+                placeholder={t('vehiclesPage.asWrittenOnTheRegistrationCard')}
                 className={inputCls} />
             </div>
 
             {/* Nickname */}
             <div>
               <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-                Nickname
+                {t('vehiclesPage.nickname')}
               </label>
               <input name="nickname" value={form.nickname} onChange={handleChange}
-                placeholder="Family car..."
+                placeholder={t('vehiclesPage.familyCar')}
                 className={inputCls} />
             </div>
 
             {/* 3D paint color - auto from AI and adjustable */}
             <div>
               <label className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-1 block">
-                3D paint color (HEX) - auto from AI
+                {t('vehiclesPage.3dPaintColorHexAutoFrom')}
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -524,7 +527,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                   value={form.hexColor}
                   onChange={handleChange}
                   className="h-9 w-9 cursor-pointer rounded-lg border border-gray-300 dark:border-white/15 bg-transparent p-0.5 shrink-0"
-                  title="Adjust vehicle paint color"
+                  title={t('vehiclesPage.adjustVehiclePaintColor')}
                 />
                 <input
                   name="hexColor"
@@ -543,7 +546,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                   border border-gray-200 dark:border-white/10
                   text-gray-600 dark:text-gray-400
                   hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                Cancel
+                {t('common.cancel')}
               </button>
               <button type="submit" disabled={saving}
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold
@@ -553,7 +556,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
                 {saving
                   ? <Loader2 size={14} className="animate-spin" />
                   : <Check size={14} />}
-                {isEdit ? 'Save changes' : 'Add vehicle'}
+                {isEdit ? t('vehiclesPage.saveChanges') : t('vehiclesPage.add')}
               </button>
             </div>
           </form>
@@ -565,6 +568,7 @@ function VehicleModal({ editVehicle, onClose, onSaved }) {
 
 // ─── No 3D Model Placeholder ─────────────────────────────────────────────────
 function NoModelPlaceholder({ hexColor }) {
+  const { t } = useLanguage();
   const accent = hexColor && hexColor !== '#ffffff' ? hexColor : null;
   return (
     <div className="w-full h-full flex flex-col items-center justify-center gap-3 select-none">
@@ -578,10 +582,10 @@ function NoModelPlaceholder({ hexColor }) {
         <Car size={38} />
       </div>
       <p className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.35)' }}>
-        3D model is not available yet
+        {t('vehiclesPage.3dModelIsNotAvailableYet')}
       </p>
       <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>
-        Admin will add the vehicle model soon
+        {t('vehiclesPage.adminWillAddTheVehicleModel')}
       </p>
     </div>
   );
@@ -635,14 +639,14 @@ export default function MyVehicles() {
 
   const clampedIdx = Math.min(selectedIdx, Math.max(0, vehicles.length - 1));
   const selected   = vehicles[clampedIdx] ?? null;
-  const typeObj    = VEHICLE_TYPES.find((t) => t.value === selected?.vehicleType);
+  const typeObj    = VEHICLE_TYPES.find((type) => type.value === selected?.vehicleType);
   const vehicleLimitReached = vehicles.length >= MAX_VEHICLES_PER_USER;
 
   const handleSaved = async (_v, action) => {
     setModalOpen(false);
     setEditVehicle(null);
     await fetchVehicles();
-    showToast(action === 'updated' ? 'Vehicle updated successfully ✓' : 'Vehicle added successfully ✓');
+    showToast(action === 'updated' ? t('vehiclesPage.vehicleUpdatedSuccessfully') : t('vehiclesPage.vehicleAddedSuccessfully'));
   };
 
   const handleDelete = async () => {
@@ -659,9 +663,9 @@ export default function MyVehicles() {
       setDeleteTarget(null);
       setSelectedIdx(0);
       await fetchVehicles();
-      showToast('Vehicle deleted ✓');
+      showToast(t('vehiclesPage.vehicleDeleted'));
     } else {
-      showToast(data?.message || 'Failed to delete vehicle', 'error');
+      showToast(data?.message || t('vehiclesPage.failedToDeleteVehicle'), 'error');
     }
   };
 
@@ -672,15 +676,15 @@ export default function MyVehicles() {
     setActionLoading(false);
     if (ok) {
       await fetchVehicles();
-      showToast('Default vehicle set ✓');
+      showToast(t('vehiclesPage.defaultVehicleSet'));
     } else {
-      showToast('Action failed', 'error');
+      showToast(t('vehiclesPage.actionFailed'), 'error');
     }
   };
 
   const openAdd = () => {
     if (vehicleLimitReached) {
-      showToast(`Each account can register up to ${MAX_VEHICLES_PER_USER} vehicles.`, 'error');
+      showToast(t('vehiclesPage.limitReached', { max: MAX_VEHICLES_PER_USER }), 'error');
       return;
     }
     setEditVehicle(null);
@@ -703,7 +707,7 @@ export default function MyVehicles() {
     setActionLoading(false);
     setQuickColor(null);
     await fetchVehicles();
-    showToast('Vehicle color updated ✓');
+    showToast(t('vehiclesPage.vehicleColorUpdated'));
   };
   const activeColor = quickColor ?? selected?.hexColor ?? '#ffffff';
 
@@ -786,7 +790,7 @@ export default function MyVehicles() {
               className="w-9 h-9 rounded-full border-2 border-white/30
                 shadow-lg transition-transform hover:scale-110 cursor-pointer"
               style={{ backgroundColor: activeColor }}
-              title="Change vehicle color"
+              title={t('vehiclesPage.changeVehicleColor')}
             />
             <input
               ref={colorInputRef}
@@ -813,7 +817,7 @@ export default function MyVehicles() {
                 onClick={() => setQuickColor(null)}
                 className="p-1.5 rounded-lg text-white/40 hover:text-white/70
                   border border-white/10 hover:border-white/20 transition-colors"
-                title="Cancel"
+                title={t('common.cancel')}
               >
                 <X size={12} />
               </button>
@@ -824,24 +828,24 @@ export default function MyVehicles() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-bold text-white/80">
-                {[selected?.brand, selected?.model].filter(Boolean).join(' ') || 'My vehicle'}
+                {[selected?.brand, selected?.model].filter(Boolean).join(' ') || t('vehiclesPage.myVehicle')}
               </span>
               {selected?.isDefault && (
                 <span className="text-[10px] font-bold bg-yellow-500/25 text-yellow-400
                   border border-yellow-500/40 rounded-full px-2 py-0.5">
-                  ★ Default
+                  ★ {t('vehiclesPage.default')}
                 </span>
               )}
               {selected?.status === 'pending' && (
                 <span className="text-[10px] font-bold bg-orange-500/20 text-orange-400
                   border border-orange-500/40 rounded-full px-2 py-0.5">
-                  ⏳ Pending approval
+                  ⏳ {t('vehiclesPage.pending')}
                 </span>
               )}
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold
                 bg-white/10 text-gray-300 border border-white/15 rounded-full px-2.5 py-0.5">
                 {typeObj?.icon}
-                {typeObj?.label ?? selected?.vehicleType}
+                {typeObj ? t(typeObj.label) : selected?.vehicleType}
               </span>
             </div>
             {/* Big license plate */}
@@ -862,7 +866,7 @@ export default function MyVehicles() {
                   transition-all disabled:opacity-50"
               >
                 <Star size={13} />
-                Default
+                {t('vehiclesPage.default')}
               </button>
             )}
             <button
@@ -930,6 +934,7 @@ export default function MyVehicles() {
             {vehicles.length > 1 && (
               <button
                 onClick={prev}
+                aria-label={t('vehiclesPage.previousVehicle')}
                 className="absolute left-4 z-20 w-12 h-12 rounded-full
                   bg-black/40 hover:bg-black/70 border border-white/20
                   flex items-center justify-center text-white
@@ -957,6 +962,7 @@ export default function MyVehicles() {
             {vehicles.length > 1 && (
               <button
                 onClick={next}
+                aria-label={t('vehiclesPage.nextVehicle')}
                 className="absolute right-4 z-20 w-12 h-12 rounded-full
                   bg-black/40 hover:bg-black/70 border border-white/20
                   flex items-center justify-center text-white
