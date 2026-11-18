@@ -226,7 +226,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, 
       </td>
       <td><span className={`inline-flex rounded-full border px-2.5 py-0.5 ${meta.badge}`}>{typeLabel}</span></td>
       <td><p className="font-semibold text-[#e8d5ad]">{formatCurrency(pkg.price, language)}</p><p className="package-description text-white/40">{unitLabel}</p></td>
-      <td><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{isActive ? t('adminPages.ticketUi.active') : t('adminPages.ticketUi.inactive')}</span>{!isActive && <p className="mt-2 text-xs text-white/50">{pkg.inactiveReason === 'SOLD_OUT' ? t('adminPages.ticketUi.soldOut') : t('adminPages.ticketUi.paused')}</p>}</td>
+      <td><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{isActive ? t('adminPages.ticketUi.active') : t('adminPages.ticketUi.inactive')}</span>{!isActive && <p className="mt-2 text-xs text-white/50">{pkg.inactiveReason === 'SOLD_OUT' ? t('adminPages.ticketUi.soldOut') : t('adminPages.ticketUi.paused')}</p>}</td>
       <td className="text-white/55">{formatPackageDate(pkg.updatedAt || pkg.createdAt, t('adminPages.ticketUi.noTimestamp'), language)}</td>
       <td>
         <div className="flex items-center justify-end gap-2">
@@ -272,12 +272,12 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, 
 
         <div className="flex items-center justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('adminPages.ticketUi.status')}</span>
-          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${
+          <span className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-black ${
             isActive
               ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
               : 'border-slate-400/15 bg-white/5 text-slate-400'
           }`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-300' : 'bg-slate-500'}`} />
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? 'bg-emerald-300' : 'bg-slate-500'}`} />
             {isActive ? t('adminPages.ticketUi.active') : t('adminPages.ticketUi.inactive')}
           </span>
         </div>

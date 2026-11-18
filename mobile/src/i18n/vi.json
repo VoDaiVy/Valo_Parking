@@ -1063,7 +1063,7 @@
 
   "Welcome reward": "Ưu đãi chào mừng",
   "Monthly allocation filled": "Đã hết suất trong tháng",
-  "No higher reward tier has vouchers available this month.": "Các mốc thưởng cao hơn đã hết suất trong tháng này."
+  "No higher reward tier has vouchers available this month.": "Các mốc thưởng cao hơn đã hết suất trong tháng này.",
 
   "Choose membership services": "Chọn dịch vụ membership",
   "Each selected service reserves 1 included use. Staff will start the service at the parking lot.": "Mỗi dịch vụ được chọn sẽ giữ 1 lượt trong gói. Nhân viên sẽ bắt đầu thực hiện tại bãi xe.",
@@ -1162,6 +1162,6 @@
   "Selected service request": "Yêu cầu dịch vụ được chọn",
   "Started": "Bắt đầu",
   "Total services": "Tổng dịch vụ",
-  "Pending approval": "Chờ tiếp nhận"
+  "Pending approval": "Chờ tiếp nhận",
   "Unable to save service selection.": "Không thể lưu lựa chọn dịch vụ."
 }

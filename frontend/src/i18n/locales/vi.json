@@ -114,6 +114,7 @@
     ,"and": "và"
   },
   "nav": {
+    "feedback": "Phản hồi khách hàng",
     "home": "Trang chủ",
     "parking": "Bãi đỗ",
     "bookings": "Đặt chỗ",
@@ -366,6 +367,10 @@
   "servicesPage": {
     "loadError": "Không thể tải danh sách dịch vụ. Vui lòng thử lại sau.",
     "catalog": {
+      "tireCare": {"name":"Cân bằng và đảo lốp"},
+      "oilChange": {"name":"Thay dầu và lọc dầu"},
+      "airConditioning": {"name":"Vệ sinh điều hòa và khử mùi"},
+      "engineDetailing": {"name":"Vệ sinh khoang động cơ"},
       "paintPolishing": {
         "name": "Đánh bóng và xóa xước sơn",
         "description": "Đánh bóng bề mặt sơn để khôi phục độ bóng, xử lý vết xoáy nhẹ và vết xước nhỏ."
@@ -1819,5 +1824,163 @@
     "previousPage": "Trước",
     "nextPage": "Sau",
     "coverageGap": "Lịch tính giá bị thiếu khung giờ tại {{hour}}."
+  },
+  "adminFeedback": {
+    "customerExperience": "Trải nghiệm khách hàng",
+    "bookingFeedback": "Đánh giá đặt chỗ",
+    "reviewCustomerExperiencesAndRespondAsValoParkingAllDatesUseVietnamTime": "Xem đánh giá của khách hàng và phản hồi với tư cách VALO Parking. Thời gian hiển thị theo giờ Việt Nam.",
+    "totalReviews": "Tổng đánh giá",
+    "averageRating": "Điểm trung bình",
+    "12StarReviews": "Đánh giá 1–2 sao",
+    "awaitingResponse": "Chờ phản hồi",
+    "bookingIdOrUsername": "Mã đặt chỗ hoặc tên người dùng",
+    "rating": "Điểm đánh giá",
+    "topic": "Chủ đề",
+    "responseStatus": "Trạng thái phản hồi",
+    "allRatings": "Tất cả điểm",
+    "allTopics": "Tất cả chủ đề",
+    "allResponses": "Tất cả trạng thái",
+    "responded": "Đã phản hồi",
+    "fromDate": "Từ ngày",
+    "toDateExclusive": "Đến trước ngày",
+    "applyFilters": "Áp dụng bộ lọc",
+    "reset": "Đặt lại",
+    "retry": "Thử lại",
+    "loadingFeedback": "Đang tải đánh giá…",
+    "customerBooking": "Khách hàng / Đặt chỗ",
+    "feedback": "Đánh giá",
+    "sent": "Ngày gửi",
+    "response": "Phản hồi",
+    "action": "Thao tác",
+    "deletedCustomer": "Khách hàng đã bị xóa",
+    "deletedBooking": "Đặt chỗ đã bị xóa",
+    "noWrittenComment": "Không có nhận xét",
+    "viewRespond": "Xem / Phản hồi",
+    "noFeedbackMatchesTheseFilters": "Không có đánh giá phù hợp với bộ lọc.",
+    "feedbackPagination": "Phân trang đánh giá",
+    "previous": "Trước",
+    "next": "Sau",
+    "feedbackDetails": "Chi tiết đánh giá",
+    "close": "Đóng",
+    "booking": "Đặt chỗ",
+    "loadLatestResponseKeepMyDraft": "Tải phản hồi mới nhất (giữ bản nháp)",
+    "loadingCurrentResponse": "Đang tải phản hồi hiện tại…",
+    "retryLoadingDetails": "Thử tải lại chi tiết",
+    "thisFeedbackIsReadOnlyBecauseItsCustomerOrBookingWasDeleted": "Đánh giá này chỉ có thể xem vì khách hàng hoặc đặt chỗ đã bị xóa.",
+    "valoParkingResponse": "Phản hồi từ VALO Parking",
+    "officialResponseValoParking": "Phản hồi chính thức · VALO Parking",
+    "currentPublishedResponse": "Phản hồi đã công bố",
+    "loadTheLatestVersionBeforeSavingYourDraftAgain": "Tải phiên bản mới nhất trước khi lưu lại bản nháp.",
+    "saving": "Đang lưu…",
+    "updateResponse": "Cập nhật phản hồi",
+    "sendResponse": "Gửi phản hồi",
+    "internalResponseHistory": "Lịch sử phản hồi nội bộ",
+    "couldNotLoadFeedback": "Không thể tải đánh giá.",
+    "couldNotLoadFeedbackDetails": "Không thể tải chi tiết đánh giá.",
+    "couldNotSaveResponseYourDraftIsPreserved": "Không thể lưu phản hồi. Bản nháp của bạn vẫn được giữ.",
+    "stars": "{{count}} sao",
+    "stars_one": "{{count}} sao",
+    "paginationSummary": "{{count}} đánh giá · Trang {{page}}",
+    "paginationSummary_one": "{{count}} đánh giá · Trang {{page}}",
+    "paginationLabel": "Phân trang đánh giá",
+    "slot": "Chỗ đỗ",
+    "replyHint": "{{count}}/2000 · Chỉ phản hồi đầu tiên gửi thông báo.",
+    "revision": "Phiên bản {{revision}}",
+    "categories": {
+      "parking": "Bãi đỗ xe",
+      "staff": "Nhân viên",
+      "payment": "Thanh toán",
+      "app": "Ứng dụng",
+      "other": "Khác"
+    },
+    "bookingStatus": {
+      "PENDING": "Chờ thanh toán",
+      "PAID": "Đã thanh toán",
+      "ACTIVE": "Đang sử dụng",
+      "PAUSED": "Tạm dừng",
+      "EXPIRED": "Hết hạn",
+      "COMPLETED": "Hoàn tất",
+      "CANCELLED": "Đã hủy"
+    }
+  },
+  "notificationUi": {
+    "loaded": "Hiển thị {{shown}} · Đã tải {{loaded}}/{{total}}",
+    "space": "Chỗ đỗ {{slot}}",
+    "reason": "Lý do:",
+    "priority": {
+      "INFO": "Thông tin",
+      "SUCCESS": "Thành công",
+      "WARNING": "Cảnh báo",
+      "ERROR": "Lỗi",
+      "SYSTEM": "Hệ thống"
+    },
+    "type": {
+      "PARKING": "Bãi đỗ xe",
+      "SYSTEM": "Hệ thống",
+      "PROMOTION": "Ưu đãi",
+      "PAYMENT": "Thanh toán",
+      "BOOKING": "Đặt chỗ",
+      "GENERAL": "Chung"
+    },
+    "status": {
+      "SENT": "Đã gửi",
+      "sent": "Đã gửi",
+      "PENDING": "Chờ gửi",
+      "pending": "Chờ gửi",
+      "FAILED": "Gửi thất bại",
+      "failed": "Gửi thất bại",
+      "SCHEDULED": "Đã lên lịch",
+      "scheduled": "Đã lên lịch"
+    },
+    "roles": {
+      "customer": "Khách hàng",
+      "staff": "Nhân viên",
+      "admin": "Quản trị viên"
+    },
+    "events": {
+      "requested": "Yêu cầu dịch vụ",
+      "started": "Dịch vụ đã bắt đầu",
+      "completed": "Dịch vụ đã hoàn tất",
+      "cancelled": "Dịch vụ đã hủy",
+      "membershipRequested": "Yêu cầu dịch vụ thành viên",
+      "membershipUpdated": "Cập nhật dịch vụ thành viên"
+    },
+    "services": {
+      "wash": "Rửa xe và hút bụi nội thất",
+      "glass": "Tẩy ố kính và phủ bảo vệ",
+      "polish": "Đánh bóng sơn và xử lý vết xước"
+    },
+    "serviceStatus": {
+      "pending": "Chờ tiếp nhận",
+      "in_progress": "Đang thực hiện",
+      "done": "Hoàn tất",
+      "cancelled": "Đã hủy"
+    },
+    "usage": {
+      "reserved": "Đã giữ 1 lượt dịch vụ trong gói.",
+      "applied": "Đã sử dụng 1 lượt dịch vụ trong gói.",
+      "returned": "Đã hoàn lại 1 lượt vào kỳ dịch vụ ban đầu.",
+      "noExtra": "Không trừ thêm lượt dịch vụ trong gói."
+    }
+  },
+  "staffLotDiagnostics": {
+    "unavailable": "Không thể tải chẩn đoán vận hành. {{error}}",
+    "syncFailed": "Đồng bộ dữ liệu thất bại",
+    "attention": "Cần kiểm tra",
+    "database": "Trạng thái từ cơ sở dữ liệu",
+    "today": "Hôm nay",
+    "noFloor": "Chưa có cấu hình tầng",
+    "noLayout": "Chưa có sơ đồ tầng",
+    "activeNow": "Tình trạng hiện tại",
+    "unknownFloor": "Chưa xác định",
+    "messages": {
+      "overdue": "Có {{count}} phiên đỗ xe đang hoạt động vượt quá thời gian dự kiến.",
+      "maintenance": "Có {{count}} chỗ đang bảo trì: {{slots}}",
+      "cancellations": "Có {{count}} đặt chỗ bị hủy hôm nay. Vui lòng kiểm tra lịch sử hủy.",
+      "no-floor": "Chưa có cấu hình tầng để đánh giá sức chứa bãi đỗ.",
+      "no-floor-slots": "Tầng {{floor}} chưa có chỗ đỗ được cấu hình để đánh giá sức chứa.",
+      "capacity-warning": "Bãi {{floor}} gần đầy ({{rate}}%). Cân nhắc hướng dẫn xe đến khu vực khác.",
+      "capacity-healthy": "Sức chứa bãi {{floor}} đang ở mức phù hợp ({{rate}}%)."
+    }
   }
 }

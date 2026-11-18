@@ -170,7 +170,7 @@ body[data-valo-typography="staff"] .g3-management-content .g3-slot-badge span:la
 
 @media (min-width: 768px) {
   body[data-valo-typography="staff"] .g3-management-content .g3-membership-columns,
-  body[data-valo-typography="staff"] .g3-management-content .g3-membership-grid { grid-template-columns: minmax(220px, 1.35fr) minmax(145px, 0.9fr) minmax(150px, 1fr) minmax(130px, 0.8fr) minmax(150px, 0.9fr) 110px; }
+  body[data-valo-typography="staff"] .g3-management-content .g3-membership-grid { grid-template-columns: minmax(220px, 1.35fr) minmax(145px, 0.9fr) minmax(150px, 1fr) minmax(130px, 0.8fr) minmax(150px, 0.9fr) 150px; }
   body[data-valo-typography="staff"] .g3-management-content .g3-membership-columns,
   body[data-valo-typography="staff"] .g3-management-content .g3-membership-rows { min-width: 1050px; }
 }
