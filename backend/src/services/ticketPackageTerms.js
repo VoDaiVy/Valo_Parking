@@ -1,8 +1,10 @@
 const crypto = require('crypto');
+const { getPackageDurationMinutes } = require('../utils/ticketPackageRules');
 
 // Historical records without terms remain explicitly legacy; never reconstruct
 // their benefits from a catalog entry that an administrator may have edited.
 const durationForType = (type) => ({
+  weekly: { unit: 'days', value: 7 },
   monthly: { unit: 'hours', value: 720 },
   yearly: { unit: 'calendarMonths', value: 12 },
   daily: { unit: 'hours', value: 24 },
@@ -11,10 +13,11 @@ const durationForType = (type) => ({
 
 const invalidTerms = (message) => Object.assign(new Error(message), { statusCode: 400 });
 const packageDuration = (pkg) => {
-  const duration = pkg.duration && (pkg.duration.value != null || pkg.duration.unit != null) ? pkg.duration : durationForType(pkg.type);
+  const duration = pkg.duration && (pkg.duration.value != null || pkg.duration.unit != null) ? pkg.duration
+    : pkg.type === 'custom' ? { unit: 'minutes', value: getPackageDurationMinutes(pkg) } : durationForType(pkg.type);
   const unit = duration?.unit === 'months' ? 'calendarMonths' : duration?.unit;
-  if (!duration || !Number.isSafeInteger(duration.value) || duration.value < 1 || !['hours', 'days', 'calendarMonths'].includes(unit))
-    throw invalidTerms('Duration must be a positive whole number of hours, days or months.');
+  if (!duration || !Number.isSafeInteger(duration.value) || duration.value < 1 || !['minutes', 'hours', 'days', 'calendarMonths'].includes(unit))
+    throw invalidTerms('Duration must be a positive whole number of minutes, hours, days or months.');
   return { unit, value: duration.value };
 };
 
@@ -30,7 +33,7 @@ const addConfiguredDuration = (fromDate, pkg) => {
     const last = new Date(end);
     last.setUTCMonth(last.getUTCMonth() + 1, 0);
     end.setUTCDate(Math.min(day, last.getUTCDate()));
-  } else end = new Date(start.getTime() + value * (unit === 'days' ? 86400000 : 3600000));
+  } else end = new Date(start.getTime() + value * (unit === 'days' ? 86400000 : unit === 'minutes' ? 60000 : 3600000));
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start)
     throw invalidTerms('The configured duration is outside the supported date range.');
   return end;
@@ -89,7 +92,9 @@ const catalogSalesAvailability = (pkg, now) => {
 
 const comparableDuration = (pkg) => {
   const duration = packageDuration(pkg);
-  return duration.unit === 'days' ? { unit: 'hours', value: duration.value * 24 } : duration;
+  if (duration.unit === 'days') return { unit: 'hours', value: duration.value * 24 };
+  if (duration.unit === 'minutes' && duration.value % 60 === 0) return { unit: 'hours', value: duration.value / 60 };
+  return duration;
 };
 
 const canonicalConfiguration = (pkg) => JSON.stringify({

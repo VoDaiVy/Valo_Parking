@@ -18,6 +18,7 @@ export default function AdminSelect({
 }) {
   const selected = options.find((option) => option.value === value) || options[0];
   const menuAlign = align === 'right' ? 'right-0 origin-top-right' : 'left-0 origin-top-left';
+  const menuPosition = menuAnchor ? '[--anchor-gap:8px]' : `absolute mt-2 min-w-full ${menuAlign}`;
   const itemHeight = 44;
   const maxMenuHeight = visibleItems ? itemHeight * visibleItems + 8 : undefined;
 
@@ -47,8 +48,8 @@ export default function AdminSelect({
         <Menu.Items
           anchor={menuAnchor}
           portal={Boolean(menuAnchor)}
-          className={`absolute z-50 mt-2 min-w-full overflow-hidden rounded-[14px] border border-white/10 bg-[#111111] py-1 shadow-2xl shadow-black/70 backdrop-blur-xl [scrollbar-color:rgba(255,255,255,.18)_transparent] [scrollbar-width:thin] focus:outline-none [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/15 hover:[&::-webkit-scrollbar-thumb]:bg-yellow-400/40 ${menuAlign} ${menuClassName}`}
-          style={menuAnchor ? { width: 'var(--button-width)', maxHeight: `min(${maxMenuHeight || 272}px, var(--available-height))`, overflowY: 'auto' } : maxMenuHeight ? { maxHeight: maxMenuHeight, overflowY: 'auto' } : undefined}
+          className={`${menuPosition} z-50 overflow-hidden rounded-[14px] border border-white/10 bg-[#111111] py-1 shadow-2xl shadow-black/70 backdrop-blur-xl [scrollbar-color:rgba(255,255,255,.18)_transparent] [scrollbar-width:thin] focus:outline-none [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-button]:h-0 [&::-webkit-scrollbar-button]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/15 hover:[&::-webkit-scrollbar-thumb]:bg-yellow-400/40 ${menuClassName}`}
+          style={menuAnchor ? { width: 'var(--button-width)', minWidth: 'var(--button-width)', maxWidth: 'calc(100vw - 24px)', maxHeight: `min(${maxMenuHeight || 272}px, var(--available-height))`, overflowY: 'auto' } : maxMenuHeight ? { maxHeight: maxMenuHeight, overflowY: 'auto' } : undefined}
         >
           {options.map((option) => (
             <Menu.Item key={option.value} disabled={option.disabled}>
