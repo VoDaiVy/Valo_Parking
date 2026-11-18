@@ -117,6 +117,15 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
   }, []);
 
   useEffect(() => {
+    const refresh = () => {
+      void loadListings();
+      if (selectedId) void loadDetail(selectedId);
+    };
+    window.addEventListener('membership:refresh', refresh);
+    return () => window.removeEventListener('membership:refresh', refresh);
+  }, [loadListings, loadDetail, selectedId]);
+
+  useEffect(() => {
     const timerId = window.setTimeout(loadListings, 0);
     return () => window.clearTimeout(timerId);
   }, [loadListings]);
@@ -243,19 +252,7 @@ export default function MembershipTransferMarketplace({ embedded = false }) {
           }
         />}
 
-        {embedded && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={refreshAll}
-              disabled={loading}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
-            >
-              <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-              {t('common.refresh')}
-            </button>
-          </div>
-        )}
+
 
         <section className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-[#151515] p-4 md:grid-cols-[1fr_140px_140px_180px]">
           <label className="relative">

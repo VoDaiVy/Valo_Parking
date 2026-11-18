@@ -30,6 +30,10 @@ const subscriptionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    // The routed purchase flow freezes service benefits and duration here.
+    // Keep these fields distinct from the bound-purchase packageSnapshot.
+    packageTermsSnapshot: { type: mongoose.Schema.Types.Mixed },
+    packageDurationSnapshot: { type: mongoose.Schema.Types.Mixed },
     packageSnapshot: { type: mongoose.Schema.Types.Mixed, immutable: true },
     bindingVersion: Number,
     paymentMethod: { type: String, enum: ['wallet', 'payos'] },

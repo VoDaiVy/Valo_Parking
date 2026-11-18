@@ -580,11 +580,9 @@ export const MembershipScreen = ({ navigation }: Props) => {
       setMembership(membershipData);
       setWalletBalance(walletResponse.data?.balance || 0);
       setTransfers(transferResponse.data || []);
-      if (membershipData?.status === 'active' && membershipData.subscriptionId) {
+      if (membershipData?.status === 'active') {
         try {
-          const qrResponse = await subscriptionsService.getMembershipQr(
-            membershipData.subscriptionId,
-          );
+          const qrResponse = await subscriptionsService.getMembershipQr();
           setQrPayload(qrResponse.data?.payload || null);
           setQrError(qrResponse.data?.payload ? '' : 'Membership QR is unavailable.');
         } catch (qrLoadError) {
@@ -898,16 +896,22 @@ export const MembershipScreen = ({ navigation }: Props) => {
                     <Text style={styles.slotText}>
                       {slot.slotCode} - {slot.floorName || `Floor ${slot.floorNumber || ''}`}
                     </Text>
+                    {slot.package?.name ? <Text style={styles.renewalMeta}>{slot.package.name}</Text> : null}
                     {slot.expireAt ? (
                       <Text style={styles.renewalMeta}>{translateUi("Expires")}{" "}{formatDate(slot.expireAt)}</Text>
+                    ) : null}
+                    {slot.renewal?.message ? <Text style={styles.renewalMeta}>{translateUi(slot.renewal.message)}</Text> : null}
+                    {!slot.canTransfer && slot.transferUnavailableReason ? (
+                      <Text style={styles.renewalMeta}>{translateUi(slot.transferUnavailableReason)}</Text>
                     ) : null}
                   </View>
                   {slot.entitlementId ? (
                     <View style={styles.slotActions}>
                       <TouchableOpacity
                         activeOpacity={0.8}
+                        disabled={slot.renewal?.canRenew === false}
                         onPress={() => void openRenewal(slot.entitlementId)}
-                        style={styles.slotAction}
+                        style={[styles.slotAction, slot.renewal?.canRenew === false && { opacity: 0.45 }]}
                       >
                         <Text style={styles.slotActionText}>{translateUi("Renew")}</Text>
                       </TouchableOpacity>

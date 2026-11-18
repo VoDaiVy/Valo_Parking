@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "../../services/api";
 import {
   History,
@@ -18,6 +18,7 @@ import {
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 import { useLanguage } from "../../i18n/hooks/useLanguage";
+import MembershipServiceSelectionModal from "../../components/membership/MembershipServiceSelectionModal";
 
 export default function ParkingHistory() {
   const { language, t } = useLanguage();
@@ -26,39 +27,43 @@ export default function ParkingHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
+  const [serviceSession, setServiceSession] = useState(null);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      const token = localStorage.getItem("accessToken");
-      if (!token) {
-        setError('historyPage.loginRequired');
-        setLoading(false);
-        return;
-      }
+  const fetchHistory = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      setError('historyPage.loginRequired');
+      setLoading(false);
+      return;
+    }
 
-      try {
-        const { ok, data } = await apiFetch("/sessions/my-history", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (ok && data?.success) {
-          setSessions(data.data);
-          setNow(Date.now());
-        } else {
-          setError('historyPage.loadFailed');
-        }
-      } catch {
-        setError('historyPage.networkError');
-      } finally {
-        setLoading(false);
+    try {
+      const { ok, data } = await apiFetch("/sessions/my-history", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (ok && data?.success) {
+        setSessions(data.data);
+        setNow(Date.now());
+      } else {
+        setError(data?.message || 'historyPage.loadFailed');
       }
-    };
+    } catch {
+      setError('historyPage.networkError');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
     const timerId = window.setTimeout(() => {
       fetchHistory();
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [fetchHistory]);
 
   const hasActiveSession = sessions.some((session) => session.status === 'active' && !session.checkOutTime);
   useEffect(() => {
@@ -287,6 +292,21 @@ export default function ParkingHistory() {
                   </div>
                 </div>
 
+                {session.canSelectServices === true && session.type === 'SUBSCRIPTION' && session.status === 'active' && (
+                  <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs text-gray-400">
+                      {t('membershipServiceModal.title')} · {t('membershipServiceModal.pending')}: {session.serviceSummary?.pending || 0} · {t('membershipServiceModal.inProgress')}: {session.serviceSummary?.inProgress || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setServiceSession(session)}
+                      className="min-h-11 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-2 text-sm font-bold text-yellow-400 hover:bg-yellow-500/20"
+                    >
+                      {t('membershipServiceModal.title')}
+                    </button>
+                  </div>
+                )}
+
                 {/* Footer / Image */}
                 {session.entryImage_url && (
                   <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -309,6 +329,15 @@ export default function ParkingHistory() {
             </div>
           ))}
         </div>
+      )}
+
+      {serviceSession && (
+        <MembershipServiceSelectionModal
+          key={serviceSession._id}
+          session={serviceSession}
+          onClose={() => setServiceSession(null)}
+          onSaved={fetchHistory}
+        />
       )}
 
       {selectedSession && (
