@@ -39,6 +39,8 @@ const MONTHS = [
 const QUARTERS = ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dec)'];
 
 const SOURCE_COLORS = {
+  parkingRevenue: '#F97316',
+  parkingRevenue: '#F97316',
   bookingRevenue: '#3B82F6', // blue-500
   serviceRevenue: '#A855F7', // purple-500
   packageRevenue: '#FACC15', // yellow-400
@@ -448,7 +450,7 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
     ? t('adminPages.revenueUi.cards.total')
     : key === 'refunds'
       ? t('adminPages.revenueUi.refundsDeducted', { defaultValue: 'Refunds (already deducted)' })
-      : t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'}`);
+      : t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : key === 'parkingRevenue' ? 'parking' : 'transfer'}`);
   const [viewMode, setViewMode] = useState('total');
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const points = trend || [];
@@ -496,10 +498,10 @@ function RevenueTrendChart({ trend, granularity, reduceMotion }) {
           {(points.length<=8 || i===0 || i===points.length-1 || i%Math.ceil(points.length/6)===0) && <text x={x(i)} y={height-10} fill="#9AADC0" textAnchor="middle" fontSize="12">{formatPeriodLabel(point.period,granularity,language)}</text>}
           <rect x={x(i)-band/2} y={pad.top} width={band} height={plotHeight} fill="transparent" tabIndex={0} role="img" aria-label={`${point.period}: ${formatCurrency(point.totalRevenue, unavailable)}`} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(i)} onBlur={() => setHoveredIndex(null)} onKeyDown={(event) => {if(event.key==='Escape') setHoveredIndex(null);}} />
         </g>)}
-        {active && <foreignObject x={Math.min(width-300,Math.max(pad.left,x(hoveredIndex)-140))} y={pad.top} width="285" height={viewMode === 'total' ? 100 : 245} pointerEvents="none"><div className="ra-tooltip" role="tooltip"><strong>{tooltipDate}</strong>{tooltipKeys.map((key) => <div key={key}><span>{sourceLabel(key)}</span><b>{formatCurrency(active[key], unavailable)}</b></div>)}</div></foreignObject>}
+        {active && <foreignObject x={Math.min(width-300,Math.max(pad.left,x(hoveredIndex)-140))} y={pad.top} width="285" height={viewMode === 'total' ? 100 : 280} pointerEvents="none"><div className="ra-tooltip" role="tooltip"><strong>{tooltipDate}</strong>{tooltipKeys.map((key) => <div key={key}><span>{sourceLabel(key)}</span><b>{formatCurrency(active[key], unavailable)}</b></div>)}</div></foreignObject>}
       </svg>
     </div> : <EmptyState text={t('adminPages.revenueUi.trend.empty')} />}
-    {viewMode === 'bySource' && <div className="ra-chart-legend ra-trend-legend" aria-label={t('adminPages.revenueUi.source.title')}>{Object.keys(SOURCE_COLORS).map((key) => <span key={key}><i style={{background:SOURCE_COLORS[key]}} />{t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'}`)}</span>)}</div>}
+    {viewMode === 'bySource' && <div className="ra-chart-legend ra-trend-legend" aria-label={t('adminPages.revenueUi.source.title')}>{Object.keys(SOURCE_COLORS).map((key) => <span key={key}><i style={{background:SOURCE_COLORS[key]}} />{t(`adminPages.revenueUi.source.${key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : key === 'parkingRevenue' ? 'parking' : 'transfer'}`)}</span>)}</div>}
     <span className="sr-only">{reduceMotion ? t('adminPages.revenueUi.reducedMotion', { defaultValue: 'Reduced motion enabled.' }) : ''}</span>
   </section>;
 }
@@ -516,9 +518,9 @@ function RevenueBySourceSection({ summary }) {
   return <section className="ra-sources"><div className="ra-section-heading"><div><h2><BarChart3 size={20} />{t('adminPages.revenueUi.source.title')}</h2><p>{t('adminPages.revenueUi.source.description', { defaultValue: 'Same selected period; refunds already deducted from booking/service.' })}</p></div></div>
     {valid && total > 0 ? <div className="ra-donut-layout"><div className="ra-donut">
       <svg viewBox="0 0 200 200" role="img" aria-label={t('adminPages.revenueUi.source.compositionAria', { defaultValue: 'Revenue composition' })}><circle cx="100" cy="100" r="78" fill="none" stroke="#16212A" strokeWidth="26" />
-        {sources.map((key,index) => {const length=Number(summary[key])/total*100; const start=sources.slice(0,index).reduce((sum,item)=>sum+Number(summary[item])/total*100,0); const sourceKey = key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'; return length>0 ? <circle key={key} cx="100" cy="100" r="78" fill="none" stroke={SOURCE_COLORS[key]} strokeWidth="26" pathLength="100" strokeDasharray={`${length} ${100-length}`} strokeDashoffset={-start} transform="rotate(-90 100 100)"><title>{`${t(`adminPages.revenueUi.source.${sourceKey}`)}: ${formatCurrency(summary[key], unavailable)}`}</title></circle> : null;})}
+        {sources.map((key,index) => {const length=Number(summary[key])/total*100; const start=sources.slice(0,index).reduce((sum,item)=>sum+Number(summary[item])/total*100,0); const sourceKey = key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : key === 'parkingRevenue' ? 'parking' : 'transfer'; return length>0 ? <circle key={key} cx="100" cy="100" r="78" fill="none" stroke={SOURCE_COLORS[key]} strokeWidth="26" pathLength="100" strokeDasharray={`${length} ${100-length}`} strokeDashoffset={-start} transform="rotate(-90 100 100)"><title>{`${t(`adminPages.revenueUi.source.${sourceKey}`)}: ${formatCurrency(summary[key], unavailable)}`}</title></circle> : null;})}
       </svg><div><strong>{formatNumber(total, unavailable)}</strong><span>VND</span><small>{t('adminPages.revenueUi.cards.total')}</small></div>
-    </div><div className="ra-source-legend">{sources.map((key) => { const sourceKey = key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : 'transfer'; return <div key={key}><span><i style={{background:SOURCE_COLORS[key]}} />{t(`adminPages.revenueUi.source.${sourceKey}`)}</span><span>{pct(summary[key],total).toFixed(1)}%</span><b>{formatCurrency(summary[key], unavailable)}</b></div>; })}</div></div> : <EmptyState text={valid ? t('adminPages.revenueUi.trend.empty') : t('adminPages.revenueUi.source.empty', { defaultValue: 'Revenue composition unavailable.' })} />}
+    </div><div className="ra-source-legend">{sources.map((key) => { const sourceKey = key === 'bookingRevenue' ? 'booking' : key === 'serviceRevenue' ? 'service' : key === 'packageRevenue' ? 'package' : key === 'parkingRevenue' ? 'parking' : 'transfer'; return <div key={key}><span><i style={{background:SOURCE_COLORS[key]}} />{t(`adminPages.revenueUi.source.${sourceKey}`)}</span><span>{pct(summary[key],total).toFixed(1)}%</span><b>{formatCurrency(summary[key], unavailable)}</b></div>; })}</div></div> : <EmptyState text={valid ? t('adminPages.revenueUi.trend.empty') : t('adminPages.revenueUi.source.empty', { defaultValue: 'Revenue composition unavailable.' })} />}
   </section>;
 }
 
