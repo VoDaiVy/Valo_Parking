@@ -83,7 +83,7 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
     if (isRange) return formatDay(points[0].date) + ' – ' + formatDay(points.at(-1).date)
       + '. Each bar shows the busiest hour of the day. Forecasts are for planning.';
     if (historicalArrivals) return 'Recorded check-ins by hour (Vietnam time). A current occupancy estimate is unavailable.';
-    const date = data.dayOfWeekName + ' (' + data.date + '). ';
+    const date = (data.dayOfWeekName ? data.dayOfWeekName + ', ' : '') + (data.date ? formatDay(data.date) : '') + '. ';
     if (recordedDay) return date + 'Recorded sessions on spaces in the current hourly inventory.';
     if (data.dataQuality?.dataSource === 'historical_sessions') {
       return date + 'Estimate from ' + data.dataQuality.historicalDayCount + ' recent matching weekdays and current reservations.';
@@ -93,20 +93,24 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
 
   return (
     <section className="relative min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#15161A] sm:p-5" aria-label="Occupancy forecast">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2.5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
           <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-gold/15 text-yellow-700 dark:text-gold"><Sparkles size={16} /></span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h4 className="text-sm font-extrabold text-gray-900 dark:text-white">
               {historicalArrivals ? 'Historical vehicle arrivals' : 'AI Occupancy & Peak Times Forecast'}
             </h4>
-            {chart && <p className="mt-0.5 text-xs font-medium text-gray-500 dark:text-gray-400">{subtitle()}</p>}
+            {chart && (
+              <p className="mt-0.5 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={subtitle()}>
+                {subtitle()}
+              </p>
+            )}
           </div>
         </div>
-        <div role="group" aria-label="Forecast period" className="flex max-w-full gap-1 rounded-lg border border-gray-200 p-1 dark:border-white/15">
+        <div role="group" aria-label="Forecast period" className="flex shrink-0 gap-1 rounded-lg border border-gray-200 p-1 dark:border-white/15">
           {PERIODS.map(([value, text]) => (
             <button key={value} type="button" aria-pressed={timeframe === value} onClick={() => setTimeframe(value)}
-              className={'rounded-md px-2.5 py-1.5 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-500 '
+              className={'whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-500 '
                 + (timeframe === value ? 'bg-gold text-charcoal' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10')}>
               {text}
             </button>

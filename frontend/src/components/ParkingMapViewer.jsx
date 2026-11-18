@@ -33,6 +33,10 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
     finalBgColor = '#cffafe'; // cyan-100
     finalBorderColor = '#06b6d4'; // cyan-500
     textColor = '#06b6d4';
+  } else if (isOccupied) {
+    finalBgColor = '#fecdd3'; // rose-200
+    finalBorderColor = '#e11d48'; // rose-600
+    textColor = '#e11d48';
   } else if (isReserved) {
     // Admin / Staff see different borders for VIP types
     if (canViewLicensePlate && el.subscriptionType === 'yearly') {
@@ -49,10 +53,6 @@ const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, is
       finalBorderColor = '#eab308'; // yellow-500
       textColor = '#ca8a04'; // yellow-600
     }
-  } else if (isOccupied) {
-    finalBgColor = '#fecdd3'; // rose-200
-    finalBorderColor = '#e11d48'; // rose-600
-    textColor = '#e11d48';
   } else if (isHeld) {
     finalBgColor = '#ffedd5'; // orange-100
     finalBorderColor = '#f97316'; // orange-500
@@ -131,7 +131,11 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
   // O(1) Lookup Map for Active Sessions
   const sessionMap = useMemo(() => {
     return activeSessions.reduce((acc, curr) => {
-      acc[`${curr.floorId}-${curr.parkingSlot}`] = curr;
+      const fId = curr.floorId || curr.floorID;
+      const sCode = curr.parkingSlot || curr.slotCode || curr.slotNumber;
+      if (fId && sCode) {
+        acc[`${String(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
+      }
       return acc;
     }, {});
   }, [activeSessions]);
@@ -151,7 +155,11 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
 
   const dbSlotMap = useMemo(() => {
     return dbSlots.reduce((acc, curr) => {
-      acc[`${curr.floorID}-${curr.slotNumber}`] = curr;
+      const fId = curr.floorID || curr.floorId;
+      const sCode = curr.slotNumber || curr.slotCode;
+      if (fId && sCode) {
+        acc[`${String(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
+      }
       return acc;
     }, {});
   }, [dbSlots]);
@@ -159,13 +167,17 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
   const availableSlotMap = useMemo(() => {
     if (!availableSlots) return null;
     return availableSlots.reduce((acc, curr) => {
-      acc[`${curr.floorId}-${curr.slotCode}`] = curr;
+      const fId = curr.floorId || curr.floorID;
+      const sCode = curr.slotCode || curr.slotNumber;
+      if (fId && sCode) {
+        acc[`${String(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
+      }
       return acc;
     }, {});
   }, [availableSlots]);
 
   const liveSlotMap = useMemo(() => liveSlots && new Map(
-    liveSlots.map((slot) => [`${slot.floorId}-${String(slot.id).trim().toUpperCase()}`, slot]),
+    liveSlots.map((slot) => [`${String(slot.floorId)}-${String(slot.id || slot.slotCode || slot.slotNumber).trim().toUpperCase()}`, slot]),
   ), [liveSlots]);
 
   const handleSelectSlot = useCallback((slot, floorId) => {
@@ -315,13 +327,15 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       if (el.type && el.type.startsWith('slot')) {
         const hasName = !!el.name && el.name.trim() !== '';
         const slotCode = hasName ? el.name : el.id;
-        const sessionKey = `${floorId}-${slotCode}`;
-        const occupiedSession = sessionMap[sessionKey];
+        const normalizedSlotCode = String(slotCode).trim().toUpperCase();
+        const normalizedFloorId = String(floorId);
+        const lookupKey = `${normalizedFloorId}-${normalizedSlotCode}`;
+        const occupiedSession = sessionMap[lookupKey];
         const isSelected = Array.isArray(selectedSlotId)
-          ? selectedSlotId.includes(`${floorId}:${slotCode}`)
-          : (selectedSlotId === slotCode || selectedSlotId === `${floorId}:${slotCode}`);
+          ? selectedSlotId.includes(`${floorId}:${slotCode}`) || selectedSlotId.includes(`${normalizedFloorId}:${normalizedSlotCode}`)
+          : (selectedSlotId === slotCode || selectedSlotId === `${floorId}:${slotCode}` || selectedSlotId === `${normalizedFloorId}:${normalizedSlotCode}`);
         if (liveSlotMap) {
-          const slot = liveSlotMap.get(`${floorId}-${String(slotCode).trim().toUpperCase()}`);
+          const slot = liveSlotMap.get(lookupKey);
           const reason = slot?.availabilityReason || 'unknown';
           const isBookable = slot && isLiveParkingSlotBookable(slot, vehicleType === 'electric_car');
           return (
@@ -344,10 +358,10 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
           );
         }
 
-        const dbSlot = dbSlotMap[`${floorId}-${slotCode}`];
+        const dbSlot = dbSlotMap[lookupKey];
         const isMaintenance = dbSlot?.status === 'maintenance';
 
-        const availableSlot = availableSlotMap?.[`${floorId}-${slotCode}`];
+        const availableSlot = availableSlotMap?.[lookupKey];
         const canSelectDespiteLiveState = allowScheduledAvailabilityOverride
           && Boolean(availableSlotMap && availableSlot);
         const isOccupied = Boolean(occupiedSession) || (
@@ -365,7 +379,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
 
         let isHeld = false;
         if (activeHolds) {
-          isHeld = activeHolds.some(h => String(h.floorId) === String(floorId) && String(h.slotCode).toUpperCase() === String(slotCode).toUpperCase());
+          isHeld = activeHolds.some(h => String(h.floorId) === normalizedFloorId && String(h.slotCode).trim().toUpperCase() === normalizedSlotCode);
         }
         if (!isHeld && dbSlot?.status === 'booked' && !canSelectDespiteLiveState && !isOccupied && !isReserved) {
           isHeld = true;
@@ -373,7 +387,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
 
         if (availableSlotMap) {
           // If availableSlots logic is active, unavailable means it's not in the map
-          if (!availableSlotMap[`${floorId}-${slotCode}`] && !isOccupied && !isHeld && !isMaintenance && !isReserved) {
+          if (!availableSlotMap[lookupKey] && !isOccupied && !isHeld && !isMaintenance && !isReserved) {
             isHeld = true;
           }
         }
