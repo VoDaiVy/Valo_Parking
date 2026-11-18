@@ -3,6 +3,7 @@ const { randomUUID } = require('crypto');
 const Program = require('../models/SpendRewardProgram');
 const Ledger = require('../models/SpendRewardLedger');
 const Month = require('../models/SpendRewardMonth');
+const Quota = require('../models/SpendRewardQuota');
 const EmailJob = require('../models/RewardEmailJob');
 const UserVoucher = require('../models/UserVoucher');
 const User = require('../models/User');
@@ -60,6 +61,15 @@ async function applySpend(event, now = new Date(), app) {
         if (!program.enabled || delta <= 0) return;
         const tier = selectTier(program.tiers, state.total, state.highestAwardedThreshold);
         if (!tier) return;
+        // Lock before counting. Concurrent transactions retry with a fresh snapshot.
+        // Count existing vouchers so limits also apply to awards issued before this feature.
+        await Quota.updateOne({ _id: `${month}:${tier.threshold}` }, { $inc: { version: 1 } }, {
+          upsert: true, session, setDefaultsOnInsert: false,
+        });
+        if (tier.recipientLimit != null) {
+          const issued = await UserVoucher.countDocuments({ source: 'spending', rewardMonth: month, rewardThreshold: tier.threshold }).session(session);
+          if (issued >= tier.recipientLimit) return;
+        }
         state.highestAwardedThreshold = tier.threshold;
         await state.save({ session });
         const rewardKey = `${event.userId}:${month}:${tier.threshold}`;
@@ -97,6 +107,7 @@ async function applySpend(event, now = new Date(), app) {
 
 async function reconcileSpending(now = new Date(), app) {
   const program = await getProgram();
+  await UserVoucher.updateMany({ source: 'welcome', status: 'available', expiresAt: { $lte: now } }, { $set: { status: 'expired' } });
   if (!program.startsAt) return;
   // Read durable settlement records, not HTTP callbacks. Replays and restarts are safe.
   // Include cancelled/refunded records so previous credit can be reversed.

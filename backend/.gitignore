@@ -38,6 +38,11 @@ coverage/
 tests/
 __tests__/
 *.test.*
+
+# Keep the auto rewards regression suite while leaving other local tests ignored.
+!/src/tests/
+/src/tests/*
+!/src/tests/autoRewards.integration.test.js
 *.spec.*
 
 # Temp files

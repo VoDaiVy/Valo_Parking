@@ -42,7 +42,7 @@ async function validateActiveService(template) {
 
 exports.listTemplates = async (_req, res, next) => {
   try {
-    const templates = await VoucherTemplate.find()
+    const templates = await VoucherTemplate.find({ archivedAt: null })
       .populate('serviceId', 'name price timeCost isActive')
       .sort({ createdAt: -1 });
     res.json({ success: true, data: templates });

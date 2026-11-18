@@ -1059,6 +1059,11 @@
   "Reviewed": "Đã đánh giá",
   "Reply available": "Có phản hồi",
   "Rate your experience": "Đánh giá trải nghiệm",
+
+  "Welcome reward": "Ưu đãi chào mừng",
+  "Monthly allocation filled": "Đã hết suất trong tháng",
+  "No higher reward tier has vouchers available this month.": "Các mốc thưởng cao hơn đã hết suất trong tháng này."
+
   "Choose membership services": "Chọn dịch vụ membership",
   "Each selected service reserves 1 included use. Staff will start the service at the parking lot.": "Mỗi dịch vụ được chọn sẽ giữ 1 lượt trong gói. Nhân viên sẽ bắt đầu thực hiện tại bãi xe.",
   "New selections are disabled. You can still remove pending services.": "Hiện không thể chọn thêm dịch vụ. Bạn vẫn có thể bỏ dịch vụ đang chờ.",
@@ -1157,4 +1162,5 @@
   "Started": "Bắt đầu",
   "Total services": "Tổng dịch vụ",
   "Pending approval": "Chờ tiếp nhận"
+  "Unable to save service selection.": "Không thể lưu lựa chọn dịch vụ."
 }

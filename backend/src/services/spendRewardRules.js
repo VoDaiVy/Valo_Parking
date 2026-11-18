@@ -10,10 +10,22 @@ const validateProgram = (input) => {
   if (!input || typeof input.enabled !== 'boolean' || !Number.isSafeInteger(input.revision) || input.revision < 0) fail('Invalid program settings or revision');
   const validityDays = input.validityDays === undefined ? 7 : input.validityDays;
   if (!Number.isSafeInteger(validityDays) || validityDays < 1 || validityDays > 365) fail('Voucher validity must be between 1 and 365 days');
+  const welcome = {};
+  if (input.welcomeEnabled !== undefined) {
+    if (typeof input.welcomeEnabled !== 'boolean') fail('Invalid welcome voucher setting');
+    welcome.welcomeEnabled = input.welcomeEnabled;
+  }
+  if (input.welcomeValidityDays !== undefined) {
+    if (!Number.isSafeInteger(input.welcomeValidityDays) || input.welcomeValidityDays < 1 || input.welcomeValidityDays > 365) fail('Welcome voucher validity must be between 1 and 365 days');
+    welcome.welcomeValidityDays = input.welcomeValidityDays;
+  }
   if (!Array.isArray(input.tiers) || input.tiers.length < 1 || input.tiers.length > 10) fail('Configure between 1 and 10 spending milestones');
   const tiers = input.tiers.map((tier) => {
     if (!tier || typeof tier !== 'object') fail('Invalid milestone');
     const result = {};
+    const recipientLimit = tier.recipientLimit ?? null;
+    if (recipientLimit !== null && (!Number.isSafeInteger(recipientLimit) || recipientLimit < 1 || recipientLimit > 1000000)) fail('Recipient limit must be between 1 and 1,000,000, or null for unlimited');
+    result.recipientLimit = recipientLimit;
     const rewardType = tier.rewardType || 'FIXED_DISCOUNT';
     if (!['FIXED_DISCOUNT', 'PERCENT_DISCOUNT'].includes(rewardType)) fail('Invalid reward type');
     result.rewardType = rewardType;
@@ -35,7 +47,7 @@ const validateProgram = (input) => {
     return result;
   }).sort((a, b) => a.threshold - b.threshold);
   if (new Set(tiers.map((tier) => tier.threshold)).size !== tiers.length) fail('Spending milestones must be unique');
-  return { enabled: input.enabled, validityDays, tiers };
+  return { enabled: input.enabled, validityDays, tiers, ...welcome };
 };
 const selectTier = (tiers, total, highest) => [...tiers].sort((a, b) => b.threshold - a.threshold)
   .find((tier) => tier.threshold <= total && tier.threshold > highest) || null;

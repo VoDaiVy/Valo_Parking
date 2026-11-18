@@ -5,8 +5,8 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const userVoucherSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'VoucherTemplate', required: function () { return this.source !== 'spending'; } },
-    source: { type: String, enum: ['loyalty', 'spending', 'manual'], default: 'loyalty' },
+    templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'VoucherTemplate', required: function () { return !['spending', 'welcome'].includes(this.source); } },
+    source: { type: String, enum: ['loyalty', 'spending', 'manual', 'welcome'], default: 'loyalty' },
     rewardKey: { type: String },
     rewardMonth: String,
     rewardThreshold: Number,
@@ -17,7 +17,7 @@ const userVoucherSchema = new mongoose.Schema(
       pointCost: { type: Number, required: true, min: 0 },
       discountAmount: { type: Number, min: 0, default: 0 },
       minimumAmount: { type: Number, min: 0, default: 0 },
-      discountPercent: { type: Number, default: null, min: 1, max: 100, validate: Number.isInteger },
+      discountPercent: { type: Number, default: null, min: 1, max: 100, validate: (value) => value == null || Number.isInteger(value) },
       serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', default: null },
     },
     status: {
@@ -43,6 +43,7 @@ userVoucherSchema.pre('validate', function setExpiry(next) {
 userVoucherSchema.index({ userId: 1, status: 1 });
 userVoucherSchema.index({ rewardKey: 1 }, { unique: true, partialFilterExpression: { rewardKey: { $type: 'string' } } });
 userVoucherSchema.index({ bookingId: 1 }, { sparse: true });
+userVoucherSchema.index({ source: 1, rewardMonth: 1, rewardThreshold: 1 });
 
 userVoucherSchema.statics.THIRTY_DAYS_MS = THIRTY_DAYS_MS;
 
