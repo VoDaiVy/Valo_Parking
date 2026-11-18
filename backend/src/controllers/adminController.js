@@ -294,6 +294,7 @@ exports.syncAllVehicleModels = async (req, res, next) => {
 exports.listUsers = async (req, res, next) => {
   try {
     const users = await User.aggregate([
+      { $project: { password: 0, expoPushTokens: 0 } },
       {
         $lookup: {
           from: "userdetails",

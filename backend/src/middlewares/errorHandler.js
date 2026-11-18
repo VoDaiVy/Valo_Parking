@@ -66,6 +66,7 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     message,
     ...(typeof err.code === 'string' && { code: err.code }),
+    ...(err.code === 'PACKAGE_PRICING_REVIEW_REQUIRED' && { details: err.details }),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };

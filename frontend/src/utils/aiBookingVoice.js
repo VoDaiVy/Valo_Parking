@@ -1,3 +1,5 @@
+import { detectBookingInputLanguage, hasMixedBookingSpeech } from './aiBookingLanguage.js';
+
 const speechLocale = (language) => (language === 'en' || language === 'en-US' ? 'en-US' : 'vi-VN');
 
 const englishParkingTerms = /\b(?:book|booking|reserve|reservation|park|parking|spot|space|slot|vehicle|car|license|plate|availability|available|wallet|balance|fee|price|location|where|cancel|change|modify|confirm|tomorrow|today|morning|afternoon|evening|night|floor|entry|exit|arrive|leave)\b/gi;
@@ -141,7 +143,8 @@ const selectPlateVoiceTranscript = (alternatives, language) => [...alternatives]
 
 export function createAiBookingRecognition(browser, {
   onTranscript, onError, onEnd, continuous = false, language = 'vi', expectLicensePlate = false,
-  contextPhrases = [],
+  contextPhrases = [], automaticLanguage = false, onClarification = () => {},
+  onAudioStart, onSpeechStart,
 }) {
   const SpeechRecognition = browser?.SpeechRecognition || browser?.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
@@ -150,6 +153,8 @@ export function createAiBookingRecognition(browser, {
   recognition.continuous = continuous;
   recognition.interimResults = false;
   recognition.maxAlternatives = 5;
+  recognition.onaudiostart = onAudioStart;
+  recognition.onspeechstart = onSpeechStart;
   recognition.onresult = (event) => {
     for (let index = event.resultIndex || 0; index < (event.results?.length || 0); index += 1) {
       const result = event.results[index];
@@ -157,9 +162,27 @@ export function createAiBookingRecognition(browser, {
       const rawAlternatives = Array.from(result || []).filter((alternative) => (
         String(alternative?.transcript || '').trim()
       ));
-      const transcript = expectLicensePlate
+      const detectedLanguage = automaticLanguage
+        ? detectBookingInputLanguage(rawAlternatives[0]?.transcript || '', language).language : language;
+      if (automaticLanguage && hasMixedBookingSpeech(rawAlternatives[0]?.transcript)) {
+        onClarification(); break;
+      }
+      // Native alternatives may disagree on business data. Never choose the
+      // alternative merely because it resembles a stored plate or booking.
+      if (automaticLanguage && (!rawAlternatives.length || !Number.isFinite(Number(rawAlternatives[0].confidence)) || Number(rawAlternatives[0].confidence) < 0.8)) {
+        onClarification(); break;
+      }
+      const numbers = (text) => String(text || '').match(/\d+(?:[.:/-]\d+)*/g)?.join('|') || '';
+      const plates = (text) => (String(text || '').match(/\b\d{2}[ .-]*[a-z]{1,2}[ .-]*\d{3,5}(?:\.\d{2})?\b/gi) || [])
+        .map((plate) => plate.replace(/[^a-z0-9]/gi, '').toUpperCase()).join('|');
+      if (automaticLanguage && rawAlternatives.some((alternative) => Number(alternative.confidence) >= 0.8
+        && (numbers(alternative.transcript) !== numbers(rawAlternatives[0]?.transcript)
+          || plates(alternative.transcript) !== plates(rawAlternatives[0]?.transcript)))) {
+        onClarification(); break;
+      }
+      const transcript = automaticLanguage ? String(rawAlternatives[0]?.transcript || '').trim() : expectLicensePlate
         ? selectPlateVoiceTranscript(rawAlternatives, language)
-        : language === 'en'
+        : detectedLanguage === 'en'
           ? selectEnglishVoiceTranscript(rawAlternatives, contextPhrases)
           : selectVietnameseVoiceTranscript(rawAlternatives, contextPhrases);
       if (transcript) { onTranscript(transcript); break; }
@@ -181,7 +204,7 @@ export function createAiBookingRecognition(browser, {
 
 // Keeps a single user-initiated voice conversation active across recognition
 // timeouts. Recognition pauses while the request and spoken reply are handled.
-export function createAiBookingVoiceSession(browser, { onTranscript, onError, onListeningChange }, restartDelayMs = 180) {
+export function createAiBookingVoiceSession(browser, { onTranscript, onError, onListeningChange, automaticLanguage = false, onClarification = () => {} }, restartDelayMs = 180) {
   if (!browser?.SpeechRecognition && !browser?.webkitSpeechRecognition) return null;
   let active = false;
   let paused = false;
@@ -202,10 +225,16 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
     const next = createAiBookingRecognition(browser, {
       continuous: true,
       language,
+      automaticLanguage,
       expectLicensePlate,
       contextPhrases,
+      onClarification: () => {
+        if (!active || paused || recognition !== next) return;
+        paused = true; try { next.stop(); } catch { /* Already stopped. */ }
+        onClarification();
+      },
       onTranscript: (text) => {
-        if (!active || paused) return;
+        if (!active || paused || recognition !== next) return;
         const normalized = String(text).trim().toLowerCase();
         const now = Date.now();
         if (normalized === lastTranscript && now - lastTranscriptAt < 1500) return;
@@ -216,8 +245,11 @@ export function createAiBookingVoiceSession(browser, { onTranscript, onError, on
         onTranscript(text);
       },
       onError: (message, code) => {
-        if (!active) return;
-        if (['no-speech', 'aborted', 'network', 'bad-grammar'].includes(code)) return;
+        if (!active || paused || recognition !== next) return;
+        if (code === 'aborted') return;
+        if (['no-speech', 'network', 'bad-grammar'].includes(code)) {
+          paused = true; onClarification(); return;
+        }
         paused = true;
         if (['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(code)) active = false;
         onError(message);
@@ -292,15 +324,18 @@ const spokenCode = (value) => String(value || '').replace(/[^A-Z0-9]/gi, '')
 
 function formatEnglishBookingSpeech(value) {
   return String(value || '').trim()
-    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_, hour, minute) => {
+    .replace(/(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:VND|đồng|đ|₫)(?=\s|[.,;!?]|$)/gi,
+      (_, amount) => `${amount.replace(/[.,]/g, '')} Vietnamese dong`)
+    .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*(?:am|pm)\b)/gi, (_, hour, minute) => {
       const date = new Date(`2000-01-01T${String(hour).padStart(2, '0')}:${minute}:00`);
       return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(date);
     })
-    .replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g, (_, day, month, year) => (
-      new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
-        .format(new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00Z`))
-    ))
-    .replace(/\b([0-9]{2}[A-Z]{1,2}[0-9]{4,6})\b/g, (plate) => spokenCode(plate))
+    .replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g, (original, day, month, year) => {
+      const date = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00Z`);
+      if (!Number.isFinite(date.getTime()) || date.getUTCDate() !== Number(day) || date.getUTCMonth() + 1 !== Number(month)) return original;
+      return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(date);
+    })
+    .replace(/\b([0-9]{2}[ .-]*[A-Z]{1,2}[ .-]*[0-9]{3,5}(?:\.[0-9]{2})?)\b/gi, (plate) => spokenCode(plate))
     .replace(/\s*[\u00b7•]\s*/g, ', ')
     .replace(/^\s*-\s*/gm, '')
     .replace(/\n+/g, '. ')
@@ -352,16 +387,17 @@ export function formatAiBookingSpeech(value, language = 'vi') {
     .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, (_, hour, minute) => spokenTime(hour, minute))
     .replace(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g,
       (_, day, month, year) => `ngày ${Number(day)} tháng ${Number(month)} năm ${year}`)
-    .replace(/(\d{1,3}(?:\.\d{3})+|\d+)\s*(?:đ|VND)(?=\s|[.,;!?]|$)/gi,
-      (_, amount) => `${amount.replace(/\./g, '')} đồng`)
-    .replace(/\b([Xx]e)\s+([0-9]{2}[A-Z]{1,2}[0-9]{4,6})\b/g,
-      (_, prefix, plate) => `${prefix} ${spokenCode(plate)}`)
+    .replace(/(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:đ|VND)(?=\s|[.,;!?]|$)/gi,
+      (_, amount) => `${amount.replace(/[.,]/g, '')} đồng`)
+    .replace(/\b([0-9]{2}[ .-]*[A-Z]{1,2}[ .-]*[0-9]{3,5}(?:\.[0-9]{2})?)\b/gi,
+      (plate) => spokenCode(plate))
     .replace(/([Ôô])\s+([A-Z]{1,2}\d{1,4})\b/g,
       (_, prefix, code) => `${prefix} ${spokenCode(code)}`)
     .replace(/\s*[\u00b7•]\s*/g, ', ')
     .replace(/^\s*-\s*/gm, '')
     .replace(/\n+/g, '. ')
     .replace(/\s+/g, ' ')
+    .replace(/ngày\s+ngày/giu, 'ngày')
     .replace(/\.{2,}/g, '.')
     .trim();
   return message;
@@ -376,7 +412,7 @@ export function createConciseAiBookingSpeech(value, language = 'vi', maximumLeng
     .trim();
   if (!text || text.length <= maximumLength) return text;
 
-  const sentences = text.match(/[^.!?]+[.!?]?/g)?.map((item) => item.trim()).filter(Boolean) || [text];
+  const sentences = text.split(/(?<=[.!?])\s+(?!\d)/).map((item) => item.trim()).filter(Boolean);
   const selected = [];
   let length = 0;
   for (const sentence of sentences) {
@@ -384,8 +420,7 @@ export function createConciseAiBookingSpeech(value, language = 'vi', maximumLeng
     const nextLength = length + (length ? 1 : 0) + sentence.length;
     if (selected.length && nextLength > maximumLength) break;
     if (!selected.length && sentence.length > maximumLength) {
-      const cutoff = sentence.slice(0, maximumLength - 1).lastIndexOf(' ');
-      selected.push(`${sentence.slice(0, Math.max(cutoff, maximumLength - 30)).trim()}…`);
+      // Never announce a truncated amount, plate, date or booking status.
       break;
     }
     selected.push(sentence);
@@ -399,11 +434,27 @@ export function createConciseAiBookingSpeech(value, language = 'vi', maximumLeng
   return `${summary} ${suffix}`.trim();
 }
 
-// Kept as a public helper for tests and callers; every response uses one
-// language-specific utterance to avoid pauses caused by switching voices.
-export function splitAiBookingSpeechSegments(value, language = 'vi') {
+// Read the entire reply in bounded utterances. Keep grouped amounts, dates,
+// individual words and spelled plate/code sequences intact at boundaries.
+export function splitAiBookingSpeechSegments(value, language = 'vi', maximumLength = 240) {
   const text = formatAiBookingSpeech(value, language);
-  return text ? [{ text, lang: speechLocale(language) }] : [];
+  if (!text) return [];
+  const limit = Number.isFinite(maximumLength) ? Math.max(80, maximumLength) : 240;
+  const tokens = text.match(/\b(?:[A-Z0-9]\s+){2,}[A-Z0-9]\b|\S+(?:\s+(?:VND|USD|EUR|đồng|₫)\b)?/gi) || [];
+  const segments = [];
+  let current = '';
+  for (const token of tokens) {
+    if (current && current.length + 1 + token.length > limit) {
+      segments.push({ text: current, lang: speechLocale(language) }); current = '';
+    }
+    current = current ? `${current} ${token}` : token;
+    // Natural sentence endings also help the speech engine finish reliably.
+    if (/[.!?]$/.test(token)) {
+      segments.push({ text: current, lang: speechLocale(language) }); current = '';
+    }
+  }
+  if (current) segments.push({ text: current, lang: speechLocale(language) });
+  return segments;
 }
 
 export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}) {
@@ -411,6 +462,12 @@ export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}
   const Utterance = browser?.SpeechSynthesisUtterance;
   if (!synthesis || !Utterance) return null;
   let active = null;
+  let generation = 0;
+  let startTimer = null;
+  const clearStartTimer = () => {
+    if (startTimer !== null) browser.clearTimeout?.(startTimer);
+    startTimer = null;
+  };
   const matchingVoice = (language) => {
     const voices = synthesis.getVoices?.() || [];
     const locale = language === 'en' ? /^en[-_]/i : /^vi[-_]/i;
@@ -422,29 +479,53 @@ export function createAiBookingSpeaker(browser, { onStart, onEnd, onError } = {}
   };
   return {
     speak(value, language = 'vi') {
-      const message = String(value || '').trim();
+      const segments = splitAiBookingSpeechSegments(value, language);
+      const token = ++generation;
+      clearStartTimer();
       if (active) {
         active = null;
         synthesis.cancel();
       }
-      if (!message) return;
-      const utterance = new Utterance(formatAiBookingSpeech(message, language));
-      utterance.lang = speechLocale(language);
-      utterance.rate = language === 'en' ? 1.05 : 1.18;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-      const selectedVoice = matchingVoice(language);
-      if (selectedVoice) utterance.voice = selectedVoice;
-      active = utterance;
-      utterance.onstart = () => { if (active === utterance) onStart?.(); };
-      utterance.onend = () => { if (active === utterance) { active = null; onEnd?.(); } };
-      utterance.onerror = () => { if (active === utterance) { active = null; onError?.(); } };
-      try { synthesis.speak(utterance); }
-      catch { active = null; onError?.(); }
+      if (!segments.length) return;
+      let index = 0, started = false;
+      const next = () => {
+        if (token !== generation) return;
+        if (index >= segments.length) { active = null; onEnd?.(); return; }
+        const segment = segments[index++];
+        const utterance = new Utterance(segment.text);
+        utterance.lang = segment.lang;
+        utterance.rate = language === 'en' ? 1.05 : 1.18;
+        utterance.pitch = 1; utterance.volume = 1;
+        const selectedVoice = matchingVoice(language);
+        if (selectedVoice) utterance.voice = selectedVoice;
+        active = utterance;
+        const isCurrent = () => token === generation && active === utterance;
+        const fail = (error) => {
+          if (!isCurrent()) return;
+          clearStartTimer();
+          active = null; generation++;
+          synthesis.cancel();
+          onError?.(error, language);
+        };
+        utterance.onstart = () => {
+          if (!isCurrent()) return;
+          clearStartTimer();
+          if (!started) { started = true; onStart?.(); }
+        };
+        utterance.onend = () => { if (isCurrent()) { clearStartTimer(); next(); } };
+        utterance.onerror = fail;
+        try {
+          if (browser.setTimeout && browser.clearTimeout) startTimer = browser.setTimeout(() => fail({ error: 'start-timeout' }), 12000);
+          synthesis.speak(utterance);
+          if (synthesis.paused) synthesis.resume?.();
+        } catch (error) { fail(error); }
+      };
+      next();
     },
     cancel() {
       if (!active) return;
-      active = null;
+      active = null; generation++;
+      clearStartTimer();
       synthesis.cancel();
       onEnd?.();
     },

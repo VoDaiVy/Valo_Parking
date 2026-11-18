@@ -13,6 +13,7 @@ import { useSocket } from "../../hooks/useSocket";
 import { DEFAULT_TEMPLATES } from "../../lib/notifications/types";
 import * as notifApi from "../../services/notificationService";
 import AdminSelect from "../../components/Admin/AdminSelect";
+import { useLanguage } from "../../i18n/hooks/useLanguage";
 
 const TABS = [
   { key: "live", label: "Live feed", icon: Bell },
@@ -92,6 +93,7 @@ function StatCard({ label, value, icon: Icon }) {
 }
 
 export default function NotificationManagement() {
+  const { t } = useLanguage();
   const socket = useSocket();
   const [activeTab, setActiveTab] = useState("live");
   const [liveNotifications, setLiveNotifications] = useState([]);
@@ -285,9 +287,9 @@ export default function NotificationManagement() {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-yellow-300">
-              <Bell size={12} /> Notifications
+              <Bell size={12} /> {t('adminPages.notifications.title')}
             </div>
-            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">Manage notifications</h1>
+            <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">{t('adminPages.notifications.title')}</h1>
           </div>
           <button
             type="button"
@@ -295,7 +297,7 @@ export default function NotificationManagement() {
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:text-yellow-500 hover:border-yellow-500/40 transition"
           >
             <Inbox size={16} />
-            Refresh
+            {t('common.refresh')}
           </button>
         </div>
 

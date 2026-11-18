@@ -2075,6 +2075,8 @@ exports.kioskExitScan = async (req, res, next) => {
       });
     }
 
+    Session.assertNoActiveServiceJobs(session);
+
     const now = new Date();
     let pricing = await pricingEngine.calculatePrice(session.checkInTime, now);
 
@@ -2407,6 +2409,8 @@ exports.kioskCheckout = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy phiên đỗ xe hoạt động' });
     }
 
+    Session.assertNoActiveServiceJobs(session);
+
     if (typeof req.body.qrPayload === 'string' && /^(VALO_PASS|VALO_BOOKING):/.test(req.body.qrPayload.trim())) {
       req.body.qrPayload = req.body.qrPayload.trim();
       const ticket = await parkingPassService.resolveParkingCredential(req.body.qrPayload);
@@ -2533,20 +2537,6 @@ exports.kioskCheckout = async (req, res, next) => {
           session.userId = walletOwnerId;
         }
 
-        if (!booking) {
-          await walletService.debitWallet(
-            walletOwnerId,
-            amountToPay,
-            `Thanh toán Check-out phát sinh - Biển số ${session.licensePlate}`,
-            {
-              refSource: 'parking',
-              refSourceId: session._id,
-              idempotencyKey: booking
-                ? `booking:${booking._id}:session:${session._id}:kiosk-extra`
-                : `session:${session._id}:kiosk-extra`,
-            }
-          );
-        }
         session.paymentStatus = 'paid';
       } else if (paymentMethod === 'vietqr') {
         if (req.parkingPassAction || req.body.useCheckoutAttempt) {
@@ -2787,7 +2777,7 @@ exports.kioskCheckout = async (req, res, next) => {
           }
 
           const completedSession = await Session.findOneAndUpdate(
-            { _id: session._id, status: 'active' },
+            Session.checkoutFilter(session._id),
             {
               status: 'completed',
               checkOutTime: now,
@@ -2801,7 +2791,7 @@ exports.kioskCheckout = async (req, res, next) => {
             { new: true, session: pauseSession }
           );
           if (!completedSession) {
-            throw Object.assign(new Error('Parking session is no longer active'), {
+            throw Object.assign(new Error('Parking session changed or has services in progress. Refresh before checking out.'), {
               statusCode: 409,
             });
           }
@@ -2861,7 +2851,7 @@ exports.kioskCheckout = async (req, res, next) => {
               if (!paid.modifiedCount) throw Object.assign(new Error('Payment already settled'), { statusCode: 409 });
             }
             const updatedSession = await Session.findOneAndUpdate(
-              { _id: session._id, status: 'active' },
+              Session.checkoutFilter(session._id),
               {
                 status: 'completed',
                 checkOutTime: now,
@@ -2876,7 +2866,7 @@ exports.kioskCheckout = async (req, res, next) => {
               { new: true, session: mongoSession }
             );
             if (!updatedSession) {
-              throw Object.assign(new Error('Parking session is no longer active'), {
+              throw Object.assign(new Error('Parking session changed or has services in progress. Refresh before checking out.'), {
                 statusCode: 409,
               });
             }
@@ -2899,7 +2889,7 @@ exports.kioskCheckout = async (req, res, next) => {
         await transaction.withTransaction(async () => {
           await assertCredentialCurrent(req, transaction);
           const updated = await Session.findOneAndUpdate(
-            { _id: session._id, status: 'active' },
+            Session.checkoutFilter(session._id),
             {
               $set: {
                 status: 'completed',
@@ -2907,6 +2897,7 @@ exports.kioskCheckout = async (req, res, next) => {
                 totalPrice: refundBreakdown?.actualParkingCharge ?? pricing.finalTotal,
                 settledPaidAmount: amountToPay,
                 paymentStatus: session.paymentStatus,
+                ...(walletOwnerId ? { userId: walletOwnerId } : {}),
                 pricingBreakdown: pricing,
                 ...(exitImage_url ? { exitImage_url } : {}),
                 ...(exitCamera ? { exitCamera } : {}),
@@ -2921,9 +2912,22 @@ exports.kioskCheckout = async (req, res, next) => {
               alreadyCompleted = true;
               return;
             }
-            throw Object.assign(new Error('Session already completed'), { statusCode: 409 });
+            throw Object.assign(new Error('Session changed or has services in progress. Refresh before checking out.'), { statusCode: 409 });
           }
           await recordPassCommit(req, updated, transaction);
+          if (amountToPay > 0 && paymentMethod === 'wallet') {
+            await walletService.debitWallet(
+              walletOwnerId,
+              amountToPay,
+              `Parking checkout ${session._id}`,
+              {
+                refSource: 'parking',
+                refSourceId: session._id,
+                idempotencyKey: `session:${session._id}:kiosk-extra`,
+                session: transaction,
+              }
+            );
+          }
           if (verifiedAttempt) {
             const settledAttempt = await CheckoutAttempt.updateOne(
               { _id: verifiedAttempt._id, status: 'paid' },
@@ -3180,10 +3184,7 @@ exports.kioskCheckout = async (req, res, next) => {
 exports.getAllSessions = async (req, res, next) => {
   try {
     const sessions = await Session.find().sort({ checkInTime: -1 });
-    res.status(200).json({
-      success: true,
-      data: sessions,
-    });
+    res.status(200).json({ success: true, data: sessions });
   } catch (error) {
     console.error('Error getting sessions:', error);
     next(error);
@@ -3226,9 +3227,17 @@ exports.getMyHistory = async (req, res, next) => {
       $or: orConditions
     }).sort({ checkInTime: -1 });
 
+    const serviceRequests = await require('../models/MembershipServiceRequest').find({
+      sessionId: { $in: sessions.map((s) => s._id) }, requesterId: req.user._id,
+      status: { $in: ['pending', 'in_progress'] },
+    }).select('sessionId status').lean();
     res.status(200).json({
       success: true,
-      data: sessions,
+      data: sessions.map((s) => ({ ...s.toObject(),
+        canSelectServices: s.type === 'SUBSCRIPTION' && s.status === 'active' && String(s.userId) === String(req.user._id),
+        serviceSummary: { pending: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'pending').length,
+          inProgress: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'in_progress').length },
+      })),
     });
   } catch (error) {
     console.error('Error getting my history:', error);

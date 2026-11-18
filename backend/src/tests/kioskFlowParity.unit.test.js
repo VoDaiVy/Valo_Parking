@@ -671,6 +671,7 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
       assert.ok(debitedArgs);
       assert.equal(String(debitedArgs[0]), String(ownerId));
       assert.equal(debitedArgs[1], 10000);
+      assert.equal(debitedArgs[3].session, fakeMongoSession);
     } finally {
       restore();
     }
@@ -710,4 +711,57 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
       restore();
     }
   });
+
+  test('kioskCheckout rejects active membership service jobs before charging the wallet', async () => {
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439101'), status: 'active',
+      licensePlate: '43B20408', activeServiceJobs: 1,
+    };
+    let debitCalls = 0;
+    const restore = stubMany([
+      [Session, 'findById', () => queryable(activeSession)],
+      [walletService, 'debitWallet', async () => { debitCalls++; }],
+    ]);
+    try {
+      let error;
+      await sessionController.kioskCheckout({
+        user: { _id: oid('507f1f77bcf86cd799439102'), role: 'staff' },
+        body: { sessionId: String(activeSession._id), paymentMethod: 'wallet' },
+      }, createRes(), (err) => { error = err; });
+      assert.equal(error?.statusCode, 409);
+      assert.equal(error?.code, 'MEMBERSHIP_SERVICES_IN_PROGRESS');
+      assert.equal(debitCalls, 0);
+    } finally { restore(); }
+  });
+
+  test('kioskCheckout does not debit when a service starts between quote and completion', async () => {
+    const ownerId = oid('507f1f77bcf86cd799439103');
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439104'), status: 'active',
+      licensePlate: '43B20408', activeServiceJobs: 0, userId: ownerId,
+      type: 'WALK_IN', checkInTime: new Date(Date.now() - 3600000),
+    };
+    let debitCalls = 0;
+    let capturedFilter;
+    const restore = stubMany([
+      [mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession() {} })],
+      [Session, 'findById', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable({ owner: ownerId })],
+      [pricingEngine, 'calculatePrice', async () => ({ finalTotal: 10000 })],
+      [walletService, 'getOrCreateWallet', async () => ({ balance: 50000 })],
+      [walletService, 'debitWallet', async () => { debitCalls++; }],
+      [Session, 'findOneAndUpdate', async filter => { capturedFilter = filter; return null; }],
+    ]);
+    try {
+      let error;
+      await sessionController.kioskCheckout({
+        user: { _id: ownerId, role: 'customer' },
+        body: { sessionId: String(activeSession._id), paymentMethod: 'wallet', checkoutToken: buildCheckoutChallenge(activeSession) },
+      }, createRes(), (err) => { error = err; });
+      assert.equal(error?.statusCode, 409);
+      assert.deepEqual(capturedFilter, Session.checkoutFilter(activeSession._id));
+      assert.equal(debitCalls, 0);
+    } finally { restore(); }
+  });
+
 });

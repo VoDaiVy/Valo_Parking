@@ -59,6 +59,7 @@ export const getFloorSlots = async (id) => {
 export const getLiveMapData = async () => {
   return await apiFetch("/parking-floors/live-map", {
     method: "GET",
+    cache: "no-store",
     headers: getAuthHeaders(),
   });
 };

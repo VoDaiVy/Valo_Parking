@@ -12,7 +12,7 @@ import { sendInternalReport } from "../services/notificationService";
 import { formatDistanceToNow } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { getDashboardDensityClass } from "./staffDensity";
-import { getSafeStaffDeepLink } from "../utils/staffDeepLink";
+import { getIssueReportLink, getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
 import RealtimeGateSpotlightModal from '../components/staff/RealtimeGateSpotlightModal';
@@ -21,6 +21,9 @@ import '../styles/adminTypography.css';
 import '../styles/adminScrolling.css';
 import { scopeStaffTypography } from './staffTypography';
 import '../styles/staffTypography.css';
+import '../styles/staffPanel.css';
+import LanguageSwitch from '../i18n/components/LanguageSwitch';
+import { useLanguage } from '../i18n/hooks/useLanguage';
 import {
   LayoutDashboard,
   Users,
@@ -31,7 +34,6 @@ import {
   BarChart2,
   DollarSign,
   Crown,
-  Layers,
   // Customer icons
   Home,
   User,
@@ -108,6 +110,8 @@ const NAV_CONFIG = {
       to: "/admin/revenue",
     },
     { label: "Vouchers", icon: <Gift size={18} />, to: "/admin/vouchers" },
+    { label: "Customer Feedback", icon: <BookOpen size={18} />, to: "/admin/feedbacks" },
+    { label: "Notifications", icon: <Bell size={18} />, to: "/admin/notifications" },
   ],
   staff: [
     {
@@ -141,6 +145,7 @@ const NAV_CONFIG = {
       icon: <Ticket size={18} />,
       to: "/staff/tickets",
     },
+    { label: "Membership services", icon: <Wrench size={18} />, to: "/staff/membership-services" },
     {
       label: "Subscriptions",
       icon: <Crown size={18} />,
@@ -213,18 +218,55 @@ const getInitials = (name = "") =>
     .join("")
     .toUpperCase();
 
+const NAV_LABEL_KEYS = {
+  Overview: 'nav.overview',
+  'Parking Lots': 'nav.parkingLots',
+  'Account Management': 'nav.accountManagement',
+  'Customer Management': 'nav.customerManagement',
+  'Session Management': 'nav.sessionManagement',
+  'Live Grid Monitor': 'nav.liveGridMonitor',
+  'Gate Control': 'nav.gateControl',
+  'Booking Management': 'nav.bookingManagement',
+  Pricing: 'nav.pricing',
+  'Ticket Packages': 'nav.ticketPackages',
+  Subscriptions: 'nav.subscriptions',
+  Services: 'nav.services',
+  'Membership services': 'staffNav.membershipServices',
+  Policies: 'nav.policies',
+  Vehicles: 'nav.vehicles',
+  'Vehicles & 3D': 'nav.vehicles',
+  'Revenue Analytics': 'nav.revenue',
+  Vouchers: 'nav.vouchers',
+  Home: 'nav.home',
+  Profile: 'nav.profile',
+  Membership: 'nav.membership',
+  'My Vehicles': 'nav.vehicles',
+  Bookings: 'nav.bookings',
+  History: 'nav.history',
+  Wallet: 'nav.wallet',
+  Rewards: 'nav.rewards',
+  Settings: 'nav.settings',
+  'Notification Management': 'nav.notificationManagement',
+};
+
 export default function DashboardLayout() {
+  const { t } = useLanguage();
   const copilotContentRef = useRef(null);
   const navigate = useNavigate();
   const [user, setUser] = useState(() =>
     JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
   );
   const [collapsed, setCollapsed] = useState(false);
+  const [staffDrawerOpen, setStaffDrawerOpen] = useState(false);
+  const staffDrawerRef = useRef(null);
+  const staffMenuRef = useRef(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportContent, setReportContent] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportPriority, setReportPriority] = useState('WARNING');
+  const [reportError, setReportError] = useState('');
   const [failedAvatarUrl, setFailedAvatarUrl] = useState("");
 
   // Hook for notifications
@@ -243,6 +285,35 @@ export default function DashboardLayout() {
 
   const { selectedNotification, openNotification, closeNotification } = useNotificationDetails(markAsRead);
   const role = user?.role;
+  useEffect(() => {
+    if (!staffDrawerOpen) return;
+    const menuButton = staffMenuRef.current;
+    const links = () => [...(staffDrawerRef.current?.querySelectorAll('nav a') || [])];
+    links()[0]?.focus();
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setStaffDrawerOpen(false);
+      if (event.key === 'Tab') {
+        const items = links();
+        const first = items[0];
+        const last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    const closeOnDesktop = () => { if (window.innerWidth >= 1024) setStaffDrawerOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnDesktop);
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnDesktop);
+      menuButton?.focus();
+    };
+  }, [staffDrawerOpen]);
   useLayoutEffect(() => scopeAdminTypography(document.body, role), [role]);
   useLayoutEffect(() => scopeStaffTypography(document.body, role), [role]);
   const densityClass = getDashboardDensityClass(role);
@@ -319,16 +390,21 @@ export default function DashboardLayout() {
   }, [user]);
 
   const handleSendReport = async () => {
-    if (!reportContent.trim()) return;
+    if (!reportContent.trim() || reportLoading) return;
     try {
       setReportLoading(true);
-      const res = await sendInternalReport(reportContent, 'WARNING');
-      if (res.ok) {
+      setReportError('');
+      const res = await sendInternalReport(reportContent, reportPriority);
+      if (res.ok && res.data?.data?._id) {
         setReportModalOpen(false);
         setReportContent("");
+        setReportPriority('WARNING');
+        navigate(`/staff/notifications?incident=${encodeURIComponent(res.data.data._id)}`, { state: { adminNotified: res.data.adminNotified } });
+      } else {
+        setReportError(res.data?.message || 'Unable to submit the report.');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setReportError('Unable to submit the report. Please try again.');
     } finally {
       setReportLoading(false);
     }
@@ -358,7 +434,10 @@ export default function DashboardLayout() {
     <div className={`${densityClass} staff-dashboard-shell h-screen overflow-hidden bg-gray-100 dark:bg-[#0D0D0D] flex font-sans transition-colors duration-300`}>
       {role === "customer" && <NotificationDetailModal notification={selectedNotification} onClose={() => { closeNotification(); notifRef.current?.querySelector("button")?.focus(); }} contextRole="customer" />}
       {/* ══════════ SIDEBAR ══════════ */}
+      {role === 'staff' && staffDrawerOpen && <button type="button" className="staff-drawer-backdrop" aria-label="Close navigation" onClick={() => setStaffDrawerOpen(false)} />}
       <aside
+        ref={staffDrawerRef}
+        data-drawer-open={role === 'staff' ? staffDrawerOpen : undefined}
         className={`
           ${collapsed ? "w-[4.5rem]" : "w-60"}
           staff-dashboard-sidebar ${role === 'staff' && !collapsed ? 'staff-sidebar-expanded' : ''}
@@ -375,7 +454,7 @@ export default function DashboardLayout() {
             alt="Valo Parking"
             className="w-9 h-9 object-contain shrink-0"
           />
-          {!collapsed && (
+          {(!collapsed || (role === 'staff' && staffDrawerOpen)) && (
             <div className="overflow-hidden leading-none">
               <p
                 className="
@@ -400,7 +479,8 @@ export default function DashboardLayout() {
               key={item.to}
               to={item.to}
               id={item.to === '/staff/gate' ? 'sidebar-nav-gate' : undefined}
-              aria-label={role === 'staff' ? item.label : undefined}
+              onClick={role === 'staff' ? () => setStaffDrawerOpen(false) : undefined}
+              aria-label={role === 'staff' ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
               end={item.to.split("/").length === 2}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold
@@ -410,10 +490,10 @@ export default function DashboardLayout() {
                   : `text-gray-500 hover:text-gray-300 hover:bg-white/5 border border-transparent`
                 }`
               }
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
             >
               <span className="shrink-0">{item.icon}</span>
-              {!collapsed && <span className="staff-shell-nav-label truncate">{item.label}</span>}
+                {(!collapsed || (role === 'staff' && staffDrawerOpen)) && <span className="staff-shell-nav-label truncate">{t(NAV_LABEL_KEYS[item.label] || item.label)}</span>}
             </NavLink>
           ))}
         </nav>
@@ -440,15 +520,16 @@ export default function DashboardLayout() {
       </aside>
 
       {/* ══════════ MAIN AREA ══════════ */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="staff-dashboard-main flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="staff-dashboard-topbar h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
+        <header data-notifications-open={role === 'staff' ? notifOpen : undefined} className="staff-dashboard-topbar h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
           {/* Hamburger (mobile) */}
           <button
+            ref={staffMenuRef}
             className="lg:hidden text-gray-500 hover:text-gray-900 dark:hover:text-white"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={role === 'staff' ? (collapsed ? 'Expand navigation' : 'Collapse navigation') : undefined}
-            aria-expanded={role === 'staff' ? !collapsed : undefined}
+            onClick={() => role === 'staff' ? setStaffDrawerOpen((open) => !open) : setCollapsed((c) => !c)}
+            aria-label={role === 'staff' ? 'Open navigation' : undefined}
+            aria-expanded={role === 'staff' ? staffDrawerOpen : undefined}
           >
             <Menu size={20} />
           </button>
@@ -457,6 +538,8 @@ export default function DashboardLayout() {
 
           {/* Right zone */}
           <div className="staff-shell-toolbar flex items-center gap-3">
+            <LanguageSwitch variant="dark" size="sm" />
+
             {/* Role badge */}
             <div
               className={`staff-shell-role-badge flex items-center gap-2 px-3 py-1.5 rounded-lg border ${theme.headerBadgeCls}`}
@@ -492,7 +575,7 @@ export default function DashboardLayout() {
 
             {/* Notifications */}
             <div className="relative" ref={notifRef} onKeyDown={(event) => {
-              if (role === 'customer' && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('button')?.focus(); }
+              if ((role === 'customer' || role === 'staff') && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('button')?.focus(); }
             }}>
               <button
                 onClick={() => setNotifOpen((o) => !o)}
@@ -543,6 +626,8 @@ export default function DashboardLayout() {
                             let dest = null;
                             if (role === 'staff') {
                               dest = getSafeStaffDeepLink(n);
+                            } else if (role === 'admin') {
+                              dest = getIssueReportLink(n, role);
                             }
                             
                             if (dest) {
@@ -645,7 +730,7 @@ export default function DashboardLayout() {
 
       {/* Report Modal */}
       {reportModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="staff-report-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-[#1A1A1A] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -662,15 +747,27 @@ export default function DashboardLayout() {
 
             <div className="p-6">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Describe the issue you are experiencing in detail. This message will be sent directly to the Admin with high priority.
+                Include the location and what happened. Follow Admin instructions in Issue Reports.
               </p>
-
+              <label className="mb-3 block text-sm font-semibold text-gray-700 dark:text-gray-200">
+                Priority
+                <select value={reportPriority} disabled={reportLoading} onChange={e => setReportPriority(e.target.value)}
+                  className="ml-3 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 dark:border-white/10 dark:bg-[#111111]">
+                  <option value="INFO">Normal</option>
+                  <option value="WARNING">High</option>
+                  <option value="ERROR">Urgent</option>
+                </select>
+              </label>
               <textarea
+                aria-label="Issue details"
                 value={reportContent}
                 onChange={(e) => setReportContent(e.target.value)}
+                maxLength={2000}
+                disabled={reportLoading}
                 placeholder="Type your report here..."
                 className="w-full h-32 px-4 py-3 bg-gray-50 dark:bg-[#111111] border border-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 text-gray-900 dark:text-white text-sm resize-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
               />
+              {reportError && <p role="alert" className="mt-2 text-sm text-red-500">{reportError}</p>}
             </div>
 
             <div className="px-6 py-4 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-[#111111] flex justify-end gap-3">

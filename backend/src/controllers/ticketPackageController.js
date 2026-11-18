@@ -1,19 +1,43 @@
 const TicketPackage = require('../models/TicketPackage');
+const { getExplorePackages, getExplorePackage } = require('../services/ticketPackageExploreService');
+const {
+  SELLABLE_PACKAGE_TYPES,
+  getPackageDurationDays,
+  getPackageBenefits,
+} = require('../utils/ticketPackageRules');
+
+exports.getExplorePackages = async (req, res, next) => {
+  try {
+    const data = await getExplorePackages(req.query);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getExplorePackage = async (req, res, next) => {
+  try {
+    const data = await getExplorePackage(req.params.id);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // Get active ticket packages (For Customer/Kiosk)
 exports.getActivePackages = async (req, res) => {
   try {
+    await require('../services/ticketPackageStockService').refreshAll();
     const packages = await TicketPackage.find({
       isActive: true,
-      type: { $in: ['monthly', 'yearly'] },
+      type: { $in: SELLABLE_PACKAGE_TYPES },
     }).sort({ type: -1, price: 1 });
     const pricedPackages = packages.map((pkg) => {
       const base = pkg.toObject();
       const common = {
-        durationMonths: pkg.type === 'yearly' ? 12 : 1,
-        benefits: pkg.type === 'yearly'
-          ? ['Reserved VIP slots', '12 free services', 'Priority parking access']
-          : ['Reserved VIP slots', 'Priority parking access'],
+        durationDays: getPackageDurationDays(pkg),
+        ...(['monthly', 'yearly'].includes(pkg.type) ? { durationMonths: pkg.type === 'yearly' ? 12 : 1 } : {}),
+        benefits: getPackageBenefits(pkg),
       };
       const price = {
         basePrice: pkg.price,
@@ -43,19 +67,28 @@ exports.getActivePackages = async (req, res) => {
 // Get all ticket packages (For Admin)
 exports.getAllPackages = async (req, res) => {
   try {
-    const packages = await TicketPackage.find().sort({ createdAt: -1 });
-    res.status(200).json({ success: true, data: packages });
+    const stockService = require('../services/ticketPackageStockService');
+    await stockService.refreshAll();
+    const packages = await TicketPackage.find({ type: { $in: SELLABLE_PACKAGE_TYPES } }).sort({ createdAt: -1 });
+    const data = await Promise.all(packages.map(async (pkg) => ({ ...pkg.toObject(), stock: await stockService.snapshot(pkg) })));
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error fetching all ticket packages:', error);
     res.status(500).json({ message: 'Server error while fetching ticket packages' });
   }
 };
 
+exports.getPackageBuyers = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await require('../services/ticketPackageStockService').getBuyers(req.params.id, req.query) });
+  } catch (error) { next(error); }
+};
+
 // Get one ticket package detail
 exports.getPackageById = async (req, res) => {
   try {
     const ticketPackage = await TicketPackage.findById(req.params.id);
-    if (!ticketPackage) return res.status(404).json({ success: false, message: 'Ticket package not found' });
+    if (!ticketPackage || !SELLABLE_PACKAGE_TYPES.includes(ticketPackage.type)) return res.status(404).json({ success: false, message: 'Ticket package not found' });
     res.status(200).json({ success: true, data: ticketPackage });
   } catch (error) {
     console.error('Error fetching ticket package:', error);

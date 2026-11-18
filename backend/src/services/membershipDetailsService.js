@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isSellablePackageType, getPackageBenefits } = require('../utils/ticketPackageRules');
 const { isEnabled, defaultForCurrentEnvironment } = require('../utils/featureFlags');
 
 const DAY_MS = 86400000;
@@ -25,7 +26,7 @@ function createMembershipDetailsService(deps = {}) {
     if (!(deps.renewalEnabled ?? isEnabled('SUBSCRIPTION_RENEWAL_ENABLED', defaultForCurrentEnvironment()))) return deny('RENEWAL_DISABLED', 'Renewal is currently unavailable.');
     if (entity.status === 'transfer_locked') return deny('TRANSFER_LOCKED', 'Renewal is unavailable while a transfer is awaiting payment.');
     if (entity.status !== 'active' || new Date(entity.expireAt) <= now) return deny('MEMBERSHIP_EXPIRED', 'This membership has expired and cannot be renewed under the current policy.');
-    if (!pkg || pkg.isRenewable === false || !['monthly', 'yearly'].includes(pkg.type)) return deny('PACKAGE_NOT_RENEWABLE', 'This package does not support renewal.');
+    if (!pkg || pkg.isRenewable === false || !isSellablePackageType((entity.packageDurationSnapshot || pkg).type)) return deny('PACKAGE_NOT_RENEWABLE', 'This package does not support renewal.');
     const pending = await (kind === 'entitlement' ? Renewal : SubscriptionRenewal).findOne({
       [kind === 'entitlement' ? 'entitlementId' : 'subscriptionId']: entity._id,
       status: 'pending',
@@ -56,13 +57,20 @@ function createMembershipDetailsService(deps = {}) {
     }
     return {
       entitlementId: entity._id, sourceSubscriptionId: entity.sourceSubscriptionId,
+      benefits: getPackageBenefits(entity.packageTermsSnapshot || entity.packageId),
       slotId: entity.slotId,
       floorId: entity.floorId?._id || entity.floorId, floorName: entity.floorId?.name || '',
       floorNumber: entity.floorId?.floorNumber ?? null, slotCode: entity.slotCode,
       status, validFrom: entity.validFrom, expireAt: entity.expireAt, daysRemaining,
       expiringSoon: ['active', 'transfer_locked'].includes(status) && isInRenewalWindow(entity.expireAt, entity.packageId, now),
       expiryReminderDays: getRenewalWindowDays(entity.packageId),
-      package: entity.packageId ? { id: entity.packageId._id, name: entity.packageId.name, type: entity.packageId.type } : null,
+      package: entity.packageId ? {
+        id: entity.packageId._id,
+        name: entity.packageId.name,
+        type: entity.packageDurationSnapshot?.type || entity.packageId.type,
+        durationDays: entity.packageDurationSnapshot?.durationDays ?? entity.packageId.durationDays ?? null,
+        durationMinutes: entity.packageDurationSnapshot?.durationMinutes ?? entity.packageId.durationMinutes ?? null,
+      } : null,
       renewal: await renewalState(userId, entity, 'entitlement', now),
       canTransfer, transferUnavailableReason,
       transferCount: entity.transferCount, unitAmount: entity.unitAmount,
@@ -93,7 +101,14 @@ function createMembershipDetailsService(deps = {}) {
       : {
           subscriptionId: entity._id, status: new Date(entity.expireAt) <= new Date() ? 'expired' : entity.status,
           validFrom: entity.validFrom, expireAt: entity.expireAt,
-          package: entity.ticketPackage ? { id: entity.ticketPackage._id, name: entity.ticketPackage.name, type: entity.ticketPackage.type } : null,
+          benefits: getPackageBenefits(entity.packageTermsSnapshot || entity.ticketPackage),
+          package: entity.ticketPackage ? {
+            id: entity.ticketPackage._id,
+            name: entity.ticketPackage.name,
+            type: entity.packageDurationSnapshot?.type || entity.ticketPackage.type,
+            durationDays: entity.packageDurationSnapshot?.durationDays ?? entity.ticketPackage.durationDays ?? null,
+            durationMinutes: entity.packageDurationSnapshot?.durationMinutes ?? entity.ticketPackage.durationMinutes ?? null,
+          } : null,
           slots: entity.slots,
           renewal: await renewalState(userId, entity, 'subscription'),
         };

@@ -1,3 +1,4 @@
+import { isMembershipPackageType } from '../../utils/ticketPackageRules';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE, apiFetch } from '../../services/api';
@@ -17,6 +18,7 @@ import {
   getOperationalViewState,
 } from '../../utils/staffOperationalAvailability';
 import toast, { Toaster } from 'react-hot-toast';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import StaffDashboardView from './components/StaffDashboardView.jsx';
 
 const EMPTY_REVENUE_STATISTICS = Object.freeze({
@@ -67,6 +69,7 @@ const compareSlotLabels = (firstSlot, secondSlot) => {
 };
 
 export default function StaffDashboard() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const socket = useSocket();
   const [selectedGate, setSelectedGate] = useState('ENTRY_1'); // 'ENTRY_1' | 'EXIT_1'
@@ -173,13 +176,13 @@ export default function StaffDashboard() {
             licensePlate: fallbackPlate
           }
         }));
-        const label = gateType === 'ENTRY_1' ? 'Entry Gate (IN)' : 'Exit Gate (OUT)';
-        toast.success(`${label} opened successfully!`);
+        const label = gateType === 'ENTRY_1' ? t('staffDashboard.gate.entry') : t('staffDashboard.gate.exit');
+        toast.success(t('staffDashboard.gateOpened', { gate: label }));
       } else {
-        toast.error(res.data?.message || 'Failed to trigger gate open!');
+        toast.error(res.data?.message || t('staffDashboard.gateOpenFailed'));
       }
     } catch {
-      toast.error('IoT Barrier connection error!');
+      toast.error(t('staffDashboard.iotError'));
     } finally {
       setIsTriggeringGate(false);
     }
@@ -204,13 +207,13 @@ export default function StaffDashboard() {
             holdOpen: false
           }
         }));
-        const label = gateType === 'ENTRY_1' ? 'Entry Gate (IN)' : 'Exit Gate (OUT)';
-        toast.success(`${label} closed successfully!`);
+        const label = gateType === 'ENTRY_1' ? t('staffDashboard.gate.entry') : t('staffDashboard.gate.exit');
+        toast.success(t('staffDashboard.gateClosed', { gate: label }));
       } else {
-        toast.error(res.data?.message || 'Failed to close gate!');
+        toast.error(res.data?.message || t('staffDashboard.gateCloseFailed'));
       }
     } catch {
-      toast.error('IoT Barrier connection error!');
+      toast.error(t('staffDashboard.iotError'));
     } finally {
       setIsTriggeringGate(false);
     }
@@ -236,17 +239,17 @@ export default function StaffDashboard() {
             holdOpen: newHold
           }
         }));
-        const label = gateType === 'ENTRY_1' ? 'Entry Gate' : 'Exit Gate';
+        const label = gateType === 'ENTRY_1' ? t('staffDashboard.gate.entry') : t('staffDashboard.gate.exit');
         if (newHold) {
-          toast(`${label} Paused: IR sensor disabled & position locked!`);
+          toast(t('staffDashboard.gatePaused', { gate: label }));
         } else {
-          toast.success(`${label} Resumed: Normal operation active!`);
+          toast.success(t('staffDashboard.gateResumed', { gate: label }));
         }
       } else {
-        toast.error(res.data?.message || 'Failed to toggle hold mode!');
+        toast.error(res.data?.message || t('staffDashboard.gateToggleFailed'));
       }
     } catch {
-      toast.error('IoT Barrier connection error!');
+      toast.error(t('staffDashboard.iotError'));
     } finally {
       setIsTriggeringGate(false);
     }
@@ -310,7 +313,7 @@ export default function StaffDashboard() {
       } else {
         setRevenueStatistics(EMPTY_REVENUE_STATISTICS);
         setRevenueError(
-          revenueRes.data?.message || 'Revenue data could not be synchronized.'
+          revenueRes.data?.message || t('staffDashboard.revenueSyncError')
         );
       }
 
@@ -321,12 +324,12 @@ export default function StaffDashboard() {
       setDbSlots([]);
       setSyncStatus(getStaffDashboardSyncStatus());
       setRevenueStatistics(EMPTY_REVENUE_STATISTICS);
-      setRevenueError('Revenue data could not be synchronized.');
-      toast.error('Failed to sync dashboard data');
+      setRevenueError(t('staffDashboard.revenueSyncError'));
+      toast.error(t('staffDashboard.syncFailed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const initialFetch = setTimeout(fetchData, 0);
@@ -357,8 +360,8 @@ export default function StaffDashboard() {
   });
   const revenueState = getOperationalViewState({
     loading,
-    error: revenueError || (!syncStatus.sources.revenue
-      ? 'Revenue data could not be synchronized.'
+      error: revenueError || (!syncStatus.sources.revenue
+      ? t('staffDashboard.revenueSyncError')
       : ''),
   });
 
@@ -380,10 +383,10 @@ export default function StaffDashboard() {
       })
       .map(([zoneKey, slots]) => ({
         key: zoneKey,
-        label: zoneKey === 'OTHER' ? 'Other slots' : `Zone ${zoneKey}`,
+        label: zoneKey === 'OTHER' ? t('staffDashboard.otherSlots') : `Zone ${zoneKey}`,
         slots: [...slots].sort(compareSlotLabels),
       }));
-  }, [activeFloorSlots]);
+  }, [activeFloorSlots, t]);
 
   const getSlotData = (slotObj) => {
     const slotLabel = slotObj.name || slotObj.id;
@@ -394,7 +397,7 @@ export default function StaffDashboard() {
     
     // Determine VIP status from DB (subscription) or layout type
     const isLayoutVip = slotObj.type === 'slot_vip' || slotObj.type?.includes('vip');
-    const isDbVip = dbSlotInfo && ['monthly', 'yearly'].includes(dbSlotInfo.subscriptionType);
+    const isDbVip = dbSlotInfo && isMembershipPackageType(dbSlotInfo.subscriptionType);
     const isVip = isLayoutVip || isDbVip;
 
     if (dbSlotInfo && dbSlotInfo.status === 'maintenance') {

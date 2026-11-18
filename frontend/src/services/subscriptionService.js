@@ -24,11 +24,11 @@ export const getTicketPackages = async () => {
   });
 };
 
-export const createSubscriptionPayment = async (packageId, slots, adjustedPrice) => {
+export const createSubscriptionPayment = async (packageId, slots, adjustedPrice, packageRevision) => {
   return apiFetch('/subscriptions/create-payment', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ packageId, slots, adjustedPrice }),
+    body: JSON.stringify({ packageId, slots, adjustedPrice, packageRevision }),
   });
 };
 
@@ -40,11 +40,11 @@ export const verifySubscriptionPayment = async (orderCode) => {
   });
 };
 
-export const paySubscriptionWithWallet = async (packageId, slots, adjustedPrice) => {
+export const paySubscriptionWithWallet = async (packageId, slots, adjustedPrice, packageRevision) => {
   return apiFetch('/subscriptions/pay-with-wallet', {
     method: 'POST',
     headers: authHeader(),
-    body: JSON.stringify({ packageId, slots, adjustedPrice }),
+    body: JSON.stringify({ packageId, slots, adjustedPrice, packageRevision }),
   });
 };
 

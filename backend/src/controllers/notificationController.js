@@ -183,50 +183,6 @@ const getUnreadCount = async (req, res, next) => {
 };
 
 /**
- * @desc    Create an internal report (Staff to Admin)
- * @route   POST /api/notifications/internal-report
- * @access  Private (staff)
- */
-const createInternalReport = async (req, res, next) => {
-  try {
-    const { content, priority = 'INFO' } = req.body;
-    
-    if (!content) {
-      return res.status(400).json({ success: false, message: 'Content is required' });
-    }
-
-    const title = `Issue Report from ${req.user.name || 'Staff'}`;
-    const createdBy = req.user._id;
-    const io = req.app.get('io');
-
-    const result = await notificationService.createForRole(
-      'admin',
-      { title, content, type: 'SYSTEM', priority, targetType: 'ROLE_BASED', targetRoles: ['admin'] },
-      createdBy
-    );
-
-    if (io) {
-      // emitNotification or broadcast to admins
-      // Since createForRole will resolve users with role 'admin'
-      const { notification, userIds } = result;
-      for (let index = 0; index < userIds.length; index += 1) {
-        await emitNotification(io, userIds[index], notification, {
-          notifyAdmins: index === 0,
-          updateUnreadCount: false,
-        });
-      }
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Report sent successfully',
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * @desc    Mark a notification as read
  * @route   PUT /api/notifications/:id/read
  * @access  Private
@@ -299,14 +255,10 @@ const deleteUserNotification = async (req, res, next) => {
 const getAdminHistory = async (req, res, next) => {
   try {
     const { page, limit, type, priority, search } = req.query;
-    const result = await notificationService.getAdminNotifications({
-      page,
-      limit,
-      type,
-      priority,
-      search,
-      adminId: req.user._id,
-    });
+    const filters = { page, limit, type, priority, search };
+    const result = req.user.role === 'staff'
+      ? await notificationService.getUserNotifications(req.user._id, { ...filters, contextRole: 'staff', withStats: true })
+      : await notificationService.getAdminNotifications({ ...filters, adminId: req.user._id });
 
     res.status(200).json({
       success: true,
@@ -544,5 +496,4 @@ module.exports = {
   getAutoRules,
   updateAutoRule,
   testAutoRule,
-  createInternalReport,
 };

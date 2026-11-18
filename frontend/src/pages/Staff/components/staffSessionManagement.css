@@ -19,7 +19,7 @@ body[data-valo-typography="staff"] .staff-session-management .g3-toolbar { flex:
 body[data-valo-typography="staff"] .staff-session-management .g3-toolbar .g3-search { flex: 1 1 230px; min-width: 0; max-width: none; }
 body[data-valo-typography="staff"] .staff-session-management .g3-toolbar input { min-height: 44px; height: 44px; border-radius: 10px; box-shadow: none; font-size: 13px; }
 body[data-valo-typography="staff"] .staff-session-management .g3-toolbar button[aria-haspopup="menu"] { min-height: 44px; height: 44px; border-radius: 10px; padding: 10px 12px; font-size: 13px; box-shadow: none; }
-body[data-valo-typography="staff"] .staff-session-management .g3-table-scroll { flex: 1 1 0%; min-height: 0; overflow: auto; border-radius: 10px; background: #0B1214; scrollbar-width: none; }
+body[data-valo-typography="staff"] .staff-session-management .g3-table-scroll { flex: 1 1 0%; min-height: 0; overflow: auto; border-radius: 10px; background: #000000; scrollbar-width: none; }
 body[data-valo-typography="staff"] .staff-session-management .g3-table-scroll::-webkit-scrollbar { display: none; }
 body[data-valo-typography="staff"] .staff-session-management table { width: 100%; min-width: 1080px; table-layout: fixed; }
 body[data-valo-typography="staff"] .staff-session-management thead { position: sticky; top: 0; z-index: 20; }

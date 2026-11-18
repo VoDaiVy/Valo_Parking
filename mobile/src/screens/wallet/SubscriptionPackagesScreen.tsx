@@ -19,6 +19,7 @@ import type { WalletStackParamList } from '@/navigation/types';
 import { subscriptionsService } from '@/services/api/subscriptions';
 import type { SubscriptionPackage } from '@/types/subscription.types';
 import { formatCurrency } from '@/utils/formatters';
+import { getPackageDurationLabel, isSellablePackageType } from '@/utils/ticketPackageRules';
 
 type Props = NativeStackScreenProps<WalletStackParamList, 'SubscriptionPackages'>;
 
@@ -44,7 +45,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
     setError('');
     try {
       const response = await subscriptionsService.getPackages();
-      setPackages((response.data || []).filter((pkg) => pkg.isActive && ['monthly', 'yearly'].includes(pkg.type)));
+      setPackages((response.data || []).filter((pkg) => pkg.isActive && isSellablePackageType(pkg.type)));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load membership plans.');
       setPackages([]);
@@ -70,7 +71,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
         style={[styles.packageCard, yearly && styles.packageCardFeatured]}
         onPress={() => navigation.navigate('SubscriptionCheckout', { packageId: item._id })}
       >
-        {yearly ? (
+        {yearly && !item.benefitsVersion ? (
           <View style={styles.featuredBadge}>
             <Ionicons name="star" size={12} color={COLORS.textInverse} />
             <Text style={styles.featuredText}>{translateUi("Best value")}</Text>
@@ -82,7 +83,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
           </View>
           <View style={styles.packageTitleWrap}>
             <Text style={styles.packageName}>{item.name}</Text>
-            <Text style={styles.packageDuration}>{yearly ? '12 months' : '1 month'}</Text>
+            <Text style={styles.packageDuration}>{translateUi(getPackageDurationLabel(item))}</Text>
           </View>
         </View>
         {dynamicPricing ? <PriceBadge changePercent={changePercent} priceLabel={item.priceLabel} /> : null}
@@ -95,7 +96,7 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
             <Text style={styles.benefitText}>{benefit}</Text>
           </View>
         ))}
-        {yearly ? (
+        {yearly && !item.benefitsVersion ? (
           <View style={styles.yearlyNote}>
             <Text style={styles.yearlyNoteText}>{translateUi("Includes 12 complimentary services")}</Text>
           </View>
@@ -112,6 +113,10 @@ export const SubscriptionPackagesScreen = ({ navigation }: Props) => {
     <SafeAreaView edges={['top']} style={styles.safe}>
       <StatusBar barStyle="light-content" />
       <ScreenHeader title={translateUi("Membership plans")} onBack={() => navigation.goBack()} />
+      <Pressable accessibilityRole="button" onPress={() => navigation.navigate('ExplorePackages')} style={{ minHeight: 48, paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: COLORS.gold, fontWeight: '700' }}>{translateUi('Explore parking packages')}</Text>
+        <Ionicons name="arrow-forward" size={18} color={COLORS.gold} />
+      </Pressable>
 
       {loading ? (
         <View style={styles.stateWrap}>

@@ -3,6 +3,7 @@ const router = express.Router();
 const bookingController = require('../controllers/bookingController');
 const { protect, authorize, softProtect } = require('../middlewares/authMiddleware');
 const { requirePolicyAcceptance } = require('../middlewares/policyAcceptanceMiddleware');
+const requireBookingAccess = require('../middlewares/bookingRestrictionMiddleware');
 
 // Route public dành cho webhook PayOS thanh toán đặt chỗ
 router.post('/webhook', bookingController.handleBookingWebhook);
@@ -13,7 +14,7 @@ router.get('/suggest-slot', bookingController.suggestSmartSlot);
 // Khóa ô đỗ tạm thời (Guest & User)
 router.get('/pricing-config', softProtect, bookingController.getPricingConfig);
 router.get('/active-holds', softProtect, bookingController.getActiveHolds);
-router.post('/hold', softProtect, bookingController.createBookingHold);
+router.post('/hold', softProtect, requireBookingAccess, bookingController.createBookingHold);
 router.delete('/holds/:holdId', softProtect, bookingController.releaseBookingHold);
 
 // Route cho Staff/Admin xem toàn bộ booking
@@ -31,11 +32,13 @@ router.use(authorize('customer', 'admin'));
 
 router.get('/my', bookingController.getMyBookings);
 router.get('/my-history', bookingController.getMyBookings);
+router.post('/:id/feedback', authorize('customer'), require('../controllers/feedbackController').create);
+router.get('/:id/feedback', authorize('customer'), require('../controllers/feedbackController').get);
 router.get('/:id/qr', bookingController.getBookingQr);
 router.get('/:id/cancel-quote', bookingController.quoteBookingCancellation);
-router.post('/', requirePolicyAcceptance({ action: 'booking:create' }), bookingController.createBooking);
-router.post('/bulk', requirePolicyAcceptance({ action: 'booking:create' }), bookingController.createBulkBooking);
-router.post('/bulk/quote', bookingController.quoteBulkBooking);
+router.post('/', requireBookingAccess, requirePolicyAcceptance({ action: 'booking:create' }), bookingController.createBooking);
+router.post('/bulk', requireBookingAccess, requirePolicyAcceptance({ action: 'booking:create' }), bookingController.createBulkBooking);
+router.post('/bulk/quote', requireBookingAccess, bookingController.quoteBulkBooking);
 router.get('/status/:orderCode', bookingController.checkVietQRStatus);
 router.post('/:id/cancel', bookingController.cancelBooking);
 router.post('/:id/ai-time/quote', bookingController.quoteBookingTimeModification);

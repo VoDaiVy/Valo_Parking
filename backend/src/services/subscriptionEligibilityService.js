@@ -8,6 +8,7 @@ const Vehicle = require('../models/Vehicle');
 const Slot = require('../models/Slot');
 const User = require('../models/User');
 const MembershipSlotEntitlement = require('../models/MembershipSlotEntitlement');
+const { isSellablePackageType, buildPackageExpirationDate } = require('../utils/ticketPackageRules');
 const { isEnabled } = require('../utils/featureFlags');
 const {
   getUnmigratedLegacySlots,
@@ -32,11 +33,8 @@ const addMonthsClamped = (date, months) => {
   return result;
 };
 
-const addPackageDuration = (fromDate, packageType) => {
-  if (packageType === 'monthly') return addMonthsClamped(fromDate, 1);
-  if (packageType === 'yearly') return addMonthsClamped(fromDate, 12);
-  throw businessError('This package type cannot be renewed.', 'PACKAGE_NOT_RENEWABLE');
-};
+const addPackageDuration = (fromDate, packageOrType) =>
+  buildPackageExpirationDate(packageOrType, fromDate);
 
 const normalizeSlotCode = (value) => String(value || '').trim().toUpperCase();
 const slotKey = (floorId, slotCode) => `${String(floorId)}:${normalizeSlotCode(slotCode)}`;
@@ -74,6 +72,10 @@ const validateNewSubscriptionEligibility = async ({
   now = new Date(),
   session = null,
 }) => {
+  if (!ticketPackage || !isSellablePackageType(ticketPackage.type) || !ticketPackage.isActive) {
+    throw businessError('Invalid subscription package.', 'INVALID_SUBSCRIPTION_PACKAGE');
+  }
+  buildPackageExpirationDate(ticketPackage, now);
   const normalizedSlots = normalizeRequestedSlots(slots);
 
   let vehicleQuery = Vehicle.countDocuments({ owner: userId, status: 'approved' });
@@ -139,9 +141,10 @@ const validateNewSubscriptionEligibility = async ({
 
   const maxSlots = Math.min(3, eligibleVehicleCount);
   const availableSlots = Math.max(0, maxSlots - activeSlotCount);
-  if (!eligibleVehicleCount || normalizedSlots.length > availableSlots) {
+  const purchaseCapacity = Math.min(availableSlots, ticketPackage.maxSlots || 3);
+  if (!eligibleVehicleCount || normalizedSlots.length > purchaseCapacity) {
     throw businessError(
-      `You can select up to ${availableSlots} additional slot(s) based on your approved vehicles.`,
+      `You can select up to ${purchaseCapacity} additional slot(s) based on this package and your approved vehicles.`,
       'INSUFFICIENT_ELIGIBLE_VEHICLES'
     );
   }
@@ -243,7 +246,8 @@ const validateRenewalEligibility = async ({
     if (session) packageQuery = packageQuery.session(session);
     ticketPackage = await packageQuery;
   }
-  if (!ticketPackage || !['monthly', 'yearly'].includes(ticketPackage.type)) {
+  const durationPackage = subscription.packageDurationSnapshot || ticketPackage;
+  if (!ticketPackage || !isSellablePackageType(durationPackage?.type)) {
     throw businessError('Package is not renewable.', 'PACKAGE_NOT_RENEWABLE');
   }
   if (ticketPackage.isRenewable === false) {
@@ -360,7 +364,7 @@ const validateRenewalEligibility = async ({
   }
 
   const renewalBase = currentExpireAt > now ? currentExpireAt : now;
-  const newExpireAt = addPackageDuration(renewalBase, ticketPackage.type);
+  const newExpireAt = addPackageDuration(renewalBase, durationPackage);
   const unitPrice = Number(ticketPackage.price || 0);
   const amount = unitPrice * selectedSlots.length;
   const quotePayload = {
@@ -389,7 +393,9 @@ const validateRenewalEligibility = async ({
     packageSnapshot: {
       id: ticketPackage._id,
       name: ticketPackage.name,
-      type: ticketPackage.type,
+      type: durationPackage.type,
+      durationDays: durationPackage.durationDays ?? null,
+      durationMinutes: durationPackage.durationMinutes ?? null,
       unitPrice,
       renewalWindowDays,
     },

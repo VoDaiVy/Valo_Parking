@@ -15,7 +15,7 @@ const rows = [
   { _id: '6aebe56ea4ec3a25a06971bc', name: 'Yearly', type: 'yearly', price: 1500000, isActive: false },
 ];
 function matches(row, filter) {
-  return Object.entries(filter).every(([key, value]) => key === '$or' ? value.some(item => matches(row, item)) : value instanceof RegExp ? value.test(row[key] || '') : row[key] === value);
+  return Object.entries(filter).every(([key, value]) => key === '$or' ? value.some(item => matches(row, item)) : value instanceof RegExp ? value.test(row[key] || '') : value?.$in ? value.$in.includes(row[key]) : row[key] === value);
 }
 function query(items, single = false) {
   let fields; let limit = Infinity;
@@ -40,36 +40,31 @@ async function withReads(run) {
   try { await run(filters); } finally { Object.assign(Package, original); }
 }
 
-test('Ticket Package search matches literal name/description/type, all types, and explicit active/inactive filters', async () => {
+test('Ticket Package search excludes retired types while preserving supported status and text filters', async () => {
   await withReads(async () => {
-    const literal = await registry.execute('search_ticket_packages', { query: '(A+)', type: 'daily', status: 'inactive' }, 'admin');
-    assert.equal(literal.data.total, 1); assert.equal(literal.data.items[0]._id, id);
-    assert.equal(literal.data.items[0].name, 'Gold_Pass'); assert.equal(literal.data.items[0].price, 0);
-    assert.equal(literal.data.items[0].isActive, false); assert.ok(literal.data.items[0].updatedAt.startsWith('2026-11-08T00:00:00.000Z'));
-    assert.equal(literal.data.items[0].aiAppliedDraftIds, undefined);
-    const bounded = await registry.execute('search_ticket_packages', { query: 'Gold_Pass', limit: 1 }, 'admin');
+    const all = await registry.execute('search_ticket_packages', { status: 'all' }, 'admin');
+    assert.equal(all.data.total, 2);
+    assert.deepEqual(all.data.items.map(item => item.type), ['monthly', 'yearly']);
+    const bounded = await registry.execute('search_ticket_packages', { limit: 1 }, 'admin');
     assert.equal(bounded.data.total, 2); assert.equal(bounded.data.returned, 1);
-    assert.equal((await registry.execute('search_ticket_packages', { status: 'all' }, 'admin')).data.total, 4);
-    for (const type of ['hourly', 'daily', 'monthly', 'yearly']) assert.equal((await registry.execute('search_ticket_packages', { type }, 'admin')).data.items[0].type, type);
-    assert.equal((await registry.execute('search_ticket_packages', { isActive: false }, 'admin')).data.total, 2);
+    assert.equal((await registry.execute('search_ticket_packages', { isActive: false }, 'admin')).data.total, 1);
+    assert.equal((await registry.execute('search_ticket_packages', { query: 'Monthly', status: 'active' }, 'admin')).data.total, 1);
+    assert.equal((await registry.execute('search_ticket_packages', { query: 'Gold_Pass' }, 'admin')).data.total, 0);
+    for (const type of ['hourly', 'daily', 'invented']) await assert.rejects(registry.execute('search_ticket_packages', { type }, 'admin'));
     await assert.rejects(registry.execute('search_ticket_packages', { status: 'active', isActive: false }, 'admin'));
-    await assert.rejects(registry.execute('search_ticket_packages', { isActive: 'invented' }, 'admin'));
-    await assert.rejects(registry.execute('search_ticket_packages', { type: 'weekly' }, 'admin'));
     await assert.rejects(registry.execute('search_ticket_packages', { query: {} }, 'admin'));
   });
 });
 
-test('package details and View Package use the exact stored ID despite duplicate names', async () => {
+test('catalog details reject retired types and retain supported exact IDs and permissions', async () => {
   await withReads(async () => {
-    const detail = await registry.execute('get_ticket_package_detail', { packageId: id }, 'admin');
-    assert.equal(detail.data._id, id); assert.equal(detail.data.type, 'daily');
-    assert.equal(detail.data.description, 'Night (A+) coverage'); assert.equal(detail.data.price, 0);
-    assert.equal(entityLinks('get_ticket_package_detail', detail.data)[0].url, `/admin/tickets?packageId=${id}`);
-    const links = entityLinks('search_ticket_packages', { items: rows.slice(0, 2) });
-    assert.equal(links.length, 2); assert.notEqual(links[0].url, links[1].url);
+    const supportedId = rows[2]._id;
+    const detail = await registry.execute('get_ticket_package_detail', { packageId: supportedId }, 'admin');
+    assert.equal(detail.data._id, supportedId); assert.equal(detail.data.type, 'monthly');
+    assert.equal(entityLinks('get_ticket_package_detail', detail.data)[0].url, `/admin/tickets?packageId=${supportedId}`);
+    for (const packageId of [id, otherId, '6aebe56ea4ec3a25a06971ba']) await assert.rejects(registry.execute('get_ticket_package_detail', { packageId }, 'admin'), error => error.code === 'PACKAGE_NOT_FOUND');
     await assert.rejects(registry.execute('get_ticket_package_detail', { packageId: 'invalid' }, 'admin'));
-    await assert.rejects(registry.execute('get_ticket_package_detail', { packageId: '6aebe56ea4ec3a25a06971ba' }, 'admin'), error => error.code === 'PACKAGE_NOT_FOUND');
-    for (const role of ['customer', 'staff']) await assert.rejects(registry.execute('get_ticket_package_detail', { packageId: id }, role));
+    for (const role of ['customer', 'staff']) await assert.rejects(registry.execute('get_ticket_package_detail', { packageId: supportedId }, role));
   });
 });
 
@@ -80,7 +75,7 @@ test('named details use exact literal identity and reject missing, conflicting, 
     assert.equal(filters.at(-1).name.source, '^monthly$');
     await assert.rejects(registry.execute('get_ticket_package_detail', { name: 'Month' }, 'admin'), error => error.code === 'PACKAGE_NOT_FOUND');
     await assert.rejects(registry.execute('get_ticket_package_detail', { name: '.*' }, 'admin'), error => error.code === 'PACKAGE_NOT_FOUND');
-    await assert.rejects(registry.execute('get_ticket_package_detail', { name: 'Gold_Pass' }, 'admin'), error => error.code === 'PACKAGE_AMBIGUOUS');
+    await assert.rejects(registry.execute('get_ticket_package_detail', { name: 'Gold_Pass' }, 'admin'), error => error.code === 'PACKAGE_NOT_FOUND');
     await assert.rejects(registry.execute('get_ticket_package_detail', { name: 'Monthly', packageId: id }, 'admin'), /do not match/);
     for (const role of ['customer', 'staff']) await assert.rejects(registry.execute('get_ticket_package_detail', { name: 'Monthly' }, role));
   });
@@ -89,10 +84,10 @@ test('named details use exact literal identity and reject missing, conflicting, 
 test('package inventory statistics use all matching records, independent of result limits or subscription counts', async () => {
   await withReads(async () => {
     const stats = await registry.execute('get_ticket_package_stats', {}, 'admin');
-    assert.equal(stats.data.summary.total, 4); assert.equal(stats.data.summary.active, 2); assert.equal(stats.data.summary.inactive, 2);
-    assert.ok(stats.data.summary.latestUpdated.startsWith('2026-11-08T00:00:00.000Z'));
-    assert.equal(stats.data.byType.length, 4);
-    const filtered = await registry.execute('get_ticket_package_stats', { query: '(A+)', status: 'inactive', type: 'daily' }, 'admin');
+    assert.equal(stats.data.summary.total, 2); assert.equal(stats.data.summary.active, 1); assert.equal(stats.data.summary.inactive, 1);
+    assert.equal(stats.data.summary.latestUpdated, null);
+    assert.equal(stats.data.byType.length, 2);
+    const filtered = await registry.execute('get_ticket_package_stats', { query: 'Yearly', status: 'inactive', type: 'yearly' }, 'admin');
     assert.equal(filtered.data.summary.total, 1); assert.equal(filtered.data.summary.active, 0);
     const empty = await registry.execute('get_ticket_package_stats', { query: 'missing' }, 'admin');
     assert.deepEqual(empty.data.summary, { total: 0, active: 0, inactive: 0, latestUpdated: null });
