@@ -19,6 +19,7 @@ import PolicyAcceptancePrompt from '../policies/PolicyAcceptancePrompt';
 import ParkingMapViewer from '../ParkingMapViewer';
 import { getPackageDurationLabel, getPackageTypeLabel, isSellablePackageType } from '../../utils/ticketPackageRules';
 import { extractMissingPolicies, isPolicyAcceptanceRequired } from '../../utils/policyErrors';
+import { isLiveParkingSlotBookable } from '../../utils/aiParkingLookup';
 
 export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   const navigate = useNavigate();
@@ -30,8 +31,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   const [selectedFloorId, setSelectedFloorId] = useState('');
   const [floorSlots, setFloorSlots] = useState([]);
   const [floorDbSlots, setFloorDbSlots] = useState([]);
-  const [mapActiveSessions, setMapActiveSessions] = useState([]);
-  const [mapActiveHolds, setMapActiveHolds] = useState([]);
+  const [mapLiveSlots, setMapLiveSlots] = useState(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
 
@@ -182,25 +182,31 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
   useEffect(() => {
     if (!selectedPackage || !selectedFloorId) return;
 
-    const fetchSlots = async () => {
+    let active = true;
+    const fetchSlots = async (showLoader = false) => {
       try {
-        setLoadingSlots(true);
-        setFloorSlots([]);
-        setFloorDbSlots([]);
-        setMapActiveSessions([]);
-        setMapActiveHolds([]);
+        if (showLoader) {
+          setLoadingSlots(true);
+          setFloorSlots([]);
+          setFloorDbSlots([]);
+          setMapLiveSlots(null);
+        }
         const [res, liveMapRes] = await Promise.all([
           apiFetch(`/parking-floors/${selectedFloorId}/slots`),
-          apiFetch('/parking-floors/live-map').catch(() => ({ ok: false })),
+          apiFetch('/parking-floors/live-map', { cache: 'no-store' }).catch(() => ({ ok: false })),
         ]);
+        if (!active) return;
         if (res.ok && res.data?.data) {
           // Only show standard car slots or EV slots that are available
           const rawSlots = res.data.data;
           const liveSlots = (liveMapRes.ok && Array.isArray(liveMapRes.data?.data)
-            ? liveMapRes.data.data : []).filter((slot) => String(slot.floorId) === String(selectedFloorId));
-          const unavailableLiveCodes = new Set(liveSlots
-            .filter((slot) => slot.status !== 'available')
-            .map((slot) => String(slot.id || '').toUpperCase()));
+            ? liveMapRes.data.data : []).filter((slot) => (
+              String(slot.floorId?._id || slot.floorId || '') === String(selectedFloorId)
+            ));
+          const hasLiveData = liveMapRes.ok && Array.isArray(liveMapRes.data?.data);
+          const liveSlotMap = new Map(liveSlots.map((slot) => [String(slot.id || '').toUpperCase(), slot]));
+          const selectedVehicle = vehicles.find((vehicle) => vehicle._id === selectedVehicleId);
+          const isElectricCar = (selectedVehicle?.vehicleType || selectedVehicle?.type) === 'electric_car';
           setFloorDbSlots(rawSlots);
           const available = rawSlots.filter((s) => 
             (s.status === 'available' || s.isAvailable) 
@@ -208,14 +214,15 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
             && s.slotType !== 'SLOT-HANDICAP'
             && !s.reservedBySubscriptionId
             && !s.reservedByEntitlementId
-            && !unavailableLiveCodes.has(String(s.slotNumber || s.slotCode).toUpperCase())
+            && (!hasLiveData || Boolean(
+              liveSlotMap.get(String(s.slotNumber || s.slotCode).toUpperCase())
+              && isLiveParkingSlotBookable(
+                liveSlotMap.get(String(s.slotNumber || s.slotCode).toUpperCase()),
+                isElectricCar
+              )
+            ))
           );
-          setMapActiveSessions(liveSlots
-            .filter((slot) => slot.status === 'occupied')
-            .map((slot) => ({ floorId: slot.floorId, parkingSlot: slot.id })));
-          setMapActiveHolds(liveSlots
-            .filter((slot) => slot.status === 'reserved')
-            .map((slot) => ({ floorId: slot.floorId, slotCode: slot.id })));
+          setMapLiveSlots(hasLiveData ? liveSlots : null);
           setFloorSlots(available);
           setSelectedSlotCode((current) => {
             const stillAvailable = available.some((slot) => (
@@ -225,19 +232,27 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
           });
         }
       } catch (err) {
-        setFloorSlots([]);
-        setFloorDbSlots([]);
-        setMapActiveSessions([]);
-        setMapActiveHolds([]);
-        setSelectedSlotCode('');
-        console.error('Error fetching floor slots:', err);
+        if (active) {
+          if (showLoader) {
+            setFloorSlots([]);
+            setFloorDbSlots([]);
+            setMapLiveSlots(null);
+            setSelectedSlotCode('');
+          }
+          console.error('Error fetching floor slots:', err);
+        }
       } finally {
-        setLoadingSlots(false);
+        if (active && showLoader) setLoadingSlots(false);
       }
     };
 
-    fetchSlots();
-  }, [selectedPackage, selectedFloorId]);
+    fetchSlots(true);
+    const refreshId = window.setInterval(() => fetchSlots(false), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(refreshId);
+    };
+  }, [selectedPackage, selectedFloorId, selectedVehicleId, vehicles]);
 
   if (!isOpen) return null;
 
@@ -624,8 +639,7 @@ export default function VipPackageModal({ isOpen, onClose, onSubscribed }) {
                           setSelectedSlotCode('');
                         }}
                         dbSlots={floorDbSlots}
-                        activeSessions={mapActiveSessions}
-                        activeHolds={mapActiveHolds}
+                        liveSlots={mapLiveSlots}
                         availableSlots={floorSlots.map((slot) => ({
                           ...slot,
                           floorId: selectedFloorId,

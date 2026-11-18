@@ -2,6 +2,18 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { Maximize, Car, Zap, Accessibility, Bike, TreePine, ArrowRight, Navigation, Layers, MonitorSmartphone } from 'lucide-react';
 import { isLiveParkingSlotBookable } from '../utils/aiParkingLookup';
 
+const normalizeEntityId = (value) => String(value?._id || value?.id || value || '');
+
+const parseFloorLayout = (layoutData) => {
+  if (!layoutData) return {};
+  if (typeof layoutData !== 'string') return layoutData;
+  try {
+    return JSON.parse(layoutData);
+  } catch {
+    return {};
+  }
+};
+
 const SlotElement = React.memo(({ el, floorId, style, isOccupied, isSelected, isMaintenance, isReserved, isHeld, isIncompatible, liveReason, canSelectDespiteLiveState, session, canViewLicensePlate, onSelectSlot, readOnly }) => {
   const hasName = !!el.name && el.name.trim() !== '';
   if (!hasName) return null;
@@ -134,7 +146,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       const fId = curr.floorId || curr.floorID;
       const sCode = curr.parkingSlot || curr.slotCode || curr.slotNumber;
       if (fId && sCode) {
-        acc[`${String(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
+        acc[`${normalizeEntityId(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
       }
       return acc;
     }, {});
@@ -158,7 +170,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       const fId = curr.floorID || curr.floorId;
       const sCode = curr.slotNumber || curr.slotCode;
       if (fId && sCode) {
-        acc[`${String(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
+        acc[`${normalizeEntityId(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
       }
       return acc;
     }, {});
@@ -170,14 +182,14 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
       const fId = curr.floorId || curr.floorID;
       const sCode = curr.slotCode || curr.slotNumber;
       if (fId && sCode) {
-        acc[`${String(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
+        acc[`${normalizeEntityId(fId)}-${String(sCode).trim().toUpperCase()}`] = curr;
       }
       return acc;
     }, {});
   }, [availableSlots]);
 
   const liveSlotMap = useMemo(() => liveSlots && new Map(
-    liveSlots.map((slot) => [`${String(slot.floorId)}-${String(slot.id || slot.slotCode || slot.slotNumber).trim().toUpperCase()}`, slot]),
+    liveSlots.map((slot) => [`${normalizeEntityId(slot.floorId || slot.floorID)}-${String(slot.id || slot.slotCode || slot.slotNumber).trim().toUpperCase()}`, slot]),
   ), [liveSlots]);
 
   const handleSelectSlot = useCallback((slot, floorId) => {
@@ -190,13 +202,8 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
   useEffect(() => {
     if (!staticFit || !is2DMode || !floors || floors.length === 0 || !containerRef.current) return;
 
-    const currentFloor = floors.find(f => f._id === currentFloorId);
-    let parsedLayout;
-    try {
-      parsedLayout = typeof currentFloor?.layoutData === 'string' ? JSON.parse(currentFloor.layoutData) : (currentFloor?.layoutData || {});
-    } catch {
-      return;
-    }
+    const currentFloor = floors.find(f => normalizeEntityId(f._id) === normalizeEntityId(currentFloorId));
+    const parsedLayout = parseFloorLayout(currentFloor?.layoutData);
     const elements = parsedLayout.elements || [];
     if (elements.length === 0) return;
 
@@ -328,7 +335,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
         const hasName = !!el.name && el.name.trim() !== '';
         const slotCode = hasName ? el.name : el.id;
         const normalizedSlotCode = String(slotCode).trim().toUpperCase();
-        const normalizedFloorId = String(floorId);
+        const normalizedFloorId = normalizeEntityId(floorId);
         const lookupKey = `${normalizedFloorId}-${normalizedSlotCode}`;
         const occupiedSession = sessionMap[lookupKey];
         const isSelected = Array.isArray(selectedSlotId)
@@ -379,7 +386,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
 
         let isHeld = false;
         if (activeHolds) {
-          isHeld = activeHolds.some(h => String(h.floorId) === normalizedFloorId && String(h.slotCode).trim().toUpperCase() === normalizedSlotCode);
+          isHeld = activeHolds.some(h => normalizeEntityId(h.floorId || h.floorID) === normalizedFloorId && String(h.slotCode).trim().toUpperCase() === normalizedSlotCode);
         }
         if (!isHeld && dbSlot?.status === 'booked' && !canSelectDespiteLiveState && !isOccupied && !isReserved) {
           isHeld = true;
@@ -592,7 +599,8 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
           }}
           >
             {floors && floors.length > 0 && floors.map((floor, idx) => {
-              const currentFloorIndex = currentFloorId ? floors.findIndex(f => f._id === currentFloorId) : -1;
+              const floorLayout = parseFloorLayout(floor.layoutData);
+              const currentFloorIndex = currentFloorId ? floors.findIndex(f => normalizeEntityId(f._id) === normalizeEntityId(currentFloorId)) : -1;
               const isOverview = currentFloorIndex === -1;
               const isCurrent = idx === currentFloorIndex;
               const isAbove = !isOverview && idx > currentFloorIndex;
@@ -642,8 +650,8 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
                   style={{
                     transformStyle: 'preserve-3d',
                     transform: `translate(-50%, -50%) translateZ(${targetZ}px)`,
-                    width: floor.layoutData?.width || 1000,
-                    height: floor.layoutData?.height || 600,
+                    width: floorLayout.width || 1000,
+                    height: floorLayout.height || 600,
                     backgroundColor: isCurrent || isOverview ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.7)',
                     border: is2DMode ? 'none' : (isCurrent ? '2px solid rgba(6,182,212,0.8)' : '1px solid rgba(255,255,255,0.5)'),
                     borderRadius: '2rem',
@@ -667,7 +675,7 @@ export default function ParkingMapViewer({ floors, currentFloorId, onFloorSelect
                   )}
                   <div className="absolute inset-0 rounded-[2rem] pointer-events-none opacity-20"
                     style={{ backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`, backgroundSize: '40px 40px' }} />
-                  {renderDynamicElements(floor.layoutData?.elements, floor._id)}
+                  {renderDynamicElements(floorLayout.elements, floor._id)}
                 </div>
               );
             })}
