@@ -1,6 +1,7 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useState } from 'react';
 import { ArrowRight, CalendarDays } from 'lucide-react';
-import { getPackageDurationLabel, getPackageTypeLabel, isSellablePackageType, SELLABLE_PACKAGE_TYPES } from '../../utils/ticketPackageRules';
+import { getPackageDurationLabel, getPackageTypeLabel, isSellablePackageType, localizePackageCopy, SELLABLE_PACKAGE_TYPES } from '../../utils/ticketPackageRules';
 
 const FILTERS = ['all', ...SELLABLE_PACKAGE_TYPES];
 const PAGE_SIZE = 6;
@@ -13,6 +14,8 @@ const TYPE_COLORS = {
 };
 
 export default function MembershipExplore({ packages, onSelectPackage, buttonState }) {
+  const { language, t } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
   const [type, setType] = useState('all');
   const [page, setPage] = useState(1);
   const filteredPackages = packages.filter((pkg) => isSellablePackageType(pkg.type) && (type === 'all' || pkg.type === type));
@@ -22,8 +25,8 @@ export default function MembershipExplore({ packages, onSelectPackage, buttonSta
 
   return (
     <section id="explore" aria-labelledby="membership-explore-heading" className="mt-12 pb-8">
-      <h2 id="membership-explore-heading" className="mb-5 text-2xl font-bold text-slate-900">Explore more</h2>
-      <div role="group" aria-label="Package type" className="mb-6 flex flex-wrap gap-2">
+      <h2 id="membership-explore-heading" className="mb-5 text-2xl font-bold text-slate-900">{t('membershipPage.exploreMore')}</h2>
+      <div role="group" aria-label={t('membershipPage.packageType')} className="mb-6 flex flex-wrap gap-2">
         {FILTERS.map((value) => (
           <button
             key={value}
@@ -32,7 +35,7 @@ export default function MembershipExplore({ packages, onSelectPackage, buttonSta
             onClick={() => { setType(value); setPage(1); }}
             className={`min-h-11 rounded-full border px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${type === value ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600 hover:border-slate-500'}`}
           >
-            {value === 'all' ? 'All packages' : getPackageTypeLabel(value)}
+            {value === 'all' ? t('membershipPage.allPackages') : getPackageTypeLabel(value, t)}
           </button>
         ))}
       </div>
@@ -40,12 +43,12 @@ export default function MembershipExplore({ packages, onSelectPackage, buttonSta
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {visiblePackages.map((pkg) => (
             <article key={pkg._id} className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <span className={`mb-4 inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-sm font-semibold ${TYPE_COLORS[pkg.type]}`}><CalendarDays size={16} aria-hidden="true" />{getPackageTypeLabel(pkg)}</span>
-              <h3 className="text-lg font-bold text-slate-900">{pkg.name}</h3>
-              <p className="mt-5 text-2xl font-black text-slate-900">{Number(pkg.price).toLocaleString('vi-VN')} <span className="text-sm">VND</span></p>
-              <p className="mt-1 text-sm text-slate-500">/ {getPackageDurationLabel(pkg)} / space</p>
-              {pkg.description && <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-600">{pkg.description}</p>}
-              {pkg.benefits?.length > 0 && <ul className="mt-4 space-y-2 text-sm text-slate-600">{pkg.benefits.map((benefit) => <li key={benefit}>{benefit}</li>)}</ul>}
+              <span className={`mb-4 inline-flex items-center gap-2 self-start rounded-xl px-3 py-2 text-sm font-semibold ${TYPE_COLORS[pkg.type]}`}><CalendarDays size={16} aria-hidden="true" />{getPackageTypeLabel(pkg, t)}</span>
+              <h3 className="text-lg font-bold text-slate-900">{localizePackageCopy(pkg.name, t)}</h3>
+              <p className="mt-5 text-2xl font-black text-slate-900">{Number(pkg.price).toLocaleString(locale)} <span className="text-sm">{t('common.currency')}</span></p>
+              <p className="mt-1 text-sm text-slate-500">{t('membershipPage.durationPerSpace', { duration: getPackageDurationLabel(pkg, t) })}</p>
+              {pkg.description && <p className="mt-4 whitespace-pre-line text-sm leading-6 text-slate-600">{localizePackageCopy(pkg.description, t)}</p>}
+              {pkg.benefits?.length > 0 && <ul className="mt-4 space-y-2 text-sm text-slate-600">{pkg.benefits.map((benefit) => <li key={benefit}>{localizePackageCopy(benefit, t)}</li>)}</ul>}
               <div className="mt-auto pt-6">
                 <button
                   type="button"
@@ -53,19 +56,19 @@ export default function MembershipExplore({ packages, onSelectPackage, buttonSta
                   onClick={() => onSelectPackage(pkg)}
                   className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl bg-[#181C23] px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-500 disabled:bg-gray-100 disabled:text-gray-500"
                 >
-                  {buttonState.disabled ? buttonState.label : 'Choose package'}
+                  {buttonState.disabled ? buttonState.label : t('membershipPage.choosePackage')}
                   {!buttonState.disabled && <ArrowRight size={18} aria-hidden="true" />}
                 </button>
               </div>
             </article>
           ))}
         </div>
-      ) : <p role="status" className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">No additional packages in this category.</p>}
+      ) : <p role="status" className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">{t('membershipPage.noAdditionalPackages')}</p>}
       {totalPages > 1 && (
-        <nav aria-label="Package pages" className="mt-6 flex items-center justify-center gap-5">
-          <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-40">Previous</button>
+        <nav aria-label={t('membershipPage.packagePages')} className="mt-6 flex items-center justify-center gap-5">
+          <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-40">{t('membershipPage.previousPage')}</button>
           <span className="text-sm text-slate-600">{currentPage} / {totalPages}</span>
-          <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-40">Next</button>
+          <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 font-semibold disabled:opacity-40">{t('common.next')}</button>
         </nav>
       )}
     </section>

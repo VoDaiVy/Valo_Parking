@@ -430,7 +430,7 @@ export default function DashboardLayout() {
                 VALO PARKING
               </p>
               <p className="staff-shell-caption text-[9px] font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap mt-0.5">
-                {theme.panelLabel}
+                {role === 'customer' ? t('profilePage.myAccount') : theme.panelLabel}
               </p>
             </div>
           )}
@@ -507,7 +507,7 @@ export default function DashboardLayout() {
             >
               <ShieldCheck size={13} />
               <span className="text-xs font-bold uppercase">
-                {theme.badge.label}
+                {role === 'customer' ? t('customer.role') : theme.badge.label}
               </span>
             </div>
 
@@ -528,7 +528,7 @@ export default function DashboardLayout() {
             <button
               onClick={handleLogout}
               className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-red-400 transition-colors"
-              title="Logout"
+              title={role === 'customer' ? t('auth.logout') : 'Logout'}
               aria-label={role === 'staff' ? 'Log out' : undefined}
             >
               <LogOut size={17} />

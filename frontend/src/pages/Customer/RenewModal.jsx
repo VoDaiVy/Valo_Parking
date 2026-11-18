@@ -1,8 +1,10 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useState } from 'react';
 import { X, CreditCard, Wallet, Loader2, AlertCircle, CalendarClock } from 'lucide-react';
 import { API_BASE } from '../../services/api';
 
 export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
+  const { t } = useLanguage();
   const [paymentMethod, setPaymentMethod] = useState('PAYOS');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -28,7 +30,7 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
       const data = await res.json();
       
       if (!data.success) {
-        setErrorMsg(data.message || 'Failed to renew subscription.');
+        setErrorMsg(data.message || t('membershipRenewal.failedToRenewSubscription'));
         setLoading(false);
         return;
       }
@@ -40,7 +42,7 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
       }
     } catch (err) {
       console.error(err);
-      setErrorMsg('Network error while processing renewal.');
+      setErrorMsg(t('membershipRenewal.networkErrorWhileProcessingRenewal'));
       setLoading(false);
     }
   };
@@ -56,8 +58,8 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
               <CalendarClock size={16} className="text-yellow-400" />
             </div>
             <div>
-              <h3 className="text-white font-bold tracking-wide uppercase text-sm">Renew VIP Pass</h3>
-              <p className="text-xs text-gray-400 font-mono">Keep your reserved slots</p>
+              <h3 className="text-white font-bold tracking-wide uppercase text-sm">{t('membershipRenewal.renewVipPass')}</h3>
+              <p className="text-xs text-gray-400 font-mono">{t('membershipRenewal.keepYourReservedSlots')}</p>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white bg-black/20 hover:bg-black/40 p-2 rounded-full transition-colors border border-white/5">
@@ -75,17 +77,17 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
           )}
 
           <div className="bg-black/40 border border-white/5 rounded-xl p-5 mb-6">
-            <p className="text-sm text-gray-400 mb-2">Current Expiration</p>
+            <p className="text-sm text-gray-400 mb-2">{t('membershipRenewal.currentExpiration')}</p>
             <p className="text-lg font-bold text-yellow-400 mb-4">
               {new Date(membership.expireAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
             </p>
             <p className="text-xs text-gray-500">
-              Renewing will extend your current subscription duration. The exact price depends on your original package.
+              {t('membershipRenewal.renewingWillExtendYourCurrentSubscription')}
             </p>
           </div>
 
           <div className="mb-6">
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Select Payment Method</label>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">{t('membershipRenewal.selectPaymentMethod')}</label>
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => setPaymentMethod('PAYOS')}
@@ -104,7 +106,7 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
               >
                 <div className="flex items-center gap-3">
                   <Wallet size={20} className={paymentMethod === 'WALLET' ? 'text-yellow-400' : 'text-gray-400'} />
-                  <span className={`font-semibold ${paymentMethod === 'WALLET' ? 'text-white' : 'text-gray-300'}`}>Valo Wallet</span>
+                  <span className={`font-semibold ${paymentMethod === 'WALLET' ? 'text-white' : 'text-gray-300'}`}>{t('membershipRenewal.valoWallet')}</span>
                 </div>
                 <div className={`w-4 h-4 rounded-full border-2 ${paymentMethod === 'WALLET' ? 'border-yellow-500 bg-yellow-400' : 'border-gray-500'}`} />
               </button>
@@ -116,7 +118,7 @@ export default function RenewModal({ isOpen, onClose, membership, onSuccess }) {
             disabled={loading}
             className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 font-extrabold uppercase tracking-wider py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.2)] flex items-center justify-center gap-2"
           >
-            {loading ? <Loader2 size={20} className="animate-spin" /> : 'Confirm Renewal'}
+            {loading ? <Loader2 size={20} className="animate-spin" /> : t('membershipRenewal.confirmRenewal')}
           </button>
         </div>
       </div>

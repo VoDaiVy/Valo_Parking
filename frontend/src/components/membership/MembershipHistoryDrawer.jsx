@@ -1,3 +1,4 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useEffect, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle, Description, Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/react';
 import { History, X, CheckCircle2, XCircle, Clock3, CreditCard, Bell, ChevronDown, Check, Wallet, QrCode } from 'lucide-react';
@@ -14,10 +15,10 @@ const tones = {
 };
 
 const activityFilters = [
-  { value: 'all', label: 'All activities', icon: History },
-  { value: 'renewals', label: 'Renewals', icon: Clock3 },
-  { value: 'payments', label: 'Payments', icon: CreditCard },
-  { value: 'notifications', label: 'Notifications', icon: Bell },
+  { value: 'all', label: 'membershipHistory.allActivities', icon: History },
+  { value: 'renewals', label: 'membershipHistory.renewals', icon: Clock3 },
+  { value: 'payments', label: 'membershipHistory.payments', icon: CreditCard },
+  { value: 'notifications', label: 'membershipHistory.notifications', icon: Bell },
 ];
 
 function Activity({ item }) {
@@ -56,6 +57,7 @@ function Activity({ item }) {
 }
 
 export default function MembershipHistoryDrawer({ onClose }) {
+  const { t } = useLanguage();
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [attempt, setAttempt] = useState(0);
@@ -81,20 +83,20 @@ export default function MembershipHistoryDrawer({ onClose }) {
       <DialogPanel className="membership-history-drawer pointer-events-auto flex h-dvh w-full max-w-full flex-col border-l border-white/10 bg-[#101113] text-white shadow-2xl sm:w-[530px]">
         <header className="flex shrink-0 items-start gap-3 border-b border-white/10 p-5">
           <History aria-hidden="true" className="mt-1 text-yellow-400" size={22} />
-          <div className="min-w-0 flex-1"><DialogTitle className="type-card">History</DialogTitle><Description className="mt-1 text-sm leading-6 text-white/60">Your membership renewals, payments and reminders.</Description></div>
-          <button type="button" autoFocus onClick={onClose} aria-label="Close membership history" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl hover:bg-white/10 focus-visible:outline-yellow-400"><X size={20} /></button>
+          <div className="min-w-0 flex-1"><DialogTitle className="type-card">{t('membershipHub.history')}</DialogTitle><Description className="mt-1 text-sm leading-6 text-white/60">{t('membershipHistory.yourMembershipRenewalsPaymentsAndReminders')}</Description></div>
+          <button type="button" autoFocus onClick={onClose} aria-label={t('membershipHistory.closeMembershipHistory')} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl hover:bg-white/10 focus-visible:outline-yellow-400"><X size={20} /></button>
         </header>
         <div className="relative z-10 shrink-0 px-5 py-4">
           <Listbox value={filter} onChange={(value) => { setFilter(value); setPage(1); }}>
             <div className="relative">
-              <ListboxButton aria-label="Activity type" className="type-button group flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-3.5 py-2.5 text-left text-white/85 transition hover:border-[#DCA11D]/40 hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#DCA11D] data-[open]:border-[#DCA11D]/50">
-                <span className="flex min-w-0 items-center gap-2.5"><History size={15} aria-hidden="true" className="shrink-0 text-[#DCA11D]" />{activityFilters.find((option) => option.value === filter)?.label}</span>
+              <ListboxButton aria-label={t('membershipHistory.activityType')} className="type-button group flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-3.5 py-2.5 text-left text-white/85 transition hover:border-[#DCA11D]/40 hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#DCA11D] data-[open]:border-[#DCA11D]/50">
+                <span className="flex min-w-0 items-center gap-2.5"><History size={15} aria-hidden="true" className="shrink-0 text-[#DCA11D]" />{t(activityFilters.find((option) => option.value === filter)?.label ?? activityFilters[0].label)}</span>
                 <ChevronDown size={15} aria-hidden="true" className="shrink-0 text-white/40 transition-transform group-data-[open]:rotate-180" />
               </ListboxButton>
               <ListboxOptions transition className="absolute inset-x-0 top-full mt-2 origin-top rounded-2xl border border-white/10 bg-[#1B1C1F] p-1.5 text-white shadow-[0_16px_40px_rgba(0,0,0,0.45)] outline-none transition duration-150 data-[closed]:scale-95 data-[closed]:opacity-0 motion-reduce:transition-none">
                 {activityFilters.map(({ value, label, icon: Icon }) => <ListboxOption key={value} value={value} className="type-button group flex min-h-11 cursor-pointer select-none items-center gap-3 rounded-xl px-3 py-2.5 text-white/65 transition data-[focus]:bg-white/[0.06] data-[focus]:text-white data-[selected]:bg-[#DCA11D]/10 data-[selected]:text-[#E6B94F]">
                   <Icon size={16} aria-hidden="true" className="shrink-0 opacity-70 group-data-[selected]:opacity-100" />
-                  <span className="flex-1">{label}</span>
+                  <span className="flex-1">{t(label)}</span>
                   <Check size={15} aria-hidden="true" className="invisible shrink-0 group-data-[selected]:visible" />
                 </ListboxOption>)}
               </ListboxOptions>
@@ -102,12 +104,12 @@ export default function MembershipHistoryDrawer({ onClose }) {
           </Listbox>
         </div>
         <div className="membership-history-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5" aria-busy={loading}>
-          {loading ? <div role="status" aria-label="Loading membership history" className="space-y-4">{[1, 2, 3].map((key) => <div key={key} className="h-36 animate-pulse rounded-2xl bg-white/5 motion-reduce:animate-none" />)}<span className="sr-only">Loading history...</span></div>
-            : error ? <div role="alert" className="rounded-2xl border border-red-500/20 p-5 text-sm"><p>Unable to load membership history.</p><button type="button" onClick={() => setAttempt(attempt + 1)} className="type-button mt-4 rounded-xl border border-white/20 px-4 py-2">Retry</button></div>
-              : !result?.items?.length ? <div role="status" className="py-12 text-center"><History className="mx-auto mb-4 text-white/30" /><p className="type-label">{filter === 'all' ? 'No membership activity yet' : 'No matching activities'}</p><p className="mt-2 text-sm text-white/50">{filter === 'all' ? 'Recorded membership activity will appear here.' : 'Choose another activity type to see more history.'}</p></div>
-                : <ul aria-label="Membership activity timeline">{result.items.map((item) => <Activity key={item.id} item={item} />)}</ul>}
+          {loading ? <div role="status" aria-label={t('membershipHistory.loadingMembershipHistory')} className="space-y-4">{[1, 2, 3].map((key) => <div key={key} className="h-36 animate-pulse rounded-2xl bg-white/5 motion-reduce:animate-none" />)}<span className="sr-only">{t('membershipHistory.loadingHistory')}</span></div>
+            : error ? <div role="alert" className="rounded-2xl border border-red-500/20 p-5 text-sm"><p>{t('membershipHistory.unableToLoadMembershipHistory')}</p><button type="button" onClick={() => setAttempt(attempt + 1)} className="type-button mt-4 rounded-xl border border-white/20 px-4 py-2">{t('common.retry')}</button></div>
+              : !result?.items?.length ? <div role="status" className="py-12 text-center"><History className="mx-auto mb-4 text-white/30" /><p className="type-label">{filter === 'all' ? t('membershipHistory.noMembershipActivityYet') : t('membershipHistory.noMatchingActivities')}</p><p className="mt-2 text-sm text-white/50">{filter === 'all' ? t('membershipHistory.recordedMembershipActivityWillAppearHere') : t('membershipHistory.chooseAnotherActivityTypeToSee')}</p></div>
+                : <ul aria-label={t('membershipHistory.membershipActivityTimeline')}>{result.items.map((item) => <Activity key={item.id} item={item} />)}</ul>}
         </div>
-        {!loading && !error && result?.pagination?.totalPages > 1 && <nav aria-label="History pages" className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 p-5"><button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="type-button rounded-xl border border-white/15 px-3 py-2 disabled:opacity-40">Previous</button><span className="type-caption" aria-live="polite">{page} / {result.pagination.totalPages}</span><button type="button" disabled={page >= result.pagination.totalPages} onClick={() => setPage(page + 1)} className="type-button rounded-xl border border-white/15 px-3 py-2 disabled:opacity-40">Next</button></nav>}
+        {!loading && !error && result?.pagination?.totalPages > 1 && <nav aria-label={t('membershipHistory.historyPages')} className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 p-5"><button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="type-button rounded-xl border border-white/15 px-3 py-2 disabled:opacity-40">{t('membershipHistory.previous')}</button><span className="type-caption" aria-live="polite">{page} / {result.pagination.totalPages}</span><button type="button" disabled={page >= result.pagination.totalPages} onClick={() => setPage(page + 1)} className="type-button rounded-xl border border-white/15 px-3 py-2 disabled:opacity-40">{t('common.next')}</button></nav>}
       </DialogPanel>
     </div>
   </Dialog>;
