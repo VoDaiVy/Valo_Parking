@@ -1,5 +1,5 @@
 // Reporting validation only: preserve backend values; never fill missing money with zero.
-export const revenueSources = ['bookingRevenue', 'serviceRevenue', 'packageRevenue', 'membershipTransferFees'];
+export const revenueSources = ['bookingRevenue', 'serviceRevenue', 'packageRevenue', 'membershipTransferFees', 'parkingRevenue'];
 export const readRevenueNumber = (value) => {
   if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
   const number = Number(value);
@@ -9,6 +9,7 @@ const equal = (a, b) => Math.abs(a - b) < 0.01;
 export function inspectRevenueResponse(data) {
   const issues = [];
   const summary = {...data?.summary};
+  if (data?.summary && !Object.hasOwn(data.summary, 'parkingRevenue')) summary.parkingRevenue = 0;
   const fields = ['totalRevenue', ...revenueSources, 'refunds', 'sourceCompositionTotal'];
   for (const field of fields) summary[field] = readRevenueNumber(summary[field]);
   const sourcesPresent = revenueSources.every((key) => summary[key] !== null);
@@ -18,7 +19,7 @@ export function inspectRevenueResponse(data) {
     issues.push('Revenue totals do not reconcile with the reported sources. Total and composition are unavailable.');
     summary.totalRevenue = null; summary.sourceCompositionTotal = null;
   }
-  let trend = Array.isArray(data?.trend) ? data.trend : null;
+  let trend = Array.isArray(data?.trend) ? data.trend.map((point) => Object.hasOwn(point, 'parkingRevenue') ? point : {...point, parkingRevenue: 0}) : null;
   if (trend && trend.some((point) => !point.period || ['totalRevenue', ...revenueSources, 'refunds'].some((key) => readRevenueNumber(point[key]) === null) || !equal(Number(point.totalRevenue), revenueSources.reduce((total, key) => total + Number(point[key]), 0)))) {
     issues.push('Revenue trend contains incomplete or inconsistent amounts.'); trend = null;
   }
