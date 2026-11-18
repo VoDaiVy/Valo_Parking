@@ -1,3 +1,4 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import '../../components/Admin/adminGridBackground.css';
 import { useEffect, useRef, useState } from "react";
 import {
@@ -17,13 +18,16 @@ const initialFilters = {
 };
 const inputClass =
   "rounded-xl border border-white/15 bg-[#171717] px-3 py-2 text-sm text-white";
-const date = (value) =>
+const date = (value, locale) =>
   value
-    ? new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Ho_Chi_Minh" })
+    ? new Date(value).toLocaleString(locale, { timeZone: "Asia/Ho_Chi_Minh" })
     : "—";
 const entityId = (item) => item?._id || item?.id;
 
 export default function FeedbackManagement() {
+  const { t, language } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-GB';
+  const categoryLabel = (value) => t('adminFeedback.categories.' + value, { defaultValue: value });
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [filters, setFilters] = useState(initialFilters);
   const [page, setPage] = useState(1);
@@ -64,7 +68,7 @@ export default function FeedbackManagement() {
         setError(
           items.data?.message ||
             counts.data?.message ||
-            "Could not load feedback.",
+            t('adminFeedback.couldNotLoadFeedback'),
         );
       }
       setLoading(false);
@@ -72,7 +76,7 @@ export default function FeedbackManagement() {
     return () => {
       active = false;
     };
-  }, [filters, page, refresh]);
+  }, [filters, page, refresh, t]);
 
   const openDetail = async (item, preserveDraft = false) => {
     const request = ++detailRequest.current;
@@ -93,7 +97,7 @@ export default function FeedbackManagement() {
       if (!preserveDraft) setReply(res.data.data.reply?.content || "");
       setConflict(false);
     } else
-      setReplyError(res.data?.message || "Could not load feedback details.");
+      setReplyError(res.data?.message || t('adminFeedback.couldNotLoadFeedbackDetails'));
     setDetailLoading(false);
   };
   const close = () => {
@@ -117,7 +121,7 @@ export default function FeedbackManagement() {
     } else {
       setReplyError(
         res.data?.message ||
-          "Could not save response. Your draft is preserved.",
+          t('adminFeedback.couldNotSaveResponseYourDraftIsPreserved'),
       );
       if (res.status === 409) setConflict(true);
     }
@@ -127,26 +131,21 @@ export default function FeedbackManagement() {
   return (
     <div className="admin-grid-background min-h-full p-4 text-white sm:p-6 lg:p-8">
       <header className="mb-7">
-        <p className="text-xs font-bold uppercase tracking-widest text-yellow-300/70">
-          Customer experience
-        </p>
-        <h1 className="mt-2 text-3xl font-bold">Booking feedback</h1>
-        <p className="mt-2 text-sm text-white/50">
-          Review customer experiences and respond as Valo Parking. All dates use
-          Vietnam time.
-        </p>
+        <p className="text-xs font-bold uppercase tracking-widest text-yellow-300/70">{t('adminFeedback.customerExperience')}</p>
+        <h1 className="mt-2 text-3xl font-bold">{t('adminFeedback.bookingFeedback')}</h1>
+        <p className="mt-2 text-sm text-white/50">{t('adminFeedback.reviewCustomerExperiencesAndRespondAsValoParkingAllDatesUseVietnamTime')}</p>
       </header>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          ["Total reviews", stats?.total],
+          [t('adminFeedback.totalReviews'), stats?.total],
           [
-            "Average rating",
+            t('adminFeedback.averageRating'),
             stats?.averageRating == null
               ? "—"
-              : `${Number(stats.averageRating).toFixed(1)}/5`,
+              : `${Number(stats.averageRating).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/5`,
           ],
-          ["1–2 star reviews", stats?.lowRatingCount],
-          ["Awaiting response", stats?.unrepliedCount],
+          [t('adminFeedback.12StarReviews'), stats?.lowRatingCount],
+          [t('adminFeedback.awaitingResponse'), stats?.unrepliedCount],
         ].map(([label, value]) => (
           <div
             key={label}
@@ -167,9 +166,7 @@ export default function FeedbackManagement() {
         }}
         className="mb-5 flex flex-wrap items-end gap-3"
       >
-        <label className="flex flex-col gap-1 text-xs text-white/60">
-          Booking ID or username
-          <input
+        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.bookingIdOrUsername')}<input
             className={inputClass}
             value={draftFilters.search}
             onChange={(e) =>
@@ -177,52 +174,46 @@ export default function FeedbackManagement() {
             }
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-white/60">
-          Rating
-          <select
+        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.rating')}<select
             className={inputClass}
             value={draftFilters.rating}
             onChange={(e) =>
               setDraftFilters({ ...draftFilters, rating: e.target.value })
             }
           >
-            <option value="">All ratings</option>
+            <option value="">{t('adminFeedback.allRatings')}</option>
             {[1, 2, 3, 4, 5].map((v) => (
               <option key={v} value={v}>
-                {v} stars
+                {t('adminFeedback.stars', { count: v })}
               </option>
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-white/60">
-          Topic
-          <select
+        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.topic')}<select
             className={inputClass}
             value={draftFilters.category}
             onChange={(e) =>
               setDraftFilters({ ...draftFilters, category: e.target.value })
             }
           >
-            <option value="">All topics</option>
+            <option value="">{t('adminFeedback.allTopics')}</option>
             {["parking", "staff", "payment", "app", "other"].map((v) => (
               <option key={v} value={v}>
-                {v}
+                {categoryLabel(v)}
               </option>
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-white/60">
-          Response status
-          <select
+        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.responseStatus')}<select
             className={inputClass}
             value={draftFilters.status}
             onChange={(e) =>
               setDraftFilters({ ...draftFilters, status: e.target.value })
             }
           >
-            <option value="">All responses</option>
-            <option value="UNREPLIED">Awaiting response</option>
-            <option value="REPLIED">Responded</option>
+            <option value="">{t('adminFeedback.allResponses')}</option>
+            <option value="UNREPLIED">{t('adminFeedback.awaitingResponse')}</option>
+            <option value="REPLIED">{t('adminFeedback.responded')}</option>
           </select>
         </label>
         {["from", "to"].map((key) => (
@@ -230,7 +221,7 @@ export default function FeedbackManagement() {
             key={key}
             className="flex flex-col gap-1 text-xs text-white/60"
           >
-            {key === "from" ? "From date" : "To date (exclusive)"}
+            {key === "from" ? t('adminFeedback.fromDate') : t('adminFeedback.toDateExclusive')}
             <input
               type="date"
               className={inputClass}
@@ -241,9 +232,7 @@ export default function FeedbackManagement() {
             />
           </label>
         ))}
-        <button className="rounded-xl bg-yellow-300 px-4 py-2 text-sm font-bold text-black">
-          Apply filters
-        </button>
+        <button className="rounded-xl bg-yellow-300 px-4 py-2 text-sm font-bold text-black">{t('adminFeedback.applyFilters')}</button>
         <button
           type="button"
           onClick={() => {
@@ -252,9 +241,7 @@ export default function FeedbackManagement() {
             setPage(1);
           }}
           className={inputClass}
-        >
-          Reset
-        </button>
+        >{t('adminFeedback.reset')}</button>
       </form>
       {error && (
         <div role="alert" className="mb-4 text-rose-300">
@@ -262,15 +249,11 @@ export default function FeedbackManagement() {
           <button
             onClick={() => setRefresh((value) => value + 1)}
             className="underline"
-          >
-            Retry
-          </button>
+          >{t('adminFeedback.retry')}</button>
         </div>
       )}
       {loading ? (
-        <p role="status" className="py-10 text-white/50">
-          Loading feedback…
-        </p>
+        <p role="status" className="py-10 text-white/50">{t('adminFeedback.loadingFeedback')}</p>
       ) : (
         !error && (
           <>
@@ -279,12 +262,12 @@ export default function FeedbackManagement() {
                 <thead className="bg-white/5 text-xs text-white/50">
                   <tr>
                     {[
-                      "Customer / booking",
-                      "Rating",
-                      "Feedback",
-                      "Sent",
-                      "Response",
-                      "Action",
+                      t('adminFeedback.customerBooking'),
+                      t('adminFeedback.rating'),
+                      t('adminFeedback.feedback'),
+                      t('adminFeedback.sent'),
+                      t('adminFeedback.response'),
+                      t('adminFeedback.action'),
                     ].map((label) => (
                       <th key={label} className="p-4 font-medium">
                         {label}
@@ -302,12 +285,12 @@ export default function FeedbackManagement() {
                         <p>
                           {item.userId?.username ||
                             item.user?.username ||
-                            "Deleted customer"}
+                            t('adminFeedback.deletedCustomer')}
                         </p>
                         <p className="mt-1 max-w-[200px] truncate text-xs text-white/40">
                           {item.bookingId && typeof item.bookingId === "object"
                             ? entityId(item.bookingId)
-                            : item.bookingId || "Deleted booking"}
+                            : item.bookingId || t('adminFeedback.deletedBooking')}
                         </p>
                       </td>
                       <td className="whitespace-nowrap p-4 text-yellow-300">
@@ -315,55 +298,47 @@ export default function FeedbackManagement() {
                       </td>
                       <td className="max-w-sm p-4">
                         <p className="line-clamp-2 break-words">
-                          {item.comment || "No written comment"}
+                          {item.comment || t('adminFeedback.noWrittenComment')}
                         </p>
                       </td>
                       <td className="whitespace-nowrap p-4 text-xs text-white/50">
-                        {date(item.createdAt)}
+                        {date(item.createdAt, locale)}
                       </td>
                       <td className="p-4 text-xs">
-                        {item.reply ? "Responded" : "Awaiting response"}
+                        {item.reply ? t('adminFeedback.responded') : t('adminFeedback.awaitingResponse')}
                       </td>
                       <td className="p-4">
                         <button
                           onClick={() => openDetail(item)}
                           className="whitespace-nowrap rounded-lg border border-yellow-300/30 px-3 py-2 text-yellow-200"
-                        >
-                          View / respond
-                        </button>
+                        >{t('adminFeedback.viewRespond')}</button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {!list.items.length && (
-                <p className="p-10 text-center text-white/50">
-                  No feedback matches these filters.
-                </p>
+                <p className="p-10 text-center text-white/50">{t('adminFeedback.noFeedbackMatchesTheseFilters')}</p>
               )}
             </div>
             <nav
-              aria-label="Feedback pagination"
+              aria-label={t('adminFeedback.feedbackPagination')}
               className="mt-4 flex items-center justify-between gap-4 text-sm"
             >
               <span>
-                {list.total} reviews · Page {page}
+                {t('adminFeedback.paginationSummary', { count: list.total, page })}
               </span>
               <div className="flex gap-2">
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage(page - 1)}
                   className={`${inputClass} disabled:opacity-40`}
-                >
-                  Previous
-                </button>
+                >{t('adminFeedback.previous')}</button>
                 <button
                   disabled={page * 20 >= list.total}
                   onClick={() => setPage(page + 1)}
                   className={`${inputClass} disabled:opacity-40`}
-                >
-                  Next
-                </button>
+                >{t('adminFeedback.next')}</button>
               </div>
             </nav>
           </>
@@ -379,17 +354,13 @@ export default function FeedbackManagement() {
         className="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#111111] p-6 text-white backdrop:bg-black/75"
       >
         <div className="flex items-center justify-between gap-3">
-          <h2 id="admin-feedback-title" className="text-xl font-bold">
-            Feedback details
-          </h2>
+          <h2 id="admin-feedback-title" className="text-xl font-bold">{t('adminFeedback.feedbackDetails')}</h2>
           <button
             type="button"
             disabled={saving}
             onClick={close}
             className={inputClass}
-          >
-            Close
-          </button>
+          >{t('adminFeedback.close')}</button>
         </div>
         {selected && (
           <>
@@ -397,21 +368,20 @@ export default function FeedbackManagement() {
               {selected.rating}/5 ★
             </p>
             <p className="mt-3 whitespace-pre-wrap break-words">
-              {selected.comment || "No written comment."}
+              {selected.comment || t('adminFeedback.noWrittenComment')}
             </p>
             <p className="mt-2 text-xs text-white/50">
-              {selected.categories?.join(" · ")} · {date(selected.createdAt)}
+              {selected.categories?.map(categoryLabel).join(" · ")} · {date(selected.createdAt, locale)}
             </p>
-            <p className="mt-2 break-all text-xs text-white/50">
-              Booking{" "}
+            <p className="mt-2 break-all text-xs text-white/50">{t('adminFeedback.booking')}{" "}
               {selected.bookingId && typeof selected.bookingId === "object"
                 ? entityId(selected.bookingId)
-                : selected.bookingId || "Deleted booking"}
+                : selected.bookingId || t('adminFeedback.deletedBooking')}
             </p>
             {selected.bookingId && typeof selected.bookingId === "object" && (
               <p className="mt-2 text-sm text-white/60">
-                {selected.bookingId.licensePlate} · Slot{" "}
-                {selected.bookingId.parkingSlot} · {selected.bookingId.status}
+                {selected.bookingId.licensePlate} · {t('adminFeedback.slot')}{' '}
+                {selected.bookingId.parkingSlot} · {t('adminFeedback.bookingStatus.' + selected.bookingId.status, { defaultValue: selected.bookingId.status })}
               </p>
             )}
             {replyError && (
@@ -424,31 +394,22 @@ export default function FeedbackManagement() {
                 type="button"
                 onClick={() => openDetail(selected, true)}
                 className="mt-3 text-sm text-yellow-300 underline"
-              >
-                Load latest response (keep my draft)
-              </button>
+              >{t('adminFeedback.loadLatestResponseKeepMyDraft')}</button>
             )}
             {detailLoading ? (
-              <p role="status" className="mt-4">
-                Loading current response…
-              </p>
+              <p role="status" className="mt-4">{t('adminFeedback.loadingCurrentResponse')}</p>
             ) : !detailReady ? (
               <button
                 type="button"
                 onClick={() => openDetail(selected, true)}
                 className="mt-4 underline"
-              >
-                Retry loading details
-              </button>
+              >{t('adminFeedback.retryLoadingDetails')}</button>
             ) : !selected.userId || !selected.bookingId ? (
               <section className="mt-5 border-t border-white/10 pt-4">
-                <p className="text-sm text-amber-200">
-                  This feedback is read-only because its customer or booking was
-                  deleted.
-                </p>
+                <p className="text-sm text-amber-200">{t('adminFeedback.thisFeedbackIsReadOnlyBecauseItsCustomerOrBookingWasDeleted')}</p>
                 {selected.reply && (
                   <>
-                    <h3 className="mt-4 font-bold">Valo Parking response</h3>
+                    <h3 className="mt-4 font-bold">{t('adminFeedback.valoParkingResponse')}</h3>
                     <p className="mt-2 whitespace-pre-wrap break-words text-sm">
                       {selected.reply.content}
                     </p>
@@ -460,25 +421,19 @@ export default function FeedbackManagement() {
                 onSubmit={save}
                 className="mt-6 border-t border-white/10 pt-5"
               >
-                <h3 className="font-bold">Official response · Valo Parking</h3>
+                <h3 className="font-bold">{t('adminFeedback.officialResponseValoParking')}</h3>
                 {selected.reply && (
                   <div className="mt-3 rounded-lg bg-white/5 p-3">
-                    <p className="text-xs text-white/50">
-                      Current published response
-                    </p>
+                    <p className="text-xs text-white/50">{t('adminFeedback.currentPublishedResponse')}</p>
                     <p className="mt-2 whitespace-pre-wrap break-words text-sm">
                       {selected.reply.content}
                     </p>
                   </div>
                 )}
                 {conflict && (
-                  <p className="mt-2 text-sm text-white/60">
-                    Load the latest version before saving your draft again.
-                  </p>
+                  <p className="mt-2 text-sm text-white/60">{t('adminFeedback.loadTheLatestVersionBeforeSavingYourDraftAgain')}</p>
                 )}
-                <label className="mt-3 block text-sm">
-                  Response
-                  <textarea
+                <label className="mt-3 block text-sm">{t('adminFeedback.response')}<textarea
                     required
                     maxLength={2000}
                     rows={5}
@@ -488,30 +443,27 @@ export default function FeedbackManagement() {
                   />
                 </label>
                 <p className="mt-1 text-xs text-white/40">
-                  {reply.length}/2000 · Only the first response sends a
-                  notification.
+                  {t('adminFeedback.replyHint', { count: reply.length })}
                 </p>
                 <button
                   disabled={saving || conflict || !reply.trim()}
                   className="mt-4 rounded-xl bg-yellow-300 px-4 py-3 text-sm font-bold text-black disabled:opacity-40"
                 >
                   {saving
-                    ? "Saving…"
+                    ? t('adminFeedback.saving')
                     : selected.reply
-                      ? "Update response"
-                      : "Send response"}
+                      ? t('adminFeedback.updateResponse')
+                      : t('adminFeedback.sendResponse')}
                 </button>
               </form>
             )}
             {selected.replyHistory?.length > 0 && (
               <details className="mt-5 border-t border-white/10 pt-4">
-                <summary className="cursor-pointer text-sm text-white/60">
-                  Internal response history
-                </summary>
+                <summary className="cursor-pointer text-sm text-white/60">{t('adminFeedback.internalResponseHistory')}</summary>
                 {selected.replyHistory.map((entry, index) => (
                   <div key={index} className="mt-3 rounded-lg bg-white/5 p-3">
                     <p className="text-xs text-white/40">
-                      Revision {entry.revision} · {date(entry.changedAt)}
+                      {t('adminFeedback.revision', { revision: entry.revision })} · {date(entry.changedAt, locale)}
                     </p>
                     <p className="mt-2 whitespace-pre-wrap break-words text-sm">
                       {entry.content}

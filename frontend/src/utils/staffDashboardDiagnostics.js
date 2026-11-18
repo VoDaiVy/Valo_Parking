@@ -175,13 +175,14 @@ export const buildStaffDashboardMetrics = ({
 export const buildStaffLotDiagnostics = ({
   metrics = {},
   availability = { isAvailable: true, error: '' },
+  t,
 } = {}) => {
   if (!availability.isAvailable) {
     return [{
       key: 'unavailable',
       level: 'error',
-      text: `Operational diagnostics unavailable. ${availability.error}`,
-      time: 'Data synchronization failed',
+      text: t ? t('staffLotDiagnostics.unavailable', { error: availability.error }) : `Operational diagnostics unavailable. ${availability.error}`,
+      time: t ? t('staffLotDiagnostics.syncFailed') : 'Data synchronization failed',
     }];
   }
 
@@ -254,5 +255,24 @@ export const buildStaffLotDiagnostics = ({
     });
   }
 
-  return diagnostics;
+  if (!t) return diagnostics;
+  const values = {
+    overdue: { count: overdueSessions.length },
+    maintenance: { count: maintenanceSlots.length, slots: maintenanceSlots
+      .map((slot) => `${slot.slotNumber}${slot.maintenanceReason ? ` (${slot.maintenanceReason})` : ''}`).join(', ') },
+    cancellations: { count: cancellationsToday },
+    'no-floor-slots': { floor: activeFloor?.name || t('staffLotDiagnostics.unknownFloor') },
+    'capacity-warning': { floor: activeFloor?.name || 'A', rate: occupancyRate },
+    'capacity-healthy': { floor: activeFloor?.name || 'A', rate: occupancyRate },
+  };
+  const timeKeys = {
+    overdue: 'attention', maintenance: 'database', cancellations: 'today',
+    'no-floor': 'noFloor', 'no-floor-slots': 'noLayout',
+    'capacity-warning': 'activeNow', 'capacity-healthy': 'activeNow',
+  };
+  return diagnostics.map((item) => ({
+    ...item,
+    text: t('staffLotDiagnostics.messages.' + item.key, values[item.key]),
+    time: t('staffLotDiagnostics.' + timeKeys[item.key]),
+  }));
 };

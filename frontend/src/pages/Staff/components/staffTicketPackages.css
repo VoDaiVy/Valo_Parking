@@ -45,7 +45,7 @@ body[data-valo-typography="staff"] .staff-ticket-packages .stp-note p:first-chil
 body[data-valo-typography="staff"] .staff-ticket-packages .stp-note > div:first-child { background: #E7C2780D; border-color: #E7C27830; color: #E7C278; }
 body[data-valo-typography="staff"] .staff-ticket-packages.stp-skeleton { padding-top: 22px; }
 @media (min-width: 1024px) {
- body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns, body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { grid-template-columns: minmax(180px,1.5fr) 100px minmax(125px,.8fr) 100px 140px; }
+ body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns, body[data-valo-typography="staff"] .staff-ticket-packages .stp-row-grid { grid-template-columns: minmax(180px,1.5fr) 100px minmax(125px,.8fr) 140px 140px; }
 }
 @media (max-width: 1023px) {
  body[data-valo-typography="staff"] .staff-ticket-packages .stp-columns { display: none; }
