@@ -1,7 +1,8 @@
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { Children, cloneElement, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { assistantSplitLayout, DEFAULT_ASSISTANT_CHAT_RATIO } from '../../utils/assistantSplitLayout';
 
-export default function ResizableAssistantShell({ children, historyCollapsed, language }) {
+export default function ResizableAssistantShell({ children, historyCollapsed }) {
   const shellRef = useRef(null);
   const dragRef = useRef(null);
   const frameRef = useRef(null);
@@ -9,7 +10,7 @@ export default function ResizableAssistantShell({ children, historyCollapsed, la
   const [preferences, setPreferences] = useState({ historyWidth: undefined, chatRatio: DEFAULT_ASSISTANT_CHAT_RATIO });
   const [dragging, setDragging] = useState(null);
   const id = useId();
-  const vi = language === 'vi';
+  const { t } = useLanguage();
   const compact = measurement.width > 0 && (measurement.container <= 1100 || measurement.viewport <= 1100);
   const mobile = measurement.width > 0 && (measurement.container <= 640 || measurement.viewport <= 640);
   const sizes = assistantSplitLayout({ width: measurement.width || 1200, ...preferences, collapsed: historyCollapsed, compact });
@@ -92,13 +93,13 @@ export default function ResizableAssistantShell({ children, historyCollapsed, la
   };
   const separator = (kind) => {
     const disabled = mobile || (kind === 'history' ? historyCollapsed : compact);
-    const label = kind === 'history' ? (vi ? 'Điều chỉnh chiều rộng lịch sử và khung chat' : 'Resize history and chat')
-      : (vi ? 'Điều chỉnh chiều rộng khung chat và booking' : 'Resize chat and booking preview');
+    const label = kind === 'history' ? (t('aiBookingUi.resizeHistoryAndChat'))
+      : (t('aiBookingUi.resizeChatAndBookingPreview'));
     return <div className={`valo-assistant-splitter is-${kind} ${dragging === kind ? 'is-dragging' : ''}`}
       role="separator" aria-orientation="vertical" aria-label={label} aria-controls={kind === 'history' ? `${id}-history ${id}-chat` : `${id}-chat ${id}-preview`}
       aria-valuemin={Math.round(kind === 'history' ? sizes.minHistory : sizes.minChat)} aria-valuemax={Math.round(kind === 'history' ? sizes.maxHistory : sizes.maxChat)}
       aria-valuenow={Math.round(kind === 'history' ? sizes.history : sizes.chat)} aria-valuetext={`${Math.round(kind === 'history' ? sizes.history : sizes.chat)} px`}
-      tabIndex={disabled ? -1 : 0} title={`${label}. ${vi ? 'Kéo hoặc dùng phím mũi tên; nhấp đúp để đặt lại.' : 'Drag or use arrow keys; double-click to reset.'}`}
+      tabIndex={disabled ? -1 : 0} title={`${label}. ${t('aiBookingUi.dragOrUseArrowKeysDouble')}`}
       onPointerDown={(event) => startDrag(event, kind)} onPointerMove={moveDrag}
       onPointerUp={() => finishDrag()} onPointerCancel={() => finishDrag()} onLostPointerCapture={() => finishDrag()}
       onKeyDown={(event) => keyboardResize(event, kind)} onDoubleClick={() => reset(kind)} />;

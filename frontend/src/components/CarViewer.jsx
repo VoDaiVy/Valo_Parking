@@ -104,6 +104,7 @@ function CarModel({ modelUrl, carColor }) {
 
 // ─── Internal: HTML fallback shown while Suspense waits ──────────────────────
 function LoadingFallback() {
+  const { t } = useLanguage();
   return (
     <Html center>
       <p
@@ -115,7 +116,7 @@ function LoadingFallback() {
           userSelect: 'none',
         }}
       >
-        Loading 3D model...
+        {t('vehiclesPage.loadingModel')}
       </p>
     </Html>
   );
@@ -220,3 +221,4 @@ const CarViewer = forwardRef(function CarViewer({ modelUrl, carColor = '#ffffff'
 });
 
 export default CarViewer;
+import { useLanguage } from '../i18n/hooks/useLanguage';

@@ -252,7 +252,7 @@ export default function PricingManagement() {
     <AdminBackgroundOverlay />
     <div className="pricing-content">
       <PricingHeader status={scheduleStatus} />
-      <nav className="pricing-tabs" role="tablist" aria-label="Pricing sections">
+      <nav className="pricing-tabs" role="tablist" aria-label={t('pricingUi.sections')}>
         {[['time-blocks', t('pricingUi.timeBlocks', { defaultValue: 'Time Blocks' }), Clock3], ['policies', t('pricingUi.calendarPolicies', { defaultValue: 'Calendar Policies' }), CalendarDays]].map(([value, label, Icon], index) => (
           <button key={value} type="button" role="tab" id={`pricing-tab-${value}`}
             aria-selected={activeTab === value} aria-controls={`pricing-panel-${value}`} tabIndex={activeTab === value ? 0 : -1}

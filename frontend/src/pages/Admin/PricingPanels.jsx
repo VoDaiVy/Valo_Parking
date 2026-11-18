@@ -64,7 +64,15 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
   const segments = warning.startsWith('Overlapping') || warning.startsWith('Invalid time') ? [] : getTimelineSegments(timeBlocks).filter((segment) => segment.width > 0);
   const tooltipId = useId();
   const focused = segments.find((segment) => segment.id === focusedSegment);
-  const describe = (segment) => `${t('pricingUi.block', { defaultValue: 'Block {{number}}', number: String(segment.sourceIndex + 1).padStart(2, '0') })}: ${segment.label}, ${t('pricingUi.perBlockPrice', { defaultValue: '{{price}} per block', price: formatSchedulePrice(segment.price) })}`;
+  const displayHour = (hour) => {
+    const value = formatScheduleHour(hour);
+    return value === 'Invalid time' ? t('pricingUi.invalidTime') : value;
+  };
+  const displayPrice = (price, withUnit) => {
+    const value = formatSchedulePrice(price, withUnit);
+    return value === 'Invalid price' ? t('pricingUi.invalidPrice') : value;
+  };
+  const describe = (segment) => `${t('pricingUi.block', { defaultValue: 'Block {{number}}', number: String(segment.sourceIndex + 1).padStart(2, '0') })}: ${segment.label}, ${t('pricingUi.perBlockPrice', { defaultValue: '{{price}} per block', price: displayPrice(segment.price) })}`;
   const warningText = warning === 'No time blocks configured.'
     ? t('pricingUi.noTimeBlocks', { defaultValue: warning })
     : warning === 'Invalid time boundaries. Review the time blocks below.'
@@ -143,19 +151,19 @@ export function PricingSchedule({ timeBlocks, onSelect }) {
         aria-label={t('pricingUi.editScheduleBlock', { defaultValue: 'Edit {{description}}', description: describe(segment) })} aria-describedby={focusedSegment === segment.id ? tooltipId : undefined}
         onFocus={(event) => showTooltip(event, segment.id)} onBlur={() => setFocusedSegment(null)} onMouseEnter={(event) => showTooltip(event, segment.id)} onMouseLeave={leaveTooltip}
         onKeyDown={(event) => { if (event.key === 'Escape') setFocusedSegment(null); }} onClick={(event) => { showTooltip(event, segment.id); onSelect(segment.sourceIndex); }}>
-        <span aria-hidden="true" className="pricing-segment-value">{formatSchedulePrice(segment.price, false)}</span>
+        <span aria-hidden="true" className="pricing-segment-value">{displayPrice(segment.price, false)}</span>
       </button>)}
     </div>
     {focused && createPortal(<div ref={tooltipRef} className="pricing-timeline-tooltip" role="tooltip" id={tooltipId}>
       <strong>{t('pricingUi.block', { defaultValue: 'Block {{number}}', number: String(focused.sourceIndex + 1).padStart(2, '0') })}</strong>
-      <span>{focused.label}</span><span>{t('pricingUi.perBlockPrice', { defaultValue: '{{price}} per block', price: formatSchedulePrice(focused.price) })}</span>
+      <span>{focused.label}</span><span>{t('pricingUi.perBlockPrice', { defaultValue: '{{price}} per block', price: displayPrice(focused.price) })}</span>
     </div>, document.body)}
     <ul className="pricing-legend">{timeBlocks.map((block, index) => <li key={index}>
-      <button type="button" onClick={() => onSelect(index)} aria-label={`Edit block ${index + 1}`}><span aria-hidden="true" className={`pricing-dot pricing-tone-${index % 5}`} /><span>B{String(index + 1).padStart(2, '0')} &middot; {formatScheduleHour(block.startHour)}–{formatScheduleHour(block.endHour)} · {formatSchedulePrice(block.price)}</span></button>
+      <button type="button" onClick={() => onSelect(index)} aria-label={t('pricingUi.editBlock', { number: index + 1 })}><span aria-hidden="true" className={`pricing-dot pricing-tone-${index % 5}`} /><span>B{String(index + 1).padStart(2, '0')} &middot; {displayHour(block.startHour)}–{displayHour(block.endHour)} · {displayPrice(block.price)}</span></button>
     </li>)}</ul>
     <div id="pricing-schedule-details" hidden={!detailsOpen} className="pricing-schedule-details">
-      <p>Base schedule · Vietnam time (UTC+7). A flat fee applies to each billable block touched.</p>
-      <dl>{timeBlocks.map((block, index) => <div key={index}><dt>Block {String(index + 1).padStart(2, '0')}</dt><dd>{formatScheduleHour(block.startHour)}–{formatScheduleHour(block.endHour)} · {getDuration(block.startHour, block.endHour)}h{block.startHour > block.endHour ? ' · Overnight' : ''} · {formatSchedulePrice(block.price)} per block</dd></div>)}</dl>
+      <p>{t('pricingUi.scheduleExplanation')}</p>
+      <dl>{timeBlocks.map((block, index) => <div key={index}><dt>{t('pricingUi.block', { number: String(index + 1).padStart(2, '0') })}</dt><dd>{displayHour(block.startHour)}–{displayHour(block.endHour)} · {t('pricingUi.durationHours', { hours: getDuration(block.startHour, block.endHour) })}{block.startHour > block.endHour ? ` · ${t('pricingUi.overnight')}` : ''} · {t('pricingUi.perBlockPrice', { price: displayPrice(block.price) })}</dd></div>)}</dl>
     </div>
   </section>;
 }
@@ -177,13 +185,13 @@ export function TimeBlockEditor({ timeBlocks, selectedBlock, onAdd, onChange, on
             ? t('pricingUi.startEndIdentical', { defaultValue: error })
             : error;
       const duration = getDuration(block.startHour, block.endHour);
-      return <div id={`pricing-block-${index}`} tabIndex={-1} aria-label={`Time block ${index + 1}`} key={index} className={`pricing-row ${selectedBlock === index ? 'pricing-row-selected' : ''}`}>
+      return <div id={`pricing-block-${index}`} tabIndex={-1} aria-label={t('pricingUi.timeBlockLabel', { number: index + 1 })} key={index} className={`pricing-row ${selectedBlock === index ? 'pricing-row-selected' : ''}`}>
         <span className="pricing-row-number">{String(index + 1).padStart(2, '0')}</span>
         {['startHour', 'endHour'].map((field) => <div className="pricing-time-cell" key={field}><span className="pricing-mobile-label">{field === 'startHour' ? t('pricingUi.startTime', { defaultValue: 'Start time' }) : t('pricingUi.endTime', { defaultValue: 'End time' })}</span>
-          <AdminSelect value={Number(block[field])} onChange={(value) => onChange(index, field, value)} options={field === 'startHour' ? startHourOptions : endHourOptions} icon={Clock3} className="w-full" buttonClassName="pricing-time-button" menuClassName="pricing-time-menu" visibleItems={7} ariaLabel={`${field === 'startHour' ? 'Start' : 'End'} time for block ${index + 1}`} />
+          <AdminSelect value={Number(block[field])} onChange={(value) => onChange(index, field, value)} options={field === 'startHour' ? startHourOptions : endHourOptions} icon={Clock3} className="w-full" buttonClassName="pricing-time-button" menuClassName="pricing-time-menu" visibleItems={7} ariaLabel={t(field === 'startHour' ? 'pricingUi.startTimeForBlock' : 'pricingUi.endTimeForBlock', { number: index + 1 })} />
         </div>)}
-        <div className="pricing-duration"><span className="pricing-mobile-label">{t('pricingUi.duration', { defaultValue: 'Duration' })}</span><strong>{duration > 0 ? `${duration}h` : '—'}</strong>{block.startHour > block.endHour && <small>{t('pricingUi.overnight', { defaultValue: 'Overnight' })}</small>}</div>
-        <label><span className="pricing-mobile-label">{t('pricingUi.blockFee', { defaultValue: 'Block fee (VND)' })}</span><div className="pricing-currency-field"><input id={`pricing-fee-${index}`} type="number" min="0" step="1000" value={block.price} onChange={(event) => onChange(index, 'price', event.target.value)} aria-label={t('pricingUi.blockFee', { defaultValue: 'Block fee in VND for block {{number}}', number: index + 1 })} aria-invalid={Boolean(error)} aria-describedby={error ? `pricing-row-error-${index}` : undefined} /><span>VND</span></div></label>
+        <div className="pricing-duration"><span className="pricing-mobile-label">{t('pricingUi.duration', { defaultValue: 'Duration' })}</span><strong>{duration > 0 ? t('pricingUi.durationHours', { hours: duration }) : '—'}</strong>{block.startHour > block.endHour && <small>{t('pricingUi.overnight', { defaultValue: 'Overnight' })}</small>}</div>
+        <label><span className="pricing-mobile-label">{t('pricingUi.blockFee', { defaultValue: 'Block fee (VND)' })}</span><div className="pricing-currency-field"><input id={`pricing-fee-${index}`} type="number" min="0" step="1000" value={block.price} onChange={(event) => onChange(index, 'price', event.target.value)} aria-label={t('pricingUi.blockFeeForBlock', { number: index + 1 })} aria-invalid={Boolean(error)} aria-describedby={error ? `pricing-row-error-${index}` : undefined} /><span>VND</span></div></label>
         <div className="pricing-row-actions"><button type="button" className="pricing-edit" onClick={() => document.getElementById(`pricing-fee-${index}`)?.focus()} aria-label={t('pricingUi.editFee', { defaultValue: 'Edit fee for time block {{number}}', number: index + 1 })} title={t('pricingUi.editFee', { defaultValue: 'Edit fee for time block {{number}}', number: index + 1 })}><SquarePen size={16} aria-hidden="true" /></button><button type="button" className="pricing-delete" onClick={() => onRemove(index)} aria-label={t('pricingUi.deleteBlock', { defaultValue: 'Delete time block {{number}}', number: index + 1 })} title={t('pricingUi.deleteBlock', { defaultValue: 'Delete time block {{number}}', number: index + 1 })}><Trash2 size={16} aria-hidden="true" /></button></div>
         {errorText && <p id={`pricing-row-error-${index}`} className="pricing-row-error pricing-error">{errorText}</p>}
       </div>;
@@ -196,8 +204,8 @@ export function AdditionalPricingRules({ config }) {
   const { t } = useTranslation();
   return <details className="pricing-panel pricing-additional"><summary><SectionTitle icon={ShieldPlus} title={t('pricingUi.additionalRules', { defaultValue: 'Additional Pricing Rules' })} description={t('pricingUi.additionalRulesDescription', { defaultValue: 'Day/night overrides and price caps (if any).' })} /><ChevronDown size={17} aria-hidden="true" /></summary>
     <div className="pricing-additional-content"><p>{t('pricingUi.savedReadOnly', { defaultValue: 'Saved settings · Read only' })}</p><dl>
-      <div><dt>{t('pricingUi.upToHours', { defaultValue: 'Up to {{hours}} hours', hours: 12 })}</dt><dd>{formatCurrency(config.cap12h ?? 100000)} {t('pricingUi.cap', { defaultValue: 'cap' })}</dd></div><div><dt>{t('pricingUi.upToHours', { defaultValue: 'Up to {{hours}} hours', hours: 24 })}</dt><dd>{formatCurrency(config.cap24h ?? 180000)} {t('pricingUi.cap', { defaultValue: 'cap' })}</dd></div>
-      {['day', 'night'].map((key) => { const rule = config.dayNightPricing?.[key]; return <div key={key}><dt>{t(`pricingUi.${key}`, { defaultValue: key })} {t('pricingUi.override', { defaultValue: 'override' })}</dt><dd>{rule?.isActive ? `${formatHour(rule.startHour)}–${formatHour((rule.startHour + 12) % 24)} · ${formatCurrency(rule.price)} ${t('pricingUi.perBlock', { defaultValue: 'per block' })}` : t('pricingUi.disabled', { defaultValue: 'Disabled' })}</dd></div>; })}
+      <div><dt>{t('pricingUi.upToHours', { defaultValue: 'Up to {{hours}} hours', hours: 12 })}</dt><dd>{t('pricingUi.cappedAt', { price: formatCurrency(config.cap12h ?? 100000) })}</dd></div><div><dt>{t('pricingUi.upToHours', { defaultValue: 'Up to {{hours}} hours', hours: 24 })}</dt><dd>{t('pricingUi.cappedAt', { price: formatCurrency(config.cap24h ?? 180000) })}</dd></div>
+      {['day', 'night'].map((key) => { const rule = config.dayNightPricing?.[key]; return <div key={key}><dt>{t(key === 'day' ? 'pricingUi.dayOverride' : 'pricingUi.nightOverride')}</dt><dd>{rule?.isActive ? `${formatHour(rule.startHour)}–${formatHour((rule.startHour + 12) % 24)} · ${t('pricingUi.perBlockPrice', { price: formatCurrency(rule.price) })}` : t('pricingUi.disabled', { defaultValue: 'Disabled' })}</dd></div>; })}
     </dl><p>{t('pricingUi.activeOverridesNote', { defaultValue: 'Active overrides replace base blocks in their 12-hour windows. Calendar adjustments apply before caps.' })}</p></div>
   </details>;
 }
@@ -206,7 +214,7 @@ export function PricingSummary({ timeBlocks, status }) {
   const { t } = useTranslation();
   const metrics = getMetrics(timeBlocks);
   return <div className="pricing-summary"><div className="pricing-summary-values"><Clock3 size={15} aria-hidden="true" /><strong>{t('pricingUi.pricingSummary', { defaultValue: 'Pricing Summary' })}:</strong><span>{t('pricingUi.timeBlocksCount', { defaultValue: '{{count}} time blocks', count: metrics.count })}</span><span>{t('pricingUi.lowestFee', { defaultValue: 'Lowest fee' })}: <b>{metrics.low}</b></span><span>{t('pricingUi.highestFee', { defaultValue: 'Highest fee' })}: <b>{metrics.high}</b></span></div>
-    <div role="status"><Coverage status={status} />{status.tone !== 'success' && <p className="pricing-error">{status.detail}</p>}</div>
+    <div role="status"><Coverage status={status} />{status.tone !== 'success' && <p className="pricing-error">{t(status.detailKey, { hour: status.hour })}</p>}</div>
   </div>;
 }
 
@@ -264,7 +272,7 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
   const firstPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
   const pageNumbers = Array.from({ length: Math.min(5, totalPages) }, (_, n) => firstPage + n);
   const describeScope = (policy) => {
-    if (policy.scope === 'date_range') return `${t('pricingUi.holidayDateRange', { defaultValue: 'Date range' })}: ${policy.startDate || t('pricingUi.notSet', { defaultValue: 'Not set' })} - ${policy.endDate || t('pricingUi.notSet', { defaultValue: 'Not set' })}`;
+    if (policy.scope === 'date_range') return `${t('pricingUi.dateRange')}: ${policy.startDate || t('pricingUi.notSet', { defaultValue: 'Not set' })} - ${policy.endDate || t('pricingUi.notSet', { defaultValue: 'Not set' })}`;
     if (policy.scope === 'month') return `${t('pricingUi.months', { defaultValue: 'Months' })}: ${policy.months?.length ? policy.months.join(', ') : t('pricingUi.notSet', { defaultValue: 'Not set' })}`;
     return `${t('pricingUi.weekdays', { defaultValue: 'Weekdays' })}: ${policy.daysOfWeek?.length ? weekDays.filter(([, value]) => policy.daysOfWeek.includes(value)).map(([label]) => t(`pricingDays.${label}`, { defaultValue: label })).join(', ') : t('pricingUi.notSet', { defaultValue: 'Not set' })}`;
   };
@@ -297,11 +305,11 @@ export function PricePolicyEditor({ policies, onAdd, onChange, onRemove }) {
           {!policies.length && <p className="pricing-policy-empty">{t('pricingUi.noCalendarPolicies', { defaultValue: 'No calendar policies. Add a policy to get started.' })}</p>}
         </div>
         <footer className="calendar-list-pagination">
-          <p aria-live="polite">{policies.length ? pageStart + 1 : 0}&ndash;{Math.min(pageStart + pageSize, policies.length)} of {policies.length}</p>
-          <nav aria-label={t('sessionManagementUi.pagination', { defaultValue: 'Calendar policy pagination' })}>
-            <button type="button" aria-label={t('sessionManagementUi.previousPage', { defaultValue: 'Previous calendar policy page' })} disabled={currentPage === 1} onClick={() => setListPage(currentPage - 1)}>&larr; {t('sessionManagementUi.previousPage', { defaultValue: 'Prev' })}</button>
-            {pageNumbers.map((number) => <button type="button" key={number} aria-label={`Calendar policy page ${number}`} aria-current={number === currentPage ? 'page' : undefined} disabled={!policies.length} onClick={() => setListPage(number)}>{number}</button>)}
-            <button type="button" aria-label={t('sessionManagementUi.nextPage', { defaultValue: 'Next calendar policy page' })} disabled={currentPage === totalPages} onClick={() => setListPage(currentPage + 1)}>{t('sessionManagementUi.nextPage', { defaultValue: 'Next' })} &rarr;</button>
+          <p aria-live="polite">{t('pricingUi.policyPageRange', { start: policies.length ? pageStart + 1 : 0, end: Math.min(pageStart + pageSize, policies.length), total: policies.length })}</p>
+          <nav aria-label={t('pricingUi.policyPagination')}>
+            <button type="button" aria-label={t('pricingUi.previousPage')} disabled={currentPage === 1} onClick={() => setListPage(currentPage - 1)}>&larr; {t('pricingUi.previousPage')}</button>
+            {pageNumbers.map((number) => <button type="button" key={number} aria-label={t('pricingUi.policyPage', { number })} aria-current={number === currentPage ? 'page' : undefined} disabled={!policies.length} onClick={() => setListPage(number)}>{number}</button>)}
+            <button type="button" aria-label={t('pricingUi.nextPage')} disabled={currentPage === totalPages} onClick={() => setListPage(currentPage + 1)}>{t('pricingUi.nextPage')} &rarr;</button>
           </nav>
         </footer>
       </aside>
