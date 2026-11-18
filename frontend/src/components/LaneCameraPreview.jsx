@@ -1,12 +1,20 @@
 import { useEffect, useRef } from 'react';
+import {
+  resolveLaneTransform,
+  getSourceRectForSide,
+  renderOrientedCanvas,
+  DEFAULT_CAMERA_CONFIG,
+} from '../utils/cameraLaneCapture';
 
 /**
- * Renders a live cropped (and optionally 180-deg rotated) lane feed from a hidden <video> stream.
- * Keeps each lane's UI isolated to its own half of a shared dual-lane camera.
+ * Renders a live cropped (and optionally rotated 0/90/180/270) lane feed from a video stream.
+ * Keeps each lane's UI isolated to its own half of a shared dual-lane camera with full rotation support.
  */
 export default function LaneCameraPreview({
   videoRef,
   lane = 'full',
+  cameraConfig = DEFAULT_CAMERA_CONFIG,
+  rotation: customRotation,
   rotate180 = false,
   active = true,
   className = '',
@@ -30,31 +38,24 @@ export default function LaneCameraPreview({
       ) {
         const vw = video.videoWidth;
         const vh = video.videoHeight;
-        const halfW = Math.floor(vw / 2);
 
-        let sx = 0;
-        let sw = vw;
-        if (lane === 'exit') {
-          sx = 0;
-          sw = Math.max(1, halfW);
-        } else if (lane === 'entry') {
-          sx = halfW;
-          sw = Math.max(1, vw - halfW);
-        }
+        const transform = resolveLaneTransform(lane, cameraConfig);
+        const rect = getSourceRectForSide(
+          vw,
+          vh,
+          transform.side,
+          transform.splitRatio,
+          transform.laneOverlap
+        );
 
-        if (canvas.width !== sw || canvas.height !== vh) {
-          canvas.width = sw;
-          canvas.height = vh;
-        }
+        const deg =
+          customRotation !== undefined
+            ? Number(customRotation)
+            : rotate180
+            ? 180
+            : transform.rotation || 0;
 
-        const ctx = canvas.getContext('2d');
-        ctx.save();
-        if (rotate180) {
-          ctx.translate(canvas.width, canvas.height);
-          ctx.rotate(Math.PI);
-        }
-        ctx.drawImage(video, sx, 0, sw, vh, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
+        renderOrientedCanvas(canvas, video, rect, rect.sw, rect.sh, deg);
       }
 
       rafId = requestAnimationFrame(renderFrame);
@@ -64,7 +65,7 @@ export default function LaneCameraPreview({
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [videoRef, lane, rotate180, active]);
+  }, [videoRef, lane, cameraConfig, customRotation, rotate180, active]);
 
   return <canvas ref={displayCanvasRef} className={className} />;
 }
