@@ -86,6 +86,8 @@ export interface StaffSubscription {
   ticketPackage?: { _id?: string; name?: string; type?: string; price?: number };
   slots?: Array<{
     entitlementId?: string;
+    vehicleId?: string | null;
+    purchasedTerms?: { name?: string; service?: string } | null;
     sourceSubscriptionId?: string;
     floorId?: { _id?: string; name?: string; floorNumber?: number } | string;
     slotCode: string;
@@ -112,6 +114,8 @@ export interface StaffMembershipQrResolution {
 }
 
 export interface StaffMembershipTransitionPayload extends StaffBookingTransitionPayload {
+  paymentMethod?: 'cash' | 'wallet';
+  expectedAmount?: number;
   entitlementId?: string;
   vehicleId?: string;
   floorId?: string;
@@ -120,6 +124,9 @@ export interface StaffMembershipTransitionPayload extends StaffBookingTransition
 }
 
 export interface TicketPackage {
+  service?: 'RESERVED_FREE' | 'RESERVED_PAID';
+  duration?: { unit: string; value: number };
+  maxSlots?: number;
   _id: string;
   name: string;
   type: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
@@ -129,11 +136,25 @@ export interface TicketPackage {
   isActive: boolean;
   saleLimit?: number | null;
   inactiveReason?: 'SOLD_OUT' | 'ADMIN_PAUSED' | null;
-  stock?: { saleLimit: number | null; allocatedQuantity: number; heldQuantity: number; remainingQuantity: number | null };
+  stock?: {
+    saleLimit: number | null;
+    allocatedQuantity: number;
+    heldQuantity: number;
+    remainingQuantity: number | null;
+  };
   createdAt?: string;
 }
 
+export interface PackageParkingQuote {
+  packageName?: string; packageService?: string; amountToPay: number; packageExpired: boolean;
+  appliedEntitlement?: { expireAt: string };
+  coveredInterval: { start: string; end: string } | null; uncoveredInterval: { start: string; end: string } | null;
+}
+
 export interface StaffSession {
+  checkoutError?: string;
+  checkoutQuote?: PackageParkingQuote;
+  pricingBreakdown?: PackageParkingQuote;
   _id: string;
   type?: 'WALK_IN' | 'BOOKING' | 'SUBSCRIPTION';
   licensePlate: string;

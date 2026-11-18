@@ -1,5 +1,3 @@
-import { isMembershipPackageType } from './ticketPackageRules';
-
 const normalizePlate = (value) => String(value || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 const normalizeSlotCode = (value) => String(value || '').trim().toUpperCase();
 const documentId = (value) => String(value?._id || value || '');
@@ -9,7 +7,7 @@ export function getVipBookingSelection({ membership, vehicles = [], selectedVehi
   const bookingEnd = new Date(endTime);
   const expireAt = new Date(membership?.expireAt);
   const activeMembershipType = membership?.isVip
-    && isMembershipPackageType(membership.packageType)
+    && ['monthly', 'yearly'].includes(membership.packageType)
     && !Number.isNaN(bookingStart.getTime())
     && !Number.isNaN(expireAt.getTime())
     && expireAt > bookingStart

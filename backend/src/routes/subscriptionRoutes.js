@@ -21,6 +21,8 @@ const renewalEnabled = (req, res, next) => {
   next();
 };
 
+router.post('/webhook', subscriptionController.handlePaymentWebhook);
+
 router.use(protect);
 
 router.get('/membership/history', authorize('customer'),
@@ -38,19 +40,19 @@ router.get('/:subscriptionId/details', authorize('customer'), param('subscriptio
 router.get('/membership', subscriptionController.getMembership);
 router.get('/membership/qr', subscriptionController.getAccountMembershipQr);
 router.post(
-  '/entitlements/renew/verify-payment',
+  '/entitlements/renew/verify-payment', authorize('customer'),
   renewalEnabled,
   renewalVerifyValidator,
   entitlementRenewalController.verifyPayment
 );
 router.post(
-  '/entitlements/:entitlementId/renew/quote',
+  '/entitlements/:entitlementId/renew/quote', authorize('customer'),
   renewalEnabled,
   param('entitlementId').isMongoId(),
   entitlementRenewalController.getQuote
 );
 router.post(
-  '/entitlements/:entitlementId/renew/pay-with-wallet',
+  '/entitlements/:entitlementId/renew/pay-with-wallet', authorize('customer'),
   renewalEnabled,
   requirePolicyAcceptance({ action: 'membership-entitlement:renew-wallet' }),
   param('entitlementId').isMongoId(),
@@ -58,7 +60,7 @@ router.post(
   entitlementRenewalController.payWithWallet
 );
 router.post(
-  '/entitlements/:entitlementId/renew/create-payment',
+  '/entitlements/:entitlementId/renew/create-payment', authorize('customer'),
   renewalEnabled,
   requirePolicyAcceptance({ action: 'membership-entitlement:renew-payment' }),
   param('entitlementId').isMongoId(),
@@ -67,36 +69,36 @@ router.post(
 );
 router.get('/:subscriptionId/qr', subscriptionIdValidator, subscriptionController.getMembershipQr);
 router.post(
-  '/renew/verify-payment',
+  '/renew/verify-payment', authorize('customer'),
   renewalEnabled,
   renewalVerifyValidator,
   renewalController.verifyPayosPayment
 );
 router.post(
-  '/:subscriptionId/renew/quote',
+  '/:subscriptionId/renew/quote', authorize('customer'),
   renewalEnabled,
   subscriptionIdValidator,
   renewalController.getQuote
 );
 router.post(
-  '/:subscriptionId/renew/pay-with-wallet',
+  '/:subscriptionId/renew/pay-with-wallet', authorize('customer'),
   renewalEnabled,
   requirePolicyAcceptance({ action: 'subscription:renew-wallet' }),
   renewalPaymentValidator,
   renewalController.payWithWallet
 );
 router.post(
-  '/:subscriptionId/renew/create-payment',
+  '/:subscriptionId/renew/create-payment', authorize('customer'),
   renewalEnabled,
   requirePolicyAcceptance({ action: 'subscription:renew-payment' }),
   renewalPaymentValidator,
   renewalController.createPayosPayment
 );
-router.post('/payment', requirePolicyAcceptance({ action: 'subscription:create-payment' }), subscriptionController.createSubscriptionPayment);
-router.post('/create-payment', requirePolicyAcceptance({ action: 'subscription:create-payment' }), subscriptionController.createSubscriptionPayment);
-router.post('/verify-payment', subscriptionController.verifyPayment);
-router.post('/pay-with-wallet', requirePolicyAcceptance({ action: 'subscription:pay-with-wallet' }), subscriptionController.paySubscriptionWithWallet);
-router.post('/renew', requirePolicyAcceptance({ action: 'subscription:renew' }), subscriptionController.renewSubscription);
+router.post('/payment', authorize('customer'), requirePolicyAcceptance({ action: 'subscription:create-payment' }), subscriptionController.createSubscriptionPayment);
+router.post('/create-payment', authorize('customer'), requirePolicyAcceptance({ action: 'subscription:create-payment' }), subscriptionController.createSubscriptionPayment);
+router.post('/verify-payment', authorize('customer'), subscriptionController.verifyPayment);
+router.post('/pay-with-wallet', authorize('customer'), requirePolicyAcceptance({ action: 'subscription:pay-with-wallet' }), subscriptionController.paySubscriptionWithWallet);
+router.post('/renew', authorize('customer'), renewalEnabled, requirePolicyAcceptance({ action: 'subscription:renew' }), subscriptionController.renewSubscription);
 // Admin route to get all subscriptions
 router.get('/all', authorize('admin', 'staff'), subscriptionController.getAllSubscriptions);
 module.exports = router;

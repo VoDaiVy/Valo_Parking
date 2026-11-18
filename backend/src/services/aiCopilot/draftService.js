@@ -1,5 +1,4 @@
 const { createHash } = require('crypto');
-const { PACKAGE_TYPES, getPackageDurationDays, getPackageDurationMinutes } = require('../../utils/ticketPackageRules');
 const UserDetail = require('../../models/UserDetail');
 const { profilePayload, assertPhoneAvailable, accountError } = require('./adminAccounts');
 const mongoose = require('mongoose');
@@ -36,7 +35,7 @@ function cleanPayload(type, input) {
       const startHour = block.startHour === undefined ? fallbackStart : Number(block.startHour);
       const price = block.price === undefined ? fallbackPrice : Number(block.price);
       if (!Number.isInteger(startHour) || startHour < 0 || startHour > 23
-        || !Number.isFinite(price) || price < 0 || typeof (block.isActive ?? false) !== 'boolean') {
+        || !Number.isSafeInteger(price) || price < 0 || typeof (block.isActive ?? false) !== 'boolean') {
         fail('Day/night pricing block is invalid.');
       }
       return { isActive: block.isActive === true, startHour, price };
@@ -117,7 +116,7 @@ function cleanPayload(type, input) {
     }
     return allowed;
   }
-  if (!['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'].includes(type)) fail('Thao tác này chưa được hỗ trợ.');
+  if (!['CREATE_TICKET_PACKAGE', 'UPDATE_TICKET_PACKAGE'].includes(type)) fail('Invalid package fields. Check the name, type, price, slot limit, and active state.');
   const {
     name,
     type: packageType,
@@ -125,55 +124,37 @@ function cleanPayload(type, input) {
     description = '',
     maxSlots = 3,
     isActive = true,
-    saleLimit = null,
-    manualPause,
     renewalWindowDays = 7,
     isRenewable = true,
-    durationDays,
-    durationMinutes,
-    displayBenefits = [],
-    serviceBenefits = [],
-    benefitsVersion = type === 'CREATE_TICKET_PACKAGE' ? 1 : 0,
   } = input;
   if (['hourly', 'daily'].includes(packageType)) fail('Chỉ hỗ trợ loại gói weekly, monthly, yearly, custom.');
   if (
     typeof name !== 'string' || !name.trim() || name.length > 120 ||
-    !PACKAGE_TYPES.includes(packageType) ||
-    !Number.isFinite(price) || price < 0 ||
+    !['hourly', 'daily', 'monthly', 'yearly'].includes(packageType) ||
+    !Number.isSafeInteger(price) || price < 0 ||
     typeof description !== 'string' || description.length > 1000 ||
     !Number.isInteger(maxSlots) || maxSlots < 1 || maxSlots > 10 ||
     typeof isActive !== 'boolean'
-  ) fail('Thông tin gói vé không hợp lệ.');
+  ) fail('Invalid package fields. Check the name, type, price, slot limit, and active state.');
   if (!Number.isInteger(renewalWindowDays) || renewalWindowDays < 1 || renewalWindowDays > 60)
-    fail('renewalWindowDays phải là số nguyên từ 1 đến 60.');
+    fail('Renewal window must be a whole number from 1 to 60 days.');
   if (typeof isRenewable !== 'boolean')
-    fail('isRenewable phải là boolean.');
-  if (saleLimit !== null && (!Number.isSafeInteger(saleLimit) || saleLimit < 0)) fail('Sale limit must be a non-negative whole number or null.');
-  if (manualPause !== undefined && typeof manualPause !== 'boolean') fail('manualPause must be boolean.');
-  if (packageType === 'hourly' && saleLimit !== null) fail('Package capacity applies to memberships, not hourly parking.');
-  if (packageType === 'custom' && !getPackageDurationDays({ type: packageType, durationDays, durationMinutes })) {
-    fail('Custom duration must be whole minutes, from 1 minute to 3650 days.');
-  }
-  if (![0, 1].includes(benefitsVersion)) fail('Invalid benefits version.');
-  if (!Array.isArray(displayBenefits) || displayBenefits.length > 20 || displayBenefits.some((value) => typeof value !== 'string' || !value.trim() || value.length > 250)) fail('Provide up to 20 benefit descriptions, each at most 250 characters.');
-  if (!Array.isArray(serviceBenefits) || serviceBenefits.length > 30 || serviceBenefits.some((benefit) => !mongoose.isObjectIdOrHexString(benefit?.serviceId) || !Number.isInteger(benefit.quantityPerSlot) || benefit.quantityPerSlot < 1 || benefit.quantityPerSlot > 10000)) fail('Select valid services with 1–10000 whole uses per space.');
-  if (new Set(serviceBenefits.map((benefit) => String(benefit.serviceId))).size !== serviceBenefits.length) fail('Each service may only appear once.');
+    fail('Allow renewal must be true or false.');
+  if (input.service !== undefined && !['RESERVED_FREE', 'RESERVED_PAID'].includes(input.service))
+    fail('Select a supported parking service: RESERVED_FREE or RESERVED_PAID.');
+  if (type === 'CREATE_TICKET_PACKAGE' && ['hourly', 'monthly', 'yearly'].includes(packageType) && !input.service)
+    fail('A parking service must be selected.');
   return {
+    ...require('../ticketPackageTerms').validatePackageConfiguration(input),
+    ...(input.service ? { service: input.service } : {}),
     name: name.trim(),
     type: packageType,
     price,
     description: description.trim(),
     maxSlots,
-    ...(type === 'UPDATE_TICKET_PACKAGE' && !Object.hasOwn(input, 'isActive') ? {} : { isActive }),
-    ...(type === 'UPDATE_TICKET_PACKAGE' && !Object.hasOwn(input, 'saleLimit') ? {} : { saleLimit }),
-    ...(manualPause !== undefined ? { manualPause } : {}),
+    isActive,
     renewalWindowDays,
     isRenewable,
-    durationDays: packageType === 'custom' && durationMinutes == null ? durationDays : null,
-    durationMinutes: packageType === 'custom' ? getPackageDurationMinutes({ type: packageType, durationDays, durationMinutes }) : null,
-    benefitsVersion: type === 'CREATE_TICKET_PACKAGE' || displayBenefits.length || serviceBenefits.length ? 1 : benefitsVersion,
-    displayBenefits: displayBenefits.map((value) => value.trim()),
-    serviceBenefits: serviceBenefits.map((benefit) => ({ serviceId: benefit.serviceId, quantityPerSlot: benefit.quantityPerSlot })),
   };
 }
 const ACCOUNT_TYPES = new Set(['CHANGE_USER_ROLE', 'UPDATE_USER_STATUS', 'UPDATE_USER_PROFILE']);
@@ -247,7 +228,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     fail('Hành động không được phép đối với Staff.', 403);
   }
   if (ACCOUNT_TYPES.has(type)) await authorizeAccountActor(adminUserId, actorRole, type, targetId);
-  let clean = cleanPayload(type, payload);
+  let clean = type === 'UPDATE_TICKET_PACKAGE' ? null : cleanPayload(type, payload);
   if (['UPDATE_TICKET_PACKAGE', 'UPDATE_USER_STATUS', 'SEND_NOTIFICATION', 'APPROVE_VEHICLE', 'ARCHIVE_POLICY', 'CHANGE_USER_ROLE', 'UPDATE_USER_PROFILE', 'ARCHIVE_TICKET_PACKAGE', 'UPDATE_SERVICE', 'ARCHIVE_SERVICE'].includes(type) && !mongoose.isValidObjectId(targetId)) fail('Thiếu mục tiêu cần xử lý.');
   if (notificationId && !mongoose.isValidObjectId(notificationId)) fail('Cảnh báo không hợp lệ.');
   
@@ -256,6 +237,7 @@ async function createDraft({ adminUserId, type, payload, targetId, notificationI
     current = await PricingConfig.findOne({ isActive: true }).sort({ createdAt: -1 }).lean();
   } else if (type === 'UPDATE_TICKET_PACKAGE') {
     current = await TicketPackage.findById(targetId).lean();
+    if (current) clean = cleanPayload(type, { ...current, ...payload });
     if (!current) fail('Không tìm thấy gói vé.', 404);
   } else if (type === 'UPDATE_USER_STATUS' || type === 'CHANGE_USER_ROLE') {
     current = await User.findById(targetId).select('status username email role updatedAt').lean();
@@ -433,7 +415,7 @@ async function approveDraft(id, adminUserId, actorRole = 'admin', app = null) {
     if (liveTarget.status !== draft.current?.status) fail('Trạng thái của người dùng đã thay đổi, vui lòng tạo đề xuất mới.', 409);
   }
 
-  const payload = cleanPayload(draft.type, draft.payload);
+  const payload = cleanPayload(draft.type, draft.type === 'UPDATE_TICKET_PACKAGE' ? { ...draft.current, ...draft.payload } : draft.payload);
   // A transaction is mandatory for multi-document pricing changes. A standalone
   // deployment still supports package writes below because each is one atomic document.
   const session = await mongoose.startSession();

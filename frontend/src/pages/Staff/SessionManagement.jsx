@@ -1,3 +1,4 @@
+import PackageParkingBreakdown from '../../components/PackageParkingBreakdown';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
 import { getAllSessions } from '../../services/sessionService';
@@ -221,7 +222,7 @@ export default function SessionManagement() {
           <RefreshCw size={17} aria-hidden="true" className={loading ? 'animate-spin' : ''} />
         </button>}
         {/* AI Blurred Plate Assistant Button */}
-        {isAdminPage && <button
+        <button
           type="button"
           onClick={() => {
             setAiInitialPlate(searchQuery || '');
@@ -232,7 +233,7 @@ export default function SessionManagement() {
         >
           <Sparkles size={16} className="text-violet-400 animate-pulse" />
           <span>{t('sessionManagementUi.aiAssistant', { defaultValue: 'AI Plate Assistant' })}</span>
-        </button>}
+        </button>
         </div>
       </div>
 
@@ -491,6 +492,16 @@ export default function SessionManagement() {
               <div>
                 <h3 className="g4-session-title text-xl font-bold text-[#ffd555]">{t('sessionManagementUi.sessionDetails', { defaultValue: 'Session Details' })}</h3>
                 <p className="g4-session-subtitle text-sm text-white/40">{t('sessionManagementUi.vehicleLabel', { defaultValue: 'Vehicle {{plate}}', plate: selectedSession.licensePlate })}</p>
+                {selectedSession.packageContext && (
+                  <div className="mt-2 text-xs text-blue-100">
+                    <p>{selectedSession.packageContext.terms?.name || 'Purchased package'} / Space {selectedSession.packageContext.slotCode}</p>
+                    <p>{selectedSession.packageContext.terms?.service === 'RESERVED_PAID' ? 'Standard parking fees apply' : 'Base parking covered until expiration'}</p>
+                    <p>Expires {formatDate(selectedSession.packageContext.expireAt)}</p>
+                    {new Date(selectedSession.packageContext.expireAt) <= new Date() && (
+                      <p className="mt-1 text-amber-200">Package coverage has ended. Review additional fees before checkout.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <button 
                 onClick={() => selectManualSession(null)}
@@ -501,6 +512,9 @@ export default function SessionManagement() {
             </div>
             
             <div className="g4-session-body p-6 grid grid-cols-2 gap-8">
+              <div className="col-span-2">
+                <PackageParkingBreakdown pricing={selectedSession.pricingBreakdown} paymentStatus={selectedSession.paymentStatus} />
+              </div>
               {/* Entry Info */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
@@ -583,7 +597,7 @@ export default function SessionManagement() {
       )}
 
       {/* AI Blurred Plate Resolution Modal */}
-      {isAdminPage && <AIPlateResolutionModal
+      <AIPlateResolutionModal
         isOpen={showAiModal}
         onClose={() => setShowAiModal(false)}
         initialPlate={aiInitialPlate}
@@ -592,7 +606,7 @@ export default function SessionManagement() {
           setSearchQuery(selectedPlate);
           setCurrentPage(1);
         }}
-      />}
+      />
 
       {/* Full-Size Image Lightbox */}
       {previewImage && (

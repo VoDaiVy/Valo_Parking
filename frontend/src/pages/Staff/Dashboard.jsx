@@ -1,4 +1,3 @@
-import { isMembershipPackageType } from '../../utils/ticketPackageRules';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE, apiFetch } from '../../services/api';
@@ -397,7 +396,7 @@ export default function StaffDashboard() {
     
     // Determine VIP status from DB (subscription) or layout type
     const isLayoutVip = slotObj.type === 'slot_vip' || slotObj.type?.includes('vip');
-    const isDbVip = dbSlotInfo && isMembershipPackageType(dbSlotInfo.subscriptionType);
+    const isDbVip = dbSlotInfo && ['monthly', 'yearly'].includes(dbSlotInfo.subscriptionType);
     const isVip = isLayoutVip || isDbVip;
 
     if (dbSlotInfo && dbSlotInfo.status === 'maintenance') {

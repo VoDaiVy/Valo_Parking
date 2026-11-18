@@ -49,7 +49,7 @@ function normalizeUserIds(userIds) {
   return uniqueIds;
 }
 
-async function resolveRecipients(userIds, { requireActive = false } = {}) {
+async function resolveRecipients(userIds, { requireActive = false, session } = {}) {
   const normalizedIds = normalizeUserIds(userIds);
   if (!normalizedIds.length) {
     throw createServiceError('At least one recipient is required');
@@ -58,7 +58,9 @@ async function resolveRecipients(userIds, { requireActive = false } = {}) {
   const query = { _id: { $in: normalizedIds } };
   if (requireActive) query.status = true;
 
-  const users = await User.find(query).select('_id').lean();
+  const userQuery = User.find(query).select('_id');
+  if (session) userQuery.session(session);
+  const users = await userQuery.lean();
   const foundIds = new Set(users.map((user) => String(user._id)));
   const unavailableIds = normalizedIds.filter((id) => !foundIds.has(id));
 
@@ -84,22 +86,23 @@ async function insertRecipientRecords(notificationId, userIds, session) {
 }
 
 async function createWithRecipients(notificationData, userIds, session) {
-  if (session) {
-    const [notification] = await Notification.create([{ ...notificationData, recipientCount: userIds.length }], { session });
-    await insertRecipientRecords(notification._id, userIds, session);
-    return notification;
-  }
-  const notification = await Notification.create({
+  const data = {
     ...notificationData,
     recipientCount: userIds.length,
-  });
+  };
+  const notification = session
+    ? (await Notification.create([data], { session }))[0]
+    : await Notification.create(data);
 
   try {
     if (userIds.length) {
-      await insertRecipientRecords(notification._id, userIds);
+      await insertRecipientRecords(notification._id, userIds, session);
     }
     return notification;
   } catch (error) {
+    // The owning transaction rolls back all writes; cleanup outside it could
+    // otherwise leak independent deletes or mask the original abort.
+    if (session) throw error;
     await Promise.allSettled([
       UserNotification.deleteMany({ notificationId: notification._id }),
       Notification.findByIdAndDelete(notification._id),
@@ -455,7 +458,7 @@ async function createForUser(userId, data, createdBy = null, options = {}) {
     targetUsers: [resolvedUserId],
     createdBy,
     metadata: data.metadata || {},
-  }, [resolvedUserId]);
+  }, [resolvedUserId], options.session);
 }
 
 // ─── Create notification for multiple users ─────────────────────────────────────

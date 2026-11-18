@@ -68,3 +68,4 @@ export default function LaneCameraPreview({
 
   return <canvas ref={displayCanvasRef} className={className} />;
 }
+

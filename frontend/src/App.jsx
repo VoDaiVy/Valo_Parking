@@ -49,7 +49,6 @@ import GateControl from "./pages/Staff/GateControl";
 // Pages – Customer
 import CustomerProfile from "./pages/Customer/CustomerProfile";
 import Membership from "./pages/Customer/Membership";
-import MembershipServices from './components/membership/MembershipServices';
 import MembershipHub from "./pages/Customer/MembershipHub";
 import MyVehicles from "./pages/Customer/MyVehicles";
 import WalletPage from "./pages/Wallet/WalletPage";
@@ -166,7 +165,7 @@ export default function App() {
             <Route path="/admin/profile" element={<AdminProfile />} />
             <Route
               path="/admin/notifications"
-              element={<NotificationManagement />}
+              element={<NotificationManagement role="admin" />}
             />
             <Route
               path="/admin/notification-inbox"
@@ -197,7 +196,7 @@ export default function App() {
             <Route path="/staff/profile" element={<StaffProfile />} />
             <Route
               path="/staff/notifications"
-              element={<NotificationManagement />}
+              element={<NotificationManagement role="staff" />}
             />
             <Route
               path="/staff/notification-inbox"
@@ -209,7 +208,6 @@ export default function App() {
             <Route path="/staff/bookings" element={<BookingManagement />} />
             <Route path="/staff/subscriptions" element={<SubscriptionManagement />} />
             <Route path="/staff/tickets" element={<TicketPackages />} />
-            <Route path="/staff/membership-services" element={<MembershipServices staff />} />
           </Route>
 
           {/* ── Customer section ── */}

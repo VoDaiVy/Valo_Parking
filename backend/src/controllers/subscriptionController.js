@@ -1,4 +1,5 @@
 const { isInRenewalWindow } = require('../utils/membershipRenewalWindow');
+const { assertPaymentMatches } = require('../services/ticketPackageTerms');
 const Subscription = require('../models/Subscription');
 const mongoose = require('mongoose');
 const TicketPackage = require('../models/TicketPackage');
@@ -183,6 +184,119 @@ exports.createSubscriptionPayment = async (req, res, next) => {
 
   } catch (error) {
     next(error);
+  }
+};
+
+// PayOS callback uses the provider signature and then confirms the payment
+// against PayOS' authoritative payment-link record before activating anything.
+exports.handlePaymentWebhook = async (req, res, next) => {
+  try {
+    let payment;
+    try {
+      payment = await payos.webhooks.verify(req.body);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment signature.',
+      });
+    }
+
+    if (payment.code !== '00') return res.json({ success: true });
+
+    const orderCode = Number(payment.orderCode);
+    if (!Number.isSafeInteger(orderCode) || orderCode <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment order.',
+      });
+    }
+
+    const [purchase, entitlementRenewal, subscriptionRenewal, checkout, booking, topUp] = await Promise.all([
+      Subscription.findOne({
+        $and: [
+          { $or: [{ orderCode }, { 'pendingRenewal.orderCode': orderCode }] },
+          { $or: [{ paymentMethod: 'payos' }, { bindingVersion: { $ne: 1 } }] },
+        ],
+      }),
+      require('../models/MembershipEntitlementRenewal').findOne({ orderCode, paymentMethod: 'payos' }),
+      require('../models/SubscriptionRenewal').findOne({ orderCode, paymentMethod: 'payos' }),
+      require('../models/CheckoutAttempt').findOne({ orderCode }),
+      require('../models/Booking').findOne({ vietqrOrderCode: orderCode }),
+      require('../models/WalletTransaction').findOne({
+        payosOrderCode: orderCode,
+        type: 'TOP_UP',
+      }),
+    ]);
+
+    const matches = [purchase, entitlementRenewal, subscriptionRenewal, checkout, booking, topUp]
+      .filter(Boolean);
+    if (!matches.length) return res.json({ success: true });
+    if (matches.length !== 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'Ambiguous historical payment order. Reconciliation is required.',
+      });
+    }
+
+    const expected = checkout
+      ? checkout.amountDue
+      : booking
+        ? booking.prepaidAmount
+        : purchase?.pendingRenewal?.orderCode === orderCode
+          ? purchase.pendingRenewal.amount
+          : matches[0].amount;
+    if (!Number.isSafeInteger(Number(payment.amount))
+      || Number(payment.amount) <= 0
+      || Number(payment.amount) > expected) {
+      return res.status(409).json({
+        success: false,
+        message: 'Payment amount mismatch.',
+      });
+    }
+
+    const provider = await payos.paymentRequests.get(orderCode);
+    assertPaymentMatches(provider, orderCode, expected);
+    if (Number(payment.amount) !== expected
+      && !provider.transactions?.some((transaction) => (
+        transaction.reference === payment.reference
+        && Number(transaction.amount) === Number(payment.amount)
+      ))) {
+      return res.status(409).json({
+        success: false,
+        message: 'Payment transfer does not belong to this order.',
+      });
+    }
+
+    if (checkout) {
+      if (checkout.status === 'settled') return res.json({ success: true });
+      await require('../services/checkoutAttemptService').verifyAttempt({
+        attemptId: checkout._id,
+        sessionId: checkout.sessionId,
+      });
+      return res.json({ success: true });
+    }
+
+    if (entitlementRenewal || subscriptionRenewal) {
+      const renewal = entitlementRenewal || subscriptionRenewal;
+      const service = require(entitlementRenewal
+        ? '../services/membershipEntitlementRenewalService'
+        : '../services/subscriptionRenewalService');
+      await service.verifyPayosRenewal({
+        userId: renewal.userId,
+        orderCode,
+        app: req.app,
+      });
+      return res.json({ success: true });
+    }
+
+    if (booking) return require('./bookingController').handleBookingWebhook(req, res, next);
+    if (topUp) return require('./walletController').handleWebhook(req, res, next);
+
+    req.user = { _id: purchase.user };
+    req.body = { orderCode };
+    return exports.verifyPayment(req, res, next);
+  } catch (error) {
+    return next(error);
   }
 };
 

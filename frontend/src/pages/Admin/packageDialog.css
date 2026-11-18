@@ -1,0 +1,173 @@
+/* Portalled Create/Edit dialog: isolated from catalog layout and theme utilities. */
+.package-dialog {
+  --package-accent: #54e3b0;
+  --package-surface: #000000;
+  --package-control: #000000;
+  --package-border: #292929;
+  --package-text: #f5f7fa;
+  --package-muted: #9aadc0;
+  position: relative;
+  z-index: 200;
+  color-scheme: dark;
+  color: var(--package-text);
+  font-family: Montserrat, sans-serif;
+}
+.package-dialog-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 72%); backdrop-filter: blur(5px); }
+.package-dialog-viewport {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--package-viewport-top, 0px);
+  height: var(--package-viewport-height, 100dvh);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-sizing: border-box;
+}
+.package-dialog-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 920px);
+  max-height: 100%;
+  min-height: 0;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--package-border);
+  border-radius: 10px;
+  background: var(--package-surface);
+  box-shadow: 0 20px 64px #0008;
+}
+.package-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; flex: 0 0 auto; gap: 12px; padding: 20px 24px 16px; border-bottom: 1px solid var(--package-border); }
+.package-dialog-header > div { min-width: 0; }
+.package-dialog-title { margin: 0; font-size: 22px; font-weight: 700; line-height: 1.3; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.package-dialog-description { margin: 5px 0 0; color: var(--package-muted); font-size: 13px; line-height: 1.5; }
+.package-dialog button, .package-dialog input, .package-dialog textarea, .package-dialog select { font-family: inherit; }
+.package-dialog-close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 0; border-radius: 4px; color: var(--package-muted); background: transparent; cursor: pointer; }
+.package-dialog-close:hover { color: var(--package-text); background: #151515; }
+.package-dialog-form { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+/* A normal flex item owns scrolling; fieldset's anonymous content box must
+   remain at its natural height so the final controls can always be reached. */
+.package-dialog-body { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 20px 24px; scroll-padding-block: 20px; scrollbar-gutter: stable; }
+.package-dialog-fields { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; column-gap: 28px; row-gap: 16px; min-width: 0; min-inline-size: 0; margin: 0; border: 0; padding: 0; }
+.package-dialog-notice { grid-column: 1 / -1; }
+.package-dialog-field { display: flex; flex-direction: column; min-width: 0; gap: 6px; }
+.package-dialog-field label { color: #d8e2eb; font-size: 12px; line-height: 1.5; font-weight: 600; }
+.package-dialog-field label > span:not(.package-dialog-optional) { color: var(--package-accent); }
+.package-dialog-optional { margin-left: 5px; color: var(--package-muted); font-size: 11px; font-weight: 400; }
+.package-dialog-field :is(input, select, textarea) { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--package-border); border-radius: 4px; background: var(--package-control); color: var(--package-text); font-size: 14px; font-weight: 500; line-height: 1.5; }
+.package-dialog-field textarea { min-height: 84px; resize: vertical; }
+.package-dialog-field :is(input, textarea)::placeholder { color: #8193a4; opacity: 1; }
+.package-dialog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.package-dialog-hint { margin: 0; color: var(--package-muted); font-size: 11px; line-height: 1.5; }
+.package-dialog-toggle { display: flex; align-items: center; gap: 10px; position: relative; min-height: 32px; width: fit-content; max-width: 100%; color: #d8e2eb; font-size: 13px; line-height: 1.5; font-weight: 600; cursor: pointer; }
+.package-dialog-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.package-dialog-switch { display: block; position: relative; flex: 0 0 38px; height: 22px; border: 1px solid #566674; border-radius: 99px; background: #263440; }
+.package-dialog-switch::after { content: ''; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #c4d0dc; transition: transform 150ms; }
+.package-dialog-toggle input:checked + .package-dialog-switch { background: var(--package-accent); border-color: var(--package-accent); }
+.package-dialog-toggle input:checked + .package-dialog-switch::after { transform: translateX(16px); background: #07201a; }
+.package-dialog :is(button, input, select, textarea):focus-visible,
+.package-dialog-toggle input:focus-visible + .package-dialog-switch { outline: 2px solid var(--package-accent); outline-offset: 3px; }
+.package-dialog-field :is(input, textarea):user-invalid { border-color: #f2a5af; outline-color: #f2a5af; }
+.package-dialog-error { flex-shrink: 0; padding: 10px 12px; border: 1px solid #f2a5af66; border-radius: 9px; background: #f2a5af14; color: #ffc7d0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.package-dialog-footer { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--package-border); background: var(--package-surface); }
+.package-dialog-footer button { min-width: 112px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--package-border); border-radius: 4px; font-size: 13px; font-weight: 600; line-height: 1.5; cursor: pointer; }
+.package-dialog-cancel { background: var(--package-control); color: #d8e2eb; }
+.package-dialog-cancel:hover { background: #151515; }
+.package-dialog-footer .package-dialog-submit { background: var(--package-accent); border-color: var(--package-accent); color: #07201a; }
+.package-dialog-submit:hover { filter: brightness(1.08); }
+body[data-valo-typography="admin"] .package-dialog { --package-accent: #f3d477; }
+
+.package-dialog-details, .package-dialog-settings { display: flex; flex-direction: column; min-width: 0; gap: 16px; }
+.package-dialog-settings { align-self: stretch; padding-left: 28px; border-left: 1px solid var(--package-border); }
+.package-dialog-settings > .package-dialog-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.package-dialog-toggles { display: flex; flex-wrap: wrap; gap: 12px 24px; padding-top: 4px; }
+.package-dialog-error { grid-column: 1 / -1; }
+
+@media (max-width: 639px) {
+  .package-dialog-viewport { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  .package-dialog-panel { border-radius: 8px; }
+  .package-dialog-header { padding: 14px; gap: 8px; }
+  .package-dialog-title { font-size: 20px; }
+  .package-dialog-description { font-size: 12px; }
+  .package-dialog-body { padding: 14px; }
+  .package-dialog-fields { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .package-dialog-settings { border-left: 0; border-top: 1px solid var(--package-border); padding-left: 0; padding-top: 18px; }
+  .package-dialog-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .package-dialog-field :is(input, select, textarea) { font-size: 16px; }
+  .package-dialog-footer { padding: 12px 14px; }
+  .package-dialog-footer button { flex: 1; min-width: 0; padding-inline: 8px; }
+}
+@media (max-height: 420px) {
+  .package-dialog-header { padding-block: 8px; }
+  .package-dialog-description { display: none; }
+  .package-dialog-footer { padding-block: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .package-dialog-switch::after { transition: none; } }
+
+/* Admin Create/Edit only: flat two-column form. Read-only/Staff remain unchanged. */
+.package-dialog--editor {
+  --package-accent: #edcf7d;
+  --package-surface: #24262c;
+  --package-control: #1b1d22;
+  --package-border: #41424a;
+  --package-muted: #b1b2bb;
+}
+.package-dialog--editor .package-dialog-panel { width: min(100%, 1140px); border-radius: 14px; }
+.package-dialog--editor .package-dialog-header { padding: 16px 24px 12px; align-items: center; }
+.package-dialog--editor .package-dialog-title { font-size: 21px; }
+.package-dialog--editor .package-dialog-description { margin-top: 3px; font-size: 12px; }
+.package-dialog--editor .package-dialog-body { padding: 20px 24px; scrollbar-gutter: auto; }
+.package-dialog--editor .package-dialog-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; }
+.package-dialog--editor .package-flat-column { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.package-dialog--editor .package-flat-right { border-left: 1px solid var(--package-border); padding-left: 28px; }
+.package-dialog--editor .package-dialog-grid { gap: 14px; }
+.package-dialog--editor .package-dialog-field { gap: 6px; }
+.package-dialog--editor .package-dialog-field label { font-size: 12px; color: #eeeef2; }
+.package-dialog--editor .package-dialog-field :is(input, textarea) { min-height: 42px; height: 42px; padding: 9px 11px; font-size: 13px; border-radius: 7px; }
+.package-dialog--editor .package-dialog-field textarea { height: 64px; min-height: 64px; max-height: 64px; resize: none; line-height: 21px; }
+.package-dialog--editor .package-flat-separated { padding-top: 14px; border-top: 1px solid #ffffff0d; }
+.package-dialog--editor .package-flat-switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 14px; min-height: 48px; }
+.package-dialog--editor .package-dialog-toggle { min-height: 32px; font-size: 12px; gap: 9px; }
+.package-dialog--editor .package-dialog-switch { background: #44454e; }
+.package-dialog--editor .package-dialog-toggle input:checked + .package-dialog-switch::after { background: #2d2718; }
+.package-dialog--editor .package-flat-summary { margin: 3px 0 0; color: #ddddE4; font-size: 12px; line-height: 1.65; }
+.package-dialog--editor .package-dialog-footer { padding: 12px 24px; background: #202228; }
+.package-dialog--editor .package-dialog-footer button { border-radius: 7px; min-height: 42px; }
+.package-dialog--editor .package-dialog-footer .package-dialog-submit { color: #292316; }
+.package-dialog--editor :is(button, input):disabled { cursor: not-allowed; opacity: .6; }
+.package-flat-select { position: relative; min-width: 0; }
+.package-flat-select-button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; height: 42px; padding: 9px 11px; border: 1px solid #41424a; border-radius: 7px; background: #1b1d22; color: #f5f5f8; font-family: Montserrat, sans-serif; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
+.package-flat-select-button > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.package-flat-select-button > svg { flex-shrink: 0; color: #b1b2bb; }
+.package-flat-select-button:hover, .package-flat-select-button[data-open] { border-color: #edcf7d88; }
+.package-flat-select-button[aria-invalid="true"] { border-color: #f2a5af; }
+.package-flat-select-menu { z-index: 260; width: var(--button-width); max-height: min(260px, var(--available-height)); overflow-y: auto; overscroll-behavior: contain; padding: 5px; border: 1px solid #55535a; border-radius: 9px; background: #2b2d34; color: #f5f5f8; box-shadow: 0 12px 40px #0008; font-family: Montserrat, sans-serif; font-size: 13px; color-scheme: dark; scrollbar-width: thin; outline: none; }
+.package-flat-select-option { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 9px; border-radius: 5px; cursor: pointer; }
+.package-flat-select-option[data-focus] { background: #ffffff0d; outline: 1px solid #edcf7d66; outline-offset: -1px; }
+.package-flat-select-option[data-selected] { color: #f5dd9b; background: #edcf7d0b; }
+.package-flat-select-option[data-disabled] { opacity: .5; cursor: not-allowed; }
+.package-flat-select-option > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.package-flat-select-option small { display: block; margin-top: 3px; color: #b1b2bb; font-size: 11px; }
+.package-flat-option-check, .package-flat-option-tick { display: grid; place-items: center; width: 16px; height: 16px; flex: 0 0 16px; color: #edcf7d; }
+.package-flat-option-check { border: 1px solid #77777f; border-radius: 3px; }
+.package-flat-select-option[data-selected] .package-flat-option-check { border-color: #edcf7d; background: #edcf7d17; }
+.package-flat-select-button:focus-visible { outline: 2px solid #edcf7d; outline-offset: 3px; }
+.package-flat-select-empty { margin: 0; padding: 12px; font-size: 12px; color: #c0c0c7; }
+.package-dialog--editor .package-dialog-field .package-flat-validation { position: absolute; bottom: 0; left: 0; width: 1px; height: 1px; min-height: 0; padding: 0; opacity: 0; pointer-events: none; }
+.package-flat-select-error { display: block; margin-top: 4px; color: #ffc7d0; font-size: 11px; }
+.package-flat-info { position: relative; display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; color: #b1b2bb; font-size: 11px; cursor: help; }
+.package-flat-info:focus-visible { outline: 2px solid #edcf7d; outline-offset: 3px; border-radius: 3px; }
+.package-flat-info-content { display: none; position: absolute; left: 0; top: calc(100% + 8px); z-index: 3; width: min(400px, calc(100vw - 90px)); padding: 12px; border: 1px solid #55535a; border-radius: 8px; background: #30323a; color: #eeeef2; font-size: 12px; line-height: 1.7; box-shadow: 0 8px 24px #0008; }
+.package-flat-info:is(:hover, :focus, :focus-within) .package-flat-info-content { display: block; }
+@media (max-width: 799px) {
+  .package-dialog--editor .package-dialog-fields { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .package-dialog--editor .package-flat-right { border-left: 0; border-top: 1px solid var(--package-border); padding-left: 0; padding-top: 20px; }
+  .package-dialog--editor .package-dialog-body { padding: 16px; }
+  .package-dialog--editor .package-dialog-header { padding: 14px 16px; }
+  .package-dialog--editor .package-dialog-footer { padding: 12px 16px; }
+}
+@media (max-width: 479px) {
+  .package-dialog--editor .package-dialog-grid, .package-dialog--editor .package-flat-switches { grid-template-columns: minmax(0, 1fr); }
+  .package-dialog--editor .package-dialog-field :is(input, textarea), .package-dialog--editor .package-flat-select-button { font-size: 16px; }
+}

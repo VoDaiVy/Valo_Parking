@@ -1,12 +1,16 @@
+import { PackageText as Text } from '@/components/profile/PackageText';
+import { PackageParkingBreakdown } from './PackageParkingBreakdown';
+import QRCode from 'react-native-qrcode-svg';
+import type { CheckoutBankPayment } from '@/services/api/sessions';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEffect, useState } from 'react';
-import { Image, Text, TextInput, View } from 'react-native';
+import { Image, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { WorkflowButton, WorkflowChip, workflowStyles as s } from '@/components/common/WorkflowUI';
 import { COLORS } from '@/constants/theme';
 import { sessionsService } from '@/services/api/sessions';
-import type { StaffSession } from '@/services/api/staff';
+import type { StaffSession, PackageParkingQuote } from '@/services/api/staff';
 import parkingFloorService from '@/services/ParkingFloorService';
 import type { ParkingFloor, Slot } from '@/types/booking.types';
 import { formatCurrency } from '@/utils/formatters';
@@ -32,8 +36,10 @@ export function SessionActionsPanel({
     totalPrice: number;
     amountToPay: number;
     refundAmount: number;
+    pricingBreakdown?: PackageParkingQuote;
   } | null>(null);
-  const [method, setMethod] = useState<'CASH' | 'WALLET'>('CASH');
+  const [method, setMethod] = useState<'CASH' | 'WALLET' | 'BANK'>('CASH');
+  const [bankPayment, setBankPayment] = useState<CheckoutBankPayment | null>(null);
   useEffect(() => {
     if (mode !== 'move') return;
     void parkingFloorService
@@ -107,18 +113,26 @@ export function SessionActionsPanel({
       setBusy(false);
     }
   };
-  const checkout = async () => {
+  const checkout = async (refreshQr = false) => {
     if (!photo || !quote || busy) return;
     setBusy(true);
     setError('');
     try {
-      const response = await sessionsService.checkout(session._id, photo.base64, method);
+      const response = await sessionsService.checkout(session._id, photo.base64, refreshQr ? 'BANK' : bankPayment ? 'QR' : method, quote.amountToPay, bankPayment?.checkoutAttemptId);
+      if (response.requiresPayment) {
+        setBankPayment(response.data);
+        setQuote({ ...quote, amountToPay: response.data.amountDue, pricingBreakdown: response.data.pricingBreakdown || quote.pricingBreakdown });
+        return;
+      }
       if (!response.data) throw new Error('No checkout confirmation received.');
       onUpdated(response.data);
       setMode('none');
+      setBankPayment(null);
       setPhoto(null);
       setQuote(null);
     } catch (e) {
+      const refreshed = (e as { data?: { data?: { amountToPay: number; pricingBreakdown?: PackageParkingQuote } } }).data?.data;
+      if (refreshed && typeof refreshed.amountToPay === 'number') setQuote({ ...quote, ...refreshed });
       setError(e instanceof Error ? e.message : 'Unable to end the session.');
     } finally {
       setBusy(false);
@@ -199,12 +213,12 @@ export function SessionActionsPanel({
       {mode === 'checkout' ? (
         <>
           <Text style={s.body}>
-            {" "}{translateUi("Capture the exiting vehicle, review the invoice and confirm payment. Completing checkout opens the barrier.")}{" "}</Text>
+            {" "}{translateUi("Capture the exiting vehicle, review the invoice and confirm payment. Successful checkout authorizes exit; use gate controls to release the vehicle.")}{" "}</Text>
           <WorkflowButton
             title={
               busy ? 'Processing…' : photo ? 'Retake photo & refresh invoice' : 'Capture exit photo'
             }
-            disabled={busy}
+            disabled={busy || Boolean(bankPayment)}
             onPress={() => void capture()}
           />
           {photo ? (
@@ -215,23 +229,27 @@ export function SessionActionsPanel({
           ) : null}
           {quote ? (
             <>
+              <PackageParkingBreakdown pricing={quote.pricingBreakdown} paymentStatus={bankPayment ? 'pending' : 'unpaid'} />
               <Text style={s.body}>{translateUi("Total fee:")}{" "}{formatCurrency(quote.totalPrice)}</Text>
               <Text style={[s.title, { color: COLORS.gold, fontVariant: ['tabular-nums'] }]}>{translateUi("Amount due:")}{" "}{formatCurrency(quote.amountToPay)}</Text>
               <Text style={s.body}>{translateUi("Estimated refund:")}{" "}{formatCurrency(quote.refundAmount)}</Text>
-              <View style={s.row}>
+              {!bankPayment && <View style={s.row}>
                 <WorkflowChip
                   selected={method === 'CASH'}
                   onPress={() => !busy && setMethod('CASH')}
                 >
-                  {" "}{translateUi("Cash")}{" "}</WorkflowChip>
+                  {" "}{translateUi("Cash received")}{" "}</WorkflowChip>
                 <WorkflowChip
                   selected={method === 'WALLET'}
                   onPress={() => !busy && setMethod('WALLET')}
                 >
                   {" "}{translateUi("Customer wallet")}{" "}</WorkflowChip>
-              </View>
+                <WorkflowChip selected={method === 'BANK'} onPress={() => !busy && setMethod('BANK')}>Bank QR</WorkflowChip>
+              </View>}
+              {bankPayment && <View style={{ alignItems: 'center', gap: 12, backgroundColor: '#fff', padding: 16, borderRadius: 12 }}><QRCode value={bankPayment.qrCode || bankPayment.checkoutUrl} size={180} /><Text style={{ color: '#0f172a' }}>Complete bank payment before verifying checkout.</Text></View>}
+              {bankPayment && <WorkflowButton title="Refresh expired QR" disabled={busy} onPress={() => void checkout(true)} />}
               <WorkflowButton
-                title={translateUi("Confirm checkout & payment")}
+                title={bankPayment ? 'Verify payment & complete checkout' : translateUi("Confirm checkout & payment")}
                 disabled={busy}
                 onPress={() => void checkout()}
               />

@@ -1,3 +1,4 @@
+import { PackageText as Text } from '@/components/profile/PackageText';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -12,10 +13,10 @@ import {
   Animated,
   Image,
   Linking,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   View,
@@ -58,6 +59,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [selectedSlotKey, setSelectedSlotKey] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [membershipPayment, setMembershipPayment] = useState<'wallet' | 'cash'>('wallet');
   const [evidenceUri, setEvidenceUri] = useState('');
   const [evidenceBase64, setEvidenceBase64] = useState('');
   const [reason, setReason] = useState('Kiosk unavailable');
@@ -144,6 +146,10 @@ export function StaffBookingQrScreen({ navigation }: Props) {
       if (action === 'CHECK_IN' && (!selectedVehicleId || !selectedSlotKey)) {
         setError('Select a membership vehicle and reserved parking space first.');
         return;
+      }
+      if (action === 'CHECK_IN') {
+        const slot = resolution.membership.slots?.find((item) => `${typeof item.floorId === 'object' ? item.floorId?._id : item.floorId}:${item.slotCode}` === selectedSlotKey);
+        if (slot?.vehicleId && slot.vehicleId !== selectedVehicleId) { setError('Select the vehicle assigned to this parking space.'); return; }
       }
       if (action === 'CHECK_OUT' && !selectedSessionId) {
         setError('Select the active parking session to check out.');
@@ -234,10 +240,14 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           floorId: selectedAction === 'CHECK_IN' ? floorId : undefined,
           parkingSlot: selectedAction === 'CHECK_IN' ? selectedSlot?.slotCode : undefined,
           sessionId: selectedAction === 'CHECK_OUT' ? selectedSessionId : undefined,
+          paymentMethod: selectedAction === 'CHECK_OUT' ? membershipPayment : undefined,
+          expectedAmount: selectedAction === 'CHECK_OUT' ? selectedSession?.checkoutQuote?.amountToPay : undefined,
         });
       }
       setPhase('success');
     } catch (transitionError) {
+      const quote = (transitionError as { data?: { data?: { pricingBreakdown?: NonNullable<typeof selectedSession>['checkoutQuote'] } } }).data?.data?.pricingBreakdown;
+      if (quote && isMembershipResolution(resolution)) setResolution({ ...resolution, activeSessions: resolution.activeSessions.map((item) => item._id === selectedSessionId ? { ...item, checkoutQuote: quote } : item) });
       setError(
         transitionError instanceof Error
           ? transitionError.message
@@ -410,7 +420,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
                     selected={selectedSlotKey === key}
                     title={slot.slotCode}
                     subtitle={floor?.name || `Floor ${floor?.floorNumber || ''}`.trim()}
-                    onPress={() => setSelectedSlotKey(key)}
+                    onPress={() => { setSelectedSlotKey(key); if (slot.vehicleId) setSelectedVehicleId(slot.vehicleId); }}
                   />
                 );
               })}
@@ -495,6 +505,18 @@ export function StaffBookingQrScreen({ navigation }: Props) {
                   : `${selectedSession?.licensePlate || 'Vehicle'} / ${selectedSession?.parkingSlot || 'Parking space'}`}
             </Text>
             <Text style={styles.inputLabel}>{translateUi("Override reason")}</Text>
+            {selectedAction === 'CHECK_OUT' && selectedSession?.checkoutQuote && <View style={{ gap: 8, padding: 12, backgroundColor: '#10233f', borderRadius: 10 }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Package parking coverage</Text>
+              <Text style={{ color: '#fff' }}>Package: {selectedSession.checkoutQuote.packageName || 'Legacy parking package'}</Text>
+              <Text style={{ color: '#bfdbfe' }}>Service: {selectedSession.checkoutQuote.packageService === 'RESERVED_PAID' ? 'Reserved space: standard parking fees' : 'Reserved space: parking included while effective'}</Text>
+              <Text style={{ color: '#bfdbfe' }}>Payment status: Awaiting checkout settlement</Text>
+              <Text style={{ color: '#bfdbfe' }}>Covered: {selectedSession.checkoutQuote.coveredInterval ? `${new Date(selectedSession.checkoutQuote.coveredInterval.start).toLocaleString()} - ${new Date(selectedSession.checkoutQuote.coveredInterval.end).toLocaleString()}` : 'None'}</Text>
+              <Text style={{ color: '#bfdbfe' }}>Chargeable: {selectedSession.checkoutQuote.uncoveredInterval ? `${new Date(selectedSession.checkoutQuote.uncoveredInterval.start).toLocaleString()} - ${new Date(selectedSession.checkoutQuote.uncoveredInterval.end).toLocaleString()}` : 'None'}</Text>
+              <Text style={{ color: '#fff' }}>Amount due: {selectedSession.checkoutQuote.amountToPay.toLocaleString()} VND</Text>
+              {selectedSession.checkoutQuote.packageExpired && <Text style={{ color: '#bfdbfe' }}>The package has expired. Only chargeable time uses standard pricing blocks and caps.</Text>}
+              <Pressable accessibilityRole="radio" accessibilityState={{ checked: membershipPayment === 'wallet' }} onPress={() => setMembershipPayment('wallet')}><Text style={{ color: '#fff' }}>{membershipPayment === 'wallet' ? 'Selected: ' : ''}Pay from customer wallet</Text></Pressable>
+              <Pressable accessibilityRole="radio" accessibilityState={{ checked: membershipPayment === 'cash' }} onPress={() => setMembershipPayment('cash')}><Text style={{ color: '#fff' }}>{membershipPayment === 'cash' ? 'Selected: ' : ''}Confirm cash received</Text></Pressable>
+            </View>}
             <TextInput
               maxLength={500}
               multiline

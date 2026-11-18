@@ -74,6 +74,7 @@ const subscriptionRenewalSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    paymentConfirmedAt: Date,
     failureReason: {
       type: String,
       default: '',

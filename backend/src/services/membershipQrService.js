@@ -118,7 +118,23 @@ const isMembershipQrAvailable = (subscription, now = new Date()) =>
     new Date(subscription.expireAt) > now
   );
 
+async function verifyCurrentMembershipQr(payload) {
+  const parsed = parseAndVerifyAnyMembershipQr(payload);
+  const User = require('../models/User');
+  if (parsed.credentialType === 'ACCOUNT') {
+    const user = await User.findOne({ _id: parsed.userId, status: true }).select('membership');
+    if (!user || Number(user.membership?.qrVersion || 1) !== parsed.version) throw Object.assign(new Error('Membership QR has been replaced or revoked.'), { statusCode: 410 });
+    return { ...parsed, userId: user._id };
+  }
+  if (!require('../utils/featureFlags').isEnabled('MEMBERSHIP_LEGACY_QR_ENABLED', true)) throw Object.assign(new Error('Legacy membership QR is disabled.'), { statusCode: 410 });
+  const subscription = await require('../models/Subscription').findOne({ _id: parsed.subscriptionId, paymentStatus: 'paid' });
+  const user = subscription && await User.exists({ _id: subscription.user, status: true });
+  if (!subscription || !user || Number(subscription.qrVersion || 1) !== parsed.version) throw Object.assign(new Error('Membership QR has been replaced or revoked.'), { statusCode: 410 });
+  return { ...parsed, userId: subscription.user };
+}
+
 module.exports = {
+  verifyCurrentMembershipQr,
   ACCOUNT_QR_PREFIX,
   buildAccountMembershipQrPayload,
   buildMembershipQrPayload,

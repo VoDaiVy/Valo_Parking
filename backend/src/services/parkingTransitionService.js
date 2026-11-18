@@ -5,6 +5,20 @@ const ParkingPassAction = require('../models/ParkingPassAction');
 // Every QR entry/exit calls this inside the transaction which changes parking state.
 // Writing the credential forces a conflict with a concurrent reissue/revocation.
 async function assertCredentialCurrent(req, mongoSession) {
+  const membership = req.membershipQrCredential;
+  if (membership) {
+    const account = membership.credentialType === 'ACCOUNT';
+    if (!account) {
+      const owner = await require('../models/User').updateOne({ _id: membership.userId, status: true }, { $inc: { __v: 1 } }, { session: mongoSession });
+      if (!owner.matchedCount) throw Object.assign(new Error('Membership account is inactive.'), { statusCode: 410 });
+    }
+    const Model = require(account ? '../models/User' : '../models/Subscription');
+    const field = account ? 'membership.qrVersion' : 'qrVersion';
+    const versions = [{ [field]: membership.version }];
+    if (membership.version === 1) versions.push({ [field]: { $exists: false } });
+    const touched = await Model.updateOne({ _id: account ? membership.userId : membership.subscriptionId, ...(account ? { status: true } : { paymentStatus: 'paid' }), $or: versions }, { $inc: { __v: 1 } }, { session: mongoSession });
+    if (!touched.matchedCount) throw Object.assign(new Error('Membership QR has been replaced or revoked.'), { statusCode: 410 });
+  }
   const credential = req.parkingPassAction || req.parkingQrCredential;
   if (!credential) return;
   if (credential.expectedVersion) {

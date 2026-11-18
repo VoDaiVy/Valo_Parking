@@ -70,7 +70,6 @@ const PREMIUM = {
 };
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { icon: 'compass-outline', label: 'Explore', description: 'Parking packages', screen: 'WalletTab', params: { screen: 'ExplorePackages' } },
   { icon: 'calendar-outline', label: 'My bookings', description: 'Reservations & QR', screen: 'Bookings', params: { screen: 'BookingList' } },
   { icon: 'gift-outline', label: 'Voucher', description: 'Rewards & spending', screen: 'WalletTab', params: { screen: 'Rewards' } },
   {
@@ -829,7 +828,7 @@ function PremiumHeroDashboard({
             <View style={styles.heroMembershipDot} />
             <Ionicons name="shield-checkmark-outline" size={14} color={COLORS.gold} />
             <Text numberOfLines={1} style={styles.heroMembershipText}>
-              {activeMembership.package?.name || translateUi("Membership")}
+              {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : translateUi("Annual member")) : (language === 'vi' ? 'Thành viên tháng' : translateUi("Monthly member"))}
               {activeMembership.expireAt ? ` · ${language === 'vi' ? 'Hết hạn' : 'Expires'} ${formatDate(activeMembership.expireAt)}` : ''}
             </Text>
           </View>
@@ -1020,7 +1019,7 @@ function MembershipCard({
             </View>
             <View style={styles.membershipTitleWrap}>
               <Text style={styles.membershipEyebrow}>
-                {activeMembership.package?.name || translateUi("Membership")}
+                {activeMembership.package?.type === 'yearly' ? (language === 'vi' ? 'Thành viên năm' : translateUi("Annual member")) : (language === 'vi' ? 'Thành viên tháng' : translateUi("Monthly member"))}
               </Text>
               <Text numberOfLines={1} style={styles.membershipName}>
                 {activeMembership.package?.name ?? 'VALO Membership'}

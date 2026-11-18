@@ -1,6 +1,6 @@
-import { MembershipServicesScreen } from '../screens/wallet/MembershipServicesScreen';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { MembershipServicesScreen } from '../screens/wallet/MembershipServicesScreen';
 import { WalletScreen }                  from '../screens/wallet/WalletScreen';
 import { RewardsScreen } from '../screens/wallet/RewardsScreen';
 import { TopUpScreen }                   from '../screens/wallet/TopUpScreen';

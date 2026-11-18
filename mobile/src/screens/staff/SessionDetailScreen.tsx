@@ -1,3 +1,5 @@
+import { PackageParkingBreakdown } from '@/components/staff/PackageParkingBreakdown';
+import { PackageText as Text } from '@/components/profile/PackageText';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -12,7 +14,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -262,6 +263,7 @@ export const SessionDetailScreen = ({ navigation, route }: Props) => {
           </FadeInView>
         ) : null}
 
+        <PackageParkingBreakdown pricing={session.pricingBreakdown} paymentStatus={session.paymentStatus} />
         <SessionActionsPanel session={session} onUpdated={setSession} />
         <Text style={styles.idRef}>{translateUi("ID:")}{" "}{session._id}</Text>
       </ScrollView>

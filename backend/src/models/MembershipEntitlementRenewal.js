@@ -51,6 +51,7 @@ const membershipEntitlementRenewalSchema = new mongoose.Schema(
     paidAt: { type: Date, default: null },
     notificationPending: { type: Boolean, default: false },
     notificationProcessedAt: { type: Date, default: null },
+    paymentConfirmedAt: Date,
     failureReason: { type: String, default: '' },
   },
   { timestamps: true }

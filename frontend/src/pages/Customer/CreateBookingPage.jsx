@@ -17,6 +17,7 @@ import {
   Lock,
   MapPin,
   Plus,
+  RefreshCw,
   Sparkles,
   Ticket,
   Trash2,
@@ -25,6 +26,8 @@ import {
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import AIBusynessForecast from '../../components/AIBusynessForecast';
 import VipPackageModal from '../../components/Customer/VipPackageModal';
+import { getLiveMapData } from '../../services/parkingFloorService';
+import { getLiveParkingSlots, isLiveParkingSlotBookable } from '../../utils/aiParkingLookup';
 
 import AiBookingPanel from '../../components/Customer/AiBookingPanel';
 
@@ -694,6 +697,7 @@ export default function CreateBookingPage() {
   const slotsRequestIdRef = useRef(0);
   const quoteRequestIdRef = useRef(0);
   const checkoutIdempotencyKeyRef = useRef(createClientItemId());
+  const bookingEditorRef = useRef(null);
   const [initialRange] = useState(() => getInitialTimeRange());
   const [startDate, setStartDate] = useState(() => initialRange.startTime.split('T')[0]);
   const [startTimeStr, setStartTimeStr] = useState(() => initialRange.startTime.split('T')[1]);
@@ -798,6 +802,19 @@ export default function CreateBookingPage() {
   const [dbSlots, setDbSlots] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [activeHolds, setActiveHolds] = useState([]);
+  const [liveMapSlots, setLiveMapSlots] = useState(null);
+  const [showLiveMap, setShowLiveMap] = useState(true);
+
+  const fetchLiveMapData = useCallback(async () => {
+    try {
+      const res = await getLiveMapData();
+      if (res?.ok || res?.success || res?.data) {
+        setLiveMapSlots(getLiveParkingSlots(res));
+      }
+    } catch (err) {
+      console.error('Failed to fetch live parking map', err);
+    }
+  }, []);
 
   const fetchDbSlots = useCallback(async () => {
     if (!currentFloorId) {
@@ -874,16 +891,18 @@ export default function CreateBookingPage() {
     const initialTimer = window.setTimeout(() => {
       fetchActiveSessions();
       fetchActiveHoldsData();
+      fetchLiveMapData();
     }, 0);
     const intervalId = window.setInterval(() => {
       fetchActiveHoldsData();
       fetchDbSlots();
+      fetchLiveMapData();
     }, 30000); // 30s
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(intervalId);
     };
-  }, [fetchDbSlots]);
+  }, [fetchDbSlots, fetchLiveMapData]);
 
   const handleManualPlateChange = (event) => {
     const raw = event.target.value.toUpperCase();
@@ -1005,7 +1024,17 @@ export default function CreateBookingPage() {
     [effectiveSelectedServices, freeServiceId, services]
   );
 
-  const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey);
+  const editingCartItem = editingClientItemId
+    ? cartItems.find((item) => item.clientItemId === editingClientItemId)
+    : null;
+  const selectedSlot = slots.find((slot) => `${slot.floorId}:${slot.slotCode}` === selectedSlotKey)
+    || (editingCartItem && `${editingCartItem.floorId}:${editingCartItem.slotCode}` === selectedSlotKey
+      ? {
+          floorId: editingCartItem.floorId,
+          floorName: editingCartItem.floorName,
+          slotCode: editingCartItem.slotCode,
+        }
+      : null);
   const selectedVehicle = vehicles.find((vehicle) => vehicle._id === vehicleId);
   const {
     activeMembershipType,
@@ -1252,7 +1281,12 @@ export default function CreateBookingPage() {
       if (selectedSlotKey) {
         const [fId, sCode] = selectedSlotKey.split(':');
         const stillAvailable = nextSlots.some(s => s.floorId === fId && s.slotCode === sCode);
-        if (!stillAvailable) {
+        const isCurrentEditingHold = cartItems.some((item) => (
+          item.clientItemId === editingClientItemId
+          && String(item.floorId) === String(fId)
+          && String(item.slotCode) === String(sCode)
+        ));
+        if (!stillAvailable && !isCurrentEditingHold) {
           setSelectedSlotKey('');
         }
       }
@@ -1437,8 +1471,13 @@ export default function CreateBookingPage() {
     setSelectedServices(item.serviceIds || []);
     setSelectedVoucherId(item.voucherId || '');
     setSelectedSlotKey(`${item.floorId}:${item.slotCode}`);
+    setCurrentFloorId(item.floorId);
     setSuccess('');
     setError('');
+
+    window.requestAnimationFrame(() => {
+      bookingEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const handleRemoveCartItem = async (clientItemId) => {
@@ -1766,7 +1805,7 @@ export default function CreateBookingPage() {
           mapActiveHolds={activeHolds}
         /> : <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-1 lg:min-h-0">
           <section className="xl:col-span-4 flex flex-col gap-4 xl:overflow-y-auto time-scrollbar xl:pr-2 pb-4 h-full">
-            <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0">
+            <div ref={bookingEditorRef} className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm shrink-0 scroll-mt-28">
               <h2 className="text-lg font-black mb-3 text-gray-900">Booking Details</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
@@ -2120,14 +2159,40 @@ export default function CreateBookingPage() {
 
           <section className="xl:col-span-8 flex flex-col gap-6">
             <div className="rounded-3xl bg-white border border-gray-200 p-4 shadow-sm flex flex-col h-[520px]">
-            <div className="flex items-center justify-between gap-4 mb-3 px-2 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-3 px-2 pt-2">
               <div>
-                <h2 className="text-lg font-black text-gray-900">Available Slots Map</h2>
+                <div className="flex items-center gap-2">
+                  <MapPin size={20} className="text-cyan-500" />
+                  <h2 className="text-lg font-black text-gray-900">{showLiveMap ? 'Live Parking Map' : 'Available Slots Map'}</h2>
+                </div>
                 <p className="text-sm font-medium text-gray-500">
-                  Select an available slot on the map. Occupied slots are shown live in red.
+                  {showLiveMap
+                    ? 'Current availability on the selected floor.'
+                    : 'Select an available slot on the map. Occupied slots are shown live in red.'}
                 </p>
               </div>
-              <div className="text-sm text-emerald-600 font-bold px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">{slots.length} slot(s) available</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLiveMap(prev => !prev)}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 hover:border-cyan-300 transition"
+                >
+                  {showLiveMap ? 'Show booking time' : 'Show real-time live map'}
+                </button>
+                <div className="text-sm text-emerald-600 font-bold px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
+                  {showLiveMap && liveMapSlots
+                    ? `${liveMapSlots.filter(s => String(s.floorId) === String(currentFloorId) && isLiveParkingSlotBookable(s, (vehicles.find(v => v._id === vehicleId)?.type === 'electric_car'))).length} spaces available on this floor`
+                    : `${slots.length} slot(s) available`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { fetchLiveMapData(); handleFindSlots(); }}
+                  className="rounded-xl border border-gray-200 bg-white p-2 text-gray-600 hover:border-cyan-300 transition"
+                  title="Refresh map"
+                >
+                  <RefreshCw size={15} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 w-full relative rounded-2xl overflow-hidden border border-[#0b0e16] bg-[#0b0e16] shadow-inner">
@@ -2158,7 +2223,7 @@ export default function CreateBookingPage() {
                 </div>
               )}
 
-              {slots.length === 0 && !checkingSlots && (
+              {slots.length === 0 && !checkingSlots && !showLiveMap && (
                 <div className="absolute inset-0 z-10 bg-[#0b0e16]/80 backdrop-blur-md flex flex-col items-center justify-center text-center p-8">
                   <div className="w-16 h-16 bg-[#181c23] shadow-xl shadow-black/50 border border-white/10 rounded-full flex items-center justify-center mb-4">
                     <MapPin className="w-8 h-8 text-cyan-500" />
@@ -2175,7 +2240,10 @@ export default function CreateBookingPage() {
                 activeSessions={activeSessions}
                 dbSlots={dbSlots}
                 activeHolds={activeHolds}
+                liveSlots={showLiveMap ? liveMapSlots : null}
                 availableSlots={slots}
+                allowScheduledAvailabilityOverride={true}
+                vehicleType={vehicles.find((v) => v._id === vehicleId)?.type || 'car'}
                 selectedSlotId={
                   cartItems.length > 0 
                     ? [...cartItems.map(item => `${item.floorId}:${item.slotCode}`), selectedSlotKey].filter(Boolean)
@@ -2188,7 +2256,7 @@ export default function CreateBookingPage() {
               />
 
               {/* Legend Overlay */}
-              {!checkingSlots && slots.length > 0 && (
+              {!checkingSlots && (slots.length > 0 || showLiveMap) && (
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center z-30 pointer-events-none px-4">
                   <div className="bg-[#181c23]/80 backdrop-blur border border-white/10 px-5 py-2.5 rounded-full flex items-center gap-4 shadow-lg pointer-events-auto">
                     <p className="text-cyan-400 font-black text-[10px] uppercase tracking-widest pr-2 hidden sm:block">Status Legend</p>

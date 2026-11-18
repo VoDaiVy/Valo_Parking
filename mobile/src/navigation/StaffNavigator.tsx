@@ -1,3 +1,5 @@
+import { StaffTicketPackagesScreen } from '@/screens/staff/StaffTicketPackagesScreen';
+import { StaffSubscriptionManagementScreen } from '@/screens/staff/StaffSubscriptionManagementScreen';
 import { MembershipServicesScreen } from '../screens/wallet/MembershipServicesScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -33,6 +35,8 @@ const SessionStack = createNativeStackNavigator<StaffSessionStackParamList>();
 
 export type StaffManagementStackParamList = {
   ManagementHome: undefined;
+  TicketPackages: undefined;
+  Subscriptions: undefined;
   MembershipServices: { sessionId: string; requestId: string } | undefined;
   Customers: undefined;
   Bookings: undefined;
@@ -65,12 +69,14 @@ function SessionStackNavigator() {
 function ManagementStackNavigator() {
   return (
     <ManagementStack.Navigator initialRouteName="ManagementHome" screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.background } }}>
-      <ManagementStack.Screen name="MembershipServices" component={MembershipServicesScreen} />
       <ManagementStack.Screen name="ManagementHome" component={ManagementHubScreen} />
       <ManagementStack.Screen name="Inbox" component={NotificationsScreen} />
       <ManagementStack.Screen name="Communication" component={StaffCommunicationScreen} />
       <ManagementStack.Screen name="StaffAssistant" component={StaffAssistantScreen} />
       <ManagementStack.Screen name="ParkingOperations" component={StaffParkingOperationsScreen} />
+      <ManagementStack.Screen name="TicketPackages" component={StaffTicketPackagesScreen} />
+      <ManagementStack.Screen name="Subscriptions" component={StaffSubscriptionManagementScreen} />
+      <ManagementStack.Screen name="MembershipServices" component={MembershipServicesScreen} />
       <ManagementStack.Screen name="Customers" component={CustomerManagementScreen} />
       <ManagementStack.Screen name="Bookings" component={StaffBookingManagementScreen} />
       <ManagementStack.Screen name="BookingScanner" component={StaffBookingQrScreen} />
