@@ -10,6 +10,7 @@ import {
 import { apiFetch } from '../../services/api';
 import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useSearchParams } from 'react-router-dom';
+import AccountBookingReview from '../../components/Admin/AccountBookingReview';
 import './accountManagement.css';
 
 // --- Constants ---------------------------------------------------------------
@@ -163,6 +164,9 @@ export default function AccountManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const [bookingReviews, setBookingReviews] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [panelUser, setPanelUser] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -195,6 +199,36 @@ export default function AccountManagement() {
       }
     } catch (e) { console.error(e); }
     finally { if (generation === userRequest.current) setLoading(false); }
+  };
+
+  const showBookingReviews = async () => {
+    if (reviewLoading) return;
+    if (reviewOnly) {
+      setReviewOnly(false);
+      setFilterRole('all');
+      setPage(1);
+      return;
+    }
+
+    setReviewLoading(true);
+    try {
+      const result = await apiFetch('/admin/users/booking-review', { cache: 'no-store', headers: authHeader });
+      if (!result.ok || !Array.isArray(result.data?.data)) {
+        showToast(result.data?.message || t('accountManagementExtra.bookingReviewUnavailable', { defaultValue: 'Booking review is unavailable.' }), 'error');
+        return;
+      }
+      setBookingReviews(new Map(result.data.data.map(row => [row.userId, row])));
+      setFilterRole('customer');
+      setFilterStatus('all');
+      setSearchTerm('');
+      setReviewOnly(true);
+      setPage(1);
+    } catch (error) {
+      console.error(error);
+      showToast(t('accountManagementExtra.bookingReviewUnavailable', { defaultValue: 'Booking review is unavailable.' }), 'error');
+    } finally {
+      setReviewLoading(false);
+    }
   };
 
   const aiUserLoader = useRef(null);
@@ -386,7 +420,7 @@ export default function AccountManagement() {
     const matchSearch = !term || name.includes(term) || (u.email || '').toLowerCase().includes(term) || (u.profile?.phone || '').includes(term);
     const matchRole = filterRole === 'all' || u.role === filterRole;
     const matchStatus = filterStatus === 'all' || (filterStatus === 'active' && u.status === true) || (filterStatus === 'blocked' && u.status === false);
-    return matchSearch && matchRole && matchStatus;
+    return matchSearch && matchRole && matchStatus && (!reviewOnly || bookingReviews?.has(u._id) || u.bookingRestriction?.blocked);
   });
 
   filtered.sort((a, b) => {
@@ -490,6 +524,15 @@ export default function AccountManagement() {
 
         {/* -- Controls Bar -- */}
         <div className="account-toolbar flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
+          <button type="button" disabled={reviewLoading} aria-pressed={reviewOnly} onClick={showBookingReviews}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${reviewOnly ? 'border-amber-400/50 bg-amber-400/10 text-amber-300' : 'border-white/10 bg-[#111] text-white/70 hover:border-white/20 hover:text-white'}`}>
+            <AlertTriangle size={14} />
+            {reviewLoading
+              ? t('accountManagementExtra.loadingBookingReview', { defaultValue: 'Loading review…' })
+              : reviewOnly
+                ? t('accountManagementExtra.showAllAccounts', { defaultValue: 'Show all accounts' })
+                : t('accountManagementExtra.bookingReview', { defaultValue: 'Booking review' })}
+          </button>
           <div className="account-search relative flex-1 min-w-0">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
@@ -601,12 +644,17 @@ export default function AccountManagement() {
                 <tr><td colSpan="8" className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3 text-white/30">
                     <UserX size={36} />
-                    <span className="text-sm">{t('accountManagement.empty')}</span>
+                    <span className="text-sm" role="status">
+                      {reviewOnly && !searchTerm.trim() && filterRole === 'customer' && filterStatus === 'all'
+                        ? t('accountManagementExtra.noBookingReviews', { defaultValue: 'No customer accounts have a cancellation history or booking restriction.' })
+                        : t('accountManagement.empty')}
+                    </span>
                   </div>
                 </td></tr>
               )}
               {!loading && pageUsers.map(u => {
                 const isActive = panelUser?._id === u._id;
+                const review = bookingReviews?.get(u._id);
                 return (
                   <tr key={u._id} className={`account-row group border-b border-white/10 cursor-pointer hover:bg-[#171717] hover:-translate-y-[1px] hover:shadow-lg transition-all duration-200 ease-out ${isActive ? 'bg-[#ffd555]/[0.04]' : 'even:bg-white/[0.01]'}`}
                     onClick={() => openPanel(u)}>
@@ -629,7 +677,21 @@ export default function AccountManagement() {
                     <td className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
                     <td className="px-4 py-3 text-[13px] text-white/55">{u.profile?.phone || '-'}</td>
                     <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
-                    <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={u.status} />
+                      {u.bookingRestriction?.blocked && <span className="mt-1 block text-xs text-rose-300">{t('accountManagementExtra.bookingRestricted', { defaultValue: 'Booking restricted' })}</span>}
+                      {review?.flagged && <span className="mt-1 block text-xs text-amber-300">{t('accountManagementExtra.reviewSuggested', { defaultValue: 'Review suggested' })}</span>}
+                      {!review?.flagged && review?.lastFlaggedAt && <span className="mt-1 block text-xs text-amber-200">{t('accountManagementExtra.pastReviewFlag', { defaultValue: 'Past review flag' })}</span>}
+                      {reviewOnly && review?.totalCancelledOrders > 0 && (
+                        <span className="mt-1 block text-xs text-white/55">
+                          {t('accountManagementExtra.cancelledOrdersHistory', {
+                            defaultValue: '{{count}} cancelled {{orderLabel}} in history',
+                            count: review.totalCancelledOrders,
+                            orderLabel: review.totalCancelledOrders === 1 ? 'order' : 'orders',
+                          })}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-[12px] text-white/35">{formatDate(u.createdAt)}</td>
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
@@ -719,6 +781,17 @@ export default function AccountManagement() {
 
                   {!isEditing ? (
                     <div className="space-y-4">
+                      {panelUser.role === 'customer' && (
+                        <AccountBookingReview
+                          key={panelUser._id}
+                          userId={panelUser._id}
+                          onRestriction={bookingRestriction => {
+                            const userId = panelUser._id;
+                            setUsers(current => current.map(user => user._id === userId ? { ...user, bookingRestriction } : user));
+                            setPanelUser(current => current?._id === userId ? { ...current, bookingRestriction } : current);
+                          }}
+                        />
+                      )}
                       <div className="bg-[#171717] rounded-2xl p-4 border border-white/10 space-y-3">
                         <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('accountManagementExtra.basicInfo', { defaultValue: 'Basic Info' })}</h4>
                         {[

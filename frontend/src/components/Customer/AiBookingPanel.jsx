@@ -49,7 +49,7 @@ import {
   addBookingCalendarDays,
   alignBookingClockValue,
 } from '../../utils/bookingTimePolicy';
-import { detectDirectParkingLookup, getLiveParkingSlots, isLiveParkingSlotBookable, parkingAvailabilityReply, parkingStatusReply, slotStatusReply } from '../../utils/aiParkingLookup';
+import { detectDirectParkingLookup, detectParkingAvailabilityFollowUp, getLiveParkingSlots, isLiveParkingSlotBookable, parkingAvailabilityReply, parkingStatusReply, slotStatusReply } from '../../utils/aiParkingLookup';
 import {
   aiBookingStepLabel,
   chooseNewestAiBookingSession,
@@ -171,6 +171,21 @@ const welcomeMessage = {
   state: 'IDLE',
   createdAt: new Date().toISOString(),
 };
+const historyItemFromSession = (session) => {
+  if (!session) return null;
+  const language = session.language === 'vi' || session.bookingDraft?.__language === 'vi' ? 'vi' : 'en';
+  const firstUserMessage = (session.messages || []).find((message) => message.role === 'user');
+  const generatedTitle = String(firstUserMessage?.content ?? firstUserMessage?.text ?? '')
+    .replace(/\s+/g, ' ').trim().slice(0, 80);
+  return {
+    sessionId: String(session.sessionId || session._id || ''),
+    title: session.title || generatedTitle || (language === 'vi' ? 'Cuộc trò chuyện mới' : 'New chat'),
+    language,
+    status: session.status,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt || new Date().toISOString(),
+  };
+};
 const newClientSessionId = () => globalThis.crypto?.randomUUID?.()
   || `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const toVietnamBookingIso = (date, time) => {
@@ -233,7 +248,6 @@ export default function AiBookingPanel({
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const [historyVersion, setHistoryVersion] = useState(0);
   const [selectedHistoryId, setSelectedHistoryId] = useState('');
   const [historyReadOnly, setHistoryReadOnly] = useState(false);
   const [replyPending, setReplyPending] = useState(false);
@@ -293,7 +307,18 @@ export default function AiBookingPanel({
   const submittedLanguageRef = useRef(null);
   const [queuedTurns, setQueuedTurns] = useState(0);
   const [turnProcessing, setTurnProcessing] = useState(false);
-  const refreshHistory = () => { setHistoryPage(1); setHistoryVersion((value) => value + 1); };
+  const upsertHistorySession = (session) => {
+    const item = historyItemFromSession(session);
+    if (!item?.sessionId) return;
+    setHistoryItems((current) => {
+      const index = current.findIndex((entry) => entry.sessionId === item.sessionId);
+      if (index >= 0) {
+        return current.map((entry, itemIndex) => itemIndex === index ? { ...entry, ...item } : entry);
+      }
+      if (historySearch.trim()) return current;
+      return [item, ...current];
+    });
+  };
 
   const requestedVehicleTotal = Math.max(
     Number(draft.requestedVehicleCount || 0),
@@ -552,7 +577,7 @@ export default function AiBookingPanel({
       const saved = normalizeAiBookingSession(response.data.data);
       sessionIdRef.current = saved.sessionId;
       setSelectedHistoryId(saved.sessionId);
-      refreshHistory();
+      upsertHistorySession(saved);
       const localSnapshot = { ...snapshot, sessionId: saved.sessionId, updatedAt: saved.updatedAt || snapshot.updatedAt };
       if (lastSnapshotRef.current?.status !== 'COMPLETED') {
         lastSnapshotRef.current = localSnapshot;
@@ -675,7 +700,7 @@ export default function AiBookingPanel({
       finally { if (!cancelled) setHistoryLoading(false); }
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [initialLanguage, historySearch, historyPage, historyVersion]);
+  }, [historySearch, historyPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -911,7 +936,6 @@ export default function AiBookingPanel({
       resetConversation(); setPrompt('');
       beginSession();
       await saveSnapshot();
-      refreshHistory();
     } catch (caught) { setHistoryError(caught.message); }
     finally { navigatingRef.current = false; setSessionLoading(false); }
   };
@@ -934,7 +958,7 @@ export default function AiBookingPanel({
   const renameHistoryChat = async (item, title) => {
     const response = await renameAiBookingSession(item.sessionId, title);
     if (!response.ok) throw new Error(languageRef.current === 'vi' ? 'Không thể đổi tên. Vui lòng thử lại.' : 'Unable to rename this conversation. Please try again.');
-    refreshHistory();
+    upsertHistorySession(response.data?.data || { ...item, title });
   };
   const deleteHistoryChat = async (item) => {
     navigatingRef.current = true; setSessionLoading(true);
@@ -948,7 +972,6 @@ export default function AiBookingPanel({
         stopChatAudio(); resetConversation(); setPrompt('');
       }
       setHistoryItems((current) => current.filter((entry) => entry.sessionId !== item.sessionId));
-      refreshHistory();
     } finally { navigatingRef.current = false; setSessionLoading(false); }
   };
   const completeCurrentSession = async (completedIntent = intentRef.current) => {
@@ -975,7 +998,7 @@ export default function AiBookingPanel({
         clearLocalAiBookingSession(undefined, ownerKeyRef.current);
         setSessionSaving('saved');
         setHistoryReadOnly(true);
-        refreshHistory();
+        upsertHistorySession(normalizeAiBookingSession(response.data?.data));
         return response.data?.data;
       }
       setSessionSaving('offline');
@@ -1497,15 +1520,20 @@ export default function AiBookingPanel({
     setConversationPhase('PROCESSING');
     setBusy(true);
     try {
-      const directLookup = detectDirectParkingLookup(text);
+      const directLookup = detectDirectParkingLookup(text)
+        || (draftRef.current.assistantContext?.lastParkingLookupIntent === 'CHECK_PARKING_AVAILABILITY'
+          ? detectParkingAvailabilityFollowUp(text)
+          : null);
       // Booking lookups use the server's account/context-aware continuation.
       if (directLookup && directLookup.intent !== 'CHECK_BOOKING_STATUS') {
         const isVehicleLookup = directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS';
+        const selectedFloorName = mapFloors.find((floor) => String(floor._id) === String(mapFloorId))?.name || '';
+        const slotLookupFloorName = directLookup.floorName || selectedFloorName;
         const response = isVehicleLookup ? await getMyParkingHistory() : await refreshLiveMap();
         const message = isVehicleLookup
           ? parkingStatusReply(response, directLookup.licensePlate)
           : directLookup.intent === 'CHECK_SLOT_STATUS'
-            ? slotStatusReply(response, directLookup.slotCode, directLookup.floorName, languageRef.current)
+            ? slotStatusReply(response, directLookup.slotCode, slotLookupFloorName, languageRef.current)
             : parkingAvailabilityReply(response, directLookup.floorName, { ...directLookup, language: languageRef.current });
         if (request !== requestRef.current) return;
         if (!isVehicleLookup) setLiveMapView({ rangeKey: mapRangeKey, electricCar: directLookup.electricCar });
@@ -1514,6 +1542,7 @@ export default function AiBookingPanel({
         updateDraft((currentDraft) => ({ ...currentDraft, assistantContext: {
           ...(currentDraft.assistantContext || {}),
           pendingLookupIntent: directLookup.intent === 'CHECK_VEHICLE_PARKING_STATUS' && !directLookup.licensePlate ? directLookup.intent : null,
+          lastParkingLookupIntent: directLookup.intent,
         } }));
         const reply = await say(localizedMessage);
         if (request !== requestRef.current) return;
@@ -2458,11 +2487,6 @@ export default function AiBookingPanel({
               <div className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-600">
                 {mapFloorAvailableCount} spaces available on this floor
               </div>
-            )}
-            {mapRangeKey && (
-              <button type="button" onClick={() => setLiveMapView(showLiveMap ? null : { rangeKey: mapRangeKey })} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-600 hover:border-cyan-300">
-                {showLiveMap ? 'Show booking time' : 'Show current availability'}
-              </button>
             )}
             <button type="button" onClick={() => showLiveMap ? refreshLiveMap().catch(() => {}) : refreshMapAvailability()} disabled={mapRefreshing || !mapFloorId} className="rounded-xl border border-gray-200 bg-white p-2.5 text-gray-600 transition hover:border-cyan-300 hover:text-cyan-600 disabled:opacity-40" aria-label="Refresh parking map">
               <RefreshCw size={17} className={mapRefreshing ? 'animate-spin' : ''} />
