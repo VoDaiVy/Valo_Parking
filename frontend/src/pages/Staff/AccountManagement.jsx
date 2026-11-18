@@ -16,6 +16,7 @@ import {
   getOperationalViewState,
   getResponseAvailability,
 } from '../../utils/staffOperationalAvailability';
+import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // Match CustomerProfile/Navbar field precedence; stored CDN URLs are already absolute.
 function CustomerAvatar({ user, imageClassName, fallbackClassName, children }) {
@@ -87,32 +88,34 @@ function AnimatedCounter({ target, duration = 1200 }) {
 
 // --- Role Badge --------------------------------------------------
 function RoleBadge({ role }) {
+  const { language } = useLanguage();
   const cfg = ROLES[role] || ROLES.customer;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg} ${cfg.border} ${cfg.text} select-none`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
+      {role === 'customer' ? (language === 'vi' ? 'Khách hàng' : 'Customer') : cfg.label}
     </span>
   );
 }
 
 // --- Status Badge -------------------------------------------------------------
 function StatusBadge({ status }) {
+  const { t } = useLanguage();
   if (status === true || status === 'active')
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Active
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />{t('staffCustomer.active')}
       </span>
     );
   if (status === 'pending')
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 border border-amber-400/30 text-amber-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />Pending
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />{t('staffCustomer.pendingVerify')}
       </span>
     );
   return (
     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/15 border border-red-500/30 text-red-300">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />Blocked
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />{t('staffCustomer.blockedStatus')}
     </span>
   );
 }
@@ -144,6 +147,7 @@ function StatCard({ icon: Icon, label, value, loading, unavailable }) {
 }
 
 export default function AccountManagement() {
+  const { t, language } = useLanguage();
   const authHeader = { Authorization: `Bearer ${localStorage.getItem('accessToken')}` };
 
   // -- State --
@@ -182,7 +186,7 @@ export default function AccountManagement() {
       setLoadError('');
       const res = await apiFetch('/staff/users', { headers: authHeader });
       if (generation !== customerRequest.current) return;
-      const responseState = getResponseAvailability(res, 'Unable to load customer accounts.');
+      const responseState = getResponseAvailability(res, t('staffCustomer.dataUnavailable'));
       if (!responseState.isAvailable) {
         setUsers([]);
         setPanelUser(null);
@@ -198,7 +202,7 @@ export default function AccountManagement() {
       console.error(e);
       setUsers([]);
       setPanelUser(null);
-      setLoadError(e?.message || 'Unable to load customer accounts.');
+      setLoadError(e?.message || t('staffCustomer.dataUnavailable'));
     }
     finally { if (generation === customerRequest.current) setLoading(false); }
   };
@@ -240,7 +244,7 @@ export default function AccountManagement() {
     const userToBlock = users.find(u => u._id === userId);
     // Action Restrictions: Staff cannot block higher or equal roles.
     if (userToBlock && userToBlock.role !== 'customer') {
-      showToast('You do not have permission to block this account.', 'error');
+      showToast(t('staffCustomer.permissionDenied'), 'error');
       return;
     }
 
@@ -252,20 +256,20 @@ export default function AccountManagement() {
       if (res.ok && res.data?.success) {
         setUsers(prev => prev.map(u => u._id === userId ? { ...u, status: newStatus } : u));
         if (panelUser?._id === userId) setPanelUser(p => ({ ...p, status: newStatus }));
-        showToast(newStatus ? 'Account unblocked successfully' : 'Account blocked successfully', 'success');
+        showToast(newStatus ? t('staffCustomer.accountUnblocked') : t('staffCustomer.accountBlocked'), 'success');
       } else {
-        showToast('Failed to update account status', 'error');
+        showToast(t('staffCustomer.statusUpdateFailed'), 'error');
       }
     } catch (e) {
       console.error(e);
-      showToast('An error occurred', 'error');
+      showToast(t('staffCustomer.unexpectedError'), 'error');
     }
   };
 
   const openPanel = (u) => { 
     // Action Restrictions: Staff cannot view details of higher or equal roles.
     if (u.role !== 'customer') {
-      showToast('You do not have permission to view this account.', 'error');
+      showToast(t('staffCustomer.permissionDenied'), 'error');
       return;
     }
     setPanelUser(u); setIsEditing(false); setBlockConfirm(false); setSaveState('idle'); 
@@ -280,7 +284,7 @@ export default function AccountManagement() {
     
     // Action Restrictions: Staff cannot edit higher or equal roles.
     if (userToEdit && userToEdit.role !== 'customer') {
-      showToast('You do not have permission to edit this account.', 'error');
+      showToast(t('staffCustomer.permissionDenied'), 'error');
       return;
     }
 
@@ -307,25 +311,25 @@ export default function AccountManagement() {
     const fn = editForm.fullName?.trim() || '';
 
     if (!fn) {
-      showToast('Full Name is required', 'error');
+      showToast(t('staffCustomer.validationNameRequired'), 'error');
       return;
     }
     
     if (fn.length > 50) {
-      showToast('Name cannot exceed 50 characters', 'error');
+      showToast(t('staffCustomer.validationNameLength'), 'error');
       return;
     }
     
     const nameRegex = /^[\p{L}\s]+$/u;
     if (!nameRegex.test(fn)) {
-      showToast('Name cannot contain numbers or special characters', 'error');
+      showToast(t('staffCustomer.validationNameChars'), 'error');
       return;
     }
 
     if (editForm.phone) {
       const cleanPhone = editForm.phone.replace(/[\s-]/g, '');
       if (!/^(03|05|07|08|09)\d{8}$/.test(cleanPhone)) {
-        showToast('Please enter a valid Vietnamese phone number', 'error');
+        showToast(t('staffCustomer.validationPhone'), 'error');
         return;
       }
     }
@@ -354,7 +358,7 @@ export default function AccountManagement() {
         const upd = res.data.data;
         setUsers(prev => prev.map(u => u._id === upd._id ? upd : u));
         setPanelUser(upd); setIsEditing(false); setSaveState('success');
-        showToast('Account updated successfully', 'success');
+        showToast(t('staffCustomer.updated'), 'success');
         setTimeout(() => setSaveState('idle'), 2000);
         
         // Global state sync in case edited themselves
@@ -368,12 +372,12 @@ export default function AccountManagement() {
         }
       } else {
         setSaveState('error');
-        showToast('Failed to update account', 'error');
+        showToast(t('staffCustomer.saveFailed'), 'error');
         setTimeout(() => setSaveState('idle'), 2500);
       }
     } catch {
       setSaveState('error');
-      showToast('An error occurred', 'error');
+      showToast(t('staffCustomer.unexpectedError'), 'error');
       setTimeout(() => setSaveState('idle'), 2500);
     }
   };
@@ -408,7 +412,7 @@ export default function AccountManagement() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageUsers = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const formatDate = (d) => !d ? 'N/A' : new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const formatDate = (d) => !d ? '—' : new Date(d).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const displayName = (u) => `${u?.profile?.firstName || ''} ${u?.profile?.lastName || ''}`.trim() || u?.username || u?.email || '-';
   const initials = (u) => displayName(u).charAt(0).toUpperCase();
   const avatarGrad = (u) => (ROLES[u?.role] || ROLES.customer).gradient;
@@ -474,20 +478,20 @@ export default function AccountManagement() {
         <div className="g3-header bg-[#080808] px-8 pt-7 pb-6 border-b border-white/[0.06] flex-shrink-0">
           <div className="g3-header-line flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-[#ffd555] tracking-tight">Customer Management</h1>
-              <p className="g3-subtitle text-sm text-white/40 mt-0.5">Manage customer accounts and access permissions</p>
+              <h1 className="text-2xl font-bold text-[#ffd555] tracking-tight">{t('staffCustomer.title')}</h1>
+              <p className="g3-subtitle text-sm text-white/40 mt-0.5">{t('staffCustomer.subtitle')}</p>
             </div>
             <button onClick={fetchUsers} className="g3-action g3-header-action flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/8 transition-all text-sm">
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> {t('staffCustomer.refresh')}
             </button>
           </div>
 
           {/* -- Stat Cards -- */}
-          <section aria-label="Customer summary" className="g3-metrics-strip g3-customer-metrics grid grid-cols-4 gap-3 mt-4">
-            <StatCard icon={Users} label="Total Customers" value={totalAccounts} loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={UserPlus} label="New This Month" value={newThisMonth} loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={UserX} label="Blocked Customers" value={blockedCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
-            <StatCard icon={Clock} label="Pending Verify" value={pendingCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+          <section aria-label={t('staffCustomer.summary')} className="g3-metrics-strip g3-customer-metrics grid grid-cols-4 gap-3 mt-4">
+            <StatCard icon={Users} label={t('staffCustomer.total')} value={totalAccounts} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserPlus} label={t('staffCustomer.newThisMonth')} value={newThisMonth} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={UserX} label={t('staffCustomer.blocked')} value={blockedCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
+            <StatCard icon={Clock} label={t('staffCustomer.pendingVerify')} value={pendingCount} loading={loading} unavailable={!accountState.isAvailable && !loading} />
           </section>
         </div>
 
@@ -496,8 +500,8 @@ export default function AccountManagement() {
           <div className="g3-search relative flex-1 min-w-[240px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
             <input
-              aria-label="Search customers" value={searchTerm} onChange={e => { linkedCustomerId.current = null; setSearchTerm(e.target.value); setPage(1); }}
-              placeholder="Search name, email, phone..."
+              aria-label={t('staffCustomer.searchCustomers')} value={searchTerm} onChange={e => { linkedCustomerId.current = null; setSearchTerm(e.target.value); setPage(1); }}
+              placeholder={t('staffCustomer.search')}
               className="w-full bg-[#111] border border-white/[0.08] rounded-full py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 transition-all shadow-inner"
             />
           </div>
@@ -507,21 +511,21 @@ export default function AccountManagement() {
             
             {/* Status Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button aria-label="Filter customers by status" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
+              <Menu.Button aria-label={t('staffCustomer.filterStatus')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Eye size={14} className="text-white/40" />
-                <span className="font-medium">{filterStatus === 'all' ? 'All Status' : filterStatus === 'active' ? 'Active' : 'Blocked'}</span>
+                <span className="font-medium">{filterStatus === 'all' ? t('staffCustomer.allStatus') : filterStatus === 'active' ? t('staffCustomer.active') : t('staffCustomer.blockedStatus')}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['all','All Status'],['active','Active'],['blocked','Blocked']].map(([v,l]) => (
+                    {[['all','allStatus'],['active','active'],['blocked','blockedStatus']].map(([v,key]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { linkedCustomerId.current = null; setFilterStatus(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {filterStatus === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
+                            {t(`staffCustomer.${key}`)}
                           </button>
                         )}
                       </Menu.Item>
@@ -533,21 +537,21 @@ export default function AccountManagement() {
 
             {/* Sort Filter */}
             <Menu as="div" className="relative inline-block text-left z-30">
-              <Menu.Button aria-label="Sort customers" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
+              <Menu.Button aria-label={t('staffCustomer.sortCustomers')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#111] border border-white/[0.08] text-sm text-white/70 hover:border-white/20 hover:text-white hover:bg-white/[0.02] transition-all shadow-sm">
                 <Clock size={14} className="text-white/40" />
-                <span className="font-medium"> {sortOrder === 'newest' ? 'Newest' : 'Oldest'}</span>
+                <span className="font-medium"> {sortOrder === 'newest' ? t('staffCustomer.newest') : t('staffCustomer.oldest')}</span>
                 <ChevronDown size={14} className="text-white/40" />
               </Menu.Button>
               <Transition as={Fragment} enter="transition ease-out duration-200" enterFrom="opacity-0 translate-y-1" enterTo="opacity-100 translate-y-0" leave="transition ease-in duration-150" leaveFrom="opacity-100 translate-y-0" leaveTo="opacity-0 translate-y-1">
                 <Menu.Items className="absolute left-0 mt-2 w-40 origin-top-left rounded-xl bg-[#111] border border-white/10 shadow-2xl backdrop-blur-xl focus:outline-none overflow-hidden">
                   <div className="p-1.5">
-                    {[['newest','Newest First'],['oldest','Oldest First']].map(([v,l]) => (
+                    {[['newest','newest'],['oldest','oldest']].map(([v,key]) => (
                       <Menu.Item key={v}>
                         {({ active }) => (
                           <button onClick={() => { linkedCustomerId.current = null; setSortOrder(v); setPage(1); }}
                             className={`${active ? 'bg-white/10 text-white' : 'text-white/70'} group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors`}>
                             {sortOrder === v ? <Check size={14} className="text-[#ffd555]" /> : <div className="w-3.5" />}
-                            {l}
+                            {t(`staffCustomer.${key}`)}
                           </button>
                         )}
                       </Menu.Item>
@@ -567,12 +571,12 @@ export default function AccountManagement() {
             <thead className="sticky top-0 z-20">
               <tr className="bg-[#14120c] border-b border-[#ffd555]/20">
                 <th className="w-6"></th>
-                {['Account','Email','Phone','Role','Status','Joined Date'].map(label => (
-                  <th key={label} className="px-4 py-4 text-left">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{label}</span>
+                {[['account','account'],['email','email'],['phone','phone'],['role','role'],['status','status'],['joinedDate','joinedDate']].map(([key,labelKey]) => (
+                  <th key={key} className="px-4 py-4 text-left">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{t(`staffCustomer.${labelKey}`)}</span>
                   </th>
                 ))}
-                <th className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">Actions</th>
+                <th className="px-4 py-4 text-center text-[11px] font-bold uppercase tracking-widest text-[#ffd555]/70">{t('staffCustomer.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -581,7 +585,7 @@ export default function AccountManagement() {
                 <tr><td colSpan="8" className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3 text-red-300" role="alert">
                     <AlertTriangle size={36} />
-                    <span className="text-sm font-medium">Customer data unavailable</span>
+                    <span className="text-sm font-medium">{t('staffCustomer.dataUnavailable')}</span>
                     <span className="max-w-md text-xs text-red-200/70">{loadError}</span>
                   </div>
                 </td></tr>
@@ -590,7 +594,7 @@ export default function AccountManagement() {
                 <tr><td colSpan="8" className="py-20 text-center">
                   <div className="flex flex-col items-center gap-3 text-white/30">
                     <UserX size={36} />
-                    <span className="text-sm">No customers match your filters</span>
+                    <span className="text-sm">{t('staffCustomer.noMatch')}</span>
                   </div>
                 </td></tr>
               )}
@@ -624,7 +628,7 @@ export default function AccountManagement() {
                     <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center">
                         <button onClick={(e) => { e.stopPropagation(); startEdit(u); }}
-                          title="Edit account" aria-label="Edit account" className="g3-edit">
+                          title={t('staffCustomer.editAccount')} aria-label={t('staffCustomer.editAccount')} className="g3-edit">
                           <Edit3 size={14} />
                         </button>
                       </div>
@@ -640,12 +644,12 @@ export default function AccountManagement() {
         <div className="g3-pagination flex items-center justify-between px-8 py-4 border-t border-white/[0.05] bg-[#080808] flex-shrink-0">
           <span className="text-xs text-white/30">
             {accountState.isAvailable
-              ? `Page ${page} of ${totalPages} · ${filtered.length} results`
-              : 'Page — of — · — results'}
+              ? t('staffCustomer.pageOf', { page, totalPages, results: filtered.length })
+              : t('staffCustomer.pageOf', { page: '—', totalPages: '—', results: '—' })}
           </span>
           <div className="flex items-center gap-1">
             <button disabled={!accountState.isAvailable || page === 1} onClick={() => setPage(p => p - 1)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; Prev</button>
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">&larr; {t('staffCustomer.prev')}</button>
             {Array.from({ length: accountState.isAvailable ? Math.min(totalPages, 7) : 0 }, (_, i) => {
               const p = i + 1;
               return (
@@ -656,7 +660,7 @@ export default function AccountManagement() {
               );
             })}
             <button disabled={!accountState.isAvailable || page === totalPages} onClick={() => setPage(p => p + 1)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">Next &rarr;</button>
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all">{t('staffCustomer.next')} &rarr;</button>
           </div>
         </div>
       </div>
@@ -683,7 +687,7 @@ export default function AccountManagement() {
               {/* Panel Header */}
               <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.05] flex-shrink-0">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  {isEditing ? 'Edit Customer' : 'Customer Detail'}
+                  {isEditing ? t('staffCustomer.editCustomer') : t('staffCustomer.detail')}
                 </h3>
                 <button onClick={closePanel} className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-all">
                   <X size={15} />
@@ -715,11 +719,11 @@ export default function AccountManagement() {
                   {!isEditing ? (
                     <div className="space-y-4">
                       <div className="bg-[#171B20] rounded-2xl p-4 border border-white/[0.03] space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Basic Info</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('staffCustomer.basicInfo')}</h4>
                         {[
-                          { icon: Mail, label: 'Email Address', val: panelUser.email },
-                          { icon: Phone, label: 'Phone Number', val: panelUser.profile?.phone || 'Not provided' },
-                          { icon: Calendar, label: 'Join Date', val: formatDate(panelUser.createdAt) },
+                          { icon: Mail, label: t('staffCustomer.emailAddress'), val: panelUser.email },
+                          { icon: Phone, label: t('staffCustomer.phoneNumber'), val: panelUser.profile?.phone || t('staffCustomer.notProvided') },
+                          { icon: Calendar, label: t('staffCustomer.joinDate'), val: formatDate(panelUser.createdAt) },
                         ].map(({ icon: Ic, label, val }) => (
                           <div key={label} className="flex items-center gap-3 group">
                             <div className="w-8 h-8 rounded-lg bg-white/[0.03] flex items-center justify-center text-white/40 group-hover:bg-[#ffd555]/10 group-hover:text-[#ffd555] transition-colors">
@@ -734,11 +738,11 @@ export default function AccountManagement() {
                       </div>
 
                       <div className="bg-[#171B20] rounded-2xl p-4 border border-white/[0.03]">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-3">Account Activity</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-3">{t('staffCustomer.activity')}</h4>
                         <div className="relative pl-3 border-l border-white/10 space-y-4">
                           {[
-                            { label: 'Account Created', date: panelUser.createdAt, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-                            { label: 'Last Updated', date: panelUser.updatedAt, color: 'text-[#ffd555]', bg: 'bg-[#ffd555]/10' },
+                            { label: t('staffCustomer.accountCreated'), date: panelUser.createdAt, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+                            { label: t('staffCustomer.lastUpdated'), date: panelUser.updatedAt, color: 'text-[#ffd555]', bg: 'bg-[#ffd555]/10' },
                           ].map(({ label, date, color, bg }, i) => (
                             <div key={i} className="relative">
                               <div className={`absolute -left-[21px] w-6 h-6 rounded-full border-[3px] border-[#1B2027] flex items-center justify-center ${bg}`}>
@@ -756,31 +760,31 @@ export default function AccountManagement() {
                   ) : (
                     <div className="space-y-4">
                       <div className="space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Edit Basic Info</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('staffCustomer.editBasic')}</h4>
                         <div className="grid grid-cols-1 gap-3">
                           <div>
-                            <label className="block text-[10px] font-medium text-white/50 mb-1">Full Name</label>
+                            <label className="block text-[10px] font-medium text-white/50 mb-1">{t('staffCustomer.fullName')}</label>
                             <div className="relative group">
                               <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#ffd555] transition-colors" />
-                              <input type="text" value={editForm.fullName || ''} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} placeholder="e.g. John Doe"
+                              <input type="text" value={editForm.fullName || ''} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} placeholder={t('staffCustomer.fullNamePlaceholder')}
                                 className="w-full bg-[#171B20] border border-white/[0.05] rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all" />
                             </div>
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[10px] font-medium text-white/50 mb-1">Phone Number</label>
+                          <label className="block text-[10px] font-medium text-white/50 mb-1">{t('staffCustomer.phoneNumber')}</label>
                           <div className="relative group">
                             <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-[#ffd555] transition-colors" />
-                            <input type="text" value={editForm.phone || ''} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="e.g. 0901234567"
+                            <input type="text" value={editForm.phone || ''} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder={t('staffCustomer.phonePlaceholder')}
                               className="w-full bg-[#171B20] border border-white/[0.05] rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-[#ffd555]/50 focus:ring-1 focus:ring-[#ffd555]/30 focus:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all" />
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-3 pt-3 border-t border-white/[0.05]">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">Role & Access</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('staffCustomer.roleAccess')}</h4>
                         <div>
-                          <label className="block text-[10px] font-medium text-white/50 mb-1">User Role</label>
+                          <label className="block text-[10px] font-medium text-white/50 mb-1">{t('staffCustomer.userRole')}</label>
                           {/* Frontend Validation: Role dropdown completely removed. Replaced with a hardcoded, uneditable disabled display to prevent privilege escalation. */}
                           <div className="w-full bg-[#171B20]/50 border border-white/[0.05] rounded-xl px-3 py-2.5 flex items-center justify-between text-sm text-white/60 cursor-not-allowed">
                             <div className="flex items-center gap-2">
@@ -789,7 +793,7 @@ export default function AccountManagement() {
                             </div>
                             <Lock size={14} className="text-white/20" />
                           </div>
-                          <p className="text-[10px] text-white/30 mt-1.5 ml-1">Staff can only assign and manage the 'Customer' role.</p>
+                          <p className="text-[10px] text-white/30 mt-1.5 ml-1">{t('staffCustomer.staffRoleHint')}</p>
                         </div>
                       </div>
                     </div>
@@ -801,12 +805,12 @@ export default function AccountManagement() {
               <div className="p-4 border-t border-white/[0.05] bg-[#171B20]/50 backdrop-blur-md flex-shrink-0">
                 {saveState === 'success' && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-2 text-emerald-400 text-sm font-medium mb-3 bg-emerald-400/10 py-1.5 rounded-lg">
-                    <Check size={16} /> Changes saved successfully!
+                    <Check size={16} /> {t('staffCustomer.saved')}
                   </motion.div>
                 )}
                 {saveState === 'error' && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-2 text-rose-400 text-sm font-medium mb-3 bg-rose-500/10 py-1.5 rounded-lg">
-                    <AlertTriangle size={16} /> Failed to save changes.
+                    <AlertTriangle size={16} /> {t('staffCustomer.saveFailed')}
                   </motion.div>
                 )}
 
@@ -816,16 +820,16 @@ export default function AccountManagement() {
                       <>
                         <button onClick={() => { setIsEditing(false); setSaveState('idle'); }}
                           className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/70 text-sm font-medium hover:bg-white/5 hover:text-white transition-all active:scale-95">
-                          Cancel
+                          {t('staffCustomer.cancel')}
                         </button>
                         <button onClick={handleSave} disabled={saveState === 'saving'}
                           className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#ffd555] to-[#f59e0b] text-black text-sm font-bold shadow-[0_0_20px_rgba(255,213,85,0.2)] hover:shadow-[0_0_25px_rgba(255,213,85,0.4)] transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 relative overflow-hidden group">
                           {saveState === 'saving' ? (
-                            <><RefreshCw size={16} className="animate-spin" /> Saving...</>
+                            <><RefreshCw size={16} className="animate-spin" /> {t('staffCustomer.saving')}</>
                           ) : (
                             <>
                               <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
-                              <span className="relative z-10 flex items-center gap-2">Save Changes <Check size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" /></span>
+                              <span className="relative z-10 flex items-center gap-2">{t('staffCustomer.saveChanges')} <Check size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" /></span>
                             </>
                           )}
                         </button>
@@ -834,17 +838,17 @@ export default function AccountManagement() {
                       <>
                         <button onClick={startEdit}
                           className="flex-1 py-2.5 rounded-xl border border-[#ffd555]/30 text-[#ffd555] text-sm font-medium hover:bg-[#ffd555]/10 hover:shadow-[0_0_15px_rgba(255,213,85,0.15)] transition-all active:scale-95">
-                          Edit Customer
+                          {t('staffCustomer.editCustomer')}
                         </button>
                         {panelUser.status ? (
                           <button onClick={() => setBlockConfirm(true)}
                             className="flex-1 py-2.5 rounded-xl border border-rose-500/30 text-rose-400 text-sm font-medium hover:bg-rose-500/10 hover:shadow-[0_0_15px_rgba(244,63,94,0.2)] transition-all active:scale-95">
-                            Block Customer
+                            {t('staffCustomer.block')}
                           </button>
                         ) : (
                           <button onClick={() => handleBlockToggle(panelUser._id, panelUser.status)}
                             className="flex-1 py-2.5 rounded-xl border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/10 hover:shadow-[0_0_15px_rgba(52,211,153,0.2)] transition-all active:scale-95">
-                            Unblock Customer
+                            {t('staffCustomer.unblock')}
                           </button>
                         )}
                       </>
@@ -855,12 +859,12 @@ export default function AccountManagement() {
                     <div className="flex items-start gap-3 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20">
                       <AlertTriangle size={18} className="text-rose-400 mt-0.5 flex-shrink-0" />
                       <p className="text-xs text-rose-200/80 leading-relaxed">
-                        Are you sure you want to block <strong className="text-white">{displayName(panelUser)}</strong>? They will lose access to their account.
+                        {t('staffCustomer.blockWarning', { name: displayName(panelUser) })}
                       </p>
                     </div>
                     <div className="flex gap-3">
-                      <button onClick={() => setBlockConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">Cancel</button>
-                      <button onClick={() => { handleBlockToggle(panelUser._id, panelUser.status); setBlockConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all">Confirm Block</button>
+                      <button onClick={() => setBlockConfirm(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium transition-all">{t('staffCustomer.cancel')}</button>
+                      <button onClick={() => { handleBlockToggle(panelUser._id, panelUser.status); setBlockConfirm(false); }} className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all">{t('staffCustomer.confirmBlock')}</button>
                     </div>
                   </motion.div>
                 )}

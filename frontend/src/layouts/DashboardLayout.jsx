@@ -33,7 +33,6 @@ import {
   BarChart2,
   DollarSign,
   Crown,
-  Layers,
   // Customer icons
   Home,
   User,
@@ -222,11 +221,16 @@ const NAV_LABEL_KEYS = {
   Overview: 'nav.overview',
   'Parking Lots': 'nav.parkingLots',
   'Account Management': 'nav.accountManagement',
+  'Customer Management': 'nav.customerManagement',
   'Session Management': 'nav.sessionManagement',
+  'Live Grid Monitor': 'nav.liveGridMonitor',
+  'Gate Control': 'nav.gateControl',
+  'Booking Management': 'nav.bookingManagement',
   Pricing: 'nav.pricing',
   'Ticket Packages': 'nav.ticketPackages',
   Subscriptions: 'nav.subscriptions',
   Services: 'nav.services',
+  'Membership services': 'staffNav.membershipServices',
   Policies: 'nav.policies',
   Vehicles: 'nav.vehicles',
   'Vehicles & 3D': 'nav.vehicles',
@@ -241,6 +245,7 @@ const NAV_LABEL_KEYS = {
   Wallet: 'nav.wallet',
   Rewards: 'nav.rewards',
   Settings: 'nav.settings',
+  'Notification Management': 'nav.notificationManagement',
 };
 
 export default function DashboardLayout() {

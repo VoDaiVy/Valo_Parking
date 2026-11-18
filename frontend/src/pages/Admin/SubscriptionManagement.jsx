@@ -20,7 +20,7 @@ import {
 import { apiFetch } from '../../services/api';
 import { useLanguage } from '../../i18n/hooks/useLanguage';
 import './vipMemberships.css';
-import { vipDate, vipDaysUntil } from './vipMembershipDates.js';
+import { vipDaysUntil } from './vipMembershipDates.js';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import AdminSelect from '../../components/Admin/AdminSelect';
 import '../Staff/components/staffManagement.css';
@@ -35,20 +35,15 @@ import {
   getResponseAvailability,
 } from '../../utils/staffOperationalAvailability';
 
-const currencyFormatter = new Intl.NumberFormat('vi-VN');
-const dateFormatter = new Intl.DateTimeFormat('en-GB', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-});
+const formatCurrency = (value = 0, language = 'vi') => `${new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US').format(Number(value) || 0)} VND`;
 
-const formatCurrency = (value = 0) => `${currencyFormatter.format(Number(value) || 0)} VND`;
-
-const formatDate = (value, fallback = 'Not available') => {
+const formatDate = (value, fallback = 'Not available', language = 'en') => {
   if (!value) return fallback;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return fallback;
-  return dateFormatter.format(date);
+  return new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  }).format(date);
 };
 
 const daysUntil = (value) => {
@@ -173,7 +168,7 @@ function SlotBadge({ slot }) {
 }
 
 function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const remaining = isAdmin ? vipDaysUntil(sub.expireAt) : daysUntil(sub.expireAt);
   const packageType = sub.ticketPackage?.type || '';
   const displayUser = getDisplayUser(sub, t);
@@ -186,8 +181,8 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
     </button></td>
     <td><p className="truncate text-white" title={sub.ticketPackage?.name}>{sub.ticketPackage?.name || t('subscriptionUi.unknownPackage')}</p>{packageType && <span className={`vip-type inline-flex rounded-full border px-2 py-0.5 ${getPackageClass(packageType)}`}>{t(`adminPages.ticketUi.types.${packageType}`, { defaultValue: titleCase(packageType) })}</span>}</td>
     <td><div className="flex flex-wrap gap-1">{sub.slots?.length ? sub.slots.map((slot) => <SlotBadge key={`${slot.floorId?._id || slot.floorId}-${slot.slotCode}`} slot={slot} />) : <SlotBadge />}</div></td>
-    <td><p className="text-[#e8d5ad]">{formatCurrency(sub.amount)}</p>{sub.paymentStatus && <p className="vip-secondary">{t(`walletPage.statuses.${sub.paymentStatus}`, { defaultValue: titleCase(sub.paymentStatus) })}</p>}</td>
-    <td><p>{vipDate(sub.validFrom)} - {vipDate(sub.expireAt)}</p>{remaining !== null && remaining >= 0 && <p className="vip-secondary">{remaining === 0 ? t('subscriptionUi.expiresToday') : t('subscriptionUi.daysLeft', { count: remaining })}</p>}</td>
+    <td><p className="text-[#e8d5ad]">{formatCurrency(sub.amount, language)}</p>{sub.paymentStatus && <p className="vip-secondary">{t(`walletPage.statuses.${sub.paymentStatus}`, { defaultValue: titleCase(sub.paymentStatus) })}</p>}</td>
+    <td><p>{formatDate(sub.validFrom, t('subscriptionUi.unavailable'), language)} - {formatDate(sub.expireAt, t('subscriptionUi.unavailable'), language)}</p>{remaining !== null && remaining >= 0 && <p className="vip-secondary">{remaining === 0 ? t('subscriptionUi.expiresToday') : t('subscriptionUi.daysLeft', { count: remaining })}</p>}</td>
     <td><StatusBadge status={sub.status} /></td>
     <td className="vip-vehicles"><div className="vip-vehicle-list">{vehicles.length ? vehicles.map((plate, index) => <span key={`${plate}-${index}`}>{plate}</span>) : <span>{vehicleText}</span>}</div></td>
   </tr>;
@@ -242,7 +237,7 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
         <div className="flex items-start justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.amount')}</span>
           <div className="text-right md:text-left">
-            <p className="g3-membership-amount font-mono text-sm font-black text-white">{formatCurrency(sub.amount)}</p>
+            <p className="g3-membership-amount font-mono text-sm font-black text-white">{formatCurrency(sub.amount, language)}</p>
             {sub.paymentStatus && <p className="mt-1 text-xs font-semibold text-slate-500">{t(`walletPage.statuses.${sub.paymentStatus}`, { defaultValue: titleCase(sub.paymentStatus) })}</p>}
           </div>
         </div>
@@ -250,8 +245,8 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
         <div className="flex items-start justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('subscriptionUi.period')}</span>
           <div className="text-right text-xs font-semibold text-slate-400 md:text-left">
-            <p>{formatDate(sub.validFrom, t('subscriptionUi.unavailable'))}</p>
-            <p className="mt-1 text-slate-500">{t('subscriptionUi.to')} {formatDate(sub.expireAt, t('subscriptionUi.unavailable'))}</p>
+            <p>{formatDate(sub.validFrom, t('subscriptionUi.unavailable'), language)}</p>
+            <p className="mt-1 text-slate-500">{t('subscriptionUi.to')} {formatDate(sub.expireAt, t('subscriptionUi.unavailable'), language)}</p>
             {remaining !== null && remaining >= 0 && (
               <p className={`mt-1 ${remaining <= 30 ? 'text-amber-300' : 'text-slate-500'}`}>
                 {remaining === 0 ? t('subscriptionUi.expiresToday') : t('subscriptionUi.daysLeft', { count: remaining })}
@@ -270,7 +265,7 @@ function MembershipRow({ sub, index, cardRef, isAdmin, onOpen }) {
 }
 
 function TransferReviewSection({ transfers, onReview }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const pendingTransfers = transfers.filter((item) => item.status === 'PENDING_ADMIN');
 
   if (!pendingTransfers.length) return null;
@@ -299,7 +294,7 @@ function TransferReviewSection({ transfers, onReview }) {
                 {transfer.entitlementId?.slotCode || t('subscriptionUi.parkingSpace')} · {transfer.fromUserId?.email || t('subscriptionUi.sender')} → {transfer.mode === 'PUBLIC' ? t('subscriptionUi.marketplace') : (transfer.toUserId?.email || t('subscriptionUi.recipient'))}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                {t('subscriptionUi.price')} {formatCurrency(transfer.askingPrice)} · {t('subscriptionUi.fee')} {formatCurrency(transfer.transferFee)}
+                {t('subscriptionUi.price')} {formatCurrency(transfer.askingPrice, language)} · {t('subscriptionUi.fee')} {formatCurrency(transfer.transferFee, language)}
               </p>
             </div>
             <div className="flex gap-2">
@@ -326,7 +321,7 @@ function TransferReviewSection({ transfers, onReview }) {
 }
 
 export default function SubscriptionManagement() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const isAdmin = useMemo(() => getStoredRole() === 'admin', []);
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -577,14 +572,14 @@ export default function SubscriptionManagement() {
             isAdmin={isAdmin}
             icon={Crown}
             label={t('subscriptionUi.totalVip')}
-            value={getOperationalValue(subscriptionState, summary.total.toLocaleString('vi-VN'))}
+            value={getOperationalValue(subscriptionState, summary.total.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US'))}
             support={subscriptionState.isAvailable ? t('subscriptionUi.loaded') : t('subscriptionUi.unavailable')}
           />
           <SummaryItem
             isAdmin={isAdmin}
             icon={ShieldCheck}
             label={t('subscriptionUi.active')}
-            value={getOperationalValue(subscriptionState, summary.active.toLocaleString('vi-VN'))}
+            value={getOperationalValue(subscriptionState, summary.active.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US'))}
             support={subscriptionState.isAvailable ? t('subscriptionUi.activeStatus') : t('subscriptionUi.unavailable')}
             tone="text-emerald-300"
           />
@@ -592,7 +587,7 @@ export default function SubscriptionManagement() {
             isAdmin={isAdmin}
             icon={Clock3}
             label={t('subscriptionUi.expiringSoon')}
-            value={getOperationalValue(subscriptionState, summary.expiringSoon.toLocaleString('vi-VN'))}
+            value={getOperationalValue(subscriptionState, summary.expiringSoon.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US'))}
             support={subscriptionState.isAvailable ? t('subscriptionUi.within30') : t('subscriptionUi.unavailable')}
             tone="text-amber-300"
           />
@@ -601,7 +596,7 @@ export default function SubscriptionManagement() {
             isAdmin={isAdmin}
               icon={TimerReset}
               label={t('subscriptionUi.transfers')}
-              value={getOperationalValue(transferState, summary.pendingTransfers.toLocaleString('vi-VN'))}
+              value={getOperationalValue(transferState, summary.pendingTransfers.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US'))}
               support={transferState.isAvailable ? t('subscriptionUi.pendingReview') : t('subscriptionUi.unavailable')}
               tone="text-purple-300"
             />
@@ -778,10 +773,10 @@ export default function SubscriptionManagement() {
                     {[
                       [t('subscriptionUi.package'), t(`adminPages.ticketUi.types.${detailMembership.ticketPackage?.type}`, { defaultValue: titleCase(detailMembership.ticketPackage?.type) })],
                       [t('subscriptionUi.vipSlot'), detailMembership.slots?.map((slot) => `${slot.floorId?.name || t('subscriptionUi.floor')} ${slot.slotCode}`).join(', ') || t('subscriptionUi.notAssigned')],
-                      [t('subscriptionUi.amount'), formatCurrency(detailMembership.amount)],
+                      [t('subscriptionUi.amount'), formatCurrency(detailMembership.amount, language)],
                       [t('walletPage.status'), t(`walletPage.statuses.${detailMembership.paymentStatus}`, { defaultValue: titleCase(detailMembership.paymentStatus) })],
-                      [t('subscriptionDetails.validFrom'), vipDate(detailMembership.validFrom)],
-                      [t('subscriptionDetails.expiresAt'), vipDate(detailMembership.expireAt)],
+                      [t('subscriptionDetails.validFrom'), formatDate(detailMembership.validFrom, t('subscriptionUi.unavailable'), language)],
+                      [t('subscriptionDetails.expiresAt'), formatDate(detailMembership.expireAt, t('subscriptionUi.unavailable'), language)],
                     ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/5 bg-white/[0.02] p-3"><dt className="text-xs text-slate-400">{label}</dt><dd className="mt-1.5 break-words font-semibold">{value}</dd></div>)}
                   </dl>
                 </div>

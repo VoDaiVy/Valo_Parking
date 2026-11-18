@@ -125,7 +125,7 @@ export default function SessionManagement() {
     return new Date(dateString).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
   };
 
-  const formatPrice = (price) => new Intl.NumberFormat('vi-VN', {
+  const formatPrice = (price) => new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US', {
     style: 'currency',
     currency: 'VND',
     maximumFractionDigits: 0,
@@ -237,7 +237,7 @@ export default function SessionManagement() {
       </div>
 
       {isAdminPage && (
-        <section aria-label="Admin session summary" aria-busy={loading} className="admin-session-metrics">
+        <section aria-label={t('sessionManagementUi.adminSummary', { defaultValue: 'Admin session summary' })} aria-busy={loading} className="admin-session-metrics">
           {[
             { label: t('sessionManagementUi.totalSessions', { defaultValue: 'Total Sessions' }), value: metrics.total, Icon: MonitorCheck, note: t('sessionManagementUi.allRecorded', { defaultValue: 'All recorded sessions' }), tone: 'text-blue-300' },
             { label: t('sessionManagementUi.currentlyParked', { defaultValue: 'Currently Parked' }), value: metrics.parked, Icon: Car, note: t('sessionManagementUi.activeSessions', { defaultValue: 'Active sessions' }), tone: 'text-cyan-300' },
@@ -250,8 +250,8 @@ export default function SessionManagement() {
                 <p className="text-xs font-bold text-blue-200/55">{label}</p>
                 {loading ? <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" aria-label={t('sessionManagementUi.loadingShort', { defaultValue: 'Loading' })} /> : (
                   <div className="mt-1.5 flex items-baseline gap-2">
-                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? 'N/A' : value.toLocaleString('vi-VN')}</p>
-                    <span className="truncate text-xs text-emerald-300">{error ? 'Unavailable' : note}</span>
+                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? t('sessionManagementUi.unavailable', { defaultValue: 'N/A' }) : value.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')}</p>
+                    <span className="truncate text-xs text-emerald-300">{error ? t('sessionManagementUi.unavailable', { defaultValue: 'Unavailable' }) : note}</span>
                   </div>
                 )}
               </div>
@@ -260,7 +260,7 @@ export default function SessionManagement() {
         </section>
       )}
 
-      {!isAdminPage && <section aria-label="Session summary" className="g3-management-content staff-session-metrics">
+      {!isAdminPage && <section aria-label={t('sessionManagementUi.summary', { defaultValue: 'Session summary' })} className="g3-management-content staff-session-metrics">
         {[
           { label: t('sessionManagementUi.totalSessions', { defaultValue: 'Total Sessions' }), value: metrics.total, Icon: MonitorCheck, note: t('sessionManagementUi.staffTotalNote', { defaultValue: 'All sessions returned by the authorized session API; independent of table filters.' }) },
           { label: t('sessionManagementUi.currentlyParked', { defaultValue: 'Currently Parked' }), value: metrics.parked, Icon: Car, note: t('sessionManagementUi.activeSessions', { defaultValue: 'All sessions with active status.' }) },
@@ -327,10 +327,10 @@ export default function SessionManagement() {
                 menuClassName="w-52"
               />
             </div>
-            {isAdminPage && <section aria-label="Filter by check-in time" className="admin-session-time-filter">
+            {isAdminPage && <section aria-label={t('sessionManagementUi.filterByTime', { defaultValue: 'Filter by check-in time' })} className="admin-session-time-filter">
           <div className="admin-session-time-controls">
             <div className="admin-session-time-mode"><StaffDropdown value={timeFilter.mode} onChange={mode => updateTimeFilter({ mode, value: '', from: '', to: '' })} options={[[ 'all', t('sessionManagementUi.allTime', { defaultValue: 'All time' }) ], ['day', t('sessionManagementUi.byDay', { defaultValue: 'By day' })], ['month', t('sessionManagementUi.byMonth', { defaultValue: 'By month' })], ['year', t('sessionManagementUi.byYear', { defaultValue: 'By year' })], ['range', t('sessionManagementUi.dateRange', { defaultValue: 'Date & time range' })]]} ariaLabel={t('sessionManagementUi.timeFilter', { defaultValue: 'Time filter mode' })} /></div>
-            {['day', 'month', 'year'].includes(timeFilter.mode) && <label className="flex flex-col gap-2 text-xs text-slate-400"><span className="sr-only">{timeFilter.mode === 'day' ? t('sessionManagementUi.date', { defaultValue: 'Date' }) : timeFilter.mode === 'month' ? t('sessionManagementUi.month', { defaultValue: 'Month' }) : t('sessionManagementUi.year', { defaultValue: 'Year' })}</span><input type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'} min={timeFilter.mode === 'year' ? '1000' : undefined} max={timeFilter.mode === 'year' ? '9999' : undefined} placeholder="YYYY" value={timeFilter.value} onChange={event => updateTimeFilter({ value: event.target.value })} className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]" /></label>}
+            {['day', 'month', 'year'].includes(timeFilter.mode) && <label className="flex flex-col gap-2 text-xs text-slate-400"><span className="sr-only">{timeFilter.mode === 'day' ? t('sessionManagementUi.date', { defaultValue: 'Date' }) : timeFilter.mode === 'month' ? t('sessionManagementUi.month', { defaultValue: 'Month' }) : t('sessionManagementUi.year', { defaultValue: 'Year' })}</span><input type={timeFilter.mode === 'day' ? 'date' : timeFilter.mode === 'month' ? 'month' : 'number'} min={timeFilter.mode === 'year' ? '1000' : undefined} max={timeFilter.mode === 'year' ? '9999' : undefined} placeholder={t('sessionManagementUi.yearPlaceholder', { defaultValue: 'YYYY' })} value={timeFilter.value} onChange={event => updateTimeFilter({ value: event.target.value })} className="h-11 rounded-xl border border-white/10 bg-[#080808] px-3 text-sm text-white outline-none focus:border-yellow-300/50 [color-scheme:dark]" /></label>}
             {timeFilter.mode === 'range' && <>
               <div><p className="sr-only">{t('sessionManagementUi.from', { defaultValue: 'From' })}</p><AdminDateTimePicker label={t('sessionManagementUi.checkInFrom', { defaultValue: 'Check-in from (Vietnam time)' })} value={timeFilter.from} onChange={from => updateTimeFilter({ from })} /></div>
               <div><p className="sr-only">{t('sessionManagementUi.to', { defaultValue: 'To' })}</p><AdminDateTimePicker label={t('sessionManagementUi.checkInTo', { defaultValue: 'Check-in to (Vietnam time)' })} value={timeFilter.to} onChange={to => updateTimeFilter({ to })} /></div>
@@ -517,11 +517,11 @@ export default function SessionManagement() {
                   {selectedSession.entryImage_url ? (
                     <button
                       type="button"
-                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `Entry Photo — ${selectedSession.licensePlate}` })}
+                      onClick={() => setPreviewImage({ url: selectedSession.entryImage_url, title: `${t('sessionManagementUi.entryRecord', { defaultValue: 'Entry Record' })} — ${selectedSession.licensePlate}` })}
                       className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
-                      title="Click to view full-size image"
+                      title={t('sessionManagementUi.viewImage', { defaultValue: 'Click to view full-size image' })}
                     >
-                      <img src={selectedSession.entryImage_url} alt="Entry" className="max-h-[280px] w-full object-contain" />
+                      <img src={selectedSession.entryImage_url} alt={t('sessionManagementUi.entryImageAlt', { defaultValue: 'Entry' })} className="max-h-[280px] w-full object-contain" />
                       <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
                         <ZoomIn size={12} /> {t('sessionManagementUi.fullView', { defaultValue: 'Full View' })}
                       </span>
@@ -551,11 +551,11 @@ export default function SessionManagement() {
                   {selectedSession.exitImage_url ? (
                     <button
                       type="button"
-                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `Exit Photo — ${selectedSession.licensePlate}` })}
+                      onClick={() => setPreviewImage({ url: selectedSession.exitImage_url, title: `${t('sessionManagementUi.exitRecord', { defaultValue: 'Exit Record' })} — ${selectedSession.licensePlate}` })}
                       className="relative flex h-full w-full items-center justify-center cursor-zoom-in"
-                      title="Click to view full-size image"
+                      title={t('sessionManagementUi.viewImage', { defaultValue: 'Click to view full-size image' })}
                     >
-                      <img src={selectedSession.exitImage_url} alt="Exit" className="max-h-[280px] w-full object-contain" />
+                      <img src={selectedSession.exitImage_url} alt={t('sessionManagementUi.exitImageAlt', { defaultValue: 'Exit' })} className="max-h-[280px] w-full object-contain" />
                       <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-semibold text-white/90 opacity-0 transition group-hover:opacity-100 border border-white/15">
                         <ZoomIn size={12} /> {t('sessionManagementUi.fullView', { defaultValue: 'Full View' })}
                       </span>

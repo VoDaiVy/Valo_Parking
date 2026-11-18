@@ -76,7 +76,7 @@ const formatServiceTime = (timeCost, t) => {
 /* ── Sub-components ───────────────────────────────────────── */
 
 /** Compact right-column service navigation card */
-const ServiceNavCard = ({ service, isActive, onClick, style }) => (
+const ServiceNavCard = ({ service, isActive, onClick, style, t }) => (
   <button
     onClick={onClick}
     id={`service-nav-${service._id}`}
@@ -128,7 +128,7 @@ const ServiceNavCard = ({ service, isActive, onClick, style }) => (
         <div className="flex items-center gap-1.5 mt-1.5">
           <Clock size={12} style={{ color: isActive ? 'rgba(245,197,66,0.8)' : '#777' }} />
           <span className="text-[11px] font-medium tracking-wide" style={{ color: isActive ? '#ccc' : '#777' }}>
-            {formatServiceTime(service.timeCost)}
+            {formatServiceTime(service.timeCost, t)}
           </span>
         </div>
       </div>
@@ -497,6 +497,7 @@ const ServiceList = () => {
                     >
                       <ServiceNavCard
                         service={service}
+                        t={t}
                         isActive={service._id === selectedId}
                         onClick={() => handleSelectService(service._id)}
                       />

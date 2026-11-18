@@ -35,16 +35,7 @@ import {
   getOperationalViewState,
 } from '../../utils/staffOperationalAvailability';
 
-const currencyFormatter = new Intl.NumberFormat('vi-VN');
-const dateFormatter = new Intl.DateTimeFormat('vi-VN', {
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-});
-const timeFormatter = new Intl.DateTimeFormat('vi-VN', {
-  hour: '2-digit',
-  minute: '2-digit',
-});
+const localeForLanguage = (language) => (String(language || '').toLowerCase().startsWith('vi') ? 'vi-VN' : 'en-US');
 
 const TYPE_META = {
   hourly: {
@@ -111,13 +102,14 @@ const durationRange = (minutes = 43200) => {
 const rangeMinutes = (start, end) => start && end ? (new Date(end).getTime() - new Date(start).getTime()) / 60000 : NaN;
 
 
-const formatCurrency = (value = 0) => `${currencyFormatter.format(Number(value) || 0)} VND`;
+const formatCurrency = (value = 0, language = 'vi') => `${new Intl.NumberFormat(localeForLanguage(language)).format(Number(value) || 0)} VND`;
 
-const formatPackageDate = (value, fallback = 'Not available') => {
+const formatPackageDate = (value, fallback = 'Not available', language = 'vi') => {
   if (!value) return fallback;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return fallback;
-  return `${dateFormatter.format(date)} ${timeFormatter.format(date)}`;
+  const locale = localeForLanguage(language);
+  return `${new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)} ${new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date)}`;
 };
 
 const getTypeMeta = (type) => {
@@ -130,6 +122,11 @@ const getTypeMeta = (type) => {
     unit: 'package rate',
   };
 };
+
+const getDefaultBenefitsText = (t) => [
+  t('ticketPackageExtras.defaultBenefitSlots'),
+  t('ticketPackageExtras.defaultBenefitPriority'),
+].join('\n');
 
 function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-300', isAdmin }) {
   if (isAdmin) return (
@@ -198,7 +195,7 @@ function LoadingSkeleton({ isAdmin }) {
   );
 }
 
-function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, t }) {
+function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, t, language }) {
   const meta = getTypeMeta(pkg.type);
   const Icon = meta.Icon;
   const isActive = Boolean(pkg.isActive);
@@ -227,9 +224,9 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, 
         </div>
       </td>
       <td><span className={`inline-flex rounded-full border px-2.5 py-0.5 ${meta.badge}`}>{typeLabel}</span></td>
-      <td><p className="font-semibold text-[#e8d5ad]">{formatCurrency(pkg.price)}</p><p className="package-description text-white/40">{unitLabel}</p></td>
+      <td><p className="font-semibold text-[#e8d5ad]">{formatCurrency(pkg.price, language)}</p><p className="package-description text-white/40">{unitLabel}</p></td>
       <td><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-slate-400'}`}><span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />{isActive ? t('adminPages.ticketUi.active') : t('adminPages.ticketUi.inactive')}</span>{!isActive && <p className="mt-2 text-xs text-white/50">{pkg.inactiveReason === 'SOLD_OUT' ? t('adminPages.ticketUi.soldOut') : t('adminPages.ticketUi.paused')}</p>}</td>
-      <td className="text-white/55">{formatPackageDate(pkg.updatedAt || pkg.createdAt, t('adminPages.ticketUi.noTimestamp'))}</td>
+      <td className="text-white/55">{formatPackageDate(pkg.updatedAt || pkg.createdAt, t('adminPages.ticketUi.noTimestamp'), language)}</td>
       <td>
         <div className="flex items-center justify-end gap-2">
 
@@ -267,7 +264,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, 
         <div className="flex items-start justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('adminPages.ticketUi.price')}</span>
           <div className="text-right md:text-left">
-            <p className="font-mono text-sm font-black text-white sm:text-base">{formatCurrency(pkg.price)}</p>
+            <p className="font-mono text-sm font-black text-white sm:text-base">{formatCurrency(pkg.price, language)}</p>
             <p className="mt-0.5 text-xs font-semibold text-slate-500">{unitLabel}</p>
           </div>
         </div>
@@ -286,7 +283,7 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, 
 
         <div className="flex items-start justify-between gap-3 md:block">
           <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 md:hidden">{t('adminPages.ticketUi.updated')}</span>
-          <p className="text-right text-xs font-semibold text-slate-300 md:text-left">{formatPackageDate(pkg.updatedAt || pkg.createdAt, t('adminPages.ticketUi.noTimestamp'))}</p>
+          <p className="text-right text-xs font-semibold text-slate-300 md:text-left">{formatPackageDate(pkg.updatedAt || pkg.createdAt, t('adminPages.ticketUi.noTimestamp'), language)}</p>
         </div>
 
         {isAdmin && (
@@ -317,7 +314,8 @@ function PackageRow({ pkg, isAdmin, onEdit, onDelete, onDetails, index, rowRef, 
 }
 
 export default function TicketPackages() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n.language;
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [packages, setPackages] = useState([]);
@@ -443,7 +441,7 @@ export default function TicketPackages() {
         renewalWindowDays: pkg.renewalWindowDays ?? 7,
         isRenewable: pkg.isRenewable ?? true,
         ...durationRange(pkg.durationMinutes ?? (pkg.durationDays ?? 30) * 1440),
-        displayBenefitsText: (pkg.benefitsVersion ? pkg.displayBenefits : ['Reserved VIP slots', 'Priority parking access']).join('\n'),
+        displayBenefitsText: (pkg.benefitsVersion ? pkg.displayBenefits : getDefaultBenefitsText(t).split('\n')).join('\n'),
         serviceBenefits: (pkg.serviceBenefits || []).map((benefit) => ({ serviceId: benefit.serviceId, quantityPerSlot: benefit.quantityPerSlot })),
       });
     } else {
@@ -459,7 +457,7 @@ export default function TicketPackages() {
         renewalWindowDays: 7,
         isRenewable: true,
         ...durationRange(),
-        displayBenefitsText: 'Reserved VIP slots\nPriority parking access',
+        displayBenefitsText: getDefaultBenefitsText(t),
         serviceBenefits: [],
       });
     }
@@ -571,9 +569,9 @@ export default function TicketPackages() {
     return {
       total: packages.length,
       active: packages.filter((pkg) => pkg.isActive).length,
-            latestUpdated: latest ? formatPackageDate(latest, t('adminPages.ticketUi.noTimestamp')) : t('adminPages.ticketUi.unavailable'),
+            latestUpdated: latest ? formatPackageDate(latest, t('adminPages.ticketUi.noTimestamp'), language) : t('adminPages.ticketUi.unavailable'),
     };
-  }, [packages, t]);
+  }, [packages, t, language]);
 
   const typeOptions = useMemo(() => {
     const actualTypes = packages.map((pkg) => pkg.type).filter(Boolean);
@@ -665,14 +663,14 @@ export default function TicketPackages() {
             isAdmin={isAdmin}
             icon={Package}
             label={t('adminPages.ticketUi.total')}
-            value={getOperationalValue(packageState, summary.total.toLocaleString('vi-VN'))}
+            value={getOperationalValue(packageState, summary.total.toLocaleString(localeForLanguage(language)))}
             support={packageState.isAvailable ? t('adminPages.ticketUi.loaded') : t('adminPages.ticketUi.unavailable')}
           />
           <SummaryItem
             isAdmin={isAdmin}
             icon={CheckCircle2}
             label={t('adminPages.ticketUi.activePackages')}
-            value={getOperationalValue(packageState, summary.active.toLocaleString('vi-VN'))}
+            value={getOperationalValue(packageState, summary.active.toLocaleString(localeForLanguage(language)))}
             support={packageState.isAvailable ? t('adminPages.ticketUi.enabled') : t('adminPages.ticketUi.unavailable')}
             tone="text-emerald-300"
           />
@@ -754,7 +752,7 @@ export default function TicketPackages() {
             isAdmin ? <div className="admin-package-table-scroll" tabIndex={0} role="region" aria-label={t('adminPages.ticketUi.package')}>
               <table>
                 <thead><tr>{[t('adminPages.ticketUi.package'), t('adminPages.ticketUi.type'), t('adminPages.ticketUi.price'), t('adminPages.ticketUi.status'), t('adminPages.ticketUi.updated'), t('adminPages.ticketUi.actions')].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
-                <tbody>{visiblePackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} t={t} isAdmin={isAdmin} onEdit={openModal} onDelete={handleDelete} onDetails={setDetailPackage} index={index} rowRef={String(pkg._id).toLowerCase() === verifiedPackageId?.toLowerCase() ? linkedRowRef : undefined} />)}</tbody>
+                <tbody>{visiblePackages.map((pkg, index) => <PackageRow key={pkg._id} pkg={pkg} t={t} language={language} isAdmin={isAdmin} onEdit={openModal} onDelete={handleDelete} onDetails={setDetailPackage} index={index} rowRef={String(pkg._id).toLowerCase() === verifiedPackageId?.toLowerCase() ? linkedRowRef : undefined} />)}</tbody>
               </table>
             </div> : <div className="stp-rows space-y-3">
               {filteredPackages.map((pkg, index) => (
@@ -762,6 +760,7 @@ export default function TicketPackages() {
                   key={pkg._id}
                   pkg={pkg}
                   t={t}
+                  language={language}
                   isAdmin={isAdmin}
                   onEdit={openModal}
                   onDelete={handleDelete}
@@ -813,12 +812,12 @@ export default function TicketPackages() {
               <div className="package-detail-body">
                 <dl className="package-detail-summary">
                   <div><dt>{t('adminPages.ticketUi.type')}</dt><dd><span className={`package-detail-type ${TYPE_META[detailPackage.type]?.badge || ''}`}>{t(`adminPages.ticketUi.types.${detailPackage.type}`, { defaultValue: TYPE_META[detailPackage.type]?.label || detailPackage.type })}</span></dd></div>
-                  <div><dt>{t('adminPages.ticketUi.price')}</dt><dd>{formatCurrency(detailPackage.price)}</dd></div>
+                  <div><dt>{t('adminPages.ticketUi.price')}</dt><dd>{formatCurrency(detailPackage.price, language)}</dd></div>
                   <div><dt>{t('adminPages.ticketUi.capacityRenewal').split(' & ')[0]}</dt><dd>{detailPackage.saleLimit ?? t('adminPages.ticketUi.unlimited')}</dd></div>
-                  <div><dt>{t('adminPages.ticketUi.renewalWindow').replace(' (days)', '')}</dt><dd>{detailPackage.isRenewable === false ? t('adminPages.ticketUi.inactive') : `${detailPackage.renewalWindowDays ?? 7} days`}</dd></div>
+                  <div><dt>{t('adminPages.ticketUi.renewalWindow').replace(String(language).startsWith('vi') ? ' (ngày)' : ' (days)', '')}</dt><dd>{detailPackage.isRenewable === false ? t('adminPages.ticketUi.inactive') : t('ticketPackageExtras.days', { count: detailPackage.renewalWindowDays ?? 7 })}</dd></div>
                 </dl>
                 <div className="package-detail-fields">
-                  <div><h3><Gift size={17} aria-hidden="true" />{t('adminPages.ticketUi.benefits')}</h3><div className="package-detail-value">{(detailPackage.benefitsVersion ? detailPackage.displayBenefits || [] : detailPackage.displayBenefits?.length ? detailPackage.displayBenefits : ['Reserved VIP slots', 'Priority parking access']).join('\n') || '\u2014'}</div></div>
+                  <div><h3><Gift size={17} aria-hidden="true" />{t('adminPages.ticketUi.benefits')}</h3><div className="package-detail-value">{(detailPackage.benefitsVersion ? detailPackage.displayBenefits || [] : detailPackage.displayBenefits?.length ? detailPackage.displayBenefits : getDefaultBenefitsText(t).split('\n')).join('\n') || '\u2014'}</div></div>
                   <div><h3><FileText size={17} aria-hidden="true" />{t('adminPages.ticketUi.description')}</h3><div className="package-detail-value">{detailPackage.description || '\u2014'}</div></div>
                   <div><h3><Users size={17} aria-hidden="true" />{t('adminPages.ticketUi.maxSlots')}</h3><div className="package-detail-value package-detail-slots">{detailPackage.maxSlots ?? 3}</div></div>
                 </div>
@@ -882,7 +881,7 @@ export default function TicketPackages() {
                       ]}
                       icon={Tag}
                       className="w-full"
-                      ariaLabel="Select ticket package type"
+                      ariaLabel={t('ticketPackageExtras.selectPackageType')}
                       menuAnchor="bottom start"
                       menuClassName="package-select-menu"
                     />
@@ -896,7 +895,7 @@ export default function TicketPackages() {
                       value={formData.price}
                       onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                       className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                      placeholder="e.g. 10000"
+                      placeholder={t('ticketPackageExtras.pricePlaceholder')}
                     />
                   </div>
                 </div>
@@ -939,7 +938,7 @@ export default function TicketPackages() {
                   <legend className="px-2 text-sm font-bold text-white">{t('adminPages.ticketUi.membershipCapacity')}</legend>
                   <label htmlFor="package-sale-limit" className="block text-xs font-semibold text-gray-300">{t('adminPages.ticketUi.totalSpaces')}</label>
                   <input id="package-sale-limit" type="number" min="0" step="1" value={formData.saleLimit} onChange={(event) => setFormData({ ...formData, saleLimit: event.target.value })} placeholder={t('adminPages.ticketUi.unlimited')} className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white" />
-                  <p className="text-xs leading-5 text-gray-400">Leave blank for unlimited.</p>
+                  <p className="text-xs leading-5 text-gray-400">{t('ticketPackageExtras.leaveBlankUnlimited')}</p>
                   {editingPackage?.stock && <p className="text-xs text-yellow-100">{t('adminPages.ticketUi.stockSummary', { inUse: editingPackage.stock.allocatedQuantity, holds: editingPackage.stock.heldQuantity, minimum: editingPackage.stock.allocatedQuantity + editingPackage.stock.heldQuantity })}</p>}
                   {editingPackage?.inactiveReason === 'SOLD_OUT' && <p className="text-xs text-yellow-200">{t('adminPages.ticketUi.soldOutHint')}</p>}
                 </fieldset>}
@@ -955,7 +954,7 @@ export default function TicketPackages() {
                       value={formData.maxSlots}
                       onChange={(e) => setFormData({ ...formData, maxSlots: Number(e.target.value) })}
                       className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                      placeholder="e.g. 3"
+                      placeholder={t('ticketPackageExtras.maxSlotsPlaceholder')}
                     />
                   </div>
                   <div>
@@ -968,7 +967,7 @@ export default function TicketPackages() {
                       value={formData.renewalWindowDays}
                       onChange={(e) => setFormData({ ...formData, renewalWindowDays: Number(e.target.value) })}
                       className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-gold focus:ring-1 focus:ring-gold"
-                      placeholder="e.g. 7"
+                      placeholder={t('ticketPackageExtras.renewalPlaceholder')}
                     />
                   </div>
                 </div>
