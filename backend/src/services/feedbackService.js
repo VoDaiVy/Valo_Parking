@@ -124,4 +124,21 @@ async function getAdminFeedback(id) {
   if (!record) fail('Feedback not found.', 404);
   return record;
 }
-module.exports = { assertId, userDTO, createFeedback, getFeedback, attachFeedbackSummaries, buildFilter, listFeedbacks, getStats, getAdminFeedback };
+async function listPublicFeedbacks(query = {}) {
+  const page = integerParam(query.page, 1, 100000);
+  const limit = integerParam(query.limit, 6, 30);
+  const [records, stats] = await Promise.all([
+    Feedback.find({}).sort({ createdAt: -1, _id: -1 })
+      .skip((page - 1) * limit).limit(limit)
+      .select('rating comment categories createdAt userId').populate('userId', 'username').lean(),
+    getStats({}),
+  ]);
+  // Only the public username is exposed; account IDs and private fields stay internal.
+  const items = records.map(record => ({
+    id: String(record._id), rating: record.rating, comment: record.comment,
+    categories: record.categories, createdAt: record.createdAt,
+    author: record.userId?.username || null,
+  }));
+  return { items, total: stats.total, averageRating: stats.averageRating, page, limit };
+}
+module.exports = { assertId, userDTO, createFeedback, getFeedback, attachFeedbackSummaries, buildFilter, listFeedbacks, getStats, getAdminFeedback, listPublicFeedbacks };

@@ -12,6 +12,7 @@ exports.create = handler(req => service.createFeedback(req.params.id, req.user._
 exports.get = handler(req => service.getFeedback(req.params.id, req.user._id));
 exports.list = handler(req => service.listFeedbacks(req.query));
 exports.stats = handler(req => service.getStats(req.query));
+exports.publicList = handler(req => service.listPublicFeedbacks(req.query));
 exports.detail = handler(req => service.getAdminFeedback(req.params.id));
 exports.reply = handler(async req => {
   const { feedback, notification } = await replyToFeedback(req.params.id, req.user._id, req.body);
