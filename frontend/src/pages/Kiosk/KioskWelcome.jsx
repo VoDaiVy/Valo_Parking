@@ -474,24 +474,17 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
   const handleStart = async () => {
     setIsScanning(true);
-    setScanMessage('Checking parking availability...');
-
-    try {
-      const fullRes = await fetch(`${API_BASE}/sessions/check-full`);
-      const fullData = await fullRes.json();
-      const isFull = Boolean(fullData.success && fullData.data && fullData.data.isFull);
-      isParkingFullRef.current = isFull;
-      if (isFull) {
-        setShowFullModal(true);
-        setIsScanning(false);
-        return;
-      }
-    } catch (e) {
-      console.warn('Failed to check full status:', e);
-      isParkingFullRef.current = false;
-    }
-
     setScanMessage('Scanning Plate...');
+
+    const checkFullPromise = fetch(`${API_BASE}/sessions/check-full`)
+      .then((res) => res.json())
+      .then((fullData) => {
+        isParkingFullRef.current = Boolean(fullData.success && fullData.data && fullData.data.isFull);
+      })
+      .catch((e) => {
+        console.warn('Failed to check full status:', e);
+        isParkingFullRef.current = false;
+      });
 
     try {
       if (!streamRef.current) {
@@ -515,6 +508,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       if (!isCamAlreadyWarm) {
         await wait(CAMERA_WARMUP_MS);
       }
+
+      await checkFullPromise;
 
       const detectedPlates = new Map();
       for (let i = 0; i < SCAN_ATTEMPTS; i++) {
