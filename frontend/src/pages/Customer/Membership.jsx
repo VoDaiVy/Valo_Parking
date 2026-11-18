@@ -119,6 +119,7 @@ export default function Membership() {
   const [floors, setFloors] = useState([]);
   const [currentFloorId, setCurrentFloorId] = useState(null);
   const [dbSlots, setDbSlots] = useState([]);
+  const [liveSlots, setLiveSlots] = useState([]);
   
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -222,23 +223,44 @@ export default function Membership() {
   }, []);
 
   useEffect(() => {
-    const fetchDbSlots = async () => {
-      if (!currentFloorId) {
-        setDbSlots([]);
-        return;
-      }
+    if (!showSlotModal || !currentFloorId) {
+      return undefined;
+    }
+
+    let active = true;
+    const fetchMapSlots = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/parking-floors/${currentFloorId}/slots`);
-        const data = await res.json();
-        if (data.success) {
-          setDbSlots(data.data);
+        const [slotRes, liveRes] = await Promise.all([
+          apiFetch(`/parking-floors/${currentFloorId}/slots`),
+          apiFetch('/parking-floors/live-map', { cache: 'no-store' }),
+        ]);
+        if (!active) return;
+
+        if (slotRes.ok && Array.isArray(slotRes.data?.data)) {
+          setDbSlots(slotRes.data.data);
+        }
+        if (liveRes.ok && Array.isArray(liveRes.data?.data)) {
+          setLiveSlots(liveRes.data.data.filter(
+            (slot) => String(slot.floorId?._id || slot.floorId || '') === String(currentFloorId)
+          ));
+        } else {
+          setLiveSlots(null);
         }
       } catch (err) {
-        console.error("Failed to fetch slots", err);
+        if (active) {
+          setLiveSlots(null);
+          console.error('Failed to fetch live parking slots', err);
+        }
       }
     };
-    fetchDbSlots();
-  }, [currentFloorId]);
+
+    fetchMapSlots();
+    const refreshId = window.setInterval(fetchMapSlots, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(refreshId);
+    };
+  }, [currentFloorId, showSlotModal]);
 
   useEffect(() => {
     let active = true;
@@ -686,6 +708,7 @@ export default function Membership() {
                   floors={floors}
                   currentFloorId={currentFloorId}
                   dbSlots={dbSlots}
+                  liveSlots={liveSlots}
                   onFloorSelect={setCurrentFloorId}
                   onSelectSlot={(slotData) => handleSelectSlot(currentFloorId, { slotNumber: slotData.name || slotData.id })}
                   selectedSlotId={selectedSlots.map(s => `${s.floorId}:${s.slotCode}`)}

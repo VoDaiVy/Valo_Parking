@@ -803,7 +803,7 @@ export default function CreateBookingPage() {
   const [activeSessions, setActiveSessions] = useState([]);
   const [activeHolds, setActiveHolds] = useState([]);
   const [liveMapSlots, setLiveMapSlots] = useState(null);
-  const [showLiveMap, setShowLiveMap] = useState(true);
+  const showLiveMap = true;
 
   const fetchLiveMapData = useCallback(async () => {
     try {
@@ -2172,13 +2172,6 @@ export default function CreateBookingPage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowLiveMap(prev => !prev)}
-                  className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 hover:border-cyan-300 transition"
-                >
-                  {showLiveMap ? 'Show booking time' : 'Show real-time live map'}
-                </button>
                 <div className="text-sm text-emerald-600 font-bold px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
                   {showLiveMap && liveMapSlots
                     ? `${liveMapSlots.filter(s => String(s.floorId) === String(currentFloorId) && isLiveParkingSlotBookable(s, (vehicles.find(v => v._id === vehicleId)?.type === 'electric_car'))).length} spaces available on this floor`

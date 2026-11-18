@@ -10,8 +10,8 @@ import {
 import { apiFetch } from '../../services/api';
 import { useLanguage } from '../../i18n/hooks/useLanguage';
 import { useSearchParams } from 'react-router-dom';
-import './accountManagement.css';
 import AccountBookingReview from '../../components/Admin/AccountBookingReview';
+import './accountManagement.css';
 
 // --- Constants ---------------------------------------------------------------
 const ROLES = {
@@ -202,16 +202,21 @@ export default function AccountManagement() {
     finally { if (generation === userRequest.current) setLoading(false); }
   };
 
-  const aiUserLoader = useRef(null);
   const showBookingReviews = async () => {
     if (reviewRequest.current) return;
-    if (reviewOnly) { setReviewOnly(false); setFilterRole('all'); setPage(1); return; }
+    if (reviewOnly) {
+      setReviewOnly(false);
+      setFilterRole('all');
+      setPage(1);
+      return;
+    }
+
     reviewRequest.current = true;
     setReviewLoading(true);
     try {
       const result = await apiFetch('/admin/users/booking-review', { cache: 'no-store', headers: authHeader });
       if (!result.ok || !Array.isArray(result.data?.data)) {
-        showToast(result.data?.message || 'Booking review is unavailable.', 'error');
+        showToast(result.data?.message || t('accountManagementExtra.bookingReviewUnavailable', { defaultValue: 'Booking review is unavailable.' }), 'error');
         return;
       }
       setBookingReviews(new Map(result.data.data.map(row => [row.userId, row])));
@@ -220,13 +225,16 @@ export default function AccountManagement() {
       setSearchTerm('');
       setReviewOnly(true);
       setPage(1);
-    } catch {
-      showToast('Booking review is unavailable.', 'error');
+    } catch (error) {
+      console.error(error);
+      showToast(t('accountManagementExtra.bookingReviewUnavailable', { defaultValue: 'Booking review is unavailable.' }), 'error');
     } finally {
       reviewRequest.current = false;
       setReviewLoading(false);
     }
   };
+
+  const aiUserLoader = useRef(null);
   useEffect(() => { aiUserLoader.current = fetchUsers; });
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -520,8 +528,13 @@ export default function AccountManagement() {
         {/* -- Controls Bar -- */}
         <div className="account-toolbar flex flex-wrap items-center gap-4 px-8 py-4 flex-shrink-0 bg-[#080808]">
           <button type="button" disabled={reviewLoading} aria-pressed={reviewOnly} onClick={showBookingReviews}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${reviewOnly ? 'border-amber-400/50 text-amber-300' : 'border-white/10 text-white/70'}`}>
-            <AlertTriangle size={14} /> {reviewLoading ? 'Loading review…' : reviewOnly ? 'Show all accounts' : 'Booking review'}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${reviewOnly ? 'border-amber-400/50 bg-amber-400/10 text-amber-300' : 'border-white/10 bg-[#111] text-white/70 hover:border-white/20 hover:text-white'}`}>
+            <AlertTriangle size={14} />
+            {reviewLoading
+              ? t('accountManagementExtra.loadingBookingReview', { defaultValue: 'Loading review…' })
+              : reviewOnly
+                ? t('accountManagementExtra.showAllAccounts', { defaultValue: 'Show all accounts' })
+                : t('accountManagementExtra.bookingReview', { defaultValue: 'Booking review' })}
           </button>
           <div className="account-search relative flex-1 min-w-0">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
@@ -636,7 +649,7 @@ export default function AccountManagement() {
                     <UserX size={36} />
                     <span className="text-sm" role="status">
                       {reviewOnly && !searchTerm.trim() && filterRole === 'customer' && filterStatus === 'all'
-                        ? 'No customer accounts have a cancellation history or booking restriction.'
+                        ? t('accountManagementExtra.noBookingReviews', { defaultValue: 'No customer accounts have a cancellation history or booking restriction.' })
                         : t('accountManagement.empty')}
                     </span>
                   </div>
@@ -667,12 +680,19 @@ export default function AccountManagement() {
                     <td className="px-4 py-3 text-[13px] text-white/55 max-w-[180px] truncate">{u.email}</td>
                     <td className="px-4 py-3 text-[13px] text-white/55">{u.profile?.phone || '-'}</td>
                     <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
-                    <td className="px-4 py-3"><StatusBadge status={u.status} />
-                      {u.bookingRestriction?.blocked && <span className="mt-1 block text-xs text-rose-300">Booking restricted</span>}
-                      {review?.flagged && <span className="mt-1 block text-xs text-amber-300">Review suggested</span>}
-                      {!review?.flagged && review?.lastFlaggedAt && <span className="mt-1 block text-xs text-amber-200">Past review flag</span>}
+                    <td className="px-4 py-3">
+                      <StatusBadge status={u.status} />
+                      {u.bookingRestriction?.blocked && <span className="mt-1 block text-xs text-rose-300">{t('accountManagementExtra.bookingRestricted', { defaultValue: 'Booking restricted' })}</span>}
+                      {review?.flagged && <span className="mt-1 block text-xs text-amber-300">{t('accountManagementExtra.reviewSuggested', { defaultValue: 'Review suggested' })}</span>}
+                      {!review?.flagged && review?.lastFlaggedAt && <span className="mt-1 block text-xs text-amber-200">{t('accountManagementExtra.pastReviewFlag', { defaultValue: 'Past review flag' })}</span>}
                       {reviewOnly && review?.totalCancelledOrders > 0 && (
-                        <span className="mt-1 block text-xs text-white/55">{review.totalCancelledOrders} cancelled {review.totalCancelledOrders === 1 ? 'order' : 'orders'} in history</span>
+                        <span className="mt-1 block text-xs text-white/55">
+                          {t('accountManagementExtra.cancelledOrdersHistory', {
+                            defaultValue: '{{count}} cancelled {{orderLabel}} in history',
+                            count: review.totalCancelledOrders,
+                            orderLabel: review.totalCancelledOrders === 1 ? 'order' : 'orders',
+                          })}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-[12px] text-white/35">{formatDate(u.createdAt)}</td>
@@ -764,10 +784,17 @@ export default function AccountManagement() {
 
                   {!isEditing ? (
                     <div className="space-y-4">
-                      {panelUser.role === 'customer' && <AccountBookingReview key={panelUser._id} userId={panelUser._id} onRestriction={bookingRestriction => {
-                        setUsers(current => current.map(user => user._id === panelUser._id ? { ...user, bookingRestriction } : user));
-                        setPanelUser(current => current?._id === panelUser._id ? { ...current, bookingRestriction } : current);
-                      }} />}
+                      {panelUser.role === 'customer' && (
+                        <AccountBookingReview
+                          key={panelUser._id}
+                          userId={panelUser._id}
+                          onRestriction={bookingRestriction => {
+                            const userId = panelUser._id;
+                            setUsers(current => current.map(user => user._id === userId ? { ...user, bookingRestriction } : user));
+                            setPanelUser(current => current?._id === userId ? { ...current, bookingRestriction } : current);
+                          }}
+                        />
+                      )}
                       <div className="bg-[#171717] rounded-2xl p-4 border border-white/10 space-y-3">
                         <h4 className="text-xs font-bold uppercase tracking-widest text-[#ffd555]/80 mb-1">{t('accountManagementExtra.basicInfo', { defaultValue: 'Basic Info' })}</h4>
                         {[

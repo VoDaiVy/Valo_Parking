@@ -53,9 +53,34 @@ export function detectDirectParkingLookup(message) {
   if (parkingAvailability && !hasScheduledTime) {
     const zoneName = text.match(/\b(?:zone|khu)\s+([a-z]\d*|\d+)\b/)?.[1] || '';
     const electricCar = /\b(?:xe dien|o to dien|electric car|electric vehicle|ev)\b/.test(text);
-    return { intent: 'CHECK_PARKING_AVAILABILITY', floorName, zoneName, electricCar };
+    const allFloors = !floorName && /\b(?:toan bai|ca bai|toan bo bai|tat ca cac tang|all floors|entire parking lot|whole parking lot|entire car park|whole car park)\b/.test(text);
+    return { intent: 'CHECK_PARKING_AVAILABILITY', floorName, zoneName, electricCar, allFloors };
   }
 
+  return null;
+}
+
+export function detectParkingAvailabilityFollowUp(message) {
+  const text = fold(message);
+  const floorMatch = text.match(/^(?:tang|floor)\s*([a-z]?\d+)$/i);
+  if (floorMatch) {
+    return {
+      intent: 'CHECK_PARKING_AVAILABILITY',
+      floorName: floorMatch[1].toUpperCase(),
+      zoneName: '',
+      electricCar: false,
+      allFloors: false,
+    };
+  }
+  if (/^(?:toan bai|ca bai|toan bo bai|tat ca cac tang|all floors)$/.test(text)) {
+    return {
+      intent: 'CHECK_PARKING_AVAILABILITY',
+      floorName: '',
+      zoneName: '',
+      electricCar: false,
+      allFloors: true,
+    };
+  }
   return null;
 }
 
@@ -140,16 +165,52 @@ export function isLiveParkingSlotBookable(slot, electricCar = false) {
 export function parkingAvailabilityReply(response, floorName = '', { zoneName = '', electricCar = false, language = 'vi' } = {}) {
   const slots = getLiveParkingSlots(response);
   const en = language === 'en';
-  const scope = [floorName && `${en ? 'Floor' : 'Tầng'} ${floorName}`, zoneName && `${en ? 'Zone' : 'Khu'} ${zoneName.toUpperCase()}`].filter(Boolean).join(' · ');
+  const normalizedFloorName = String(floorName || '').replace(/^(?:floor|tầng)\s*/i, '').trim();
+  const scope = [normalizedFloorName && `${en ? 'Floor' : 'Tầng'} ${normalizedFloorName}`, zoneName && `${en ? 'Zone' : 'Khu'} ${zoneName.toUpperCase()}`].filter(Boolean).join(' · ');
   const scoped = slots.filter(slot => sameFloor(slot, floorName)
     && (!zoneName || fold(slot.zone).replace(/^(zone|khu)\s+/, '') === fold(zoneName)));
   if (!scoped.length) return scope
     ? en ? `No parking spaces were found for ${scope}. Check the floor or zone name.` : `Không tìm thấy ô đỗ tại ${scope}. Bạn kiểm tra lại tầng hoặc khu nhé.`
     : en ? 'No parking space data is available yet.' : 'Bãi xe chưa có dữ liệu ô đỗ.';
   const isBookable = slot => isLiveParkingSlotBookable(slot, electricCar);
-  const available = scoped.filter(isBookable);
-  const suggestions = (available.length ? available : scope ? slots.filter(isBookable) : [])
-    .slice(0, 3).map(slot => [slot.floorName, slot.id].filter(Boolean).join(' · ')).join(', ');
+  const byLocation = (left, right) => Number(left.floorNumber || 0) - Number(right.floorNumber || 0)
+    || String(left.id || '').localeCompare(String(right.id || ''), undefined, { numeric: true });
+  const available = scoped.filter(isBookable).sort(byLocation);
+  const formatSpaces = (items, includeFloor) => {
+    const visible = items.slice(0, 30);
+    const labels = visible.map((slot) => includeFloor
+      ? [slot.floorName, slot.id].filter(Boolean).join(' · ')
+      : String(slot.id || '')).filter(Boolean);
+    const remaining = items.length - visible.length;
+    return `${labels.join(', ')}${remaining > 0 ? en ? `, and ${remaining} more` : `, và ${remaining} ô khác` : ''}`;
+  };
+  const formatFloorGroups = (items) => {
+    const groups = new Map();
+    items.forEach((slot) => {
+      const key = String(slot.floorName || slot.floorNumber || (en ? 'Unknown floor' : 'Tầng chưa xác định'));
+      if (!groups.has(key)) groups.set(key, []);
+      const slotCode = String(slot.id || '');
+      if (slotCode) groups.get(key).push(slotCode);
+    });
+    let displayed = 0;
+    const labels = [];
+    groups.forEach((slotCodes, floor) => {
+      const availableBudget = Math.max(0, 30 - displayed);
+      const visibleCodes = slotCodes.slice(0, availableBudget);
+      if (!visibleCodes.length) return;
+      displayed += visibleCodes.length;
+      const floorLabel = en
+        ? floor.replace(/^tầng\s*/i, 'Floor ')
+        : floor.replace(/^floor\s*/i, 'Tầng ');
+      labels.push(`${floorLabel} (${slotCodes.length}): ${visibleCodes.join(', ')}`);
+    });
+    const remaining = items.length - displayed;
+    return `${labels.join('; ')}${remaining > 0 ? en ? `; and ${remaining} more` : `; và ${remaining} ô khác` : ''}`;
+  };
+  const alternatives = scope ? slots.filter(isBookable).sort(byLocation) : [];
+  const suggestions = available.length
+    ? normalizedFloorName ? formatSpaces(available, false) : formatFloorGroups(available)
+    : formatFloorGroups(alternatives);
   if (!available.length) {
     const location = scope || (en ? 'The car park' : 'Bãi đỗ');
     const options = suggestions ? en ? ` Available elsewhere: ${suggestions}.` : ` Còn chỗ ở nơi khác: ${suggestions}.`
@@ -157,8 +218,8 @@ export function parkingAvailabilityReply(response, floorName = '', { zoneName = 
     return en ? `${location} has no suitable spaces available right now.${options}` : `${location} hiện không còn chỗ phù hợp.${options}`;
   }
   return en
-    ? `${available.length} suitable ${available.length === 1 ? 'space is' : 'spaces are'} available right now${scope ? ` in ${scope}` : ''}. ${suggestions}.`
-    : `${scope || 'Toàn bãi'} hiện còn ${available.length} chỗ phù hợp. ${suggestions}.`;
+    ? `${scope || 'The car park'} currently has ${available.length} suitable ${available.length === 1 ? 'space' : 'spaces'}${suggestions ? `: ${suggestions}` : ''}.`
+    : `${scope || 'Toàn bãi'} hiện còn ${available.length} chỗ phù hợp${suggestions ? `: ${suggestions}` : ''}.`;
 }
 
 export function slotStatusReply(response, slotCode, floorName = '', language = 'vi') {

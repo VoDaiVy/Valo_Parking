@@ -133,6 +133,7 @@ const NAV_CONFIG = {
       to: "/staff/live-grid",
     },
     { label: "Gate Control", icon: <Car size={18} />, to: "/staff/gate" },
+    { label: "Membership services", icon: <Wrench size={18} />, to: "/staff/membership-services" },
     {
       label: "Booking Management",
       icon: <BookOpen size={18} />,
@@ -237,6 +238,7 @@ const NAV_LABEL_KEYS = {
   Home: 'nav.home',
   Profile: 'nav.profile',
   Membership: 'nav.membership',
+  'Membership services': 'staffNav.membershipServices',
   'My Vehicles': 'nav.vehicles',
   'My Bookings': 'nav.bookings',
   History: 'nav.history',
