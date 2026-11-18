@@ -18,6 +18,7 @@ import {
 import CustomerPageHeader from "../../components/Customer/CustomerPageHeader";
 import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 import { useLanguage } from "../../i18n/hooks/useLanguage";
+import MembershipServiceSelectionModal from "../../components/membership/MembershipServiceSelectionModal";
 
 export default function ParkingHistory() {
   const { t } = useLanguage();
@@ -25,9 +26,11 @@ export default function ParkingHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
+  const [serviceSession, setServiceSession] = useState(null);
 
   const fetchHistory = async () => {
     setLoading(true);
+    setError(null);
     const token = localStorage.getItem("accessToken");
     if (!token) {
       setError(t('historyPage.loginRequired'));
@@ -273,6 +276,21 @@ export default function ParkingHistory() {
                   </div>
                 </div>
 
+                {session.canSelectServices === true && session.type === 'SUBSCRIPTION' && session.status === 'active' && (
+                  <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs text-gray-400">
+                      {t('membershipServiceModal.title')} · {t('membershipServiceModal.pending')}: {session.serviceSummary?.pending || 0} · {t('membershipServiceModal.inProgress')}: {session.serviceSummary?.inProgress || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setServiceSession(session)}
+                      className="min-h-11 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-2 text-sm font-bold text-yellow-400 hover:bg-yellow-500/20"
+                    >
+                      {t('membershipServiceModal.title')}
+                    </button>
+                  </div>
+                )}
+
                 {/* Footer / Image */}
                 {session.entryImage_url && (
                   <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -295,6 +313,15 @@ export default function ParkingHistory() {
             </div>
           ))}
         </div>
+      )}
+
+      {serviceSession && (
+        <MembershipServiceSelectionModal
+          key={serviceSession._id}
+          session={serviceSession}
+          onClose={() => setServiceSession(null)}
+          onSaved={fetchHistory}
+        />
       )}
 
       {selectedSession && (

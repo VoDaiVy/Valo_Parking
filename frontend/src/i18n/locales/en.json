@@ -843,6 +843,8 @@
     }
   },
   "membershipServiceModal": {
+    "pending": "Pending",
+    "inProgress": "In progress",
     "loadError": "Unable to load services.",
     "saveError": "Unable to save.",
     "title": "Membership services",

@@ -845,6 +845,8 @@
     }
   },
   "membershipServiceModal": {
+    "pending": "Đang chờ",
+    "inProgress": "Đang thực hiện",
     "loadError": "Không thể tải dịch vụ.",
     "saveError": "Không thể lưu.",
     "title": "Dịch vụ thành viên",

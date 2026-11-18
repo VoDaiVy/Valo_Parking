@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BarcodeScanningResult } from 'expo-camera';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera';
 import * as Crypto from 'expo-crypto';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useEffect, useRef, useState } from 'react';
@@ -31,11 +31,14 @@ import {
   type StaffBookingQrAction,
   type StaffBookingQrResolution,
   type StaffMembershipQrResolution,
+  type StaffParkingPassResolution,
+  type ParkingCheckoutQuote,
 } from '@/services/api/staff';
+import { resolveStaffParkingQr } from '@/services/staffParkingQr';
 
 type Props = NativeStackScreenProps<StaffManagementStackParamList, 'BookingScanner'>;
 type Phase = 'scan' | 'detail' | 'capture' | 'confirm' | 'success';
-type QrResolution = StaffBookingQrResolution | StaffMembershipQrResolution;
+type QrResolution = StaffBookingQrResolution | StaffMembershipQrResolution | StaffParkingPassResolution;
 
 const actionLabel = (action: StaffBookingQrAction) =>
   action === 'CHECK_IN' ? 'Check in vehicle' : 'Check out vehicle';
@@ -46,6 +49,7 @@ const isMembershipResolution = (
 export function StaffBookingQrScreen({ navigation }: Props) {
   const { t: translateUi } = useLanguage();
   const cameraRef = useRef<CameraView | null>(null);
+  const resolving = useRef(false);
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const [permission, requestPermission] = useCameraPermissions();
@@ -64,6 +68,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   const [evidenceBase64, setEvidenceBase64] = useState('');
   const [reason, setReason] = useState('Kiosk unavailable');
   const [idempotencyKey, setIdempotencyKey] = useState('');
+  const [passQuote, setPassQuote] = useState<ParkingCheckoutQuote | null>(null);
 
   useEffect(() => {
     if (!permission) {
@@ -86,33 +91,31 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     setEvidenceBase64('');
     setReason('Kiosk unavailable');
     setIdempotencyKey('');
+    setPassQuote(null);
+    setMembershipPayment('wallet');
   };
 
   const resolveQr = async (payload: string) => {
-    if (busy) return;
+    if (resolving.current) return;
+    resolving.current = true;
     setBusy(true);
     setError('');
     try {
-      const isMembershipQr =
-        payload.startsWith('VALO_MEMBERSHIP:') ||
-        payload.startsWith('VALO_MEMBERSHIP_ACCOUNT:');
-      const response = isMembershipQr
-        ? await staffService.resolveMembershipQr(payload)
-        : await staffService.resolveBookingQr(payload);
+      const { payload: normalizedPayload, response } = await resolveStaffParkingQr(payload);
       const result = response.data;
       if (
-        !result ||
-        (!isMembershipQr && !('booking' in result)) ||
-        (isMembershipQr && !('membership' in result))
+        !response.success || !result ||
+        !Array.isArray(result.allowedActions)
       ) {
         throw new Error('Parking credential information was not returned.');
       }
-      setQrPayload(payload);
+      setQrPayload(normalizedPayload);
       setResolution(result as QrResolution);
       setPhase('detail');
     } catch (resolveError) {
       setError(resolveError instanceof Error ? resolveError.message : 'Unable to resolve this QR code.');
     } finally {
+      resolving.current = false;
       setBusy(false);
     }
   };
@@ -134,6 +137,10 @@ export function StaffBookingQrScreen({ navigation }: Props) {
       if (!photo?.uri) {
         throw new Error('Unable to capture the QR frame.');
       }
+      const codes = await scanFromURLAsync(photo.uri, ['qr']);
+      const code = codes.find((item) => item.data?.trim().startsWith('VALO_'));
+      if (!code) throw new Error('No VALO QR code found. Keep the entire QR code in the frame and try again.');
+      await resolveQr(code.data);
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : 'Unable to capture the QR frame.');
     } finally {
@@ -141,7 +148,8 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     }
   };
 
-  const startEvidenceCapture = (action: StaffBookingQrAction) => {
+  const startEvidenceCapture = async (action: StaffBookingQrAction) => {
+    if (busy || !resolution?.allowedActions.includes(action)) return;
     if (isMembershipResolution(resolution)) {
       if (action === 'CHECK_IN' && (!selectedVehicleId || !selectedSlotKey)) {
         setError('Select a membership vehicle and reserved parking space first.');
@@ -154,6 +162,24 @@ export function StaffBookingQrScreen({ navigation }: Props) {
       if (action === 'CHECK_OUT' && !selectedSessionId) {
         setError('Select the active parking session to check out.');
         return;
+      }
+      if (action === 'CHECK_OUT' && (!selectedSession?.checkoutQuote || selectedSession.checkoutError)) {
+        setError(selectedSession?.checkoutError || 'Unable to load the checkout price. Scan the membership QR again.');
+        return;
+      }
+    }
+    if (resolution && 'pass' in resolution && action === 'CHECK_OUT') {
+      setBusy(true);
+      setError('');
+      try {
+        const response = await staffService.quoteParkingPass(resolution.pass._id, qrPayload);
+        if (!response.success || !response.data) throw new Error('Unable to load the checkout price.');
+        setPassQuote(response.data);
+      } catch (quoteError) {
+        setError(quoteError instanceof Error ? quoteError.message : 'Unable to load the checkout price.');
+        return;
+      } finally {
+        setBusy(false);
       }
     }
     setSelectedAction(action);
@@ -204,7 +230,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
     const booking = resolution && 'booking' in resolution ? resolution.booking : null;
     const membershipResolution = isMembershipResolution(resolution) ? resolution : null;
     if (
-      (!booking && !membershipResolution) ||
+      (!booking && !membershipResolution && !passResolution) ||
       !selectedAction ||
       !evidenceBase64 ||
       !reason.trim() ||
@@ -222,8 +248,17 @@ export function StaffBookingQrScreen({ navigation }: Props) {
         idempotencyKey,
         reason: reason.trim(),
       };
-      if (booking) {
-        await staffService.transitionBookingByQr(booking._id, commonPayload);
+      if (passResolution) {
+        const response = await staffService.transitionParkingPass(passResolution.pass._id, {
+          ...commonPayload,
+          paymentMethod: selectedAction === 'CHECK_OUT' ? membershipPayment : undefined,
+        });
+        if (!response.success || response.requiresPayment) {
+          throw new Error('Checkout payment is not complete. Verify payment before confirming parking access.');
+        }
+      } else if (booking) {
+        const response = await staffService.transitionBookingByQr(booking._id, commonPayload);
+        if (!response.success) throw new Error('Unable to update parking access.');
       } else if (membershipResolution) {
         const selectedSlot = membershipResolution.membership.slots?.find((slot) => {
           const floorId = typeof slot.floorId === 'object' ? slot.floorId?._id : slot.floorId;
@@ -232,7 +267,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
         const floorId = typeof selectedSlot?.floorId === 'object'
           ? selectedSlot.floorId?._id
           : selectedSlot?.floorId;
-        await staffService.transitionMembershipByQr(membershipResolution.membership._id, {
+        const response = await staffService.transitionMembershipByQr(membershipResolution.membership._id, {
           ...commonPayload,
           entitlementId:
             selectedAction === 'CHECK_IN' ? selectedSlot?.entitlementId : undefined,
@@ -243,6 +278,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           paymentMethod: selectedAction === 'CHECK_OUT' ? membershipPayment : undefined,
           expectedAmount: selectedAction === 'CHECK_OUT' ? selectedSession?.checkoutQuote?.amountToPay : undefined,
         });
+        if (!response.success) throw new Error('Unable to update parking access.');
       }
       setPhase('success');
     } catch (transitionError) {
@@ -259,6 +295,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
   };
 
   const bookingResolution = resolution && 'booking' in resolution ? resolution : null;
+  const passResolution = resolution && 'pass' in resolution ? resolution : null;
   const booking = bookingResolution?.booking || null;
   const membershipResolution = isMembershipResolution(resolution) ? resolution : null;
   const selectedVehicle = membershipResolution?.vehicles.find(
@@ -360,13 +397,15 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           {bookingResolution?.allowedActions.map((action) => (
             <ActionButton
               key={action}
+              disabled={busy}
               label={actionLabel(action)}
-              onPress={() => startEvidenceCapture(action)}
+              onPress={() => void startEvidenceCapture(action)}
             />
           ))}
           {bookingResolution?.allowedActions.length === 0 ? (
             <ErrorMessage message={translateUi("No manual action is allowed for this booking status.")} />
           ) : null}
+          {error ? <ErrorMessage message={translateUi(error)} /> : null}
           <ActionButton label={translateUi("Scan another QR")} secondary onPress={reset} />
         </ScrollView>
       ) : null}
@@ -425,8 +464,9 @@ export function StaffBookingQrScreen({ navigation }: Props) {
                 );
               })}
               <ActionButton
+                disabled={busy}
                 label={actionLabel('CHECK_IN')}
-                onPress={() => startEvidenceCapture('CHECK_IN')}
+                onPress={() => void startEvidenceCapture('CHECK_IN')}
               />
             </>
           ) : null}
@@ -444,8 +484,9 @@ export function StaffBookingQrScreen({ navigation }: Props) {
                 />
               ))}
               <ActionButton
+                disabled={busy}
                 label={actionLabel('CHECK_OUT')}
-                onPress={() => startEvidenceCapture('CHECK_OUT')}
+                onPress={() => void startEvidenceCapture('CHECK_OUT')}
               />
             </>
           ) : null}
@@ -455,6 +496,19 @@ export function StaffBookingQrScreen({ navigation }: Props) {
           ) : null}
           {error ? <ErrorMessage message={translateUi(error)} /> : null}
           <ActionButton label={translateUi("Scan another QR")} secondary onPress={reset} />
+        </ScrollView>
+      ) : null}
+
+      {phase === 'detail' && passResolution && !booking ? (
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.plate}>{passResolution.licensePlate}</Text>
+          <DetailRow label="Parking space" value={passResolution.session?.parkingSlot || '—'} />
+          {passResolution.allowedActions.map((action) => (
+            <ActionButton key={action} disabled={busy} label={actionLabel(action)} onPress={() => void startEvidenceCapture(action)} />
+          ))}
+          {!passResolution.allowedActions.length ? <ErrorMessage message="No action is available for this parking pass." /> : null}
+          {error ? <ErrorMessage message={translateUi(error)} /> : null}
+          <ActionButton label={translateUi('Scan another QR')} secondary onPress={reset} />
         </ScrollView>
       ) : null}
 
@@ -491,7 +545,7 @@ export function StaffBookingQrScreen({ navigation }: Props) {
         </>
       ) : null}
 
-      {phase === 'confirm' && (booking || membershipResolution) && selectedAction ? (
+      {phase === 'confirm' && (booking || membershipResolution || passResolution) && selectedAction ? (
         <>
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: stickyContentPadding }]}>
             <StatusStrip icon="checkmark-done-outline" label={translateUi("Final step")} value="Confirm transition" tone="warning" />
@@ -500,11 +554,21 @@ export function StaffBookingQrScreen({ navigation }: Props) {
             <Text style={styles.helper}>
               {booking
                 ? `${booking.licensePlate} / ${booking.parkingSlot}`
+                : passResolution
+                  ? `${passResolution.licensePlate} / ${passResolution.session?.parkingSlot || 'Parking space'}`
                 : selectedAction === 'CHECK_IN'
                   ? `${selectedVehicle?.licensePlate || 'Vehicle'} / ${selectedSlotKey.split(':')[1] || 'Parking space'}`
                   : `${selectedSession?.licensePlate || 'Vehicle'} / ${selectedSession?.parkingSlot || 'Parking space'}`}
             </Text>
             <Text style={styles.inputLabel}>{translateUi("Override reason")}</Text>
+            {selectedAction === 'CHECK_OUT' && passQuote ? (
+              <View style={styles.bookingCard}>
+                <DetailRow label="Amount due" value={`${passQuote.amountToPay.toLocaleString()} VND`} />
+                <DetailRow label="Refund" value={`${passQuote.refundAmount?.toLocaleString() || 0} VND`} />
+                <SelectionCard title="Pay from customer wallet" selected={membershipPayment === 'wallet'} onPress={() => setMembershipPayment('wallet')} />
+                <SelectionCard title="Confirm cash received" selected={membershipPayment === 'cash'} onPress={() => setMembershipPayment('cash')} />
+              </View>
+            ) : null}
             {selectedAction === 'CHECK_OUT' && selectedSession?.checkoutQuote && <View style={{ gap: 8, padding: 12, backgroundColor: '#10233f', borderRadius: 10 }}>
               <Text style={{ color: '#fff', fontWeight: '700' }}>Package parking coverage</Text>
               <Text style={{ color: '#fff' }}>Package: {selectedSession.checkoutQuote.packageName || 'Legacy parking package'}</Text>

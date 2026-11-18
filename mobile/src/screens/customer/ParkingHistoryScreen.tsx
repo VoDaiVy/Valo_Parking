@@ -22,7 +22,8 @@ import { format } from 'date-fns';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { sessionsService } from '@/services/api/sessions';
-import { ErrorState } from '@/components/common';
+import { Button, ErrorState } from '@/components/common';
+import { MembershipServiceSelectionModal } from '@/components/profile/MembershipServiceSelectionModal';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { formatCurrency } from '@/utils/formatters';
 import type { ProfileStackParamList } from '@/navigation/types';
@@ -75,7 +76,7 @@ export function StatusBadge({ status }: { status: string }) {
   return <View style={[styles.statusBadge, { borderColor: `${config.color}55`, backgroundColor: `${config.color}18` }]}><Animated.View style={[styles.statusDot, { backgroundColor: config.color, opacity: status === 'active' ? pulse : 1 }]} /><Text style={[styles.statusText, { color: config.color }]}>{translateUi(config.label)}</Text></View>;
 }
 
-function HistoryCard({ session, index, onPress }: { session: HistorySession; index: number; onPress: () => void }) {
+function HistoryCard({ session, index, onPress, onChooseServices }: { session: HistorySession; index: number; onPress: () => void; onChooseServices: () => void }) {
   const { t: translateUi } = useLanguage();
   const checkIn  = new Date(session.checkInTime);
   const checkOut = session.checkOutTime ? new Date(session.checkOutTime) : null;
@@ -86,7 +87,8 @@ function HistoryCard({ session, index, onPress }: { session: HistorySession; ind
   const m = durationMins !== null ? durationMins % 60 : null;
 
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Session details for ${session.licensePlate}`} style={[styles.card, index === 0 && styles.latestCard]}>
+    <View style={[styles.card, index === 0 && styles.latestCard]}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Session details for ${session.licensePlate}`} style={{ gap: SPACING.sm }}>
       <LinearGradient
         colors={session.status === 'completed' ? [COLORS.gold, 'transparent'] : [COLORS.textMuted, 'transparent']}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -134,6 +136,10 @@ function HistoryCard({ session, index, onPress }: { session: HistorySession; ind
         </View>
       </View>
     </Pressable>
+    {session.type === 'SUBSCRIPTION' && session.status === 'active' ? (
+      <Button title="Choose membership services" variant="outline" onPress={onChooseServices} />
+    ) : null}
+    </View>
   );
 }
 
@@ -163,6 +169,7 @@ export const ParkingHistoryScreen = ({ navigation }: Props) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedSession, setSelectedSession] = useState<HistorySession | null>(null);
+  const [serviceSession, setServiceSession] = useState<HistorySession | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -236,7 +243,7 @@ export const ParkingHistoryScreen = ({ navigation }: Props) => {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.gold} colors={[COLORS.gold]} />
           }
-          renderItem={({ item, index }) => <HistoryCard session={item} index={index} onPress={() => setSelectedSession(item)} />}
+          renderItem={({ item, index }) => <HistoryCard session={item} index={index} onPress={() => setSelectedSession(item)} onChooseServices={() => setServiceSession(item)} />}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Ionicons name="car-outline" size={48} color={COLORS.textMuted} />
@@ -247,6 +254,8 @@ export const ParkingHistoryScreen = ({ navigation }: Props) => {
         />
       )}
       <SessionDetailModal session={selectedSession} onClose={() => setSelectedSession(null)} />
+      {serviceSession ? <MembershipServiceSelectionModal key={serviceSession._id} session={serviceSession}
+        onClose={() => setServiceSession(null)} onSaved={() => { setServiceSession(null); void load(); }} /> : null}
     </SafeAreaView>
   );
 };
