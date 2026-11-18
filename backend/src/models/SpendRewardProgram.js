@@ -16,8 +16,9 @@ const tierSchema = new mongoose.Schema({
       },
     ],
   },
-  discountPercent: { type: Number, min: 1, max: 100, validate: Number.isInteger, required: function () { return this.rewardType === 'PERCENT_DISCOUNT'; } },
+  discountPercent: { type: Number, min: 1, max: 100, validate: (value) => value == null || Number.isInteger(value), required: function () { return this.rewardType === 'PERCENT_DISCOUNT'; } },
   minimumAmount: money,
+  recipientLimit: { type: Number, min: 1, max: 1000000, validate: (value) => value == null || Number.isSafeInteger(value), default: null },
 }, { _id: false });
 
 const schema = new mongoose.Schema({
@@ -26,6 +27,8 @@ const schema = new mongoose.Schema({
   startsAt: { type: Date, default: null },
   revision: { type: Number, default: 0 },
   validityDays: { type: Number, default: 7, min: 1, max: 365 },
+  welcomeEnabled: { type: Boolean, default: true },
+  welcomeValidityDays: { type: Number, default: 30, min: 1, max: 365 },
   tiers: { type: [tierSchema], default: () => [
     { threshold: 300000, discountAmount: 20000, minimumAmount: 100000 },
     { threshold: 700000, discountAmount: 50000, minimumAmount: 200000 },

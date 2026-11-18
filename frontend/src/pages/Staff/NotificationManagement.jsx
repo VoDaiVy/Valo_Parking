@@ -1,3 +1,4 @@
+import '../../components/Admin/adminGridBackground.css';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import StaffIssueReports from "../../components/notifications/StaffIssueReports";
@@ -166,7 +167,7 @@ export default function NotificationManagement({ role }) {
   }, [refreshHistory]);
 
   return (
-    <div className={`staff-notification-management ${STAFF_THEME.page}`}>
+    <div className={`staff-notification-management ${STAFF_THEME.page} ${role === 'admin' ? 'admin-grid-background' : ''}`}>
       <div className="snm-content px-6 py-6 max-w-[1400px] mx-auto">
         <header className="snm-header flex items-start justify-between gap-4 mb-6">
           <div>

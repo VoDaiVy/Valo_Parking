@@ -1,3 +1,4 @@
+import '../../components/Admin/adminGridBackground.css';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bell,
@@ -282,7 +283,7 @@ export default function NotificationManagement() {
   };
 
   return (
-    <div className="p-6 md:p-8 mx-auto min-h-[calc(100vh-70px)] overflow-auto bg-[#080808]">
+    <div className="admin-grid-background p-6 md:p-8 mx-auto min-h-[calc(100vh-70px)] overflow-auto">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
