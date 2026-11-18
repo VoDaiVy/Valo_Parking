@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Claim = require('../models/TelegramClaimToken');
 const Link = require('../models/TelegramLink');
+const User = require('../models/User');
 const Session = require('../models/Session');
 const Delivery = require('../models/TelegramDelivery');
 const { normalizePhone } = require('../utils/phoneUtils');
@@ -51,6 +52,13 @@ async function consumeContact(message) {
   let outcome;
   const dbSession = await mongoose.startSession();
   try {
+    // Commit orphan cleanup before linking: the unique Telegram index must be released first.
+    await dbSession.withTransaction(async () => {
+      const oldLink = await Link.findOne({ telegramUserId: identity.boundTelegramUserId, revokedAt: null }).session(dbSession);
+      if (oldLink && !await User.exists({ _id: oldLink.userId }).session(dbSession)) {
+        await profileService.revokeAccount(oldLink.userId, dbSession, 'ACCOUNT_DELETED');
+      }
+    });
     await dbSession.withTransaction(async () => {
       const claim = await Claim.findOne({ ...identity, consumedAt: null, revokedAt: null, expiresAt: { $gt: new Date() } }).select('+recipientPhone').sort({ createdAt: -1 }).session(dbSession);
       if (!claim) { outcome = { ok: false, text: 'Link đã hết hạn hoặc đã sử dụng. Vui lòng tạo link mới.' }; return; }

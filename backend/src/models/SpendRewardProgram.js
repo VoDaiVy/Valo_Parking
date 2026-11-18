@@ -4,7 +4,18 @@ const money = { type: Number, required: true, min: 1000, max: 1000000000, valida
 const tierSchema = new mongoose.Schema({
   threshold: money,
   rewardType: { type: String, enum: ['FIXED_DISCOUNT', 'PERCENT_DISCOUNT'], default: 'FIXED_DISCOUNT' },
-  discountAmount: { ...money, required: function () { return this.rewardType !== 'PERCENT_DISCOUNT'; } },
+  discountAmount: {
+    ...money,
+    min: 0,
+    required: function () { return this.rewardType !== 'PERCENT_DISCOUNT'; },
+    validate: [
+      { validator: Number.isSafeInteger, message: 'Discount must be a whole VND amount' },
+      {
+        validator: function (value) { return this.rewardType === 'PERCENT_DISCOUNT' || value >= 1000; },
+        message: 'Fixed discount must be at least 1,000 VND',
+      },
+    ],
+  },
   discountPercent: { type: Number, min: 1, max: 100, validate: Number.isInteger, required: function () { return this.rewardType === 'PERCENT_DISCOUNT'; } },
   minimumAmount: money,
 }, { _id: false });

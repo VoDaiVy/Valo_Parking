@@ -553,6 +553,9 @@ exports.deleteUser = async (req, res, next) => {
     const PolicyAcceptance = require('../models/PolicyAcceptance');
     const Revenue = require('../models/Revenue');
 
+    // Revoke Telegram before removing the profile used to validate its link.
+    await require('../services/telegramLinkService').unlink(userId);
+
     // 1. Wallets & Transactions
     await Wallet.deleteOne({ user: userId });
     await WalletTransaction.deleteMany({ user: userId });
