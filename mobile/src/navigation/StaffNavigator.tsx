@@ -37,7 +37,7 @@ export type StaffManagementStackParamList = {
   ManagementHome: undefined;
   TicketPackages: undefined;
   Subscriptions: undefined;
-  MembershipServices: { sessionId: string; requestId: string } | undefined;
+  MembershipServices: { sessionId?: string; requestId?: string } | undefined;
   Customers: undefined;
   Bookings: undefined;
   BookingScanner: undefined;

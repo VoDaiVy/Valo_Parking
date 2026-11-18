@@ -66,6 +66,7 @@ export type NotificationNavigationTarget =
       params: { transferId: string };
     }
   | { tab: 'WalletTab'; screen: 'Membership' }
+  | { tab: 'WalletTab'; screen: 'MembershipServices'; params?: { sessionId?: string; requestId?: string } }
   | { tab: 'WalletTab'; screen: 'Wallet' }
   | { tab: 'WalletTab'; screen: 'Rewards' }
   | { tab: 'ProfileTab'; screen: 'Profile' };
@@ -94,6 +95,9 @@ const getMarketplaceTransferId = (metadata: Record<string, unknown>) => {
 
 export const getNotificationNavigationTarget = (item: UserNotification) => {
   const metadata = item.metadata || {};
+  if (isMembershipServiceNotification(item)) {
+    return { tab: 'WalletTab', screen: 'MembershipServices', params: getMembershipServiceNotificationParams(item) } satisfies NotificationNavigationTarget;
+  }
   if (typeof metadata.deepLink === 'string' && /^(?:valo:\/\/|\/)(?:customer\/)?rewards\/?(?:[?#].*)?$/.test(metadata.deepLink.trim())) {
     return { tab: 'WalletTab', screen: 'Rewards' } satisfies NotificationNavigationTarget;
   }
@@ -129,4 +133,13 @@ export const getNotificationNavigationTarget = (item: UserNotification) => {
   }
   return null;
 };
+
+export const isMembershipServiceNotification = (item: UserNotification) =>
+  ['MEMBERSHIP_SERVICE_REQUESTED', 'MEMBERSHIP_SERVICE_STATUS_CHANGED'].includes(String(item?.metadata?.eventType || ''));
+
+export function getMembershipServiceNotificationParams(item: UserNotification) {
+  const metadata = item.metadata || {};
+  const id = (value: unknown) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value) ? value : undefined;
+  return { sessionId: id(metadata.sessionId), requestId: id(metadata.serviceRequestId) };
+}
 

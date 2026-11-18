@@ -20,7 +20,7 @@ import { UnsupportedRoleScreen } from '@/screens/shared/UnsupportedRoleScreen';
 import type { StaffTabParamList } from './StaffNavigator';
 import type { CustomerTabParamList } from './CustomerNavigator';
 import type { AuthStackParamList } from './types';
-import { navigationRef } from './notificationNavigation';
+import { navigationRef, flushPendingNotification } from './notificationNavigation';
 
 type AppRoutes = AuthStackParamList & CustomerTabParamList & StaffTabParamList;
 const customerLinking: LinkingOptions<AppRoutes> = {
@@ -78,11 +78,12 @@ export const AppNavigator = () => {
   return (
     <NavigationContainer
       ref={navigationRef}
+      onReady={flushPendingNotification}
       key={navigationKey}
       initialState={initialState}
       linking={isStaff ? { prefixes: ['valo://'], config: { screens: {
         Dashboard: 'staff', LiveGrid: 'staff/parking', Sessions: 'staff/sessions',
-        Manage: { path: 'staff/manage', screens: { ManagementHome: '', Bookings: 'bookings', BookingScanner: 'scan', Inbox: 'inbox', ParkingOperations: 'operations', StaffAssistant: 'assistant' } },
+        Manage: { path: 'staff/manage', screens: { ManagementHome: '', Bookings: 'bookings', BookingScanner: 'scan', Inbox: 'inbox', ParkingOperations: 'operations', MembershipServices: 'membership-services', StaffAssistant: 'assistant' } },
       } } } : customerLinking}
       onStateChange={(state) => {
         if (state) {

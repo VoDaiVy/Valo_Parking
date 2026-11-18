@@ -1,3 +1,4 @@
+import { openNotification as navigateNotification } from '@/navigation/notificationNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import type { NavigationProp, ParamListBase } from '@react-navigation/native';
 import { useState } from 'react';
@@ -20,7 +21,6 @@ import { CustomerAmbientBackground } from '@/components/customer/CustomerAmbient
 import { NotificationCard } from '@/components/notifications/NotificationCard';
 import { COLORS, FONT_SIZES, RADIUS, SPACING } from '@/constants/theme';
 import { useNotifications } from '@/hooks/useNotifications';
-import type { CustomerTabParamList } from '@/navigation/CustomerNavigator';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
@@ -70,38 +70,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
 
   const openNotification = async (id: string, notification: Parameters<typeof getNotificationNavigationTarget>[0]) => {
     if (id) await markAsRead(id).catch(() => undefined);
-    if (user?.role === 'staff' || user?.role === 'admin') {
-      if (notification.metadata?.eventType === 'MEMBERSHIP_SERVICE_REQUESTED' && typeof notification.metadata.sessionId === 'string' && /^[a-f\d]{24}$/i.test(notification.metadata.sessionId)) {
-        navigation.navigate('MembershipServices', { sessionId: notification.metadata.sessionId, requestId: notification.metadata.serviceRequestId });
-      } else if (notification.type === 'BOOKING') navigation.navigate('Bookings');
-      else if (notification.type === 'VIOLATION' || notification.type === 'CAMERA') navigation.navigate('ParkingOperations');
-      return;
-    }
-    const target = getNotificationNavigationTarget(notification);
-    const tabs = navigation.getParent<NavigationProp<CustomerTabParamList>>();
-    if (!target || !tabs) return;
-
-    if (target.tab === 'WalletTab') {
-      if (target.screen === 'Wallet') {
-        tabs.navigate('WalletTab', { screen: 'Wallet' });
-      } else if (target.screen === 'Rewards') {
-        tabs.navigate('WalletTab', { screen: 'Rewards' });
-      } else if (target.screen === 'Membership') {
-        tabs.navigate('WalletTab', { screen: 'Membership' });
-      } else {
-        tabs.navigate('WalletTab', {
-          screen: 'MembershipMarketplaceDetail',
-          params: target.params,
-        });
-      }
-    } else if (target.tab === 'Bookings') {
-      tabs.navigate('Bookings', {
-        screen: 'BookingDetail',
-        params: target.params,
-      });
-    } else {
-      tabs.navigate('ProfileTab', { screen: 'Profile' });
-    }
+    navigateNotification(notification, user?.role);
   };
 
   const renderEmpty = () => {

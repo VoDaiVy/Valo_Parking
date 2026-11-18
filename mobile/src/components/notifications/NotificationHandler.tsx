@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { NotificationResponse } from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { useExpoPushToken } from '@/hooks/useExpoPushToken';
 import { useNotificationPermissions } from '@/hooks/useNotificationPermissions';
 import { useSocket } from '@/hooks/useSocket';
 import { useAuth } from '@/hooks/useAuth';
-import { openNotification } from '@/navigation/notificationNavigation';
+import { openNotification, clearPendingNotification } from '@/navigation/notificationNavigation';
 import type { UserNotification } from '@/types/models';
 import { isExpoGo } from '@/utils/notificationRuntime';
 
@@ -17,6 +18,14 @@ export const NotificationHandler = () => {
   const permissions = useNotificationPermissions();
   useExpoPushToken(isAuthenticated && permissions.status === 'granted');
   const [banner, setBanner] = useState<UserNotification | null>(null);
+  const handledResponse = useRef('');
+  useEffect(() => {
+    if (!isAuthenticated) {
+      clearPendingNotification();
+      setBanner(null);
+      handledResponse.current = '';
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && permissions.status === 'undetermined' && !permissions.loading) {
@@ -25,7 +34,7 @@ export const NotificationHandler = () => {
   }, [permissions]);
 
   useEffect(() => {
-    if (isExpoGo || Platform.OS === 'web') return undefined;
+    if (isExpoGo || Platform.OS === 'web' || !isAuthenticated || !user?.role) return undefined;
 
     let active = true;
     let subscription: { remove: () => void } | undefined;
@@ -53,10 +62,17 @@ export const NotificationHandler = () => {
           createdAt: new Date().toISOString(),
         });
       });
-      responseSubscription = Notifications.addNotificationResponseReceivedListener((event) => {
+      const respond = (event: NotificationResponse) => {
+        if (!active) return;
+        const responseKey = `${event.notification.request.identifier}:${event.actionIdentifier}`;
+        if (handledResponse.current === responseKey) return;
+        handledResponse.current = responseKey;
         const content = event.notification.request.content;
         openNotification({ id: String(content.data?.id || ''), title: content.title || '', content: content.body || '', type: (content.data?.type as UserNotification['type']) || 'SYSTEM', priority: 'INFO', isRead: false, metadata: content.data || {}, createdAt: new Date().toISOString() }, user?.role);
-      });
+        void Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
+      };
+      responseSubscription = Notifications.addNotificationResponseReceivedListener(respond);
+      void Notifications.getLastNotificationResponseAsync().then((event) => { if (event) respond(event); }).catch(() => undefined);
     }).catch((error) => {
       console.warn('[Notifications] Listener setup failed:', error);
     });
@@ -66,7 +82,7 @@ export const NotificationHandler = () => {
       subscription?.remove();
       responseSubscription?.remove();
     };
-  }, [user?.role]);
+  }, [user?.role, isAuthenticated]);
 
   useEffect(() => {
     const handler = (payload: unknown) => setBanner(payload as UserNotification);
