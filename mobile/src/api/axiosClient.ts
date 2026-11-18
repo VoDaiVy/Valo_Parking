@@ -53,9 +53,15 @@ axiosClient.interceptors.request.use((config) => {
 axiosClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    const requestUrl = error.config
+      ? axiosClient.getUri(error.config).split(/[?#]/)[0]
+      : API_URL;
+    const responseMessage = getErrorMessage(error.response?.data, error.message || 'Request failed');
     const normalizedError = new Error(
       error.response
-        ? getErrorMessage(error.response.data, error.message || 'Request failed')
+        ? error.response.status === 404
+          ? `${responseMessage} · API: ${error.config?.method?.toUpperCase() || 'REQUEST'} ${requestUrl}`
+          : responseMessage
         : `${error.message || 'Request failed'} · API: ${API_URL}`,
     ) as NormalizedApiError;
 

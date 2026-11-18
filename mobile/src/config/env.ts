@@ -15,8 +15,8 @@ const defaults = {
     socketUrl: 'https://staging-api.valoparking.com',
   },
   production: {
-    apiBaseUrl: 'https://api.valoparking.com/api',
-    socketUrl: 'https://api.valoparking.com',
+    apiBaseUrl: 'https://valoparking-server.onrender.com/api',
+    socketUrl: 'https://valoparking-server.onrender.com',
   },
 } as const;
 

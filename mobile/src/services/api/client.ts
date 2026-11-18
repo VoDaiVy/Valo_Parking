@@ -164,10 +164,16 @@ class APIClient {
         }
 
         const status = error.response?.status;
-        const message = extractErrorMessage(
+        const responseMessage = extractErrorMessage(
           error.response?.data,
           error.message || 'Request failed',
         );
+        const requestUrl = error.config
+          ? this.client.getUri(error.config).split(/[?#]/)[0]
+          : API_BASE_URL;
+        const message = status === 404
+          ? `${responseMessage} · API: ${error.config?.method?.toUpperCase() || 'REQUEST'} ${requestUrl}`
+          : responseMessage;
 
         if (!error.response) {
           return Promise.reject(new NetworkError(`${message} · API: ${API_BASE_URL}`));
