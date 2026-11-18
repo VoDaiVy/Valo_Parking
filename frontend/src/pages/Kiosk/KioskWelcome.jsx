@@ -252,6 +252,36 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     const formatted = formatVietnamesePlate(plate);
     if (!formatted) return false;
 
+    // Broadcast directly to staff tab with 0ms latency
+    try {
+      const ch = new BroadcastChannel('valo_gate_channel');
+      ch.postMessage({
+        type: 'VEHICLE_DETECTED',
+        payload: {
+          gate: 'ENTRY_1',
+          mode: 'entry',
+          licensePlate: formatted,
+          entryImageBase64: imageBase64,
+          vehicleModelInfo: 'Vehicle at Entry Gate',
+          timestamp: Date.now(),
+        },
+      });
+      ch.close();
+    } catch (_) {}
+
+    // Notify staff gate spotlight immediately via IoT
+    fetch(`${API_BASE}/iot/vehicle-detected`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        gate: 'ENTRY_1',
+        mode: 'entry',
+        licensePlate: formatted,
+        entryImageBase64: imageBase64,
+        vehicleModelInfo: 'Vehicle at Entry Gate',
+      }),
+    }).catch(() => {});
+
     setScanMessage('Checking registration...');
 
     const response = await fetch(`${API_BASE}/sessions/verify-plate`, {
@@ -276,11 +306,20 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     if (verifyData.isMonthly || verifyData.hasPreBooking) {
       const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
       const canFastPassNow = Boolean(verifyData.assignedSlot && !needsReallocation);
+      const isPausedResume = Boolean(verifyData.isPausedResume);
+      const isAutoReallocated = Boolean(verifyData.slotAutoReallocated);
+
       updateFormData({
         step3Mode: canFastPassNow ? 'fastpass' : 'policy',
         isMonthly: Boolean(verifyData.isMonthly),
         membershipType: verifyData.membershipType || null,
         hasPreBooking: Boolean(verifyData.hasPreBooking),
+        isPausedResume,
+        slotAutoReallocated: isAutoReallocated,
+        reallocationReason: verifyData.reallocationReason || null,
+        remainingHours: verifyData.remainingHours,
+        remainingMinutes: verifyData.remainingMinutes,
+        bookingEnd: verifyData.bookingEnd || null,
         isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
         isBookingReallocation: Boolean(verifyData.isBookingReallocation),
         quotaExhausted: Boolean(verifyData.quotaExhausted),
@@ -298,7 +337,16 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       });
 
       if (canFastPassNow) {
-        setScanMessage('Opening Barrier & Assigning Slot...');
+        if (isPausedResume) {
+          if (isAutoReallocated) {
+            setScanMessage(`Welcome back! Slot reassigned to ${verifyData.assignedSlot}. Opening barrier...`);
+          } else {
+            setScanMessage(`Welcome back! Resuming slot ${verifyData.assignedSlot}. Opening barrier...`);
+          }
+        } else {
+          setScanMessage('Opening Barrier & Assigning Slot...');
+        }
+
         try {
           const entryPayload = {
             licensePlate: formatted,
@@ -311,6 +359,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
             bookingMode: verifyData.bookingMode || 'hourly',
             bookingId: verifyData.bookingId || null,
             bookingHoldId: null,
+            isAutoReallocated,
           };
 
           const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
@@ -332,6 +381,12 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               step3Mode: 'fastpass',
               isMonthly: verifyData.isMonthly,
               hasPreBooking: verifyData.hasPreBooking,
+              isPausedResume,
+              slotAutoReallocated: isAutoReallocated,
+              reallocationReason: verifyData.reallocationReason || null,
+              remainingHours: verifyData.remainingHours,
+              remainingMinutes: verifyData.remainingMinutes,
+              bookingEnd: verifyData.bookingEnd || null,
               entryImageBase64: imageBase64,
             });
             return true;
@@ -467,6 +522,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         }
         await wait(SCAN_RETRY_DELAY_MS);
       } // End of loop
+      try {
+        const ch = new BroadcastChannel('valo_gate_channel');
+        ch.postMessage({
+          type: 'VEHICLE_CLEARED',
+          gate: 'ENTRY_1',
+          reason: 'NO_VEHICLE_DETECTED',
+        });
+        ch.close();
+      } catch (_) {}
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
       stopCamera();
       setIsScanning(false);
@@ -559,7 +623,19 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
       // 5. Nếu là Khách VIP hoặc Đặt trước -> Tự động tạo phiên check-in & Mở barrier & Chuyển thẳng đến màn hình chỉ ô đỗ
       if (verifyData && (verifyData.hasPreBooking || verifyData.isMonthly) && !verifyData.requiresSlotReallocation && verifyData.assignedSlot) {
-        setScanMessage('Opening Barrier & Assigning Slot...');
+        const isPausedResume = Boolean(verifyData.isPausedResume);
+        const isAutoReallocated = Boolean(verifyData.slotAutoReallocated);
+
+        if (isPausedResume) {
+          if (isAutoReallocated) {
+            setScanMessage(`Welcome back! Slot reassigned to ${verifyData.assignedSlot}. Opening barrier...`);
+          } else {
+            setScanMessage(`Welcome back! Resuming slot ${verifyData.assignedSlot}. Opening barrier...`);
+          }
+        } else {
+          setScanMessage('Opening Barrier & Assigning Slot...');
+        }
+
         const entryPayload = {
           qrPayload,
           licensePlate: cleanPlate,
@@ -572,6 +648,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           bookingMode: verifyData.bookingMode || 'hourly',
           bookingId: verifyData.bookingId || null,
           bookingHoldId: null,
+          isAutoReallocated,
         };
 
         const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
@@ -596,6 +673,12 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
             step3Mode: 'fastpass',
             isMonthly: verifyData.isMonthly,
             hasPreBooking: verifyData.hasPreBooking,
+            isPausedResume,
+            slotAutoReallocated: isAutoReallocated,
+            reallocationReason: verifyData.reallocationReason || null,
+            remainingHours: verifyData.remainingHours,
+            remainingMinutes: verifyData.remainingMinutes,
+            bookingEnd: verifyData.bookingEnd || null,
             entryImageBase64: entryImage,
           });
           return;

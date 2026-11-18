@@ -88,6 +88,36 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   }, []);
 
   const handlePlateDetected = async (plate, imageBase64) => {
+    // 1. Broadcast to staff tabs in real-time via BroadcastChannel (0ms delay)
+    try {
+      const ch = new BroadcastChannel('valo_gate_channel');
+      ch.postMessage({
+        type: 'VEHICLE_DETECTED',
+        payload: {
+          gate: 'EXIT_1',
+          mode: 'exit',
+          licensePlate: plate,
+          exitImageBase64: imageBase64,
+          vehicleModelInfo: 'Vehicle at Exit Gate',
+          timestamp: Date.now(),
+        },
+      });
+      ch.close();
+    } catch (_) {}
+
+    // 2. Notify backend IoT
+    fetch(`${API_BASE}/iot/vehicle-detected`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        gate: 'EXIT_1',
+        mode: 'exit',
+        licensePlate: plate,
+        exitImageBase64: imageBase64,
+        vehicleModelInfo: 'Vehicle at Exit Gate',
+      }),
+    }).catch(() => {});
+
     try {
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
         method: 'POST',
@@ -102,21 +132,59 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       if (data.success) {
         setErrorMessage('');
         setAlarmState(false);
+        try {
+          const ch = new BroadcastChannel('valo_gate_channel');
+          ch.postMessage({
+            type: 'VEHICLE_DETECTED',
+            payload: {
+              gate: 'EXIT_1',
+              mode: 'exit',
+              licensePlate: plate,
+              hasSession: true,
+              vehicleModelInfo: data.data?.session?.vehicle?.model || 'Vehicle at Exit Gate',
+              registeredOwnerName: data.data?.session?.user?.fullName || data.data?.session?.vehicle?.ownerName || 'Khách hàng',
+              phone: data.data?.session?.user?.phone || data.data?.session?.vehicle?.ownerPhone || null,
+              amountToPay: data.data?.amountToPay || 0,
+              parkingDuration: data.data?.parkingDuration || '1 hrs',
+              exitImageBase64: imageBase64,
+              timestamp: Date.now(),
+            },
+          });
+          ch.close();
+        } catch (_) {}
         onScanSuccess(data.data, imageBase64);
       } else {
         lastErrorPlateAtRef.current = { plate, at: Date.now() };
         setAlarmState(Boolean(data.alarm));
+        let errText = `No active parking session found for plate ${plate}.`;
         if (data.alarmReason === 'already_checked_out') {
-          setErrorMessage(`Vehicle with plate ${plate} has already checked out.`);
+          errText = `Vehicle with plate ${plate} has already checked out.`;
         } else if (data.code === 'EXIT_PLATE_UNREADABLE') {
-          setErrorMessage('Unable to read license plate clearly. Please position the plate inside the frame.');
+          errText = 'Unable to read license plate clearly. Please position the plate inside the frame.';
         } else if (data.code === 'EXIT_PLATE_MISMATCH') {
-          setErrorMessage(`Exit plate does not match active parking session for ${plate}.`);
+          errText = `Exit plate does not match active parking session for ${plate}.`;
         } else if (res.status === 404) {
-          setErrorMessage(`No active parking session found for plate ${plate}.`);
+          errText = `No active parking session found for plate ${plate}.`;
         } else {
-          setErrorMessage(`Unable to verify parking session for plate ${plate}.`);
+          errText = `Unable to verify parking session for plate ${plate}.`;
         }
+        setErrorMessage(errText);
+        try {
+          const ch = new BroadcastChannel('valo_gate_channel');
+          ch.postMessage({
+            type: 'VEHICLE_DETECTED',
+            payload: {
+              gate: 'EXIT_1',
+              mode: 'exit',
+              licensePlate: plate,
+              hasSession: false,
+              errorMessage: errText,
+              exitImageBase64: imageBase64,
+              timestamp: Date.now(),
+            },
+          });
+          ch.close();
+        } catch (_) {}
         console.warn(data.message);
       }
     } catch (err) {
@@ -245,8 +313,24 @@ export default function KioskOutWelcome({ onScanSuccess }) {
               }
             } else {
               consecutiveEmptyFrames += 1;
-              // Require 3 consecutive empty frames before resetting so a single missed OCR frame doesn't flicker
-              if (consecutiveEmptyFrames >= 3) {
+              // Require 2 consecutive empty frames before resetting so a single missed OCR frame doesn't flicker
+              if (consecutiveEmptyFrames >= 2) {
+                try {
+                  const ch = new BroadcastChannel('valo_gate_channel');
+                  ch.postMessage({
+                    type: 'VEHICLE_CLEARED',
+                    gate: 'EXIT_1',
+                    reason: 'NO_VEHICLE_DETECTED',
+                  });
+                  ch.close();
+                } catch (_) {}
+
+                fetch(`${API_BASE}/iot/vehicle-detected`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ gate: 'EXIT_1', cleared: true, reason: 'NO_VEHICLE_DETECTED' }),
+                }).catch(() => {});
+
                 lastScannedPlateRef.current = null;
                 setRecognizedText('');
                 setErrorMessage('');

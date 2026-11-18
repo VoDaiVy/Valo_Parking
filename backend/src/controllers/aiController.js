@@ -44,12 +44,12 @@ exports.scanPlate = async (req, res, next) => {
     // -------------------------------------------------------------
     try {
       console.log('[AI Scan] Attempting Local Python AI for License Plate...', normalizedLane ? `(lane=${normalizedLane})` : '');
-      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+      const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
       const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
         image: base64Data,
         ...(normalizedLane ? { lane: normalizedLane } : {}),
       }, {
-        timeout: 10000 // 10 seconds timeout
+        timeout: 15000 // 15 seconds timeout (supports Cloud AI CPU)
       });
 
       const rawPlate = pythonRes.data?.plate || pythonRes.data?.licensePlate;
@@ -680,7 +680,7 @@ If isParkingLotScene is false:
 
     let physicalCalibratedSlots = [];
     let detectedCorners = null;
-    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
 
     // Mode 1: Pure Gemini Vision or Force Deep Scan
     if (aiMode === 'gemini' || forceDeepScan) {
@@ -711,7 +711,7 @@ If isParkingLotScene is false:
           slots,
           skipAutoCalibrate: Boolean(skipAutoCalibrate),
         }, {
-          timeout: 25000, // 25s to handle 4K frame on CPU (was 8s)
+          timeout: 45000, // 45s to handle 4K frame & Cloud CPU
         });
         console.log(`[AI Slot Scan] Local Edge ALPR responded in ${Date.now() - localStartMs}ms (pythonScanTime=${aiResponse.data?.scanTime ?? '?'}s)`);
 
@@ -835,7 +835,7 @@ If isParkingLotScene is false:
         const polyRes = await axios.post(`${aiServiceUrl}/auto-detect-grid`, {
           image,
           slotCodes: slots.map((s) => s.slotCode),
-        }, { timeout: 3000 });
+        }, { timeout: 10000 });
         if (polyRes.data && Array.isArray(polyRes.data.slots) && polyRes.data.slots.length > 0) {
           physicalCalibratedSlots = polyRes.data.slots;
         }
@@ -1501,14 +1501,14 @@ exports.autoDetectSlotGrid = async (req, res) => {
     // -------------------------------------------------------------
     // ATTEMPT 1: Local Python AI Service (YOLOv8-Seg parking_slots_yolo.pt)
     // -------------------------------------------------------------
-    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
     try {
       console.log('[AI Auto Detect] Attempting Local YOLOv8-Seg Model...');
       const aiResponse = await axios.post(`${aiServiceUrl}/auto-detect-grid`, {
         image: image || null,
         slotCodes: slotCodes || [],
       }, {
-        timeout: 25000,
+        timeout: 35000,
       });
 
       if (aiResponse.data && aiResponse.data.success && Array.isArray(aiResponse.data.slots) && aiResponse.data.slots.length > 0) {
@@ -1647,7 +1647,7 @@ Do NOT include any extra text or markdown formatting. Return raw JSON only.`;
 
 exports.downloadArucoMarkersSheet = async (req, res) => {
   try {
-    const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
     const response = await axios.get(`${aiServiceUrl}/aruco-markers-sheet`, {
       responseType: 'arraybuffer',
       timeout: 10000,

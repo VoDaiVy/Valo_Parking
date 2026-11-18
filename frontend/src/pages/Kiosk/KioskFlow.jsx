@@ -46,6 +46,12 @@ const createEmptyKioskFormData = () => ({
   hasPreBooking: false,
   isVIP: false,
   isRegisteredVehicle: false,
+  isPausedResume: false,
+  slotAutoReallocated: false,
+  reallocationReason: null,
+  remainingHours: null,
+  remainingMinutes: null,
+  bookingEnd: null,
   entryIdempotencyKey: createRequestKey(),
 });
 
@@ -161,6 +167,12 @@ export default function KioskFlow() {
       ticketPackageId: verifyData.bookingTicketPackageId || verifyData.pricingPackage?._id || null,
       pricingPackage: verifyData.pricingPackage || null,
       pricingSource: verifyData.pricingSource || 'default',
+      isPausedResume: Boolean(verifyData.isPausedResume),
+      slotAutoReallocated: Boolean(verifyData.slotAutoReallocated),
+      reallocationReason: verifyData.reallocationReason || null,
+      remainingHours: verifyData.remainingHours,
+      remainingMinutes: verifyData.remainingMinutes,
+      bookingEnd: verifyData.bookingEnd || null,
     });
 
     if (canFastPassNow) {
@@ -365,6 +377,7 @@ export default function KioskFlow() {
           bookingMode: formData.bookingMode,
           bookingId: formData.bookingId,
           bookingHoldId: formData.bookingHoldId,
+          isAutoReallocated: Boolean(formData.slotAutoReallocated),
         }),
       });
 
@@ -415,6 +428,7 @@ export default function KioskFlow() {
         bookingMode: formData.bookingMode,
         bookingId: formData.bookingId,
         bookingHoldId: formData.bookingHoldId,
+        isAutoReallocated: Boolean(formData.slotAutoReallocated),
       }),
     });
 

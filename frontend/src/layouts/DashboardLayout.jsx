@@ -15,6 +15,7 @@ import { getDashboardDensityClass } from "./staffDensity";
 import { getIssueReportLink, getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
+import RealtimeGateSpotlightModal from '../components/staff/RealtimeGateSpotlightModal';
 import { scopeAdminTypography } from './adminTypography';
 import '../styles/adminTypography.css';
 import '../styles/adminScrolling.css';
@@ -477,6 +478,7 @@ export default function DashboardLayout() {
             <NavLink
               key={item.to}
               to={item.to}
+              id={item.to === '/staff/gate' ? 'sidebar-nav-gate' : undefined}
               onClick={role === 'staff' ? () => setStaffDrawerOpen(false) : undefined}
               aria-label={role === 'staff' ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
               end={item.to.split("/").length === 2}
@@ -792,6 +794,9 @@ export default function DashboardLayout() {
           </div>
         </div>
       )}
+
+      {/* Realtime Gate Spotlight Live Modal (Staff only) */}
+      {role === 'staff' && <RealtimeGateSpotlightModal />}
     </div>
   );
 }

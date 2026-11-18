@@ -3,7 +3,12 @@ import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon 
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { API_BASE } from '../../services/api';
 
-export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSuccess, onBack }) {
+export default function KioskOutInvoice({ sessionData: initialSessionData, exitImage, onCheckoutSuccess, onBack }) {
+  const [sessionData, setSessionData] = useState(initialSessionData);
+  useEffect(() => {
+    if (initialSessionData) setSessionData(initialSessionData);
+  }, [initialSessionData]);
+
   const processingRef = useRef(false);
   const completedRef = useRef(false);
   const [checkoutError, setCheckoutError] = useState('');
@@ -15,14 +20,39 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
   const [keepPausedChoice, setKeepPausedChoice] = useState(false);
   const [paymentError, setPaymentError] = useState('');
 
-  const handleCheckout = useCallback(async (paymentMethod, keepPaused = false, paymentRef = null) => {
+  const handleCheckout = useCallback(async (paymentMethod, keepPaused = false, paymentRef = null, forceRefresh = false) => {
     if (processingRef.current || completedRef.current) return;
     processingRef.current = true;
     setCheckoutError('');
     setPaymentError('');
     setIsProcessing(true);
     try {
-      const sessionId = sessionData?.session?._id;
+      let currentData = sessionData;
+      const targetPlate = sessionData?.observedLicensePlate || sessionData?.session?.licensePlate || sessionData?.licensePlate;
+
+      // If user is retrying after challenge expired or forceRefresh, request fresh challenge token
+      if (forceRefresh || paymentError || checkoutError) {
+        try {
+          const refreshRes = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              licensePlate: targetPlate,
+              detectedPlate: targetPlate,
+              exitImageBase64: exitImage,
+            })
+          });
+          const refreshed = await refreshRes.json();
+          if (refreshed.success && refreshed.data) {
+            currentData = refreshed.data;
+            setSessionData(refreshed.data);
+          }
+        } catch (e) {
+          console.warn('Failed to refresh challenge token before checkout:', e);
+        }
+      }
+
+      const sessionId = currentData?.session?._id;
       const checkoutAttemptId = paymentRef && typeof paymentRef === 'object' ? (paymentRef.checkoutAttemptId || null) : null;
       const paymentIntentId = paymentRef && typeof paymentRef === 'object'
         ? (paymentRef.paymentIntentId || null)
@@ -31,18 +61,18 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': `kiosk-checkout:${sessionId}:${paymentIntentId || checkoutAttemptId || paymentMethod}`,
+          'Idempotency-Key': `kiosk-checkout:${sessionId}:${paymentIntentId || checkoutAttemptId || paymentMethod}:${Date.now()}`,
         },
         body: JSON.stringify({
-          qrPayload: sessionData?.qrPayload,
-          licensePlate: sessionData?.observedLicensePlate || sessionData?.session?.licensePlate,
+          qrPayload: currentData?.qrPayload,
+          licensePlate: currentData?.observedLicensePlate || currentData?.session?.licensePlate || currentData?.licensePlate,
           checkoutAttemptId,
           sessionId,
           exitImageBase64: exitImage,
           paymentMethod,
           paymentIntentId,
           keepPaused,
-          checkoutToken: sessionData?.checkoutToken,
+          checkoutToken: currentData?.checkoutToken,
         })
       });
       const data = await res.json();
@@ -55,7 +85,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           onCheckoutSuccess();
         }
       } else {
-        const msg = data.message || 'Không thể hoàn tất thanh toán.';
+        const msg = data.message || 'Unable to complete checkout.';
         setPaymentError(msg);
         setCheckoutError(msg);
         setIsProcessing(false);
@@ -66,7 +96,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
       setCheckoutError(msg);
       setIsProcessing(false);
     } finally { processingRef.current = false; }
-  }, [exitImage, onCheckoutSuccess, sessionData]);
+  }, [exitImage, onCheckoutSuccess, sessionData, paymentError, checkoutError]);
 
   useEffect(() => {
     const timerIds = [];
@@ -108,7 +138,7 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
           } else if (data.expired) {
             clearInterval(intervalId);
             setPaymentData(null);
-            setPaymentError('Mã QR đã hết hạn. Vui lòng tạo mã thanh toán mới.');
+            setPaymentError('QR code has expired. Please generate a new payment QR code.');
           }
         } catch (err) {
           console.error('Error polling payment status:', err);
@@ -301,40 +331,12 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
             </div>
           </div>
 
-          {(paymentError || checkoutError) && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-300 rounded-xl p-4 mb-6 text-sm flex items-center justify-between gap-3">
-              <span>{paymentError || checkoutError}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setPaymentError('');
-                  setCheckoutError('');
-                  handleCheckout('vietqr', keepPausedChoice);
-                }}
-                className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-lg text-xs font-bold uppercase tracking-wider shrink-0 transition-colors"
-              >
-                Thử lại
-              </button>
-            </div>
-          )}
-
-          {/* Wallet Status Box (Visible when vehicle owner has an authorized wallet) */}
-          {(sessionData?.hasWallet || canAutoPay || walletBalance > 0) && (
-            <div className="bg-blue-900/20 border border-blue-500/20 rounded-2xl p-5 mb-6 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Wallet className="text-blue-400" />
-                <div>
-                  <p className="text-xs text-blue-400 font-semibold">VALO WALLET BALANCE</p>
-                  <p className="text-lg font-bold text-white">{formatVND(walletBalance)}</p>
-                </div>
-              </div>
-              <p className={`text-xs font-semibold max-w-[140px] text-right ${canAutoPay ? 'text-emerald-400' : 'text-red-400'}`}>
-                {canAutoPay ? 'Ready for wallet payment.' : 'Insufficient balance. Please use QR.'}
-              </p>
-            </div>
-          )}
-
-          {checkoutError ? <p role="alert" className="mb-4 text-red-400">{checkoutError}</p> : null}
+          {/* Clean single error alert without duplicate card */}
+          {(paymentError || checkoutError) ? (
+            <p role="alert" className="mb-4 text-sm font-semibold text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-center">
+              {paymentError || checkoutError}
+            </p>
+          ) : null}
           {/* QR Code Section */}
           <div className="bg-white rounded-2xl p-6 flex flex-col items-center text-black">
             <p className="font-bold text-sm mb-4">{amountToPay > 0 ? 'SCAN TO PAY' : 'NO PAYMENT REQUIRED'}</p>
@@ -388,11 +390,15 @@ export default function KioskOutInvoice({ sessionData, exitImage, onCheckoutSucc
             </button>
           ) : (
             <button
-              onClick={() => handleCheckout('vietqr', keepPausedChoice)}
+              onClick={() => handleCheckout('vietqr', keepPausedChoice, null, Boolean(paymentError || checkoutError))}
               disabled={isProcessing || (sessionData?.canAutoPay && !isEarlyExit)}
               className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
             >
-              {isProcessing ? 'Processing...' : 'GENERATE QR'} <ChevronRight />
+              {isProcessing
+                ? 'Processing...'
+                : (paymentError || checkoutError)
+                ? 'RETRY'
+                : 'GENERATE QR'} <ChevronRight />
             </button>
           )}
         </div>

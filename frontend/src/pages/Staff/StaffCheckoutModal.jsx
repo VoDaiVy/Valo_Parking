@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Camera, X, Check, ArrowRight, Loader2, AlertCircle, ShieldAlert, Clock, AlertTriangle } from 'lucide-react';
+import { Camera, X, Check, ArrowRight, Loader2, AlertCircle, ShieldAlert, Clock, PauseCircle, Wallet, CheckCircle2 } from 'lucide-react';
 import { API_BASE } from '../../services/api';
 import StaffDropdown from './components/StaffDropdown.jsx';
 
@@ -87,12 +87,18 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
       }
 
       const invoice = data.data || data;
+      const totalAmount = Number(invoice.amountToPay || 0);
       setInvoiceData({
         ...invoice,
         checkoutToken: invoice.checkoutToken || data.checkoutToken || null,
-        totalAmount: Number(invoice.amountToPay || 0),
+        totalAmount,
         parkingFee: Number(invoice.totalPrice || 0),
       });
+      if (invoice.canAutoPay && totalAmount > 0) {
+        setPaymentMethod('WALLET');
+      } else {
+        setPaymentMethod('CASH');
+      }
       setCashReceivedAmount('');
       setStep('invoice');
     } catch (err) {
@@ -102,12 +108,12 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
     }
   };
 
-  const handleConfirmCheckout = async () => {
+  const handleConfirmCheckout = async (keepPaused = false) => {
     setStep('submitting');
     setErrorMsg('');
     try {
       const token = localStorage.getItem("accessToken");
-      const idempotencyKey = `staff-checkout:${session._id}:${paymentMethod}:${cashReceivedAmount || 'vietqr'}`;
+      const idempotencyKey = `staff-checkout:${session._id}:${paymentMethod}:${cashReceivedAmount || 'vietqr'}:${keepPaused ? 'paused' : 'ended'}`;
       const res = await fetch(`${API_BASE}/sessions/kiosk-checkout`, {
         method: 'POST',
         headers: { 
@@ -118,9 +124,10 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
         body: JSON.stringify({ 
           sessionId: session._id,
           exitImageBase64,
-          paymentMethod: paymentMethod === 'CASH' ? 'cash' : 'vietqr',
+          paymentMethod: paymentMethod === 'CASH' ? 'cash' : paymentMethod === 'WALLET' ? 'wallet' : 'vietqr',
           cashReceivedAmount: paymentMethod === 'CASH' ? Number(cashReceivedAmount) : null,
           checkoutToken: invoiceData?.checkoutToken || null,
+          keepPaused,
         })
       });
       const data = await res.json();
@@ -296,13 +303,47 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                 </div>
               </div>
 
+              {/* Registration & Wallet Status Info */}
+              <div className="mb-4 rounded-xl border border-white/10 bg-black/40 p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    {invoiceData.isRegisteredVehicle || invoiceData.registeredVehicleInfo?.isRegisteredVehicle ? (
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <CheckCircle2 size={14} /> Registered ({invoiceData.registeredVehicleInfo?.ownerName || 'Customer'})
+                      </span>
+                    ) : invoiceData.registeredVehicleInfo?.isMemberAccount || invoiceData.hasWallet ? (
+                      <span className="flex items-center gap-1 text-sky-400">
+                        <Check size={14} /> Member ({invoiceData.registeredVehicleInfo?.ownerName || 'Customer'})
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-amber-400">
+                        <AlertCircle size={14} /> Unregistered / Guest
+                      </span>
+                    )}
+                  </div>
+                  {invoiceData.hasWallet && (
+                    <span className="rounded bg-cyan-400/20 px-2 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-400/30">
+                      Wallet: {invoiceData.walletBalance?.toLocaleString()} VND
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  {invoiceData.canAutoPay
+                    ? 'Customer has sufficient wallet balance for 1-click Auto-Debit.'
+                    : invoiceData.hasWallet
+                      ? `Wallet balance insufficient (deficit ${(invoiceData.totalAmount - (invoiceData.walletBalance || 0)).toLocaleString()} VND). Collect cash.`
+                      : 'Vehicle has no Valo account. Staff must collect cash or VietQR.'}
+                </p>
+              </div>
+
               <div className="mb-4">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Payment Method</label>
                 <StaffDropdown
                   value={paymentMethod}
                   onChange={setPaymentMethod}
                   options={[
-                    ['CASH', 'Cash'],
+                    ...(invoiceData.canAutoPay ? [['WALLET', `Valo Wallet Auto-Debit (${invoiceData.walletBalance?.toLocaleString()} VND)`]] : []),
+                    ['CASH', 'Cash (Direct Collection)'],
                   ]}
                   ariaLabel="Select payment method"
                   placement="top"
@@ -334,14 +375,50 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                 </div>
               )}
 
-              <button 
-                onClick={handleConfirmCheckout}
-                disabled={paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98]"
-              >
-                Confirm Payment & Checkout
-                <ArrowRight size={18} />
-              </button>
+              {invoiceData?.isEarlyExit ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-200">
+                    <div className="flex items-center gap-1.5 font-bold mb-1 text-cyan-300">
+                      <PauseCircle size={15} className="text-cyan-400" />
+                      <span>Early Departure Choice</span>
+                      <span className="ml-auto rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] font-mono text-cyan-300 border border-cyan-400/30">
+                        {invoiceData.remainingHours || 0}h Left
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-cyan-100/70">
+                      Booking valid until {invoiceData.bookingEnd ? new Date(invoiceData.bookingEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'scheduled end'}. Pause to keep slot for return, or complete session now.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button 
+                      onClick={() => handleConfirmCheckout(true)}
+                      disabled={paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-cyan-500 py-3.5 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(6,182,212,0.2)] transition-all hover:bg-cyan-400 active:scale-[0.98] disabled:opacity-50 text-xs"
+                    >
+                      <PauseCircle size={16} />
+                      Pause (Keep Slot)
+                    </button>
+                    <button 
+                      onClick={() => handleConfirmCheckout(false)}
+                      disabled={paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 py-3.5 font-extrabold uppercase tracking-wider text-white transition-all hover:bg-white/20 active:scale-[0.98] disabled:opacity-50 text-xs"
+                    >
+                      End Session
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => handleConfirmCheckout(false)}
+                  disabled={paymentMethod === 'CASH' && invoiceData.totalAmount > 0 && Number(cashReceivedAmount) < Number(invoiceData.totalAmount)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ffd555] py-4 font-extrabold uppercase tracking-wider text-[#080808] shadow-[0_0_20px_rgba(255,213,85,0.18)] transition-all hover:bg-[#ffe58a] active:scale-[0.98] disabled:opacity-50"
+                >
+                  Confirm Payment & Checkout
+                  <ArrowRight size={18} />
+                </button>
+              )}
             </div>
           )}
 
@@ -358,8 +435,14 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
               <div className="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center border border-emerald-500/50 mb-6">
                 <Check size={40} strokeWidth={3} />
               </div>
-              <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-wide">Checkout Success</h3>
-              <p className="text-gray-400">Vehicle is clear to exit.</p>
+              <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-wide">
+                {completedCheckout?.bookingStatus === 'PAUSED' || completedCheckout?.isPaused ? 'Session Paused' : 'Checkout Success'}
+              </h3>
+              <p className="text-gray-400">
+                {completedCheckout?.bookingStatus === 'PAUSED' || completedCheckout?.isPaused
+                  ? `Slot ${session.parkingSlot} is retained. Vehicle can return anytime.`
+                  : 'Vehicle is clear to exit.'}
+              </p>
               {completedCheckout?.changeAmount != null && (
                 <p className="mt-3 text-lg font-bold text-emerald-300">
                   Change: {Number(completedCheckout.changeAmount).toLocaleString()} VND

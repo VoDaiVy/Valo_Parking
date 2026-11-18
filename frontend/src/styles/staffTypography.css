@@ -223,3 +223,37 @@ body[data-valo-typography="staff"],
 body[data-valo-typography="staff"] * { scrollbar-width: none !important; }
 body[data-valo-typography="staff"]::-webkit-scrollbar,
 body[data-valo-typography="staff"] *::-webkit-scrollbar { display: none; }
+
+/* Realtime Gate Activity Fly-to-Nav Pulse Animation */
+@keyframes sidebarGateGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.9), 0 0 15px rgba(52, 211, 153, 0.8);
+    transform: scale(1);
+    background-color: rgba(16, 185, 129, 0.25);
+    border-color: #34d399;
+  }
+  30% {
+    box-shadow: 0 0 35px 12px rgba(16, 185, 129, 0.85), inset 0 0 15px rgba(52, 211, 153, 0.6);
+    transform: scale(1.14);
+    background-color: rgba(16, 185, 129, 0.45);
+    border-color: #6ee7b7;
+  }
+  65% {
+    box-shadow: 0 0 20px 6px rgba(16, 185, 129, 0.5);
+    transform: scale(1.05);
+    background-color: rgba(16, 185, 129, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    transform: scale(1);
+    background-color: transparent;
+    border-color: transparent;
+  }
+}
+
+.sidebar-gate-pulse-glow {
+  animation: sidebarGateGlow 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  border-color: rgba(16, 185, 129, 0.9) !important;
+  z-index: 50 !important;
+  position: relative !important;
+}

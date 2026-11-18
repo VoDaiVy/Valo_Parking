@@ -3,10 +3,12 @@ import os
 import serial
 import serial.tools.list_ports
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 # ====================================================
 # VALO PARKING - PYTHON IOT DUAL-GATE CONTROLLER
 # Quản lý đồng thời 2 Cổng độc lập: ENTRY_1 & EXIT_1
+# Hỗ trợ SONG SONG cả 2 Môi trường: CLOUD (Render) & LOCAL
 # ====================================================
 
 # Tự động nạp cấu hình từ backend/.env nếu có
@@ -35,8 +37,34 @@ _load_env_file()
 
 SERIAL_PORT = '/dev/cu.usbserial-0001'
 BAUD_RATE = 115200
-BACKEND_STATUS_URL = 'http://127.0.0.1:5001/api/iot/barrier-status'
-BACKEND_CLOSE_URL = 'http://127.0.0.1:5001/api/iot/bridge/close-barrier'
+
+# 2 Môi trường Backend (Cloud Render + Localhost)
+RENDER_URL = (os.getenv('CLOUD_BACKEND_URL') or 'https://valoparking-server.onrender.com').rstrip('/')
+LOCAL_URL = (os.getenv('LOCAL_BACKEND_URL') or 'http://127.0.0.1:5001').rstrip('/')
+
+TARGET_BACKENDS = [
+    {
+        'id': 'render',
+        'name': 'Cloud (Render)',
+        'base_url': RENDER_URL,
+        'status_url': f"{RENDER_URL}/api/iot/barrier-status",
+        'close_url': f"{RENDER_URL}/api/iot/bridge/close-barrier",
+        'timeout': 3.5,
+        'is_online': False,
+        'last_log_time': 0
+    },
+    {
+        'id': 'local',
+        'name': 'Localhost',
+        'base_url': LOCAL_URL,
+        'status_url': f"{LOCAL_URL}/api/iot/barrier-status",
+        'close_url': f"{LOCAL_URL}/api/iot/bridge/close-barrier",
+        'timeout': 1.5,
+        'is_online': False,
+        'last_log_time': 0
+    }
+]
+
 BRIDGE_TOKEN = os.getenv('IOT_BRIDGE_TOKEN') or os.getenv('JWT_SECRET') or os.getenv('SESSION_QR_SECRET') or 'valo_parking_jwt_secret_key_2026_super_secure'
 
 
@@ -70,18 +98,66 @@ def connect_serial():
 
         print(f"✅ ĐÃ KẾT NỐI THÀNH CÔNG VỚI ESP32 DUAL-GATE TẠI: {port}")
         return ser
-    except Exception as e:
+    except Exception:
         return None
 
+def notify_all_backends_close(closed_gate, executor):
+    """Gửi thông báo đóng barrier về TẤT CẢ các backend (Cloud + Local) cùng lúc"""
+    def send_close(backend):
+        try:
+            res_close = requests.post(
+                backend['close_url'],
+                json={'fromBridge': True, 'gate': closed_gate},
+                headers={'x-bridge-token': BRIDGE_TOKEN},
+                timeout=backend['timeout']
+            )
+            if res_close.status_code == 200:
+                print(f"✅ [{backend['name']}] Đồng bộ trạng thái ĐÓNG ({closed_gate}) thành công!")
+            else:
+                print(f"⚠️ [{backend['name']}] Lỗi đóng ({closed_gate}): HTTP {res_close.status_code}")
+        except Exception as e_close:
+            pass
+
+    executor.map(send_close, TARGET_BACKENDS)
+
+def poll_backend_status(backend, esp_ready, port):
+    """Thăm dò trạng thái barrier từ một backend"""
+    try:
+        res = requests.get(
+            backend['status_url'],
+            params={
+                'esp': '1' if esp_ready else '0',
+                'port': port if esp_ready else ''
+            },
+            headers={'x-bridge-token': BRIDGE_TOKEN},
+            timeout=backend['timeout']
+        )
+        if res.status_code == 200:
+            data = res.json()
+            if data.get('success'):
+                backend['is_online'] = True
+                return (backend, data, None)
+        backend['is_online'] = False
+        return (backend, None, f"HTTP {res.status_code}")
+    except Exception as e:
+        backend['is_online'] = False
+        return (backend, None, str(e))
+
 def main():
-    print("=" * 65)
+    print("=" * 70)
     print("🚗 VALO PARKING - BỘ ĐIỀU KHIỂN CỔNG BARRIER DUAL-GATE (2 CỔNG) 🚗")
-    print("=" * 65)
+    print("🌐 CHẾ ĐỘ HYBRID SONG SONG: CLOUD RENDER & LOCALHOST")
+    print(f"   • Cloud Backend: {RENDER_URL}")
+    print(f"   • Local Backend: {LOCAL_URL}")
+    print("=" * 70)
 
     ser = None
+    executor = ThreadPoolExecutor(max_workers=4)
+
+    # Theo dõi triggerId độc lập cho từng backend để tránh xung đột id
     last_trigger_ids = {
-        'ENTRY_1': None,
-        'EXIT_1': None
+        'render': {'ENTRY_1': None, 'EXIT_1': None},
+        'local': {'ENTRY_1': None, 'EXIT_1': None}
     }
     was_hold_states = {
         'ENTRY_1': False,
@@ -138,58 +214,37 @@ def main():
                                 closed_gate = 'ENTRY_1'
 
                             if closed_gate:
-                                print(f"🔒 [BRIDGE SYNC] Cổng {closed_gate} đã đóng xong -> Gửi thông báo về Web App...")
-                                try:
-                                    res_close = requests.post(
-                                        BACKEND_CLOSE_URL,
-                                        json={'fromBridge': True, 'gate': closed_gate},
-                                        headers={'x-bridge-token': BRIDGE_TOKEN},
-                                        timeout=2
-                                    )
-                                    if res_close.status_code == 200:
-                                        data_close = res_close.json()
-                                        last_trigger_ids[closed_gate] = data_close.get('data', {}).get('triggerId', last_trigger_ids[closed_gate])
-                                        print(f"✅ [BRIDGE SYNC] Đồng bộ trạng thái ĐÓNG ({closed_gate}) thành công!")
-                                    else:
-                                        print(f"❌ [BRIDGE SYNC ERROR] Không thể đồng bộ trạng thái ĐÓNG ({closed_gate}) về Web! HTTP {res_close.status_code}: {res_close.text}")
-                                except Exception as e_close:
-                                    print(f"⚠️ Lỗi gửi close-barrier cho {closed_gate}: {e_close}")
+                                print(f"🔒 [BRIDGE SYNC] Cổng {closed_gate} đã đóng xong -> Đồng bộ về cả Cloud & Local...")
+                                notify_all_backends_close(closed_gate, executor)
 
             # 2. XỬ LÝ TỰ ĐỘNG ĐÓNG CỔNG Ở CHẾ ĐỘ GIẢ LẬP (NẾU CHƯA CẮM ESP32)
             for g_name, opened_time in list(virtual_gate_opened_at.items()):
                 if opened_time > 0 and (now - opened_time >= 4.0):
                     virtual_gate_opened_at[g_name] = 0
                     print(f"🔒 [MÔ PHỎNG XE QUA CỔNG] Xe đã chạy qua cổng {g_name} -> Tự động đóng barrier và báo Kiosk về trang chủ...")
-                    try:
-                        res_close = requests.post(
-                            BACKEND_CLOSE_URL,
-                            json={'fromBridge': True, 'gate': g_name},
-                            headers={'x-bridge-token': BRIDGE_TOKEN},
-                            timeout=2
-                        )
-                        if res_close.status_code == 200:
-                            data_close = res_close.json()
-                            last_trigger_ids[g_name] = data_close.get('data', {}).get('triggerId', last_trigger_ids[g_name])
-                            print(f"✅ [MÔ PHỎNG XE QUA CỔNG] Đã đồng bộ trạng thái ĐÓNG ({g_name}) về Backend & Kiosk thành công!")
-                        else:
-                            print(f"❌ [MÔ PHỎNG SYNC ERROR] HTTP {res_close.status_code}: {res_close.text}")
-                    except Exception as e_virt_close:
-                        print(f"⚠️ Lỗi đóng cổng ảo {g_name}: {e_virt_close}")
+                    notify_all_backends_close(g_name, executor)
 
-            # 3. ĐỒNG BỘ TRẠNG THÁI 2 CỔNG & HEARTBEAT PHẦN CỨNG TỪ BACKEND
+            # 3. ĐỒNG BỘ TRẠNG THÁI TỪ CẢ 2 BACKEND (PARALLEL CONCURRENT FETCH)
             esp_ready = bool(ser and ser.is_open)
-            res = requests.get(
-                BACKEND_STATUS_URL,
-                params={
-                    'esp': '1' if esp_ready else '0',
-                    'port': getattr(ser, 'port', '') if esp_ready else ''
-                },
-                headers={'x-bridge-token': BRIDGE_TOKEN},
-                timeout=5
-            )
-            if res.status_code == 200:
-                data = res.json()
-                if data.get('success'):
+            current_port = getattr(ser, 'port', '') if esp_ready else ''
+
+            futures = [
+                executor.submit(poll_backend_status, b, esp_ready, current_port)
+                for b in TARGET_BACKENDS
+            ]
+
+            for future in futures:
+                backend, data, err = future.result()
+                b_id = backend['id']
+                b_name = backend['name']
+
+                if err:
+                    if now - backend['last_log_time'] >= 15.0:
+                        backend['last_log_time'] = now
+                        print(f"ℹ️ [{b_name}]: Đang thử kết nối... ({err})")
+                    continue
+
+                if data and data.get('success'):
                     gates = data.get('gates', {})
                     if not gates:
                         single = data.get('data', {})
@@ -206,48 +261,48 @@ def main():
                         force_close = gate_info.get('forceClose', False)
 
                         # Khởi tạo triggerId ban đầu
-                        if last_trigger_ids.get(norm_gate) is None:
+                        if last_trigger_ids[b_id].get(norm_gate) is None:
                             if should_open or is_hold or force_close:
-                                last_trigger_ids[norm_gate] = -1
+                                last_trigger_ids[b_id][norm_gate] = -1
                             else:
-                                last_trigger_ids[norm_gate] = trigger_id
+                                last_trigger_ids[b_id][norm_gate] = trigger_id
 
-                        # Phát hiện lệnh mới của cổng này
-                        if trigger_id != last_trigger_ids.get(norm_gate, 0):
+                        # Phát hiện lệnh mới từ backend này
+                        if trigger_id != last_trigger_ids[b_id].get(norm_gate, 0):
                             # A. LỆNH TẠM DỪNG / BẢO TRÌ
                             if is_hold:
-                                last_trigger_ids[norm_gate] = trigger_id
+                                last_trigger_ids[b_id][norm_gate] = trigger_id
                                 was_hold_states[norm_gate] = True
-                                print(f"\n⏸️ [PAUSE] Bật chế độ TẠM DỪNG tại {norm_gate}...")
+                                print(f"\n⏸️ [PAUSE từ {b_name}] Bật chế độ TẠM DỪNG tại {norm_gate}...")
                                 if ser and ser.is_open:
                                     ser.write(f"PAUSE|{norm_gate}\n".encode('utf-8'))
                                     ser.flush()
 
                             # B. LỆNH TIẾP TỤC HOẠT ĐỘNG
                             elif was_hold_states.get(norm_gate, False) and not is_hold and not force_close:
-                                last_trigger_ids[norm_gate] = trigger_id
+                                last_trigger_ids[b_id][norm_gate] = trigger_id
                                 was_hold_states[norm_gate] = False
-                                print(f"\n▶️ [RESUME] Tiếp tục hoạt động bình thường tại {norm_gate}...")
+                                print(f"\n▶️ [RESUME từ {b_name}] Tiếp tục hoạt động bình thường tại {norm_gate}...")
                                 if ser and ser.is_open:
                                     ser.write(f"RESUME|{norm_gate}\n".encode('utf-8'))
                                     ser.flush()
 
-                            # C. LỆNH ĐÓNG CỔNG (TỪ NÚT ĐÓNG CỔNG HOẶC HỆ THỐNG)
+                            # C. LỆNH ĐÓNG CỔNG
                             elif not should_open:
-                                last_trigger_ids[norm_gate] = trigger_id
+                                last_trigger_ids[b_id][norm_gate] = trigger_id
                                 was_hold_states[norm_gate] = False
                                 virtual_gate_opened_at[norm_gate] = 0
                                 cmd_str = "FORCE_CLOSE" if force_close else "CLOSE"
-                                print(f"\n🔒 [GATE CLOSE] Đóng cổng {norm_gate} (Lệnh: {cmd_str})...")
+                                print(f"\n🔒 [GATE CLOSE từ {b_name}] Đóng cổng {norm_gate} (Lệnh: {cmd_str})...")
                                 if ser and ser.is_open:
                                     ser.write(f"{cmd_str}|{norm_gate}\n".encode('utf-8'))
                                     ser.flush()
 
                             # D. LỆNH MỞ CỔNG TỪ KIOSK HOẶC STAFF
                             elif should_open:
-                                last_trigger_ids[norm_gate] = trigger_id
+                                last_trigger_ids[b_id][norm_gate] = trigger_id
                                 was_hold_states[norm_gate] = False
-                                print(f"\n🎉 [GATE OPEN] Mở cổng {norm_gate}! Biển số: {plate} | Ô: {slot}")
+                                print(f"\n🎉 [GATE OPEN từ {b_name}] Mở cổng {norm_gate}! Biển số: {plate} | Ô: {slot}")
                                 
                                 if ser and ser.is_open:
                                     cmd = f"OPEN|{plate}|{slot}|{norm_gate}\n"
@@ -260,9 +315,9 @@ def main():
 
                             # E. Đồng bộ triggerId
                             else:
-                                last_trigger_ids[norm_gate] = trigger_id
+                                last_trigger_ids[b_id][norm_gate] = trigger_id
 
-                    # 4. ĐỒNG BỘ CÔNG SUẤT BÃI XE CHO MÀN HÌNH LCD THỨ 3 (NẾU CÓ DỮ LIỆU)
+                    # 4. ĐỒNG BỘ CÔNG SUẤT BÃI XE CHO MÀN HÌNH LCD THỨ 3 (NẾU CÓ)
                     capacity_data = data.get('capacity')
                     if capacity_data and isinstance(capacity_data, dict):
                         c_avail = int(capacity_data.get('available', 0))
@@ -275,7 +330,6 @@ def main():
                             c_total != last_capacity['total']
                         )
 
-                        # Gửi ngay khi có thay đổi công suất, hoặc gửi định kỳ mỗi 30s (heartbeat)
                         if has_changed or (now - last_capacity_sync_time >= 30.0):
                             last_capacity = {'available': c_avail, 'occupied': c_occ, 'total': c_total}
                             last_capacity_sync_time = now
@@ -284,12 +338,8 @@ def main():
                                 ser.write(cmd_cap.encode('utf-8'))
                                 ser.flush()
                             if has_changed:
-                                print(f"📊 [LCD CAPACITY] Gate Display: Available {c_avail} | Occupied {c_occ} | Total {c_total}")
+                                print(f"📊 [LCD CAPACITY ({b_name})] Available {c_avail} | Occupied {c_occ} | Total {c_total}")
 
-        except requests.exceptions.RequestException as req_err:
-            if now - last_reconnect_check >= 3.0:
-                print(f"⚠️ [BRIDGE HTTP TIMEOUT/ERROR]: Không thể lấy dữ liệu từ Backend ({req_err})")
-                last_reconnect_check = now
         except (serial.SerialException, OSError) as se:
             print(f"⚠️ Mất kết nối USB ({se}). Đang tự động kết nối lại...")
             if ser:
@@ -300,7 +350,7 @@ def main():
             ser = None
             time.sleep(1.5)
         except Exception as e:
-            print(f"⚠️ Lỗi: {e}")
+            print(f"⚠️ Lỗi vòng lặp chính: {e}")
             if "device not configured" in str(e).lower() or "bad file descriptor" in str(e).lower():
                 ser = None
 

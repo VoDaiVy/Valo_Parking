@@ -31,6 +31,14 @@ const { buildAccountMembershipQrPayload } = require('../services/membershipQrSer
 const { buildCheckoutChallenge } = require('../services/checkoutChallengeService');
 const sessionController = require('../controllers/sessionController');
 const bookingController = require('../controllers/bookingController');
+const emailUtils = require('../utils/emailUtils');
+const notifTriggers = require('../services/notificationTriggers');
+
+emailUtils.sendCheckoutEmail = async () => {};
+emailUtils.sendKioskCheckInEmail = async () => {};
+notifTriggers.notifyVehicleExit = async () => {};
+notifTriggers.notifyPaymentSuccess = async () => {};
+notifTriggers.notifyVehicleEntry = async () => {};
 
 const oid = (hex) => new mongoose.Types.ObjectId(hex);
 
@@ -117,6 +125,102 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
       assert.equal(res.state.body.data.isBookingReallocation, true);
       assert.equal(res.state.body.data.originalSlot, 'A-01');
       assert.equal(res.state.body.data.assignedSlot, null);
+    } finally {
+      restore();
+    }
+  });
+
+  test('verifyPlate identifies PAUSED booking resuming, calculates remaining time, and preserves reserved slot without forcing map reselection', async () => {
+    const floorId = oid('507f1f77bcf86cd799439021');
+    const bookingId = oid('507f1f77bcf86cd799439022');
+    const now = Date.now();
+
+    const bookingDoc = {
+      _id: bookingId,
+      licensePlate: '30A12345',
+      status: 'PAUSED',
+      parkingSlot: 'A-05',
+      durationHours: 3,
+      floorId: { _id: floorId, name: 'Floor 1' },
+      scheduledStart: new Date(now - 60 * 60 * 1000),
+      scheduledEnd: new Date(now + 120 * 60 * 1000),
+    };
+
+    let bookingCallCount = 0;
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(null)],
+      [Vehicle, 'findOne', () => queryable(null)],
+      [Booking, 'findOne', () => {
+        bookingCallCount++;
+        return queryable(bookingCallCount === 1 ? bookingDoc : null);
+      }],
+      [Slot, 'findOne', () => queryable({ _id: oid('507f1f77bcf86cd799439055'), status: 'booked', aiObservation: { occupied: false } })],
+    ]);
+
+    try {
+      const req = { body: { licensePlate: '30A-123.45' } };
+      const res = createRes();
+      await sessionController.verifyPlate(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.hasPreBooking, true);
+      assert.equal(res.state.body.data.isPausedResume, true);
+      assert.equal(res.state.body.data.requiresSlotReallocation, false);
+      assert.equal(res.state.body.data.assignedSlot, 'A-05');
+      assert.equal(res.state.body.data.remainingHours, 2);
+    } finally {
+      restore();
+    }
+  });
+
+  test('verifyPlate auto-reallocates conflict-free replacement slot when PAUSED booking slot is blocked by unauthorized vehicle', async () => {
+    const floorId = oid('507f1f77bcf86cd799439021');
+    const bookingId = oid('507f1f77bcf86cd799439022');
+    const now = Date.now();
+
+    const bookingDoc = {
+      _id: bookingId,
+      licensePlate: '30A12345',
+      status: 'PAUSED',
+      parkingSlot: 'A-05',
+      durationHours: 3,
+      floorId: { _id: floorId, name: 'Floor 1' },
+      scheduledStart: new Date(now - 60 * 60 * 1000),
+      scheduledEnd: new Date(now + 120 * 60 * 1000),
+    };
+
+    let bookingCallCount = 0;
+    const restore = stubMany([
+      [Session, 'findOne', (q) => {
+        if (q?.floorId && q?.parkingSlot === 'A-05' && q?.status === 'active') {
+          return queryable({ _id: oid('507f1f77bcf86cd799439091'), licensePlate: '99A99999' });
+        }
+        return queryable(null);
+      }],
+      [Vehicle, 'findOne', () => queryable(null)],
+      [Booking, 'findOne', () => {
+        bookingCallCount++;
+        return queryable(bookingCallCount === 1 ? bookingDoc : null);
+      }],
+      [Slot, 'findOne', () => queryable({ _id: oid('507f1f77bcf86cd799439055'), status: 'occupied' })],
+      [bookingController, 'getAvailableSlotsForRange', async () => [
+        { floorId, floorName: 'Floor 1', slotCode: 'A-06' },
+        { floorId, floorName: 'Floor 1', slotCode: 'A-07' },
+      ]],
+    ]);
+
+    try {
+      const req = { body: { licensePlate: '30A-123.45' } };
+      const res = createRes();
+      await sessionController.verifyPlate(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.hasPreBooking, true);
+      assert.equal(res.state.body.data.isPausedResume, true);
+      assert.equal(res.state.body.data.slotAutoReallocated, true);
+      assert.equal(res.state.body.data.originalSlot, 'A-05');
+      assert.equal(res.state.body.data.assignedSlot, 'A-06');
+      assert.equal(res.state.body.data.requiresSlotReallocation, false);
     } finally {
       restore();
     }
