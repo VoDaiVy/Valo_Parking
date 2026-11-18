@@ -356,6 +356,7 @@ export default function StaffDashboard() {
   const lotDiagnostics = buildStaffLotDiagnostics({
     metrics: dashboardMetrics,
     availability: operationalStatus,
+    t,
   });
   const revenueState = getOperationalViewState({
     loading,

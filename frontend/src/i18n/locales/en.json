@@ -114,6 +114,7 @@
     ,"and": "and"
   },
   "nav": {
+    "feedback": "Customer Feedback",
     "home": "Home",
     "parking": "Parking",
     "bookings": "Bookings",
@@ -366,6 +367,10 @@
   "servicesPage": {
     "loadError": "Unable to load services. Please try again later.",
     "catalog": {
+      "tireCare": {"name":"Tire Balancing & Rotation"},
+      "oilChange": {"name":"Oil & Filter Change"},
+      "airConditioning": {"name":"A/C System Cleaning & Odor Removal"},
+      "engineDetailing": {"name":"Engine Bay Detailing"},
       "paintPolishing": {
         "name": "Paint Polishing & Scratch Removal",
         "description": "Polishing the paint surface to restore gloss and remove light swirl marks or minor scratches."
@@ -1817,5 +1822,163 @@
     "increaseBase": "Increase the applicable base fee by {{percent}}%.",
     "noPolicySelected": "No Policy Selected",
     "selectPolicy": "Select a policy or use Add policy to create one."
+  },
+  "adminFeedback": {
+    "customerExperience": "Customer experience",
+    "bookingFeedback": "Booking feedback",
+    "reviewCustomerExperiencesAndRespondAsValoParkingAllDatesUseVietnamTime": "Review customer experiences and respond as Valo Parking. All dates use Vietnam time.",
+    "totalReviews": "Total reviews",
+    "averageRating": "Average rating",
+    "12StarReviews": "1–2 star reviews",
+    "awaitingResponse": "Awaiting response",
+    "bookingIdOrUsername": "Booking ID or username",
+    "rating": "Rating",
+    "topic": "Topic",
+    "responseStatus": "Response status",
+    "allRatings": "All ratings",
+    "allTopics": "All topics",
+    "allResponses": "All responses",
+    "responded": "Responded",
+    "fromDate": "From date",
+    "toDateExclusive": "To date (exclusive)",
+    "applyFilters": "Apply filters",
+    "reset": "Reset",
+    "retry": "Retry",
+    "loadingFeedback": "Loading feedback…",
+    "customerBooking": "Customer / booking",
+    "feedback": "Feedback",
+    "sent": "Sent",
+    "response": "Response",
+    "action": "Action",
+    "deletedCustomer": "Deleted customer",
+    "deletedBooking": "Deleted booking",
+    "noWrittenComment": "No written comment",
+    "viewRespond": "View / respond",
+    "noFeedbackMatchesTheseFilters": "No feedback matches these filters.",
+    "feedbackPagination": "Feedback pagination",
+    "previous": "Previous",
+    "next": "Next",
+    "feedbackDetails": "Feedback details",
+    "close": "Close",
+    "booking": "Booking",
+    "loadLatestResponseKeepMyDraft": "Load latest response (keep my draft)",
+    "loadingCurrentResponse": "Loading current response…",
+    "retryLoadingDetails": "Retry loading details",
+    "thisFeedbackIsReadOnlyBecauseItsCustomerOrBookingWasDeleted": "This feedback is read-only because its customer or booking was deleted.",
+    "valoParkingResponse": "Valo Parking response",
+    "officialResponseValoParking": "Official response · Valo Parking",
+    "currentPublishedResponse": "Current published response",
+    "loadTheLatestVersionBeforeSavingYourDraftAgain": "Load the latest version before saving your draft again.",
+    "saving": "Saving…",
+    "updateResponse": "Update response",
+    "sendResponse": "Send response",
+    "internalResponseHistory": "Internal response history",
+    "couldNotLoadFeedback": "Could not load feedback.",
+    "couldNotLoadFeedbackDetails": "Could not load feedback details.",
+    "couldNotSaveResponseYourDraftIsPreserved": "Could not save response. Your draft is preserved.",
+    "stars": "{{count}} stars",
+    "stars_one": "{{count}} star",
+    "paginationSummary": "{{count}} reviews · Page {{page}}",
+    "paginationSummary_one": "{{count}} review · Page {{page}}",
+    "paginationLabel": "Feedback pagination",
+    "slot": "Slot",
+    "replyHint": "{{count}}/2000 · Only the first response sends a notification.",
+    "revision": "Revision {{revision}}",
+    "categories": {
+      "parking": "Parking",
+      "staff": "Staff",
+      "payment": "Payment",
+      "app": "Application",
+      "other": "Other"
+    },
+    "bookingStatus": {
+      "PENDING": "Pending",
+      "PAID": "Paid",
+      "ACTIVE": "Active",
+      "PAUSED": "Paused",
+      "EXPIRED": "Expired",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled"
+    }
+  },
+  "notificationUi": {
+    "loaded": "{{shown}} shown · {{loaded}}/{{total}} loaded",
+    "space": "Space {{slot}}",
+    "reason": "Reason:",
+    "priority": {
+      "INFO": "Information",
+      "SUCCESS": "Success",
+      "WARNING": "Warning",
+      "ERROR": "Error",
+      "SYSTEM": "System"
+    },
+    "type": {
+      "PARKING": "Parking",
+      "SYSTEM": "System",
+      "PROMOTION": "Promotion",
+      "PAYMENT": "Payment",
+      "BOOKING": "Booking",
+      "GENERAL": "General"
+    },
+    "status": {
+      "SENT": "Sent",
+      "sent": "Sent",
+      "PENDING": "Pending",
+      "pending": "Pending",
+      "FAILED": "Failed",
+      "failed": "Failed",
+      "SCHEDULED": "Scheduled",
+      "scheduled": "Scheduled"
+    },
+    "roles": {
+      "customer": "Customer",
+      "staff": "Staff",
+      "admin": "Admin"
+    },
+    "events": {
+      "requested": "Service requested",
+      "started": "Service started",
+      "completed": "Service completed",
+      "cancelled": "Service cancelled",
+      "membershipRequested": "Membership service requested",
+      "membershipUpdated": "Membership service updated"
+    },
+    "services": {
+      "wash": "Car Wash & Interior Vacuuming",
+      "glass": "Glass Water Spot Removal & Coating",
+      "polish": "Paint Polishing & Scratch Removal"
+    },
+    "serviceStatus": {
+      "pending": "Pending",
+      "in_progress": "In progress",
+      "done": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "usage": {
+      "reserved": "1 included use has been reserved.",
+      "applied": "1 included use has been applied.",
+      "returned": "1 included use has been returned to its original service period.",
+      "noExtra": "No additional included use has been deducted."
+    }
+  },
+  "staffLotDiagnostics": {
+    "unavailable": "Operational diagnostics unavailable. {{error}}",
+    "syncFailed": "Data synchronization failed",
+    "attention": "Requires attention",
+    "database": "Database status",
+    "today": "Today",
+    "noFloor": "Floor configuration unavailable",
+    "noLayout": "Floor layout unavailable",
+    "activeNow": "Active now",
+    "unknownFloor": "Unknown",
+    "messages": {
+      "overdue": "{{count}} active session(s) exceeded their expected duration.",
+      "maintenance": "{{count}} slot(s) under maintenance: {{slots}}",
+      "cancellations": "{{count}} booking(s) cancelled today. Please review cancellation logs.",
+      "no-floor": "No parking floor configuration is available for capacity diagnostics.",
+      "no-floor-slots": "Floor {{floor}} has no configured slots for capacity diagnostics.",
+      "capacity-warning": "Lot {{floor}} is nearing capacity ({{rate}}%). Consider diverting incoming traffic.",
+      "capacity-healthy": "Lot {{floor}} capacity is optimal ({{rate}}%)."
+    }
   }
 }

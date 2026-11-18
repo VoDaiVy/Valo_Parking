@@ -1,3 +1,4 @@
+import { serviceName, serviceDescription } from '../../utils/servicePresentation';
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, Transition } from '@headlessui/react';
@@ -94,7 +95,8 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
 
 // --- Main Component -----------------------------------------------------------
 const AdminServiceManager = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const serviceIdQuery = searchParams.get('serviceId');
@@ -190,8 +192,9 @@ const AdminServiceManager = () => {
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase();
       result = result.filter(s => 
-        s.name.toLowerCase().includes(lowerSearch) || 
-        s.description.toLowerCase().includes(lowerSearch)
+        s.name.toLowerCase().includes(lowerSearch) ||
+        serviceName(s, t).toLowerCase().includes(lowerSearch) || 
+        (s.description || '').toLowerCase().includes(lowerSearch) || serviceDescription(s, t).toLowerCase().includes(lowerSearch)
       );
     }
 
@@ -205,13 +208,13 @@ const AdminServiceManager = () => {
         case 'oldest': return new Date(a.createdAt) - new Date(b.createdAt);
         case 'price_desc': return b.price - a.price;
         case 'price_asc': return a.price - b.price;
-        case 'name_asc': return a.name.localeCompare(b.name);
+        case 'name_asc': return serviceName(a, t).localeCompare(serviceName(b, t), locale);
         default: return 0;
       }
     });
 
     return result;
-  }, [services, searchTerm, statusFilter, sortBy]);
+  }, [services, searchTerm, statusFilter, sortBy, t, locale]);
 
   // Handlers
   const handleInputChange = (e) => {
@@ -521,15 +524,15 @@ const AdminServiceManager = () => {
               </td></tr> : pageServices.map((service) => <tr key={service._id} ref={String(service._id).toLowerCase() === verifiedServiceId?.toLowerCase() ? linkedRowRef : undefined} className="services-row" onClick={() => openViewModal(service)}>
                 <td><div className="flex min-w-0 items-center gap-3">
                   {service.imageUrl ? <img src={service.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" /> : <Package size={20} className="shrink-0 text-white/40" aria-hidden="true" />}
-                  <span className="truncate text-white" title={service.name}>{service.name}</span>
+                  <span className="truncate text-white" title={serviceName(service, t)}>{serviceName(service, t)}</span>
                 </div></td>
-                <td className="text-[#e8d5ad]">{service.price.toLocaleString('vi-VN')} VND</td>
+                <td className="text-[#e8d5ad]">{service.price.toLocaleString(locale)} VND</td>
                 <td>{service.timeCost} {t('serviceMinuteShort', { defaultValue: 'min' })}</td>
                 <td><span className={`services-status inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${service.isActive ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-white/50'}`}><span className={`h-1.5 w-1.5 rounded-full ${service.isActive ? 'bg-emerald-400' : 'bg-white/30'}`} />{service.isActive ? t('serviceUi.activeStatus') : t('serviceUi.inactiveStatus')}</span></td>
                 <td onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-end gap-2">
-                  <button type="button" onClick={() => openViewModal(service)} className="services-view" aria-label={t('serviceUi.viewPanel', { name: service.name })}><Eye size={14} aria-hidden="true" /></button>
-                  <button type="button" onClick={() => openModal(service)} title={t('serviceUi.edit')} aria-label={`${t('serviceUi.edit')} ${service.name}`} className="services-icon text-[#e8d5ad]"><Pencil size={14} /></button>
-                  <button type="button" onClick={() => confirmDelete(service)} title={t('serviceUi.delete')} aria-label={`${t('serviceUi.delete')} ${service.name}`} className="services-icon text-red-400"><Trash2 size={14} /></button>
+                  <button type="button" onClick={() => openViewModal(service)} className="services-view" aria-label={t('serviceUi.viewPanel', { name: serviceName(service, t) })}><Eye size={14} aria-hidden="true" /></button>
+                  <button type="button" onClick={() => openModal(service)} title={t('serviceUi.edit')} aria-label={`${t('serviceUi.edit')} ${serviceName(service, t)}`} className="services-icon text-[#e8d5ad]"><Pencil size={14} /></button>
+                  <button type="button" onClick={() => confirmDelete(service)} title={t('serviceUi.delete')} aria-label={`${t('serviceUi.delete')} ${serviceName(service, t)}`} className="services-icon text-red-400"><Trash2 size={14} /></button>
                 </div></td>
               </tr>)}
             </tbody>
@@ -565,9 +568,9 @@ const AdminServiceManager = () => {
               </header>
               <div className="service-profile-content">
                 <div className="service-profile-identity">
-                  <img src={viewingService.imageUrl} alt={viewingService.name} />
+                  <img src={viewingService.imageUrl} alt={serviceName(viewingService, t)} />
                   <div className="min-w-0">
-                    <h2>{viewingService.name}</h2>
+                    <h2>{serviceName(viewingService, t)}</h2>
                     {viewingService.isActive ? (
                       <span className="service-profile-status inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{t('serviceUi.activeService')}</span>
                     ) : (
@@ -576,18 +579,18 @@ const AdminServiceManager = () => {
                   </div>
                 </div>
                 <div className="service-profile-facts">
-                  <div><p className="service-profile-label"><DollarSign size={15} className="text-[#e8d5ad]" aria-hidden="true" />{t('serviceUi.pricing')}</p><p className="service-profile-price">{viewingService.price.toLocaleString('vi-VN')} VND</p></div>
+                  <div><p className="service-profile-label"><DollarSign size={15} className="text-[#e8d5ad]" aria-hidden="true" />{t('serviceUi.pricing')}</p><p className="service-profile-price">{viewingService.price.toLocaleString(locale)} VND</p></div>
                   <div><p className="service-profile-label"><Clock size={15} className="text-slate-400" aria-hidden="true" />{t('serviceUi.duration')}</p><p className="service-profile-duration">{viewingService.timeCost}<span>{t('serviceMinuteShort', { defaultValue: 'min' })}</span></p></div>
                 </div>
                 <section className="service-profile-description">
                   <h4>{t('serviceUi.serviceDescription')}</h4>
-                  <div><p>{viewingService.description}</p></div>
+                  <div><p>{serviceDescription(viewingService, t)}</p></div>
                 </section>
                 <section className="service-profile-system">
                   <h4>{t('serviceUi.systemInfo')}</h4>
                   <div className="service-profile-system-rows">
-                    <div><span><Calendar size={14} aria-hidden="true" />{t('serviceUi.addedDate')}</span><time dateTime={viewingService.createdAt}>{new Date(viewingService.createdAt).toLocaleDateString()}</time></div>
-                    {viewingService.updatedAt && <div><span><Pencil size={14} aria-hidden="true" />{t('serviceUi.lastUpdated')}</span><time dateTime={viewingService.updatedAt}>{new Date(viewingService.updatedAt).toLocaleDateString()}</time></div>}
+                    <div><span><Calendar size={14} aria-hidden="true" />{t('serviceUi.addedDate')}</span><time dateTime={viewingService.createdAt}>{new Date(viewingService.createdAt).toLocaleDateString(locale, { timeZone: 'Asia/Ho_Chi_Minh' })}</time></div>
+                    {viewingService.updatedAt && <div><span><Pencil size={14} aria-hidden="true" />{t('serviceUi.lastUpdated')}</span><time dateTime={viewingService.updatedAt}>{new Date(viewingService.updatedAt).toLocaleDateString(locale, { timeZone: 'Asia/Ho_Chi_Minh' })}</time></div>}
                   </div>
                 </section>
               </div>

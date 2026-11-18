@@ -145,8 +145,8 @@ function LoadingRows() {
 function StatusBadge({ status }) {
   const { t } = useLanguage();
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${getStatusClass(status)}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${status === 'active' ? 'bg-emerald-300' : status === 'pending' ? 'bg-amber-300' : status === 'expired' ? 'bg-slate-400' : 'bg-rose-300'}`} />
+    <span className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-black ${getStatusClass(status)}`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status === 'active' ? 'bg-emerald-300' : status === 'pending' ? 'bg-amber-300' : status === 'expired' ? 'bg-slate-400' : 'bg-rose-300'}`} />
       {t(`subscriptionStatus.${status}`, { defaultValue: titleCase(status) })}
     </span>
   );

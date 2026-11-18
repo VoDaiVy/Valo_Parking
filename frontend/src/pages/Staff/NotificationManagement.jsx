@@ -1,3 +1,4 @@
+import { notificationPresentation, notificationLabel } from '../../utils/notificationPresentation';
 import '../../components/Admin/adminGridBackground.css';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
@@ -386,6 +387,8 @@ function FeedTab({
       const q = query.toLowerCase();
       return (
         m.title?.toLowerCase().includes(q) ||
+        notificationPresentation(m, t).title?.toLowerCase().includes(q) ||
+        notificationPresentation(m, t).content?.toLowerCase().includes(q) ||
         m.content?.toLowerCase().includes(q) ||
         m.targetType?.toLowerCase().includes(q)
       );
@@ -405,13 +408,13 @@ function FeedTab({
       <div className="snm-toolbar flex flex-wrap items-center gap-2">
         {paginated ? (
           <Listbox value={filter} onChange={changeFilter}>
-            <ListboxButton className="snm-severity-select" aria-label={`${t("staffNotifications.filters.severity")}: ${filter === "ALL" ? t("staffNotifications.filters.allSeverities") : filter}`}>
-              <span>{filter === "ALL" ? t("staffNotifications.filters.allSeverities") : filter}</span><ChevronDown size={14} aria-hidden="true" />
+            <ListboxButton className="snm-severity-select" aria-label={`${t("staffNotifications.filters.severity")}: ${filter === "ALL" ? t("staffNotifications.filters.allSeverities") : notificationLabel('priority', filter, t)}`}>
+              <span>{filter === "ALL" ? t("staffNotifications.filters.allSeverities") : notificationLabel('priority', filter, t)}</span><ChevronDown size={14} aria-hidden="true" />
             </ListboxButton>
             <ListboxOptions anchor="bottom start" className="snm-severity-options">
               {["ALL", ...PRIORITIES].map(priority => (
-                <ListboxOption key={priority} value={priority} className="snm-severity-option">
-                  {({ selected }) => <><span>{priority === "ALL" ? t("staffNotifications.filters.allSeverities") : priority}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
+                <ListboxOption key={notificationLabel('priority', priority, t)} value={notificationLabel('priority', priority, t)} className="snm-severity-option">
+                  {({ selected }) => <><span>{priority === "ALL" ? t("staffNotifications.filters.allSeverities") : notificationLabel('priority', priority, t)}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
                 </ListboxOption>
               ))}
             </ListboxOptions>
@@ -419,7 +422,7 @@ function FeedTab({
         ) : <div className="snm-priority-filters contents">
         <FilterChip label={t("staffNotifications.filters.all")} active={filter === "ALL"} onClick={() => changeFilter("ALL")} />
         {PRIORITIES.map((p) => (
-          <FilterChip key={p} label={p} active={filter === p} onClick={() => changeFilter(p)} tone={p} />
+          <FilterChip key={p} label={notificationLabel('priority', p, t)} active={filter === p} onClick={() => changeFilter(p)} tone={p} />
         ))}
         </div>}
         <div className="snm-toolbar-spacer flex-1" />
@@ -440,7 +443,7 @@ function FeedTab({
           <div className="font-semibold text-white">{paginated ? t("staffNotifications.feed.received") : t("staffNotifications.feed.liveEvents")}</div>
           <div className="text-xs text-gray-400">
             {paginated ? (resultAvailable ? t("staffNotifications.feed.shown", { count: filtered.length }) : feedLoading ? t("staffNotifications.feed.loading") : t("staffNotifications.feed.countUnavailable")) : state.isAvailable
-              ? `${filtered.length} shown · ${notifications.length}/${total} loaded`
+              ? t('notificationUi.loaded', { shown: filtered.length, loaded: notifications.length, total })
               : t("staffNotifications.feed.countUnavailable")}
           </div>
         </div>
@@ -510,47 +513,48 @@ function FilterChip({ label, active, onClick, tone }) {
 }
 
 function MessageRow({ m, onOpen, t, language = "en" }) {
+  const display = notificationPresentation(m, t);
   const meta = PRIORITY_META[m.priority] || PRIORITY_META.INFO;
   const targetLabel = m.targetType === "ALL_USERS" ? t("staffNotifications.drawer.wholeSystem") :
-                      m.targetType === "ROLE_BASED" ? t("staffNotifications.drawer.role", { roles: (m.targetRoles || []).join(", ") }) :
+                      m.targetType === "ROLE_BASED" ? t("staffNotifications.drawer.role", { roles: (m.targetRoles || []).map(role => notificationLabel('roles', role, t)).join(', ') }) :
                       m.targetType === "MULTI_USER" ? t("staffNotifications.drawer.users", { count: m.targetUsers?.length || 0 }) :
                       m.targetType === "SINGLE_USER" ? t("staffNotifications.drawer.oneUser") : t("staffNotifications.drawer.system");
 
   if (onOpen) return (
-    <li className="snm-compact-event" data-priority={m.priority || "INFO"}>
-      <button type="button" className="snm-event-open" onClick={onOpen} aria-label={t("staffNotifications.drawer.view", { title: m.title || t("staffNotifications.drawer.untitled") })} aria-haspopup="dialog">
+    <li className="snm-compact-event" data-priority={notificationLabel('priority', m.priority || 'INFO', t)}>
+      <button type="button" className="snm-event-open" onClick={onOpen} aria-label={t("staffNotifications.drawer.view", { title: display.title || t("staffNotifications.drawer.untitled") })} aria-haspopup="dialog">
         <span className="snm-event-message">
-          <span className="snm-event-title">{m.title || t("staffNotifications.drawer.untitled")}</span>
-          <span className="snm-event-preview">{m.content || t("staffNotifications.drawer.noContent")}</span>
+          <span className="snm-event-title">{display.title || t("staffNotifications.drawer.untitled")}</span>
+          <span className="snm-event-preview">{display.content || t("staffNotifications.drawer.noContent")}</span>
         </span>
-        <span className="snm-event-severity">{meta.label}</span>
+        <span className="snm-event-severity">{notificationLabel('priority', meta.label, t)}</span>
         <span className="snm-event-recipient" title={targetLabel}><span className="sr-only">{t("staffNotifications.drawer.recipient")}: </span>{targetLabel}</span>
-        <span className="snm-event-status"><span className="sr-only">{t("staffNotifications.drawer.status")}: </span>{m.isRevoked ? t("staffNotifications.drawer.revoked") : m.status || t("staffNotifications.drawer.sent")}</span>
+        <span className="snm-event-status"><span className="sr-only">{t("staffNotifications.drawer.status")}: </span>{m.isRevoked ? t("staffNotifications.drawer.revoked") : m.status ? notificationLabel('status', m.status, t) : t("staffNotifications.drawer.sent")}</span>
         <time className="snm-event-time" dateTime={validNotificationDate(m.createdAt)?.toISOString()} title={notificationDate(m.createdAt, language, t)}>{validNotificationDate(m.createdAt) ? formatDistanceToNow(new Date(m.createdAt), { addSuffix: true, locale: language === "vi" ? vi : enUS }) : t("staffNotifications.drawer.timeUnavailable")}</time>
       </button>
     </li>
   );
 
   return (
-    <li data-priority={m.priority || "INFO"} className="snm-event px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
+    <li data-priority={notificationLabel('priority', m.priority || 'INFO', t)} className="snm-event px-5 py-4 flex items-start gap-4 bg-white/[0.02]">
       <div className={`w-10 h-10 rounded-lg border ${meta.bg} ${meta.color} ${meta.border} grid place-items-center text-xs font-bold shrink-0`}>
         {m.priority ? m.priority[0] : "I"}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-gray-100">{m.title}</span>
+          <span className="font-semibold text-gray-100">{display.title}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${meta.bg} ${meta.color} border ${meta.border}`}>
-            {meta.label}
+            {notificationLabel('priority', meta.label, t)}
           </span>
           <span className="text-[10px] px-1.5 py-0.5 rounded border border-white/10 text-gray-400">
-            {m.type || "SYSTEM"}
+            {notificationLabel('type', m.type || 'SYSTEM', t)}
           </span>
         </div>
-        <div className="text-sm text-gray-400 mt-1">{m.content}</div>
+        <div className="text-sm text-gray-400 mt-1">{display.content}</div>
         <div className="text-xs text-gray-500 mt-2 flex flex-wrap gap-x-3 gap-y-1">
           <span>{t("staffNotifications.drawer.user")} {targetLabel}</span>
           <span>-</span>
-          <span>{t("staffNotifications.drawer.statusPrefix")} {m.status || t("staffNotifications.drawer.sent")}</span>
+          <span>{t("staffNotifications.drawer.statusPrefix")} {m.status ? notificationLabel('status', m.status, t) : t("staffNotifications.drawer.sent")}</span>
           <span>-</span>
           <span>{m.createdAt ? formatDistanceToNow(new Date(m.createdAt), { addSuffix: true, locale: language === "vi" ? vi : enUS }) : t("staffNotifications.drawer.justNow")}</span>
         </div>
@@ -570,13 +574,14 @@ function notificationDate(value, language = "en", t = value => value) {
 }
 
 function NotificationDrawer({ notification: m, onClose, t, language = "en" }) {
+  const display = notificationPresentation(m, t);
   const scope = useLocation().pathname.startsWith('/admin/') ? 'admin' : 'staff';
   // Unpopulated database references belong in Technical Details, not the summary.
   const userLabel = (user) => typeof user === "object" && user
     ? [user.username || user.fullName || user.name, user.email].filter(Boolean).join(", ") || t("staffNotifications.drawer.userUnavailable")
     : t("staffNotifications.drawer.userUnavailable");
   const recipient = m?.targetType === "ALL_USERS" ? t("staffNotifications.drawer.allUsers")
-    : m?.targetType === "ROLE_BASED" ? (m.targetRoles?.join(", ") || t("staffNotifications.drawer.selectedRoles"))
+    : m?.targetType === "ROLE_BASED" ? (m.targetRoles?.map(role => notificationLabel('roles', role, t)).join(', ') || t("staffNotifications.drawer.selectedRoles"))
       : m?.targetUsers?.length ? m.targetUsers.map(userLabel).join("; ") : t("staffNotifications.drawer.inbox");
   return (
     <Dialog open={Boolean(m)} onClose={onClose} className="snm-detail-dialog">
@@ -586,15 +591,15 @@ function NotificationDrawer({ notification: m, onClose, t, language = "en" }) {
           {m && <>
             <header>
               <div className="snm-detail-heading">
-                <DialogTitle>{m.title || t("staffNotifications.drawer.untitled")}</DialogTitle>
-                <span className="snm-detail-severity" data-priority={m.priority || "INFO"}>{m.priority || "INFO"}</span>
+                <DialogTitle>{display.title || t("staffNotifications.drawer.untitled")}</DialogTitle>
+                <span className="snm-detail-severity" data-priority={notificationLabel('priority', m.priority || 'INFO', t)}>{notificationLabel('priority', m.priority || 'INFO', t)}</span>
               </div>
               <button type="button" onClick={onClose} aria-label={t("staffNotifications.drawer.close")}><X size={18} /></button>
             </header>
             <div className="snm-detail-body">
               <section className="snm-detail-content" aria-label={t("staffNotifications.drawer.notificationMessage")}>
                 <p className="snm-detail-section-label">{t("staffNotifications.drawer.message")}</p>
-                <p className="snm-detail-message">{m.content || t("staffNotifications.drawer.noContent")}</p>
+                <p className="snm-detail-message">{display.content || t("staffNotifications.drawer.noContent")}</p>
                 {m.metadata?.eventType === 'STAFF_INCIDENT' && /^[a-f0-9]{24}$/i.test(m.metadata.incidentId || '') && (
                   <Link className="text-sm font-semibold text-amber-300 underline" onClick={onClose}
                     to={`/${scope}/notifications?incident=${m.metadata.incidentId}`}>{t("staffNotifications.drawer.openIssue")}</Link>
@@ -603,8 +608,8 @@ function NotificationDrawer({ notification: m, onClose, t, language = "en" }) {
               <dl className="snm-detail-info">
                 {[
                   [t("staffNotifications.drawer.recipient"), recipient, User],
-                  [t("staffNotifications.drawer.status"), m.isRevoked ? t("staffNotifications.drawer.revoked") : m.status || t("staffNotifications.drawer.sent"), CheckCircle2],
-                  [t("staffNotifications.drawer.type"), m.type || t("staffNotifications.drawer.system"), Info],
+                  [t("staffNotifications.drawer.status"), m.isRevoked ? t("staffNotifications.drawer.revoked") : m.status ? notificationLabel('status', m.status, t) : t("staffNotifications.drawer.sent"), CheckCircle2],
+                  [t("staffNotifications.drawer.type"), m.type ? notificationLabel('type', m.type, t) : t("staffNotifications.drawer.system"), Info],
                   [t("staffNotifications.drawer.sentAt"), notificationDate(m.createdAt, language), History],
                 ].map(([label, value, Icon]) => <div key={label}><dt><Icon size={14} aria-hidden="true" />{label}</dt><dd>{value}</dd></div>)}
               </dl>
@@ -721,13 +726,13 @@ function ComposeTab({ onSent, t }) {
           <section className="snm-message-section">
             <div className="snm-message-heading">
             <StepHeading number="2" title={isStaffCompose ? t("staffNotifications.compose.message") : t("staffNotifications.compose.writeMessage")} description={t("staffNotifications.compose.messageHint")} />
-              {isStaffCompose && <Listbox value={priority} onChange={setPriority}>
-                <ListboxButton className="snm-priority-select" data-priority={priority} aria-label={t("staffNotifications.compose.priority")}>
-                  <span className="snm-priority-dot" aria-hidden="true" /><span>{priority}</span><ChevronDown size={14} aria-hidden="true" />
+              {isStaffCompose && <Listbox value={notificationLabel('priority', priority, t)} onChange={setPriority}>
+                <ListboxButton className="snm-priority-select" data-priority={notificationLabel('priority', priority, t)} aria-label={t("staffNotifications.compose.priority")}>
+                  <span className="snm-priority-dot" aria-hidden="true" /><span>{notificationLabel('priority', priority, t)}</span><ChevronDown size={14} aria-hidden="true" />
                 </ListboxButton>
                 <ListboxOptions anchor={{ to: 'bottom end', gap: 6, padding: 12 }} className="snm-composer-options snm-priority-menu">
                   {PRIORITIES.map(item => <ListboxOption key={item} value={item} data-priority={item} className="snm-composer-option">
-                    {({ selected }) => <><span className="snm-priority-dot" aria-hidden="true" /><span>{PRIORITY_META[item].label}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
+                    {({ selected }) => <><span className="snm-priority-dot" aria-hidden="true" /><span>{notificationLabel('priority', PRIORITY_META[item].label, t)}</span>{selected && <Check size={14} aria-hidden="true" />}</>}
                   </ListboxOption>)}
                 </ListboxOptions>
               </Listbox>}
@@ -897,7 +902,7 @@ function ComposeTab({ onSent, t }) {
                         : "border-white/10 bg-[#0D0D0D] text-gray-500 hover:border-white/20 hover:text-gray-300"
                     }`}
                   >
-                    {meta.label}
+                    {notificationLabel('priority', meta.label, t)}
                   </button>
                 );
               })}
@@ -910,7 +915,7 @@ function ComposeTab({ onSent, t }) {
               <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
                 <span className="text-xs text-gray-500">{t("staffNotifications.compose.recipientInbox")}</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PRIORITY_META[priority].bg} ${PRIORITY_META[priority].color} ${PRIORITY_META[priority].border}`}>
-                  {priority}
+                  {notificationLabel('priority', priority, t)}
                 </span>
               </div>
               <div className="flex gap-3 p-4">
