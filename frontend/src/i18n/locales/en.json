@@ -1980,5 +1980,21 @@
       "capacity-warning": "Lot {{floor}} is nearing capacity ({{rate}}%). Consider diverting incoming traffic.",
       "capacity-healthy": "Lot {{floor}} capacity is optimal ({{rate}}%)."
     }
+  },
+  "homeTestimonials": {
+    "rating": "{{rating}} out of 5 stars",
+    "title": "From the VALO community",
+    "carousel": "Review carousel",
+    "customer": "VALO customer",
+    "verified": "Verified parking experience",
+    "controls": "Review controls",
+    "previous": "Previous review",
+    "next": "Next review",
+    "play": "Resume automatic reviews",
+    "pause": "Pause automatic reviews",
+    "publish": "Show on Home",
+    "unpublish": "Remove from Home",
+    "publicationNote": "Selected reviews appear publicly with the sender's username. Check the comment before publishing.",
+    "publishError": "Could not update publication. Please try again."
   }
 }

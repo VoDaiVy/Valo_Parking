@@ -12,6 +12,7 @@ const schema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, immutable: true },
   rating: { type: Number, required: true, min: 1, max: 5, validate: Number.isInteger },
   comment: { type: String, trim: true, maxlength: 1000, default: '' },
+  isPublic: { type: Boolean, default: false },
   categories: [{ type: String, enum: ['parking', 'staff', 'payment', 'app', 'other'] }],
   reply: { type: replySchema, default: null },
   replyRevision: { type: Number, default: 0, min: 0 },
@@ -25,6 +26,7 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 schema.index({ userId: 1, createdAt: -1 });
 schema.index({ createdAt: -1, _id: -1 });
+schema.index({ isPublic: 1, createdAt: -1, _id: -1 });
 schema.index({ 'reply.repliedAt': 1, createdAt: -1 });
 
 module.exports = mongoose.model('BookingFeedback', schema);

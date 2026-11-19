@@ -7,6 +7,7 @@ import CarImage from '../../assets/images/car.png';
 
 // Import Component 3D
 import SmartGate3D from '../../components/SmartGate3D';
+import HomeTestimonials from '../../components/Customer/HomeTestimonials';
 
 import { getServices } from '../../services/extraServiceApi';
 import { getLiveMapData } from '../../services/parkingFloorService';
@@ -486,6 +487,7 @@ export default function GuestHome() {
               </div>
             )}
           </div>
+          <HomeTestimonials />
         </div>
       </section>
 

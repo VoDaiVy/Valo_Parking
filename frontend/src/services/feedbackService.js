@@ -27,3 +27,8 @@ export const replyToFeedback = (id, data) =>
     method: "PUT",
     body: JSON.stringify(data),
   });
+export const setFeedbackPublication = (id, isPublic) =>
+  request(`/admin/feedbacks/${encodeURIComponent(id)}/publication`, {
+    method: "PUT",
+    body: JSON.stringify({ isPublic }),
+  });

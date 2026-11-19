@@ -68,6 +68,7 @@ app.use("/api/parking-floors", require("./routes/parkingFloorRoutes"));
 app.use("/api/maintenance", require("./routes/maintenanceRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/bookings", require("./routes/bookingRoutes"));
+app.get('/api/feedbacks/public', require('./controllers/feedbackController').publicList);
 app.use("/api/qr", require("./routes/qrRoutes"));
 app.use('/api/kiosk-devices', require('./routes/kioskDeviceRoutes'));
 app.use('/api/parking-passes', require('./routes/parkingPassRoutes'));

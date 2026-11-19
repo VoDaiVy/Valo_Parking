@@ -13,6 +13,8 @@ exports.get = handler(req => service.getFeedback(req.params.id, req.user._id));
 exports.list = handler(req => service.listFeedbacks(req.query));
 exports.stats = handler(req => service.getStats(req.query));
 exports.detail = handler(req => service.getAdminFeedback(req.params.id));
+exports.publicList = handler(() => service.listPublicFeedbacks());
+exports.publication = handler(req => service.setPublication(req.params.id, req.body));
 exports.reply = handler(async req => {
   const { feedback, notification } = await replyToFeedback(req.params.id, req.user._id, req.body);
   if (notification) {

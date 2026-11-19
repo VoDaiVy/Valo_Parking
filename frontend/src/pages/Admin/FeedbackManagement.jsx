@@ -6,6 +6,7 @@ import {
   getAdminFeedbacks,
   getFeedbackStats,
   replyToFeedback,
+  setFeedbackPublication,
 } from "../../services/feedbackService";
 
 const initialFilters = {
@@ -126,6 +127,20 @@ export default function FeedbackManagement() {
       if (res.status === 409) setConflict(true);
     }
     setSaving(false);
+  };
+
+  const togglePublication = async () => {
+    setSaving(true);
+    setReplyError("");
+    try {
+      const res = await setFeedbackPublication(entityId(selected), !selected.isPublic);
+      if (res.ok) {
+        setSelected(res.data.data);
+        setRefresh((value) => value + 1);
+      } else setReplyError(res.data?.message || t('homeTestimonials.publishError'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -388,6 +403,17 @@ export default function FeedbackManagement() {
               <p role="alert" className="mt-4 text-sm text-rose-300">
                 {replyError}
               </p>
+            )}
+            {detailReady && (
+              <section className="mt-5 rounded-xl border border-yellow-300/20 bg-yellow-300/5 p-4">
+                <p className="text-sm text-white/70">{t('homeTestimonials.publicationNote')}</p>
+                <button
+                  type="button"
+                  disabled={saving || (!selected.isPublic && !selected.comment?.trim())}
+                  onClick={togglePublication}
+                  className="mt-3 rounded-lg border border-yellow-300/40 px-4 py-2 text-sm font-semibold text-yellow-200 disabled:opacity-40"
+                >{t(selected.isPublic ? 'homeTestimonials.unpublish' : 'homeTestimonials.publish')}</button>
+              </section>
             )}
             {conflict && (
               <button

@@ -17,4 +17,8 @@ function validateReply(body = {}) {
   if (!Number.isInteger(body.expectedRevision) || body.expectedRevision < 0) fail('Expected revision must be a non-negative integer.');
   return { content: body.content.trim(), expectedRevision: body.expectedRevision };
 }
-module.exports = { CATEGORIES, fail, validateFeedback, validateReply };
+function validatePublication(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.isPublic !== 'boolean') fail('isPublic must be a boolean.');
+  return { isPublic: body.isPublic };
+}
+module.exports = { CATEGORIES, fail, validateFeedback, validateReply, validatePublication };

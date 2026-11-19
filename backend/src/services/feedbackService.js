@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Feedback = require('../models/BookingFeedback');
 const Booking = require('../models/Booking');
 const User = require('../models/User');
-const { CATEGORIES, fail, validateFeedback } = require('../validators/feedbackValidator');
+const { CATEGORIES, fail, validateFeedback, validatePublication } = require('../validators/feedbackValidator');
 
 function assertId(id) {
   if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id)) fail('Feedback or booking not found.', 404);
@@ -124,4 +124,25 @@ async function getAdminFeedback(id) {
   if (!record) fail('Feedback not found.', 404);
   return record;
 }
-module.exports = { assertId, userDTO, createFeedback, getFeedback, attachFeedbackSummaries, buildFilter, listFeedbacks, getStats, getAdminFeedback };
+function publicDTO(record) {
+  const username = record.userId?.username;
+  const displayName = typeof username === 'string' && username.trim() ? username.trim() : 'VALO customer';
+  return { id: String(record._id), rating: record.rating, comment: record.comment, displayName };
+}
+async function listPublicFeedbacks() {
+  // Opt in explicitly: legacy feedback without isPublic remains private.
+  const items = await Feedback.find({ isPublic: true, comment: { $regex: /\S/ } })
+    .select('_id rating comment userId').populate('userId', 'username').sort({ createdAt: -1, _id: -1 }).limit(8).lean();
+  return { items: items.map(publicDTO) };
+}
+async function setPublication(id, body) {
+  assertId(id);
+  const { isPublic } = validatePublication(body);
+  const record = await Feedback.findById(id);
+  if (!record) fail('Feedback not found.', 404);
+  if (isPublic && !record.comment?.trim()) fail('Only feedback with a comment can be published.');
+  record.isPublic = isPublic;
+  await record.save();
+  return getAdminFeedback(id);
+}
+module.exports = { assertId, userDTO, createFeedback, getFeedback, attachFeedbackSummaries, buildFilter, listFeedbacks, getStats, getAdminFeedback, publicDTO, listPublicFeedbacks, setPublication };

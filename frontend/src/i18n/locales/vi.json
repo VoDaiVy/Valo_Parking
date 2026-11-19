@@ -1982,5 +1982,21 @@
       "capacity-warning": "Bãi {{floor}} gần đầy ({{rate}}%). Cân nhắc hướng dẫn xe đến khu vực khác.",
       "capacity-healthy": "Sức chứa bãi {{floor}} đang ở mức phù hợp ({{rate}}%)."
     }
+  },
+  "homeTestimonials": {
+    "rating": "{{rating}} trên 5 sao",
+    "title": "Khách hàng nói về VALO",
+    "carousel": "Trình chiếu nhận xét",
+    "customer": "Khách hàng VALO",
+    "verified": "Đã trải nghiệm dịch vụ",
+    "controls": "Điều khiển nhận xét",
+    "previous": "Nhận xét trước",
+    "next": "Nhận xét tiếp theo",
+    "play": "Tiếp tục tự động chuyển nhận xét",
+    "pause": "Tạm dừng tự động chuyển nhận xét",
+    "publish": "Hiển thị trên Home",
+    "unpublish": "Gỡ khỏi Home",
+    "publicationNote": "Nhận xét được chọn sẽ hiển thị công khai cùng tên tài khoản người gửi. Hãy kiểm tra nội dung trước khi đăng.",
+    "publishError": "Không thể cập nhật hiển thị. Vui lòng thử lại."
   }
 }
