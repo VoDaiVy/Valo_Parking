@@ -7,6 +7,7 @@ import CarImage from '../../assets/images/car.png';
 
 // Import Component 3D
 import SmartGate3D from '../../components/SmartGate3D';
+import PublicFeedbackSection from '../../components/Guest/PublicFeedbackSection';
 
 import { getServices } from '../../services/extraServiceApi';
 import { getLiveMapData } from '../../services/parkingFloorService';
@@ -575,6 +576,7 @@ export default function GuestHome() {
 
       {/* 4. PREMIUM CAR SERVICES */}
       <PremiumCarServicesSection />
+      <PublicFeedbackSection />
 
       {/* 5. HOW IT WORKS */}
       <section className="bg-charcoal text-white py-24 relative">

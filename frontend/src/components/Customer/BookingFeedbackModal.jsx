@@ -251,8 +251,8 @@ export default function BookingFeedbackModal({
             <span className="text-xs text-white/40">{comment.length}/1000</span>
           </label>
           <p className="text-xs text-white/50">
-            Your feedback is private to you and the admin team. It cannot be
-            edited after sending.
+            Your username, rating and comment appear on our homepage. Please
+            avoid personal information. Feedback cannot be edited after sending.
           </p>
           <button
             disabled={saving}

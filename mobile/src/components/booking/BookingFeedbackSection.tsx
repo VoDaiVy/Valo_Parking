@@ -145,6 +145,7 @@ export function BookingFeedbackSection({ bookingId, canSubmit }: { bookingId: st
         {saving ? <ActivityIndicator color={COLORS.textInverse} /> : <Text style={styles.submitLabel}>{t('Send feedback')}</Text>}
       </TouchableOpacity>
       <Text style={styles.muted}>{t('One review per completed booking. Your review cannot be edited after sending.')}</Text>
+      <Text style={styles.muted}>{t('Your username, rating and comment appear on our homepage. Please avoid personal information.')}</Text>
     </> : null}
   </View>;
 }

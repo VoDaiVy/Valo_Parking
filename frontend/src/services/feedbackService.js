@@ -1,5 +1,7 @@
 import { apiFetch } from "./api";
 
+export const getPublicFeedbacks = (page = 1) => apiFetch(`/feedbacks?page=${page}&limit=6`);
+
 const request = (path, options = {}) =>
   apiFetch(path, {
     ...options,
