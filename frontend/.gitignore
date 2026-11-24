@@ -15,6 +15,7 @@ dist-ssr
 tests/
 __tests__/
 *.test.*
+!src/components/AIBusynessForecast.test.jsx
 *.spec.*
 
 *.local

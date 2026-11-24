@@ -2293,7 +2293,7 @@ export default function CreateBookingPage() {
             </div>
             </div>
 
-            <div className="rounded-3xl bg-white border border-gray-200 p-5 shadow-sm">
+            <div className="min-w-0">
               <AIBusynessForecast
                 selectedDate={startDate}
                 selectedHour={parseInt(startTimeStr?.split(':')[0] || 12, 10)}

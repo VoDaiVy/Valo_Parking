@@ -13,6 +13,34 @@ const slotKey = (floor, code) => `${floor}:${String(code || '').trim().toUpperCa
 const overlap = (row, from, until) => row.start < until && row.end > from;
 const weekdayFormatter = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Bangkok', weekday: 'long' });
 
+// Half-open intervals: departures at a timestamp precede arrivals there.
+// Reference counts deduplicate records without losing a longer overlapping record.
+function peakOccupancy(rows, from, until, baseline = 0) {
+  const events = [];
+  for (const row of rows) {
+    if (!overlap(row, from, until)) continue;
+    events.push({ time: Math.max(from, row.start), row, delta: 1 });
+    events.push({ time: Math.min(until, row.end), row, delta: -1 });
+  }
+  events.sort((a, b) => a.time - b.time);
+  const active = new Map();
+  const walkIns = new Map();
+  let peak = baseline;
+  for (let i = 0; i < events.length;) {
+    const time = events[i].time;
+    while (i < events.length && events[i].time === time) {
+      const { row, delta } = events[i++];
+      for (const counts of row.walkIn ? [active, walkIns] : [active]) {
+        const count = (counts.get(row.key) || 0) + delta;
+        if (count) counts.set(row.key, count);
+        else counts.delete(row.key);
+      }
+    }
+    if (time < until) peak = Math.max(peak, active.size + Math.max(0, baseline - walkIns.size));
+  }
+  return peak;
+}
+
 const validateScope = ({ date, floorId, now }) => {
   const localDate = date || bangkokDateParts(now).date;
   const start = targetDateTime(localDate, 0);
@@ -29,7 +57,7 @@ function prepareOccupancy({ now, capacitySlots, maintenance, sessions, bookings,
   const maintained = new Set(maintenance.map(row => slotKey(row.floorID, row.slotNumber)).filter(key => physicalKeys.has(key)));
   const capacity = physicalKeys.size - maintained.size;
   const usable = row => physicalKeys.has(row.key) && !maintained.has(row.key);
-  const intervals = sessions.map(row => ({
+  const intervals = sessions.filter(row => ['active', 'completed'].includes(row.status)).map(row => ({
     key: slotKey(row.floorId, row.parkingSlot),
     start: +new Date(row.checkInTime),
     end: row.status === 'active' ? now.getTime() + 1 : +new Date(row.checkOutTime),
@@ -42,27 +70,29 @@ function prepareOccupancy({ now, capacitySlots, maintenance, sessions, bookings,
   const temporary = holds.map(row => ({
     key: slotKey(row.floorId, row.slotCode), start: +new Date(row.startTime), end: +new Date(row.endTime), expiresAt: +new Date(row.expiresAt),
   })).filter(usable);
-  const historic = intervals.filter(row => row.completed && row.end <= today);
   const profiles = new Map();
 
   function historyFor(date) {
     const weekday = new Date(date + 7 * HOUR).getUTCDay();
-    if (profiles.has(weekday)) return profiles.get(weekday);
-    const daysBack = (new Date(today + 7 * HOUR).getUTCDay() - weekday + 7) % 7 || 7;
-    const sampleDays = Array.from({ length: HISTORY_WEEKS }, (_, index) => today - (daysBack + index * 7) * DAY);
+    const cutoff = Math.min(today, date);
+    const profileKey = `${weekday}:${cutoff}`;
+    if (profiles.has(profileKey)) return profiles.get(profileKey);
+    const historic = intervals.filter(row => row.completed && row.end <= cutoff);
+    const daysBack = (new Date(cutoff + 7 * HOUR).getUTCDay() - weekday + 7) % 7 || 7;
+    const sampleDays = Array.from({ length: HISTORY_WEEKS }, (_, index) => cutoff - (daysBack + index * 7) * DAY);
     const recordedDays = sampleDays.map(day => ({
       day, sessions: historic.filter(row => overlap(row, day, day + DAY)),
     })).filter(sample => sample.sessions.length > 0);
     const hasHistory = recordedDays.length >= MIN_SAMPLE_DAYS;
     const baseline = hasHistory ? Array.from({ length: 24 }, (_, hour) => recordedDays.reduce((sum, sample) => {
       const from = sample.day + hour * HOUR;
-      return sum + new Set(sample.sessions.filter(row => row.walkIn && overlap(row, from, from + HOUR)).map(row => row.key)).size;
+      return sum + peakOccupancy(sample.sessions.filter(row => row.walkIn), from, from + HOUR);
     }, 0) / recordedDays.length) : [];
     const profile = {
       hasHistory, baseline, dayCount: recordedDays.length,
       sessionCount: new Set(recordedDays.flatMap(sample => sample.sessions)).size,
     };
-    profiles.set(weekday, profile);
+    profiles.set(profileKey, profile);
     return profile;
   }
 
@@ -86,20 +116,21 @@ function buildHours(start, now, prepared) {
     const isPast = until <= now.getTime();
     const knownSessions = sessions.filter(row => overlap(row, from, until));
     const knownBookings = isPast ? [] : bookings.filter(row => overlap(row, from, until));
-    const knownHolds = isPast ? [] : holds.filter(row => row.expiresAt > Math.max(now.getTime(), from) && overlap(row, from, until));
-    const known = new Set([...knownSessions, ...knownBookings, ...knownHolds].map(row => row.key)).size;
-    const observedWalkIns = new Set(knownSessions.filter(row => row.walkIn).map(row => row.key)).size;
+    const knownHolds = isPast ? [] : holds
+      .filter(row => row.expiresAt > Math.max(now.getTime(), from))
+      .map(row => ({ ...row, start: Math.max(row.start, now.getTime()), end: Math.min(row.end, row.expiresAt) }))
+      .filter(row => row.end > row.start && overlap(row, from, until));
     const historicalWalkIns = hasHistory && !isPast ? Math.round(baseline[hour]) : 0;
-    const occupied = Math.min(capacity, known + Math.max(0, historicalWalkIns - observedWalkIns));
+    const occupied = Math.min(capacity, peakOccupancy([...knownSessions, ...knownBookings, ...knownHolds], from, until, historicalWalkIns));
     const score = capacity ? Math.round(occupied / capacity * 100) : null;
     const level = score >= 80 ? 'peak' : score >= 60 ? 'high' : score >= 35 ? 'moderate' : 'low';
     const label = `${String(hour).padStart(2, '0')}:00`;
     return {
       id: hour, hour, label, timeLabel: label, busynessScore: score, level,
-      dataKind: isPast ? 'recorded' : hasHistory ? 'estimated' : 'known_only',
+      dataKind: isPast ? (knownSessions.length ? 'recorded' : 'known_only') : hasHistory ? 'estimated' : 'known_only',
       isPeak: Boolean(capacity && score >= 80 && (start < today || (!isPast && hasHistory))),
       estimatedOccupiedSlots: occupied, estimatedAvailableSlots: hasHistory && !isPast ? capacity - occupied : null,
-      activeBookings: new Set(knownBookings.map(row => row.key)).size,
+      activeBookings: peakOccupancy(knownBookings, from, until),
     };
   });
 }
@@ -136,8 +167,12 @@ function buildDailyOccupancyForecast({ start, now, selectedHour, forecastHorizon
 }
 
 async function getOccupancyInputs({ start, end, floorId, vehicleType, now }) {
+  vehicleType ??= 'car';
+  if (!['car', 'electric_car', 'motorcycle', 'all'].includes(vehicleType)) {
+    throw Object.assign(new Error('Invalid forecast vehicle type.'), { statusCode: 400 });
+  }
   if (mongoose.connection.readyState !== 1) throw Object.assign(new Error('Forecast data is unavailable.'), { statusCode: 503 });
-  const since = new Date(Math.min(start.getTime(), now.getTime() - (HISTORY_WEEKS + 1) * 7 * DAY));
+  const since = new Date(Math.min(start.getTime(), now.getTime()) - (HISTORY_WEEKS + 1) * 7 * DAY);
   const scope = floorId ? { floorId } : {};
   // Reuse the published hourly inventory and the same dedicated-space exclusions as booking.
   const { getGeneralBookableSlots } = require('../controllers/bookingController');
@@ -191,8 +226,9 @@ function buildPeriodOccupancyForecast({ date, timeframe, now, selectedIndex, ...
       ...peak, id, date: bangkokDateParts(day).date, peakHour: peak.timeLabel, estimatedAvailableSlots: null,
     };
   });
-  const index = Number.isInteger(selectedIndex) && items[selectedIndex]
-    ? selectedIndex : items.findIndex(item => item.date === date);
+  const selected = selectedIndex == null ? NaN : Number(selectedIndex);
+  const index = Number.isInteger(selected) && items[selected]
+    ? selected : items.findIndex(item => item.date === date);
   const { totalCapacity, totalPhysicalCapacity, maintenanceSlotsCount } = prepared;
   return {
     timeframe, date, startDate: items[0].date, endDate: items.at(-1).date,

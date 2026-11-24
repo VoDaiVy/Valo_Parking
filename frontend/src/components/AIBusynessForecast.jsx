@@ -1,45 +1,20 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, Info, Sparkles, TrendingUp } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Car, CheckCircle2, Info, ParkingCircle, Sparkles } from 'lucide-react';
 import { getOccupancyForecast } from '../services/aiForecastService';
-import { readOccupancyChart } from '../utils/occupancyChart.mjs';
+import { readOccupancyChart, selectOccupancyPoint } from '../utils/occupancyChart.mjs';
 import { useLanguage } from '../i18n/hooks/useLanguage';
 
-const PERIODS = [['day', '24 hours'], ['week', '7 days'], ['month', '1 month']];
-const DAY_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' });
-const formatDay = date => DAY_FORMAT.format(new Date(date + 'T00:00:00+07:00'));
-const HOUR_TICKS = ['00:00', '06:00', '12:00', '18:00', '23:00'];
-const LEGEND = [
-  ['bg-emerald-500', 'Low (<35%)'], ['bg-yellow-400', 'Moderate'],
-  ['bg-amber-500', 'High'], ['bg-rose-500', 'Peak (≥80%)'],
-];
-const TONES = {
-  info: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300',
-  high: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300',
-  peak: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300',
-  low: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-300',
-};
-
-function describePoint(point, isRange, historicalArrivals) {
-  if (historicalArrivals) return {
-    title: 'Recorded vehicle arrivals',
-    detail: point.realDbSessions + ' arrivals recorded in the available history',
-  };
-  if (point.dataKind === 'known_only') return {
-    title: 'Confirmed activity only',
-    detail: point.estimatedOccupiedSlots + ' spaces with a recorded session, booking or hold. There is not enough history to estimate availability.',
-  };
-  if (point.dataKind === 'recorded') return {
-    title: isRange ? 'Highest recorded hourly occupancy' : 'Recorded occupancy',
-    detail: point.estimatedOccupiedSlots + ' spaces had a recorded session during this hour',
-  };
-  return {
-    title: isRange ? 'Estimated peak occupancy' : { peak: 'Peak demand', high: 'Busy', moderate: 'Moderate demand', low: 'Off-peak' }[point.level],
-    detail: 'About ' + point.busynessScore + '% of eligible spaces may be in use or reserved. Check your exact times for availability.',
-  };
-}
+const PERIODS = ['day', 'week', 'month'];
+const COLORS = { low: 'bg-emerald-500', moderate: 'bg-yellow-400', high: 'bg-amber-500', peak: 'bg-rose-500' };
+const BANNER_COLORS = { low: 'bg-emerald-500/15 text-emerald-300', moderate: 'bg-yellow-400/15 text-yellow-200', high: 'bg-amber-500/15 text-amber-300', peak: 'bg-rose-500/15 text-rose-300' };
+const number = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
 export default function AIBusynessForecast({ selectedDate, selectedHour, vehicleType = 'car', floorId }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const detailsId = useId();
+  const infoId = useId();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const infoPointerFocus = useRef(false);
   const [result, setResult] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [timeframe, setTimeframe] = useState('day');
@@ -51,21 +26,26 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
   const loading = result?.key !== requestKey;
   const data = loading ? null : result.data;
   const chart = readOccupancyChart(data, timeframe);
-  const points = chart?.days ?? chart?.hours;
-  const historicalArrivals = chart?.kind === 'arrivals';
-  const hoveredIndex = hoveredBar?.key === requestKey ? hoveredBar.index : null;
-  const defaultIndex = isRange ? data?.selectedIndex : Number(hour ?? data?.selectedHour ?? 12);
-  const selectedIndex = selectedBar?.key === requestKey ? selectedBar.index : defaultIndex;
-  const activeIndex = hoveredIndex ?? selectedIndex;
-  const active = points?.[activeIndex] ?? points?.[0];
-  const activeLabel = active && (isRange ? formatDay(active.date) + ' · ' + active.peakHour : active.timeLabel);
-  const insight = active && describePoint(active, isRange, historicalArrivals);
-  const recordedDay = points?.every(point => point.dataKind === 'recorded');
-  const ticks = isRange && points
-    ? (timeframe === 'week' ? points : [points[0], points[7], points[14], points[21], points.at(-1)]).map(point => formatDay(point.date))
-    : HOUR_TICKS;
-  const legend = points?.some(point => point.dataKind === 'known_only')
-    ? [...LEGEND, ['bg-gray-400', 'Known activity']] : LEGEND;
+  const points = chart?.days ?? chart?.hours ?? [];
+  const arrivals = chart?.kind === 'arrivals';
+  const selectedIndex = selectedBar?.key === requestKey ? selectedBar.index
+    : isRange ? data?.selectedIndex : Number(hour ?? data?.selectedHour ?? 12);
+  const activeIndex = hoveredBar?.key === requestKey ? hoveredBar.index : selectedIndex;
+  const active = selectOccupancyPoint(points, activeIndex);
+  const formatDay = date => new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-GB', {
+    day: 'numeric', month: 'short', timeZone: 'Asia/Ho_Chi_Minh',
+  }).format(new Date(date + 'T00:00:00+07:00'));
+  const pointLabel = point => isRange ? `${formatDay(point.date)} · ${point.peakHour}` : point.timeLabel;
+  const kindLabel = point => t(`forecast.${arrivals ? 'arrivals' : point.dataKind}`);
+  const valueLabel = point => {
+    const value = number(arrivals ? point.realDbSessions : point.busynessScore);
+    return value === null ? t('forecast.unknown') : arrivals ? String(value) : `${value}%`;
+  };
+  const capacity = number(data?.totalCapacity);
+  const occupied = number(active?.estimatedOccupiedSlots);
+  const available = active?.dataKind === 'estimated' ? number(active?.estimatedAvailableSlots) : null;
+  const noCapacity = !arrivals && capacity === 0;
+  const tickIndices = isRange ? (timeframe === 'week' ? [0, 3, 6] : [0, 7, 14, 21, points.length - 1]) : [0, 6, 12, 18, 23];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,126 +53,126 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
       .then(data => {
         if (!controller.signal.aborted) setResult({ key: requestKey, data });
       })
-      .catch(error => {
-        if (controller.signal.aborted) return;
-        console.warn('[AI Forecast] Failed to fetch forecast:', error);
-        setResult({ key: requestKey, data: null });
+      .catch(() => {
+        if (!controller.signal.aborted) setResult({ key: requestKey, data: null });
       });
     return () => controller.abort();
   }, [selectedDate, hour, vehicleType, floorId, timeframe, requestKey]);
 
-  const subtitle = () => {
-    if (isRange) return formatDay(points[0].date) + ' – ' + formatDay(points.at(-1).date)
-      + '. Each bar shows the busiest hour of the day. Forecasts are for planning.';
-    if (historicalArrivals) return 'Recorded check-ins by hour (Vietnam time). A current occupancy estimate is unavailable.';
-    const date = (data.dayOfWeekName ? data.dayOfWeekName + ', ' : '') + (data.date ? formatDay(data.date) : '') + '. ';
-    if (recordedDay) return date + 'Recorded sessions on spaces in the current hourly inventory.';
-    if (data.dataQuality?.dataSource === 'historical_sessions') {
-      return date + 'Estimate from ' + data.dataQuality.historicalDayCount + ' recent matching weekdays and current reservations.';
-    }
-    return date + 'Limited history. Showing recorded sessions, bookings and holds only.';
-  };
-
   return (
-    <section className="relative min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#15161A] sm:p-5" aria-label="Occupancy forecast">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-gold/15 text-yellow-700 dark:text-gold"><Sparkles size={16} /></span>
-          <div className="min-w-0 flex-1">
-            <h4 className="text-sm font-extrabold text-gray-900 dark:text-white">
-              {historicalArrivals ? 'Historical vehicle arrivals' : t('forecast.title', { defaultValue: 'AI Occupancy & Peak Times Forecast' })}
-            </h4>
-            {chart && (
-              <p className="mt-0.5 truncate text-xs font-medium text-gray-500 dark:text-gray-400" title={subtitle()}>
-                {subtitle()}
-              </p>
-            )}
+    <section className="dark min-w-0 rounded-2xl bg-[#15161A] p-4 text-white sm:p-5" aria-label={t('forecast.title')} aria-busy={loading}>
+      <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2.5 sm:flex-1">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gold/15 text-yellow-700 dark:text-gold"><Sparkles size={17} /></span>
+          <div className="min-w-0 break-words">
+            <h4 className="text-sm font-extrabold leading-6 text-gray-900 dark:text-white">{t(arrivals ? 'forecast.arrivalsTitle' : 'forecast.title')}</h4>
+            <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {t(isRange ? 'forecast.rangeHelp' : arrivals ? 'forecast.arrivalsHelp' : 'forecast.dayHelp')}
+            </p>
           </div>
         </div>
-        <div role="group" aria-label="Forecast period" className="flex shrink-0 gap-1 rounded-lg border border-gray-200 p-1 dark:border-white/15">
-          {PERIODS.map(([value, text]) => (
+        <div role="group" aria-label={t('forecast.period')} className="grid w-full shrink-0 grid-cols-3 gap-1 sm:w-auto">
+          {PERIODS.map(value => (
             <button key={value} type="button" aria-pressed={timeframe === value} onClick={() => setTimeframe(value)}
-              className={'whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-500 '
-                + (timeframe === value ? 'bg-gold text-charcoal' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10')}>
-              {text}
+              className={'min-h-11 min-w-0 break-words rounded-lg px-3 text-xs font-bold leading-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-500 '
+                + (timeframe === value ? 'bg-gold text-black' : 'bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10')}>
+              {t(`forecast.${value}`)}
             </button>
           ))}
         </div>
       </div>
 
       {loading ? (
-        <div className="h-28 animate-pulse rounded-xl bg-gray-100 dark:bg-white/5" role="status"><span className="sr-only">Loading forecast</span></div>
-      ) : !chart ? (
+        <div className="h-48 animate-pulse rounded-xl bg-gray-100 motion-reduce:animate-none dark:bg-white/5" role="status"><span className="sr-only">{t('forecast.loading')}</span></div>
+      ) : !chart || noCapacity ? (
         <div className="rounded-xl border border-gray-200 p-4 dark:border-white/10">
-          <p className="text-sm text-gray-500 dark:text-gray-400" role="status">
-            {data ? 'No recorded data is available for this selection.' : 'Occupancy data is temporarily unavailable.'} Check the booking map for availability.
+          <p className="text-sm leading-6 text-gray-500 dark:text-gray-400" role="status">
+            {t(noCapacity ? 'forecast.noCapacity' : data ? 'forecast.empty' : 'forecast.error')}
           </p>
-          <button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-2 text-sm font-semibold text-yellow-800 underline dark:text-gold">{t('common.retry', { defaultValue: 'Retry' })}</button>
+          {!noCapacity && <button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-2 min-h-11 rounded px-2 text-sm font-semibold text-yellow-800 underline focus-visible:outline-2 focus-visible:outline-gold dark:text-gold">{t('common.retry')}</button>}
         </div>
-      ) : !historicalArrivals && !data.totalCapacity ? (
-        <p className="rounded-xl border border-gray-200 p-4 text-sm text-gray-500 dark:border-white/10" role="status">
-          There are no eligible hourly spaces for this vehicle type and floor.
-        </p>
       ) : (
         <>
-          {!historicalArrivals && !isRange && data.peakWindows?.length > 0 && (
-            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-300">
-              <TrendingUp size={13} /> {recordedDay ? 'Recorded peaks' : t('forecast.peak', { windows: data.peakWindows.join(' & '), defaultValue: `Peak: ${data.peakWindows.join(' & ')}` })}
-            </div>
-          )}
-          {!historicalArrivals && !isRange && !recordedDay && data.isReferenceOnly && (
-            <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300/40 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
-              <AlertTriangle size={15} className="shrink-0" />
-              <span>{t('forecast.referenceOnly', { defaultValue: 'Reference forecast only' })}: This date is outside the {data.forecastHorizonHours || 24}-hour forecast horizon. Use the chart for planning.</span>
-            </div>
-          )}
-          <div className="mb-3.5 rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-white/5 dark:bg-black/30 sm:p-4">
-            <div className="flex h-24 items-end justify-between gap-1 px-1 pt-1 sm:h-28">
-              {points.map((point, index) => {
-                const label = isRange ? formatDay(point.date) + ', ' + point.peakHour : point.timeLabel;
-                const value = historicalArrivals ? point.realDbSessions / chart.peakArrivals * 100 : point.busynessScore;
-                const description = historicalArrivals ? point.realDbSessions + ' recorded arrivals'
-                  : point.dataKind === 'known_only' ? point.estimatedOccupiedSlots + ' spaces with known activity'
-                  : point.busynessScore + '% ' + point.dataKind;
-                const color = historicalArrivals ? 'bg-sky-500' : point.dataKind === 'known_only' ? 'bg-gray-400'
-                  : LEGEND[{ low: 0, moderate: 1, high: 2, peak: 3 }[point.level]]?.[0];
-                return (
-                  <button key={point.id} type="button" aria-label={label + ': ' + description} title={label + ': ' + description}
-                    aria-pressed={selectedIndex === index}
-                    onClick={() => setSelectedBar({ key: requestKey, index })}
-                    onMouseEnter={() => setHoveredBar({ key: requestKey, index })}
-                    onMouseLeave={() => setHoveredBar(null)}
-                    className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-end rounded-sm focus-visible:outline-2 focus-visible:outline-gold">
-                    <span style={{ height: Math.max(4, value || 0) + '%' }}
-                      className={'w-full max-w-[18px] rounded-t-md ' + color + (active === point ? ' ring-1 ring-gold' : ' opacity-85')} />
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-2.5 flex justify-between gap-1 border-t border-gray-200/60 px-1 pt-1.5 text-[10px] font-bold text-gray-500 dark:border-white/5 dark:text-gray-400">
-              {ticks.map(label => <span key={label}>{label}</span>)}
-            </div>
-          </div>
-          {insight && (
-            <div className={'flex flex-col justify-between gap-3 rounded-xl border p-3.5 sm:flex-row sm:items-center '
-              + ((active.dataKind === 'estimated' && TONES[active.level]) || TONES.info)}>
-              <div className="flex min-w-0 items-start gap-3">
-                <Info size={18} className="mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm font-extrabold">{insight.title}</p>
-                  <p className="mt-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">{activeLabel} · {insight.detail}</p>
+          {!arrivals && <dl className="mb-4 flex min-w-0 flex-wrap gap-y-2">
+            {[
+              ['capacity', capacity, ParkingCircle, 'text-yellow-700 dark:text-gold'],
+              [active?.dataKind === 'known_only' ? 'knownOccupancy' : 'occupied', occupied, Car, 'text-orange-600 dark:text-orange-400'],
+              ['estimatedAvailable', available, CheckCircle2, 'text-emerald-600 dark:text-emerald-400'],
+            ].map(([key, value, Icon, color]) => <div key={key} className="flex min-w-0 max-w-full items-center gap-1.5 border-l border-gray-200 px-3 first:border-l-0 first:pl-0 dark:border-white/10">
+              <dt className="flex min-w-0 items-center gap-1.5 break-words text-xs leading-5 text-gray-500 dark:text-gray-400"><Icon size={14} aria-hidden="true" className={'shrink-0 ' + color} />{t(`forecast.${key}`)}</dt>
+              <dd className={'min-w-0 break-words text-sm font-semibold tabular-nums ' + color}>{value ?? t('forecast.unknown')}</dd>
+            </div>)}
+          </dl>}
+          {!arrivals && data.isReferenceOnly && <p className="mb-3 rounded-xl border border-gold/30 bg-gold/10 p-3 text-xs leading-5 text-yellow-900 dark:text-yellow-200">{t('forecast.horizonHelp', { hours: data.forecastHorizonHours ?? 24 })}</p>}
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-black/25">
+            <p className="mb-3 text-xs font-semibold text-gray-500 dark:text-gray-400">{t(arrivals ? 'forecast.arrivalsAxis' : 'forecast.occupancyAxis')}</p>
+            <div className="flex gap-2">
+              <div aria-hidden="true" className="flex h-36 w-8 shrink-0 flex-col justify-between text-right text-[10px] tabular-nums text-gray-500 dark:text-gray-400">
+                {[100, 75, 50, 25, 0].map(value => <span key={value}>{arrivals ? Math.round(chart.peakArrivals * value / 100) : `${value}%`}</span>)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="relative h-36">
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex flex-col justify-between">{[0, 1, 2, 3, 4].map(value => <div key={value} className="border-t border-gray-200 dark:border-white/10" />)}</div>
+                  <div className="relative flex h-full items-end gap-px sm:gap-1">
+                    {points.map((point, index) => {
+                      const value = number(arrivals ? point.realDbSessions / chart.peakArrivals * 100 : point.busynessScore);
+                      const description = `${pointLabel(point)}: ${kindLabel(point)}, ${valueLabel(point)}`;
+                      return <button key={point.id ?? index} type="button" aria-label={description} aria-pressed={selectedIndex === index}
+                        aria-describedby={active === point ? detailsId : undefined}
+                        onClick={() => { setSelectedBar({ key: requestKey, index }); setHoveredBar(null); }}
+                        onFocus={() => setHoveredBar({ key: requestKey, index })} onBlur={() => setHoveredBar(null)}
+                        onMouseEnter={() => setHoveredBar({ key: requestKey, index })} onMouseLeave={() => setHoveredBar(null)}
+                        className="relative flex h-full min-w-0 flex-1 items-end justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-gold">
+                        <span style={{ height: value === null ? '2px' : value === 0 ? '1px' : `${Math.min(100, Math.max(0, value))}%` }}
+                          className={'w-full max-w-[18px] rounded-t-sm ' + (arrivals ? 'bg-sky-500' : point.dataKind === 'known_only' ? 'bg-gray-400' : COLORS[point.level] ?? 'bg-gold')
+                            + (point.dataKind === 'recorded' ? ' border-t-2 border-gray-800 dark:border-white' : point.dataKind === 'estimated' ? ' border-t-2 border-dashed border-gray-800 dark:border-white' : '')
+                            + (active === point ? ' ring-2 ring-yellow-600 dark:ring-gold' : ' opacity-80')} />
+                      </button>;
+                    })}
+                  </div>
+                </div>
+                <div aria-hidden="true" className="mt-2 flex justify-between gap-1 text-[9px] font-medium leading-4 text-gray-500 dark:text-gray-400 sm:text-[10px]">
+                  {tickIndices.map(index => points[index] && <span key={index}>{isRange ? formatDay(points[index].date) : points[index].timeLabel}</span>)}
                 </div>
               </div>
-              {!historicalArrivals && !isRange && active.estimatedAvailableSlots != null && (
-                <p className="shrink-0 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('forecast.estimatedAvailable', { defaultValue: 'Estimated available' })} <strong className="ml-1 text-yellow-700 dark:text-gold">~{t('forecast.slots', { available: active.estimatedAvailableSlots, total: data.totalCapacity, defaultValue: `${active.estimatedAvailableSlots} / ${data.totalCapacity} slots` })}</strong></p>
-              )}
             </div>
-          )}
-          {!historicalArrivals && (
-            <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 px-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-              {legend.map(([color, name]) => <span key={name} className="flex items-center gap-1.5"><span className={'size-2.5 rounded-full ' + color} />{name}</span>)}
+          </div>
+          {active && <div aria-live="polite" id={detailsId}
+            className={'mt-3 flex min-w-0 items-start gap-3 rounded-xl p-3 text-xs leading-5 ' + (arrivals ? 'bg-sky-500/15 text-sky-300' : active.dataKind === 'known_only' || number(active.busynessScore) === null ? 'bg-gray-400/15 text-gray-300' : BANNER_COLORS[active.level] ?? 'bg-gold/10 text-gold')}>
+            <Car size={20} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <div className="flex min-w-0 flex-1 flex-col gap-2 break-words sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="font-bold">{!arrivals && active.dataKind !== 'known_only' && number(active.busynessScore) !== null && <>{t(`forecast.level_${active.level}`)} &middot; </>}{kindLabel(active)}</p>
+                <p className="text-gray-300">{pointLabel(active)} &middot; {t(arrivals ? 'forecast.arrivals' : 'forecast.bannerOccupancy')}: {valueLabel(active)}</p>
+              </div>
+              {!arrivals && <div className="sm:text-right">
+                <p>{t('forecast.bannerAvailable')}</p>
+                <p className="text-lg font-bold tabular-nums">{available ?? t('forecast.unknown')}</p>
+              </div>}
+              <div className="sr-only">
+                <p>{t(arrivals ? 'forecast.arrivalsDetail' : active.dataKind === 'known_only' ? 'forecast.knownHelp' : active.dataKind === 'recorded' ? 'forecast.recordedHelp' : 'forecast.estimatedHelp')}</p>
+                {isRange && <p>{t('forecast.dailyPeak')}</p>}
+              </div>
             </div>
-          )}
+          </div>}
+          {!arrivals && <>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] leading-5 text-gray-600 dark:text-gray-300">
+              {['low', 'moderate', 'high', 'peak'].map(level => <span key={level} className="flex items-center gap-1.5"><span className={'size-2.5 rounded-full ' + COLORS[level]} />{t(`forecast.level_${level}`)}</span>)}
+              <div className="relative ml-auto shrink-0" onMouseEnter={() => setInfoOpen(true)} onMouseLeave={() => setInfoOpen(false)} onFocus={() => { if (!infoPointerFocus.current) setInfoOpen(true); infoPointerFocus.current = false; }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setInfoOpen(false); infoPointerFocus.current = false; } }}>
+                <button type="button" aria-label={t('forecast.infoLabel')} aria-expanded={infoOpen} aria-controls={infoId}
+                  onPointerDown={() => { infoPointerFocus.current = true; }}
+                  onClick={() => setInfoOpen(value => !value)} onKeyDown={event => { if (event.key === 'Escape') setInfoOpen(false); }}
+                  className="grid size-11 place-items-center rounded-lg text-gray-400 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-gold">
+                  <Info size={16} aria-hidden="true" />
+                </button>
+                {infoOpen && <div role="tooltip" id={infoId} className="absolute bottom-full right-0 z-20 w-64 max-w-[calc(100vw-4rem)] rounded-xl bg-gray-800 p-3 text-xs leading-5 text-gray-200">
+                  <p>{t('forecast.kindLegend')}</p>
+                  <p className="mt-2">{t('forecast.footer')}</p>
+                  <p className="mt-2">{t('forecast.disclaimer')}</p>
+                </div>}
+              </div>
+            </div>
+          </>}
         </>
       )}
     </section>

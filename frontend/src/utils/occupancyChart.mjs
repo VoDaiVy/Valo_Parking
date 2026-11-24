@@ -31,3 +31,8 @@ export function readOccupancyChart(data, timeframe = 'day') {
 
   return null;
 }
+
+// Resolve every summary metric from the same chart point, never top-level summaries.
+export function selectOccupancyPoint(points, index) {
+  return points?.[Number.isInteger(index) ? index : 0] ?? points?.[0] ?? null;
+}
