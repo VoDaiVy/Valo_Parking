@@ -1,4 +1,6 @@
 const Service = require('../models/Service');
+const BookingService = require('../models/BookingService');
+const MembershipServiceRequest = require('../models/MembershipServiceRequest');
 const { uploadToCloudinary } = require('../middlewares/uploadMiddleware');
 const cloudinary = require('../config/cloudinary');
 
@@ -73,11 +75,37 @@ exports.getAllServices = async (req, res, next) => {
     }
 
     const services = await Service.find(filter).sort('-createdAt');
+    const serviceIds = services.map((service) => service._id);
+    const [bookingUsage, membershipUsage] = await Promise.all([
+      BookingService.aggregate([
+        { $match: { status: 'done', serviceId: { $in: serviceIds } } },
+        { $lookup: { from: 'bookings', localField: 'bookingId', foreignField: '_id', as: 'booking' } },
+        { $unwind: '$booking' },
+        { $match: { 'booking.status': { $ne: 'CANCELLED' } } },
+        { $group: { _id: '$serviceId', count: { $sum: 1 } } },
+      ]),
+      MembershipServiceRequest.aggregate([
+        { $match: { status: 'done', usageReversedAt: null } },
+        { $lookup: { from: 'membershipservicegrants', localField: 'grantId', foreignField: '_id', as: 'grant' } },
+        { $unwind: '$grant' },
+        { $set: { resolvedServiceId: { $ifNull: ['$serviceId', '$grant.serviceId'] } } },
+        { $match: { resolvedServiceId: { $in: serviceIds } } },
+        { $group: { _id: '$resolvedServiceId', count: { $sum: 1 } } },
+      ]),
+    ]);
+    const usageCounts = new Map();
+    for (const row of [...bookingUsage, ...membershipUsage]) {
+      const id = String(row._id);
+      usageCounts.set(id, (usageCounts.get(id) || 0) + row.count);
+    }
 
     res.status(200).json({
       success: true,
       count: services.length,
-      data: services.map(normalizeService),
+      data: services.map((service) => ({
+        ...normalizeService(service),
+        usageCount: usageCounts.get(String(service._id)) || 0,
+      })),
     });
   } catch (error) {
     next(error);

@@ -438,6 +438,32 @@
     "hours": "{{value}} giờ"
   },
   "homePage": {
+    "premiumServices": {
+      "details": "Chi tiết",
+      "pagination": "Trang dịch vụ",
+      "previous": "Dịch vụ trước",
+      "next": "Dịch vụ tiếp theo",
+      "eyebrow": "Tiện ích cao cấp",
+      "title": "Dịch vụ",
+      "titleAccent": "chăm sóc xe",
+      "subtitle": "Chăm sóc xe chuyên nghiệp trong khi bạn đỗ xe.",
+      "minutes": "{{count}} phút",
+      "durationUnknown": "Liên hệ để biết thời gian",
+      "completed": "{{count}} lượt hoàn tất",
+      "usageUnknown": "Chưa có dữ liệu lượt sử dụng",
+      "contact": "Liên hệ",
+      "loading": "Đang tải dịch vụ…",
+      "error": "Dịch vụ tạm thời không khả dụng",
+      "errorHint": "Vui lòng thử lại sau.",
+      "empty": "Chưa có dịch vụ chăm sóc xe",
+      "emptyHint": "Vui lòng quay lại sau để khám phá dịch vụ chăm sóc xe.",
+      "fallbackName": "Dịch vụ cao cấp",
+      "fallbackDescription": "Chăm sóc xe cao cấp trong thời gian đỗ xe tại VALO.",
+      "book": "Đặt ngay",
+      "choose": "Chọn dịch vụ",
+      "popular": "Phổ biến nhất",
+      "explore": "Khám phá tất cả dịch vụ"
+    },
     "publicFeedback": {
           "eyebrow": "GÓC NHÌN TỪ NGƯỜI DÙNG",
           "title": "Mỗi chuyến đi.",

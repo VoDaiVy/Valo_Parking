@@ -438,6 +438,32 @@
     "hours": "{{value}}h"
   },
   "homePage": {
+    "premiumServices": {
+      "details": "Details",
+      "pagination": "Service pages",
+      "previous": "Previous services",
+      "next": "Next services",
+      "eyebrow": "Premium Add-ons",
+      "title": "Premium Car",
+      "titleAccent": "Services",
+      "subtitle": "Professional car care while you park.",
+      "minutes": "{{count}} min",
+      "durationUnknown": "Duration on request",
+      "completed": "{{count}} completed",
+      "usageUnknown": "Usage unavailable",
+      "contact": "Contact us",
+      "loading": "Loading services…",
+      "error": "Services are temporarily unavailable",
+      "errorHint": "Please try again later.",
+      "empty": "No premium services available",
+      "emptyHint": "Check back soon for professional car care.",
+      "fallbackName": "Premium Service",
+      "fallbackDescription": "Premium vehicle care during your VALO parking session.",
+      "book": "Book Now",
+      "choose": "Choose a service",
+      "popular": "Most Popular",
+      "explore": "Explore all services"
+    },
     "publicFeedback": {
           "eyebrow": "THE DRIVER’S PERSPECTIVE",
           "title": "Every journey.",

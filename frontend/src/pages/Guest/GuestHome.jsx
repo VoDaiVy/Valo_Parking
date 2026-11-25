@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, ShieldCheck, Zap, Camera, Car, CreditCard, ArrowRight, Smartphone, QrCode, Wrench, Sparkles, Clock, ChevronDown, Star } from 'lucide-react';
+import { Search, ShieldCheck, Zap, Camera, Car, CreditCard, ArrowRight, Smartphone, QrCode, Wrench, Sparkles, Clock, ChevronDown, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 
 // Import images
 import CarImage from '../../assets/images/car.png';
@@ -11,161 +11,102 @@ import PublicFeedbackSection from '../../components/Guest/PublicFeedbackSection'
 
 import { getServices } from '../../services/extraServiceApi';
 import { getLiveMapData } from '../../services/parkingFloorService';
+import { buildBookingUrl } from '../../utils/bookingNavigation';
+import { serviceName, serviceDescription } from '../../utils/servicePresentation';
 import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 const SERVICE_PRESENTATION = [
   {
-    badge: 'Most Requested',
     icon: Sparkles,
     fallbackImage: 'https://images.unsplash.com/photo-1502877338535-766e1452684a?auto=format&fit=crop&w=1400&q=80',
   },
   {
-    badge: 'Fast Care',
     icon: Zap,
     fallbackImage: 'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=1400&q=80',
   },
   {
-    badge: 'Cabin Care',
     icon: ShieldCheck,
     fallbackImage: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=1400&q=80',
   },
   {
-    badge: 'Safety Add-on',
     icon: Wrench,
     fallbackImage: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=1400&q=80',
   },
   {
-    badge: 'Smart Energy',
     icon: CreditCard,
     fallbackImage: 'https://images.unsplash.com/photo-1593941707882-a5bba14938c7?auto=format&fit=crop&w=1400&q=80',
   },
   {
-    badge: 'VIP Flow',
     icon: Car,
     fallbackImage: 'https://images.unsplash.com/photo-1525609004556-c46c7d6cf023?auto=format&fit=crop&w=1400&q=80',
   },
 ];
 
-const formatServicePrice = (price) => {
-  const amount = Number(price);
-
-  if (!Number.isFinite(amount)) {
-    return 'Contact us';
-  }
-
-  return `${amount.toLocaleString('vi-VN')} VND`;
-};
-
-const formatServiceTime = (timeCost) => {
-  const minutes = Number(timeCost);
-
-  if (!Number.isFinite(minutes) || minutes < 1) {
-    return '30 min';
-  }
-
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-};
-
-const mapServiceFromApi = (service, index) => {
-  const presentation = SERVICE_PRESENTATION[index % SERVICE_PRESENTATION.length];
-
-  return {
-    id: service._id || service.id || `service-${index}`,
-    title: service.name || 'Premium Service',
-    price: formatServicePrice(service.price),
-    desc: service.description || 'Premium vehicle care handled during your VALO parking session.',
-    image: service.imageUrl || presentation.fallbackImage,
-    badge: presentation.badge,
-    duration: formatServiceTime(service.timeCost),
-    icon: presentation.icon,
-  };
-};
-
-const PremiumCarServicesSection = () => {
+export const PremiumCarServicesSection = () => {
+  const { t, language } = useLanguage();
   const [services, setServices] = useState([]);
-  const [activeService, setActiveService] = useState(null);
-  const [fade, setFade] = useState(true);
+  const [selectedId, setSelectedId] = useState(null);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const fadeTimeoutRef = useRef(null);
+  const [error, setError] = useState(false);
+  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  const text = (key, options) => t(`homePage.premiumServices.${key}`, options);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchPremiumServices = async () => {
+    let mounted = true;
+    const fetchServices = async () => {
       try {
         const res = await getServices(true);
-
-        if (!isMounted) return;
-
-        if (res.ok && res.data?.success) {
-          const mappedServices = (res.data.data || []).map(mapServiceFromApi);
-
-          setServices(mappedServices);
-          setActiveService(mappedServices[0] || null);
-          setError('');
-          return;
+        if (!res.ok || !res.data?.success || !Array.isArray(res.data.data)) throw new Error('Unavailable');
+        // Rank once from API data; selection never changes order or popularity.
+        const count = service => Number.isInteger(service.usageCount) && service.usageCount >= 0 ? service.usageCount : -1;
+        const date = service => Date.parse(service.createdAt) || 0;
+        const id = service => String(service._id || service.id);
+        const ranked = res.data.data.filter(service => service.isActive === true)
+          .sort((a, b) => Math.max(0, count(b)) - Math.max(0, count(a)) || date(b) - date(a)
+            || (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : 0))
+          .map((service, index) => ({
+            ...service,
+            id: id(service),
+            image: service.imageUrl || SERVICE_PRESENTATION[index % SERVICE_PRESENTATION.length].fallbackImage,
+            usageCount: count(service),
+            icon: SERVICE_PRESENTATION[index % SERVICE_PRESENTATION.length].icon,
+          }));
+        if (mounted) {
+          setServices(ranked);
+          setSelectedId(ranked[0]?.id ?? null);
         }
-
-        throw new Error(res.data?.message || 'Failed to fetch services');
-      } catch (err) {
-        if (!isMounted) return;
-
-        setServices([]);
-        setActiveService(null);
-        setError(err.message || 'Failed to fetch services');
+      } catch {
+        if (mounted) setError(true);
       } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
-
-    fetchPremiumServices();
-
-    return () => {
-      isMounted = false;
-      if (fadeTimeoutRef.current) {
-        clearTimeout(fadeTimeoutRef.current);
-      }
-    };
+    fetchServices();
+    return () => { mounted = false; };
   }, []);
-
-  const handleServiceSelect = (service) => {
-    if (!activeService || service.id === activeService.id) return;
-
+  const duration = service => Number.isFinite(Number(service.timeCost)) && Number(service.timeCost) > 0
+    ? text('minutes', { count: Number(service.timeCost) }) : text('durationUnknown');
+  const usage = service => service.usageCount >= 0
+    ? text('completed', { count: service.usageCount.toLocaleString(locale) }) : text('usageUnknown');
+  const price = service => service.price != null && Number.isFinite(Number(service.price))
+    ? <span className="inline-flex items-baseline gap-1 whitespace-nowrap"><span className="text-lg font-extrabold">{Number(service.price).toLocaleString('en-US')}</span><span className="text-[10px] font-semibold">VND</span></span> : text('contact');
+  const pageCount = Math.ceil(services.length / 3);
+  const visibleServices = services.slice(page * 3, page * 3 + 3);
+  const popular = service => service.id === services[0]?.id && service.usageCount > 0;
+  const focus = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold';
+  const activeService = services.find(service => service.id === selectedId);
+  const [fade, setFade] = useState(true);
+  const fadeTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(fadeTimeoutRef.current), []);
+  const handleServiceSelect = service => {
+    if (service.id === selectedId) return;
+    setSelectedId(service.id);
     setFade(false);
-    if (fadeTimeoutRef.current) {
-      clearTimeout(fadeTimeoutRef.current);
-    }
-
-    fadeTimeoutRef.current = setTimeout(() => {
-      setActiveService(service);
-      setFade(true);
-    }, 220);
+    clearTimeout(fadeTimeoutRef.current);
+    fadeTimeoutRef.current = setTimeout(() => setFade(true), 220);
   };
-
-  const handleNextService = () => {
-    if (!activeService || services.length < 2) return;
-
-    const currentIndex = services.findIndex((service) => service.id === activeService.id);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % services.length;
-
-    handleServiceSelect(services[nextIndex]);
-  };
-
   const ActiveIcon = activeService?.icon || Sparkles;
-  const activeIndex = activeService ? services.findIndex((service) => service.id === activeService.id) : -1;
-  const visibleServices = activeIndex >= 0
-    ? Array.from({ length: Math.min(4, services.length) }, (_, offset) => services[(activeIndex + offset) % services.length])
-    : services.slice(0, 4);
 
   return (
     <section className="bg-[#121212] text-white py-12 lg:py-14 relative overflow-hidden border-y border-gray-800">
@@ -175,37 +116,37 @@ const PremiumCarServicesSection = () => {
       <div className="max-w-7xl mx-auto px-6 relative z-10">
         <div className="max-w-3xl mx-auto text-center mb-9">
           <div className="inline-flex items-center gap-2 py-1.5 px-4 rounded-full bg-white/5 border border-white/10 text-gold text-xs font-bold tracking-wider mb-3 uppercase">
-            <Sparkles size={14} /> Premium Add-ons
+            <Sparkles size={14} /> {text('eyebrow')}
           </div>
           <h2 className="text-3xl lg:text-4xl font-extrabold leading-tight mb-3">
-            Premium Car <span className="text-gold-gradient">Services</span>
+            {text('title')} <span className="text-gold-gradient">{text('titleAccent')}</span>
           </h2>
           <p className="text-gray-400 text-sm leading-relaxed">
-            Upgrade every parking session with curated vehicle care, safety checks, and VIP pickup options handled while your car stays inside VALO.
+            {text('subtitle')}
           </p>
         </div>
 
         {loading && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start max-w-6xl mx-auto animate-pulse">
+          <div role="status" aria-label={text('loading')} className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start max-w-6xl mx-auto animate-pulse motion-reduce:animate-none">
             <div className="lg:col-span-5">
-              <div className="w-full max-w-[410px] mx-auto h-[430px] lg:h-[460px] rounded-[26px] bg-[#1A1A1A] border border-white/10"></div>
+              <div className="w-full max-w-[410px] mx-auto h-[430px] lg:h-[488px] rounded-[26px] bg-[#1A1A1A] border border-white/10"></div>
             </div>
             <div className="lg:col-span-7 space-y-3">
-              {[1, 2, 3, 4].map((item) => (
-                <div key={item} className={`${item === 1 ? 'h-32' : 'h-20'} rounded-[22px] bg-[#1A1A1A] border border-gray-800`}></div>
+              {[1, 2, 3].map((item) => (
+                <div key={item} className={`h-32 rounded-[22px] bg-[#1A1A1A] border border-gray-800`}></div>
               ))}
             </div>
           </div>
         )}
 
         {!loading && (error || !activeService) && (
-          <div className="rounded-2xl border border-white/10 bg-[#1A1A1A] p-10 text-center">
+          <div role="status" className="rounded-2xl border border-white/10 bg-[#1A1A1A] p-10 text-center">
             <Sparkles size={28} className="text-gold mx-auto mb-4" />
             <h3 className="text-xl font-extrabold text-white mb-2">
-              {error ? 'Services are temporarily unavailable' : 'No premium services available'}
+              {text(error ? 'error' : 'empty')}
             </h3>
             <p className="text-gray-400 text-sm max-w-xl mx-auto">
-              {error || 'Please add active services from the admin dashboard to display them here.'}
+              {text(error ? 'errorHint' : 'emptyHint')}
             </p>
           </div>
         )}
@@ -213,30 +154,29 @@ const PremiumCarServicesSection = () => {
         {!loading && activeService && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start max-w-6xl mx-auto">
             <div className="lg:col-span-5">
-              <div className="relative w-full max-w-[410px] mx-auto h-[430px] lg:h-[460px] rounded-[26px] overflow-hidden border border-white/10 bg-[#1A1A1A] shadow-2xl">
+              <div className="relative w-full max-w-[410px] mx-auto h-[430px] lg:h-[488px] rounded-[26px] overflow-hidden border border-white/10 bg-[#1A1A1A] shadow-2xl">
                 <img
                   src={activeService.image}
-                  alt={activeService.title}
-                  className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ease-out ${fade ? 'opacity-100 scale-100' : 'opacity-40 scale-105'}`}
+                  alt={serviceName(activeService, t) || text('fallbackName')}
+                  className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 motion-reduce:transition-none ease-out ${fade ? 'opacity-100 scale-100' : 'opacity-40 scale-105'}`}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-charcoal/75 via-transparent to-black/10"></div>
-                <div className={`absolute left-5 right-5 bottom-5 transition-all duration-300 ${fade ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
-                  <div className="flex max-w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/90 p-3 text-charcoal shadow-xl backdrop-blur">
+                <div className={`absolute left-5 right-5 bottom-5 transition-all duration-300 motion-reduce:transition-none ${fade ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
+                  <div className="flex max-w-full flex-wrap sm:flex-nowrap items-center gap-3 rounded-2xl border border-white/15 bg-white/90 p-3 text-charcoal shadow-xl backdrop-blur">
                     <div className="w-11 h-11 rounded-xl bg-gold text-charcoal flex items-center justify-center shrink-0">
                       <ActiveIcon size={21} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-extrabold truncate">{activeService.title}</p>
-                      <p className="text-[10px] text-gray-500 uppercase tracking-[0.18em] font-bold truncate">
-                        {activeService.badge}
+                      <p className="text-sm font-extrabold break-words [overflow-wrap:anywhere]">{serviceName(activeService, t) || text('fallbackName')}</p>
+                      <p className="text-[10px] text-gray-600 font-bold leading-relaxed">
+                        <span className="text-[#A67C24]">{price(activeService)}</span><span className="block">{duration(activeService)}</span>
                       </p>
                     </div>
                     <Link
-                      to={`/services`}
-                      state={{ selectedServiceId: activeService.id }}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-gold-gradient px-4 py-2.5 text-xs font-extrabold text-charcoal shadow-[0_10px_24px_rgba(212,175,55,0.24)] transition-all hover:scale-105"
+                      to={buildBookingUrl(activeService.id)}
+                      className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold inline-flex items-center justify-center gap-1.5 rounded-full bg-gold-gradient px-4 py-2.5 text-xs font-extrabold text-charcoal shadow-[0_10px_24px_rgba(212,175,55,0.24)] transition-all hover:scale-105"
                     >
-                      Book Now
+                      {text('book')}
                       <ArrowRight size={13} />
                     </Link>
                   </div>
@@ -244,101 +184,49 @@ const PremiumCarServicesSection = () => {
               </div>
             </div>
 
-            <div className="lg:col-span-7">
-              <div className="relative space-y-3">
-                {services.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={handleNextService}
-                    className="absolute left-1/2 top-[122px] z-20 hidden h-10 w-10 -translate-x-1/2 items-center justify-center rounded-full border border-gold/40 bg-[#121212] text-gold shadow-[0_10px_30px_rgba(0,0,0,0.35),0_0_0_6px_rgba(18,18,18,0.75)] transition-all hover:-translate-y-0.5 hover:border-gold hover:bg-gold hover:text-charcoal lg:flex"
-                    aria-label="Show next service"
-                  >
-                    <ChevronDown size={20} />
-                  </button>
-                )}
+            <div className="lg:col-span-7 min-w-0">
+              <div className="space-y-3 lg:h-[432px]">
                 {visibleServices.map((service) => {
                   const Icon = service.icon;
                   const isActive = service.id === activeService.id;
-
                   return (
-                    <button
-                      key={service.id}
-                      type="button"
-                      onClick={() => handleServiceSelect(service)}
-                      aria-pressed={isActive}
-                      className={`group relative w-full overflow-hidden text-left rounded-[24px] border transition-all duration-300 ${
-                        isActive
-                          ? 'min-h-[132px] border-gold/70 bg-[linear-gradient(135deg,rgba(212,175,55,0.12),rgba(26,26,26,0.96)_48%,rgba(26,26,26,1))] p-5 shadow-[0_14px_34px_rgba(0,0,0,0.24),0_6px_22px_rgba(212,175,55,0.07)]'
-                          : 'min-h-[76px] border-white/10 bg-[#181818] p-3.5 hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#202020]'
-                      }`}
-                    >
-                      {isActive && (
-                        <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-gold-gradient"></div>
-                      )}
-                      <div className={`flex gap-4 ${isActive ? 'items-start' : 'items-center'}`}>
-                        <div className={`rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 ${
-                          isActive
-                            ? 'w-14 h-14 rounded-2xl bg-gold-gradient text-charcoal shadow-[0_10px_24px_rgba(212,175,55,0.2)]'
-                            : 'w-10 h-10 bg-white/5 text-gold group-hover:bg-gold/10'
-                        }`}>
-                          <Icon size={isActive ? 23 : 18} />
-                        </div>
-
+                    <article key={service.id} className={`group relative isolate overflow-hidden rounded-2xl border p-3.5 transition-colors motion-reduce:transition-none lg:h-[136px] ${isActive
+                      ? 'border-gold/60 bg-[linear-gradient(120deg,rgba(212,175,55,0.14),rgba(26,26,26,0.98)_65%)] shadow-[0_4px_20px_rgba(212,175,55,0.06)]'
+                      : 'border-white/10 bg-[#181818] hover:border-gold/30 hover:bg-[#202020]'}`}>
+                      {isActive && <div className="absolute inset-y-3 left-0 w-0.5 rounded-r-full bg-gold-gradient" />}
+                      <button type="button" onClick={() => handleServiceSelect(service)} aria-pressed={isActive}
+                        aria-label={serviceName(service, t) || text('fallbackName')}
+                        className={`${focus} absolute inset-0 z-10 rounded-2xl`} />
+                      <div className="flex items-start gap-3">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-gold-gradient text-charcoal shadow-[0_0_18px_rgba(212,175,55,0.3)]' : 'bg-white/5 text-gold'}`}><Icon size={20} aria-hidden="true" /></div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-4">
+                          <div className="grid min-w-0 grid-cols-1 items-start gap-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-3">
                             <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h4 className={`font-extrabold text-white truncate ${isActive ? 'text-lg' : 'text-sm'}`}>
-                                  {service.title}
-                                </h4>
-                                {isActive && (
-                                  <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full border border-gold/30 bg-gold/10 text-gold text-[10px] font-bold uppercase tracking-wider">
-                                    {service.badge}
-                                  </span>
-                                )}
-                              </div>
-                              <p className={`text-gray-400 leading-relaxed transition-all duration-300 ${
-                                isActive ? 'mt-1.5 text-sm line-clamp-1' : 'mt-1 text-xs line-clamp-1'
-                              }`}>
-                                {service.desc}
-                              </p>
+                              <h3 className="line-clamp-1 text-sm font-extrabold text-white" title={serviceName(service, t)}>{serviceName(service, t) || text('fallbackName')}</h3>
+                              {popular(service) && <span className="mt-1 inline-flex rounded-full border border-gold/30 bg-gold/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-gold">{text('popular')}</span>}
+                              <p className="mt-1 min-w-0 truncate text-xs leading-5 text-gray-400">{serviceDescription(service, t) || text('fallbackDescription')}</p>
                             </div>
-                            <span className={`text-gold font-mono font-bold whitespace-nowrap ${isActive ? 'text-base' : 'text-sm'}`}>
-                              {service.price}
-                            </span>
-                          </div>
-
-                          <div className={`flex items-center justify-between ${isActive ? 'mt-3' : 'mt-2.5'}`}>
-                            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gray-500">
-                              <Clock size={13} className="text-gold" /> {service.duration}
-                            </span>
-                            {isActive ? (
-                              <span className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/10 px-3.5 py-1.5 text-xs font-extrabold text-gold">
-                                Selected
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-600 group-hover:text-gold">
-                                View <ArrowRight size={12} />
-                              </span>
-                            )}
+                            <div className="shrink-0 whitespace-nowrap text-gold">{price(service)}</div>
                           </div>
                         </div>
                       </div>
-                    </button>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                        <span className="inline-flex flex-wrap items-center gap-1 text-[11px] text-gray-400"><Clock size={12} aria-hidden="true" className="text-gold" />{duration(service)}<span aria-hidden="true" className="mx-0.5 h-1 w-1 shrink-0 rounded-full bg-current" />{usage(service)}</span>
+                        <Link to="/services" state={{ selectedServiceId: service.id }} aria-label={`${text('details')}: ${serviceName(service, t)}`}
+                          className={`${focus} relative z-20 inline-flex min-h-11 items-center rounded-full border border-gold/50 px-3 text-xs font-bold text-gold transition-colors hover:border-gold hover:bg-gold/10 motion-reduce:transition-none lg:min-h-8`}>{text('details')}<ArrowRight size={12} className="ml-1" aria-hidden="true" /></Link>
+                      </div>
+                    </article>
                   );
                 })}
               </div>
-
-              {services.length > 1 && (
-                <button
-                  type="button"
-                  onClick={handleNextService}
-                  className="mx-auto mt-4 flex h-10 w-10 items-center justify-center rounded-full border border-gold/30 bg-white/5 text-gold transition-all hover:border-gold hover:bg-gold hover:text-charcoal lg:hidden"
-                  aria-label="Show next service"
-                >
-                  <ChevronDown size={19} />
-                </button>
-              )}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <Link to="/services" className={`${focus} inline-flex min-h-11 items-center gap-2 rounded text-sm font-bold text-gold`}>{text('explore')}<ArrowRight size={16} aria-hidden="true" /></Link>
+                {pageCount > 1 && <nav aria-label={text('pagination')} className="flex items-center gap-1">
+                  <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label={text('previous')} className={`${focus} h-11 w-11 rounded-full border border-white/10 text-gold hover:bg-gold/10 disabled:opacity-30`}><ChevronLeft size={16} aria-hidden="true" className="mx-auto" /></button>
+                  <span className="whitespace-nowrap px-1 text-xs text-gray-400" aria-live="polite">{page + 1} / {pageCount}</span>
+                  <button type="button" disabled={page === pageCount - 1} onClick={() => setPage(page + 1)} aria-label={text('next')} className={`${focus} h-11 w-11 rounded-full border border-white/10 text-gold hover:bg-gold/10 disabled:opacity-30`}><ChevronRight size={16} aria-hidden="true" className="mx-auto" /></button>
+                </nav>}
+              </div>
             </div>
           </div>
         )}
