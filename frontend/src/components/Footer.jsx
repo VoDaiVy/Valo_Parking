@@ -31,7 +31,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="text-center text-gray-400 text-sm border-t border-gray-100 pt-8 max-w-7xl mx-auto">
-        © 2026 VALO Smart Parking. Developed by Vo Dai Vy.
+        © 2026 VALO Smart Parking.
       </div>
     </footer>
   );

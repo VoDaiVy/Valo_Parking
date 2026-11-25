@@ -4,6 +4,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Viewport only: do not target descendants, nested scrollers, or modals. */
+html.guest-page-scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.guest-page-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .scrollbar-hidden {
   -ms-overflow-style: none;
   scrollbar-width: none;

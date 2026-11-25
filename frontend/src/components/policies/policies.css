@@ -1,0 +1,9 @@
+/* Scope the shared shell adjustment to policy routes only. */
+div:has(> main .policy-page) { display: flex; flex-direction: column; min-height: 100vh; overflow-x: clip; }
+div:has(> main .policy-page) > main { flex: 1; }
+.policy-page { min-width: 0; }
+.policy-toc a { overflow-wrap: anywhere; }
+.policy-toc summary:focus-visible, .policy-toc a:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+@media (min-width: 1024px) {
+  .policy-toc { position: sticky; top: 6rem; max-height: calc(100vh - 7rem); overflow-y: auto; }
+}

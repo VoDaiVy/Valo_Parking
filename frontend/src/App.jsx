@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { useLayoutEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, matchPath } from "react-router-dom";
 import { SocketProvider } from "./contexts/SocketProvider";
 
 // Layouts
@@ -62,6 +63,23 @@ import LoyaltyRewards from "./pages/Customer/LoyaltyRewards";
 // Misc
 import UnauthorizedPage from "./pages/UnauthorizedPage";
 
+// Hide only the document scrollbar on Guest routes and these Customer pages.
+function GuestPageScrollbar() {
+  const { pathname } = useLocation();
+  const isGuestPage = ["/", "/services", "/parking-map", "/policies", "/policies/:slug", "/policy", "/login", "/oauth/callback", "/booking", "/membership"]
+    .some((path) => matchPath(path, pathname));
+
+  useLayoutEffect(() => {
+    if (!isGuestPage) return undefined;
+
+    const root = document.documentElement;
+    root.classList.add("guest-page-scrollbar-hidden");
+    return () => root.classList.remove("guest-page-scrollbar-hidden");
+  }, [isGuestPage]);
+
+  return null;
+}
+
 function RedirectOldWalletRoutes() {
   const location = useLocation();
   return <Navigate to={`/customer/wallet${location.search}`} replace />;
@@ -91,6 +109,7 @@ export default function App() {
   return (
     <SocketProvider>
       <BrowserRouter>
+        <GuestPageScrollbar />
         <Routes>
           {/* ── Standalone Kiosk app ── */}
           <Route path="/kiosk/*" element={<KioskFlow />} />

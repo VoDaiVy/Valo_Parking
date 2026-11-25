@@ -1,12 +1,19 @@
+import './BookingPage.css';
+import './ParkingHistory.css';
+import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "../../services/api";
 import {
   History,
+  Car,
   MapPin,
   Clock,
-  Car,
-  Calendar,
   CreditCard,
+  Search,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Check,
   Image as ImageIcon,
   CheckCircle2,
   AlertCircle,
@@ -20,15 +27,89 @@ import { formatLicensePlateDisplay } from "../../utils/licensePlate";
 import { useLanguage } from "../../i18n/hooks/useLanguage";
 import MembershipServiceSelectionModal from "../../components/membership/MembershipServiceSelectionModal";
 
+function HistoryDropdown({ label, value, onChange, options }) {
+  return (
+    <div className="booking-dropdown">
+      <Listbox value={value} onChange={onChange}>
+        <ListboxButton aria-label={label} className="booking-dropdown-button">
+          <span>{options.find((option) => option.value === value)?.label}</span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </ListboxButton>
+        <ListboxOptions anchor="bottom start" className="booking-dropdown-menu">
+          {options.map((option) => (
+            <ListboxOption key={option.value} value={option.value} className="booking-dropdown-option">
+              {({ selected }) => <><span>{option.label}</span>{selected && <Check size={16} aria-hidden="true" />}</>}
+            </ListboxOption>
+          ))}
+        </ListboxOptions>
+      </Listbox>
+    </div>
+  );
+}
+
+const sessionTimestamp = (session) => new Date(session.checkInTime).getTime() || 0;
+const normalizeSearch = (value) => String(value || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
 export default function ParkingHistory() {
   const { language, t } = useLanguage();
-  const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+  const locale = language === 'vi' ? 'vi-VN' : 'en-GB';
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
   const [serviceSession, setServiceSession] = useState(null);
   const [now, setNow] = useState(() => Date.now());
+
+  const [query, setQuery] = useState('');
+  const [dateRange, setDateRange] = useState('all');
+  const [sortOrder, setSortOrder] = useState('newest');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(4);
+  const copy = language === 'vi' ? {
+    search: 'T\u00ecm bi\u1ec3n s\u1ed1, v\u1ecb tr\u00ed', dates: 'Ng\u00e0y v\u00e0o', allDates: 'M\u1ecdi th\u1eddi gian',
+    today: 'H\u00f4m nay', week: '7 ng\u00e0y qua', month: '30 ng\u00e0y qua', sort: 'S\u1eafp x\u1ebfp',
+    newest: 'M\u1edbi nh\u1ea5t', oldest: 'C\u0169 nh\u1ea5t', status: 'Tr\u1ea1ng th\u00e1i', allStatus: 'T\u1ea5t c\u1ea3 tr\u1ea1ng th\u00e1i',
+    page: 'Trang', of: '/', results: 'k\u1ebft qu\u1ea3', prev: 'Tr\u01b0\u1edbc', next: 'Sau',
+    pagination: 'Ph\u00e2n trang l\u1ecbch s\u1eed', noResults: 'Kh\u00f4ng t\u00ecm th\u1ea5y phi\u00ean \u0111\u1ed7 xe', reset: '\u0110\u1eb7t l\u1ea1i b\u1ed9 l\u1ecdc',
+  } : {
+    search: 'Search plate, slot', dates: 'Check-in date', allDates: 'All dates', today: 'Today', week: 'Past 7 days', month: 'Past 30 days',
+    sort: 'Sort order', newest: 'Newest first', oldest: 'Oldest first', status: 'Status', allStatus: 'All statuses',
+    page: 'Page', of: 'of', results: 'results', prev: 'Prev', next: 'Next', pagination: 'History pagination',
+    noResults: 'No matching sessions', reset: 'Reset filters',
+  };
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px) and (min-height: 850px)');
+    const resize = () => { setPageSize(media.matches ? 5 : 4); setPage(1); };
+    resize();
+    media.addEventListener('change', resize);
+    return () => media.removeEventListener('change', resize);
+  }, []);
+  const statuses = [...new Set(sessions.map((session) => session.status).filter(Boolean))].sort();
+  const latestSession = sessions.reduce((latest, session) =>
+    !latest || sessionTimestamp(session) > sessionTimestamp(latest) ? session : latest, null);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const rangeStart = new Date(today);
+  rangeStart.setDate(rangeStart.getDate() - (dateRange === 'week' ? 6 : dateRange === 'month' ? 29 : 0));
+  const rangeEnd = new Date(today);
+  rangeEnd.setDate(rangeEnd.getDate() + 1);
+  const filteredSessions = sessions.filter((session) => {
+    const matchesSearch = [session.licensePlate, session.parkingSlot].some((value) => normalizeSearch(value).includes(normalizeSearch(query)));
+    const checkIn = new Date(session.checkInTime);
+    return matchesSearch && (statuses.length < 2 || statusFilter === 'all' || session.status === statusFilter)
+      && (dateRange === 'all' || (checkIn >= rangeStart && checkIn < rangeEnd));
+  }).sort((a, b) => {
+    const difference = sessionTimestamp(b) - sessionTimestamp(a) || String(b._id).localeCompare(String(a._id));
+    return sortOrder === 'newest' ? difference : -difference;
+  });
+  const pageCount = Math.max(1, Math.ceil(filteredSessions.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  if (page > pageCount) setPage(pageCount);
+  const visibleSessions = filteredSessions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const resetFilters = () => { setQuery(''); setDateRange('all'); setSortOrder('newest'); setStatusFilter('all'); setPage(1); };
+  const statusLabel = (status) => status === 'active' ? t('historyPage.active')
+    : t(`myBookings.status.${String(status).toUpperCase()}`, { defaultValue: status });
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
@@ -94,7 +175,7 @@ export default function ParkingHistory() {
           </span>
         );
       default:
-        return null;
+        return <span className="history-unknown-status">{statusLabel(status)}</span>;
     }
   };
 
@@ -170,18 +251,13 @@ export default function ParkingHistory() {
   );
 
   return (
-    <div
-      className="min-h-full flex flex-col p-4 md:p-8"
-      style={{
-        backgroundColor: "#050505",
-      }}
-    >
+    <div className="history-page min-h-full px-4 py-6 sm:px-6 sm:py-8">
       {/* ── HEADER ── */}
       <CustomerPageHeader
         icon={History}
         title={t('historyPage.title')}
         description={t('historyPage.description')}
-        className="mb-8 md:mb-10"
+        className="mb-6"
       />
 
       {/* ── CONTENT ── */}
@@ -203,95 +279,50 @@ export default function ParkingHistory() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col space-y-6">
-          {sessions.map((session, index) => (
-            <div
-              key={session._id}
-              className={`relative group bg-[#0d0d12] rounded-3xl border overflow-hidden transition-all duration-300 hover:shadow-[0_8px_30px_rgba(234,179,8,0.06)] ${
-                index === 0
-                  ? "border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.08)]"
-                  : "border-gray-800/50 hover:border-yellow-500/30"
-              }`}
-            >
-              <div
-                className={`absolute top-0 left-0 w-1.5 h-full transition-opacity ${
-                  index === 0
-                    ? "bg-gradient-to-b from-yellow-400 to-yellow-600 opacity-100"
-                    : "bg-gradient-to-b from-yellow-400 to-yellow-600 opacity-0 group-hover:opacity-100"
-                }`}
-              ></div>
-
-              <div className="p-5 md:p-6">
-                {/* Card Header */}
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-                  <div className="flex items-center gap-3 md:gap-4">
-                    <div className="w-12 h-12 shrink-0 bg-gray-800/50 rounded-xl flex items-center justify-center border border-gray-700/50">
-                      <Car size={24} className="text-yellow-400" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-[10px] md:text-xs font-bold text-gray-500 uppercase tracking-widest">
-                          {t('historyPage.licensePlate')}
-                        </p>
-                        {index === 0 && (
-                          <span className="px-2 py-0.5 rounded text-[9px] font-black bg-yellow-500 text-black tracking-wider uppercase shadow-[0_0_10px_rgba(234,179,8,0.4)]">
-                            {t('historyPage.latest')}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-xl md:text-2xl font-black text-white tracking-wide">
-                        {formatLicensePlateDisplay(session.licensePlate)}
-                      </h4>
+        <>
+          <div className="booking-toolbar">
+            <label className="booking-search">
+              <Search size={17} aria-hidden="true" />
+              <input type="search" aria-label={copy.search} placeholder={copy.search} value={query}
+                onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
+            </label>
+            {statuses.length > 1 && <HistoryDropdown label={copy.status} value={statusFilter}
+              onChange={(value) => { setStatusFilter(value); setPage(1); }}
+              options={[{ value: 'all', label: copy.allStatus }, ...statuses.map((status) => ({ value: status, label: statusLabel(status) }))]} />}
+            <HistoryDropdown label={copy.dates} value={dateRange} onChange={(value) => { setDateRange(value); setPage(1); }}
+              options={[{ value: 'all', label: copy.allDates }, { value: 'today', label: copy.today }, { value: 'week', label: copy.week }, { value: 'month', label: copy.month }]} />
+            <HistoryDropdown label={copy.sort} value={sortOrder} onChange={(value) => { setSortOrder(value); setPage(1); }}
+              options={[{ value: 'newest', label: copy.newest }, { value: 'oldest', label: copy.oldest }]} />
+          </div>
+          <div className="history-list">
+            {visibleSessions.length === 0 && <div className="history-no-results">
+              <p>{copy.noResults}</p>
+              <button type="button" onClick={resetFilters}>{copy.reset}</button>
+            </div>}
+            {visibleSessions.map((session) => {
+              const checkIn = session.checkInTime ? new Date(session.checkInTime) : null;
+              const validCheckIn = checkIn && Number.isFinite(checkIn.getTime());
+              return (
+                <article key={session._id} className="history-record">
+                  <div className="history-vehicle">
+                    <Car className="history-vehicle-mark" size={52} strokeWidth={1.2} aria-hidden="true" />
+                    <div className="history-plate">
+                      <h3>{formatLicensePlateDisplay(session.licensePlate)}</h3>
+                      {session._id === latestSession?._id && <span className="history-latest">{t('historyPage.latest')}</span>}
+                      <span className="history-slot"><MapPin size={12} aria-hidden="true" />{t('historyPage.slot')} {session.parkingSlot || t('historyPage.unassigned')}</span>
                     </div>
                   </div>
-                  <div className="self-start">
-                    {getStatusBadge(session.status)}
+                  <div className="history-time" aria-label={t('historyPage.checkIn')}>
+                    <span className="history-label"><LogIn size={12} aria-hidden="true" />{t('historyPage.checkIn')}</span>
+                    <span>{validCheckIn ? checkIn.toLocaleDateString(locale, { dateStyle: 'short' }) : '\u2014'}</span>
+                    <span>{validCheckIn ? checkIn.toLocaleTimeString(locale, { timeStyle: 'short' }) : '\u2014'}</span>
                   </div>
-                </div>
-
-                {/* Details Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-y-5 gap-x-4 mb-6">
-                  <div>
-                    <div className="flex items-center gap-1.5 text-gray-500 mb-1">
-                      <Calendar size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.checkIn')}</span>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-200">
-                      {formatDate(session.checkInTime)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-1.5 text-gray-500 mb-1">
-                      <Clock size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.duration')}</span>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-200">
-                      {calculateDuration(session.checkInTime, session.checkOutTime)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-1.5 text-gray-500 mb-1">
-                      <MapPin size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.slot')}</span>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-200">
-                      {session.parkingSlot || t('historyPage.unassigned')}
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-1.5 text-gray-500 mb-1">
-                      <CreditCard size={14} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{t('historyPage.total')}</span>
-                    </div>
-                    <p className="text-sm font-bold text-yellow-400">
-                      {formatMoney(session.totalPrice)}
-                    </p>
-                  </div>
-                </div>
-
+                  <div className="history-cell"><span className="history-label"><Clock size={12} aria-hidden="true" />{t('historyPage.duration')}</span>
+                    <span>{calculateDuration(session.checkInTime, session.checkOutTime)}</span></div>
+                  <div className="history-cell"><span className="history-label"><CreditCard size={12} aria-hidden="true" />{t('historyPage.total')}</span>
+                    <strong className="history-total">{formatMoney(session.totalPrice)}</strong></div>
+                  <div className="history-status">{getStatusBadge(session.status)}</div>
+                  <div className="history-extras">
                 {session.canSelectServices === true && session.type === 'SUBSCRIPTION' && session.status === 'active' && (
                   <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-wrap items-center justify-between gap-3">
                     <span className="text-xs text-gray-400">
@@ -325,10 +356,26 @@ export default function ParkingHistory() {
                     </a>
                   </div>
                 )}
-              </div>
+
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <nav aria-label={copy.pagination} className="booking-pagination history-pagination">
+            <p role="status" className="booking-page-summary">{copy.page} {currentPage} {copy.of} {pageCount} &middot; {filteredSessions.length} {copy.results}</p>
+            <div className="booking-page-links">
+              <button type="button" aria-label={copy.prev} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={14} />{copy.prev}</button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => number === 1 || number === pageCount || Math.abs(number - currentPage) <= 1).map((number, index, numbers) => (
+                <span key={number} className="inline-flex items-center gap-2">
+                  {index > 0 && number - numbers[index - 1] > 1 && <span className="text-white/50">&hellip;</span>}
+                  <button type="button" aria-label={`${copy.page} ${number}`} aria-current={number === currentPage ? 'page' : undefined} onClick={() => setPage(number)}>{number}</button>
+                </span>
+              ))}
+              <button type="button" aria-label={copy.next} disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>{copy.next}<ChevronRight size={14} /></button>
             </div>
-          ))}
-        </div>
+          </nav>
+        </>
       )}
 
       {serviceSession && (
