@@ -4,7 +4,6 @@ import * as THREE from 'three';
 import {
   useGLTF,
   OrbitControls,
-  Environment,
   ContactShadows,
   Html,
   Bounds,
@@ -204,7 +203,6 @@ const CarViewer = forwardRef(function CarViewer({ modelUrl, carColor = '#ffffff'
             far={1.5}
           />
         </Suspense>
-        <Environment preset="city" />
 
         {/* Controls */}
         <OrbitControls

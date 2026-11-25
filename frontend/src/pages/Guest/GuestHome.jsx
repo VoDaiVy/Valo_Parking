@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, ShieldCheck, Zap, Camera, Car, CreditCard, ArrowRight, Smartphone, QrCode, Wrench, Sparkles, Clock, ChevronDown } from 'lucide-react';
+import { Search, ShieldCheck, Zap, Camera, Car, CreditCard, ArrowRight, Smartphone, QrCode, Wrench, Sparkles, Clock, ChevronDown, Star } from 'lucide-react';
 
 // Import images
 import CarImage from '../../assets/images/car.png';
@@ -348,7 +348,8 @@ const PremiumCarServicesSection = () => {
 };
 
 export default function GuestHome() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const [feedbackSummary, setFeedbackSummary] = useState(null);
   const navigate = useNavigate();
   const [pulse, setPulse] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -391,6 +392,24 @@ export default function GuestHome() {
     };
   }, []);
 
+  const summary = feedbackSummary?.data;
+  const averageRating = Number(summary?.averageRating);
+  const totalReviews = Number(summary?.total);
+  const hasRating = !feedbackSummary?.loading && !feedbackSummary?.error
+    && Number.isInteger(totalReviews) && totalReviews > 0
+    && summary?.averageRating != null && Number.isFinite(averageRating) && averageRating >= 1 && averageRating <= 5;
+  const scrollToReviews = event => {
+    const target = document.getElementById('public-feedback');
+    if (!target) return;
+    event.preventDefault();
+    const navbarHeight = document.getElementById('main-navbar')?.getBoundingClientRect().height || 0;
+    window.scrollTo({
+      top: Math.max(0, window.scrollY + target.getBoundingClientRect().top - navbarHeight - 16),
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
+    target.focus({ preventScroll: true });
+  };
+
   const handleMapClick = () => {
     if (isLoggedIn) {
       navigate('/parking-map');
@@ -416,9 +435,23 @@ export default function GuestHome() {
             <div className="flex items-center pl-3 text-gray-400">
               <Search size={20} />
             </div>
-            <input type="text" placeholder={t('homePage.platePlaceholder')} className="flex-1 bg-transparent px-2 py-3 outline-none text-gray-700 font-semibold placeholder-gray-400" />
+            <input type="text" placeholder={t('homePage.platePlaceholder')} className="min-w-0 flex-1 bg-transparent px-2 py-3 outline-none text-gray-700 font-semibold placeholder-gray-400" />
             <button className="bg-charcoal text-white px-6 py-3 rounded-lg font-bold hover:bg-black hover:scale-105 transition-all whitespace-nowrap">{t('homePage.check')}</button>
           </div>
+          <a href="#public-feedback" onClick={scrollToReviews} className="valo-hero-rating">
+            {hasRating ? <>
+              <span className="valo-hero-stars" aria-hidden="true">
+                {[0, 1, 2, 3, 4].map(index => <span key={index} className="valo-hero-star">
+                  <Star size={16} />
+                  <span style={{ width: `${Math.max(0, Math.min(1, averageRating - index)) * 100}%` }}><Star size={16} fill="currentColor" /></span>
+                </span>)}
+              </span>
+              <strong>{averageRating.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US', { maximumFractionDigits: 2 })} / 5</strong>
+              <span>{t('homePage.reviewCount', { count: totalReviews })}</span>
+            </> : <span>{t(!feedbackSummary || feedbackSummary.loading ? 'homePage.reviewsLoading'
+              : !feedbackSummary.error && totalReviews === 0 ? 'homePage.noReviews' : 'homePage.reviewsUnavailable')}</span>}
+            <span className="valo-hero-read-reviews">{t('homePage.readReviews')}<ChevronDown size={14} aria-hidden="true" /></span>
+          </a>
         </div>
 
         <div className="w-full lg:w-1/2 relative">
@@ -576,7 +609,7 @@ export default function GuestHome() {
 
       {/* 4. PREMIUM CAR SERVICES */}
       <PremiumCarServicesSection />
-      <PublicFeedbackSection />
+      <PublicFeedbackSection onSummaryChange={setFeedbackSummary} />
 
       {/* 5. HOW IT WORKS */}
       <section className="bg-charcoal text-white py-24 relative">

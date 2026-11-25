@@ -127,18 +127,27 @@ async function getAdminFeedback(id) {
 async function listPublicFeedbacks(query = {}) {
   const page = integerParam(query.page, 1, 100000);
   const limit = integerParam(query.limit, 6, 30);
-  const [records, stats] = await Promise.all([
-    Feedback.find({}).sort({ createdAt: -1, _id: -1 })
+  const rating = /^[1-5]$/.test(String(query.rating)) ? Number(query.rating) : null;
+  const filter = rating ? { rating } : {};
+  const sort = query.sort === 'lowest' ? { rating: 1, createdAt: -1, _id: -1 }
+    : query.sort === 'highest' ? { rating: -1, createdAt: -1, _id: -1 }
+      : { createdAt: -1, _id: -1 };
+  const [records, buckets] = await Promise.all([
+    Feedback.find(filter).sort(sort)
       .skip((page - 1) * limit).limit(limit)
       .select('rating comment categories createdAt userId').populate('userId', 'username').lean(),
-    getStats({}),
+    Feedback.aggregate([{ $group: { _id: '$rating', count: { $sum: 1 } } }]),
   ]);
+  const distribution = Object.fromEntries([1, 2, 3, 4, 5].map(value => [value, 0]));
+  for (const bucket of buckets) distribution[bucket._id] = bucket.count;
+  const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
+  const averageRating = total ? Object.entries(distribution).reduce((sum, [value, count]) => sum + Number(value) * count, 0) / total : null;
   // Only the public username is exposed; account IDs and private fields stay internal.
   const items = records.map(record => ({
     id: String(record._id), rating: record.rating, comment: record.comment,
     categories: record.categories, createdAt: record.createdAt,
     author: record.userId?.username || null,
   }));
-  return { items, total: stats.total, averageRating: stats.averageRating, page, limit };
+  return { items, total, averageRating, distribution, filteredTotal: rating ? distribution[rating] : total, page, limit };
 }
 module.exports = { assertId, userDTO, createFeedback, getFeedback, attachFeedbackSummaries, buildFilter, listFeedbacks, getStats, getAdminFeedback, listPublicFeedbacks };

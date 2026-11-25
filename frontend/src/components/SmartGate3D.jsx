@@ -1,6 +1,6 @@
 import { useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, useGLTF, ContactShadows, Environment, Text } from '@react-three/drei';
+import { OrbitControls, useGLTF, ContactShadows, Text } from '@react-three/drei';
 import * as THREE from 'three';
 
 // 1. Real car
@@ -175,8 +175,6 @@ export default function SmartGate3D() {
         />
 
         <Suspense fallback={null}>
-          <Environment preset="warehouse" />
-
           <BarrierAndCamera position={[-6, 0, 5]} rotationY={0} enabled={false} showPlate={false} />
           <BarrierAndCamera position={[6, 0, 5]} rotationY={Math.PI} enabled showPlate />
           <RealCarModel position={[6, 0, 0]} />
