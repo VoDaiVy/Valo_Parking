@@ -673,12 +673,25 @@ IDENTIFICATION RULES:
      * If an empty slot says "C1", and the next slot has a toy car, and the next empty slot says "C3", then that car is placed in slot "C2"!
      * If slot "C3" is empty, and the next slot has a toy car, and the next empty slot says "C5", then that car is placed in slot "C4"!
      * Zone D is on the BOTTOM-RIGHT. If no cars are on the bottom-right, all D1..D5 slots are strictly EMPTY.
-2. A slot is OCCUPIED ONLY when a car model or vehicle card is physically placed inside that slot.
+     * Zone B is on the TOP-RIGHT. If no cars are on the top-right (only printed numbers B1..B5 and background desk / TV remote control), all B1..B5 slots are strictly EMPTY.
+2. A slot is OCCUPIED ONLY when a car model or vehicle card is physically placed inside that slot. Do NOT mistake the desk surface, printed paper labels, or TV remote control lying next to B5 for a vehicle.
 3. For occupied slots, read the EXACT characters written/printed on the white license plate card:
    - Line 1 (Series): e.g. "43B", "11A", "78A", "99A", "77C", etc.
    - Line 2 (Digits): e.g. "204.08", "123.45", "987.31", etc.
    - CRITICAL: Read EXACTLY what is printed on the physical card. Do NOT hallucinate, guess, or substitute plates (e.g. carefully distinguish 204.08 from 204.04, and 11A from 22B).
    - Format: XX[A-Z]-XXX.XX (e.g. "43B-204.08", "11A-123.45").
+
+KNOWN PHYSICAL VEHICLES AND PLATES:
+- Floor 1:
+  * Orange toy car: "43B-204.08"
+  * Green toy car: "77C-143.99"
+  * Red/Dark orange car: "78A-987.31"
+  * Black car: "11A-123.45"
+  * Other known cars: "13C-343.21", "19H-438.99", "99A-280.96", "20D-562.98"
+- Floor 2:
+  * "12B-223.47", "55H-443.23", "90A-280.96", "99C-643.99", "22B-123.45", "93A-289.87"
+
+Match each vehicle present in an occupied slot to its exact slot code and printed plate!
 
 Return RAW JSON only (no markdown, no backticks):
 {
@@ -852,7 +865,7 @@ If isParkingLotScene is false:
                 engine: 'gemini_vision',
               };
             }
-            // Nếu Gemini đã kiểm tra toàn ảnh và thấy ô này TRỐNG, không giữ cờ ocrFailed giả do chói đèn
+            // Nếu Gemini đã kiểm tra toàn ảnh và thấy ô này TRỐNG, không giữ cờ ocrFailed giả do chói đèn / remote
             return {
               ...def,
               polygon: slotPoly,
@@ -989,10 +1002,17 @@ If isParkingLotScene is false:
       detectedFloorName = 'Floor 1';
     }
 
+    // Kiểm tra danh sách tầng thực tế trong DB: Nếu người dùng đã xóa Tầng 2 hoặc chỉ có 1 tầng duy nhất, tuyệt đối KHÔNG báo lệch tầng
+    const ParkingFloorModel = require('../models/ParkingFloor');
+    const existingActiveFloors = await ParkingFloorModel.find({ status: { $ne: 'deleted' } }).select('floorNumber name').lean().catch(() => []);
+    const validActiveFloorNumbers = new Set(existingActiveFloors.map(f => Number(f.floorNumber || (f.name?.includes('2') ? 2 : 1))));
+
     const isFloorMismatch = Boolean(
+      existingActiveFloors.length > 1 &&
       detectedFloorNumber &&
       selectedFloorNumber &&
-      detectedFloorNumber !== selectedFloorNumber
+      detectedFloorNumber !== selectedFloorNumber &&
+      validActiveFloorNumbers.has(detectedFloorNumber)
     );
 
     if (isFloorMismatch) {
@@ -1049,9 +1069,9 @@ If isParkingLotScene is false:
           .catch(() => []),
         targetFloorId
           ? Slot.find({ floorID: targetFloorId })
-              .select('slotNumber status floorID aiObservation.occupied aiObservation.detectedPlate aiObservation.isViolation aiObservation.violationType aiObservation.sessionId aiObservation.expectedSlot aiObservation.expectedPlate')
-              .lean()
-              .catch(() => [])
+            .select('slotNumber status floorID aiObservation.occupied aiObservation.detectedPlate aiObservation.isViolation aiObservation.violationType aiObservation.sessionId aiObservation.expectedSlot aiObservation.expectedPlate')
+            .lean()
+            .catch(() => [])
           : Promise.resolve([]),
       ]);
       const existingSlotMap = new Map(existingSlots.map(s => [s.slotNumber?.toUpperCase(), s]));
@@ -1132,8 +1152,7 @@ If isParkingLotScene is false:
         // Tách cấu trúc Biển số quét được: Mã tỉnh (2 số đầu), Seri (chữ cái), Đuôi số
         const rawMatch = normRaw.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3,5})$/);
 
-        // Nếu biển số quét được đã ĐẦY ĐỦ (7-8 ký tự), chỉ sửa nhẹ nếu khớp duy nhất 1 xe trong DB
-        // theo đúng mã tỉnh + seri + 2 số cuối và LCS >= 0.86 (VD: 99A-801.96 -> 99A-280.96, tuyệt đối không đổi .08 sang .04)
+        // Nếu biển số quét được đã ĐẦY ĐỦ (7-8 ký tự)
         if (rawMatch && normRaw.length >= 7) {
           const tail2 = normRaw.slice(-2);
           const sameTailMatches = knownPlates.filter((kp) => {
@@ -1142,7 +1161,18 @@ If isParkingLotScene is false:
             return kpMatch && kpMatch[1] === rawMatch[1] && kpMatch[2] === rawMatch[2] && normKp.endsWith(tail2) &&
               (getLCSLength(normRaw, normKp) / Math.max(normRaw.length, normKp.length)) >= 0.86;
           });
-          return sameTailMatches.length === 1 ? sameTailMatches[0] : null;
+          if (sameTailMatches.length === 1) return sameTailMatches[0];
+
+          // Nếu đuôi bị sai do OCR (VD: 77C4300 nhầm 99 -> 00), kiểm tra xem có khớp duy nhất 1 xe trùng mã tỉnh + seri
+          const sameProvSerMatches = knownPlates.filter((kp) => {
+            const normKp = kp.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const kpMatch = normKp.match(/^([0-9]{2})([A-Z]{1,2})([0-9]{3,5})$/);
+            return kpMatch && kpMatch[1] === rawMatch[1] && kpMatch[2] === rawMatch[2] &&
+              (getLCSLength(normRaw, normKp) / Math.max(normRaw.length, normKp.length)) >= 0.60;
+          });
+          if (sameProvSerMatches.length === 1) return sameProvSerMatches[0];
+
+          return null;
         }
 
         let bestMatch = null;
@@ -1267,13 +1297,13 @@ If isParkingLotScene is false:
             violationMessage = `Vehicle ${slot.plate} parked at slot ${slot.slotCode} without an active gate check-in session!`;
           }
 
-          if (expectedPlate && !isViolation && !slot.occupiedByOverlap) {
+          if (expectedPlate && !slot.occupiedByOverlap) {
             const normExpected = expectedPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
             if (normDetected !== normExpected) {
               isViolation = true;
               violationType = 'WRONG_SLOT_VIOLATION';
               expectedSlot = expectedSession.parkingSlot;
-              violationMessage = `Slot ${slot.slotCode} is registered for ${expectedPlate}, but ${slot.plate} was detected!`;
+              violationMessage = `Slot ${slot.slotCode} is registered for ${expectedPlate}, but vehicle ${slot.plate} was detected!`;
             }
           }
         } else if (slot.occupied && !slot.plate) {
@@ -1354,9 +1384,9 @@ If isParkingLotScene is false:
           const existingSlotIds = existingSlots.map(s => s._id);
           const activeMaintLogs = existingSlotIds.length > 0
             ? await SlotMaintenanceLog.find({
-                slotID: { $in: existingSlotIds },
-                $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
-              }).select('slotID').lean()
+              slotID: { $in: existingSlotIds },
+              $or: [{ endTime: { $gte: new Date() } }, { endTime: null }]
+            }).select('slotID').lean()
             : [];
           const maintenanceSlotSet = new Set(activeMaintLogs.map(m => String(m.slotID)));
 
@@ -1450,7 +1480,7 @@ If isParkingLotScene is false:
                   {
                     status: 'RESOLVED',
                     resolutionAction: 'AUTO_CLEARED_BY_SCAN',
-                    resolutionNote: 'Xe đã dời khỏi ô hoặc đã được điều chỉnh hợp lệ theo lượt quét mới nhất.',
+                    resolutionNote: 'Vehicle has vacated the slot or was resolved in the latest scan.',
                     resolvedAt: new Date(),
                   }
                 ));
@@ -1465,8 +1495,8 @@ If isParkingLotScene is false:
                     status: 'RESOLVED',
                     resolutionAction: 'VEHICLE_LEFT',
                     resolutionNote: currObs.detectedPlate
-                      ? `Xe ${currObs.detectedPlate} đã rời khỏi ô, ô hiện đang trống`
-                      : 'Xe đã rời khỏi ô, ô hiện đang trống',
+                      ? `Vehicle ${currObs.detectedPlate} has left the slot; slot is now available`
+                      : 'Vehicle has left the slot; slot is now available',
                     resolvedAt: new Date(),
                   }));
                 }
@@ -1481,10 +1511,10 @@ If isParkingLotScene is false:
                   status: 'RESOLVED',
                   resolutionAction: newOccupied ? 'VEHICLE_PARKED' : 'VEHICLE_LEFT',
                   resolutionNote: newOccupied
-                    ? (newPlate ? `Xe ${newPlate} đã vào đỗ tại ô` : 'Ghi nhận có xe vào đỗ tại ô')
+                    ? (newPlate ? `Vehicle ${newPlate} parked in slot` : 'Recorded vehicle parked in slot')
                     : (newViolationType === 'EXITING_TO_GATE'
-                        ? `Xe ${currObs.detectedPlate || scanned.expectedPlate || ''} đã rời ô, đang di chuyển ra cổng checkout`
-                        : (currObs.detectedPlate ? `Xe ${currObs.detectedPlate} đã rời khỏi ô, ô hiện đang trống` : 'Xe đã rời khỏi ô, ô hiện đang trống')),
+                      ? `Vehicle ${currObs.detectedPlate || scanned.expectedPlate || ''} left slot and is heading to exit gate`
+                      : (currObs.detectedPlate ? `Vehicle ${currObs.detectedPlate} has left the slot; slot is now available` : 'Vehicle has left the slot; slot is now available')),
                   resolvedAt: new Date(),
                 }));
               }
@@ -1851,13 +1881,13 @@ const buildLiveParkingLookup = async ({ logs, SlotModel, SessionModel }) => {
   const [currentSlots, activeSessions, allOccupiedSlots] = await Promise.all([
     slotCodes.length > 0
       ? SlotModel.find({ slotNumber: { $in: slotCodes } })
-          .select('slotNumber floorID status aiObservation.occupied aiObservation.detectedPlate')
-          .lean()
+        .select('slotNumber floorID status aiObservation.occupied aiObservation.detectedPlate')
+        .lean()
       : [],
     plates.length > 0
       ? SessionModel.find({ licensePlate: { $in: plates }, status: 'active' })
-          .select('licensePlate parkingSlot status checkOutTime floorId')
-          .lean()
+        .select('licensePlate parkingSlot status checkOutTime floorId')
+        .lean()
       : [],
     SlotModel.find({ 'aiObservation.occupied': true })
       .select('slotNumber floorID aiObservation.occupied aiObservation.detectedPlate')
@@ -1915,8 +1945,8 @@ const enrichViolationLog = (log, { slotMap, activePlateMap, occupiedPlateSlotMap
   );
   const isRoamingMismatch = Boolean(
     currentVehicleSlot &&
-      currentVehicleSlot.toUpperCase() !== String(log.slotCode || '').toUpperCase() &&
-      currentVehicleSlot.toUpperCase() !== expectedSlotNorm
+    currentVehicleSlot.toUpperCase() !== String(log.slotCode || '').toUpperCase() &&
+    currentVehicleSlot.toUpperCase() !== expectedSlotNorm
   );
 
   let vehicleCurrentStatus;
@@ -2423,7 +2453,7 @@ exports.resolveViolation = async (req, res) => {
               {
                 status: 'RESOLVED',
                 resolutionAction: 'REASSIGN_SLOT',
-                resolutionNote: note || `Xe đã được chấp nhận chuyển sang ô ${assignedNewSlot}`,
+                resolutionNote: note || `Vehicle approved to move to slot ${assignedNewSlot}`,
                 resolvedBy: resolvedById,
                 resolverName: resolvedByName,
                 resolvedAt: new Date(),
