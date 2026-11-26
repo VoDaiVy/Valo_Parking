@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 const Slot = require('../models/Slot');
 const Booking = require('../models/Booking');
 const Session = require('../models/Session');
-const BookingHold = require('../models/BookingHold');
+const Vehicle = require('../models/Vehicle');
+const { normalizeLicensePlate } = require('../utils/licensePlateUtils');
 const { bangkokDateParts, targetDateTime, buildForecastHorizonMetadata } = require('../utils/pricingHorizon');
 
 const HOUR = 60 * 60_000;
@@ -24,19 +25,20 @@ function peakOccupancy(rows, from, until, baseline = 0) {
   }
   events.sort((a, b) => a.time - b.time);
   const active = new Map();
-  const walkIns = new Map();
-  let peak = baseline;
+  const unscheduled = new Map();
+  const expected = () => typeof baseline === 'function' ? baseline(active, unscheduled) : baseline;
+  let peak = expected();
   for (let i = 0; i < events.length;) {
     const time = events[i].time;
     while (i < events.length && events[i].time === time) {
       const { row, delta } = events[i++];
-      for (const counts of row.walkIn ? [active, walkIns] : [active]) {
+      for (const counts of row.unscheduled ? [active, unscheduled] : [active]) {
         const count = (counts.get(row.key) || 0) + delta;
         if (count) counts.set(row.key, count);
         else counts.delete(row.key);
       }
     }
-    if (time < until) peak = Math.max(peak, active.size + Math.max(0, baseline - walkIns.size));
+    if (time < until) peak = Math.max(peak, active.size + Math.max(0, expected() - unscheduled.size));
   }
   return peak;
 }
@@ -51,25 +53,89 @@ const validateScope = ({ date, floorId, now }) => {
   return { localDate, start };
 };
 
-function prepareOccupancy({ now, capacitySlots, maintenance, sessions, bookings, holds }) {
+// Join exact identifiers only, including a booking's link to its actual session.
+// Slot assignments are deliberately absent from this identity graph.
+function vehicleKeys(sessions, bookings) {
+  const parents = new Map();
+  const root = key => {
+    if (!parents.has(key)) parents.set(key, key);
+    if (parents.get(key) !== key) parents.set(key, root(parents.get(key)));
+    return parents.get(key);
+  };
+  const keys = new Map();
+  for (const [kind, rows] of [['session', sessions], ['booking', bookings]]) {
+    rows.forEach((row, index) => {
+      const plate = normalizeLicensePlate(row.licensePlate);
+      const aliases = [row.vehicleId && `vehicle:${row.vehicleId}`, plate && `plate:${plate}`,
+        (kind === 'booking' ? row._id : row.bookingId) && `booking:${kind === 'booking' ? row._id : row.bookingId}`,
+        `${kind}:${row._id || row.entryIdempotencyKey || index}`].filter(Boolean);
+      for (const alias of aliases) parents.set(root(alias), root(aliases[0]));
+      keys.set(row, aliases[0]);
+    });
+  }
+  return row => root(keys.get(row));
+}
+
+// Merge duplicate/overlapping observations before deriving dwell-time samples.
+function mergeIntervals(rows) {
+  const merged = [];
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.key}:${row.floorId}:${row.vehicleType}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  for (const group of groups.values()) {
+    let previous;
+    for (const row of group.sort((a, b) => a.start - b.start)) {
+      if (previous && row.start < previous.end) previous.end = Math.max(previous.end, row.end);
+      else { previous = { ...row }; merged.push(previous); }
+    }
+  }
+  return merged;
+}
+
+function prepareOccupancy({ now, capacitySlots, maintenance, sessions, bookings, floorId, vehicleType = 'car' }) {
   const today = targetDateTime(bangkokDateParts(now).date, 0).getTime();
   const physicalKeys = new Set(capacitySlots.map(row => slotKey(row.floorId, row.slotCode)));
   const maintained = new Set(maintenance.map(row => slotKey(row.floorID, row.slotNumber)).filter(key => physicalKeys.has(key)));
   const capacity = physicalKeys.size - maintained.size;
-  const usable = row => physicalKeys.has(row.key) && !maintained.has(row.key);
-  const intervals = sessions.filter(row => ['active', 'completed'].includes(row.status)).map(row => ({
-    key: slotKey(row.floorId, row.parkingSlot),
+  const keyFor = vehicleKeys(sessions, bookings);
+  const matches = row => (!floorId || String(row.floorId) === String(floorId))
+    && (vehicleType === 'all' || row.vehicleType === vehicleType);
+  const valid = row => Number.isFinite(row.start) && Number.isFinite(row.end) && row.start > 0 && row.end > row.start;
+  const reserved = bookings.filter(row => (!row.status || ['PAID', 'ACTIVE', 'PAUSED'].includes(row.status)) && matches(row)).map(row => ({
+    key: keyFor(row), bookingId: String(row._id || ''),
+    start: +new Date(row.scheduledStart), end: +new Date(row.scheduledEnd),
+  })).filter(valid);
+  const observed = sessions.filter(row => ['active', 'completed'].includes(row.status) && matches(row)).map(row => ({
+    key: keyFor(row), floorId: String(row.floorId), vehicleType: row.vehicleType,
+    bookingId: row.bookingId && String(row.bookingId),
     start: +new Date(row.checkInTime),
     end: row.status === 'active' ? now.getTime() + 1 : +new Date(row.checkOutTime),
     completed: row.status === 'completed',
-    walkIn: !row.bookingId && !['BOOKING', 'SUBSCRIPTION'].includes(row.type),
-  })).filter(row => usable(row) && row.start > 0 && row.end > row.start);
-  const reserved = bookings.map(row => ({
-    key: slotKey(row.floorId, row.parkingSlot), start: +new Date(row.scheduledStart), end: +new Date(row.scheduledEnd),
-  })).filter(usable);
-  const temporary = holds.map(row => ({
-    key: slotKey(row.floorId, row.slotCode), start: +new Date(row.startTime), end: +new Date(row.endTime), expiresAt: +new Date(row.expiresAt),
-  })).filter(usable);
+    // Subscription visits have no separately scheduled booking demand.
+    unscheduled: !row.bookingId && row.type !== 'BOOKING',
+  })).filter(valid);
+  // A fixed evidence window keeps departure estimates identical across request periods.
+  const dwellSamples = mergeIntervals(observed.filter(row => row.completed && row.end <= +now
+    && row.start >= +now - HISTORY_WEEKS * 7 * DAY));
+  let unsupportedActiveSessions = 0;
+  const intervals = observed.map(row => {
+    if (row.completed) return row;
+    const booking = reserved.find(candidate => candidate.end > +now
+      && (row.bookingId ? candidate.bookingId === row.bookingId : candidate.key === row.key && candidate.start <= +now));
+    if (booking) return { ...row, end: booking.end, departureSource: 'booking' };
+    const elapsed = +now - row.start;
+    const durations = dwellSamples.filter(sample => sample.floorId === row.floorId && sample.vehicleType === row.vehicleType)
+      .map(sample => sample.end - sample.start).filter(duration => duration > elapsed);
+    if (durations.length >= MIN_SAMPLE_DAYS) {
+      return { ...row, end: row.start + durations.reduce((sum, duration) => sum + duration, 0) / durations.length,
+        departureSource: 'historical_dwell' };
+    }
+    unsupportedActiveSessions++;
+    return { ...row, departureSource: 'observed_only' };
+  });
   const profiles = new Map();
 
   function historyFor(date) {
@@ -86,29 +152,45 @@ function prepareOccupancy({ now, capacitySlots, maintenance, sessions, bookings,
     const hasHistory = recordedDays.length >= MIN_SAMPLE_DAYS;
     const baseline = hasHistory ? Array.from({ length: 24 }, (_, hour) => recordedDays.reduce((sum, sample) => {
       const from = sample.day + hour * HOUR;
-      return sum + peakOccupancy(sample.sessions.filter(row => row.walkIn), from, from + HOUR);
+      return sum + peakOccupancy(sample.sessions.filter(row => row.unscheduled), from, from + HOUR);
     }, 0) / recordedDays.length) : [];
     const profile = {
       hasHistory, baseline, dayCount: recordedDays.length,
-      sessionCount: new Set(recordedDays.flatMap(sample => sample.sessions)).size,
+      sessionCount: mergeIntervals([...new Set(recordedDays.flatMap(sample => sample.sessions))]).length,
+    };
+    const adjusted = new Map();
+    profile.expectedDemand = (hour, active, unscheduled) => {
+      // A vehicle historically using walk-in/subscription parking may book today.
+      // Remove its historical contribution while its confirmed interval is active.
+      const scheduledKeys = [...active.keys()].filter(key => !unscheduled.has(key)).sort();
+      if (!scheduledKeys.length) return Math.round(baseline[hour]);
+      const cacheKey = JSON.stringify([hour, scheduledKeys]);
+      if (!adjusted.has(cacheKey)) {
+        const excluded = new Set(scheduledKeys);
+        adjusted.set(cacheKey, Math.round(recordedDays.reduce((sum, sample) => {
+          const from = sample.day + hour * HOUR;
+          return sum + peakOccupancy(sample.sessions.filter(row => row.unscheduled && !excluded.has(row.key)), from, from + HOUR);
+        }, 0) / recordedDays.length));
+      }
+      return adjusted.get(cacheKey);
     };
     profiles.set(profileKey, profile);
     return profile;
   }
 
   return {
-    today, intervals, reserved, temporary, historyFor,
+    today, intervals, reserved, historyFor, unsupportedActiveSessions,
     totalCapacity: capacity, totalPhysicalCapacity: physicalKeys.size, maintenanceSlotsCount: maintained.size,
   };
 }
 
 function buildHours(start, now, prepared) {
   const { today, totalCapacity: capacity } = prepared;
-  const { hasHistory, baseline } = prepared.historyFor(start);
+  const { hasHistory, expectedDemand } = prepared.historyFor(start);
   const findForDay = rows => rows.filter(row => overlap(row, start, start + DAY));
   const sessions = findForDay(prepared.intervals);
   const bookings = findForDay(prepared.reserved);
-  const holds = findForDay(prepared.temporary);
+  const unresolved = prepared.intervals.filter(row => row.departureSource === 'observed_only');
 
   return Array.from({ length: 24 }, (_, hour) => {
     const from = start + hour * HOUR;
@@ -116,23 +198,41 @@ function buildHours(start, now, prepared) {
     const isPast = until <= now.getTime();
     const knownSessions = sessions.filter(row => overlap(row, from, until));
     const knownBookings = isPast ? [] : bookings.filter(row => overlap(row, from, until));
-    const knownHolds = isPast ? [] : holds
-      .filter(row => row.expiresAt > Math.max(now.getTime(), from))
-      .map(row => ({ ...row, start: Math.max(row.start, now.getTime()), end: Math.min(row.end, row.expiresAt) }))
-      .filter(row => row.end > row.start && overlap(row, from, until));
-    const historicalWalkIns = hasHistory && !isPast ? Math.round(baseline[hour]) : 0;
-    const occupied = Math.min(capacity, peakOccupancy([...knownSessions, ...knownBookings, ...knownHolds], from, until, historicalWalkIns));
-    const score = capacity ? Math.round(occupied / capacity * 100) : null;
+    const historicalDemand = hasHistory && !isPast ? (active, unscheduled) => expectedDemand(hour, active, unscheduled) : 0;
+    const occupied = peakOccupancy([...knownSessions, ...knownBookings], from, until, historicalDemand);
+    // These are independent per-bucket scenarios, not predicted checkout times
+    // or an assumption that an unresolved vehicle stays for the whole horizon.
+    const possiblyPresent = isPast ? [] : unresolved.map(row => ({
+      ...row, start: Math.max(row.start, +now, from), end: until,
+    })).filter(row => row.start < row.end);
+    const possibleDemand = Math.max(occupied,
+      peakOccupancy([...knownSessions, ...knownBookings, ...possiblyPresent], from, until, historicalDemand));
+    const uncertainty = buildUncertainty(occupied, possibleDemand,
+      new Set(possiblyPresent.map(row => row.key)).size, capacity, hasHistory && !isPast);
+    const score = capacity ? Math.min(100, Math.round(occupied / capacity * 100)) : null;
     const level = score >= 80 ? 'peak' : score >= 60 ? 'high' : score >= 35 ? 'moderate' : 'low';
     const label = `${String(hour).padStart(2, '0')}:00`;
     return {
       id: hour, hour, label, timeLabel: label, busynessScore: score, level,
       dataKind: isPast ? (knownSessions.length ? 'recorded' : 'known_only') : hasHistory ? 'estimated' : 'known_only',
       isPeak: Boolean(capacity && score >= 80 && (start < today || (!isPast && hasHistory))),
-      estimatedOccupiedSlots: occupied, estimatedAvailableSlots: hasHistory && !isPast ? capacity - occupied : null,
+      predictedVehicles: occupied,
+      estimatedOccupiedSlots: occupied, estimatedAvailableSlots: uncertainty.availableSpacesRange?.min ?? null,
+      uncertainty,
       activeBookings: peakOccupancy(knownBookings, from, until),
     };
   });
+}
+
+function buildUncertainty(predicted, possible, unresolvedActiveVehicles, capacity, hasAvailability) {
+  return {
+    unresolvedActiveVehicles,
+    reason: unresolvedActiveVehicles ? 'unsupported_active_departure' : null,
+    predictedVehiclesRange: { min: predicted, max: possible },
+    availableSpacesRange: hasAvailability ? {
+      min: Math.max(0, capacity - possible), max: Math.max(0, capacity - predicted),
+    } : null,
+  };
 }
 
 function buildDailyOccupancyForecast({ start, now, selectedHour, forecastHorizonHours, ...inputs }) {
@@ -162,6 +262,8 @@ function buildDailyOccupancyForecast({ start, now, selectedHour, forecastHorizon
       usesFallbackBaseline: false, historicalDayCount: dayCount, minimumHistoricalDays: MIN_SAMPLE_DAYS,
       historicalSessionCount: sessionCount,
       scheduledBookingCount: reserved.length,
+      countingUnit: 'vehicles', holdsIncluded: false,
+      unsupportedActiveSessions: prepared.unsupportedActiveSessions,
     },
   };
 }
@@ -176,23 +278,41 @@ async function getOccupancyInputs({ start, end, floorId, vehicleType, now }) {
   const scope = floorId ? { floorId } : {};
   // Reuse the published hourly inventory and the same dedicated-space exclusions as booking.
   const { getGeneralBookableSlots } = require('../controllers/bookingController');
-  const [inventory, maintenance, sessions, bookings, holds] = await Promise.all([
+  const [inventory, maintenance, sessions] = await Promise.all([
     getGeneralBookableSlots(),
     Slot.find({ ...(floorId ? { floorID: floorId } : {}), retired: { $ne: true }, status: 'maintenance' }).select('floorID slotNumber').lean(),
     Session.find({ ...scope, checkInTime: { $lt: end }, $or: [
       { status: 'completed', checkOutTime: { $gt: since } }, { status: 'active' },
-    ] }).select('floorId parkingSlot status type bookingId checkInTime checkOutTime').lean(),
-    Booking.find({ ...scope, status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] }, scheduledStart: { $lt: end }, scheduledEnd: { $gt: start } })
-      .select('floorId parkingSlot scheduledStart scheduledEnd').lean(),
-    BookingHold.find({ ...scope, status: 'active', expiresAt: { $gt: now }, startTime: { $lt: end }, endTime: { $gt: start } })
-      .select('floorId slotCode startTime endTime expiresAt').lean(),
+    ] }).select('vehicleId licensePlate entryIdempotencyKey floorId vehicleType status type bookingId checkInTime checkOutTime').lean(),
   ]);
+  const bookings = await Booking.find({ ...scope, status: { $in: ['PAID', 'ACTIVE', 'PAUSED'] }, $or: [
+    { scheduledStart: { $lt: end }, scheduledEnd: { $gt: start } },
+    { _id: { $in: sessions.filter(row => row.status === 'active' && row.bookingId).map(row => row.bookingId) } },
+  ] }).select('vehicleId licensePlate floorId status scheduledStart scheduledEnd').lean();
+  // Booking has no vehicleType snapshot. Resolve it from an actual linked session
+  // or registered vehicle, never from the assigned slot's type.
+  const vehicleIds = [...new Set(bookings.filter(row => row.vehicleId).map(row => String(row.vehicleId)))];
+  const plates = [...new Set(bookings.map(row => normalizeLicensePlate(row.licensePlate)).filter(Boolean))];
+  const vehicles = vehicleIds.length || plates.length ? await Vehicle.find({ $or: [
+    { _id: { $in: vehicleIds } }, { licensePlate: { $in: plates } },
+  ] }).select('licensePlate vehicleType').lean() : [];
+  const typedSessions = sessions.filter(session => session.vehicleType)
+    .sort((a, b) => +new Date(b.checkInTime) - +new Date(a.checkInTime));
+  for (const row of bookings) {
+    const linked = typedSessions.find(session => session.bookingId && String(session.bookingId) === String(row._id))
+      || typedSessions.find(session => row.vehicleId && session.vehicleId && String(session.vehicleId) === String(row.vehicleId))
+      || typedSessions.find(session => normalizeLicensePlate(row.licensePlate)
+        && normalizeLicensePlate(session.licensePlate) === normalizeLicensePlate(row.licensePlate));
+    const vehicle = vehicles.find(vehicle => (row.vehicleId && String(vehicle._id) === String(row.vehicleId))
+      || (normalizeLicensePlate(row.licensePlate) && normalizeLicensePlate(vehicle.licensePlate) === normalizeLicensePlate(row.licensePlate)));
+    row.vehicleType = linked?.vehicleType || vehicle?.vehicleType;
+  }
   const capacitySlots = inventory.filter(row => {
     const type = String(row.slotType).toLowerCase();
     return vehicleType !== 'motorcycle' && (!floorId || String(row.floorId) === String(floorId))
       && (type === 'slot' || (['all', 'electric_car'].includes(vehicleType) && type === 'slot-ev'));
   });
-  return { capacitySlots, maintenance, sessions, bookings, holds };
+  return { capacitySlots, maintenance, sessions, bookings, floorId, vehicleType };
 }
 
 async function getDailyOccupancyForecast({ date, hour, selectedIndex, floorId, vehicleType, forecastHorizonHours, now = new Date() }) {
@@ -219,11 +339,16 @@ function buildPeriodOccupancyForecast({ date, timeframe, now, selectedIndex, ...
   const items = Array.from({ length: dayCount }, (_, id) => {
     const day = +start + id * DAY;
     const hours = buildHours(day, now, prepared);
-    // Use the busiest single hour so the same space cannot stack across the day.
+    // Use peak concurrent vehicle demand, never summed hourly traffic.
     const peak = hours.reduce((current, next) =>
       next.estimatedOccupiedSlots > current.estimatedOccupiedSlots ? next : current);
+    const uncertainty = buildUncertainty(peak.predictedVehicles,
+      Math.max(...hours.map(hour => hour.uncertainty.predictedVehiclesRange.max)),
+      Math.max(...hours.map(hour => hour.uncertainty.unresolvedActiveVehicles)),
+      prepared.totalCapacity, peak.estimatedAvailableSlots !== null);
     return {
-      ...peak, id, date: bangkokDateParts(day).date, peakHour: peak.timeLabel, estimatedAvailableSlots: null,
+      ...peak, id, date: bangkokDateParts(day).date, peakHour: peak.timeLabel,
+      uncertainty, estimatedAvailableSlots: uncertainty.availableSpacesRange?.min ?? null,
     };
   });
   const selected = selectedIndex == null ? NaN : Number(selectedIndex);
@@ -234,7 +359,8 @@ function buildPeriodOccupancyForecast({ date, timeframe, now, selectedIndex, ...
     timeframe, date, startDate: items[0].date, endDate: items.at(-1).date,
     totalCapacity, totalPhysicalCapacity, maintenanceSlotsCount,
     selectedIndex: index, selectedItem: items[index], items, dailyForecast: items,
-    dataQuality: { dataSource: 'daily_occupancy', usesFallbackBaseline: false },
+    dataQuality: { dataSource: 'daily_occupancy', usesFallbackBaseline: false, countingUnit: 'vehicles',
+      holdsIncluded: false, unsupportedActiveSessions: prepared.unsupportedActiveSessions },
   };
 }
 

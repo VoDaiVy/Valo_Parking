@@ -1,6 +1,6 @@
 import './BookingPage.css';
 import './ParkingHistory.css';
-import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
+import { Dialog, DialogPanel, DialogTitle, Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "../../services/api";
 import {
@@ -218,31 +218,28 @@ export default function ParkingHistory() {
     imageUrl,
     emptyLabel,
   }) => (
-    <div className="bg-[#101018] border border-gray-800/70 rounded-2xl p-5">
-      <div className="flex items-center gap-2 text-sm font-black text-white mb-4 uppercase tracking-wide">
+    <div className="history-snapshot">
+      <div className="history-snapshot-title">
         {icon}
         <span>{title}</span>
       </div>
 
-      <div className="mb-4">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 mb-2">
-          {t('historyPage.time')}
-        </p>
+      <div className="history-snapshot-time">
         <p className="text-lg font-bold text-gray-100">
-          {time ? formatDate(time) : emptyLabel}
+          {time ? formatDate(time) : '—'}
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-gray-800 bg-[#07070a] min-h-[240px]">
+      <div className="history-snapshot-media">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={title}
-            className="w-full h-[260px] object-cover"
+            className="history-snapshot-image"
           />
         ) : (
-          <div className="w-full h-[260px] flex flex-col items-center justify-center text-center px-6 text-gray-500">
-            <Camera size={34} className="mb-3 text-gray-600" />
+          <div className="history-snapshot-empty">
+            <Camera size={24} aria-hidden="true" />
             <p className="font-semibold">{emptyLabel}</p>
           </div>
         )}
@@ -302,6 +299,8 @@ export default function ParkingHistory() {
             {visibleSessions.map((session) => {
               const checkIn = session.checkInTime ? new Date(session.checkInTime) : null;
               const validCheckIn = checkIn && Number.isFinite(checkIn.getTime());
+              const checkOut = session.checkOutTime ? new Date(session.checkOutTime) : null;
+              const validCheckOut = checkOut && Number.isFinite(checkOut.getTime());
               return (
                 <article key={session._id} className="history-record">
                   <div className="history-vehicle">
@@ -314,14 +313,28 @@ export default function ParkingHistory() {
                   </div>
                   <div className="history-time" aria-label={t('historyPage.checkIn')}>
                     <span className="history-label"><LogIn size={12} aria-hidden="true" />{t('historyPage.checkIn')}</span>
-                    <span>{validCheckIn ? checkIn.toLocaleDateString(locale, { dateStyle: 'short' }) : '\u2014'}</span>
-                    <span>{validCheckIn ? checkIn.toLocaleTimeString(locale, { timeStyle: 'short' }) : '\u2014'}</span>
+                    <span>{validCheckIn ? checkIn.toLocaleDateString(locale, { dateStyle: 'short' }) : '—'}</span>
+                    <span>{validCheckIn ? checkIn.toLocaleTimeString(locale, { timeStyle: 'short' }) : '—'}</span>
+                  </div>
+                  <div className="history-time" aria-label={t('historyPage.checkOut')}>
+                    <span className="history-label"><LogOut size={12} aria-hidden="true" />{t('historyPage.checkOut')}</span>
+                    {validCheckOut ? <>
+                      <span>{checkOut.toLocaleDateString(locale, { dateStyle: 'short' })}</span>
+                      <span>{checkOut.toLocaleTimeString(locale, { timeStyle: 'short' })}</span>
+                    </> : <span className="history-missing">{session.status === 'active' ? t('historyPage.notCheckedOut') : '—'}</span>}
                   </div>
                   <div className="history-cell"><span className="history-label"><Clock size={12} aria-hidden="true" />{t('historyPage.duration')}</span>
                     <span>{calculateDuration(session.checkInTime, session.checkOutTime)}</span></div>
                   <div className="history-cell"><span className="history-label"><CreditCard size={12} aria-hidden="true" />{t('historyPage.total')}</span>
                     <strong className="history-total">{formatMoney(session.totalPrice)}</strong></div>
                   <div className="history-status">{getStatusBadge(session.status)}</div>
+                  <button type="button" className="history-details" onClick={() => setSelectedSession(session)}
+                    aria-label={`${t('common.viewDetails')} ${formatLicensePlateDisplay(session.licensePlate)}`}>
+                    {session.entryImage_url || session.exitImage_url ? (
+                      <img src={session.entryImage_url || session.exitImage_url} alt="" loading="lazy" />
+                    ) : <ImageIcon size={20} aria-hidden="true" />}
+                    <span>{t('common.viewDetails')}</span><ChevronRight size={14} aria-hidden="true" />
+                  </button>
                   <div className="history-extras">
                 {session.canSelectServices === true && session.type === 'SUBSCRIPTION' && session.status === 'active' && (
                   <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-wrap items-center justify-between gap-3">
@@ -338,24 +351,7 @@ export default function ParkingHistory() {
                   </div>
                 )}
 
-                {/* Footer / Image */}
-                {session.entryImage_url && (
-                  <div className="pt-4 mt-2 border-t border-gray-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <span className="text-[11px] md:text-xs font-semibold text-gray-500 flex items-center gap-1.5">
-                      <ImageIcon size={14} className="shrink-0" /> {t('historyPage.entrySnapshot')}
-                    </span>
-                    <a
-                      href="#"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setSelectedSession(session);
-                      }}
-                      className="text-[11px] md:text-xs font-bold text-yellow-500 hover:text-yellow-400 transition-colors w-fit border border-yellow-500/30 px-3 py-1.5 rounded-lg hover:bg-yellow-500/10"
-                    >
-                      {t('common.viewDetails')}
-                    </a>
-                  </div>
-                )}
+
 
                   </div>
                 </article>
@@ -388,16 +384,18 @@ export default function ParkingHistory() {
       )}
 
       {selectedSession && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-[#09090d] border border-yellow-500/20 rounded-3xl shadow-[0_25px_80px_rgba(0,0,0,0.55)]">
-            <div className="flex items-start justify-between gap-4 p-6 md:p-7 border-b border-gray-800/70">
+        <Dialog open onClose={() => setSelectedSession(null)} className="relative z-50">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="history-dialog">
+            <div className="history-dialog-header">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-yellow-500 mb-2">
                   {t('historyPage.sessionDetails')}
                 </p>
-                <h2 className="text-2xl md:text-3xl font-black text-white">
+                <DialogTitle className="text-2xl md:text-3xl font-black text-white">
                   {formatLicensePlateDisplay(selectedSession.licensePlate)}
-                </h2>
+                </DialogTitle>
                 <p className="text-sm text-gray-400 mt-2">
                   {t('historyPage.slot')}: {selectedSession.parkingSlot || t('historyPage.unassigned')} •{" "}
                   {selectedSession.totalPrice !== undefined && selectedSession.totalPrice !== null
@@ -415,8 +413,8 @@ export default function ParkingHistory() {
               </button>
             </div>
 
-            <div className="p-6 md:p-7">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="history-dialog-body">
+              <div className="history-snapshots">
                 {renderSnapshotPanel({
                   title: t('historyPage.checkIn'),
                   icon: <LogIn size={18} className="text-emerald-400" />,
@@ -437,8 +435,9 @@ export default function ParkingHistory() {
                 })}
               </div>
             </div>
+          </DialogPanel>
           </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

@@ -42,8 +42,19 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
     return value === null ? t('forecast.unknown') : arrivals ? String(value) : `${value}%`;
   };
   const capacity = number(data?.totalCapacity);
-  const occupied = number(active?.estimatedOccupiedSlots);
+  const vehicles = number(active?.predictedVehicles);
   const available = active?.dataKind === 'estimated' ? number(active?.estimatedAvailableSlots) : null;
+  const unresolved = number(active?.uncertainty?.unresolvedActiveVehicles) ?? 0;
+  const availabilityRange = active?.dataKind === 'estimated' ? active?.uncertainty?.availableSpacesRange : null;
+  const rangeMin = number(availabilityRange?.min);
+  const rangeMax = number(availabilityRange?.max);
+  const availabilityLabel = unresolved > 0 && rangeMin !== null && rangeMax !== null
+    ? rangeMin === rangeMax ? String(rangeMin) : `${rangeMin}\u2013${rangeMax}`
+    : available ?? t('forecast.unknown');
+  const vehicleLabel = active?.dataKind === 'recorded' ? 'observedVehicles'
+    : active?.dataKind === 'known_only' ? 'knownOccupancy' : 'predictedVehicles';
+  const occupancyLabel = active?.dataKind === 'recorded' ? 'observedOccupancy'
+    : active?.dataKind === 'known_only' ? 'knownOccupancyRate' : 'estimatedOccupancy';
   const noCapacity = !arrivals && capacity === 0;
   const tickIndices = isRange ? (timeframe === 'week' ? [0, 3, 6] : [0, 7, 14, 21, points.length - 1]) : [0, 6, 12, 18, 23];
 
@@ -96,8 +107,8 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
           {!arrivals && <dl className="mb-4 flex min-w-0 flex-wrap gap-y-2">
             {[
               ['capacity', capacity, ParkingCircle, 'text-yellow-700 dark:text-gold'],
-              [active?.dataKind === 'known_only' ? 'knownOccupancy' : 'occupied', occupied, Car, 'text-orange-600 dark:text-orange-400'],
-              ['estimatedAvailable', available, CheckCircle2, 'text-emerald-600 dark:text-emerald-400'],
+              [vehicleLabel, vehicles, Car, 'text-orange-600 dark:text-orange-400'],
+              ['estimatedAvailable', availabilityLabel, CheckCircle2, 'text-emerald-600 dark:text-emerald-400'],
             ].map(([key, value, Icon, color]) => <div key={key} className="flex min-w-0 max-w-full items-center gap-1.5 border-l border-gray-200 px-3 first:border-l-0 first:pl-0 dark:border-white/10">
               <dt className="flex min-w-0 items-center gap-1.5 break-words text-xs leading-5 text-gray-500 dark:text-gray-400"><Icon size={14} aria-hidden="true" className={'shrink-0 ' + color} />{t(`forecast.${key}`)}</dt>
               <dd className={'min-w-0 break-words text-sm font-semibold tabular-nums ' + color}>{value ?? t('forecast.unknown')}</dd>
@@ -143,11 +154,12 @@ export default function AIBusynessForecast({ selectedDate, selectedHour, vehicle
             <div className="flex min-w-0 flex-1 flex-col gap-2 break-words sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="font-bold">{!arrivals && active.dataKind !== 'known_only' && number(active.busynessScore) !== null && <>{t(`forecast.level_${active.level}`)} &middot; </>}{kindLabel(active)}</p>
-                <p className="text-gray-300">{pointLabel(active)} &middot; {t(arrivals ? 'forecast.arrivals' : 'forecast.bannerOccupancy')}: {valueLabel(active)}</p>
+                <p className="text-gray-300">{pointLabel(active)} &middot; {t(arrivals ? 'forecast.arrivals' : `forecast.${occupancyLabel}`)}: {valueLabel(active)}</p>
+                {!arrivals && unresolved > 0 && <p className="mt-1 text-[11px] leading-5 text-gray-300">{t('forecast.uncertainAvailability', { count: unresolved })}</p>}
               </div>
               {!arrivals && <div className="sm:text-right">
                 <p>{t('forecast.bannerAvailable')}</p>
-                <p className="text-lg font-bold tabular-nums">{available ?? t('forecast.unknown')}</p>
+                <p className="text-lg font-bold tabular-nums">{availabilityLabel}</p>
               </div>}
               <div className="sr-only">
                 <p>{t(arrivals ? 'forecast.arrivalsDetail' : active.dataKind === 'known_only' ? 'forecast.knownHelp' : active.dataKind === 'recorded' ? 'forecast.recordedHelp' : 'forecast.estimatedHelp')}</p>

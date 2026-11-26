@@ -16,7 +16,7 @@ vi.mock('../i18n/hooks/useLanguage', () => ({ useLanguage: () => ({ language, t:
 
 const hours = Array.from({ length: 24 }, (_, hour) => ({
   id: hour, hour, timeLabel: `${String(hour).padStart(2, '0')}:00`, busynessScore: hour * 3,
-  estimatedOccupiedSlots: hour * 3, estimatedAvailableSlots: 100 - hour * 3,
+  predictedVehicles: hour * 3, estimatedOccupiedSlots: hour * 3, estimatedAvailableSlots: 100 - hour * 3,
   dataKind: 'estimated', level: 'low',
 }));
 const day = { totalCapacity: 100, selectedHour: 12, dataQuality: { usesFallbackBaseline: false }, hourlyForecast: hours };
@@ -32,14 +32,14 @@ afterEach(cleanup);
 it('maps click, hover and keyboard details to the same bar', async () => {
   render(<AIBusynessForecast selectedDate="2026-11-24" selectedHour={4} floorId="F2" vehicleType="motorcycle" />);
   const bar = await screen.findByRole('button', { name: '08:00: Estimated, 24%' });
-  expect(metric(en.forecast.occupied)).toBe('12');
+  expect(metric(en.forecast.predictedVehicles)).toBe('12');
   fireEvent.mouseEnter(bar);
-  expect(metric(en.forecast.occupied)).toBe('24');
-  expect(document.getElementById(bar.getAttribute('aria-describedby')).textContent).toContain('08:00 \u00b7 Occupancy: 24%');
+  expect(metric(en.forecast.predictedVehicles)).toBe('24');
+  expect(document.getElementById(bar.getAttribute('aria-describedby')).textContent).toContain('08:00 \u00b7 Estimated occupancy: 24%');
   fireEvent.mouseLeave(bar);
-  expect(metric(en.forecast.occupied)).toBe('12');
+  expect(metric(en.forecast.predictedVehicles)).toBe('12');
   fireEvent.focus(bar);
-  expect(metric(en.forecast.occupied)).toBe('24');
+  expect(metric(en.forecast.predictedVehicles)).toBe('24');
   fireEvent.click(bar);
   fireEvent.blur(bar);
   expect(metric(en.forecast.estimatedAvailable)).toBe('76');
@@ -51,21 +51,21 @@ it.each(['week', 'month'])('keeps %s filters and daily peak metrics aligned', as
   render(<AIBusynessForecast floorId="F2" vehicleType="electric_car" />);
   await screen.findByRole('button', { name: '08:00: Estimated, 24%' });
   fireEvent.click(screen.getByRole('button', { name: en.forecast[timeframe] }));
-  await waitFor(() => expect(metric(en.forecast.occupied)).toBe('6'));
+  await waitFor(() => expect(metric(en.forecast.predictedVehicles)).toBe('6'));
   expect(metric(en.forecast.estimatedAvailable)).toBe('—');
   expect(screen.getByText(en.forecast.dailyPeak)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /^4 Nov · 18:00: Estimated/ }));
-  expect(metric(en.forecast.occupied)).toBe('9');
+  expect(metric(en.forecast.predictedVehicles)).toBe('9');
   expect(getOccupancyForecast.mock.calls.at(-1)[0]).toMatchObject({ timeframe, floorId: 'F2', vehicleType: 'electric_car', hour: undefined });
 });
 
 it.each(['known_only', 'recorded', 'estimated'])('preserves nulls and explains %s', async dataKind => {
   getOccupancyForecast.mockResolvedValue({ ...day, totalCapacity: null, hourlyForecast: hours.map(h => ({ ...h, dataKind,
-    busynessScore: null, estimatedOccupiedSlots: null, estimatedAvailableSlots: null })) });
+    busynessScore: null, predictedVehicles: null, estimatedOccupiedSlots: null, estimatedAvailableSlots: null })) });
   render(<AIBusynessForecast />);
   await screen.findByText(en.forecast[dataKind === 'known_only' ? 'knownHelp' : dataKind === 'recorded' ? 'recordedHelp' : 'estimatedHelp']);
   expect(metric(en.forecast.capacity)).toBe('—');
-  expect(metric(en.forecast[dataKind === 'known_only' ? 'knownOccupancy' : 'occupied'])).toBe('—');
+  expect(metric(en.forecast[dataKind === 'known_only' ? 'knownOccupancy' : dataKind === 'recorded' ? 'observedVehicles' : 'predictedVehicles'])).toBe('—');
   expect(metric(en.forecast.estimatedAvailable)).toBe('—');
   expect(document.querySelector('[aria-live="polite"]').textContent).not.toContain('null');
 });
@@ -146,4 +146,70 @@ it('rejects fallback data and resolves invalid selections consistently', () => {
   expect(selectOccupancyPoint(hours, 500)).toBe(hours[0]);
   expect(selectOccupancyPoint(hours, 3)).toBe(hours[3]);
   expect(selectOccupancyPoint([], 0)).toBeNull();
+});
+
+it.each(['en', 'vi'])('shows %s departure uncertainty and a scenario range without changing the chart', async lang => {
+  language = lang;
+  const dictionary = lang === 'vi' ? vn : en;
+  const uncertain = { ...hours[12], predictedVehicles: 2, estimatedOccupiedSlots: 90,
+    estimatedAvailableSlots: 94, busynessScore: 2,
+    uncertainty: { unresolvedActiveVehicles: 4, reason: 'unsupported_active_departure',
+      predictedVehiclesRange: { min: 2, max: 6 }, availableSpacesRange: { min: 94, max: 98 } } };
+  getOccupancyForecast.mockResolvedValue({ ...day, hourlyForecast: hours.map(p => p.hour === 12 ? uncertain : p) });
+  render(<AIBusynessForecast />);
+  await waitFor(() => expect(metric(dictionary.forecast.predictedVehicles)).toBe('2'));
+  expect(metric(dictionary.forecast.estimatedAvailable)).toBe('94\u201398');
+  const banner = document.querySelector('[aria-live="polite"]');
+  expect(banner.textContent).toContain(dictionary.forecast.uncertainAvailability.replace('{{count}}', '4'));
+  expect(banner.textContent).toContain(dictionary.forecast.estimatedOccupancy);
+  expect(banner.textContent).toContain('94\u201398');
+  expect(screen.getAllByRole('button', { name: /:00:/ })).toHaveLength(24);
+  fireEvent.mouseEnter(screen.getByRole('button', { name: new RegExp('08:00:') }));
+  expect(banner.textContent).not.toContain(dictionary.forecast.uncertainAvailability.replace('{{count}}', '4'));
+});
+
+it('distinguishes recorded vehicles and observed occupancy from predictions', async () => {
+  getOccupancyForecast.mockResolvedValue({ ...day, hourlyForecast: hours.map(p => ({ ...p, dataKind: 'recorded',
+    predictedVehicles: 5, estimatedOccupiedSlots: 90, estimatedAvailableSlots: null })) });
+  render(<AIBusynessForecast />);
+  await waitFor(() => expect(metric(en.forecast.observedVehicles)).toBe('5'));
+  expect(screen.queryByText(en.forecast.predictedVehicles)).toBeNull();
+  expect(document.querySelector('[aria-live="polite"]').textContent).toContain(en.forecast.observedOccupancy);
+  expect(metric(en.forecast.estimatedAvailable)).toBe(en.forecast.unknown);
+});
+
+it('does not promise spaces when unresolved vehicles have insufficient historical evidence', async () => {
+  getOccupancyForecast.mockResolvedValue({ ...day, hourlyForecast: hours.map(p => ({ ...p, dataKind: 'known_only',
+    predictedVehicles: 0, estimatedAvailableSlots: null, uncertainty: { unresolvedActiveVehicles: 4,
+      predictedVehiclesRange: { min: 0, max: 4 }, availableSpacesRange: null } })) });
+  render(<AIBusynessForecast />);
+  await waitFor(() => expect(metric(en.forecast.knownOccupancy)).toBe('0'));
+  expect(metric(en.forecast.estimatedAvailable)).toBe(en.forecast.unknown);
+  expect(document.querySelector('[aria-live="polite"]').textContent).toContain(en.forecast.uncertainAvailability.replace('{{count}}', '4'));
+  expect(document.querySelector('[aria-live="polite"]').textContent).toContain(en.forecast.knownOccupancyRate);
+});
+
+it('keeps raw vehicle demand above capacity while free spaces stay zero', async () => {
+  getOccupancyForecast.mockResolvedValue({ ...day, hourlyForecast: hours.map(p => ({ ...p,
+    predictedVehicles: 120, estimatedOccupiedSlots: 120, estimatedAvailableSlots: 0, busynessScore: 100,
+    uncertainty: { unresolvedActiveVehicles: 3, predictedVehiclesRange: { min: 120, max: 123 },
+      availableSpacesRange: { min: 0, max: 0 } } })) });
+  render(<AIBusynessForecast />);
+  await waitFor(() => expect(metric(en.forecast.predictedVehicles)).toBe('120'));
+  expect(metric(en.forecast.estimatedAvailable)).toBe('0');
+  expect(document.querySelector('[aria-live="polite"]').textContent).toContain('100%');
+});
+
+it.each(['week', 'month'])('keeps the %s scenario range aligned with the selected daily peak', async timeframe => {
+  const period = range(timeframe);
+  period.dailyForecast = period.dailyForecast.map(p => ({ ...p, estimatedAvailableSlots: 90,
+    uncertainty: { unresolvedActiveVehicles: 4, predictedVehiclesRange: { min: p.predictedVehicles, max: p.predictedVehicles + 4 },
+      availableSpacesRange: { min: 90, max: 94 } } }));
+  getOccupancyForecast.mockImplementation(({ timeframe: requested }) => Promise.resolve(requested === 'day' ? day : period));
+  render(<AIBusynessForecast />);
+  await screen.findByRole('button', { name: '08:00: Estimated, 24%' });
+  fireEvent.click(screen.getByRole('button', { name: en.forecast[timeframe] }));
+  await waitFor(() => expect(metric(en.forecast.estimatedAvailable)).toBe('90\u201394'));
+  expect(metric(en.forecast.predictedVehicles)).toBe('6');
+  expect(document.querySelector('[aria-live="polite"]').textContent).toContain(en.forecast.uncertainAvailability.replace('{{count}}', '4'));
 });
