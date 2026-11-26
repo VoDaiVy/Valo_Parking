@@ -32,7 +32,7 @@ const plateFingerprint = (plate) => {
   return `${clean.slice(0, 4)}-${clean.slice(-4)}`;
 };
 
-export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass }) {
+export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass, targetGate = 'ENTRY_1' }) {
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
   const [isParkingFull, setIsParkingFull] = useState(false);
@@ -178,7 +178,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           streamRef.current = stream;
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(() => {});
+            await videoRef.current.play().catch(() => { });
             await configureCameraTrack(stream);
           }
         }
@@ -205,7 +205,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   };
 
   const buildScanImageBase64 = async () => {
-    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'entry');
+    const cameraLane = targetGate === 'EXIT_1' ? 'exit' : 'entry';
+    return captureVideoLaneBase64(videoRef.current, canvasRef.current, cameraLane);
   };
 
   const formatVietnamesePlate = (plate) => {
@@ -283,7 +284,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       ch.postMessage({
         type: 'VEHICLE_DETECTED',
         payload: {
-          gate: 'ENTRY_1',
+          gate: targetGate || 'ENTRY_1',
           mode: 'entry',
           licensePlate: formatted,
           entryImageBase64: imageBase64,
@@ -292,20 +293,20 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         },
       });
       ch.close();
-    } catch (_) {}
+    } catch (_) { }
 
     // Notify staff gate spotlight immediately via IoT
     fetch(`${API_BASE}/iot/vehicle-detected`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        gate: 'ENTRY_1',
+        gate: targetGate || 'ENTRY_1',
         mode: 'entry',
         licensePlate: formatted,
         entryImageBase64: imageBase64,
         vehicleModelInfo: 'Vehicle at Entry Gate',
       }),
-    }).catch(() => {});
+    }).catch(() => { });
 
     setScanMessage('Checking registration...');
 
@@ -385,6 +386,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
             bookingId: verifyData.bookingId || null,
             bookingHoldId: null,
             isAutoReallocated,
+            entryGate: targetGate || 'ENTRY_1',
           };
 
           const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
@@ -555,11 +557,11 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         const ch = new BroadcastChannel('valo_gate_channel');
         ch.postMessage({
           type: 'VEHICLE_CLEARED',
-          gate: 'ENTRY_1',
+          gate: targetGate || 'ENTRY_1',
           reason: 'NO_VEHICLE_DETECTED',
         });
         ch.close();
-      } catch (_) {}
+      } catch (_) { }
       if (isParkingFullRef.current) {
         setShowFullModal(true);
         updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
@@ -692,6 +694,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           bookingId: verifyData.bookingId || null,
           bookingHoldId: null,
           isAutoReallocated,
+          entryGate: targetGate || 'ENTRY_1',
         };
 
         const entryRes = await fetch(`${API_BASE}/sessions/kiosk-entry`, {

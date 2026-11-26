@@ -22,7 +22,7 @@ const resolveZoneLabel = (slotRecord, slotCode) => {
   return '--';
 };
 
-export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete, successSession }) {
+export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete, successSession, targetGate = 'ENTRY_1', basePath = '/kiosk' }) {
   const socket = useSocket();
   const [issuedSession, setIssuedSession] = useState(successSession);
   const [status, setStatus] = useState(successSession ? 'ready' : 'checking-in');
@@ -53,11 +53,11 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     } catch (e) {
       console.error(e);
     } finally {
-      window.location.replace('/kiosk');
+      window.location.replace(basePath || '/kiosk');
     }
-  }, []);
+  }, [basePath]);
 
-  // Màn hình tự động quay trở lại màn hình chính (Click to start) khi xe đi qua barrier ENTRY_1 hoặc staff đóng cổng
+  // Màn hình tự động quay trở lại màn hình chính khi xe đi qua barrier hoặc staff đóng cổng
   useEffect(() => {
     mountTimeRef.current = Date.now();
     let returnTimerId = null;
@@ -73,8 +73,9 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
       }
     };
 
+    const target = targetGate || 'ENTRY_1';
     const processGateState = (gateData) => {
-      if (!gateData || (gateData.gate && gateData.gate !== 'ENTRY_1')) return;
+      if (!gateData || (gateData.gate && gateData.gate !== target)) return;
       if (gateData.open) {
         hasSeenOpenRef.current = true;
         return;
@@ -86,10 +87,10 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
       }
     };
 
-    // 1. Kiểm tra trạng thái đóng của Barrier ENTRY_1 qua Polling
+    // 1. Kiểm tra trạng thái đóng của Barrier qua Polling
     const checkBarrier = async () => {
       try {
-        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=ENTRY_1&_t=${Date.now()}`, {
+        const res = await fetch(`${API_BASE}/iot/barrier-status?gate=${target}&_t=${Date.now()}`, {
           cache: 'no-store'
         });
         const data = await res.json();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import KioskWelcome from './KioskWelcome';
@@ -9,6 +9,8 @@ import KioskLayout from './KioskLayout';
 import { API_BASE } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
 import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
+
+const LazyKioskOutFlow = lazy(() => import('../KioskOut/KioskOutFlow'));
 
 const createRequestKey = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -57,7 +59,7 @@ const createEmptyKioskFormData = () => ({
 
 const KIOSK_IDLE_TIMEOUT_MS = 120000;
 
-export default function KioskFlow() {
+function KioskEntryFlowInner({ assignedGate, basePath, isTidalReversed }) {
   const navigate = useNavigate();
   const location = useLocation();
   const socket = useSocket();
@@ -74,11 +76,12 @@ export default function KioskFlow() {
   };
 
   const handleNext = (step) => {
-    navigate(`/kiosk/step${step}`);
+    navigate(`${basePath}/step${step}`);
   };
 
   const applySyncedEntryScan = useCallback((payload) => {
-    const { mode = 'verified', licensePlate, verifyData, session, entryImageBase64 = null } = payload || {};
+    const { mode = 'verified', gate = null, licensePlate, verifyData, session, entryImageBase64 = null } = payload || {};
+    if (gate && assignedGate && String(gate).toUpperCase() !== String(assignedGate).toUpperCase()) return;
     if (!licensePlate || successSession) return;
 
     const now = Date.now();
@@ -92,10 +95,10 @@ export default function KioskFlow() {
 
     if (mode === 'checked_in' && session) {
       const canShowTicketScreen =
-        location.pathname === '/kiosk' ||
-        location.pathname === '/kiosk/' ||
-        location.pathname === '/kiosk/step1' ||
-        location.pathname === '/kiosk/step2';
+        location.pathname === basePath ||
+        location.pathname === `${basePath}/` ||
+        location.pathname === `${basePath}/step1` ||
+        location.pathname === `${basePath}/step2`;
       if (!canShowTicketScreen) return;
 
       lastEntrySyncRef.current = { key: dedupeKey, at: now };
@@ -111,7 +114,7 @@ export default function KioskFlow() {
         entryImageBase64: entryImageBase64 || null,
       });
       setSuccessSession(session);
-      navigate('/kiosk/step3');
+      navigate(`${basePath}/step3`);
       return;
     }
 
@@ -122,9 +125,9 @@ export default function KioskFlow() {
 
     // Only auto-transition when kiosk is idle on welcome screen or Step 1
     const onIdleEntryScreen =
-      location.pathname === '/kiosk' ||
-      location.pathname === '/kiosk/' ||
-      location.pathname === '/kiosk/step1';
+      location.pathname === basePath ||
+      location.pathname === `${basePath}/` ||
+      location.pathname === `${basePath}/step1`;
     if (!onIdleEntryScreen) return;
 
     lastEntrySyncRef.current = { key: dedupeKey, at: now };
@@ -176,11 +179,11 @@ export default function KioskFlow() {
     });
 
     if (canFastPassNow) {
-      navigate('/kiosk/step3');
+      navigate(`${basePath}/step3`);
     } else {
-      navigate('/kiosk/step2');
+      navigate(`${basePath}/step2`);
     }
-  }, [location.pathname, navigate, successSession]);
+  }, [location.pathname, navigate, successSession, basePath, assignedGate]);
 
   useEffect(() => {
     let channel = null;
@@ -218,7 +221,7 @@ export default function KioskFlow() {
   };
 
   useEffect(() => {
-    const isWorkingStep = location.pathname.startsWith('/kiosk/step') && !successSession;
+    const isWorkingStep = location.pathname.startsWith(`${basePath}/step`) && !successSession;
     if (!isWorkingStep) return undefined;
 
     let idleTimer = null;
@@ -236,7 +239,7 @@ export default function KioskFlow() {
       setKioskAlert(null);
       setSuccessSession(null);
       setFormData(createEmptyKioskFormData());
-      navigate('/kiosk', { replace: true });
+      navigate(basePath, { replace: true });
     };
 
     const armTimer = () => {
@@ -352,7 +355,7 @@ export default function KioskFlow() {
     if (step === 2) {
       await releaseCurrentHold();
     }
-    navigate(step === 0 ? '/kiosk' : `/kiosk/step${step}`);
+    navigate(step === 0 ? basePath : `${basePath}/step${step}`);
   };
 
   const handleConfirm = async () => {
@@ -378,6 +381,7 @@ export default function KioskFlow() {
           bookingId: formData.bookingId,
           bookingHoldId: formData.bookingHoldId,
           isAutoReallocated: Boolean(formData.slotAutoReallocated),
+          entryGate: assignedGate || 'ENTRY_1',
         }),
       });
 
@@ -406,7 +410,7 @@ export default function KioskFlow() {
   const handleFastPassComplete = () => {
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
-    window.location.replace('/kiosk');
+    window.location.replace(basePath);
   };
 
   const handleFastPassEntry = async () => {
@@ -429,6 +433,7 @@ export default function KioskFlow() {
         bookingId: formData.bookingId,
         bookingHoldId: formData.bookingHoldId,
         isAutoReallocated: Boolean(formData.slotAutoReallocated),
+        entryGate: assignedGate || 'ENTRY_1',
       }),
     });
 
@@ -446,11 +451,11 @@ export default function KioskFlow() {
       setFormData(prev => ({ ...prev, ...newFormData }));
     }
     setSuccessSession(sessionData);
-    navigate('/kiosk/step3');
+    navigate(`${basePath}/step3`);
   };
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-white selection:bg-gold/30">
+    <div className="w-screen h-screen overflow-hidden bg-white selection:bg-gold/30 relative">
       {isSubmitting && (
         <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center">
           <div className="text-2xl font-bold text-[#0f172a] animate-pulse">CREATING SESSION...</div>
@@ -482,7 +487,7 @@ export default function KioskFlow() {
 
       <Routes>
         {/* Step 0: Welcome Screen (Full width, no split layout) */}
-        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} onDirectFastPass={handleDirectFastPass} />} />
+        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} onDirectFastPass={handleDirectFastPass} targetGate={assignedGate} />} />
 
         {/* Steps 1-3 use the Split-Screen KioskLayout */}
         <Route element={<KioskLayout />}>
@@ -504,6 +509,8 @@ export default function KioskFlow() {
                 onAutoCheckIn={handleFastPassEntry}
                 onComplete={handleFastPassComplete}
                 successSession={successSession}
+                targetGate={assignedGate}
+                basePath={basePath}
               />
             }
           />
@@ -511,4 +518,46 @@ export default function KioskFlow() {
       </Routes>
     </div>
   );
+}
+
+export default function KioskFlow({ assignedGate = 'ENTRY_1', basePath = '/kiosk', isTidalReversed = false }) {
+  const socket = useSocket();
+  const [laneMode, setLaneMode] = useState('STANDARD');
+
+  // Lắng nghe chế độ làn (Tidal Flow) nếu đây là Kiosk gốc
+  useEffect(() => {
+    if (isTidalReversed) return;
+
+    fetch(`${API_BASE}/iot/lane-mode`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.mode) setLaneMode(data.mode);
+      })
+      .catch(() => {});
+
+    if (!socket) return;
+    const handleLaneModeChanged = (data) => {
+      if (data?.mode) {
+        setLaneMode(data.mode);
+      }
+    };
+    socket.on('gate:lane_mode_changed', handleLaneModeChanged);
+    return () => socket.off('gate:lane_mode_changed', handleLaneModeChanged);
+  }, [socket, isTidalReversed]);
+
+  // Nếu bãi xe đang ở chế độ Cao điểm Ra (PEAK_EXIT) và màn hình này là Cột bên Phải:
+  // Tự động chuyển luồng hiển thị sang Kiosk Ra nhưng gắn chặt với Barrier Phải (assignedGate)
+  if (!isTidalReversed && laneMode === 'PEAK_EXIT') {
+    return (
+      <Suspense fallback={<div className="w-screen h-screen bg-[#0a0a0a] flex items-center justify-center text-white font-bold">Loading Tidal Flow...</div>}>
+        <LazyKioskOutFlow
+          assignedGate={assignedGate}
+          basePath={basePath}
+          isTidalReversed={true}
+        />
+      </Suspense>
+    );
+  }
+
+  return <KioskEntryFlowInner assignedGate={assignedGate} basePath={basePath} isTidalReversed={isTidalReversed} />;
 }

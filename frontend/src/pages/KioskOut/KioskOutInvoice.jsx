@@ -2,8 +2,9 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon } from 'lucide-react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { API_BASE } from '../../services/api';
+import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 
-export default function KioskOutInvoice({ sessionData: initialSessionData, exitImage, onCheckoutSuccess, onBack }) {
+export default function KioskOutInvoice({ sessionData: initialSessionData, exitImage, targetGate = 'EXIT_1', onCheckoutSuccess, onBack }) {
   const [sessionData, setSessionData] = useState(initialSessionData);
   useEffect(() => {
     if (initialSessionData) setSessionData(initialSessionData);
@@ -73,6 +74,7 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
           paymentIntentId,
           keepPaused,
           checkoutToken: currentData?.checkoutToken,
+          exitGate: targetGate || 'EXIT_1',
         })
       });
       const data = await res.json();
@@ -248,7 +250,7 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
             <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-6">
               <div>
                 <p className="text-xs text-gray-500 font-semibold tracking-wider mb-1">LICENSE PLATE</p>
-                <p className="text-2xl font-black text-yellow-400 tracking-wider">{session.licensePlate}</p>
+                <p className="text-2xl font-black text-yellow-400 tracking-wider">{formatLicensePlateDisplay(session.licensePlate)}</p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-500 font-semibold tracking-wider mb-1">SLOT</p>

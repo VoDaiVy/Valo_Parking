@@ -37,6 +37,11 @@ const barrierAuditLogSchema = new mongoose.Schema(
       default: 'Staff',
       trim: true,
     },
+    evidenceImage: {
+      type: String,
+      default: '',
+      trim: true,
+    },
   },
   {
     timestamps: true,

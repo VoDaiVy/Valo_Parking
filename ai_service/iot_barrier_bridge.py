@@ -179,6 +179,7 @@ def main():
         'total': -1
     }
     last_capacity_sync_time = 0
+    last_lane_mode = None
 
     while True:
         now = time.time()
@@ -233,6 +234,9 @@ def main():
                 for b in TARGET_BACKENDS
             ]
 
+            best_capacity_data = None
+            best_capacity_source = None
+
             for future in futures:
                 backend, data, err = future.result()
                 b_id = backend['id']
@@ -245,6 +249,23 @@ def main():
                     continue
 
                 if data and data.get('success'):
+                    # Đồng bộ chế độ làn đảo chiều cao điểm (STANDARD / PEAK_ENTRY / PEAK_EXIT)
+                    current_lane_mode = data.get('laneMode')
+                    if current_lane_mode and current_lane_mode != last_lane_mode:
+                        last_lane_mode = current_lane_mode
+                        print(f"\n🔄 [LANE MODE SYNC từ {b_name}] Chuyển chế độ làn: {current_lane_mode} -> Gửi xuống ESP32...")
+                        if ser and ser.is_open:
+                            ser.write(f"MODE|{current_lane_mode}\n".encode('utf-8'))
+                            ser.flush()
+
+                    # Chọn nguồn công suất ưu tiên (Authoritative):
+                    # Ưu tiên Local Backend nếu đang hoạt động tốt; nếu Local mất kết nối thì dùng Render Cloud
+                    cap = data.get('capacity')
+                    if cap and isinstance(cap, dict):
+                        if b_id == 'local' or best_capacity_data is None:
+                            best_capacity_data = cap
+                            best_capacity_source = b_name
+
                     gates = data.get('gates', {})
                     if not gates:
                         single = data.get('data', {})
@@ -317,28 +338,27 @@ def main():
                             else:
                                 last_trigger_ids[b_id][norm_gate] = trigger_id
 
-                    # 4. ĐỒNG BỘ CÔNG SUẤT BÃI XE CHO MÀN HÌNH LCD THỨ 3 (NẾU CÓ)
-                    capacity_data = data.get('capacity')
-                    if capacity_data and isinstance(capacity_data, dict):
-                        c_avail = int(capacity_data.get('available', 0))
-                        c_occ = int(capacity_data.get('occupied', 0))
-                        c_total = int(capacity_data.get('total', 0))
+            # 4. ĐỒNG BỘ CÔNG SUẤT BÃI XE CHO MÀN HÌNH LCD THỨ 3 (DUY NHẤT 1 NGUỒN UY TÍN TRÁNH NHẢY LCD)
+            if best_capacity_data and isinstance(best_capacity_data, dict):
+                c_avail = int(best_capacity_data.get('available', 0))
+                c_occ = int(best_capacity_data.get('occupied', 0))
+                c_total = int(best_capacity_data.get('total', 0))
 
-                        has_changed = (
-                            c_avail != last_capacity['available'] or
-                            c_occ != last_capacity['occupied'] or
-                            c_total != last_capacity['total']
-                        )
+                has_changed = (
+                    c_avail != last_capacity['available'] or
+                    c_occ != last_capacity['occupied'] or
+                    c_total != last_capacity['total']
+                )
 
-                        if has_changed or (now - last_capacity_sync_time >= 30.0):
-                            last_capacity = {'available': c_avail, 'occupied': c_occ, 'total': c_total}
-                            last_capacity_sync_time = now
-                            cmd_cap = f"CAPACITY|{c_avail}|{c_occ}|{c_total}\n"
-                            if ser and ser.is_open:
-                                ser.write(cmd_cap.encode('utf-8'))
-                                ser.flush()
-                            if has_changed:
-                                print(f"📊 [LCD CAPACITY ({b_name})] Available {c_avail} | Occupied {c_occ} | Total {c_total}")
+                if has_changed or (now - last_capacity_sync_time >= 15.0):
+                    last_capacity = {'available': c_avail, 'occupied': c_occ, 'total': c_total}
+                    last_capacity_sync_time = now
+                    cmd_cap = f"CAPACITY|{c_avail}|{c_occ}|{c_total}\n"
+                    if ser and ser.is_open:
+                        ser.write(cmd_cap.encode('utf-8'))
+                        ser.flush()
+                    if has_changed:
+                        print(f"📊 [LCD CAPACITY ({best_capacity_source})] Available {c_avail} | Occupied {c_occ} | Total {c_total}")
 
         except (serial.SerialException, OSError) as se:
             print(f"⚠️ Mất kết nối USB ({se}). Đang tự động kết nối lại...")

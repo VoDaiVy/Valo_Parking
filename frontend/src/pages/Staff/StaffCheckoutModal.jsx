@@ -235,14 +235,18 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                   <div className="space-y-1">
                     <p className="text-white font-medium">
                       <strong className="text-red-300">Violation Reason:</strong>{' '}
-                      {invoiceData.violationDetails.violationMessage || `Unauthorized parking at slot ${invoiceData.violationDetails.slotCode}`}
+                      {typeof invoiceData.violationDetails === 'string'
+                        ? invoiceData.violationDetails
+                        : (invoiceData.violationDetails.violationMessage || `Unauthorized parking at slot ${invoiceData.violationDetails.slotCode || 'N/A'}`)}
                     </p>
                     <div className="flex items-center gap-1.5 text-slate-300 text-[11px]">
                       <Clock size={13} className="text-amber-400 flex-shrink-0" />
                       <span>
                         <strong className="text-slate-200">Violation Duration:</strong> From{' '}
                         <span className="text-white font-mono font-bold">
-                          {new Date(invoiceData.violationDetails.detectedAt).toLocaleString('en-US')}
+                          {invoiceData.violationDetails.detectedAt
+                            ? new Date(invoiceData.violationDetails.detectedAt).toLocaleString('en-US')
+                            : 'N/A'}
                         </span>{' '}
                         to{' '}
                         <span className="text-white font-mono font-bold">
@@ -250,7 +254,7 @@ export default function StaffCheckoutModal({ isOpen, onClose, session, onSuccess
                             ? new Date(invoiceData.violationDetails.resolvedAt).toLocaleString('en-US')
                             : 'Present'}
                         </span>{' '}
-                        ({invoiceData.violationDetails.durationMinutes} min)
+                        ({invoiceData.violationDetails.durationMinutes || 0} min)
                       </span>
                     </div>
                   </div>

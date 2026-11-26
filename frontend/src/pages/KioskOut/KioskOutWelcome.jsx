@@ -21,7 +21,8 @@ const isLikelyVietnamesePlate = (plate) => {
   );
 };
 
-export default function KioskOutWelcome({ onScanSuccess }) {
+export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }) {
+  const cameraLane = targetGate === 'ENTRY_1' ? 'entry' : 'exit';
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -94,8 +95,8 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       ch.postMessage({
         type: 'VEHICLE_DETECTED',
         payload: {
-          gate: 'EXIT_1',
-          mode: 'exit',
+          gate: targetGate || 'EXIT_1',
+          mode: cameraLane,
           licensePlate: plate,
           exitImageBase64: imageBase64,
           vehicleModelInfo: 'Vehicle at Exit Gate',
@@ -110,7 +111,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        gate: 'EXIT_1',
+        gate: targetGate || 'EXIT_1',
         mode: 'exit',
         licensePlate: plate,
         exitImageBase64: imageBase64,
@@ -137,7 +138,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
           ch.postMessage({
             type: 'VEHICLE_DETECTED',
             payload: {
-              gate: 'EXIT_1',
+              gate: targetGate || 'EXIT_1',
               mode: 'exit',
               licensePlate: plate,
               hasSession: true,
@@ -174,7 +175,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
           ch.postMessage({
             type: 'VEHICLE_DETECTED',
             payload: {
-              gate: 'EXIT_1',
+              gate: targetGate || 'EXIT_1',
               mode: 'exit',
               licensePlate: plate,
               hasSession: false,
@@ -195,7 +196,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
   };
 
   const captureFrameBase64 = () => {
-    return captureVideoLaneBase64(videoRef.current, canvasRef.current, 'exit', cameraConfigRef.current);
+    return captureVideoLaneBase64(videoRef.current, canvasRef.current, cameraLane, cameraConfigRef.current);
   };
   const formatVietnamesePlate = (clean) => {
     let province, series, numbers;
@@ -282,7 +283,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
 
         const video = videoRef.current;
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
-          const nextSig = computeLaneFrameSignature(video, 'exit', cameraConfigRef.current);
+          const nextSig = computeLaneFrameSignature(video, cameraLane, cameraConfigRef.current);
           const motionDetected = !prevFrameSigRef.current || hasLaneMotionChanged(prevFrameSigRef.current, nextSig);
           const heartbeatDue = Date.now() - lastAiScanAtRef.current >= 4000;
           if (!motionDetected && !heartbeatDue) return;
@@ -319,7 +320,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
                   const ch = new BroadcastChannel('valo_gate_channel');
                   ch.postMessage({
                     type: 'VEHICLE_CLEARED',
-                    gate: 'EXIT_1',
+                    gate: targetGate || 'EXIT_1',
                     reason: 'NO_VEHICLE_DETECTED',
                   });
                   ch.close();
@@ -328,7 +329,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
                 fetch(`${API_BASE}/iot/vehicle-detected`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ gate: 'EXIT_1', cleared: true, reason: 'NO_VEHICLE_DETECTED' }),
+                  body: JSON.stringify({ gate: targetGate || 'EXIT_1', cleared: true, reason: 'NO_VEHICLE_DETECTED' }),
                 }).catch(() => {});
 
                 lastScannedPlateRef.current = null;
@@ -401,16 +402,24 @@ export default function KioskOutWelcome({ onScanSuccess }) {
           <div className="relative w-full max-w-[580px] rounded-[36px] p-[1.5px] bg-gradient-to-br from-white/40 via-amber-300/45 to-sky-300/25 shadow-[0_28px_80px_rgba(15,23,42,0.75),0_0_50px_rgba(250,204,21,0.12)]">
             <div className="relative w-full aspect-[4/3.6] rounded-[34px] overflow-hidden bg-slate-900 flex items-center justify-center">
               {streamError ? (
-                <div className="flex flex-col items-center justify-center text-red-300 p-6 text-center">
-                  <AlertCircle size={52} className="mb-3" />
-                  <p className="font-bold text-lg">Cannot access Camera.</p>
-                  <p className="text-sm text-slate-300 mt-1">Please check camera permissions for this browser.</p>
+                <div className="flex flex-col items-center justify-center text-amber-200 p-6 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-300 mb-4 animate-pulse">
+                    <ScanLine size={36} />
+                  </div>
+                  <p className="font-bold text-xl text-white">Station Camera Active</p>
+                  <p className="text-sm text-slate-300 mt-2 max-w-sm">
+                    Station camera is scanning from the lane. Please drive to the exit barrier to check out.
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 rounded-full bg-emerald-500/20 border border-emerald-400/40 px-3.5 py-1 text-xs text-emerald-300 font-semibold">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span>Connected to Gate System</span>
+                  </div>
                 </div>
               ) : (
                 <>
                   <LaneCameraPreview
                     videoRef={videoRef}
-                    lane="exit"
+                    lane={cameraLane}
                     cameraConfig={cameraConfig}
                     active={!streamError}
                     className="w-full h-full object-cover brightness-[1.04] contrast-[1.03]"
@@ -421,7 +430,7 @@ export default function KioskOutWelcome({ onScanSuccess }) {
                     <div className="flex items-center gap-2.5 rounded-full bg-slate-950/60 backdrop-blur-md border border-white/25 px-4 py-1.5">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping" />
                       <span className="text-[11px] font-bold tracking-[0.18em] text-white uppercase">
-                        Exit Gate Live
+                        {cameraLane === 'entry' ? 'Entry Gate Live' : 'Exit Gate Live'}
                       </span>
                     </div>
                     <div className="rounded-full bg-slate-950/60 backdrop-blur-md border border-white/20 px-3.5 py-1.5">

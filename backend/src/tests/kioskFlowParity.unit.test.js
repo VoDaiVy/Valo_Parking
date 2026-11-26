@@ -764,4 +764,44 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
     } finally { restore(); }
   });
 
+  test('verifyPlate includes licensePlate filter alongside time-window $or via $and', async () => {
+    const capturedQueries = [];
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(null)],
+      [Session, 'find', () => queryable([])],
+      [Vehicle, 'findOne', () => queryable(null)],
+      [ParkingFloor, 'find', () => queryable([])],
+      [Slot, 'find', () => queryable([])],
+      [Booking, 'find', () => queryable([])],
+      [Booking, 'findOne', (q) => {
+        capturedQueries.push(q);
+        return queryable(null);
+      }],
+    ]);
+
+    try {
+      const req = { body: { licensePlate: '99A-280.96', gate: 'ENTRY_1' } };
+      const res = createRes();
+      await sessionController.verifyPlate(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.ok(capturedQueries.length >= 1);
+      const bookingQuery = capturedQueries[0];
+      assert.ok(Array.isArray(bookingQuery.$and), 'booking query must combine plate & status filters with $and');
+      assert.equal(bookingQuery.$and.length, 2);
+      assert.ok(
+        bookingQuery.$and[0].$or.some((cond) => cond.licensePlate === '99A28096'),
+        'first $and clause must preserve licensePlate filter'
+      );
+      assert.ok(
+        bookingQuery.$and[1].$or.some((cond) => cond.status === 'PAID'),
+        'second $and clause must preserve status/window filter'
+      );
+      assert.equal(res.state.body.data.hasPreBooking, false);
+      assert.equal(res.state.body.data.assignedSlot, null);
+    } finally {
+      restore();
+    }
+  });
+
 });

@@ -28,6 +28,7 @@ const gateStates = {
 };
 
 let latestBarrierState = { ...gateStates.ENTRY_1 };
+let currentLaneMode = 'STANDARD'; // 'STANDARD' | 'PEAK_ENTRY' (2 Cổng Vào) | 'PEAK_EXIT' (2 Cổng Ra)
 
 const getGateState = (gateName = 'ENTRY_1') => {
   const normGate = (gateName || 'ENTRY_1').toUpperCase();
@@ -180,6 +181,7 @@ router.get('/barrier-status', softProtect, async (req, res) => {
       gates: showDetails
         ? gateStates
         : Object.fromEntries(Object.entries(gateStates).map(([key, value]) => [key, toPublicGateState(value)])),
+      laneMode: currentLaneMode,
       capacity,
       espStatus,
     });
@@ -191,13 +193,55 @@ router.get('/barrier-status', softProtect, async (req, res) => {
     gates: showDetails
       ? gateStates
       : Object.fromEntries(Object.entries(gateStates).map(([key, value]) => [key, toPublicGateState(value)])),
+    laneMode: currentLaneMode,
     capacity,
     espStatus,
   });
 });
 
+// API lấy và chuyển đổi chế độ Làn đảo chiều cao điểm (Lane Flow Mode)
+router.get('/lane-mode', softProtect, (req, res) => {
+  return res.json({ success: true, mode: currentLaneMode });
+});
+
+router.post('/lane-mode', softProtect, (req, res) => {
+  const { mode = 'STANDARD' } = req.body || {};
+  const upper = String(mode).trim().toUpperCase();
+  if (['STANDARD', 'PEAK_ENTRY', 'PEAK_EXIT'].includes(upper)) {
+    currentLaneMode = upper;
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('gate:lane_mode_changed', { mode: currentLaneMode });
+    }
+    console.log(`[BACKEND IOT] 🔄 CHUYỂN CHẾ ĐỘ LÀN: ${currentLaneMode}`);
+    return res.json({ success: true, mode: currentLaneMode });
+  }
+  return res.status(400).json({ success: false, message: 'Invalid lane mode. Use STANDARD, PEAK_ENTRY, or PEAK_EXIT.' });
+});
+
 // API chuyên dụng lấy công suất bãi xe (Dùng cho Bảng hiển thị LCD ngoài cổng & Kiosk)
 const BarrierAuditLog = require('../models/BarrierAuditLog');
+const cloudinary = require('../config/cloudinary');
+
+const uploadEvidenceSafe = async (rawImg) => {
+  if (!rawImg || typeof rawImg !== 'string') return '';
+  const trimmed = rawImg.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  if (trimmed.startsWith('data:image')) {
+    try {
+      const uploadRes = await cloudinary.uploader.upload(trimmed, {
+        folder: 'valo_parking/barrier_audits',
+        resource_type: 'image',
+      });
+      return uploadRes?.secure_url || trimmed;
+    } catch (err) {
+      console.warn('[BarrierAuditLog] Cloudinary upload note:', err.message);
+      return trimmed;
+    }
+  }
+  return trimmed;
+};
 
 router.get('/capacity', softProtect, async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -217,6 +261,8 @@ router.post('/open-barrier', protect, authorize('staff', 'admin'), async (req, r
     hold = false,
     reason = 'MANUAL_OVERRIDE',
     notes = '',
+    evidenceImage = '',
+    image = '',
   } = req.body;
   const normGate = (gate || 'ENTRY_1').toUpperCase();
 
@@ -224,12 +270,14 @@ router.post('/open-barrier', protect, authorize('staff', 'admin'), async (req, r
 
   if (req.user) {
     try {
+      const finalEvidence = await uploadEvidenceSafe(evidenceImage || image);
       await BarrierAuditLog.create({
         gate: normGate,
         action: 'open',
         reason: reason || 'MANUAL_OVERRIDE',
         notes: notes || '',
         licensePlate: licensePlate || '',
+        evidenceImage: finalEvidence,
         staffId: req.user._id,
         staffName: req.user.fullName || req.user.username || 'Staff',
       });
@@ -262,17 +310,26 @@ router.post('/open-barrier', protect, authorize('staff', 'admin'), async (req, r
 
 // Chế độ Tạm dừng Barrier (Vô hiệu hóa cảm biến & Giữ nguyên vị trí)
 router.post('/hold-barrier', protect, authorize('staff', 'admin'), async (req, res) => {
-  const { hold = true, gate = 'ENTRY_1', reason = '', notes = '' } = req.body;
+  const {
+    hold = true,
+    gate = 'ENTRY_1',
+    reason = '',
+    notes = '',
+    evidenceImage = '',
+    image = '',
+  } = req.body;
   const normGate = (gate || 'ENTRY_1').toUpperCase();
   const current = getGateState(normGate);
 
   if (req.user) {
     try {
+      const finalEvidence = await uploadEvidenceSafe(evidenceImage || image);
       await BarrierAuditLog.create({
         gate: normGate,
         action: hold ? 'hold' : 'close',
         reason: reason || (hold ? 'HOLD_PAUSE' : 'RESUME_NORMAL'),
         notes: notes || '',
+        evidenceImage: finalEvidence,
         staffId: req.user._id,
         staffName: req.user.fullName || req.user.username || 'Staff',
       });
@@ -306,11 +363,65 @@ router.post('/hold-barrier', protect, authorize('staff', 'admin'), async (req, r
   });
 });
 
-// Xem lịch sử mở cổng cưỡng bức (Audit Trail)
-router.get('/barrier-audit-logs', protect, authorize('staff', 'admin'), async (req, res) => {
+// Xem lịch sử mở cổng cưỡng bức & thao tác Barrier (Audit Trail)
+router.get('/barrier-audit-logs', softProtect, async (req, res) => {
   try {
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
-    const logs = await BarrierAuditLog.find()
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+    const filter = {};
+
+    // Lọc theo Cổng
+    if (req.query.gate && req.query.gate !== 'ALL') {
+      filter.gate = String(req.query.gate).trim().toUpperCase();
+    }
+
+    // Lọc theo Hành động (open / hold / close)
+    if (req.query.action && req.query.action !== 'ALL') {
+      filter.action = String(req.query.action).trim().toLowerCase();
+    }
+
+    // Lọc theo Ngày cụ thể (YYYY-MM-DD)
+    if (req.query.date) {
+      const targetDate = new Date(req.query.date);
+      if (!isNaN(targetDate.getTime())) {
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        filter.createdAt = { $gte: startOfDay, $lte: endOfDay };
+      }
+    } else {
+      // Lọc theo khoảng ngày (startDate - endDate)
+      if (req.query.startDate || req.query.endDate) {
+        filter.createdAt = {};
+        if (req.query.startDate) {
+          const s = new Date(req.query.startDate);
+          if (!isNaN(s.getTime())) {
+            s.setHours(0, 0, 0, 0);
+            filter.createdAt.$gte = s;
+          }
+        }
+        if (req.query.endDate) {
+          const e = new Date(req.query.endDate);
+          if (!isNaN(e.getTime())) {
+            e.setHours(23, 59, 59, 999);
+            filter.createdAt.$lte = e;
+          }
+        }
+      }
+    }
+
+    // Tìm kiếm theo từ khóa (Biển số xe, Tên nhân viên, Lý do, Ghi chú)
+    if (req.query.search && String(req.query.search).trim()) {
+      const searchRegex = new RegExp(String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { licensePlate: searchRegex },
+        { staffName: searchRegex },
+        { reason: searchRegex },
+        { notes: searchRegex },
+      ];
+    }
+
+    const logs = await BarrierAuditLog.find(filter)
       .sort({ createdAt: -1 })
       .limit(limit)
       .populate('staffId', 'username fullName role email')
@@ -321,12 +432,29 @@ router.get('/barrier-audit-logs', protect, authorize('staff', 'admin'), async (r
   }
 });
 
-const closeBarrierHandler = (req, res) => {
-  const { gate = 'ENTRY_1', fromBridge = false } = req.body || {};
+const closeBarrierHandler = async (req, res) => {
+  const { gate = 'ENTRY_1', fromBridge = false, reason = 'MANUAL_CLOSE', notes = '', evidenceImage = '', image = '' } = req.body || {};
   const normGate = (gate || 'ENTRY_1').toUpperCase();
   const current = getGateState(normGate);
 
   console.log(`[BACKEND IOT] 🔒 NHẬN LỆNH ĐÓNG CỔNG: ${normGate} (Nguồn: ${fromBridge ? 'ESP32 Bridge' : 'Web Staff'})`);
+
+  if (req.user) {
+    try {
+      const finalEvidence = await uploadEvidenceSafe(evidenceImage || image);
+      await BarrierAuditLog.create({
+        gate: normGate,
+        action: 'close',
+        reason: reason || 'MANUAL_CLOSE',
+        notes: notes || '',
+        evidenceImage: finalEvidence,
+        staffId: req.user._id,
+        staffName: req.user.fullName || req.user.username || 'Staff',
+      });
+    } catch (auditErr) {
+      console.error('[BarrierAuditLog] Failed to record close audit:', auditErr.message);
+    }
+  }
 
   const newState = {
     open: false,
@@ -580,6 +708,7 @@ router.put('/camera-config', protect, authorize('staff', 'admin'), async (req, r
 router.post('/kiosk-entry-sync', protect, authorize('staff', 'admin'), (req, res) => {
   const {
     mode = 'verified',
+    gate = 'ENTRY_1',
     licensePlate,
     verifyData = null,
     session = null,
@@ -591,6 +720,7 @@ router.post('/kiosk-entry-sync', protect, authorize('staff', 'admin'), (req, res
 
   const payload = {
     mode,
+    gate: String(gate || 'ENTRY_1').toUpperCase(),
     licensePlate,
     verifyData,
     session,
@@ -601,6 +731,35 @@ router.post('/kiosk-entry-sync', protect, authorize('staff', 'admin'), (req, res
   const io = req.app.get('io');
   if (io) {
     io.emit('kiosk:entry_plate_synced', payload);
+  }
+
+  return res.json({ success: true, data: payload });
+});
+
+// Đồng bộ hóa đơn / phiên ra từ Staff Gate Control sang màn hình Check-out Kiosk Out
+router.post('/kiosk-exit-sync', protect, authorize('staff', 'admin'), (req, res) => {
+  const {
+    gate = 'EXIT_1',
+    licensePlate,
+    invoiceData = null,
+    exitImageBase64 = null,
+  } = req.body || {};
+
+  if (!licensePlate || !invoiceData) {
+    return res.status(400).json({ success: false, message: 'licensePlate and invoiceData are required' });
+  }
+
+  const payload = {
+    gate: String(gate || 'EXIT_1').toUpperCase(),
+    licensePlate,
+    invoiceData,
+    exitImageBase64,
+    syncedAt: Date.now(),
+  };
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('kiosk:exit_plate_synced', payload);
   }
 
   return res.json({ success: true, data: payload });

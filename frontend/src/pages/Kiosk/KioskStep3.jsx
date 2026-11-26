@@ -4,17 +4,17 @@ import { Navigate } from 'react-router-dom';
 import KioskFastPass from './KioskFastPass';
 import { getPolicyBySlug } from '../../services/policyService';
 
-export default function KioskStep3({ formData, onConfirm, onBack, onAutoCheckIn, onComplete, successSession }) {
+export default function KioskStep3({ formData, onConfirm, onBack, onAutoCheckIn, onComplete, successSession, targetGate = 'ENTRY_1', basePath = '/kiosk' }) {
   const isFastPassMode = formData.step3Mode === 'fastpass';
   const hasPolicyContext = Boolean(formData.licensePlate && formData.selectedSlot && formData.floorId);
   const hasFastPassContext = Boolean(formData.licensePlate && formData.selectedSlot && formData.floorId);
 
   if (isFastPassMode && !hasFastPassContext) {
-    return <Navigate to="/kiosk" replace />;
+    return <Navigate to={basePath || '/kiosk'} replace />;
   }
 
   if (!isFastPassMode && !hasPolicyContext) {
-    return <Navigate to="/kiosk" replace />;
+    return <Navigate to={basePath || '/kiosk'} replace />;
   }
 
   if (isFastPassMode || successSession) {
@@ -25,6 +25,8 @@ export default function KioskStep3({ formData, onConfirm, onBack, onAutoCheckIn,
         onAutoCheckIn={onAutoCheckIn}
         onComplete={onComplete}
         successSession={successSession}
+        targetGate={targetGate}
+        basePath={basePath}
       />
     );
   }

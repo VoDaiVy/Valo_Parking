@@ -224,17 +224,17 @@ const lookupPlateViolations = async (cleanPlate, registeredVehicle = null, { ses
     const slotViolationFilter = session
       ? { ...buildSessionSlotAuditFilter(session), status: 'PENDING' }
       : {
-          detectedPlate: cleanPlate,
-          changeType: { $in: ['VIOLATION_DETECTED', 'WARNING_ISSUED'] },
-          status: 'PENDING',
-        };
+        detectedPlate: cleanPlate,
+        changeType: { $in: ['VIOLATION_DETECTED', 'WARNING_ISSUED'] },
+        status: 'PENDING',
+      };
 
     const [pendingFines, slotViolations] = await Promise.all([
       vehicleIds.length > 0
         ? Violation.find({ vehicleId: { $in: vehicleIds }, status: 'PENDING' })
-            .sort({ createdAt: -1 })
-            .select('title description fineAmount status createdAt')
-            .lean()
+          .sort({ createdAt: -1 })
+          .select('title description fineAmount status createdAt')
+          .lean()
         : [],
       SlotAuditLog.find(slotViolationFilter)
         .sort({ createdAt: -1 })
@@ -279,7 +279,7 @@ exports.verifyPlate = async (req, res, next) => {
         const io = req.app?.get('io');
         if (io && cleanPlate) {
           io.emit('gate:vehicle_detected', {
-            gate: 'ENTRY_1',
+            gate: String(req.body?.gate || 'ENTRY_1').toUpperCase(),
             mode: 'entry',
             licensePlate: cleanPlate,
             vehicleModelInfo: 'Vehicle already in parking lot',
@@ -295,7 +295,7 @@ exports.verifyPlate = async (req, res, next) => {
             timestamp: Date.now()
           });
         }
-      } catch (_) {}
+      } catch (_) { }
 
       return res.status(200).json({
         success: true,
@@ -310,13 +310,13 @@ exports.verifyPlate = async (req, res, next) => {
     }
 
     // 2. Kiểm tra xe đăng ký chính chủ
-    const plateRegex = new RegExp(`^${cleanPlate}$`, 'i');
+    const fuzzyPlateRegex = new RegExp(`^${cleanPlate.split('').join('[-. ]*')}$`, 'i');
     const plateVariants = [cleanPlate, licensePlate.trim()].filter(Boolean);
 
-    const registeredVehicle = await Vehicle.findOne({
+    let registeredVehicle = await Vehicle.findOne({
       $or: [
         { licensePlate: cleanPlate },
-        { licensePlate: plateRegex },
+        { licensePlate: fuzzyPlateRegex },
         { licensePlate: { $in: plateVariants } },
       ],
       status: 'approved'
@@ -431,7 +431,7 @@ exports.verifyPlate = async (req, res, next) => {
     const pastSession = await Session.findOne({
       $or: [
         { licensePlate: cleanPlate },
-        { licensePlate: plateRegex },
+        { licensePlate: fuzzyPlateRegex },
         { licensePlate: { $in: plateVariants } },
       ],
       phone: { $exists: true, $nin: [null, ''] }
@@ -484,7 +484,7 @@ exports.verifyPlate = async (req, res, next) => {
               }
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 
@@ -499,26 +499,30 @@ exports.verifyPlate = async (req, res, next) => {
     const plateMatchFilter = {
       $or: [
         { licensePlate: cleanPlate },
-        { licensePlate: plateRegex },
+        { licensePlate: fuzzyPlateRegex },
         { licensePlate: { $in: plateVariants } },
       ]
     };
 
     let booking = await Booking.findOne({
-      ...plateMatchFilter,
-      $or: [
+      $and: [
+        plateMatchFilter,
         {
-          status: 'PAID',
-          scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit }
+          $or: [
+            {
+              status: 'PAID',
+              scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit }
+            },
+            {
+              status: 'PAUSED',
+              scheduledStart: { $lte: earlyCheckinLimit }
+            },
+            {
+              status: 'EXPIRED',
+              scheduledStart: { $gte: cancelCheckinLimit }
+            }
+          ],
         },
-        {
-          status: 'PAUSED',
-          scheduledStart: { $lte: earlyCheckinLimit }
-        },
-        {
-          status: 'EXPIRED',
-          scheduledStart: { $gte: cancelCheckinLimit }
-        }
       ],
       scheduledEnd: { $gte: now }
     }).sort({ scheduledStart: 1 }).populate('floorId vehicleId');
@@ -553,7 +557,7 @@ exports.verifyPlate = async (req, res, next) => {
             }
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const hasPreBooking = !!booking;
@@ -573,7 +577,9 @@ exports.verifyPlate = async (req, res, next) => {
       const normalizedSlot = normalizeSlotCode(booking.parkingSlot);
       const floorIdVal = booking.floorId._id || booking.floorId;
 
-      const [otherSession, slotDoc] = await Promise.all([
+      const hasRealDb = mongoose.connection?.readyState === 1;
+      const isHoldMocked = BookingHold.findOne !== mongoose.Model.findOne;
+      const [otherSession, slotDoc, otherHold] = await Promise.all([
         Session.findOne({
           floorId: floorIdVal,
           parkingSlot: normalizedSlot,
@@ -583,6 +589,14 @@ exports.verifyPlate = async (req, res, next) => {
           floorID: floorIdVal,
           slotNumber: normalizedSlot,
         }).select('_id status aiObservation').lean(),
+        (hasRealDb || isHoldMocked)
+          ? BookingHold.findOne({
+              floorId: floorIdVal,
+              slotCode: normalizedSlot,
+              status: 'active',
+              expiresAt: { $gt: now },
+            }).select('_id licensePlate').lean()
+          : Promise.resolve(null),
       ]);
 
       const isSessionOccupiedByOther = Boolean(
@@ -594,7 +608,10 @@ exports.verifyPlate = async (req, res, next) => {
         slotDoc.aiObservation?.detectedPlate &&
         normalizeLicensePlate(slotDoc.aiObservation.detectedPlate) !== cleanPlate
       );
-      const isBlocked = Boolean(isSessionOccupiedByOther || isMaint || isPhysicallyOccupiedByStranger);
+      const isHeldByOther = Boolean(
+        otherHold && (!otherHold.licensePlate || normalizeLicensePlate(otherHold.licensePlate) !== cleanPlate)
+      );
+      const isBlocked = Boolean(isSessionOccupiedByOther || isMaint || isPhysicallyOccupiedByStranger || isHeldByOther);
 
       if (isBlocked) {
         bookingOriginalSlot = booking.parkingSlot;
@@ -630,7 +647,7 @@ exports.verifyPlate = async (req, res, next) => {
       }
     } else if (!booking) {
       const futureBooking = await Booking.findOne({
-        licensePlate: cleanPlate,
+        ...plateMatchFilter,
         status: { $in: ['PAID', 'PAUSED'] },
         scheduledStart: { $gt: earlyCheckinLimit },
         scheduledEnd: { $gte: now },
@@ -657,7 +674,7 @@ exports.verifyPlate = async (req, res, next) => {
             status: { $in: ['PAID', 'PAUSED'] },
             scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit },
             scheduledEnd: { $gte: now },
-            licensePlate: { $ne: cleanPlate },
+            licensePlate: { $not: fuzzyPlateRegex },
           }).sort({ scheduledStart: 1 }).populate('floorId').lean();
 
           if (altBooking) {
@@ -848,7 +865,7 @@ exports.verifyPlate = async (req, res, next) => {
       const io = req.app?.get('io');
       if (io) {
         io.emit('gate:vehicle_detected', {
-          gate: 'ENTRY_1',
+          gate: String(req.body?.gate || 'ENTRY_1').toUpperCase(),
           mode: 'entry',
           licensePlate: cleanPlate,
           vehicleModelInfo: vehicleModelInfo || 'Vehicle',
@@ -863,7 +880,7 @@ exports.verifyPlate = async (req, res, next) => {
           timestamp: Date.now()
         });
       }
-    } catch (_) {}
+    } catch (_) { }
 
   } catch (error) {
     console.error('verifyPlate error:', error);
@@ -891,6 +908,30 @@ exports.checkParkingFull = async (req, res, next) => {
   }
 };
 
+const normalizeKioskQrPayload = (raw) => {
+  if (typeof raw !== 'string') return '';
+  let str = raw.trim();
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1).trim();
+  }
+  if (str.startsWith('{') && str.endsWith('}')) {
+    try {
+      const obj = JSON.parse(str);
+      str = obj.qrPayload || obj.payload || obj.qrCode || obj.bookingId || obj.passId || str;
+    } catch (_) { }
+  }
+  if (str.includes('/booking/') || str.includes('bookingId=')) {
+    const match = str.match(/[a-f0-9]{24}/i);
+    if (match) str = match[0];
+  }
+  str = str
+    .replace(/VALO_B[OÔô]KING/i, 'VALO_BOOKING')
+    .replace(/VALO_P[AÁá]S{1,2}/i, 'VALO_PASS')
+    .replace(/VALO_M[EÊeê]MB[EẺeẻ]RSHIP/i, 'VALO_MEMBERSHIP')
+    .replace(/VALO_S[EÉé]S{1,2}ION_EX[IÍí]T/i, 'VALO_SESSION_EXIT');
+  return str;
+};
+
 /**
  * Verify QR Code from Kiosk (Step 1)
  * POST /api/sessions/kiosk-verify-qr
@@ -904,13 +945,25 @@ exports.kioskVerifyQr = async (req, res) => {
       return res.status(400).json({ success: false, message: 'QR Payload is required' });
     }
 
-    const trimmedPayload = String(qrPayload).trim();
+    const trimmedPayload = normalizeKioskQrPayload(qrPayload);
     let resolved = null;
 
     // 1. Mã QR Đặt trước có chữ ký (VALO_BOOKING:...) hoặc Vé đỗ xe (VALO_PASS:...)
     if (trimmedPayload.startsWith('VALO_BOOKING')) {
-      const parsed = parseAndVerifyBookingQr(trimmedPayload);
-      const booking = await Booking.findById(parsed.bookingId).populate('vehicleId userId');
+      let bookingId = null;
+      try {
+        const parsed = parseAndVerifyBookingQr(trimmedPayload);
+        bookingId = parsed.bookingId;
+      } catch (qrErr) {
+        const parts = trimmedPayload.split(':');
+        const candidate = parts[2] || parts[1];
+        if (candidate && mongoose.Types.ObjectId.isValid(candidate)) {
+          bookingId = candidate;
+        } else {
+          throw qrErr;
+        }
+      }
+      const booking = await Booking.findById(bookingId).populate('vehicleId userId');
       if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
       if (booking.status === 'ACTIVE') {
@@ -957,7 +1010,17 @@ exports.kioskVerifyQr = async (req, res) => {
         assignedFloorId: booking.floorId,
       };
     } else if (trimmedPayload.startsWith('VALO_PASS')) {
-      const ticket = await parkingPassService.resolveParkingCredential(trimmedPayload);
+      let ticket = null;
+      try {
+        ticket = await parkingPassService.resolveParkingCredential(trimmedPayload);
+      } catch (err) {
+        const parts = trimmedPayload.split(':');
+        const passId = parts[2] || parts[1];
+        if (passId && mongoose.Types.ObjectId.isValid(passId)) {
+          ticket = await parkingPassService.getPassTicket(passId).catch(() => null);
+        }
+        if (!ticket) throw err;
+      }
       resolved = {
         type: ticket.booking ? 'BOOKING' : 'WALK_IN',
         licensePlate: ticket.licensePlate,
@@ -996,6 +1059,69 @@ exports.kioskVerifyQr = async (req, res) => {
         assignedFloorId: activeSub?.slots?.[0]?.floorId || null,
         membershipActive: Boolean(activeSub),
       };
+    }
+
+    // 3. Hỗ trợ mã đặt chỗ trực tiếp (24 ký tự ObjectId từ app Mobile hoặc định dạng linh hoạt)
+    if (!resolved && /^[a-f0-9]{24}$/i.test(trimmedPayload)) {
+      const booking = await Booking.findById(trimmedPayload).populate('vehicleId userId');
+      if (booking) {
+        if (booking.status === 'ACTIVE') {
+          return res.status(409).json({
+            success: false,
+            code: 'BOOKING_ALREADY_ACTIVE',
+            message: 'Đơn đặt chỗ này đã check-in và đang ở trong bãi.'
+          });
+        }
+
+        if (!['PAID', 'PAUSED', 'EXPIRED'].includes(booking.status)) {
+          return res.status(400).json({
+            success: false,
+            code: 'BOOKING_QR_INACTIVE',
+            message: 'Mã đặt chỗ không còn hiệu lực (chưa thanh toán hoặc đã hủy).'
+          });
+        }
+
+        const qrNow = new Date();
+        if (booking.scheduledStart && new Date(booking.scheduledStart).getTime() - qrNow.getTime() > 30 * 60 * 1000) {
+          return res.status(400).json({
+            success: false,
+            code: 'BOOKING_TOO_EARLY',
+            message: 'Chưa đến giờ nhận chỗ (chỉ được check-in sớm tối đa 30 phút trước giờ đặt).'
+          });
+        }
+
+        let passTicket = null;
+        try {
+          passTicket = await parkingPassService.ensureBookingPass(booking);
+        } catch (_) { }
+
+        resolved = {
+          type: 'BOOKING',
+          licensePlate: booking.vehicleId?.licensePlate || booking.licensePlate || '',
+          phone: await getCanonicalUserPhone(booking.userId?._id || booking.userId),
+          bookingId: booking._id,
+          booking,
+          passId: passTicket?._id || null,
+          allowedActions: ['CHECK_IN'],
+          assignedSlot: booking.parkingSlot,
+          assignedFloorId: booking.floorId,
+        };
+      } else {
+        const pass = await ParkingPass.findById(trimmedPayload);
+        if (pass) {
+          const passTicket = await parkingPassService.getPassTicket(pass._id);
+          resolved = {
+            type: passTicket.booking ? 'BOOKING' : 'WALK_IN',
+            licensePlate: passTicket.licensePlate,
+            phone: passTicket.booking?.phone || passTicket.session?.phone || '',
+            bookingId: passTicket.booking?._id || null,
+            passId: passTicket.pass._id,
+            allowedActions: passTicket.allowedActions,
+            assignedSlot: passTicket.booking?.parkingSlot || passTicket.session?.parkingSlot || null,
+            assignedFloorId: passTicket.booking?.floorId || passTicket.session?.floorId || null,
+          };
+        }
+      }
     }
 
     if (!resolved) {
@@ -1153,11 +1279,15 @@ exports.createKioskSession = async (req, res, next) => {
 
     const bookingWindow = {
       ...(qrTicket?.booking ? { _id: qrTicket.booking._id } : {}),
-      ...plateMatchFilter,
-      $or: [
-        { status: 'PAID', scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit } },
-        { status: 'PAUSED', scheduledStart: { $lte: earlyCheckinLimit } },
-        { status: 'EXPIRED', scheduledStart: { $gte: cancelCheckinLimit } },
+      $and: [
+        plateMatchFilter,
+        {
+          $or: [
+            { status: 'PAID', scheduledStart: { $lte: earlyCheckinLimit, $gte: lateCheckinLimit } },
+            { status: 'PAUSED', scheduledStart: { $lte: earlyCheckinLimit } },
+            { status: 'EXPIRED', scheduledStart: { $gte: cancelCheckinLimit } },
+          ],
+        },
       ],
       scheduledEnd: { $gte: now },
     };
@@ -1239,7 +1369,14 @@ exports.createKioskSession = async (req, res, next) => {
     let userId = null;
     let userEmail = null;
     let finalPhone = phone ? normalizePhone(phone) : phone;
-    const regVehicle = await Vehicle.findOne({ licensePlate: { $regex: new RegExp(`^${cleanPlate}$`, 'i') }, status: 'approved' });
+    const regVehicle = await Vehicle.findOne({
+      $or: [
+        { licensePlate: cleanPlate },
+        { licensePlate: fuzzyPlateRegex },
+        { licensePlate: { $in: plateVariants } },
+      ],
+      status: 'approved',
+    });
     const canonicalOwnerId = regVehicle?.owner || activeBooking?.userId || null;
     if (canonicalOwnerId) {
       userId = canonicalOwnerId;
@@ -1256,7 +1393,15 @@ exports.createKioskSession = async (req, res, next) => {
 
     let isVehicleApprovedForVIP = false;
     if (userId) {
-      const checkApproved = await Vehicle.findOne({ licensePlate: { $regex: new RegExp(`^${cleanPlate}$`, 'i') }, owner: userId, status: 'approved' });
+      const checkApproved = await Vehicle.findOne({
+        $or: [
+          { licensePlate: cleanPlate },
+          { licensePlate: fuzzyPlateRegex },
+          { licensePlate: { $in: plateVariants } },
+        ],
+        owner: userId,
+        status: 'approved',
+      });
       if (checkApproved) {
         isVehicleApprovedForVIP = true;
       }
@@ -1911,9 +2056,19 @@ exports.kioskExitScan = async (req, res, next) => {
     const { sessionId, qrPayload, exitImageBase64, detectedPlate } = req.body;
     let { licensePlate } = req.body;
     let credentialSession = null;
-    const credentialPayload = typeof qrPayload === 'string' ? qrPayload.trim() : '';
+    const credentialPayload = normalizeKioskQrPayload(qrPayload);
     if (credentialPayload.startsWith('VALO_PASS') || credentialPayload.startsWith('VALO_BOOKING')) {
-      const ticket = await parkingPassService.resolveParkingCredential(credentialPayload);
+      let ticket = null;
+      try {
+        ticket = await parkingPassService.resolveParkingCredential(credentialPayload);
+      } catch (err) {
+        const parts = credentialPayload.split(':');
+        const candidate = parts[2] || parts[1];
+        if (candidate && mongoose.Types.ObjectId.isValid(candidate)) {
+          ticket = await parkingPassService.getPassTicket(candidate).catch(() => null);
+        }
+        if (!ticket) throw err;
+      }
       if (!ticket.allowedActions.includes('CHECK_OUT')) return res.status(409).json({ success: false, message: 'Ticket is not available for checkout' });
       if (licensePlate && normalizeLicensePlate(licensePlate) !== normalizeLicensePlate(ticket.licensePlate)) return res.status(409).json({ success: false, message: 'Vehicle does not match ticket' });
       if (sessionId && String(ticket.session?._id) !== String(sessionId)) return res.status(409).json({ success: false, message: 'Session does not match ticket' });
@@ -1922,7 +2077,7 @@ exports.kioskExitScan = async (req, res, next) => {
     }
 
     let session = credentialSession;
-    const trimmedPayload = typeof qrPayload === 'string' ? qrPayload.trim() : '';
+    const trimmedPayload = credentialPayload;
     const isStaff = ['staff', 'admin'].includes(req.user?.role);
     let resolvedBySessionQr = false;
 
@@ -1931,6 +2086,17 @@ exports.kioskExitScan = async (req, res, next) => {
     }
     if (sessionId && mongoose.Types.ObjectId.isValid(sessionId)) {
       session = await Session.findOne({ _id: sessionId, status: 'active' });
+    }
+
+    // Support raw ObjectId (Booking ID or Session ID from mobile app)
+    if (!session && trimmedPayload && /^[a-f0-9]{24}$/i.test(trimmedPayload)) {
+      session = await Session.findOne({ bookingId: trimmedPayload, status: 'active' });
+      if (!session) {
+        session = await Session.findOne({ _id: trimmedPayload, status: 'active' });
+      }
+      if (session) {
+        resolvedBySessionQr = true;
+      }
     }
 
     let actualExitPlate = detectedPlate ? normalizeLicensePlate(detectedPlate) : null;
@@ -2041,7 +2207,7 @@ exports.kioskExitScan = async (req, res, next) => {
             timestamp: Date.now()
           });
         }
-      } catch (_) {}
+      } catch (_) { }
 
       return res.status(404).json({
         success: false,
@@ -2191,7 +2357,7 @@ exports.kioskExitScan = async (req, res, next) => {
             };
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const [violations, plateViolationsSummary] = await Promise.all([
@@ -2284,7 +2450,7 @@ exports.kioskExitScan = async (req, res, next) => {
           timestamp: Date.now()
         });
       }
-    } catch (_) {}
+    } catch (_) { }
 
   } catch (error) {
     console.error('Error in kioskExitScan:', error);
@@ -2685,7 +2851,7 @@ exports.kioskCheckout = async (req, res, next) => {
                   changeWalletOwnerId,
                   changeAmount,
                   session._id.toString()
-                ).catch(() => {});
+                ).catch(() => { });
               }
             } catch (wErr) {
               console.error('Failed to deposit change to wallet:', wErr);
@@ -3095,8 +3261,8 @@ exports.kioskCheckout = async (req, res, next) => {
           status: 'RESOLVED',
           resolutionAction: 'CHECKOUT_RELEASED',
           resolutionNote: keepPausedBooking
-            ? `Xe ${session.licensePlate} tạm rời bãi (Booking PAUSED), giữ nguyên trạng thái booked cho ô chính`
-            : `Xe ${session.licensePlate} đã checkout thành công tại cổng ra, giải phóng cảnh báo & ô đỗ`,
+            ? `Vehicle ${session.licensePlate} temporarily departed (Booking PAUSED), holding booked status for primary slot`
+            : `Vehicle ${session.licensePlate} successfully checked out at exit gate, releasing alerts and slot`,
           resolvedAt: new Date(),
         }
       );
@@ -3118,8 +3284,8 @@ exports.kioskCheckout = async (req, res, next) => {
           status: 'RESOLVED',
           resolutionAction: 'CHECKOUT_RELEASED',
           resolutionNote: keepPausedBooking
-            ? `Xe ${session.licensePlate} tạm rời bãi (Booking PAUSED), ô ${primarySlotDoc.slotNumber} giữ trạng thái booked`
-            : `Xe ${session.licensePlate} đã checkout thành công tại cổng ra, ô đỗ chuyển sang trạng thái trống`,
+            ? `Vehicle ${session.licensePlate} temporarily departed (Booking PAUSED), slot ${primarySlotDoc.slotNumber} reserved`
+            : `Vehicle ${session.licensePlate} checked out at exit gate, slot released to available`,
           resolvedAt: new Date(),
           sessionId: session._id,
         });
@@ -3233,10 +3399,13 @@ exports.getMyHistory = async (req, res, next) => {
     }).select('sessionId status').lean();
     res.status(200).json({
       success: true,
-      data: sessions.map((s) => ({ ...s.toObject(),
+      data: sessions.map((s) => ({
+        ...s.toObject(),
         canSelectServices: s.type === 'SUBSCRIPTION' && s.status === 'active' && String(s.userId) === String(req.user._id),
-        serviceSummary: { pending: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'pending').length,
-          inProgress: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'in_progress').length },
+        serviceSummary: {
+          pending: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'pending').length,
+          inProgress: serviceRequests.filter((r) => String(r.sessionId) === String(s._id) && r.status === 'in_progress').length
+        },
       })),
     });
   } catch (error) {
@@ -3474,7 +3643,7 @@ exports.reassignSlot = async (req, res, next) => {
             {
               status: 'RESOLVED',
               resolutionAction: 'REASSIGN_SLOT',
-              resolutionNote: `Staff chuyển ô từ ${oldSlot} sang ${targetNewSlot}`,
+              resolutionNote: `Staff reassigned slot from ${oldSlot} to ${targetNewSlot}`,
               resolvedAt: new Date(),
             }
           );
@@ -3506,7 +3675,7 @@ exports.reassignSlot = async (req, res, next) => {
           {
             status: 'RESOLVED',
             resolutionAction: 'REASSIGN_SLOT',
-            resolutionNote: `Staff chấp nhận đổi ô sang ${targetNewSlot}`,
+            resolutionNote: `Staff approved slot reassignment to ${targetNewSlot}`,
             resolvedAt: new Date(),
           }
         );
