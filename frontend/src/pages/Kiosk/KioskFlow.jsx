@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import KioskWelcome from './KioskWelcome';
@@ -7,7 +7,10 @@ import KioskStep2 from './KioskStep2';
 import KioskStep3 from './KioskStep3';
 import KioskLayout from './KioskLayout';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
+
+const LazyKioskOutFlow = lazy(() => import('../KioskOut/KioskOutFlow'));
 
 const createRequestKey = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -45,17 +48,25 @@ const createEmptyKioskFormData = () => ({
   hasPreBooking: false,
   isVIP: false,
   isRegisteredVehicle: false,
+  isPausedResume: false,
+  slotAutoReallocated: false,
+  reallocationReason: null,
+  remainingHours: null,
+  remainingMinutes: null,
+  bookingEnd: null,
   entryIdempotencyKey: createRequestKey(),
 });
 
 const KIOSK_IDLE_TIMEOUT_MS = 120000;
 
-export default function KioskFlow() {
+function KioskEntryFlowInner({ assignedGate, basePath, isTidalReversed }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const socket = useSocket();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successSession, setSuccessSession] = useState(null); // stores the successful session data
   const [kioskAlert, setKioskAlert] = useState(null);
+  const lastEntrySyncRef = useRef({ key: '', at: 0 });
 
   // Shared State across steps
   const [formData, setFormData] = useState(createEmptyKioskFormData);
@@ -65,8 +76,135 @@ export default function KioskFlow() {
   };
 
   const handleNext = (step) => {
-    navigate(`/kiosk/step${step}`);
+    navigate(`${basePath}/step${step}`);
   };
+
+  const applySyncedEntryScan = useCallback((payload) => {
+    const { mode = 'verified', gate = null, licensePlate, verifyData, session, entryImageBase64 = null } = payload || {};
+    if (gate && assignedGate && String(gate).toUpperCase() !== String(assignedGate).toUpperCase()) return;
+    if (!licensePlate || successSession) return;
+
+    const now = Date.now();
+    const dedupeKey = `${mode}:${licensePlate}`;
+    if (
+      lastEntrySyncRef.current.key === dedupeKey &&
+      now - lastEntrySyncRef.current.at < 4000
+    ) {
+      return;
+    }
+
+    if (mode === 'checked_in' && session) {
+      const canShowTicketScreen =
+        location.pathname === basePath ||
+        location.pathname === `${basePath}/` ||
+        location.pathname === `${basePath}/step1` ||
+        location.pathname === `${basePath}/step2`;
+      if (!canShowTicketScreen) return;
+
+      lastEntrySyncRef.current = { key: dedupeKey, at: now };
+      setKioskAlert(null);
+      setFormData({
+        ...createEmptyKioskFormData(),
+        step3Mode: 'fastpass',
+        licensePlate: session.licensePlate || licensePlate,
+        selectedSlot: session.parkingSlot || '',
+        floorId: session.floorId || '',
+        isMonthly: session.type === 'SUBSCRIPTION',
+        hasPreBooking: session.type === 'RESERVATION',
+        entryImageBase64: entryImageBase64 || null,
+      });
+      setSuccessSession(session);
+      navigate(`${basePath}/step3`);
+      return;
+    }
+
+    if (!verifyData || verifyData.isActive) return;
+
+    const isEligible = Boolean(verifyData.isMonthly || verifyData.hasPreBooking || verifyData.isVIP);
+    if (!isEligible) return;
+
+    // Only auto-transition when kiosk is idle on welcome screen or Step 1
+    const onIdleEntryScreen =
+      location.pathname === basePath ||
+      location.pathname === `${basePath}/` ||
+      location.pathname === `${basePath}/step1`;
+    if (!onIdleEntryScreen) return;
+
+    lastEntrySyncRef.current = { key: dedupeKey, at: now };
+
+    const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
+    const canFastPassNow = Boolean(
+      (verifyData.isMonthly || verifyData.hasPreBooking) &&
+      verifyData.assignedSlot &&
+      verifyData.assignedFloorId &&
+      !needsReallocation
+    );
+
+    setSuccessSession(null);
+    setKioskAlert(null);
+    setFormData({
+      ...createEmptyKioskFormData(),
+      step3Mode: canFastPassNow ? 'fastpass' : 'policy',
+      licensePlate,
+      phone: verifyData.phone || '',
+      entryImageBase64: entryImageBase64 || null,
+      isMonthly: Boolean(verifyData.isMonthly),
+      hasPreBooking: Boolean(verifyData.hasPreBooking),
+      isVIP: Boolean(verifyData.isVIP),
+      isRegisteredVehicle: Boolean(verifyData.isRegisteredVehicle),
+      isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
+      isBookingReallocation: Boolean(verifyData.isBookingReallocation),
+      quotaExhausted: Boolean(verifyData.quotaExhausted),
+      membershipType: verifyData.membershipType || null,
+      bookingId: verifyData.bookingId || null,
+      bookingFloorName: verifyData.assignedFloorName || null,
+      originalSlot: verifyData.originalSlot || null,
+      selectedSlot: canFastPassNow ? verifyData.assignedSlot : null,
+      floorId: canFastPassNow ? verifyData.assignedFloorId : null,
+      suggestedSlot: verifyData.suggestedSlot || null,
+      suggestedFloorId: verifyData.suggestedFloorId || null,
+      suggestedFloorName: verifyData.suggestedFloorName || null,
+      upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+      durationHours: verifyData.bookingDurationHours || 1,
+      bookingMode: verifyData.bookingMode || 'hourly',
+      ticketPackageId: verifyData.bookingTicketPackageId || verifyData.pricingPackage?._id || null,
+      pricingPackage: verifyData.pricingPackage || null,
+      pricingSource: verifyData.pricingSource || 'default',
+      isPausedResume: Boolean(verifyData.isPausedResume),
+      slotAutoReallocated: Boolean(verifyData.slotAutoReallocated),
+      reallocationReason: verifyData.reallocationReason || null,
+      remainingHours: verifyData.remainingHours,
+      remainingMinutes: verifyData.remainingMinutes,
+      bookingEnd: verifyData.bookingEnd || null,
+    });
+
+    if (canFastPassNow) {
+      navigate(`${basePath}/step3`);
+    } else {
+      navigate(`${basePath}/step2`);
+    }
+  }, [location.pathname, navigate, successSession, basePath, assignedGate]);
+
+  useEffect(() => {
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel = new BroadcastChannel('valo_kiosk_entry_sync');
+      channel.onmessage = (event) => {
+        if (event.data) applySyncedEntryScan(event.data);
+      };
+    }
+
+    if (socket) {
+      socket.on('kiosk:entry_plate_synced', applySyncedEntryScan);
+    }
+
+    return () => {
+      if (channel) channel.close();
+      if (socket) {
+        socket.off('kiosk:entry_plate_synced', applySyncedEntryScan);
+      }
+    };
+  }, [socket, applySyncedEntryScan]);
 
   const releaseCurrentHold = async () => {
     if (!formData.bookingHoldId) return;
@@ -83,7 +221,7 @@ export default function KioskFlow() {
   };
 
   useEffect(() => {
-    const isWorkingStep = location.pathname.startsWith('/kiosk/step') && !successSession;
+    const isWorkingStep = location.pathname.startsWith(`${basePath}/step`) && !successSession;
     if (!isWorkingStep) return undefined;
 
     let idleTimer = null;
@@ -101,7 +239,7 @@ export default function KioskFlow() {
       setKioskAlert(null);
       setSuccessSession(null);
       setFormData(createEmptyKioskFormData());
-      navigate('/kiosk', { replace: true });
+      navigate(basePath, { replace: true });
     };
 
     const armTimer = () => {
@@ -217,7 +355,7 @@ export default function KioskFlow() {
     if (step === 2) {
       await releaseCurrentHold();
     }
-    navigate(step === 0 ? '/kiosk' : `/kiosk/step${step}`);
+    navigate(step === 0 ? basePath : `${basePath}/step${step}`);
   };
 
   const handleConfirm = async () => {
@@ -242,6 +380,8 @@ export default function KioskFlow() {
           bookingMode: formData.bookingMode,
           bookingId: formData.bookingId,
           bookingHoldId: formData.bookingHoldId,
+          isAutoReallocated: Boolean(formData.slotAutoReallocated),
+          entryGate: assignedGate || 'ENTRY_1',
         }),
       });
 
@@ -270,7 +410,7 @@ export default function KioskFlow() {
   const handleFastPassComplete = () => {
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
-    window.location.replace('/kiosk');
+    window.location.replace(basePath);
   };
 
   const handleFastPassEntry = async () => {
@@ -292,6 +432,8 @@ export default function KioskFlow() {
         bookingMode: formData.bookingMode,
         bookingId: formData.bookingId,
         bookingHoldId: formData.bookingHoldId,
+        isAutoReallocated: Boolean(formData.slotAutoReallocated),
+        entryGate: assignedGate || 'ENTRY_1',
       }),
     });
 
@@ -309,11 +451,11 @@ export default function KioskFlow() {
       setFormData(prev => ({ ...prev, ...newFormData }));
     }
     setSuccessSession(sessionData);
-    navigate('/kiosk/step3');
+    navigate(`${basePath}/step3`);
   };
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-white selection:bg-gold/30">
+    <div className="w-screen h-screen overflow-hidden bg-white selection:bg-gold/30 relative">
       {isSubmitting && (
         <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center">
           <div className="text-2xl font-bold text-[#0f172a] animate-pulse">CREATING SESSION...</div>
@@ -345,7 +487,7 @@ export default function KioskFlow() {
 
       <Routes>
         {/* Step 0: Welcome Screen (Full width, no split layout) */}
-        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} onDirectFastPass={handleDirectFastPass} />} />
+        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} onDirectFastPass={handleDirectFastPass} targetGate={assignedGate} />} />
 
         {/* Steps 1-3 use the Split-Screen KioskLayout */}
         <Route element={<KioskLayout />}>
@@ -367,6 +509,8 @@ export default function KioskFlow() {
                 onAutoCheckIn={handleFastPassEntry}
                 onComplete={handleFastPassComplete}
                 successSession={successSession}
+                targetGate={assignedGate}
+                basePath={basePath}
               />
             }
           />
@@ -374,4 +518,46 @@ export default function KioskFlow() {
       </Routes>
     </div>
   );
+}
+
+export default function KioskFlow({ assignedGate = 'ENTRY_1', basePath = '/kiosk', isTidalReversed = false }) {
+  const socket = useSocket();
+  const [laneMode, setLaneMode] = useState('STANDARD');
+
+  // Lắng nghe chế độ làn (Tidal Flow) nếu đây là Kiosk gốc
+  useEffect(() => {
+    if (isTidalReversed) return;
+
+    fetch(`${API_BASE}/iot/lane-mode`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.mode) setLaneMode(data.mode);
+      })
+      .catch(() => {});
+
+    if (!socket) return;
+    const handleLaneModeChanged = (data) => {
+      if (data?.mode) {
+        setLaneMode(data.mode);
+      }
+    };
+    socket.on('gate:lane_mode_changed', handleLaneModeChanged);
+    return () => socket.off('gate:lane_mode_changed', handleLaneModeChanged);
+  }, [socket, isTidalReversed]);
+
+  // Nếu bãi xe đang ở chế độ Cao điểm Ra (PEAK_EXIT) và màn hình này là Cột bên Phải:
+  // Tự động chuyển luồng hiển thị sang Kiosk Ra nhưng gắn chặt với Barrier Phải (assignedGate)
+  if (!isTidalReversed && laneMode === 'PEAK_EXIT') {
+    return (
+      <Suspense fallback={<div className="w-screen h-screen bg-[#0a0a0a] flex items-center justify-center text-white font-bold">Loading Tidal Flow...</div>}>
+        <LazyKioskOutFlow
+          assignedGate={assignedGate}
+          basePath={basePath}
+          isTidalReversed={true}
+        />
+      </Suspense>
+    );
+  }
+
+  return <KioskEntryFlowInner assignedGate={assignedGate} basePath={basePath} isTidalReversed={isTidalReversed} />;
 }

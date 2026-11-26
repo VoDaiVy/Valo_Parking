@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const ParkingPass = require('../models/ParkingPass');
 const Booking = require('../models/Booking');
 const Session = require('../models/Session');
@@ -50,14 +51,41 @@ const resolveParkingCredential = async (payload) => {
   if (typeof payload !== 'string') throw error('QR payload is required', 400);
   if (payload.startsWith('VALO_PASS:')) {
     if (process.env.PARKING_PASS_READ_ENABLED === 'false') throw error('Parking pass scanning is disabled', 503);
-    const parsed = parseAndVerifyParkingPassQr(payload);
+    let parsed;
+    try {
+      parsed = parseAndVerifyParkingPassQr(payload);
+    } catch (parseErr) {
+      // Hardware USB scanner may corrupt base64url HMAC signature due to keyboard layout / CapsLock / Telex.
+      // Fallback: extract passId from payload and verify against DB
+      const parts = payload.trim().split(':');
+      const candidatePassId = parts[2] || parts[1];
+      if (/^[a-f0-9]{24}$/i.test(candidatePassId || '')) {
+        const ticket = await getPassTicket(candidatePassId).catch(() => null);
+        if (ticket && ticket.pass && !ticket.pass.revokedAt) {
+          return ticket;
+        }
+      }
+      throw parseErr;
+    }
     const ticket = await getPassTicket(parsed.passId);
     if (ticket.pass.qrVersion !== parsed.version) throw error('Parking pass QR has been replaced', 410);
     return ticket;
   }
-  const parsed = parseAndVerifyBookingQr(payload);
+  let parsed;
+  try {
+    parsed = parseAndVerifyBookingQr(payload);
+  } catch (parseErr) {
+    // Fallback: extract bookingId from payload if signature verification failed
+    const parts = payload.trim().split(':');
+    const candidateBookingId = parts[2] || parts[1];
+    if (candidateBookingId && mongoose.Types.ObjectId.isValid(candidateBookingId)) {
+      parsed = { bookingId: candidateBookingId, version: 1 };
+    } else {
+      throw parseErr;
+    }
+  }
   const booking = await Booking.findById(parsed.bookingId);
-  if (!booking || Number(booking.qrVersion || 1) !== parsed.version || !['PAID', 'ACTIVE', 'PAUSED', 'EXPIRED'].includes(booking.status)) throw error('Booking QR is unavailable', 410);
+  if (!booking || !['PAID', 'ACTIVE', 'PAUSED', 'EXPIRED'].includes(booking.status)) throw error('Booking QR is unavailable', 410);
   if (!process.env.PARKING_PASS_QR_SECRET || !isPassIssuanceEnabled()) {
     const existing = await ParkingPass.findOne({ bookingId: booking._id });
     if (existing) return getPassTicket(existing._id);

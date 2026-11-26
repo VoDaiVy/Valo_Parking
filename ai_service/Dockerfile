@@ -8,14 +8,24 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    YOLO_CONFIG_DIR=/app/.cache/ultralytics \
+    EASYOCR_MODULE_PATH=/app/.cache/easyocr
+
+RUN mkdir -p /app/.cache/ultralytics /app/.cache/easyocr && chmod -R 777 /app/.cache
+
 # Copy requirements and install python packages
 COPY requirements.txt .
-RUN pip install --default-timeout=2000 --retries 20 -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=2000 --retries 20 -r requirements.txt
 
-# Copy source code
+# Pre-download EasyOCR weights into /app/.cache/easyocr so cold starts are fast
+RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False)" && chmod -R 777 /app/.cache
+
+# Copy source code and trained weights (best.pt, parking_slots_yolo.pt)
 COPY . .
 
-# Expose port
+# Expose default port (honors $PORT dynamically at runtime)
 EXPOSE 8000
 
 # Run the API

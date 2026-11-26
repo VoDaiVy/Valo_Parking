@@ -112,8 +112,8 @@ export default function App() {
         <GuestPageScrollbar />
         <Routes>
           {/* ── Standalone Kiosk app ── */}
-          <Route path="/kiosk/*" element={<KioskFlow />} />
-          <Route path="/kiosk-out/*" element={<KioskOutFlow />} />
+          <Route path="/kiosk/*" element={<KioskFlow assignedGate="ENTRY_1" basePath="/kiosk" />} />
+          <Route path="/kiosk-out/*" element={<KioskOutFlow assignedGate="EXIT_1" basePath="/kiosk-out" />} />
           {/* Typo Catchers */}
           <Route
             path="/kiost-out/*"

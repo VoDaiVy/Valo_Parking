@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
 const dotenv = require('dotenv');
 const { createCorsOptions } = require('./config/cors');
 const connectDB = require('./config/db');
@@ -12,6 +13,7 @@ const { startScheduler } = require('./services/parkingScheduler');
 const { seedRules } = require('./seeds/notificationRuleSeeder');
 
 // Load env variables
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 // Import routes

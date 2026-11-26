@@ -22,6 +22,7 @@ const Slot = require('../models/Slot');
 const BookingHold = require('../models/BookingHold');
 const SlotAuditLog = require('../models/SlotAuditLog');
 const SlotMaintenanceLog = require('../models/SlotMaintenanceLog');
+const Revenue = require('../models/Revenue');
 const pricingEngine = require('../services/pricingEngine');
 const bookingRefundService = require('../services/bookingRefundService');
 const walletService = require('../services/walletService');
@@ -30,6 +31,14 @@ const { buildAccountMembershipQrPayload } = require('../services/membershipQrSer
 const { buildCheckoutChallenge } = require('../services/checkoutChallengeService');
 const sessionController = require('../controllers/sessionController');
 const bookingController = require('../controllers/bookingController');
+const emailUtils = require('../utils/emailUtils');
+const notifTriggers = require('../services/notificationTriggers');
+
+emailUtils.sendCheckoutEmail = async () => {};
+emailUtils.sendKioskCheckInEmail = async () => {};
+notifTriggers.notifyVehicleExit = async () => {};
+notifTriggers.notifyPaymentSuccess = async () => {};
+notifTriggers.notifyVehicleEntry = async () => {};
 
 const oid = (hex) => new mongoose.Types.ObjectId(hex);
 
@@ -116,6 +125,102 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
       assert.equal(res.state.body.data.isBookingReallocation, true);
       assert.equal(res.state.body.data.originalSlot, 'A-01');
       assert.equal(res.state.body.data.assignedSlot, null);
+    } finally {
+      restore();
+    }
+  });
+
+  test('verifyPlate identifies PAUSED booking resuming, calculates remaining time, and preserves reserved slot without forcing map reselection', async () => {
+    const floorId = oid('507f1f77bcf86cd799439021');
+    const bookingId = oid('507f1f77bcf86cd799439022');
+    const now = Date.now();
+
+    const bookingDoc = {
+      _id: bookingId,
+      licensePlate: '30A12345',
+      status: 'PAUSED',
+      parkingSlot: 'A-05',
+      durationHours: 3,
+      floorId: { _id: floorId, name: 'Floor 1' },
+      scheduledStart: new Date(now - 60 * 60 * 1000),
+      scheduledEnd: new Date(now + 120 * 60 * 1000),
+    };
+
+    let bookingCallCount = 0;
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(null)],
+      [Vehicle, 'findOne', () => queryable(null)],
+      [Booking, 'findOne', () => {
+        bookingCallCount++;
+        return queryable(bookingCallCount === 1 ? bookingDoc : null);
+      }],
+      [Slot, 'findOne', () => queryable({ _id: oid('507f1f77bcf86cd799439055'), status: 'booked', aiObservation: { occupied: false } })],
+    ]);
+
+    try {
+      const req = { body: { licensePlate: '30A-123.45' } };
+      const res = createRes();
+      await sessionController.verifyPlate(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.hasPreBooking, true);
+      assert.equal(res.state.body.data.isPausedResume, true);
+      assert.equal(res.state.body.data.requiresSlotReallocation, false);
+      assert.equal(res.state.body.data.assignedSlot, 'A-05');
+      assert.equal(res.state.body.data.remainingHours, 2);
+    } finally {
+      restore();
+    }
+  });
+
+  test('verifyPlate auto-reallocates conflict-free replacement slot when PAUSED booking slot is blocked by unauthorized vehicle', async () => {
+    const floorId = oid('507f1f77bcf86cd799439021');
+    const bookingId = oid('507f1f77bcf86cd799439022');
+    const now = Date.now();
+
+    const bookingDoc = {
+      _id: bookingId,
+      licensePlate: '30A12345',
+      status: 'PAUSED',
+      parkingSlot: 'A-05',
+      durationHours: 3,
+      floorId: { _id: floorId, name: 'Floor 1' },
+      scheduledStart: new Date(now - 60 * 60 * 1000),
+      scheduledEnd: new Date(now + 120 * 60 * 1000),
+    };
+
+    let bookingCallCount = 0;
+    const restore = stubMany([
+      [Session, 'findOne', (q) => {
+        if (q?.floorId && q?.parkingSlot === 'A-05' && q?.status === 'active') {
+          return queryable({ _id: oid('507f1f77bcf86cd799439091'), licensePlate: '99A99999' });
+        }
+        return queryable(null);
+      }],
+      [Vehicle, 'findOne', () => queryable(null)],
+      [Booking, 'findOne', () => {
+        bookingCallCount++;
+        return queryable(bookingCallCount === 1 ? bookingDoc : null);
+      }],
+      [Slot, 'findOne', () => queryable({ _id: oid('507f1f77bcf86cd799439055'), status: 'occupied' })],
+      [bookingController, 'getAvailableSlotsForRange', async () => [
+        { floorId, floorName: 'Floor 1', slotCode: 'A-06' },
+        { floorId, floorName: 'Floor 1', slotCode: 'A-07' },
+      ]],
+    ]);
+
+    try {
+      const req = { body: { licensePlate: '30A-123.45' } };
+      const res = createRes();
+      await sessionController.verifyPlate(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.hasPreBooking, true);
+      assert.equal(res.state.body.data.isPausedResume, true);
+      assert.equal(res.state.body.data.slotAutoReallocated, true);
+      assert.equal(res.state.body.data.originalSlot, 'A-05');
+      assert.equal(res.state.body.data.assignedSlot, 'A-06');
+      assert.equal(res.state.body.data.requiresSlotReallocation, false);
     } finally {
       restore();
     }
@@ -419,4 +524,284 @@ describe('Kiosk Check-in / Check-out Parity Fixes', { concurrency: false }, () =
       restore();
     }
   });
+
+  test('kioskExitScan scopes SlotAuditLog violation lookup to current sessionId or createdAt >= checkInTime', async () => {
+    const checkInTime = new Date(Date.now() - 30 * 60 * 1000);
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439081'),
+      licensePlate: '43B20408',
+      type: 'WALK_IN',
+      checkInTime,
+      parkingSlot: 'A3',
+      status: 'active',
+      expectedDurationHours: 2,
+    };
+    let capturedAuditFilter = null;
+
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(activeSession)],
+      [SlotAuditLog, 'find', (filter) => {
+        capturedAuditFilter = filter;
+        return queryable([]);
+      }],
+      [pricingEngine, 'calculatePrice', async () => ({ durationHours: 1, finalTotal: 10000 })],
+    ]);
+
+    try {
+      const req = {
+        body: {
+          licensePlate: '43B20408',
+          exitImageBase64: 'data:image/jpeg;base64,ZmFrZQ==',
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskExitScan(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.violationDetails, null);
+      assert.ok(Array.isArray(capturedAuditFilter?.$or));
+      assert.equal(String(capturedAuditFilter.$or[0]?.sessionId), String(activeSession._id));
+      assert.equal(
+        new Date(capturedAuditFilter.$or[1]?.createdAt?.$gte).getTime(),
+        checkInTime.getTime()
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskExitScan enables canAutoPay and walletBalance for WALK_IN session matching an approved registered Vehicle', async () => {
+    const ownerId = oid('507f1f77bcf86cd799439091');
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439092'),
+      licensePlate: '43B20408',
+      userId: ownerId,
+      type: 'WALK_IN',
+      checkInTime: new Date(Date.now() - 45 * 60 * 1000),
+      parkingSlot: 'A3',
+      status: 'active',
+      expectedDurationHours: 2,
+    };
+
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable({ owner: ownerId })],
+      [walletService, 'getOrCreateWallet', async () => ({ userId: ownerId, balance: 120000 })],
+      [SlotAuditLog, 'find', () => queryable([])],
+      [pricingEngine, 'calculatePrice', async () => ({ durationHours: 1, finalTotal: 10000 })],
+    ]);
+
+    try {
+      const req = {
+        body: {
+          licensePlate: '43B20408',
+          exitImageBase64: 'data:image/jpeg;base64,ZmFrZQ==',
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskExitScan(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.data.walletBalance, 120000);
+      assert.equal(res.state.body.data.hasWallet, true);
+      assert.equal(res.state.body.data.canAutoPay, true);
+      assert.ok(res.state.body.data.checkoutToken);
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskCheckout auto-debits owner wallet for approved registered WALK_IN vehicle with valid checkoutToken', async () => {
+    const ownerId = oid('507f1f77bcf86cd799439093');
+    const sessionId = oid('507f1f77bcf86cd799439094');
+    const floorId = oid('507f1f77bcf86cd799439095');
+
+    const activeSession = {
+      _id: sessionId,
+      licensePlate: '43B20408',
+      userId: ownerId,
+      type: 'WALK_IN',
+      parkingSlot: 'A3',
+      floorId,
+      checkInTime: new Date(Date.now() - 3600000),
+      status: 'active',
+      toObject() { return { ...this }; },
+    };
+    const fakeMongoSession = {
+      startTransaction() { },
+      async withTransaction(fn) { return fn(); },
+      async commitTransaction() { },
+      async abortTransaction() { },
+      endSession() { },
+    };
+    let debitedArgs = null;
+
+    const restore = stubMany([
+      [mongoose, 'startSession', async () => fakeMongoSession],
+      [Session, 'findById', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable({ owner: ownerId })],
+      [pricingEngine, 'calculatePrice', async () => ({ durationHours: 1, finalTotal: 10000 })],
+      [walletService, 'getOrCreateWallet', async () => ({ userId: ownerId, balance: 50000 })],
+      [walletService, 'debitWallet', async (...args) => {
+        debitedArgs = args;
+        return { balance: 40000 };
+      }],
+      [Session, 'findOneAndUpdate', async () => ({ ...activeSession, status: 'completed', totalPrice: 10000 })],
+      [Revenue, 'findOneAndUpdate', async () => ({ _id: oid('507f1f77bcf86cd799439099') })],
+      [Slot, 'find', async () => []],
+      [SlotMaintenanceLog, 'find', () => queryable([])],
+      [SlotAuditLog, 'updateMany', async () => ({ modifiedCount: 0 })],
+      [User, 'findById', () => queryable({ _id: ownerId, email: 'owner@example.com' })],
+    ]);
+
+    try {
+      const req = {
+        app: { get: () => null },
+        body: {
+          sessionId: String(sessionId),
+          paymentMethod: 'wallet',
+          checkoutToken: buildCheckoutChallenge(activeSession),
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskCheckout(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.equal(res.state.body.success, true);
+      assert.ok(debitedArgs);
+      assert.equal(String(debitedArgs[0]), String(ownerId));
+      assert.equal(debitedArgs[1], 10000);
+      assert.equal(debitedArgs[3].session, fakeMongoSession);
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskCheckout rejects wallet payment with 403 WALK_IN_WALLET_UNVERIFIED when WALK_IN vehicle is unregistered', async () => {
+    const sessionId = oid('507f1f77bcf86cd799439096');
+    const activeSession = {
+      _id: sessionId,
+      licensePlate: '99A99999',
+      type: 'WALK_IN',
+      parkingSlot: 'B1',
+      checkInTime: new Date(Date.now() - 3600000),
+      status: 'active',
+    };
+
+    const restore = stubMany([
+      [Session, 'findById', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable(null)],
+    ]);
+
+    try {
+      const req = {
+        app: { get: () => null },
+        body: {
+          sessionId: String(sessionId),
+          paymentMethod: 'wallet',
+          checkoutToken: buildCheckoutChallenge(activeSession),
+        },
+      };
+      const res = createRes();
+      await sessionController.kioskCheckout(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 403);
+      assert.equal(res.state.body.code, 'WALK_IN_WALLET_UNVERIFIED');
+    } finally {
+      restore();
+    }
+  });
+
+  test('kioskCheckout rejects active membership service jobs before charging the wallet', async () => {
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439101'), status: 'active',
+      licensePlate: '43B20408', activeServiceJobs: 1,
+    };
+    let debitCalls = 0;
+    const restore = stubMany([
+      [Session, 'findById', () => queryable(activeSession)],
+      [walletService, 'debitWallet', async () => { debitCalls++; }],
+    ]);
+    try {
+      let error;
+      await sessionController.kioskCheckout({
+        user: { _id: oid('507f1f77bcf86cd799439102'), role: 'staff' },
+        body: { sessionId: String(activeSession._id), paymentMethod: 'wallet' },
+      }, createRes(), (err) => { error = err; });
+      assert.equal(error?.statusCode, 409);
+      assert.equal(error?.code, 'MEMBERSHIP_SERVICES_IN_PROGRESS');
+      assert.equal(debitCalls, 0);
+    } finally { restore(); }
+  });
+
+  test('kioskCheckout does not debit when a service starts between quote and completion', async () => {
+    const ownerId = oid('507f1f77bcf86cd799439103');
+    const activeSession = {
+      _id: oid('507f1f77bcf86cd799439104'), status: 'active',
+      licensePlate: '43B20408', activeServiceJobs: 0, userId: ownerId,
+      type: 'WALK_IN', checkInTime: new Date(Date.now() - 3600000),
+    };
+    let debitCalls = 0;
+    let capturedFilter;
+    const restore = stubMany([
+      [mongoose, 'startSession', async () => ({ withTransaction: async fn => fn(), endSession() {} })],
+      [Session, 'findById', () => queryable(activeSession)],
+      [Vehicle, 'findOne', () => queryable({ owner: ownerId })],
+      [pricingEngine, 'calculatePrice', async () => ({ finalTotal: 10000 })],
+      [walletService, 'getOrCreateWallet', async () => ({ balance: 50000 })],
+      [walletService, 'debitWallet', async () => { debitCalls++; }],
+      [Session, 'findOneAndUpdate', async filter => { capturedFilter = filter; return null; }],
+    ]);
+    try {
+      let error;
+      await sessionController.kioskCheckout({
+        user: { _id: ownerId, role: 'customer' },
+        body: { sessionId: String(activeSession._id), paymentMethod: 'wallet', checkoutToken: buildCheckoutChallenge(activeSession) },
+      }, createRes(), (err) => { error = err; });
+      assert.equal(error?.statusCode, 409);
+      assert.deepEqual(capturedFilter, Session.checkoutFilter(activeSession._id));
+      assert.equal(debitCalls, 0);
+    } finally { restore(); }
+  });
+
+  test('verifyPlate includes licensePlate filter alongside time-window $or via $and', async () => {
+    const capturedQueries = [];
+    const restore = stubMany([
+      [Session, 'findOne', () => queryable(null)],
+      [Session, 'find', () => queryable([])],
+      [Vehicle, 'findOne', () => queryable(null)],
+      [ParkingFloor, 'find', () => queryable([])],
+      [Slot, 'find', () => queryable([])],
+      [Booking, 'find', () => queryable([])],
+      [Booking, 'findOne', (q) => {
+        capturedQueries.push(q);
+        return queryable(null);
+      }],
+    ]);
+
+    try {
+      const req = { body: { licensePlate: '99A-280.96', gate: 'ENTRY_1' } };
+      const res = createRes();
+      await sessionController.verifyPlate(req, res, (err) => { if (err) throw err; });
+
+      assert.equal(res.state.statusCode, 200);
+      assert.ok(capturedQueries.length >= 1);
+      const bookingQuery = capturedQueries[0];
+      assert.ok(Array.isArray(bookingQuery.$and), 'booking query must combine plate & status filters with $and');
+      assert.equal(bookingQuery.$and.length, 2);
+      assert.ok(
+        bookingQuery.$and[0].$or.some((cond) => cond.licensePlate === '99A28096'),
+        'first $and clause must preserve licensePlate filter'
+      );
+      assert.ok(
+        bookingQuery.$and[1].$or.some((cond) => cond.status === 'PAID'),
+        'second $and clause must preserve status/window filter'
+      );
+      assert.equal(res.state.body.data.hasPreBooking, false);
+      assert.equal(res.state.body.data.assignedSlot, null);
+    } finally {
+      restore();
+    }
+  });
+
 });

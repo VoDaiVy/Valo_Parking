@@ -26,6 +26,7 @@ import {
   ArrowDown,
   LayoutGrid,
   RotateCcw,
+  RotateCw,
   Eye,
   EyeOff,
   Volume2,
@@ -40,6 +41,7 @@ import {
 import { API_BASE } from '../../../services/api';
 import toast from 'react-hot-toast';
 import { formatLicensePlateDisplay } from '../../../utils/licensePlate';
+import { renderOrientedCanvas } from '../../../utils/cameraLaneCapture';
 
 const ROBOFLOW_CALIBRATED_SLOTS = [
   { slotCode: 'A1', polygon: [[0.0313, 0.0947], [0.1197, 0.0944], [0.1203, 0.3034], [0.0318, 0.3036]] },
@@ -75,32 +77,37 @@ const ROBOFLOW_CALIBRATED_SLOTS = [
 const formatViolationEnglish = (res, slotCode) => {
   if (!res) return '';
   const rawPlate = res.plate || res.detectedPlate || res.expectedPlate || res.session?.licensePlate;
-  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : 'Vehicle';
+  const plateDisp = rawPlate ? formatLicensePlateDisplay(rawPlate) : '';
+  const subj = plateDisp ? `Vehicle ${plateDisp}` : 'Unidentified vehicle';
   const isWrong = res.status === 'WRONG_SLOT_VIOLATION' || res.violationType === 'WRONG_SLOT_VIOLATION';
   const isDoubleParking = res.status === 'DOUBLE_PARKING_VIOLATION' || res.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(res.occupiedByOverlap);
   const isUnauth = res.status === 'UNAUTHORIZED_PARKING' || res.violationType === 'UNAUTHORIZED_PARKING';
   const isPending = res.status === 'CHECKED_IN_PENDING_PARK' || res.violationType === 'CHECKED_IN_PENDING_PARK';
+  const isExiting = res.status === 'EXITING_TO_GATE' || res.violationType === 'EXITING_TO_GATE';
 
   if (isDoubleParking) {
     if (res.primarySlot) {
-      return `Vehicle ${plateDisp} parked at ${res.primarySlot} is occupying too much of adjacent slot ${slotCode}!`;
+      return `${subj} parked at ${res.primarySlot} is occupying too much of adjacent slot ${slotCode}!`;
     }
-    return `Vehicle ${plateDisp} is straddling across two parking slots (encroaching ${slotCode})!`;
+    return `${subj} is straddling across two parking slots (encroaching ${slotCode})!`;
   }
   if (isWrong) {
     if (res.expectedSlot) {
-      return `Vehicle ${plateDisp} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
+      return `${subj} assigned to slot ${res.expectedSlot}, but parked at ${slotCode}!`;
     }
-    return `Vehicle ${plateDisp} parked in wrong slot (assigned elsewhere)!`;
+    return `${subj} parked in wrong slot (assigned elsewhere)!`;
   }
   if (isUnauth) {
-    return `Vehicle ${plateDisp} parked at slot ${slotCode} without an active check-in or reservation!`;
+    return `${subj} parked at slot ${slotCode} without an active check-in or reservation!`;
   }
   if (isPending) {
     const timeStr = res.session?.checkInTime
       ? new Date(res.session.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
       : '';
-    return `Vehicle ${plateDisp} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+    return `${subj} checked in at gate${timeStr ? ` at ${timeStr}` : ''}; currently in transit to slot ${slotCode}.`;
+  }
+  if (isExiting) {
+    return `${subj} left slot ${slotCode} and is heading toward exit gate (pending checkout).`;
   }
   if (res.violationMessage && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(res.violationMessage)) {
     return res.violationMessage;
@@ -449,6 +456,15 @@ export default function SlotCameraMonitorModal({
   const [cameraMisalignedWarning, setCameraMisalignedWarning] = useState(null);
   const [floorMismatch, setFloorMismatch] = useState(null);
   const [isAiDropdownOpen, setIsAiDropdownOpen] = useState(false);
+  const [cameraRotation, setCameraRotation] = useState(() => {
+    try {
+      const saved = localStorage.getItem('valo_slot_camera_rotation');
+      const num = Number(saved);
+      return [0, 90, 180, 270].includes(num) ? num : 0;
+    } catch {
+      return 0;
+    }
+  });
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -537,10 +553,17 @@ export default function SlotCameraMonitorModal({
           const a1MinY = a1 && a1.polygon ? Math.min(...a1.polygon.map((p) => p[1])) : 0;
           const c1MinY = c1 && c1.polygon ? Math.min(...c1.polygon.map((p) => p[1])) : 0;
           const isRowsMerged = c1 && a1 && Math.abs(c1MinY - a1MinY) < 0.08; // C/D row too close to A/B row
-          if (!isStaleWallCoords && !isStaleShiftedCoords && !isRowsMerged) {
+          // Inverted if A1 is in the bottom half of the screen (y > 0.5) from prior rotation bug
+          const isInverted = a1 && a1.polygon && Math.min(...a1.polygon.map((p) => p[1])) > 0.5;
+
+          if (!isStaleWallCoords && !isStaleShiftedCoords && !isRowsMerged && !isInverted) {
             setSlotRois(parsed);
             setSelectedSlotIndex(-1);
             loaded = true;
+          } else if (isInverted) {
+            // Clean up inverted cache so layout automatically recovers
+            localStorage.removeItem(sStorageKey);
+            localStorage.removeItem(`valo_board_corners_v7_${floorId}`);
           }
         }
       }
@@ -564,8 +587,39 @@ export default function SlotCameraMonitorModal({
       }
       const lockKey = `valo_layout_locked_v8_${floorId}`;
       setIsLayoutLocked(localStorage.getItem(lockKey) === 'true');
+      const rKey = `valo_slot_camera_rotation_${floorId}`;
+      const savedRot = localStorage.getItem(rKey) ?? localStorage.getItem('valo_slot_camera_rotation');
+      if (savedRot != null) {
+        const num = Number(savedRot);
+        if ([0, 90, 180, 270].includes(num)) {
+          setCameraRotation(num);
+        }
+      }
     } catch (e) { }
   }, [activeFloor, floorData.allSlots, generateFloorLayoutGrid]);
+
+  const handleRotateCamera = useCallback((delta = 90) => {
+    const nextRotation = (cameraRotation + delta) % 360;
+    setCameraRotation(nextRotation);
+    const fKey = activeFloor ? (activeFloor._id || activeFloor.name || 'default') : 'default';
+    localStorage.setItem(`valo_slot_camera_rotation_${fKey}`, String(nextRotation));
+    localStorage.setItem('valo_slot_camera_rotation', String(nextRotation));
+
+    // If slotRois is currently inverted (A1 at bottom half y > 0.5), auto restore canonical layout
+    setSlotRois((currentSlots) => {
+      const a1 = Array.isArray(currentSlots) ? currentSlots.find((s) => s.slotCode === 'A1') : null;
+      const isInverted = a1 && a1.polygon && Math.min(...a1.polygon.map((p) => p[1])) > 0.5;
+      if (isInverted) {
+        localStorage.removeItem(`valo_slot_roi_floor_v7_${fKey}`);
+        localStorage.removeItem(`valo_board_corners_v7_${fKey}`);
+        setBoardCorners(DEFAULT_BOARD_CORNERS);
+        return generateFloorLayoutGrid(activeFloor);
+      }
+      return currentSlots;
+    });
+
+    toast.success(`Camera angle set to ${nextRotation}°. Canonical slot order preserved.`);
+  }, [cameraRotation, activeFloor, generateFloorLayoutGrid]);
 
   // Load cameras with persistent memory (Tự động nhớ camera USB/C270 đã chọn)
   useEffect(() => {
@@ -712,6 +766,8 @@ export default function SlotCameraMonitorModal({
     localStorage.setItem(`valo_slot_roi_floor_v7_${fKey}`, JSON.stringify(slotRois));
     localStorage.setItem(`valo_board_corners_v7_${fKey}`, JSON.stringify(boardCorners));
     localStorage.setItem(`valo_layout_locked_v8_${fKey}`, 'true');
+    localStorage.setItem(`valo_slot_camera_rotation_${fKey}`, String(cameraRotation));
+    localStorage.setItem('valo_slot_camera_rotation', String(cameraRotation));
     setIsLayoutLocked(true);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
@@ -755,12 +811,21 @@ export default function SlotCameraMonitorModal({
       // Cap resolution at 1920×1080 to reduce payload size (~4× faster than 4K)
       const MAX_W = 1920;
       const MAX_H = 1080;
-      const scale = Math.min(1, MAX_W / video.videoWidth, MAX_H / video.videoHeight);
+      const swapDims = cameraRotation === 90 || cameraRotation === 270;
+      const srcW = swapDims ? video.videoHeight : video.videoWidth;
+      const srcH = swapDims ? video.videoWidth : video.videoHeight;
+      const scale = Math.min(1, MAX_W / srcW, MAX_H / srcH);
+      const outW = Math.round(video.videoWidth * scale);
+      const outH = Math.round(video.videoHeight * scale);
       const offscreen = document.createElement('canvas');
-      offscreen.width = Math.round(video.videoWidth * scale);
-      offscreen.height = Math.round(video.videoHeight * scale);
-      const ctx = offscreen.getContext('2d');
-      ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+      renderOrientedCanvas(
+        offscreen,
+        video,
+        { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight },
+        outW,
+        outH,
+        cameraRotation
+      );
       const base64Image = offscreen.toDataURL('image/jpeg', 0.88); // 0.88 quality saves ~30% size vs 0.95
 
       const token = localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
@@ -830,12 +895,21 @@ export default function SlotCameraMonitorModal({
       // Cap resolution at 1600×900 (keeps far-row plates sharp while cutting payload & decode ~40%)
       const MAX_W = 1600;
       const MAX_H = 900;
-      const scale = Math.min(1, MAX_W / video.videoWidth, MAX_H / video.videoHeight);
+      const swapDims = cameraRotation === 90 || cameraRotation === 270;
+      const srcW = swapDims ? video.videoHeight : video.videoWidth;
+      const srcH = swapDims ? video.videoWidth : video.videoHeight;
+      const scale = Math.min(1, MAX_W / srcW, MAX_H / srcH);
+      const outW = Math.round(video.videoWidth * scale);
+      const outH = Math.round(video.videoHeight * scale);
       const offscreen = document.createElement('canvas');
-      offscreen.width = Math.round(video.videoWidth * scale);
-      offscreen.height = Math.round(video.videoHeight * scale);
-      const ctx = offscreen.getContext('2d');
-      ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+      renderOrientedCanvas(
+        offscreen,
+        video,
+        { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight },
+        outW,
+        outH,
+        cameraRotation
+      );
       const base64Image = offscreen.toDataURL('image/jpeg', 0.85);
 
       // Lightweight evidence crops (320px for Gemini Deep Vision, 160px for fast Edge ALPR audit logs)
@@ -967,65 +1041,16 @@ export default function SlotCameraMonitorModal({
           }
         });
 
-        // --- Temporal Smoothing: stabilize results across scans ---
-        // Update occupancy memory with current scan
+        // Live Ground Truth: Always use fresh scan results directly (no ghost car memory lag)
+        const smoothedSlots = freshSlots;
+        occupancyMemoryRef.current.clear();
         freshSlots.forEach((s) => {
-          const key = s.slotCode?.toUpperCase();
-          if (!key) return;
-          const prev = occupancyMemoryRef.current.get(key) || { occupiedCount: 0, emptyCount: 0, lastPlate: null };
           if (s.occupied && s.plate) {
-            prev.occupiedCount = Math.min((prev.occupiedCount || 0) + 1, 3);
-            prev.emptyCount = 0;
-            prev.lastPlate = s.plate;
-            prev.lastStatus = s.status;
-            prev.lastViolationType = s.violationType;
-            prev.lastIsViolation = s.isViolation;
-            prev.lastExpectedSlot = s.expectedSlot;
-            prev.lastViolationMessage = s.violationMessage;
-            prev.lastSession = s.session;
-            prev.lastOccupiedByOverlap = s.occupiedByOverlap;
-            prev.lastPrimarySlot = s.primarySlot;
-          } else {
-            const normPrevPlate = prev.lastPlate ? prev.lastPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
-            const movedElsewhere = normPrevPlate && freshPlateSlots.has(normPrevPlate) && !freshPlateSlots.get(normPrevPlate).includes(key);
-            if (movedElsewhere) {
-              prev.occupiedCount = 0;
-              prev.emptyCount = 3;
-              prev.lastPlate = null;
-            } else {
-              prev.emptyCount = Math.min((prev.emptyCount || 0) + 1, 3);
-              // Only clear occupied if consistently empty 2+ scans
-              if (prev.emptyCount >= 2) {
-                prev.occupiedCount = 0;
-                prev.lastPlate = null;
-              }
-            }
+            occupancyMemoryRef.current.set(s.slotCode?.toUpperCase(), {
+              lastPlate: s.plate,
+              lastStatus: s.status,
+            });
           }
-          occupancyMemoryRef.current.set(key, prev);
-        });
-        // Apply memory ONLY if the plate isn't already accounted for at another slot in freshSlots
-        const smoothedSlots = freshSlots.map((s) => {
-          const key = s.slotCode?.toUpperCase();
-          const mem = occupancyMemoryRef.current.get(key);
-          const normMemPlate = mem?.lastPlate ? mem.lastPlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
-          const alreadyActiveElsewhere = normMemPlate && freshPlateSlots.has(normMemPlate) && !freshPlateSlots.get(normMemPlate).includes(key);
-          if (!s.occupied && mem && mem.occupiedCount >= 1 && mem.lastPlate && !alreadyActiveElsewhere) {
-            return {
-              ...s,
-              occupied: true,
-              plate: mem.lastPlate,
-              status: mem.lastStatus || s.status,
-              violationType: mem.lastViolationType || s.violationType,
-              isViolation: Boolean(mem.lastIsViolation),
-              expectedSlot: mem.lastExpectedSlot || s.expectedSlot,
-              violationMessage: mem.lastViolationMessage || s.violationMessage,
-              session: mem.lastSession || s.session,
-              occupiedByOverlap: Boolean(mem.lastOccupiedByOverlap),
-              primarySlot: mem.lastPrimarySlot || s.primarySlot,
-              _fromMemory: true,
-            };
-          }
-          return s;
         });
 
         setScanResults(smoothedSlots);
@@ -1061,7 +1086,7 @@ export default function SlotCameraMonitorModal({
     } finally {
       setIsScanning(false);
     }
-  }, [activeFloor, isScanning, slotRois, aiMode, isLayoutLocked, onSlotStatusUpdate, playAlertSound]);
+  }, [activeFloor, isScanning, slotRois, aiMode, isLayoutLocked, onSlotStatusUpdate, playAlertSound, cameraRotation]);
 
   // Auto-switch floor when AI detects camera is pointing at another floor
   const handleAutoSwitchFloor = useCallback((targetFloorNumber, targetFloorName) => {
@@ -1190,20 +1215,26 @@ export default function SlotCameraMonitorModal({
   }, [slotRois, resolveSlotStatus, hasScanned]);
 
   const totalSlots = slotRois.length;
+  const isTransitRes = (r) => {
+    const vt = r?.violationType || r?.status;
+    return vt === 'CHECKED_IN_PENDING_PARK' || vt === 'EXITING_TO_GATE';
+  };
   const occupiedSlots = hasScanned
-    ? allResolvedSlots.filter((r) => r.occupied || r.status === 'OCCUPIED_VALID' || (r.isViolation && r.status !== 'CHECKED_IN_PENDING_PARK' && r.violationType !== 'CHECKED_IN_PENDING_PARK')).length
+    ? allResolvedSlots.filter((r) => r.occupied || r.status === 'OCCUPIED_VALID' || (r.isViolation && !isTransitRes(r))).length
     : 0;
 
   const violations = useMemo(() => {
     if (!hasScanned) return [];
-    const list = allResolvedSlots.filter((r) =>
-      r.status === 'WRONG_SLOT_VIOLATION' ||
-      r.status === 'DOUBLE_PARKING_VIOLATION' ||
-      r.violationType === 'DOUBLE_PARKING_VIOLATION' ||
-      r.status === 'UNAUTHORIZED_PARKING' ||
-      r.status === 'CHECKED_IN_PENDING_PARK' ||
-      r.isViolation
-    );
+    const list = allResolvedSlots.filter((r) => {
+      if (isTransitRes(r)) return false;
+      return (
+        r.status === 'WRONG_SLOT_VIOLATION' ||
+        r.status === 'DOUBLE_PARKING_VIOLATION' ||
+        r.violationType === 'DOUBLE_PARKING_VIOLATION' ||
+        r.status === 'UNAUTHORIZED_PARKING' ||
+        Boolean(r.isViolation)
+      );
+    });
     const seenKeys = new Set();
     return list.filter((v) => {
       const p = (v.plate || v.detectedPlate || v.expectedPlate || v.session?.licensePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -1219,11 +1250,12 @@ export default function SlotCameraMonitorModal({
 
   const wrongSlotCount = useMemo(() => violations.filter((v) => v.status === 'WRONG_SLOT_VIOLATION' || v.violationType === 'WRONG_SLOT_VIOLATION').length, [violations]);
   const unauthCount = useMemo(() => violations.filter((v) => v.status === 'UNAUTHORIZED_PARKING' || v.violationType === 'UNAUTHORIZED_PARKING').length, [violations]);
-  const pendingCount = useMemo(() => violations.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length, [violations]);
+  const pendingCount = useMemo(() => hasScanned ? allResolvedSlots.filter((v) => v.status === 'CHECKED_IN_PENDING_PARK' || v.violationType === 'CHECKED_IN_PENDING_PARK').length : 0, [allResolvedSlots, hasScanned]);
+  const exitingCount = useMemo(() => hasScanned ? allResolvedSlots.filter((v) => v.status === 'EXITING_TO_GATE' || v.violationType === 'EXITING_TO_GATE').length : 0, [allResolvedSlots, hasScanned]);
   const validCount = useMemo(() => hasScanned ? allResolvedSlots.filter((s) => s.status === 'OCCUPIED_VALID' || (s.occupied && !s.isViolation)).length : 0, [allResolvedSlots, hasScanned]);
-  const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots) : 0;
+  const availableCount = hasScanned ? Math.max(0, totalSlots - occupiedSlots - pendingCount - exitingCount) : 0;
 
-  // Smart sorted & filtered slot list: Pinned alerts on top, followed by parked, then available
+  // Smart sorted & filtered slot list: Pinned alerts on top, followed by transit/parked, then available
   const sortedAndFilteredSlots = useMemo(() => {
     return slotRois
       .filter((s) => {
@@ -1237,9 +1269,11 @@ export default function SlotCameraMonitorModal({
         const isDouble = res?.status === 'DOUBLE_PARKING_VIOLATION' || res?.violationType === 'DOUBLE_PARKING_VIOLATION' || Boolean(res?.occupiedByOverlap);
         const isUnauth = res?.status === 'UNAUTHORIZED_PARKING' || res?.violationType === 'UNAUTHORIZED_PARKING';
         const isPending = res?.status === 'CHECKED_IN_PENDING_PARK' || res?.violationType === 'CHECKED_IN_PENDING_PARK';
-        const isAlert = isWrong || isDouble || isUnauth || isPending || Boolean(res?.isViolation);
+        const isExiting = res?.status === 'EXITING_TO_GATE' || res?.violationType === 'EXITING_TO_GATE';
+        const isTransit = isPending || isExiting;
+        const isAlert = isWrong || isDouble || isUnauth || (Boolean(res?.isViolation) && !isTransit);
         const isValid = res?.status === 'OCCUPIED_VALID' || (res?.occupied && !isWrong && !isDouble && !isUnauth);
-        const isEmpty = !res?.occupied && !isWrong && !isDouble && !isUnauth && !isPending;
+        const isEmpty = !res?.occupied && !isWrong && !isDouble && !isUnauth && !isTransit;
 
         if (activeStatusFilter === 'ALERTS') return isAlert;
         if (activeStatusFilter === 'VALID') return isValid;
@@ -1249,12 +1283,16 @@ export default function SlotCameraMonitorModal({
       .sort((a, b) => {
         const resA = resolveSlotStatus(a.slotCode);
         const resB = resolveSlotStatus(b.slotCode);
-        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resA?.isViolation);
-        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || Boolean(resB?.isViolation);
+        const isTransitA = resA?.status === 'CHECKED_IN_PENDING_PARK' || resA?.violationType === 'CHECKED_IN_PENDING_PARK' || resA?.status === 'EXITING_TO_GATE' || resA?.violationType === 'EXITING_TO_GATE';
+        const isTransitB = resB?.status === 'CHECKED_IN_PENDING_PARK' || resB?.violationType === 'CHECKED_IN_PENDING_PARK' || resB?.status === 'EXITING_TO_GATE' || resB?.violationType === 'EXITING_TO_GATE';
+        const isAlertA = resA?.status === 'WRONG_SLOT_VIOLATION' || resA?.violationType === 'WRONG_SLOT_VIOLATION' || resA?.status === 'UNAUTHORIZED_PARKING' || resA?.violationType === 'UNAUTHORIZED_PARKING' || (Boolean(resA?.isViolation) && !isTransitA);
+        const isAlertB = resB?.status === 'WRONG_SLOT_VIOLATION' || resB?.violationType === 'WRONG_SLOT_VIOLATION' || resB?.status === 'UNAUTHORIZED_PARKING' || resB?.violationType === 'UNAUTHORIZED_PARKING' || (Boolean(resB?.isViolation) && !isTransitB);
 
-        // Pin active alerts to the top
+        // Pin active alerts to the top, followed by transit vehicles (arriving/exiting)
         if (isAlertA && !isAlertB) return -1;
         if (!isAlertA && isAlertB) return 1;
+        if (isTransitA && !isTransitB) return -1;
+        if (!isTransitA && isTransitB) return 1;
 
         // Occupied cars next
         const occA = resA?.occupied ? 1 : 0;
@@ -1277,8 +1315,9 @@ export default function SlotCameraMonitorModal({
     }
     const cw = container.clientWidth;
     const ch = container.clientHeight;
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
+    const swapDims = cameraRotation === 90 || cameraRotation === 270;
+    const vw = swapDims ? video.videoHeight : video.videoWidth;
+    const vh = swapDims ? video.videoWidth : video.videoHeight;
     const videoRatio = vw / vh;
     const containerRatio = cw / ch;
 
@@ -1295,7 +1334,39 @@ export default function SlotCameraMonitorModal({
       offsetY = (ch - renderH) / 2;
     }
     return { x: offsetX, y: offsetY, width: renderW, height: renderH };
-  }, []);
+  }, [cameraRotation]);
+
+  const videoStyle = useMemo(() => {
+    const vr = getVideoRenderRect();
+    if (!cameraRotation) {
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+      };
+    }
+    if (cameraRotation === 180) {
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        transform: 'rotate(180deg)',
+      };
+    }
+    return {
+      position: 'absolute',
+      left: `${vr.x + (vr.width - vr.height) / 2}px`,
+      top: `${vr.y + (vr.height - vr.width) / 2}px`,
+      width: `${vr.height}px`,
+      height: `${vr.width}px`,
+      objectFit: 'contain',
+      transform: `rotate(${cameraRotation}deg)`,
+    };
+  }, [cameraRotation, getVideoRenderRect]);
 
   const toScreenCoords = useCallback((nx, ny) => {
     const vr = getVideoRenderRect();
@@ -1380,8 +1451,10 @@ export default function SlotCameraMonitorModal({
       const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
       const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
       const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
-      const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
-      const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
+      const isExiting = result?.status === 'EXITING_TO_GATE' || result?.violationType === 'EXITING_TO_GATE';
+      const isTransit = isPendingPark || isExiting;
+      const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || (Boolean(result?.isViolation) && !isTransit);
+      const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || isViolation;
       const isSelected = sIdx === selectedSlotIndex;
 
       // Giữ khung bám sát vạch sơn thực tế (hệ số 1.01), tránh phình sang ô bên cạnh khi nhìn góc nghiêng
@@ -1448,6 +1521,14 @@ export default function SlotCameraMonitorModal({
           ctx.fill();
           ctx.stroke();
           ctx.setLineDash([]);
+        } else if (isExiting) {
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 3.0;
+          ctx.setLineDash([6, 4]);
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.22)';
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
         } else if (isOccupied) {
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2.5;
@@ -1479,7 +1560,7 @@ export default function SlotCameraMonitorModal({
         const bLen = 12;
 
         ctx.save();
-        ctx.strokeStyle = isDoubleParking ? '#f97316' : isWrongSlot ? '#f43f5e' : isUnauthorized ? '#f59e0b' : isPendingPark ? '#c084fc' : isOccupied ? '#10b981' : '#38bdf8';
+        ctx.strokeStyle = isDoubleParking ? '#f97316' : isWrongSlot ? '#f43f5e' : isUnauthorized ? '#f59e0b' : isPendingPark ? '#c084fc' : isExiting ? '#22d3ee' : isOccupied ? '#10b981' : '#38bdf8';
         ctx.lineWidth = 2.5;
 
         for (let ci = 0; ci < 4; ci++) {
@@ -1514,9 +1595,11 @@ export default function SlotCameraMonitorModal({
           ? `⚠️ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
           : isPendingPark
             ? `⏳ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
-            : isOccupied
-              ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
-              : slot.slotCode;
+            : isExiting
+              ? `↗ ${slot.slotCode}${pendingPlate ? ` • ${formatLicensePlateDisplay(pendingPlate)}` : ''}`
+              : isOccupied
+                ? `✅ ${slot.slotCode}${plateText ? ` • ${formatLicensePlateDisplay(plateText)}` : ''}`
+                : slot.slotCode;
       
       const textMetrics = ctx.measureText(slotText);
       const pillW = textMetrics.width + 10;
@@ -1543,9 +1626,11 @@ export default function SlotCameraMonitorModal({
           ? 'rgba(217, 119, 6, 0.95)'
           : isPendingPark
             ? 'rgba(124, 58, 237, 0.95)'
-            : isOccupied
-              ? 'rgba(5, 150, 105, 0.95)'
-              : 'rgba(15, 23, 42, 0.88)';
+            : isExiting
+              ? 'rgba(8, 145, 178, 0.95)'
+              : isOccupied
+                ? 'rgba(5, 150, 105, 0.95)'
+                : 'rgba(15, 23, 42, 0.88)';
       ctx.beginPath();
       ctx.roundRect(pillX, pillY, pillW, pillH, 4);
       ctx.fill();
@@ -1558,7 +1643,7 @@ export default function SlotCameraMonitorModal({
           ? 'rgba(255, 255, 255, 0.45)'
         : isUnauthorized
           ? 'rgba(255, 255, 255, 0.4)'
-          : isPendingPark
+          : isTransit
             ? 'rgba(255, 255, 255, 0.45)'
             : isOccupied
               ? 'rgba(255, 255, 255, 0.35)'
@@ -1790,6 +1875,36 @@ export default function SlotCameraMonitorModal({
               </select>
             </div>
 
+            {/* Camera Setup Rotation / Flip Controls */}
+            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10" title="Rotate camera setup angle (0° → 90° → 180° → 270°)">
+              <button
+                type="button"
+                onClick={() => handleRotateCamera(90)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                  cameraRotation !== 0
+                    ? 'bg-amber-400 text-black shadow'
+                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                }`}
+                title="Rotate Camera 90° clockwise (0° → 90° → 180° → 270°)"
+              >
+                <RotateCw size={12} className={cameraRotation !== 0 ? 'text-black' : 'text-amber-400'} />
+                <span>{cameraRotation}°</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRotateCamera(180)}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+                  cameraRotation === 180
+                    ? 'bg-amber-500/25 text-amber-300 border border-amber-400/40'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+                title="Quick Flip 180° (Invert upside-down mounted camera)"
+              >
+                <RefreshCw size={11} />
+                <span>Flip 180°</span>
+              </button>
+            </div>
+
             {/* Auto Scan Toggle */}
             <label className="flex items-center gap-2 cursor-pointer select-none bg-black/40 px-3 py-1.5 rounded-xl border border-white/10 hover:border-white/20 transition">
               <input
@@ -1970,12 +2085,17 @@ export default function SlotCameraMonitorModal({
 
                   {isAiDropdownOpen && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setIsAiDropdownOpen(false)} />
-                      <div className="absolute right-0 top-full mt-1.5 z-50 w-64 bg-[#0e121b]/95 backdrop-blur-xl border border-white/15 rounded-xl p-1.5 shadow-2xl space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="fixed inset-0 z-[55]" onClick={() => setIsAiDropdownOpen(false)} />
+                      <div className="absolute right-0 top-full mt-1.5 z-[60] w-64 bg-[#0e121b]/95 backdrop-blur-xl border border-white/15 rounded-xl p-1.5 shadow-2xl space-y-1 animate-in fade-in zoom-in-95 duration-150">
                         <button
                           type="button"
-                          onClick={() => { setAiMode('hybrid'); setIsAiDropdownOpen(false); }}
-                          className={`w-full text-left p-2 rounded-lg text-xs transition flex items-start gap-2.5 ${aiMode === 'hybrid' ? 'bg-amber-400/15 border border-amber-400/40 text-amber-200' : 'hover:bg-white/5 text-gray-300'}`}
+                          onClick={() => {
+                            setAiMode('hybrid');
+                            setActiveAiEngine('hybrid_edge_gemini');
+                            setIsAiDropdownOpen(false);
+                            toast.success('Switched to 🚀 Smart Auto (Hybrid)', { id: 'ai-mode-toast', duration: 1500 });
+                          }}
+                          className={`w-full text-left p-2 rounded-lg text-xs transition flex items-start gap-2.5 cursor-pointer active:scale-95 ${aiMode === 'hybrid' ? 'bg-amber-400/15 border border-amber-400/40 text-amber-200' : 'hover:bg-white/5 text-gray-300'}`}
                         >
                           <span className="text-base leading-none">🚀</span>
                           <div>
@@ -1989,8 +2109,13 @@ export default function SlotCameraMonitorModal({
 
                         <button
                           type="button"
-                          onClick={() => { setAiMode('local'); setIsAiDropdownOpen(false); }}
-                          className={`w-full text-left p-2 rounded-lg text-xs transition flex items-start gap-2.5 ${aiMode === 'local' ? 'bg-emerald-500/15 border border-emerald-400/40 text-emerald-200' : 'hover:bg-white/5 text-gray-300'}`}
+                          onClick={() => {
+                            setAiMode('local');
+                            setActiveAiEngine('local_edge_alpr');
+                            setIsAiDropdownOpen(false);
+                            toast.success('Switched to ⚡ Edge ALPR Engine', { id: 'ai-mode-toast', duration: 1500 });
+                          }}
+                          className={`w-full text-left p-2 rounded-lg text-xs transition flex items-start gap-2.5 cursor-pointer active:scale-95 ${aiMode === 'local' ? 'bg-emerald-500/15 border border-emerald-400/40 text-emerald-200' : 'hover:bg-white/5 text-gray-300'}`}
                         >
                           <span className="text-base leading-none">⚡</span>
                           <div>
@@ -2001,8 +2126,13 @@ export default function SlotCameraMonitorModal({
 
                         <button
                           type="button"
-                          onClick={() => { setAiMode('gemini'); setIsAiDropdownOpen(false); }}
-                          className={`w-full text-left p-2 rounded-lg text-xs transition flex items-start gap-2.5 ${aiMode === 'gemini' ? 'bg-purple-500/15 border border-purple-400/40 text-purple-200' : 'hover:bg-white/5 text-gray-300'}`}
+                          onClick={() => {
+                            setAiMode('gemini');
+                            setActiveAiEngine('gemini_2.5_flash_vision');
+                            setIsAiDropdownOpen(false);
+                            toast.success('Switched to ✨ Gemini 2.5 Flash Vision', { id: 'ai-mode-toast', duration: 1500 });
+                          }}
+                          className={`w-full text-left p-2 rounded-lg text-xs transition flex items-start gap-2.5 cursor-pointer active:scale-95 ${aiMode === 'gemini' ? 'bg-purple-500/15 border border-purple-400/40 text-purple-200' : 'hover:bg-white/5 text-gray-300'}`}
                         >
                           <span className="text-base leading-none">✨</span>
                           <div>
@@ -2046,7 +2176,7 @@ export default function SlotCameraMonitorModal({
               ref={videoRef}
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-contain"
+              style={videoStyle}
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-10" />
 
@@ -2085,6 +2215,15 @@ export default function SlotCameraMonitorModal({
                 <>
                   <span className="text-gray-600">•</span>
                   <span className="text-gray-400 font-mono text-[10px]">{lastScanDuration}s</span>
+                </>
+              )}
+              {cameraRotation !== 0 && (
+                <>
+                  <span className="text-gray-600">•</span>
+                  <span className="font-mono text-amber-300 text-[10px] bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-400/30 flex items-center gap-1 font-bold">
+                    <RotateCw size={9} />
+                    {cameraRotation}°
+                  </span>
                 </>
               )}
             </div>
@@ -2380,8 +2519,10 @@ export default function SlotCameraMonitorModal({
                   const isWrongSlot = result?.status === 'WRONG_SLOT_VIOLATION' || result?.violationType === 'WRONG_SLOT_VIOLATION';
                   const isUnauthorized = result?.status === 'UNAUTHORIZED_PARKING' || result?.violationType === 'UNAUTHORIZED_PARKING';
                   const isPendingPark = result?.status === 'CHECKED_IN_PENDING_PARK' || result?.violationType === 'CHECKED_IN_PENDING_PARK';
-                  const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || isPendingPark || result?.isViolation;
-                  const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || (isViolation && !isPendingPark);
+                  const isExiting = result?.status === 'EXITING_TO_GATE' || result?.violationType === 'EXITING_TO_GATE';
+                  const isTransit = isPendingPark || isExiting;
+                  const isViolation = isDoubleParking || isWrongSlot || isUnauthorized || (Boolean(result?.isViolation) && !isTransit);
+                  const isOccupied = result?.occupied || result?.status === 'OCCUPIED_VALID' || isViolation;
                   const isSelected = originalIndex === selectedSlotIndex;
                   const cardPlate = result?.plate || result?.detectedPlate || result?.expectedPlate || result?.session?.licensePlate;
 
@@ -2398,11 +2539,13 @@ export default function SlotCameraMonitorModal({
                               ? 'bg-amber-950/30 border-amber-500/50 hover:bg-amber-950/45'
                               : isPendingPark
                                 ? 'bg-purple-950/30 border-purple-500/50 hover:bg-purple-950/45'
-                                : isOccupied
-                                  ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
-                                  : isSelected
-                                    ? 'bg-amber-400/10 border-amber-400/50'
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10'
+                                : isExiting
+                                  ? 'bg-cyan-950/30 border-cyan-500/50 hover:bg-cyan-950/45'
+                                  : isOccupied
+                                    ? 'bg-emerald-950/20 border-emerald-500/35 hover:bg-emerald-950/35'
+                                    : isSelected
+                                      ? 'bg-amber-400/10 border-amber-400/50'
+                                      : 'bg-white/5 border-white/5 hover:bg-white/10'
                       }`}
                     >
                       {/* Card Header */}
@@ -2419,9 +2562,11 @@ export default function SlotCameraMonitorModal({
                                     ? 'bg-amber-500 text-black font-black'
                                     : isPendingPark
                                       ? 'bg-purple-500 text-white font-black animate-pulse'
-                                      : isOccupied
-                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
-                                        : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
+                                      : isExiting
+                                        ? 'bg-cyan-500 text-black font-black animate-pulse'
+                                        : isOccupied
+                                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
+                                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold'
                             }`}
                           >
                             {isDoubleParking
@@ -2432,9 +2577,11 @@ export default function SlotCameraMonitorModal({
                                   ? 'Unregistered'
                                   : isPendingPark
                                     ? 'In Transit'
-                                    : isOccupied
-                                      ? 'Parked'
-                                      : 'Available'}
+                                    : isExiting
+                                      ? 'Exiting Gate'
+                                      : isOccupied
+                                        ? 'Parked'
+                                        : 'Available'}
                           </span>
                         </div>
 
@@ -2443,13 +2590,15 @@ export default function SlotCameraMonitorModal({
                             className={`font-mono font-black text-xs px-2 py-0.5 rounded border ${
                               isPendingPark
                                 ? 'bg-purple-950/60 border-purple-400/40 text-purple-200'
-                                : isDoubleParking
-                                  ? 'bg-orange-950/60 border-orange-400/40 text-orange-200'
-                                  : isWrongSlot
-                                    ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
-                                    : isUnauthorized
-                                      ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
-                                      : 'bg-black/60 border-white/20 text-white'
+                                : isExiting
+                                  ? 'bg-cyan-950/60 border-cyan-400/40 text-cyan-200'
+                                  : isDoubleParking
+                                    ? 'bg-orange-950/60 border-orange-400/40 text-orange-200'
+                                    : isWrongSlot
+                                      ? 'bg-rose-950/60 border-rose-400/40 text-rose-200'
+                                      : isUnauthorized
+                                        ? 'bg-amber-950/60 border-amber-400/40 text-amber-200'
+                                        : 'bg-black/60 border-white/20 text-white'
                             }`}
                           >
                             {formatLicensePlateDisplay(cardPlate)}
@@ -2521,6 +2670,26 @@ export default function SlotCameraMonitorModal({
                             <Clock size={13} className="text-purple-400 shrink-0 mt-0.5 animate-pulse" />
                             <span>{formatViolationEnglish(result, slot.slotCode)}</span>
                           </div>
+                        </div>
+                      ) : isExiting ? (
+                        <div className="mt-1 pt-1.5 border-t border-cyan-500/30 space-y-2">
+                          <div className="text-[11px] font-bold text-cyan-300 flex items-start gap-1.5 leading-snug">
+                            <ArrowRight size={13} className="text-cyan-400 shrink-0 mt-0.5 animate-pulse" />
+                            <span>{formatViolationEnglish(result, slot.slotCode)}</span>
+                          </div>
+                          {result?.session && onCheckoutSlot && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCheckoutSlot(result.session);
+                              }}
+                              className="w-full py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <LogOut size={13} className="text-cyan-300" />
+                              <span>Complete Gate Checkout</span>
+                            </button>
+                          )}
                         </div>
                       ) : isOccupied && result?.session && onCheckoutSlot ? (
                         <button

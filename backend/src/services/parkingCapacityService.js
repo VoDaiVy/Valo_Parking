@@ -69,6 +69,8 @@ const getParkingCapacitySnapshot = async (now = new Date()) => {
       $or: [
         { status: { $in: ['maintenance', 'occupied'] } },
         { 'aiObservation.occupied': true },
+        { 'aiObservation.sessionId': { $ne: null } },
+        { 'aiObservation.violationType': { $in: ['CHECKED_IN_PENDING_PARK', 'EXITING_TO_GATE'] } },
       ],
     }).select('floorID slotNumber status aiObservation').lean(),
     MembershipSlotEntitlement.find({
@@ -81,6 +83,7 @@ const getParkingCapacitySnapshot = async (now = new Date()) => {
   activeBookings.forEach((item) => addSlotOrUnassigned(item.floorId, item.parkingSlot));
   activeHolds.forEach((item) => addSlotOrUnassigned(item.floorId, item.slotCode));
   blockedSlots.forEach((item) => addSlotOrUnassigned(item.floorID, item.slotNumber));
+  activeVipEntitlements.forEach((item) => addSlotOrUnassigned(item.floorId, item.slotCode));
 
   const totalSlots = configuredSlots.size;
   const occupiedCount = occupiedSlots.size + unassignedCount;

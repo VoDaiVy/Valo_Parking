@@ -24,7 +24,7 @@ export function useQrScannerListener(onScan, enabled = true) {
     const MIN_LENGTH = 3;
 
     const triggerScan = () => {
-      const text = bufferRef.current.trim();
+      let text = bufferRef.current.trim();
       bufferRef.current = '';
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
@@ -32,6 +32,13 @@ export function useQrScannerListener(onScan, enabled = true) {
       }
 
       if (text.length >= MIN_LENGTH) {
+        // Auto-fix Telex / Vietnamese IME keystroke corruption from USB scanner
+        text = text
+          .replace(/VALO_B[OÔô]KING/i, 'VALO_BOOKING')
+          .replace(/VALO_P[AÁá]S{1,2}/i, 'VALO_PASS')
+          .replace(/VALO_M[EÊeê]MB[EẺeẻ]RSHIP/i, 'VALO_MEMBERSHIP')
+          .replace(/VALO_S[EÉé]S{1,2}ION_EX[IÍí]T/i, 'VALO_SESSION_EXIT');
+
         console.log('📷 [GM65 Scanner] Full QR Received:', text);
         onScanRef.current?.(text);
       }
