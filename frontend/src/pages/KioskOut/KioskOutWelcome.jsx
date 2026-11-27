@@ -42,11 +42,13 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
   const lastAiScanAtRef = useRef(0);
 
   // Lắng nghe luồng ảnh trực tiếp từ webcam C270 cắm trên PC
+  const remoteFrameRef = useRef(null);
   useEffect(() => {
     if (!socket) return;
     const handleRemoteFrame = (data) => {
       if (data?.lane === cameraLane && data?.frameBase64) {
         setRemoteFrame(data.frameBase64);
+        remoteFrameRef.current = data.frameBase64;
         setStreamError(false);
       }
     };
@@ -289,87 +291,111 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
   const lastScannedPlateRef = useRef(null);
   const lastErrorPlateAtRef = useRef({ plate: null, at: 0 });
 
-  // Camera Scanning Loop
+  // Camera Scanning Loop (Tự động quét thông minh từ luồng camera C270 của PC hoặc Camera local)
   useEffect(() => {
     let interval;
-    if (!streamError && videoRef.current) {
-      let consecutiveEmptyFrames = 0;
-      interval = setInterval(async () => {
-        if (isScanningRef.current || qrScanningRef.current || showQrModal) return; // Skip if already processing
+    let consecutiveEmptyFrames = 0;
 
-        const video = videoRef.current;
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-          const nextSig = computeLaneFrameSignature(video, cameraLane, cameraConfigRef.current);
-          const motionDetected = !prevFrameSigRef.current || hasLaneMotionChanged(prevFrameSigRef.current, nextSig);
-          const heartbeatDue = Date.now() - lastAiScanAtRef.current >= 4000;
-          if (!motionDetected && !heartbeatDue) return;
+    interval = setInterval(async () => {
+      if (isScanningRef.current || qrScanningRef.current || showQrModal) return;
 
-          prevFrameSigRef.current = nextSig;
-          lastAiScanAtRef.current = Date.now();
-          isScanningRef.current = true;
-          // Only show scanning state when motion is detected so silent 4s heartbeats don't flash the UI
-          if (motionDetected) {
-            setIsScanning(true);
-          }
+      const currentRemoteFrame = remoteFrameRef.current;
+      const video = videoRef.current;
+      const hasLocalVideo = !streamError && video && video.readyState === video.HAVE_ENOUGH_DATA;
+
+      // Nếu không có cả ảnh từ PC lẫn camera local thì bỏ qua
+      if (!currentRemoteFrame && !hasLocalVideo) return;
+
+      const now = Date.now();
+      const heartbeatDue = now - lastAiScanAtRef.current >= 2000; // Mỗi 2 giây kiểm tra AI
+      if (!heartbeatDue) return;
+
+      lastAiScanAtRef.current = now;
+      isScanningRef.current = true;
+      setIsScanning(true);
+
+      try {
+        let result = null;
+        // 1. Ưu tiên quét trực tiếp trên frame live truyền từ webcam C270 của PC
+        if (currentRemoteFrame) {
           try {
-            const result = await captureAndAnalyze();
-            if (result && result.plate) {
-              const cleaned = result.plate.replace(/[^A-Z0-9]/g, '');
-              const formatted = formatVietnamesePlate(cleaned) || cleaned;
-
-              if (formatted) {
-                consecutiveEmptyFrames = 0;
-                setRecognizedText(formatted);
-                const recentlyFailedSamePlate =
-                  lastErrorPlateAtRef.current.plate === formatted &&
-                  Date.now() - lastErrorPlateAtRef.current.at < 10000;
-                if (formatted !== lastScannedPlateRef.current && !recentlyFailedSamePlate) {
-                  lastScannedPlateRef.current = formatted;
-                  await handlePlateDetected(formatted, result.imageBase64);
-                }
-              }
-            } else {
-              consecutiveEmptyFrames += 1;
-              // Require 2 consecutive empty frames before resetting so a single missed OCR frame doesn't flicker
-              if (consecutiveEmptyFrames >= 2) {
-                try {
-                  const ch = new BroadcastChannel('valo_gate_channel');
-                  ch.postMessage({
-                    type: 'VEHICLE_CLEARED',
-                    gate: targetGate || 'EXIT_1',
-                    reason: 'NO_VEHICLE_DETECTED',
-                  });
-                  ch.close();
-                } catch (_) { }
-
-                fetch(`${API_BASE}/iot/vehicle-detected`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ gate: targetGate || 'EXIT_1', cleared: true, reason: 'NO_VEHICLE_DETECTED' }),
-                }).catch(() => { });
-
-                lastScannedPlateRef.current = null;
-                setRecognizedText('');
-                setErrorMessage('');
-                setAlarmState(false);
-              }
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const response = await fetch(`${API_BASE}/ai/scan-plate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: currentRemoteFrame, lane: 'exit' }),
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            const data = await response.json();
+            const detectedPlate = data.plate || data.licensePlate || data.data?.licensePlate || data.data?.plate;
+            const normalized = normalizeLicensePlate(detectedPlate);
+            if (response.ok && data.success && isLikelyVietnamesePlate(normalized)) {
+              result = { plate: normalized, imageBase64: currentRemoteFrame };
             }
-          } catch (err) {
-            console.error("OCR Error:", err);
-          } finally {
-            isScanningRef.current = false;
-            setIsScanning(false);
+          } catch (e) {
+            console.warn('[KioskOut] AI scan on remote frame error:', e?.message);
           }
         }
-      }, 1000); // Scan every 1 second to prevent UI stuttering
-    }
+
+        // 2. Nếu không có remote frame thì fallback quét camera local
+        if (!result && hasLocalVideo) {
+          result = await captureAndAnalyze();
+        }
+
+        if (result && result.plate) {
+          const cleaned = result.plate.replace(/[^A-Z0-9]/g, '');
+          const formatted = formatVietnamesePlate(cleaned) || cleaned;
+
+          if (formatted) {
+            consecutiveEmptyFrames = 0;
+            setRecognizedText(formatted);
+            const recentlyFailedSamePlate =
+              lastErrorPlateAtRef.current.plate === formatted &&
+              Date.now() - lastErrorPlateAtRef.current.at < 8000;
+            if (formatted !== lastScannedPlateRef.current && !recentlyFailedSamePlate) {
+              lastScannedPlateRef.current = formatted;
+              await handlePlateDetected(formatted, result.imageBase64);
+            }
+          }
+        } else {
+          consecutiveEmptyFrames += 1;
+          if (consecutiveEmptyFrames >= 3) {
+            try {
+              const ch = new BroadcastChannel('valo_gate_channel');
+              ch.postMessage({
+                type: 'VEHICLE_CLEARED',
+                gate: targetGate || 'EXIT_1',
+                reason: 'NO_VEHICLE_DETECTED',
+              });
+              ch.close();
+            } catch (_) { }
+
+            fetch(`${API_BASE}/iot/vehicle-detected`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ gate: targetGate || 'EXIT_1', cleared: true, reason: 'NO_VEHICLE_DETECTED' }),
+            }).catch(() => { });
+
+            lastScannedPlateRef.current = null;
+            setRecognizedText('');
+            setErrorMessage('');
+            setAlarmState(false);
+          }
+        }
+      } catch (err) {
+        console.error("KioskOut OCR Loop Error:", err);
+      } finally {
+        isScanningRef.current = false;
+        setIsScanning(false);
+      }
+    }, 1000);
 
     return () => {
       if (interval) clearInterval(interval);
     };
-    // Scanner loop intentionally captures the current handlers for this mounted camera session.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamError, showQrModal]);
+  }, [streamError, targetGate, cameraLane, showQrModal]);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-br from-[#151e34] via-[#0f172a] to-[#131b2e] overflow-hidden px-6 py-8 lg:px-12 text-white select-none">
