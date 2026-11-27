@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import { API_BASE } from '../../services/api';
@@ -23,6 +24,7 @@ const resolveZoneLabel = (slotRecord, slotCode) => {
 };
 
 export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete, successSession, targetGate = 'ENTRY_1', basePath = '/kiosk' }) {
+  const navigate = useNavigate();
   const socket = useSocket();
   const [issuedSession, setIssuedSession] = useState(successSession);
   const [status, setStatus] = useState(successSession ? 'ready' : 'checking-in');
@@ -53,9 +55,9 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     } catch (e) {
       console.error(e);
     } finally {
-      window.location.replace(basePath || '/kiosk');
+      navigate(basePath || '/kiosk', { replace: true });
     }
-  }, [basePath]);
+  }, [basePath, navigate]);
 
   // Màn hình tự động quay trở lại màn hình chính khi xe đi qua barrier hoặc staff đóng cổng
   useEffect(() => {
@@ -68,8 +70,12 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         hasSeenOpenRef.current = true;
         return;
       }
-      // Xe đã qua cổng và barrier đã đóng xuống -> lập tức quay về màn hình ban đầu
-      returnToStart();
+      const closedAfterMount = Boolean(gateData.forceClose)
+        && Number(gateData.timestamp || 0) >= mountTimeRef.current;
+      if (hasSeenOpenRef.current || closedAfterMount) {
+        // Xe đã qua cổng và barrier đã đóng xuống -> lập tức quay về màn hình ban đầu
+        returnToStart();
+      }
     };
 
     // 1. Kiểm tra trạng thái đóng của Barrier qua Polling

@@ -9,11 +9,11 @@ export default function KioskStep3({ formData, onConfirm, onBack, onAutoCheckIn,
   const hasPolicyContext = Boolean(formData.licensePlate && formData.selectedSlot && formData.floorId);
   const hasFastPassContext = Boolean(formData.licensePlate && formData.selectedSlot && formData.floorId);
 
-  if (isFastPassMode && !hasFastPassContext) {
+  if (isFastPassMode && !hasFastPassContext && !successSession) {
     return <Navigate to={basePath || '/kiosk'} replace />;
   }
 
-  if (!isFastPassMode && !hasPolicyContext) {
+  if (!isFastPassMode && !hasPolicyContext && !successSession) {
     return <Navigate to={basePath || '/kiosk'} replace />;
   }
 

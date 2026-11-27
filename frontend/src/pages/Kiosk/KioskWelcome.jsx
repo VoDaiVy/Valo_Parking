@@ -171,14 +171,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   // Lắng nghe luồng ảnh trực tiếp từ webcam C270 của PC qua Socket
   useEffect(() => {
     if (!socket) return;
+    const expectedLane = targetGate === 'EXIT_1' ? 'exit' : 'entry';
     const handleRemoteFrame = (data) => {
-      if (data?.lane === 'entry' && data?.frameBase64) {
+      if (data?.lane === expectedLane && data?.frameBase64) {
         setRemoteFrame(data.frameBase64);
       }
     };
     socket.on('gate:live_frame', handleRemoteFrame);
     return () => socket.off('gate:live_frame', handleRemoteFrame);
-  }, [socket]);
+  }, [socket, targetGate]);
 
   useEffect(() => {
     let isMounted = true;
