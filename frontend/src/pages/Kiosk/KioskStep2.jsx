@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
-import { AlertCircle, ArrowRight, CarFront, CreditCard, X } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { AlertCircle, ArrowRight, CarFront, CreditCard, Loader2, X } from 'lucide-react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import { API_BASE } from '../../services/api';
-import { getAvailableBookingSlots, getActiveHolds } from '../../services/bookingService';
+import { getAvailableBookingSlots, getActiveHolds, createBookingHold, releaseBookingHold } from '../../services/bookingService';
+import { useSocket } from '../../hooks/useSocket';
 
 export default function KioskStep2({ formData, updateFormData, onNext, onBack, isHoldingSlot = false }) {
+  const socket = useSocket();
   const [floors, setFloors] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [currentFloorId, setCurrentFloorId] = useState(null);
@@ -13,10 +15,91 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
   const [dbSlots, setDbSlots] = useState([]);
   const [availableSlots, setAvailableSlots] = useState(null);
   const [activeHolds, setActiveHolds] = useState([]);
-  const [checkingSlots, setCheckingSlots] = useState(false);
+  const [isLockingSlot, setIsLockingSlot] = useState(false);
+  const holdPromiseRef = useRef(null);
+  const isLockingSlotRef = useRef(false);
 
   const bookingMode = formData.bookingMode || 'hourly';
   const [pricingConfig, setPricingConfig] = useState(null);
+
+  // Phát sóng sự kiện Hold ô đỗ realtime qua BroadcastChannel (nội bộ thiết bị) và Socket.IO (toàn mạng)
+  const broadcastHoldEvent = useCallback((payload) => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const ch = new BroadcastChannel('valo_slot_holds');
+        ch.postMessage(payload);
+        ch.close();
+      } catch (_) { }
+    }
+    if (socket) {
+      socket.emit('kiosk:slot_hold_changed', payload);
+    }
+  }, [socket]);
+
+  // Lắng nghe realtime các sự kiện Hold và Release từ Kiosk khác
+  useEffect(() => {
+    const handleRemoteHoldCreated = (data) => {
+      if (!data?.slotCode) return;
+      setActiveHolds((prev) => {
+        const exists = prev.some(
+          h => String(h.floorId) === String(data.floorId) && String(h.slotCode).toUpperCase() === String(data.slotCode).toUpperCase()
+        );
+        if (exists) return prev;
+        return [...prev, data];
+      });
+
+      // Nếu Kiosk này đang mở panel của đúng ô này mà không phải do mình hold
+      if (
+        formData.selectedSlot === data.slotCode &&
+        formData.floorId === data.floorId &&
+        formData.bookingHoldSlot !== data.slotCode
+      ) {
+        updateFormData({ selectedSlot: null, floorId: null });
+        setError(`Slot ${data.slotCode} was just selected by another customer.`);
+      }
+    };
+
+    const handleRemoteHoldReleased = (data) => {
+      if (!data?.slotCode && !data?.holdId) return;
+      setActiveHolds((prev) => prev.filter(h =>
+        !(data.floorId && data.slotCode && String(h.floorId) === String(data.floorId) && String(h.slotCode).toUpperCase() === String(data.slotCode).toUpperCase()) &&
+        !(data.holdId && (String(h.holdId) === String(data.holdId) || String(h._id) === String(data.holdId)))
+      ));
+    };
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('valo_slot_holds');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'HOLD_CREATED') {
+            handleRemoteHoldCreated(event.data);
+          } else if (event.data?.type === 'HOLD_RELEASED') {
+            handleRemoteHoldReleased(event.data);
+          }
+        };
+      } catch (_) { }
+    }
+
+    if (socket) {
+      socket.on('booking:hold_created', handleRemoteHoldCreated);
+      socket.on('booking:hold_released', handleRemoteHoldReleased);
+      socket.on('parking:slots_updated', () => {
+        getActiveHolds().then(res => {
+          if (res.ok && res.data?.data) setActiveHolds(res.data.data);
+        }).catch(() => { });
+      });
+    }
+
+    return () => {
+      if (channel) channel.close();
+      if (socket) {
+        socket.off('booking:hold_created', handleRemoteHoldCreated);
+        socket.off('booking:hold_released', handleRemoteHoldReleased);
+        socket.off('parking:slots_updated');
+      }
+    };
+  }, [socket, formData.selectedSlot, formData.floorId, formData.bookingHoldSlot, updateFormData]);
 
   const calculateCurrentHourlyRate = () => {
     if (!pricingConfig || !pricingConfig.timeBlocks) return 10000;
@@ -117,7 +200,6 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
 
   useEffect(() => {
     const fetchAvailable = async () => {
-      setCheckingSlots(true);
       try {
         const effectiveHours = Number(formData.durationHours || (bookingMode === 'daily' ? 24 : 1));
         const startTimeStr = new Date().toISOString();
@@ -139,16 +221,171 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
       } catch (err) {
         console.error('Failed to fetch available slots', err);
         setAvailableSlots([]);
-      } finally {
-        setCheckingSlots(false);
       }
     };
 
     fetchAvailable();
   }, [formData.durationHours, bookingMode]);
 
-  const closePanel = () => {
-    updateFormData({ selectedSlot: null, floorId: null });
+  // Khóa ô đỗ (Hold) NGAY KHI KHÁCH CLICK VÀO Ô ĐỖ trên bản đồ 2D (Optimistic, mượt mà không load đen màn hình)
+  const handleSlotSelect = async (slot, floorId) => {
+    const slotCode = slot?.id || slot;
+    if (!slotCode || !floorId) return;
+
+    // Nếu bấm lại vào đúng ô đang chọn thì không xử lý lại
+    if (formData.selectedSlot === slotCode && formData.floorId === floorId && formData.bookingHoldId) {
+      return;
+    }
+
+    // Kiểm tra nhanh xem ô này có đang bị người khác Hold hoặc Occupied không
+    const isCurrentlyHeld = activeHolds.some(
+      h => String(h.floorId) === String(floorId) && String(h.slotCode).toUpperCase() === String(slotCode).toUpperCase()
+    );
+    if (isCurrentlyHeld && formData.bookingHoldSlot !== slotCode) {
+      setError(`Slot ${slotCode} is currently held by another vehicle. Please choose another slot.`);
+      return;
+    }
+
+    // Hiển thị ngay lập tức panel và ô đã chọn (Optimistic UI - không ngắt quãng màn hình)
+    updateFormData({
+      selectedSlot: slotCode,
+      floorId,
+    });
+    setIsLockingSlot(true);
+    isLockingSlotRef.current = true;
+    setError(null);
+
+    const holdPromise = (async () => {
+      try {
+        // 1. Giải phóng ô hold cũ (nếu có đổi từ ô khác sang)
+        if (formData.bookingHoldId) {
+          const prevPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+          releaseBookingHold(formData.bookingHoldId, {
+            licensePlate: prevPlate,
+            floorId: formData.bookingHoldFloorId,
+            slotCode: formData.bookingHoldSlot,
+          }).catch(() => null);
+
+          broadcastHoldEvent({
+            type: 'HOLD_RELEASED',
+            holdId: formData.bookingHoldId,
+            floorId: formData.bookingHoldFloorId,
+            slotCode: formData.bookingHoldSlot,
+          });
+        }
+
+        // 2. Khóa tạm thời ô mới này NGAY LẬP TỨC trên máy chủ
+        const cleanPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+        const now = new Date();
+        const endTime = new Date(now.getTime() + 60 * 60 * 1000);
+
+        const res = await createBookingHold({
+          floorId,
+          slotCode,
+          licensePlate: cleanPlate,
+          startTime: now.toISOString(),
+          endTime: endTime.toISOString(),
+          ...(formData.isBookingReallocation && formData.bookingId
+            ? { bookingSource: 'KIOSK_REALLOCATION', reallocateBookingId: formData.bookingId }
+            : { bookingSource: 'KIOSK_WALK_IN' }),
+        }, { anonymous: true });
+
+        if (!res.ok) {
+          setError(res.data?.message || `Slot ${slotCode} was just selected by someone else. Please choose another slot!`);
+          updateFormData({
+            selectedSlot: null,
+            floorId: null,
+            bookingHoldId: null,
+            bookingHoldSlot: null,
+            bookingHoldFloorId: null,
+          });
+          const refreshed = await getActiveHolds();
+          if (refreshed.ok && refreshed.data?.data) setActiveHolds(refreshed.data.data);
+          return false;
+        }
+
+        const holdData = res.data?.data;
+        const newHoldId = holdData?._id;
+
+        // 3. Cập nhật state formData với bookingHoldId
+        updateFormData({
+          selectedSlot: slotCode,
+          floorId,
+          bookingHoldId: newHoldId,
+          bookingHoldSlot: slotCode,
+          bookingHoldFloorId: floorId,
+        });
+
+        // 4. Cập nhật ngay lập tức vào activeHolds local & phát sóng realtime cho Kiosk khác
+        const newHoldItem = {
+          holdId: newHoldId,
+          floorId,
+          slotCode,
+          expiresAt: holdData?.expiresAt || new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        };
+        setActiveHolds(prev => [
+          ...prev.filter(h => !(String(h.floorId) === String(floorId) && String(h.slotCode).toUpperCase() === String(slotCode).toUpperCase())),
+          newHoldItem,
+        ]);
+
+        broadcastHoldEvent({
+          type: 'HOLD_CREATED',
+          ...newHoldItem,
+        });
+        setError(null);
+        return true;
+      } catch (err) {
+        console.error('Error holding slot immediately:', err);
+        setError('Failed to hold this slot. Please try another.');
+        return false;
+      } finally {
+        setIsLockingSlot(false);
+        isLockingSlotRef.current = false;
+      }
+    })();
+
+    holdPromiseRef.current = holdPromise;
+  };
+
+  const handleNextStep = async () => {
+    if (isLockingSlotRef.current && holdPromiseRef.current) {
+      setIsLockingSlot(true);
+      const ok = await holdPromiseRef.current;
+      if (!ok) return;
+    }
+    if (formData.selectedSlot) {
+      onNext();
+    }
+  };
+
+  const closePanel = async () => {
+    if (formData.bookingHoldId) {
+      const prevPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+      await releaseBookingHold(formData.bookingHoldId, {
+        licensePlate: prevPlate,
+        floorId: formData.bookingHoldFloorId,
+        slotCode: formData.bookingHoldSlot,
+      }).catch(() => null);
+
+      broadcastHoldEvent({
+        type: 'HOLD_RELEASED',
+        holdId: formData.bookingHoldId,
+        floorId: formData.bookingHoldFloorId,
+        slotCode: formData.bookingHoldSlot,
+      });
+
+      setActiveHolds(prev => prev.filter(h =>
+        !(String(h.floorId) === String(formData.bookingHoldFloorId) && String(h.slotCode).toUpperCase() === String(formData.bookingHoldSlot).toUpperCase()) &&
+        !(String(h.holdId) === String(formData.bookingHoldId) || String(h._id) === String(formData.bookingHoldId))
+      ));
+    }
+    updateFormData({
+      selectedSlot: null,
+      floorId: null,
+      bookingHoldId: null,
+      bookingHoldSlot: null,
+      bookingHoldFloorId: null,
+    });
   };
 
   return (
@@ -170,6 +407,12 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                 </button>
               ))}
             </div>
+            {error && floors.length > 0 && (
+              <div className="bg-red-950/90 backdrop-blur border border-red-500/50 text-red-200 px-5 py-2 rounded-2xl text-xs font-semibold shadow-lg max-w-xl text-center pointer-events-auto flex items-center justify-center gap-2">
+                <AlertCircle size={16} className="text-red-400 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
             {(formData.isVipReallocation || formData.isBookingReallocation || formData.quotaExhausted || formData.upcomingBookingTooEarly) && (
               <div className="bg-[#181c23]/95 backdrop-blur border border-amber-400/40 text-amber-200 px-5 py-2 rounded-2xl text-xs font-semibold shadow-lg max-w-2xl text-center pointer-events-auto">
                 {formData.isVipReallocation && (
@@ -188,12 +431,12 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
             )}
           </div>
 
-          {loading || checkingSlots ? (
+          {loading && floors.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center z-10 bg-[#0b0e16]/80 backdrop-blur-sm absolute inset-0">
               <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <div className="text-cyan-400 font-bold text-xl tracking-widest">{checkingSlots ? 'CHECKING SLOTS...' : 'LOADING MAP...'}</div>
+              <div className="text-cyan-400 font-bold text-xl tracking-widest">LOADING MAP...</div>
             </div>
-          ) : error ? (
+          ) : error && floors.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-red-400 gap-4 z-10">
               <AlertCircle size={48} />
               <div className="font-bold">{error}</div>
@@ -208,7 +451,7 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
               availableSlots={availableSlots}
               activeHolds={activeHolds}
               selectedSlotId={formData.selectedSlot}
-              onSelectSlot={(slot, floorId) => updateFormData({ selectedSlot: slot.id, floorId })}
+              onSelectSlot={handleSlotSelect}
               is2DMode={true}
               hideUI={true}
               theme="dark"
@@ -250,15 +493,10 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
           </div>
         </div>
 
-        <div
-          className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-500 z-40 rounded-[32px]
-        ${formData.selectedSlot ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-          onClick={closePanel}
-        ></div>
-
+        {/* Side panel drawer for Booking Details - slides in smoothly without blackening the map */}
         <div className="absolute top-0 right-0 h-full z-50 overflow-hidden rounded-r-[32px] pointer-events-none">
           <div
-            className={`relative w-[400px] h-full bg-white shadow-[-20px_0_40px_rgba(0,0,0,0.15)] flex flex-col transition-transform duration-500 ease-out pointer-events-auto
+            className={`relative w-[380px] sm:w-[400px] h-full bg-white/95 backdrop-blur-md shadow-[-20px_0_40px_rgba(0,0,0,0.25)] border-l border-gray-100 flex flex-col transition-transform duration-300 ease-out pointer-events-auto
           ${formData.selectedSlot ? 'translate-x-0' : 'translate-x-full'}`}
           >
             <div className="flex justify-between items-center p-6 border-b border-gray-100">
@@ -359,15 +597,24 @@ export default function KioskStep2({ formData, updateFormData, onNext, onBack, i
                     Back
                   </button>
                   <button
-                    onClick={onNext}
+                    onClick={handleNextStep}
                     disabled={!formData.selectedSlot || isHoldingSlot}
                     className={`flex-[2] flex items-center justify-center gap-2 text-lg font-bold py-4 rounded-2xl transition-all ${!formData.selectedSlot || isHoldingSlot
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-[#FFDF00] text-[#0f172a] hover:bg-[#e6c800] shadow-[0_8px_20px_rgba(255,223,0,0.3)] active:scale-95'
                       }`}
                   >
-                    {isHoldingSlot ? 'Holding Slot...' : 'Next Step'}
-                    {!isHoldingSlot && <ArrowRight size={20} strokeWidth={3} />}
+                    {isHoldingSlot || isLockingSlot ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 size={20} className="animate-spin text-gray-700" />
+                        Please wait...
+                      </span>
+                    ) : (
+                      <>
+                        <span>Next Step</span>
+                        <ArrowRight size={20} strokeWidth={3} />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

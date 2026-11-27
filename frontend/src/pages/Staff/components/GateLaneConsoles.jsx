@@ -624,13 +624,12 @@ export function ExitLaneConsole({
           {/* 1. Header Bar: Status & Identity */}
           <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border ${
-                ctrl.statusInfo?.sessionType === 'VIP' || ctrl.invoiceData.isMonthly
-                  ? 'bg-purple-500/20 text-purple-300 border-purple-400/40'
-                  : ctrl.statusInfo?.sessionType === 'BOOKING' || ctrl.invoiceData.session?.type === 'BOOKING'
-                    ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-              }`}>
+              <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border ${ctrl.statusInfo?.sessionType === 'VIP' || ctrl.invoiceData.isMonthly
+                ? 'bg-purple-500/20 text-purple-300 border-purple-400/40'
+                : ctrl.statusInfo?.sessionType === 'BOOKING' || ctrl.invoiceData.session?.type === 'BOOKING'
+                  ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                }`}>
                 {ctrl.statusInfo?.sessionType === 'VIP' || ctrl.invoiceData.isMonthly
                   ? 'VIP Pass'
                   : ctrl.statusInfo?.sessionType === 'BOOKING' || ctrl.invoiceData.session?.type === 'BOOKING'
@@ -644,11 +643,10 @@ export function ExitLaneConsole({
                 </span>
               )}
 
-              <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${
-                ctrl.invoiceData.violationDetails || ctrl.statusInfo?.violations?.hasViolations
-                  ? 'bg-red-500/20 text-red-300 border-red-400/40'
-                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-              }`}>
+              <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${ctrl.invoiceData.violationDetails || ctrl.statusInfo?.violations?.hasViolations
+                ? 'bg-red-500/20 text-red-300 border-red-400/40'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                }`}>
                 {ctrl.invoiceData.violationDetails || ctrl.statusInfo?.violations?.hasViolations ? (
                   <><AlertTriangle size={10} /> Violation Detected</>
                 ) : (
@@ -862,11 +860,10 @@ export function ExitLaneConsole({
                   <button
                     type="button"
                     onClick={() => ctrl.setCashReceivedAmount(String(ctrl.invoiceData.totalAmount))}
-                    className={`shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-bold transition border ${
-                      Number(ctrl.cashReceivedAmount) === Number(ctrl.invoiceData.totalAmount)
-                        ? 'bg-amber-400 text-black border-amber-400'
-                        : 'bg-amber-400/10 text-amber-300 border-amber-400/30 hover:bg-amber-400/20'
-                    }`}
+                    className={`shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-bold transition border cursor-pointer active:scale-95 ${Number(ctrl.cashReceivedAmount) === Number(ctrl.invoiceData.totalAmount)
+                      ? 'bg-amber-400 text-black border-amber-400'
+                      : 'bg-amber-400/10 text-amber-300 border-amber-400/30 hover:bg-amber-400/20'
+                      }`}
                   >
                     Exact ({formatShortCurrency(ctrl.invoiceData.totalAmount)})
                   </button>
@@ -876,11 +873,10 @@ export function ExitLaneConsole({
                       key={val}
                       type="button"
                       onClick={() => ctrl.setCashReceivedAmount(String(val))}
-                      className={`shrink-0 rounded-lg px-1.5 py-1.5 text-[10px] font-mono font-medium transition border ${
-                        Number(ctrl.cashReceivedAmount) === val
-                          ? 'bg-amber-400 text-black border-amber-400 font-bold'
-                          : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
-                      }`}
+                      className={`shrink-0 rounded-lg px-1.5 py-1.5 text-[10px] font-mono font-medium transition border cursor-pointer active:scale-95 ${Number(ctrl.cashReceivedAmount) === val
+                        ? 'bg-amber-400 text-black border-amber-400 font-bold'
+                        : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                        }`}
                     >
                       {formatShortCurrency(val)}
                     </button>
@@ -990,7 +986,7 @@ export function ExitLaneConsole({
                 || !ctrl.invoiceData
                 || (Number(ctrl.invoiceData.totalAmount || 0) > 0
                   && !ctrl.invoiceData.canAutoPay
-                  && Number(ctrl.cashReceivedAmount) < Number(ctrl.invoiceData.totalAmount))
+                  && Number(ctrl.cashReceivedAmount || ctrl.invoiceData.totalAmount) < Number(ctrl.invoiceData.totalAmount))
               }
               className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-3 text-xs font-black text-black hover:brightness-110 disabled:opacity-50 transition shadow-lg shadow-sky-500/20 active:scale-95 cursor-pointer"
             >
