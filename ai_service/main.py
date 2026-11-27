@@ -1727,16 +1727,21 @@ def scan_license_plate(request: ScanRequest):
         h_orig, w_orig = img.shape[:2]
         lane_mode = (request.lane or "").strip().lower()
 
-        if lane_mode == "exit":
-            # Làn ra nằm nửa bên trái, xe đi từ trong ra ngoài nên biển số bị ngược 180°
+        # Nếu ảnh đã được frontend crop theo từng trạm (w <= h * 1.35),
+        # KHÔNG crop đôi thêm lần nào nữa! Luôn quét cả ảnh gốc và ảnh xoay 180°.
+        is_already_cropped = w_orig <= int(h_orig * 1.35)
+
+        if not is_already_cropped and lane_mode == "exit":
+            # Làn ra nằm nửa bên trái trên khung toàn cảnh
             roi = img[:, :max(1, w_orig // 2)]
             orientations = [cv2.rotate(roi, cv2.ROTATE_180), roi]
-        elif lane_mode == "entry":
-            # Làn vào nằm nửa bên phải, xe đi từ ngoài vào trong nên biển số xuôi chiều
+        elif not is_already_cropped and lane_mode == "entry":
+            # Làn vào nằm nửa bên phải trên khung toàn cảnh
             roi = img[:, w_orig // 2:]
             orientations = [roi, cv2.rotate(roi, cv2.ROTATE_180)]
         else:
-            orientations = [img]
+            # Đã cắt đúng trạm (Staff stream): Thử cả 0° và 180° để nhận diện mọi chiều xe
+            orientations = [img, cv2.rotate(img, cv2.ROTATE_180)]
 
         cleaned_plate = None
         raw_text = ""

@@ -49,6 +49,107 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const fastPassKeyRef = useRef({ plate: '', key: '' });
+  const lastScannedPlateRef = useRef(null);
+  const isScanningLoopRef = useRef(false);
+  const lastAiScanAtRef = useRef(0);
+  const [autoScanEnabled, setAutoScanEnabled] = useState(() => localStorage.getItem('valo_auto_scan') !== 'false');
+
+  // Lắng nghe đồng bộ trạng thái Auto-Scan từ Staff qua Socket và BroadcastChannel
+  useEffect(() => {
+    const handleAutoScanChange = (data) => {
+      if (typeof data?.enabled === 'boolean') {
+        setAutoScanEnabled(data.enabled);
+        localStorage.setItem('valo_auto_scan', String(data.enabled));
+      }
+    };
+
+    if (socket) {
+      socket.on('gate:auto_scan_status', handleAutoScanChange);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('valo_gate_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'AUTO_SCAN_CHANGED' && event.data?.payload) {
+            handleAutoScanChange(event.data.payload);
+          }
+        };
+      } catch (_) { }
+    }
+
+    return () => {
+      if (socket) socket.off('gate:auto_scan_status', handleAutoScanChange);
+      if (channel) channel.close();
+    };
+  }, [socket]);
+
+  // Vòng lặp tự động nhận diện xe khi xe tiến tới cổng (Autonomous AI Scan Loop)
+  // Tương tự 100% như màn hình kiosk-out, xe tới cổng là tự quét và chuyển màn hình
+  useEffect(() => {
+    let interval;
+    interval = setInterval(async () => {
+      if (!autoScanEnabled || isScanningLoopRef.current || isScanning || showFullModal || showAlreadyInsideModal) return;
+
+      const currentRemoteFrame = remoteFrameRef.current;
+      if (!currentRemoteFrame) return;
+
+      const now = Date.now();
+      const heartbeatDue = now - lastAiScanAtRef.current >= 2000;
+      if (!heartbeatDue) return;
+
+      lastAiScanAtRef.current = now;
+      isScanningLoopRef.current = true;
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const response = await fetch(`${API_BASE}/ai/scan-plate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: currentRemoteFrame }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const data = await response.json();
+        const detectedPlate = data?.data?.licensePlate || data?.data?.plate || data?.plate;
+        const normalized = normalizeLicensePlate(detectedPlate);
+
+        if (response.ok && data.success && isLikelyVietnamesePlate(normalized)) {
+          const cleaned = normalized.replace(/[^A-Z0-9]/g, '');
+          const formatted = formatVietnamesePlate(cleaned) || cleaned;
+
+          if (formatted && formatted !== lastScannedPlateRef.current) {
+            lastScannedPlateRef.current = formatted;
+            setIsScanning(true);
+            setScanMessage('Verifying plate...');
+
+            const checkFullRes = await fetch(`${API_BASE}/sessions/check-full`).then(r => r.json()).catch(() => ({}));
+            if (checkFullRes.success && checkFullRes.data?.isFull) {
+              isParkingFullRef.current = true;
+              setShowFullModal(true);
+              setIsScanning(false);
+              return;
+            }
+
+            const handled = await verifyScannedPlate({ plate: formatted, imageBase64: currentRemoteFrame });
+            setIsScanning(false);
+            if (handled) return;
+            onStart(1);
+          }
+        }
+      } catch (err) {
+        console.warn('[Kiosk Entry Auto-Scan Loop] Error:', err?.message);
+      } finally {
+        isScanningLoopRef.current = false;
+      }
+    }, 1000);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoScanEnabled, isScanning, showFullModal, showAlreadyInsideModal, onStart]);
 
   const getFastPassKey = (plate) => {
     if (fastPassKeyRef.current.plate !== plate) {
@@ -517,9 +618,9 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     // 1. Quét trực tiếp từ ảnh camera C270 máy chủ (live frame truyền qua Socket)
     let candidateFrame = remoteFrameRef.current || remoteFrame;
 
-    // Chờ tối đa 1.5 giây để nhận frame mới nhất từ Camera C270 máy chủ nếu chưa có
+    // Chờ tối đa 2 giây để nhận frame mới nhất từ Camera C270 máy chủ nếu chưa có
     if (!candidateFrame) {
-      for (let w = 0; w < 15; w++) {
+      for (let w = 0; w < 20; w++) {
         await wait(100);
         candidateFrame = remoteFrameRef.current || remoteFrame;
         if (candidateFrame) break;
@@ -527,37 +628,42 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     }
 
     if (candidateFrame) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
-        const response = await fetch(`${API_BASE}/ai/scan-plate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: candidateFrame, lane: targetGate === 'EXIT_1' ? 'exit' : 'entry' }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        const data = await response.json();
-        const rawPlate = data?.data?.licensePlate || data?.data?.plate || data?.plate;
-        if (data.success && rawPlate) {
-          const normalized = normalizeLicensePlate(rawPlate);
-          const handled = await verifyScannedPlate({ plate: normalized, imageBase64: candidateFrame });
-          setIsScanning(false);
-          if (handled) return;
-          await checkFullPromise;
-          if (isParkingFullRef.current) {
-            setShowFullModal(true);
+      // Thực hiện tối đa 3 lần quét nhanh (cách nhau 250ms) nếu lần đầu xe đang tiến vào chưa lấy nét kịp
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const frameToScan = remoteFrameRef.current || candidateFrame;
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
+          const response = await fetch(`${API_BASE}/ai/scan-plate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: frameToScan }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          const data = await response.json();
+          const rawPlate = data?.data?.licensePlate || data?.data?.plate || data?.plate;
+          if (data.success && rawPlate) {
+            const normalized = normalizeLicensePlate(rawPlate);
+            const handled = await verifyScannedPlate({ plate: normalized, imageBase64: frameToScan });
+            setIsScanning(false);
+            if (handled) return;
+            await checkFullPromise;
+            if (isParkingFullRef.current) {
+              setShowFullModal(true);
+              return;
+            }
+            onStart(1);
             return;
           }
-          onStart(1);
-          return;
+        } catch (err) {
+          console.warn(`[Kiosk scan] Remote frame AI scan error (attempt ${attempt + 1}):`, err?.message);
         }
-      } catch (err) {
-        console.warn('[Kiosk scan] Remote frame AI scan error:', err?.message);
+        await wait(250);
       }
     }
 
-    // Nếu camera C270 chưa quét ra biển số, chuyển sang Step 1 để khách nhập tay
+    // Nếu sau 3 lần quét vẫn chưa đọc được biển số, chuyển sang Step 1 để khách nhập tay
     setIsScanning(false);
     await checkFullPromise;
     if (isParkingFullRef.current) {
