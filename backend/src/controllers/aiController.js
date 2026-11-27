@@ -82,7 +82,14 @@ exports.scanPlate = async (req, res, next) => {
         const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const fallbackModels = ['gemini-2.5-flash', 'gemini-3.5-flash-lite'];
+        const fallbackModels = [
+          'gemini-1.5-flash',
+          'gemini-1.5-flash-latest',
+          'gemini-1.5-pro',
+          'gemini-2.0-flash',
+          'gemini-2.5-flash',
+          'gemini-3.5-flash-lite'
+        ];
 
         for (const modelName of fallbackModels) {
           try {
