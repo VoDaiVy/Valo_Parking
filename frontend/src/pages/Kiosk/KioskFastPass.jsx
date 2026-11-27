@@ -60,18 +60,6 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
   // Màn hình tự động quay trở lại màn hình chính khi xe đi qua barrier hoặc staff đóng cổng
   useEffect(() => {
     mountTimeRef.current = Date.now();
-    let returnTimerId = null;
-
-    const scheduleReturn = () => {
-      if (returnTimerId || isRedirectingRef.current) return;
-      const elapsed = Date.now() - mountTimeRef.current;
-      const delay = Math.max(0, 1500 - elapsed);
-      if (delay === 0) {
-        returnToStart();
-      } else {
-        returnTimerId = setTimeout(returnToStart, delay);
-      }
-    };
 
     const target = targetGate || 'ENTRY_1';
     const processGateState = (gateData) => {
@@ -80,11 +68,8 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
         hasSeenOpenRef.current = true;
         return;
       }
-      const closedAfterMount = Boolean(gateData.forceClose)
-        && Number(gateData.timestamp || 0) >= mountTimeRef.current;
-      if (hasSeenOpenRef.current || closedAfterMount) {
-        scheduleReturn();
-      }
+      // Xe đã qua cổng và barrier đã đóng xuống -> lập tức quay về màn hình ban đầu
+      returnToStart();
     };
 
     // 1. Kiểm tra trạng thái đóng của Barrier qua Polling
@@ -123,12 +108,11 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     return () => {
       clearInterval(interval);
       clearTimeout(maxTimeoutTimer);
-      if (returnTimerId) clearTimeout(returnTimerId);
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }
     };
-  }, [socket, returnToStart]);
+  }, [socket, returnToStart, targetGate]);
 
   useEffect(() => {
     if (successSession) {
