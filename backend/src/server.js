@@ -109,6 +109,14 @@ const startServer = async () => {
     // Attach io to app so controllers/services can access it
     app.set('io', io);
 
+    // Lắng nghe stream frame trực tiếp qua Socket từ PC sang Kiosk tablet (siêu nhẹ, không tốn HTTP overhead)
+    io.on('connection', (socket) => {
+      socket.on('gate:stream_frame', (data) => {
+        // Broadcast frame này ngay lập tức cho các tablet đang kết nối
+        socket.broadcast.emit('gate:live_frame', data);
+      });
+    });
+
     // Setup notification socket handlers
     const { onlineUsers } = setupNotificationSocket(io);
     app.set('onlineUsers', onlineUsers);

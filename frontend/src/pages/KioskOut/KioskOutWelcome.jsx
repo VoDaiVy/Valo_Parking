@@ -3,6 +3,7 @@ import { Camera, ScanLine, AlertCircle, QrCode } from 'lucide-react';
 import valoLogo from '../../assets/images/Kiosk/ValoExitLogo.png';
 import KioskQrScannerModal from '../Kiosk/KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
 import {
@@ -22,9 +23,11 @@ const isLikelyVietnamesePlate = (plate) => {
 };
 
 export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }) {
+  const socket = useSocket();
   const cameraLane = targetGate === 'ENTRY_1' ? 'entry' : 'exit';
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const [remoteFrame, setRemoteFrame] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const isScanningRef = useRef(false);
   const [streamError, setStreamError] = useState(false);
@@ -37,6 +40,19 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
   const cameraConfigRef = useRef(cameraConfig);
   const prevFrameSigRef = useRef(null);
   const lastAiScanAtRef = useRef(0);
+
+  // Lắng nghe luồng ảnh trực tiếp từ webcam C270 cắm trên PC
+  useEffect(() => {
+    if (!socket) return;
+    const handleRemoteFrame = (data) => {
+      if (data?.lane === cameraLane && data?.frameBase64) {
+        setRemoteFrame(data.frameBase64);
+        setStreamError(false);
+      }
+    };
+    socket.on('gate:live_frame', handleRemoteFrame);
+    return () => socket.off('gate:live_frame', handleRemoteFrame);
+  }, [socket, cameraLane]);
 
   useEffect(() => {
     cameraConfigRef.current = cameraConfig;
@@ -104,7 +120,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
         },
       });
       ch.close();
-    } catch (_) {}
+    } catch (_) { }
 
     // 2. Notify backend IoT
     fetch(`${API_BASE}/iot/vehicle-detected`, {
@@ -117,7 +133,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
         exitImageBase64: imageBase64,
         vehicleModelInfo: 'Vehicle at Exit Gate',
       }),
-    }).catch(() => {});
+    }).catch(() => { });
 
     try {
       const res = await fetch(`${API_BASE}/sessions/kiosk-exit-scan`, {
@@ -152,7 +168,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
             },
           });
           ch.close();
-        } catch (_) {}
+        } catch (_) { }
         onScanSuccess(data.data, imageBase64);
       } else {
         lastErrorPlateAtRef.current = { plate, at: Date.now() };
@@ -185,7 +201,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
             },
           });
           ch.close();
-        } catch (_) {}
+        } catch (_) { }
         console.warn(data.message);
       }
     } catch (err) {
@@ -324,13 +340,13 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
                     reason: 'NO_VEHICLE_DETECTED',
                   });
                   ch.close();
-                } catch (_) {}
+                } catch (_) { }
 
                 fetch(`${API_BASE}/iot/vehicle-detected`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ gate: targetGate || 'EXIT_1', cleared: true, reason: 'NO_VEHICLE_DETECTED' }),
-                }).catch(() => {});
+                }).catch(() => { });
 
                 lastScannedPlateRef.current = null;
                 setRecognizedText('');
@@ -401,7 +417,38 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
         <div className="lg:col-span-6 flex flex-col items-center">
           <div className="relative w-full max-w-[580px] rounded-[36px] p-[1.5px] bg-gradient-to-br from-white/40 via-amber-300/45 to-sky-300/25 shadow-[0_28px_80px_rgba(15,23,42,0.75),0_0_50px_rgba(250,204,21,0.12)]">
             <div className="relative w-full aspect-[4/3.6] rounded-[34px] overflow-hidden bg-slate-900 flex items-center justify-center">
-              {streamError ? (
+              {remoteFrame ? (
+                <div className="relative w-full h-full">
+                  <img
+                    src={remoteFrame}
+                    alt="Exit Lane Live Feed"
+                    className="w-full h-full object-cover brightness-[1.04] contrast-[1.03]"
+                  />
+                  {/* Minimal Top HUD */}
+                  <div className="pointer-events-none absolute top-4 left-4 right-4 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 rounded-full bg-slate-950/60 backdrop-blur-md border border-white/25 px-4 py-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="text-[11px] font-bold tracking-[0.18em] text-white uppercase">
+                        Station Live (C270)
+                      </span>
+                    </div>
+                    <div className="rounded-full bg-slate-950/60 backdrop-blur-md border border-white/20 px-3.5 py-1.5">
+                      <span className={`text-[11px] font-mono font-bold tracking-widest uppercase ${isScanning ? 'text-amber-300' : 'text-slate-100'}`}>
+                        {isScanning ? 'Scanning' : 'AI Ready'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Clean Corner Reticle & Laser Beam */}
+                  <div className="pointer-events-none absolute top-18 bottom-8 inset-x-6 rounded-2xl overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-[2.5px] bg-gradient-to-r from-transparent via-amber-300 to-transparent shadow-[0_0_18px_3px_rgba(253,224,71,0.85)] animate-scan" />
+                    <div className="absolute top-0 left-0 w-7 h-7 border-t-[3px] border-l-[3px] border-amber-300 rounded-tl-xl" />
+                    <div className="absolute top-0 right-0 w-7 h-7 border-t-[3px] border-r-[3px] border-amber-300 rounded-tr-xl" />
+                    <div className="absolute bottom-0 left-0 w-7 h-7 border-b-[3px] border-l-[3px] border-amber-300 rounded-bl-xl" />
+                    <div className="absolute bottom-0 right-0 w-7 h-7 border-b-[3px] border-r-[3px] border-amber-300 rounded-br-xl" />
+                  </div>
+                </div>
+              ) : streamError ? (
                 <div className="flex flex-col items-center justify-center text-amber-200 p-6 text-center">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-300 mb-4 animate-pulse">
                     <ScanLine size={36} />
