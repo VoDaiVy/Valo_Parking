@@ -51,6 +51,9 @@ exports.scanPlate = async (req, res, next) => {
         image: base64Data,
         ...(normalizedLane ? { lane: normalizedLane } : {}),
       }, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
         timeout: 10000 // Allow enough time when multiple lanes scan concurrently
       });
 
@@ -85,7 +88,8 @@ exports.scanPlate = async (req, res, next) => {
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const fallbackModels = [
-          'gemini-2.0-flash',
+          'gemini-2.5-flash',
+          'gemini-1.5-flash',
         ];
 
         for (const modelName of fallbackModels) {

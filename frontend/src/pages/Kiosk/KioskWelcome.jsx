@@ -519,6 +519,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
   };
 
   const handleStart = async (isAuto = false) => {
+    const isAutoScan = isAuto === true;
     if (isScanningRef.current) return;
     isScanningRef.current = true;
     setIsScanning(true);
@@ -545,6 +546,13 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           candidateFrame = remoteFrameRef.current || remoteFrame;
           if (candidateFrame) break;
         }
+      }
+
+      // Fallback sang camera local nếu máy chủ chưa stream frame (ví dụ test trực tiếp trên deploy)
+      if (!candidateFrame && videoRef.current?.videoWidth) {
+        try {
+          candidateFrame = await buildScanImageBase64();
+        } catch (_) {}
       }
 
       if (candidateFrame) {
@@ -591,7 +599,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         setShowFullModal(true);
         return;
       }
-      if (!isAuto) {
+      if (!isAutoScan) {
         onStart(1);
       }
     } finally {
@@ -814,7 +822,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         </div>
 
         <button
-          onClick={handleStart}
+          onClick={() => handleStart(false)}
           disabled={isScanning}
           className="mt-12 bg-[#FFEB00] hover:bg-[#FFE000] text-[#0f172a] font-black text-3xl px-16 py-6 rounded-full flex items-center gap-4 transition-all shadow-[0_15px_30px_rgba(255,235,0,0.4)] border border-[#F2D600] group min-w-[400px] justify-center hover:shadow-[0_20px_40px_rgba(255,235,0,0.6)] active:scale-95 active:shadow-md cursor-pointer"
         >
