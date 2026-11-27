@@ -447,7 +447,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
     if (!data.success) {
       updateFormData({ licensePlate: formatted, entryImageBase64: imageBase64 });
-      return false;
+      onStart(2);
+      return true;
     }
 
     if (verifyData.isActive) {
@@ -598,7 +599,9 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       bookingMode: 'hourly',
       membershipType: verifyData.membershipType || null,
     });
-    return false;
+    // Biển số xe vãng lai đã quét thành công -> Tự động chuyển thẳng sang Bước 2 (Chọn vị trí đỗ)
+    onStart(2);
+    return true;
   };
 
   const handleStart = async () => {

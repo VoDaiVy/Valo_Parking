@@ -49,6 +49,7 @@ export function useEntryLaneController({
   const phoneRef = useRef(phone);
   const otherSelectedSlotKeyRef = useRef('');
   const lastVerifiedPlateRef = useRef('');
+  const lastScannedPlateRef = useRef('');
 
   const setOtherSelectedSlotKey = useCallback((key) => {
     otherSelectedSlotKeyRef.current = key || '';
@@ -158,21 +159,21 @@ export function useEntryLaneController({
         }
 
         if (v.isActive) {
-          toast.error(`[${gate}] Warning: Vehicle already has an active session in the lot.`);
+          toast.error(`[${gate}] Warning: Vehicle already has an active session in the lot.`, { id: `entry-verify-${gate}` });
         } else if (v.isPausedResume) {
           if (v.slotAutoReallocated) {
-            toast.success(`[${gate}] Paused booking resumed! Replacement slot ${v.assignedSlot} auto-assigned.`);
+            toast.success(`[${gate}] Paused booking resumed! Replacement slot ${v.assignedSlot} auto-assigned.`, { id: `entry-verify-${gate}` });
           } else {
-            toast.success(`[${gate}] Paused booking resumed! Slot ${v.assignedSlot} retained.`);
+            toast.success(`[${gate}] Paused booking resumed! Slot ${v.assignedSlot} retained.`, { id: `entry-verify-${gate}` });
           }
         } else if (v.isMonthly) {
-          toast.success(`[${gate}] VIP Member (${v.membershipType || 'Monthly Pass'}) verified.`);
+          toast.success(`[${gate}] VIP Member (${v.membershipType || 'Monthly Pass'}) verified.`, { id: `entry-verify-${gate}` });
         } else if (v.hasPreBooking) {
-          toast.success(`[${gate}] Pre-booking found (Slot: ${v.assignedSlot || 'Reallocate'}).`);
+          toast.success(`[${gate}] Pre-booking found (Slot: ${v.assignedSlot || 'Reallocate'}).`, { id: `entry-verify-${gate}` });
         } else if (v.isVIP) {
-          toast.success(`[${gate}] VIP Member verified.`);
+          toast.success(`[${gate}] VIP Member verified.`, { id: `entry-verify-${gate}` });
         } else if (!isSilent) {
-          toast(`[${gate}] Valid walk-in vehicle. Ready to assign slot.`);
+          toast(`[${gate}] Valid walk-in vehicle. Ready to assign slot.`, { id: `entry-verify-${gate}` });
         }
       }
     } catch (e) {
@@ -180,7 +181,7 @@ export function useEntryLaneController({
     }
   }, [plate, gate, emitKioskEntrySync]);
 
-  const scanPlate = useCallback(async (manualImage = null) => {
+  const scanPlate = useCallback(async (manualImage = null, isAuto = false) => {
     if (scanLockRef.current) return;
     scanLockRef.current = true;
     try {
@@ -190,7 +191,7 @@ export function useEntryLaneController({
       if (manualImage) setSnapshot(rawImage);
       const imageToScan = rawImage;
       if (!imageToScan) {
-        toast.error('Please enable the camera or upload a photo to scan.');
+        if (!isAuto) toast.error('Please enable the camera or upload a photo to scan.');
         return;
       }
 
@@ -210,27 +211,48 @@ export function useEntryLaneController({
         const plateVal = scanData.data?.licensePlate || scanData.data?.plate || scanData.plate || scanData.licensePlate;
         if (scanData.success && plateVal) {
           detectedPlate = normalizeLicensePlate(plateVal);
-          const formatted = formatLicensePlateDisplay(detectedPlate);
-          setPlate(formatted);
-          setDismissSameOwnerBooking(false);
-          toast.success(`[${gate}] Detected entry plate: ${formatted}`);
-        } else {
-          toast.error(`[${gate}] Plate unclear. Enter manually or use AI Plate Assistant.`);
         }
 
-        if (detectedPlate) {
-          await verifyPlate(detectedPlate, imageToScan);
+        // Cổng thông thoáng: nếu trước đó có xe nhưng bây giờ khung hình trống/không còn biển số
+        if (!detectedPlate) {
+          if (lastScannedPlateRef.current) {
+            lastScannedPlateRef.current = '';
+            lastVerifiedPlateRef.current = '';
+            toast.dismiss(`entry-verify-${gate}`);
+            toast.dismiss(`gate-scan-${gate}`);
+            reset();
+          }
+          if (!isAuto) {
+            toast.error(`[${gate}] Plate unclear. Enter manually or use AI Plate Assistant.`, { id: `gate-scan-${gate}` });
+          }
+          return;
         }
+
+        // Nếu xe vẫn là xe cũ đang đứng ở cổng -> Bỏ qua không spam thông báo
+        if (isAuto && detectedPlate === lastScannedPlateRef.current) {
+          return;
+        }
+
+        // Xe mới tới hoặc đã thay đổi xe!
+        lastScannedPlateRef.current = detectedPlate;
+        const formatted = formatLicensePlateDisplay(detectedPlate);
+        setPlate(formatted);
+        setDismissSameOwnerBooking(false);
+        toast.success(`[${gate}] Detected entry plate: ${formatted}`, { id: `gate-scan-${gate}` });
+
+        await verifyPlate(detectedPlate, imageToScan);
       } catch (err) {
-        console.error(`[${gate}] Entry scan plate error:`, err);
-        toast.error('Failed to scan license plate.');
+        if (!isAuto) {
+          console.error(`[${gate}] Entry scan plate error:`, err);
+          toast.error('Failed to scan license plate.', { id: `gate-scan-${gate}` });
+        }
       } finally {
         setIsScanning(false);
       }
     } finally {
       scanLockRef.current = false;
     }
-  }, [cameraLane, cameraConfigRef, captureFrame, setSnapshot, gate, verifyPlate]);
+  }, [cameraLane, cameraConfigRef, captureFrame, setSnapshot, gate, verifyPlate, reset]);
 
   const checkIn = useCallback(async (overridePlate = null, overrideVerify = null) => {
     const cleanPlate = overridePlate ? normalizeLicensePlate(overridePlate) : normalizeLicensePlate(plate);
@@ -452,14 +474,17 @@ export function useEntryLaneController({
   ]);
 
   const reset = useCallback(() => {
+    lastScannedPlateRef.current = '';
     lastVerifiedPlateRef.current = '';
+    toast.dismiss(`entry-verify-${gate}`);
+    toast.dismiss(`gate-scan-${gate}`);
     setPlate('');
     setPhone('');
     setSlotCode('');
     setVerifyData(null);
     setSlotPickerOpen(false);
     setDismissSameOwnerBooking(false);
-  }, []);
+  }, [gate]);
 
   const handlePlateChange = useCallback((nextVal) => {
     const upper = String(nextVal || '').toUpperCase();
@@ -555,12 +580,13 @@ export function useExitLaneController({
 
   const scanLockRef = useRef(false);
   const snapshotRef = useRef(snapshot);
+  const lastScannedPlateRef = useRef('');
 
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
 
-  const lookupSession = useCallback(async (plateToLookup, imageOverride = null) => {
+  const lookupSession = useCallback(async (plateToLookup, imageOverride = null, isAuto = false) => {
     const cleanPlate = normalizeLicensePlate(plateToLookup || plate);
     if (!cleanPlate) return;
 
@@ -597,7 +623,7 @@ export function useExitLaneController({
           violations: invoice.violations || null,
         });
         setCashReceivedAmount('');
-        toast.success(`[${gate}] Found active session for ${cleanPlate}.`);
+        toast.success(`[${gate}] Found active session for ${cleanPlate}.`, { id: `exit-lookup-${gate}` });
 
         // Đồng bộ hóa đơn sang màn hình Kiosk Out trên tablet
         if (typeof emitKioskExitSync === 'function') {
@@ -622,15 +648,15 @@ export function useExitLaneController({
           message: errorText,
           violations: data.violations || null,
         });
-        toast.error(`[${gate}] ${errorText}`);
+        toast.error(`[${gate}] ${errorText}`, { id: `exit-lookup-${gate}` });
       }
     } catch (e) {
       console.error(`[${gate}] Lookup exit session error:`, e);
-      toast.error('Failed to look up parking session.');
+      if (!isAuto) toast.error('Failed to look up parking session.', { id: `exit-lookup-${gate}` });
     }
-  }, [plate, gate]);
+  }, [plate, gate, emitKioskExitSync]);
 
-  const scanPlate = useCallback(async (manualImage = null) => {
+  const scanPlate = useCallback(async (manualImage = null, isAuto = false) => {
     if (scanLockRef.current) return;
     scanLockRef.current = true;
     try {
@@ -640,7 +666,7 @@ export function useExitLaneController({
       if (manualImage) setSnapshot(rawImage);
       const imageToScan = rawImage;
       if (!imageToScan) {
-        toast.error('Please enable the camera or upload a photo.');
+        if (!isAuto) toast.error('Please enable the camera or upload a photo.');
         return;
       }
 
@@ -657,26 +683,46 @@ export function useExitLaneController({
         const plateVal = scanData.data?.licensePlate || scanData.data?.plate || scanData.plate || scanData.licensePlate;
         if (scanData.success && plateVal) {
           detectedPlate = normalizeLicensePlate(plateVal);
-          const formatted = formatLicensePlateDisplay(detectedPlate);
-          setPlate(formatted);
-          toast.success(`[${gate}] Detected exit plate: ${formatted}`);
-        } else {
-          toast.error(`[${gate}] Exit plate unclear. Enter manually or use AI Plate Assistant.`);
         }
 
-        if (detectedPlate) {
-          await lookupSession(detectedPlate, imageToScan);
+        // Cổng thông thoáng: nếu trước đó có xe nhưng bây giờ khung hình trống/không còn biển số
+        if (!detectedPlate) {
+          if (lastScannedPlateRef.current) {
+            lastScannedPlateRef.current = '';
+            toast.dismiss(`exit-lookup-${gate}`);
+            toast.dismiss(`gate-scan-${gate}`);
+            reset();
+          }
+          if (!isAuto) {
+            toast.error(`[${gate}] Exit plate unclear. Enter manually or use AI Plate Assistant.`, { id: `gate-scan-${gate}` });
+          }
+          return;
         }
+
+        // Nếu xe vẫn là xe cũ đang đứng ở cổng -> Bỏ qua không spam thông báo
+        if (isAuto && detectedPlate === lastScannedPlateRef.current) {
+          return;
+        }
+
+        // Xe mới tới hoặc đã thay đổi xe!
+        lastScannedPlateRef.current = detectedPlate;
+        const formatted = formatLicensePlateDisplay(detectedPlate);
+        setPlate(formatted);
+        toast.success(`[${gate}] Detected exit plate: ${formatted}`, { id: `gate-scan-${gate}` });
+
+        await lookupSession(detectedPlate, imageToScan, isAuto);
       } catch (err) {
-        console.error(`[${gate}] Exit scan plate error:`, err);
-        toast.error('Failed to scan exit license plate.');
+        if (!isAuto) {
+          console.error(`[${gate}] Exit scan plate error:`, err);
+          toast.error('Failed to scan exit license plate.', { id: `gate-scan-${gate}` });
+        }
       } finally {
         setIsScanning(false);
       }
     } finally {
       scanLockRef.current = false;
     }
-  }, [cameraLane, cameraConfigRef, captureFrame, setSnapshot, gate, lookupSession]);
+  }, [cameraLane, cameraConfigRef, captureFrame, setSnapshot, gate, lookupSession, reset]);
 
   const checkOut = useCallback(async (overrideInvoice = null, keepPausedChoice = false, paymentMethodChoice = null) => {
     const inv = overrideInvoice || invoiceData;
@@ -767,12 +813,15 @@ export function useExitLaneController({
   }, [invoiceData, cashReceivedAmount, depositChangeToWallet, gate, triggerBarrier, setSnapshot, refreshFloorsAndSessions]);
 
   const reset = useCallback(() => {
+    lastScannedPlateRef.current = '';
+    toast.dismiss(`exit-lookup-${gate}`);
+    toast.dismiss(`gate-scan-${gate}`);
     setPlate('');
     setInvoiceData(null);
     setStatusInfo(null);
     setCashReceivedAmount('');
     setDepositChangeToWallet(false);
-  }, []);
+  }, [gate]);
 
   const handlePlateChange = useCallback((nextVal) => {
     const upper = String(nextVal || '').toUpperCase();

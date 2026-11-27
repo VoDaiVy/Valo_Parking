@@ -70,10 +70,10 @@ export function resolveLaneTransform(lane = 'full', cameraConfig = DEFAULT_CAMER
   }
 
   // VỊ TRÍ VẬT LÝ CỦA CAMERA TRÊN MÔ HÌNH:
-  // - Trạm Bên Trái (Cổng Vào ENTRY_1): Luôn là NỬA TRÁI của Camera (side = 'left'), góc xoay entryRotation
-  // - Trạm Bên Phải (Cổng Ra EXIT_1): Luôn là NỬA PHẢI của Camera (side = 'right'), góc xoay exitRotation
-  // Giữ nguyên cố định 100% vị trí vật lý này ngay cả khi đổi sang chế độ 2 IN hay 2 OUT!
-  let side = lane === 'entry' ? 'left' : 'right';
+  // - Trạm Bên Trái (Cổng Vào ENTRY_1): NỬA BÊN PHẢI của Camera (side = 'right')
+  // - Trạm Bên Phải (Cổng Ra EXIT_1): NỬA BÊN TRÁI của Camera (side = 'left')
+  // Cố định bất biến cho từng cổng, không bao giờ thay đổi qua lại!
+  let side = lane === 'entry' ? 'right' : 'left';
   if (cfg.swapLanes) {
     side = side === 'left' ? 'right' : 'left';
   }
