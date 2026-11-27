@@ -2159,19 +2159,19 @@ export default function GateControl() {
               ) : (
                 <div className="text-center py-12 text-white/40 text-xs">
                   <AlertCircle size={28} className="mx-auto mb-2 text-white/20" />
-                  <span>Không có dữ liệu hình ảnh cho phiên này</span>
+                  <span>No image data available for this session</span>
                 </div>
               )}
             </div>
 
             <div className="flex items-center justify-between text-[11px] text-white/50 pt-1">
-              <span>Kiểm tra chi tiết biển số &amp; phương tiện khớp thực tế</span>
+              <span>Verify license plate &amp; vehicle match actual vehicle</span>
               <button
                 type="button"
                 onClick={() => setPreviewPhotoModal(null)}
                 className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15 transition cursor-pointer"
               >
-                Đóng
+                Close
               </button>
             </div>
           </div>

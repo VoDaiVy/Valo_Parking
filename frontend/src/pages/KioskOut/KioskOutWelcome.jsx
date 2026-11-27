@@ -161,7 +161,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
               licensePlate: plate,
               hasSession: true,
               vehicleModelInfo: data.data?.session?.vehicle?.model || 'Vehicle at Exit Gate',
-              registeredOwnerName: data.data?.session?.user?.fullName || data.data?.session?.vehicle?.ownerName || 'Khách hàng',
+              registeredOwnerName: data.data?.session?.user?.fullName || data.data?.session?.vehicle?.ownerName || 'Valued Customer',
               phone: data.data?.session?.user?.phone || data.data?.session?.vehicle?.ownerPhone || null,
               amountToPay: data.data?.amountToPay || 0,
               parkingDuration: data.data?.parkingDuration || '1 hrs',

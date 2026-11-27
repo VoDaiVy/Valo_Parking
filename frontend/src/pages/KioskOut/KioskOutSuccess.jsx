@@ -37,14 +37,10 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
           const isOpen = Boolean(data.data.open);
           if (isOpen) {
             hasSeenOpenRef.current = true;
-          } else if (hasSeenOpenRef.current) {
-            // Cổng đã đóng sau khi xe qua cảm biến -> đợi đủ 1.5s rồi mới quay về màn hình chính
-            const elapsed = Date.now() - mountTimeRef.current;
-            if (elapsed >= 1500) {
-              handleDone();
-            } else {
-              setTimeout(handleDone, 1500 - elapsed);
-            }
+          } else {
+            // Xe đi qua rồi và barrier đóng xuống (isOpen: false) -> lập tức quay về màn hình chính
+            // Đảm bảo không cần chờ thêm bất kỳ bộ đếm nào
+            handleDone();
           }
         }
       } catch {
@@ -66,14 +62,9 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
       if (data && (data.gate === activeGate || !data.gate)) {
         if (data.open) {
           hasSeenOpenRef.current = true;
-        } else if (!data.open && hasSeenOpenRef.current) {
-          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ sau tối thiểu 1.5s
-          const elapsed = Date.now() - mountTimeRef.current;
-          if (elapsed >= 1500) {
-            handleDone();
-          } else {
-            setTimeout(handleDone, 1500 - elapsed);
-          }
+        } else if (!data.open) {
+          // Xe đã qua cổng và barrier đã đóng -> lập tức quay về trang chủ
+          handleDone();
         }
       }
     };
@@ -111,7 +102,7 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
         </p>
 
         <p className="text-gray-400 text-lg">
-          Vui lòng lái xe qua cổng. Chúc quý khách thượng lộ bình an!
+          Please proceed through the gate. Have a safe journey!
         </p>
       </div>
     </div>

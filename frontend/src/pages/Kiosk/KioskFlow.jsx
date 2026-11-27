@@ -121,7 +121,8 @@ function KioskEntryFlowInner({ assignedGate, basePath, isTidalReversed }) {
     if (!verifyData || verifyData.isActive) return;
 
     const isEligible = Boolean(verifyData.isMonthly || verifyData.hasPreBooking || verifyData.isVIP);
-    if (!isEligible) return;
+    // Nếu là xe vãng lai (walk-in): Tự động điền biển số vào Step 1 hoặc Step 2
+    const isWalkIn = !isEligible;
 
     // Only auto-transition when kiosk is idle on welcome screen or Step 1
     const onIdleEntryScreen =
@@ -180,6 +181,9 @@ function KioskEntryFlowInner({ assignedGate, basePath, isTidalReversed }) {
 
     if (canFastPassNow) {
       navigate(`${basePath}/step3`);
+    } else if (isWalkIn) {
+      // Xe vãng lai: Tự động chuyển thẳng sang màn hình chọn ô đỗ (Step 2) với biển số đã điền sẵn!
+      navigate(`${basePath}/step2`);
     } else {
       navigate(`${basePath}/step2`);
     }
@@ -322,7 +326,7 @@ function KioskEntryFlowInner({ assignedGate, basePath, isTidalReversed }) {
       if (!res.ok) {
         setKioskAlert({
           title: 'Slot Unavailable',
-          message: res.data?.message || 'Ô đỗ này vừa có người khác chọn. Vui lòng chọn ô khác!',
+          message: res.data?.message || 'This parking slot was just selected by someone else. Please choose another slot!',
         });
         updateFormData({
           selectedSlot: null,

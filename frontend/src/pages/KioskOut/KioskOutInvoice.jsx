@@ -2,9 +2,11 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon } from 'lucide-react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { formatLicensePlateDisplay } from '../../utils/licensePlate';
 
 export default function KioskOutInvoice({ sessionData: initialSessionData, exitImage, targetGate = 'EXIT_1', onCheckoutSuccess, onBack }) {
+  const socket = useSocket();
   const [sessionData, setSessionData] = useState(initialSessionData);
   useEffect(() => {
     if (initialSessionData) setSessionData(initialSessionData);
@@ -12,6 +14,46 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
 
   const processingRef = useRef(false);
   const completedRef = useRef(false);
+
+  // Lắng nghe sự kiện Checkout hoàn tất từ Backend (khi nhân viên thu tiền mặt hoặc xác nhận tại Gate)
+  useEffect(() => {
+    const handleCheckoutDone = (payload) => {
+      if (completedRef.current) return;
+      const currentSessionId = sessionData?.session?._id;
+      const currentPlate = sessionData?.observedLicensePlate || sessionData?.session?.licensePlate || sessionData?.licensePlate;
+
+      const matchesSession = payload?.sessionId && currentSessionId && String(payload.sessionId) === String(currentSessionId);
+      const matchesPlate = payload?.licensePlate && currentPlate && String(payload.licensePlate).replace(/[^A-Z0-9]/gi, '').toUpperCase() === String(currentPlate).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+      if (matchesSession || matchesPlate) {
+        completedRef.current = true;
+        onCheckoutSuccess();
+      }
+    };
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('valo_kiosk_checkout_sync');
+        channel.onmessage = (event) => {
+          if (event.data) handleCheckoutDone(event.data);
+        };
+      } catch {
+        // Fallback to socket only
+      }
+    }
+
+    if (socket) {
+      socket.on('kiosk:checkout_completed', handleCheckoutDone);
+    }
+
+    return () => {
+      if (channel) channel.close();
+      if (socket) {
+        socket.off('kiosk:checkout_completed', handleCheckoutDone);
+      }
+    };
+  }, [socket, sessionData, onCheckoutSuccess]);
   const [checkoutError, setCheckoutError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 

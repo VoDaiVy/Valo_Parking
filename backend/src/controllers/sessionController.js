@@ -3298,14 +3298,28 @@ exports.kioskCheckout = async (req, res, next) => {
       await markPaymentIntentSettled(paymentIntentId);
     }
 
-    // Trigger IoT ESP32 Barrier Open on Exit
-    if (req.kioskDevice || hasVerifiedCheckoutChallenge || req.parkingQrCredential) {
+    // Trigger IoT ESP32 Barrier Open on Exit (áp dụng cho cả Kiosk và khi Staff thu tiền mặt tại Gate)
+    if (req.kioskDevice || hasVerifiedCheckoutChallenge || req.parkingQrCredential || isStaff) {
       triggerBarrierOpen(
         session.licensePlate,
         session.parkingSlot || 'N/A',
         exitGate || req.kioskDevice?.gate || 'EXIT_1',
         req.app
       );
+    }
+
+    // Broadcast sự kiện Checkout hoàn tất (đặc biệt khi nhân viên thu tiền mặt tại Gate)
+    // để Tablet Kiosk Out lập tức chuyển sang màn hình thành công
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('kiosk:checkout_completed', {
+        sessionId: session._id,
+        licensePlate: session.licensePlate,
+        gate: String(exitGate || req.kioskDevice?.gate || 'EXIT_1').toUpperCase(),
+        paymentMethod,
+        amountToPay,
+        timestamp: Date.now(),
+      });
     }
 
     res.status(200).json({

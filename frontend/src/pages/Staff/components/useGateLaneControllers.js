@@ -146,7 +146,8 @@ export function useEntryLaneController({
           if (autoFloorId) setFloorId(autoFloorId);
         }
 
-        if (!v.isActive && (v.isMonthly || v.hasPreBooking || v.isVIP)) {
+        if (!v.isActive) {
+          // Đồng bộ sang Tablet Kiosk In cho TẤT CẢ các loại xe (VIP, Đặt trước, và cả Xe vãng lai)
           emitKioskEntrySync?.({
             gate,
             mode: 'verified',
@@ -732,6 +733,21 @@ export function useExitLaneController({
           toast.success(`[${gate}] Checked out ${inv.session.licensePlate}.${paymentMethodNote}${changeMessage} Opening barrier...`);
         }
         await triggerBarrier('open', gate, inv.session.licensePlate, '', 'CHECKOUT_SUCCESS', 'Checkout completed');
+
+        // Bắn broadcast channel cục bộ để Kiosk Out chuyển màn hình ngay tức thì (0ms latency)
+        if (typeof BroadcastChannel !== 'undefined') {
+          try {
+            const ch = new BroadcastChannel('valo_kiosk_checkout_sync');
+            ch.postMessage({
+              sessionId: inv.session._id,
+              licensePlate: inv.session.licensePlate,
+              gate,
+              paymentMethod: chosenMethod,
+            });
+            ch.close();
+          } catch (_) {}
+        }
+
         setPlate('');
         setInvoiceData(null);
         setStatusInfo(null);
