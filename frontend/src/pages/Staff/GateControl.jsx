@@ -556,32 +556,43 @@ export default function GateControl() {
   }, []);
 
   // Truyền luồng ảnh Live Frame từ camera PC sang Tablet Kiosk qua Socket.IO
+  // Chuẩn hóa phát chính xác theo Gate (ENTRY_1 / EXIT_1) và Lane (entry / exit)
   useEffect(() => {
     if (!socket) return undefined;
     const interval = setInterval(() => {
-      // 1. Gửi frame cổng Vào
+      // 1. Gửi frame Trạm Bên Trái (Cổng ENTRY_1 - Mặc định Cổng Vào)
       const entryVideo = entryVideoRef.current;
       const entryCanvas = entryCanvasRef.current;
       if (entryVideo && entryVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const frame = captureVideoLaneBase64(entryVideo, entryCanvas, 'entry', cameraConfigRef.current);
         if (frame) {
-          socket.emit('gate:stream_frame', { lane: 'entry', gate: 'ENTRY_1', frameBase64: frame });
+          socket.emit('gate:stream_frame', {
+            lane: 'entry',
+            gate: 'ENTRY_1',
+            role: leftRole,
+            frameBase64: frame
+          });
         }
       }
 
-      // 2. Gửi frame cổng Ra
+      // 2. Gửi frame Trạm Bên Phải (Cổng EXIT_1 - Mặc định Cổng Ra)
       const exitVideo = exitVideoRef.current;
       const exitCanvas = exitCanvasRef.current;
       if (exitVideo && exitVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const frame = captureVideoLaneBase64(exitVideo, exitCanvas, 'exit', cameraConfigRef.current);
         if (frame) {
-          socket.emit('gate:stream_frame', { lane: 'exit', gate: 'EXIT_1', frameBase64: frame });
+          socket.emit('gate:stream_frame', {
+            lane: 'exit',
+            gate: 'EXIT_1',
+            role: rightRole,
+            frameBase64: frame
+          });
         }
       }
     }, 400); // 400ms = 2.5 FPS siêu mượt và không tốn băng thông đường truyền
 
     return () => clearInterval(interval);
-  }, [socket]);
+  }, [socket, leftRole, rightRole]);
 
   const emitKioskEntrySync = useCallback((payload) => {
     if (!payload?.licensePlate) return;
