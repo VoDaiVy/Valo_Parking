@@ -1,0 +1,523 @@
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
+import KioskWelcome from './KioskWelcome';
+import KioskStep1 from './KioskStep1';
+import KioskStep2 from './KioskStep2';
+import KioskStep3 from './KioskStep3';
+import KioskLayout from './KioskLayout';
+import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
+import { createBookingHold, releaseBookingHold } from '../../services/bookingService';
+
+
+const createRequestKey = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `kiosk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const createEmptyKioskFormData = () => ({
+  qrPayload: null,
+  licensePlate: '',
+  phone: '',
+  selectedSlot: null,
+  floorId: null,
+  bookingHoldId: null,
+  bookingHoldSlot: null,
+  bookingHoldFloorId: null,
+  bookingId: null,
+  bookingFloorName: null,
+  originalSlot: null,
+  suggestedSlot: null,
+  suggestedFloorId: null,
+  suggestedFloorName: null,
+  upcomingBookingTooEarly: null,
+  step3Mode: 'policy',
+  durationHours: 1,
+  entryImageBase64: null,
+  ticketPackageId: null,
+  pricingPackage: null,
+  pricingSource: 'default',
+  bookingMode: 'hourly',
+  isMonthly: false,
+  isVipReallocation: false,
+  isBookingReallocation: false,
+  quotaExhausted: false,
+  membershipType: null,
+  hasPreBooking: false,
+  isVIP: false,
+  isRegisteredVehicle: false,
+  isPausedResume: false,
+  slotAutoReallocated: false,
+  reallocationReason: null,
+  remainingHours: null,
+  remainingMinutes: null,
+  bookingEnd: null,
+  entryIdempotencyKey: createRequestKey(),
+});
+
+const KIOSK_IDLE_TIMEOUT_MS = 120000;
+
+export default function KioskEntryFlow({ assignedGate, basePath, isTidalReversed }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const socket = useSocket();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successSession, setSuccessSession] = useState(null); // stores the successful session data
+  const [kioskAlert, setKioskAlert] = useState(null);
+  const lastEntrySyncRef = useRef({ key: '', at: 0 });
+
+  // Shared State across steps
+  const [formData, setFormData] = useState(createEmptyKioskFormData);
+
+  const updateFormData = (data) => {
+    setFormData(prev => ({ ...prev, ...data }));
+  };
+
+  const handleNext = (step) => {
+    navigate(`${basePath}/step${step}`);
+  };
+
+  const applySyncedEntryScan = useCallback((payload) => {
+    const { mode = 'verified', gate = null, licensePlate, verifyData, session, entryImageBase64 = null } = payload || {};
+    if (gate && assignedGate && String(gate).toUpperCase() !== String(assignedGate).toUpperCase()) return;
+    if (!licensePlate || successSession) return;
+
+    const now = Date.now();
+    const dedupeKey = `${mode}:${licensePlate}`;
+    if (
+      lastEntrySyncRef.current.key === dedupeKey &&
+      now - lastEntrySyncRef.current.at < 4000
+    ) {
+      return;
+    }
+
+    if (mode === 'checked_in' && session) {
+      const canShowTicketScreen =
+        location.pathname === basePath ||
+        location.pathname === `${basePath}/` ||
+        location.pathname === `${basePath}/step1` ||
+        location.pathname === `${basePath}/step2`;
+      if (!canShowTicketScreen) return;
+
+      lastEntrySyncRef.current = { key: dedupeKey, at: now };
+      setKioskAlert(null);
+      setFormData({
+        ...createEmptyKioskFormData(),
+        step3Mode: 'fastpass',
+        licensePlate: session.licensePlate || licensePlate,
+        selectedSlot: session.parkingSlot || '',
+        floorId: session.floorId || '',
+        isMonthly: session.type === 'SUBSCRIPTION',
+        hasPreBooking: session.type === 'RESERVATION',
+        entryImageBase64: entryImageBase64 || null,
+      });
+      setSuccessSession(session);
+      navigate(`${basePath}/step3`);
+      return;
+    }
+
+    if (!verifyData || verifyData.isActive) return;
+
+    const isEligible = Boolean(verifyData.isMonthly || verifyData.hasPreBooking || verifyData.isVIP);
+    // Nếu là xe vãng lai (walk-in): Tự động điền biển số vào Step 1 hoặc Step 2
+    const isWalkIn = !isEligible;
+
+    // Only auto-transition when kiosk is idle on welcome screen or Step 1
+    const onIdleEntryScreen =
+      location.pathname === basePath ||
+      location.pathname === `${basePath}/` ||
+      location.pathname === `${basePath}/step1`;
+    if (!onIdleEntryScreen) return;
+
+    lastEntrySyncRef.current = { key: dedupeKey, at: now };
+
+    const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
+    const canFastPassNow = Boolean(
+      (verifyData.isMonthly || verifyData.hasPreBooking) &&
+      verifyData.assignedSlot &&
+      verifyData.assignedFloorId &&
+      !needsReallocation
+    );
+
+    setSuccessSession(null);
+    setKioskAlert(null);
+    setFormData({
+      ...createEmptyKioskFormData(),
+      step3Mode: canFastPassNow ? 'fastpass' : 'policy',
+      licensePlate,
+      phone: verifyData.phone || '',
+      entryImageBase64: entryImageBase64 || null,
+      isMonthly: Boolean(verifyData.isMonthly),
+      hasPreBooking: Boolean(verifyData.hasPreBooking),
+      isVIP: Boolean(verifyData.isVIP),
+      isRegisteredVehicle: Boolean(verifyData.isRegisteredVehicle),
+      isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
+      isBookingReallocation: Boolean(verifyData.isBookingReallocation),
+      quotaExhausted: Boolean(verifyData.quotaExhausted),
+      membershipType: verifyData.membershipType || null,
+      bookingId: verifyData.bookingId || null,
+      bookingFloorName: verifyData.assignedFloorName || null,
+      originalSlot: verifyData.originalSlot || null,
+      selectedSlot: canFastPassNow ? verifyData.assignedSlot : null,
+      floorId: canFastPassNow ? verifyData.assignedFloorId : null,
+      suggestedSlot: verifyData.suggestedSlot || null,
+      suggestedFloorId: verifyData.suggestedFloorId || null,
+      suggestedFloorName: verifyData.suggestedFloorName || null,
+      upcomingBookingTooEarly: verifyData.upcomingBookingTooEarly || null,
+      durationHours: verifyData.bookingDurationHours || 1,
+      bookingMode: verifyData.bookingMode || 'hourly',
+      ticketPackageId: verifyData.bookingTicketPackageId || verifyData.pricingPackage?._id || null,
+      pricingPackage: verifyData.pricingPackage || null,
+      pricingSource: verifyData.pricingSource || 'default',
+      isPausedResume: Boolean(verifyData.isPausedResume),
+      slotAutoReallocated: Boolean(verifyData.slotAutoReallocated),
+      reallocationReason: verifyData.reallocationReason || null,
+      remainingHours: verifyData.remainingHours,
+      remainingMinutes: verifyData.remainingMinutes,
+      bookingEnd: verifyData.bookingEnd || null,
+    });
+
+    if (canFastPassNow) {
+      navigate(`${basePath}/step3`);
+    } else if (isWalkIn) {
+      // Xe vãng lai: Tự động chuyển thẳng sang màn hình chọn ô đỗ (Step 2) với biển số đã điền sẵn!
+      navigate(`${basePath}/step2`);
+    } else {
+      navigate(`${basePath}/step2`);
+    }
+  }, [location.pathname, navigate, successSession, basePath, assignedGate]);
+
+  useEffect(() => {
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel = new BroadcastChannel('valo_kiosk_entry_sync');
+      channel.onmessage = (event) => {
+        if (event.data) applySyncedEntryScan(event.data);
+      };
+    }
+
+    if (socket) {
+      socket.on('kiosk:entry_plate_synced', applySyncedEntryScan);
+    }
+
+    return () => {
+      if (channel) channel.close();
+      if (socket) {
+        socket.off('kiosk:entry_plate_synced', applySyncedEntryScan);
+      }
+    };
+  }, [socket, applySyncedEntryScan]);
+
+  const releaseCurrentHold = async () => {
+    if (!formData.bookingHoldId) return;
+
+    const cleanPlate = formData.licensePlate
+      ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+      : '';
+    await releaseBookingHold(formData.bookingHoldId, {
+      licensePlate: cleanPlate,
+      floorId: formData.bookingHoldFloorId,
+      slotCode: formData.bookingHoldSlot,
+    }).catch(() => null);
+    clearCurrentHoldState();
+  };
+
+  useEffect(() => {
+    const isWorkingStep = location.pathname.startsWith(`${basePath}/step`) && !successSession;
+    if (!isWorkingStep) return undefined;
+
+    let idleTimer = null;
+    const resetFlowOnIdle = async () => {
+      if (formData.bookingHoldId) {
+        const cleanPlate = formData.licensePlate
+          ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+          : '';
+        await releaseBookingHold(formData.bookingHoldId, {
+          licensePlate: cleanPlate,
+          floorId: formData.bookingHoldFloorId,
+          slotCode: formData.bookingHoldSlot,
+        }).catch(() => null);
+      }
+      setKioskAlert(null);
+      setSuccessSession(null);
+      setFormData(createEmptyKioskFormData());
+      navigate(basePath, { replace: true });
+    };
+
+    const armTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(resetFlowOnIdle, KIOSK_IDLE_TIMEOUT_MS);
+    };
+
+    const events = ['pointerdown', 'keydown', 'touchstart'];
+    events.forEach((evt) => window.addEventListener(evt, armTimer, { passive: true }));
+    armTimer();
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      events.forEach((evt) => window.removeEventListener(evt, armTimer));
+    };
+  }, [
+    location.pathname,
+    successSession,
+    formData.bookingHoldId,
+    formData.bookingHoldFloorId,
+    formData.bookingHoldSlot,
+    formData.licensePlate,
+    navigate,
+  ]);
+
+  const clearCurrentHoldState = () => {
+    updateFormData({
+      bookingHoldId: null,
+      bookingHoldSlot: null,
+      bookingHoldFloorId: null,
+    });
+  };
+
+  const handleHoldSlotAndNext = async () => {
+    if (!formData.selectedSlot || !formData.floorId) {
+      setKioskAlert({ title: 'Slot Required', message: 'Please select a parking slot first.' });
+      return;
+    }
+
+    const hasCurrentHold =
+      formData.bookingHoldId &&
+      formData.bookingHoldSlot === formData.selectedSlot &&
+      formData.bookingHoldFloorId === formData.floorId;
+
+    if (hasCurrentHold) {
+      handleNext(3);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (formData.bookingHoldId) {
+        const previousCleanPlate = formData.licensePlate
+          ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+          : '';
+        await releaseBookingHold(formData.bookingHoldId, {
+          licensePlate: previousCleanPlate,
+          floorId: formData.bookingHoldFloorId,
+          slotCode: formData.bookingHoldSlot,
+        }).catch(() => null);
+      }
+
+      const cleanPlate = formData.licensePlate
+        ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+        : '';
+      const now = new Date();
+      const endTime = new Date(now.getTime() + 60 * 60 * 1000);
+
+      const res = await createBookingHold({
+        floorId: formData.floorId,
+        slotCode: formData.selectedSlot,
+        licensePlate: cleanPlate,
+        startTime: now.toISOString(),
+        endTime: endTime.toISOString(),
+        ...(formData.isBookingReallocation && formData.bookingId
+          ? { bookingSource: 'KIOSK_REALLOCATION', reallocateBookingId: formData.bookingId }
+          : { bookingSource: 'KIOSK_WALK_IN' }),
+      }, { anonymous: true });
+
+      if (!res.ok) {
+        setKioskAlert({
+          title: 'Slot Unavailable',
+          message: res.data?.message || 'This parking slot was just selected by someone else. Please choose another slot!',
+        });
+        updateFormData({
+          selectedSlot: null,
+          floorId: null,
+          bookingHoldId: null,
+          bookingHoldSlot: null,
+          bookingHoldFloorId: null,
+        });
+        return;
+      }
+
+      updateFormData({
+        bookingHoldId: res.data?.data?._id || null,
+        bookingHoldSlot: formData.selectedSlot,
+        bookingHoldFloorId: formData.floorId,
+      });
+      handleNext(3);
+    } catch (error) {
+      console.error('Hold slot error:', error);
+      setKioskAlert({
+        title: 'Connection Error',
+        message: 'Network error while holding this slot. Please try again.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleBack = async (step) => {
+    await releaseCurrentHold();
+    navigate(step === 0 ? basePath : `${basePath}/step${step}`);
+  };
+
+  const handleConfirm = async () => {
+    setIsSubmitting(true);
+    try {
+      const cleanPlate = formData.licensePlate ? formData.licensePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+      const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': formData.entryIdempotencyKey,
+        },
+        body: JSON.stringify({
+          qrPayload: formData.qrPayload,
+          licensePlate: cleanPlate,
+          phone: formData.phone,
+          parkingSlot: formData.selectedSlot,
+          floorId: formData.floorId,
+          durationHours: formData.durationHours,
+          entryImageBase64: formData.entryImageBase64,
+          ticketPackageId: formData.ticketPackageId,
+          bookingMode: formData.bookingMode,
+          bookingId: formData.bookingId,
+          bookingHoldId: formData.bookingHoldId,
+          isAutoReallocated: Boolean(formData.slotAutoReallocated),
+          entryGate: assignedGate || 'ENTRY_1',
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        clearCurrentHoldState();
+        // Cập nhật session thành công để chuyển sang màn hình chào đón & chỉ ô đỗ
+        setSuccessSession({ ...data.data, pass: data.pass });
+      } else {
+        setKioskAlert({
+          title: 'Check-in Failed',
+          message: data.message || 'Something went wrong.',
+        });
+      }
+    } catch (error) {
+      console.error('Submission error:', error);
+      setKioskAlert({
+        title: 'Connection Error',
+        message: 'Network error. Please try again.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFastPassComplete = () => {
+    setSuccessSession(null);
+    setFormData(createEmptyKioskFormData());
+    navigate(basePath, { replace: true });
+  };
+
+  const handleFastPassEntry = async () => {
+    const response = await fetch(`${API_BASE}/sessions/kiosk-entry`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': formData.entryIdempotencyKey,
+      },
+      body: JSON.stringify({
+        qrPayload: formData.qrPayload,
+        licensePlate: formData.licensePlate,
+        phone: formData.phone,
+        parkingSlot: formData.selectedSlot,
+        floorId: formData.floorId,
+        durationHours: formData.durationHours,
+        entryImageBase64: formData.entryImageBase64,
+        ticketPackageId: formData.ticketPackageId,
+        bookingMode: formData.bookingMode,
+        bookingId: formData.bookingId,
+        bookingHoldId: formData.bookingHoldId,
+        isAutoReallocated: Boolean(formData.slotAutoReallocated),
+        entryGate: assignedGate || 'ENTRY_1',
+      }),
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.message || 'Fast-pass check-in failed.');
+    }
+
+    clearCurrentHoldState();
+    return data;
+  };
+
+  const handleDirectFastPass = (sessionData, newFormData) => {
+    if (newFormData) {
+      setFormData(prev => ({ ...prev, ...newFormData }));
+    }
+    setSuccessSession(sessionData);
+    navigate(`${basePath}/step3`);
+  };
+
+  return (
+    <div className="w-screen h-screen overflow-hidden bg-white selection:bg-gold/30 relative">
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-white/80 z-[100] flex items-center justify-center">
+          <div className="text-2xl font-bold text-[#0f172a] animate-pulse">CREATING SESSION...</div>
+        </div>
+      )}
+
+      {kioskAlert && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+          <div className="bg-white rounded-[32px] p-8 max-w-[440px] w-full shadow-2xl flex flex-col items-center text-center">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-5">
+              <AlertCircle size={34} />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 uppercase tracking-wide mb-2">
+              {kioskAlert.title || 'Notice'}
+            </h3>
+            <p className="text-sm font-medium text-slate-600 mb-6 leading-relaxed">
+              {kioskAlert.message}
+            </p>
+            <button
+              type="button"
+              onClick={() => setKioskAlert(null)}
+              className="w-full h-[54px] bg-[#0f172a] hover:bg-black text-white text-base font-black rounded-2xl transition-all"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Routes>
+        {/* Step 0: Welcome Screen (Full width, no split layout) */}
+        <Route index element={<KioskWelcome onStart={(step = 1) => handleNext(step)} updateFormData={updateFormData} onDirectFastPass={handleDirectFastPass} targetGate={assignedGate} />} />
+
+        {/* Steps 1-3 use the Split-Screen KioskLayout */}
+        <Route element={<KioskLayout />}>
+          <Route
+            path="step1"
+            element={<KioskStep1 formData={formData} updateFormData={updateFormData} onNext={handleNext} />}
+          />
+          <Route
+            path="step2"
+            element={<KioskStep2 formData={formData} updateFormData={updateFormData} onNext={handleHoldSlotAndNext} onBack={() => handleBack(1)} isHoldingSlot={isSubmitting} />}
+          />
+          <Route
+            path="step3"
+            element={
+              <KioskStep3
+                formData={formData}
+                onConfirm={handleConfirm}
+                onBack={() => handleBack(formData.step3Mode === 'fastpass' ? 0 : 2)}
+                onAutoCheckIn={handleFastPassEntry}
+                onComplete={handleFastPassComplete}
+                successSession={successSession}
+                targetGate={assignedGate}
+                basePath={basePath}
+              />
+            }
+          />
+        </Route>
+        <Route path="*" element={<Navigate to={basePath} replace />} />
+      </Routes>
+    </div>
+  );
+}

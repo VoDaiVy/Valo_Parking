@@ -9,7 +9,7 @@ import {
   releaseBookingHold,
 } from '../../../services/bookingService';
 import { normalizeLicensePlate, formatLicensePlateDisplay } from '../../../utils/licensePlate';
-import { cropImageDataUrlForLane } from '../../../utils/cameraLaneCapture';
+import { cropImageDataUrlForLane, rotateImageBase64 } from '../../../utils/cameraLaneCapture';
 import { normalizeSlotCodeLocal, formatGateCurrency } from './gateControlUtils';
 
 /**
@@ -50,6 +50,7 @@ export function useEntryLaneController({
   const otherSelectedSlotKeyRef = useRef('');
   const lastVerifiedPlateRef = useRef('');
   const lastScannedPlateRef = useRef('');
+  const emptyFramesCountRef = useRef(0);
 
   const setOtherSelectedSlotKey = useCallback((key) => {
     otherSelectedSlotKeyRef.current = key || '';
@@ -62,6 +63,24 @@ export function useEntryLaneController({
   useEffect(() => {
     phoneRef.current = phone;
   }, [phone]);
+
+  const reset = useCallback(() => {
+    scanLockRef.current = false;
+    setIsScanning(false);
+    emptyFramesCountRef.current = 0;
+    lastScannedPlateRef.current = '';
+    lastVerifiedPlateRef.current = '';
+    toast.dismiss(`entry-verify-${gate}`);
+    toast.dismiss(`gate-scan-${gate}`);
+    toast.dismiss(`remote-detect-${gate}`);
+    setPlate('');
+    setPhone('');
+    setSlotCode('');
+    setVerifyData(null);
+    setSnapshot(null);
+    setSlotPickerOpen(false);
+    setDismissSameOwnerBooking(false);
+  }, [gate, setSnapshot]);
 
   const effectiveFloorId = floorId || floors[0]?._id || '';
 
@@ -197,14 +216,18 @@ export function useEntryLaneController({
 
       setIsScanning(true);
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
         const scanRes = await fetch(`${API_BASE}/ai/scan-plate`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
           },
-          body: JSON.stringify({ image: imageToScan }),
+          body: JSON.stringify({ image: imageToScan, lane: cameraLane, gate }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
         const scanData = await scanRes.json();
 
         let detectedPlate = '';
@@ -215,12 +238,16 @@ export function useEntryLaneController({
 
         // Cổng thông thoáng: nếu trước đó có xe nhưng bây giờ khung hình trống/không còn biển số
         if (!detectedPlate) {
-          if (lastScannedPlateRef.current) {
-            lastScannedPlateRef.current = '';
-            lastVerifiedPlateRef.current = '';
-            toast.dismiss(`entry-verify-${gate}`);
-            toast.dismiss(`gate-scan-${gate}`);
-            reset();
+          emptyFramesCountRef.current += 1;
+          if (emptyFramesCountRef.current >= 2) {
+            if (plate || lastScannedPlateRef.current) {
+              lastScannedPlateRef.current = '';
+              lastVerifiedPlateRef.current = '';
+              toast.dismiss(`entry-verify-${gate}`);
+              toast.dismiss(`gate-scan-${gate}`);
+              toast.dismiss(`remote-detect-${gate}`);
+              reset();
+            }
           }
           if (!isAuto) {
             toast.error(`[${gate}] Plate unclear. Enter manually or use AI Plate Assistant.`, { id: `gate-scan-${gate}` });
@@ -228,8 +255,10 @@ export function useEntryLaneController({
           return;
         }
 
-        // Nếu xe vẫn là xe cũ đang đứng ở cổng -> Bỏ qua không spam thông báo
-        if (isAuto && detectedPlate === lastScannedPlateRef.current) {
+        emptyFramesCountRef.current = 0;
+
+        // Nếu xe vẫn là xe cũ đang đứng ở cổng và input đã có biển số -> Bỏ qua không spam thông báo
+        if (isAuto && plate && normalizeLicensePlate(plate) === detectedPlate && detectedPlate === lastScannedPlateRef.current) {
           return;
         }
 
@@ -473,19 +502,6 @@ export function useEntryLaneController({
     refreshFloorsAndSessions,
   ]);
 
-  const reset = useCallback(() => {
-    lastScannedPlateRef.current = '';
-    lastVerifiedPlateRef.current = '';
-    toast.dismiss(`entry-verify-${gate}`);
-    toast.dismiss(`gate-scan-${gate}`);
-    setPlate('');
-    setPhone('');
-    setSlotCode('');
-    setVerifyData(null);
-    setSlotPickerOpen(false);
-    setDismissSameOwnerBooking(false);
-  }, [gate]);
-
   const handlePlateChange = useCallback((nextVal) => {
     const upper = String(nextVal || '').toUpperCase();
     setPlate(upper);
@@ -581,10 +597,28 @@ export function useExitLaneController({
   const scanLockRef = useRef(false);
   const snapshotRef = useRef(snapshot);
   const lastScannedPlateRef = useRef('');
+  const emptyFramesCountRef = useRef(0);
+  const isAutoSettingPlateRef = useRef(false);
 
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
+
+  const reset = useCallback(() => {
+    scanLockRef.current = false;
+    setIsScanning(false);
+    emptyFramesCountRef.current = 0;
+    lastScannedPlateRef.current = '';
+    toast.dismiss(`exit-lookup-${gate}`);
+    toast.dismiss(`gate-scan-${gate}`);
+    toast.dismiss(`remote-detect-${gate}`);
+    setPlate('');
+    setInvoiceData(null);
+    setStatusInfo(null);
+    setSnapshot(null);
+    setCashReceivedAmount('');
+    setDepositChangeToWallet(false);
+  }, [gate, setSnapshot]);
 
   const lookupSession = useCallback(async (plateToLookup, imageOverride = null, isAuto = false) => {
     const cleanPlate = normalizeLicensePlate(plateToLookup || plate);
@@ -600,6 +634,7 @@ export function useExitLaneController({
           'Idempotency-Key': `staff-exit-scan:${gate}:${cleanPlate}`,
         },
         body: JSON.stringify({
+          gate,
           licensePlate: cleanPlate,
           exitImageBase64: imageOverride || snapshotRef.current || null,
         }),
@@ -622,8 +657,8 @@ export function useExitLaneController({
           violationDetails: invoice.violationDetails || null,
           violations: invoice.violations || null,
         });
-        setCashReceivedAmount('');
-        toast.success(`[${gate}] Found active session for ${cleanPlate}.`, { id: `exit-lookup-${gate}` });
+        setCashReceivedAmount((prev) => (prev && Number(prev) > 0 ? prev : String(Number(invoice.amountToPay || 0))));
+        toast.success(`[${gate}] Found active session for ${cleanPlate}.`, { id: `exit-lookup-${gate}`, duration: 3500 });
 
         // Đồng bộ hóa đơn sang màn hình Kiosk Out trên tablet
         if (typeof emitKioskExitSync === 'function') {
@@ -648,7 +683,9 @@ export function useExitLaneController({
           message: errorText,
           violations: data.violations || null,
         });
-        toast.error(`[${gate}] ${errorText}`, { id: `exit-lookup-${gate}` });
+        if (!isAuto) {
+          toast.error(`[${gate}] ${errorText}`, { id: `exit-lookup-${gate}` });
+        }
       }
     } catch (e) {
       console.error(`[${gate}] Lookup exit session error:`, e);
@@ -672,11 +709,15 @@ export function useExitLaneController({
 
       setIsScanning(true);
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
         const scanRes = await fetch(`${API_BASE}/ai/scan-plate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: imageToScan }),
+          body: JSON.stringify({ image: imageToScan, lane: cameraLane, gate }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
         const scanData = await scanRes.json();
 
         let detectedPlate = '';
@@ -687,11 +728,15 @@ export function useExitLaneController({
 
         // Cổng thông thoáng: nếu trước đó có xe nhưng bây giờ khung hình trống/không còn biển số
         if (!detectedPlate) {
-          if (lastScannedPlateRef.current) {
-            lastScannedPlateRef.current = '';
-            toast.dismiss(`exit-lookup-${gate}`);
-            toast.dismiss(`gate-scan-${gate}`);
-            reset();
+          emptyFramesCountRef.current += 1;
+          if (emptyFramesCountRef.current >= 2) {
+            if (plate || lastScannedPlateRef.current) {
+              lastScannedPlateRef.current = '';
+              toast.dismiss(`exit-lookup-${gate}`);
+              toast.dismiss(`gate-scan-${gate}`);
+              toast.dismiss(`remote-detect-${gate}`);
+              reset();
+            }
           }
           if (!isAuto) {
             toast.error(`[${gate}] Exit plate unclear. Enter manually or use AI Plate Assistant.`, { id: `gate-scan-${gate}` });
@@ -699,14 +744,17 @@ export function useExitLaneController({
           return;
         }
 
-        // Nếu xe vẫn là xe cũ đang đứng ở cổng -> Bỏ qua không spam thông báo
-        if (isAuto && detectedPlate === lastScannedPlateRef.current) {
+        emptyFramesCountRef.current = 0;
+
+        // Nếu xe vẫn là xe cũ đang đứng ở cổng và input đã có biển số -> Bỏ qua không spam thông báo
+        if (isAuto && plate && normalizeLicensePlate(plate) === detectedPlate && detectedPlate === lastScannedPlateRef.current) {
           return;
         }
 
         // Xe mới tới hoặc đã thay đổi xe!
         lastScannedPlateRef.current = detectedPlate;
         const formatted = formatLicensePlateDisplay(detectedPlate);
+        isAutoSettingPlateRef.current = true;
         setPlate(formatted);
         toast.success(`[${gate}] Detected exit plate: ${formatted}`, { id: `gate-scan-${gate}` });
 
@@ -732,12 +780,13 @@ export function useExitLaneController({
     }
 
     const dueAmount = Number(inv.totalAmount || 0);
+    const effectiveCashAmount = cashReceivedAmount ? Number(cashReceivedAmount) : dueAmount;
     const chosenMethod =
-      paymentMethodChoice || (cashReceivedAmount ? 'cash' : dueAmount === 0 ? 'cash' : (inv.canAutoPay ? 'wallet' : 'vietqr'));
+      paymentMethodChoice || (cashReceivedAmount ? 'cash' : dueAmount === 0 ? 'cash' : (inv.canAutoPay ? 'wallet' : 'cash'));
     const isCash = chosenMethod === 'cash';
     const isWallet = chosenMethod === 'wallet';
 
-    if (isCash && dueAmount > 0 && Number(cashReceivedAmount) < dueAmount) {
+    if (isCash && dueAmount > 0 && effectiveCashAmount < dueAmount) {
       toast.error(`Please collect at least ${formatGateCurrency(dueAmount)} in cash.`);
       return;
     }
@@ -751,13 +800,13 @@ export function useExitLaneController({
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-          'Idempotency-Key': `staff-checkout:${gate}:${inv.session._id}:${chosenMethod}:${cashReceivedAmount || 'auto'}:${keepPausedChoice ? 'paused' : 'ended'}`,
+          'Idempotency-Key': `staff-checkout:${gate}:${inv.session._id}:${chosenMethod}:${effectiveCashAmount || 'auto'}:${keepPausedChoice ? 'paused' : 'ended'}`,
         },
         body: JSON.stringify({
           sessionId: inv.session._id,
           exitImageBase64: snapshotRef.current || null,
           paymentMethod: chosenMethod,
-          cashReceivedAmount: isCash && dueAmount > 0 ? Number(cashReceivedAmount) : null,
+          cashReceivedAmount: isCash && dueAmount > 0 ? effectiveCashAmount : null,
           depositChangeToWallet: isCash && depositChangeToWallet,
           checkoutToken: inv.checkoutToken || null,
           exitCamera: exitCameraName,
@@ -791,7 +840,7 @@ export function useExitLaneController({
               paymentMethod: chosenMethod,
             });
             ch.close();
-          } catch (_) {}
+          } catch (_) { }
         }
 
         setPlate('');
@@ -812,17 +861,6 @@ export function useExitLaneController({
     }
   }, [invoiceData, cashReceivedAmount, depositChangeToWallet, gate, triggerBarrier, setSnapshot, refreshFloorsAndSessions]);
 
-  const reset = useCallback(() => {
-    lastScannedPlateRef.current = '';
-    toast.dismiss(`exit-lookup-${gate}`);
-    toast.dismiss(`gate-scan-${gate}`);
-    setPlate('');
-    setInvoiceData(null);
-    setStatusInfo(null);
-    setCashReceivedAmount('');
-    setDepositChangeToWallet(false);
-  }, [gate]);
-
   const handlePlateChange = useCallback((nextVal) => {
     const upper = String(nextVal || '').toUpperCase();
     setPlate(upper);
@@ -834,6 +872,10 @@ export function useExitLaneController({
 
   // Debounced lookup on typing
   useEffect(() => {
+    if (isAutoSettingPlateRef.current) {
+      isAutoSettingPlateRef.current = false;
+      return undefined;
+    }
     const clean = normalizeLicensePlate(plate);
     if (!clean || clean.length < 5) return undefined;
     const timer = setTimeout(() => {

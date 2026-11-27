@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { Camera, ScanLine, AlertCircle, QrCode } from 'lucide-react';
+import { Camera, ScanLine, AlertCircle, QrCode, Loader2 } from 'lucide-react';
 import valoLogo from '../../assets/images/Kiosk/ValoExitLogo.png';
 import KioskQrScannerModal from '../Kiosk/KioskQrScannerModal';
 import { API_BASE } from '../../services/api';
@@ -10,15 +10,20 @@ import {
   captureVideoLaneBase64,
   computeLaneFrameSignature,
   hasLaneMotionChanged,
+  rotateImageBase64,
 } from '../../utils/cameraLaneCapture';
 import { useGateCameraConfig } from '../../hooks/useGateCameraConfig';
 import LaneCameraPreview from '../../components/LaneCameraPreview';
 
 const isLikelyVietnamesePlate = (plate) => {
   const clean = normalizeLicensePlate(plate);
+  if (!clean || clean.length < 6 || clean.length > 10) return false;
+  const prov = parseInt(clean.slice(0, 2), 10);
+  if (isNaN(prov) || prov < 11 || prov > 99) return false;
   return (
     /^\d{2}[A-Z]{1,2}\d{4,5}$/.test(clean) ||
-    /^\d{2}[A-Z]\d\d{4,5}$/.test(clean)
+    /^\d{2}[A-Z]\d\d{4,5}$/.test(clean) ||
+    /^\d{2}[A-Z]\d{5,6}$/.test(clean)
   );
 };
 
@@ -70,6 +75,47 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
     return () => {
       if (socket) socket.off('gate:auto_scan_status', handleAutoScanChange);
       if (channel) channel.close();
+    };
+  }, [socket]);
+
+  // Lắng nghe thay đổi chế độ làn (Tidal Flow) để reset ngay lập tức bộ nhớ cache quét
+  useEffect(() => {
+    const handleModeChange = () => {
+      // Reset hoàn toàn mọi trạng thái scan để bắt đầu quét mới ngay lập tức
+      lastAiScanAtRef.current = 0;
+      scanStartedAtRef.current = 0;
+      lastScannedPlateRef.current = null;
+      lastErrorPlateAtRef.current = { plate: null, at: 0 };
+      isScanningRef.current = false;
+      qrScanningRef.current = false;
+      setIsScanning(false);
+      setErrorMessage('');
+      setRecognizedText('');
+      setAlarmState(false);
+      // Reset remote frame reference để buộc lấy frame mới từ luồng đúng
+      remoteFrameRef.current = null;
+      prevFrameSigRef.current = null;
+    };
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('valo_gate_channel');
+        channel.onmessage = (e) => {
+          if (e.data?.type === 'LANE_MODE_CHANGED') {
+            handleModeChange();
+          }
+        };
+      } catch (_) {}
+    }
+
+    if (socket) {
+      socket.on('gate:lane_mode_changed', handleModeChange);
+    }
+
+    return () => {
+      if (channel) channel.close();
+      if (socket) socket.off('gate:lane_mode_changed', handleModeChange);
     };
   }, [socket]);
 
@@ -135,7 +181,9 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
           }
           return;
         } catch (err) {
-          console.warn('KioskOut camera constraint fallback:', err?.message || err);
+          if (!remoteFrameRef.current) {
+            console.warn('KioskOut camera constraint fallback:', err?.message || err);
+          }
         }
       }
       setStreamError(true);
@@ -182,6 +230,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          gate: targetGate || 'EXIT_1',
           licensePlate: plate,
           detectedPlate: plate,
           exitImageBase64: imageBase64,
@@ -330,6 +379,16 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
 
   const lastScannedPlateRef = useRef(null);
   const lastErrorPlateAtRef = useRef({ plate: null, at: 0 });
+  const scanStartedAtRef = useRef(0);
+
+  const triggerScan = () => {
+    isScanningRef.current = false;
+    setIsScanning(false);
+    lastAiScanAtRef.current = 0;
+    lastScannedPlateRef.current = null;
+    lastErrorPlateAtRef.current = { plate: null, at: 0 };
+    setErrorMessage('');
+  };
 
   // Camera Scanning Loop (Tự động quét thông minh từ luồng camera C270 của PC hoặc Camera local)
   useEffect(() => {
@@ -337,7 +396,16 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
     let consecutiveEmptyFrames = 0;
 
     interval = setInterval(async () => {
-      if (!autoScanEnabled || isScanningRef.current || qrScanningRef.current || showQrModal) return;
+      if (isScanningRef.current) {
+        if (Date.now() - scanStartedAtRef.current > 11000) {
+          console.warn('[KioskOut] Scan watchdog: releasing stuck scan lock after 11s');
+          isScanningRef.current = false;
+          setIsScanning(false);
+        } else {
+          return;
+        }
+      }
+      if (qrScanningRef.current || showQrModal) return;
 
       const currentRemoteFrame = remoteFrameRef.current;
       const video = videoRef.current;
@@ -347,24 +415,26 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
       if (!currentRemoteFrame && !hasLocalVideo) return;
 
       const now = Date.now();
-      const heartbeatDue = now - lastAiScanAtRef.current >= 2000; // Mỗi 2 giây kiểm tra AI
+      const heartbeatDue = now - lastAiScanAtRef.current >= 1500; // Mỗi 1.5 giây quét AI
       if (!heartbeatDue) return;
 
       lastAiScanAtRef.current = now;
+      scanStartedAtRef.current = now;
       isScanningRef.current = true;
       setIsScanning(true);
 
       try {
         let result = null;
         // 1. Ưu tiên quét trực tiếp trên frame live truyền từ webcam C270 của PC
+        // (Backend ai_service /scan đã tự động thử cả góc 0° và 180°, không cần gọi lại lần 2)
         if (currentRemoteFrame) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
             const response = await fetch(`${API_BASE}/ai/scan-plate`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: currentRemoteFrame, lane: 'exit' }),
+              body: JSON.stringify({ image: currentRemoteFrame, lane: cameraLane, gate: targetGate || 'EXIT_1' }),
               signal: controller.signal,
             });
             clearTimeout(timeoutId);
@@ -375,7 +445,9 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
               result = { plate: normalized, imageBase64: currentRemoteFrame };
             }
           } catch (e) {
-            console.warn('[KioskOut] AI scan on remote frame error:', e?.message);
+            if (e?.name !== 'AbortError') {
+              console.warn('[KioskOut] AI scan on remote frame error:', e?.message);
+            }
           }
         }
 
@@ -393,9 +465,12 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
             setRecognizedText(formatted);
             const recentlyFailedSamePlate =
               lastErrorPlateAtRef.current.plate === formatted &&
-              Date.now() - lastErrorPlateAtRef.current.at < 8000;
-            if (formatted !== lastScannedPlateRef.current && !recentlyFailedSamePlate) {
-              lastScannedPlateRef.current = formatted;
+              Date.now() - lastErrorPlateAtRef.current.at < 2000;
+            const recentlyScanned =
+              lastScannedPlateRef.current?.plate === formatted &&
+              Date.now() - (lastScannedPlateRef.current?.at || 0) < 3000;
+            if (!recentlyScanned && !recentlyFailedSamePlate) {
+              lastScannedPlateRef.current = { plate: formatted, at: Date.now() };
               await handlePlateDetected(formatted, result.imageBase64);
             }
           }
@@ -419,6 +494,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
             }).catch(() => { });
 
             lastScannedPlateRef.current = null;
+            lastErrorPlateAtRef.current = { plate: null, at: 0 };
             setRecognizedText('');
             setErrorMessage('');
             setAlarmState(false);
@@ -590,19 +666,23 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
           </p>
 
           {/* Brighter Glass Card */}
-          <div className="w-full rounded-[28px] p-[1.5px] bg-gradient-to-b from-white/30 to-white/10 mb-5 shadow-[0_24px_60px_rgba(15,23,42,0.55)]">
+          <div
+            onClick={triggerScan}
+            className="w-full rounded-[28px] p-[1.5px] bg-gradient-to-b from-white/30 to-white/10 mb-5 shadow-[0_24px_60px_rgba(15,23,42,0.55)] cursor-pointer active:scale-[0.99] transition hover:from-amber-400/50 hover:to-white/20"
+            title="Click to scan license plate"
+          >
             <div className="rounded-[27px] bg-white/[0.08] backdrop-blur-2xl p-7 space-y-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300/30 to-amber-400/10 border border-amber-300/45 text-amber-300 shadow-[0_0_24px_rgba(250,204,21,0.18)]">
-                    <ScanLine size={26} />
+                    {isScanning ? <Loader2 size={26} className="animate-spin text-amber-300" /> : <ScanLine size={26} />}
                   </div>
                   <div className="text-left">
                     <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-300">
                       AI Plate Reader
                     </p>
                     <p className="text-lg font-bold text-white mt-0.5">
-                      Waiting for vehicle...
+                      {isScanning ? 'Scanning Plate...' : (recognizedText ? `Scanned: ${recognizedText}` : 'Waiting for vehicle...')}
                     </p>
                   </div>
                 </div>

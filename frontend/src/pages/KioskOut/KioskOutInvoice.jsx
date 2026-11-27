@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
-import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon } from 'lucide-react';
+import { Camera, Clock, ChevronRight, AlertTriangle, Wallet, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { API_BASE } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
@@ -62,6 +62,50 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
   const [paymentData, setPaymentData] = useState(null);
   const [keepPausedChoice, setKeepPausedChoice] = useState(false);
   const [paymentError, setPaymentError] = useState('');
+  const [liveExitFrame, setLiveExitFrame] = useState(null);
+
+  // 15-minute payment hold timeout (900 seconds) -> Return to main welcome screen
+  const PAYMENT_TIMEOUT_SECONDS = 15 * 60;
+  const [timeLeft, setTimeLeft] = useState(PAYMENT_TIMEOUT_SECONDS);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          onBack?.();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [onBack]);
+
+  const formatCountdown = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Lắng nghe luồng camera live đúng trạm (ENTRY_1 hoặc EXIT_1) từ Staff Gate Control
+  useEffect(() => {
+    if (!socket) return;
+    const normTargetGate = String(targetGate || 'EXIT_1').toUpperCase();
+    const handleRemoteFrame = (data) => {
+      const dataGate = String(data?.gate || '').toUpperCase();
+      const isMatchingGate = dataGate === normTargetGate;
+      const isFallbackLane = !dataGate && (
+        normTargetGate === 'ENTRY_1' ? data?.lane === 'entry' : data?.lane === 'exit'
+      );
+      if ((isMatchingGate || isFallbackLane) && data?.frameBase64) {
+        setLiveExitFrame(data.frameBase64);
+      }
+    };
+    socket.on('gate:live_frame', handleRemoteFrame);
+    return () => socket.off('gate:live_frame', handleRemoteFrame);
+  }, [socket, targetGate]);
 
   const handleCheckout = useCallback(async (paymentMethod, keepPaused = false, paymentRef = null, forceRefresh = false) => {
     if (processingRef.current || completedRef.current) return;
@@ -142,20 +186,26 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
     } finally { processingRef.current = false; }
   }, [exitImage, onCheckoutSuccess, sessionData, paymentError, checkoutError]);
 
+  const autoCheckoutTriggeredRef = useRef(null);
   useEffect(() => {
+    if (!sessionData || !sessionData.session?._id) return undefined;
+    const currentSessionId = sessionData.session._id;
+    if (autoCheckoutTriggeredRef.current === currentSessionId) return undefined;
+    autoCheckoutTriggeredRef.current = currentSessionId;
+
     const timerIds = [];
-    if (sessionData && sessionData.isEarlyExit) {
+    if (sessionData.isEarlyExit) {
       timerIds.push(setTimeout(() => setIsEarlyExitModalOpen(true), 0));
     }
     // If AutoPay is allowed AND it's not an early exit, auto-trigger checkout
-    if (sessionData && sessionData.canAutoPay && !sessionData.isEarlyExit) {
-      const timerId = setTimeout(() => handleCheckout('wallet', false), 0);
+    if (sessionData.canAutoPay && !sessionData.isEarlyExit) {
+      const timerId = setTimeout(() => handleCheckout('wallet', false), 50);
       timerIds.push(timerId);
-    } else if (sessionData && !sessionData.canAutoPay && sessionData.amountToPay > 0 && !sessionData.isEarlyExit) {
-      const timerId = setTimeout(() => handleCheckout('vietqr', false), 0);
+    } else if (!sessionData.canAutoPay && sessionData.amountToPay > 0 && !sessionData.isEarlyExit) {
+      const timerId = setTimeout(() => handleCheckout('vietqr', false), 50);
       timerIds.push(timerId);
-    } else if (sessionData && sessionData.amountToPay <= 0 && !sessionData.isEarlyExit) {
-      const timerId = setTimeout(() => handleCheckout('free', false), 0);
+    } else if (sessionData.amountToPay <= 0 && !sessionData.isEarlyExit) {
+      const timerId = setTimeout(() => handleCheckout('free', false), 50);
       timerIds.push(timerId);
     }
 
@@ -250,6 +300,13 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
   // Format currency
   const formatVND = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 
+  const plateForQr = sessionData?.observedLicensePlate || sessionData?.session?.licensePlate || sessionData?.licensePlate || '';
+  const cleanPlateForQr = String(plateForQr).replace(/[^A-Z0-9]/g, '');
+  const instantVietQrUrl = amountToPay > 0 && cleanPlateForQr
+    ? `https://img.vietqr.io/image/970422-0904555791-qr_only.png?amount=${amountToPay}&addInfo=${encodeURIComponent(`VALO ${cleanPlateForQr}`)}&accountName=VALO%20PARKING`
+    : (sessionData?.qrCode || sessionData?.vietQrUrl || null);
+  const currentQr = instantVietQrUrl || paymentData?.qrCode;
+
   return (
     <div className="w-full h-full flex flex-col md:flex-row bg-[#0D0D0D]">
 
@@ -263,18 +320,21 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
 
         <div className="flex-1 p-6 flex flex-col justify-center gap-6">
           <div className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden relative group flex items-center justify-center min-h-[220px] max-h-[36vh]">
-            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10 shadow">ENTRY CAMERA</div>
+            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10 shadow">CHECK-IN SNAPSHOT</div>
             {session.entryImage_url ? (
-              <img src={session.entryImage_url} alt="Entry" className="w-full h-full max-h-[36vh] object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
+              <img src={session.entryImage_url} alt="Entry Snapshot" className="w-full h-full max-h-[36vh] object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
             ) : (
               <div className="w-full h-[220px] flex items-center justify-center text-gray-600"><ImageIcon size={48} /></div>
             )}
           </div>
 
           <div className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden relative group flex items-center justify-center min-h-[220px] max-h-[36vh]">
-            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10 shadow">EXIT CAMERA (LIVE)</div>
-            {exitImage ? (
-              <img src={exitImage} alt="Exit" className="w-full h-full max-h-[36vh] object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10 shadow flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              {targetGate === 'ENTRY_1' ? 'LEFT LANE (ENTRY_1) · LIVE' : 'RIGHT LANE (EXIT_1) · LIVE'}
+            </div>
+            {(liveExitFrame || exitImage) ? (
+              <img src={liveExitFrame || exitImage} alt="Exit Station Live Camera" className="w-full h-full max-h-[36vh] object-contain brightness-[1.03] opacity-90 group-hover:opacity-100 transition-opacity" />
             ) : (
               <div className="w-full h-[220px] flex items-center justify-center text-gray-600"><ImageIcon size={48} /></div>
             )}
@@ -383,17 +443,29 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
           ) : null}
           {/* QR Code Section */}
           <div className="bg-white rounded-2xl p-6 flex flex-col items-center text-black">
-            <p className="font-bold text-sm mb-4">{amountToPay > 0 ? 'SCAN TO PAY' : 'NO PAYMENT REQUIRED'}</p>
+            <p className="font-bold text-sm mb-3 tracking-wide">{amountToPay > 0 ? 'SCAN TO PAY' : 'NO PAYMENT REQUIRED'}</p>
             {amountToPay <= 0 ? (
               <p className="text-green-700 font-bold text-center">Your parking session is authorized for exit.</p>
-            ) : paymentData ? (
-              <QRCode value={paymentData.qrCode} size={160} />
+            ) : currentQr ? (
+              currentQr.startsWith('http') ? (
+                <img src={currentQr} alt="VietQR" className="w-[180px] h-[235px] object-contain rounded-lg shadow-xs" />
+              ) : (
+                <QRCode value={currentQr} size={180} />
+              )
             ) : (
-              <div className="w-[160px] h-[160px] bg-gray-200 flex items-center justify-center text-gray-500 text-xs text-center p-4 rounded-lg">
-                {isProcessing ? "Generating QR Code..." : "Please select option to generate QR"}
+              <div className="w-[180px] h-[235px] bg-gray-100 flex flex-col items-center justify-center text-gray-500 text-xs text-center p-3 rounded-lg gap-2">
+                <Loader2 className="animate-spin text-amber-500" size={24} />
+                <span>Loading QR Code...</span>
               </div>
             )}
-            <p className="text-xs text-gray-500 mt-4 text-center">
+
+            {/* 15-minute countdown hold badge */}
+            <div className="mt-3 flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 px-3.5 py-1.5 rounded-full font-bold border border-amber-200/80 shadow-xs">
+              <Clock size={13} className="text-amber-600" />
+              <span>Payment expires in: {formatCountdown(timeLeft)}</span>
+            </div>
+
+            <p className="text-xs text-gray-500 mt-2 text-center">
               {amountToPay > 0
                 ? 'Use any banking app to scan and pay.'
                 : (isEarlyExit ? 'Select Pause or End Session below to open the exit barrier.' : 'Barrier opens automatically after confirmation.')}
@@ -408,15 +480,7 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
           >
             Cancel
           </button>
-          {paymentData ? (
-            <button
-              disabled={true}
-              className="flex-1 bg-green-500/50 text-white font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-wait"
-            >
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Waiting for payment...
-            </button>
-          ) : isEarlyExit && !earlyExitDecisionMade ? (
+          {isEarlyExit && !earlyExitDecisionMade ? (
             <button
               onClick={() => setIsEarlyExitModalOpen(true)}
               disabled={isProcessing}
@@ -434,15 +498,11 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
             </button>
           ) : (
             <button
-              onClick={() => handleCheckout('vietqr', keepPausedChoice, null, Boolean(paymentError || checkoutError))}
-              disabled={isProcessing || (sessionData?.canAutoPay && !isEarlyExit)}
-              className="flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+              disabled={true}
+              className="flex-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 font-black text-lg py-4 rounded-xl flex items-center justify-center gap-2 cursor-wait shadow-sm"
             >
-              {isProcessing
-                ? 'Processing...'
-                : (paymentError || checkoutError)
-                ? 'RETRY'
-                : 'GENERATE QR'} <ChevronRight />
+              <div className="w-5 h-5 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" />
+              <span>Waiting for payment...</span>
             </button>
           )}
         </div>

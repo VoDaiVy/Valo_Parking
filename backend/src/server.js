@@ -119,6 +119,15 @@ const startServer = async () => {
       socket.on('gate:auto_scan_changed', (data) => {
         socket.broadcast.emit('gate:auto_scan_status', data);
       });
+
+      socket.on('kiosk:slot_hold_changed', (data) => {
+        if (data?.type === 'HOLD_CREATED') {
+          socket.broadcast.emit('booking:hold_created', data);
+        } else if (data?.type === 'HOLD_RELEASED') {
+          socket.broadcast.emit('booking:hold_released', data);
+        }
+        socket.broadcast.emit('parking:slots_updated');
+      });
     });
 
     // Setup notification socket handlers
