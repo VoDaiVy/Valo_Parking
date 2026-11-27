@@ -890,6 +890,73 @@ export default function GateControl() {
     }
   }, [searchParams, primaryEntry, primaryExit]);
 
+  // ─── REALTIME VEHICLE DETECTION SYNC FROM KIOSK / CAMERA (BroadcastChannel + Socket.IO) ───
+  useEffect(() => {
+    const handleRemoteVehicleDetected = (payload) => {
+      if (!payload || !payload.licensePlate) return;
+      const targetGate = String(payload.gate || 'ENTRY_1').toUpperCase();
+      const detectedPlate = normalizeLicensePlate(payload.licensePlate);
+      if (!detectedPlate) return;
+      const formattedPlate = formatLicensePlateDisplay(detectedPlate);
+
+      // Match target gate to left/right active controllers based on current Tidal Flow
+      // leftRole: 'entry' => primaryEntry (ENTRY_1), 'exit' => reversedExit (ENTRY_1)
+      // rightRole: 'entry' => reversedEntry (EXIT_1), 'exit' => primaryExit (EXIT_1)
+      const isLeftGate = targetGate === 'ENTRY_1';
+      const targetCtrl = isLeftGate ? leftCtrl : rightCtrl;
+      const targetRole = isLeftGate ? leftRole : rightRole;
+
+      if (targetRole === 'entry') {
+        targetCtrl.setPlate(formattedPlate);
+        if (payload.phone) targetCtrl.setPhone(payload.phone);
+        if (payload.assignedSlot) targetCtrl.setSlotCode(payload.assignedSlot);
+        if (payload.entryImageBase64) {
+          if (isLeftGate) setEntrySnapshot(payload.entryImageBase64);
+          else setExitSnapshot(payload.entryImageBase64);
+        }
+        targetCtrl.verifyPlate(detectedPlate, payload.entryImageBase64 || null, false, payload.phone || null);
+        toast.info(`[${targetGate}] Vehicle scanned: ${formattedPlate}`, { id: `remote-detect-${targetGate}` });
+      } else {
+        targetCtrl.setPlate(formattedPlate);
+        if (payload.exitImageBase64) {
+          if (isLeftGate) setEntrySnapshot(payload.exitImageBase64);
+          else setExitSnapshot(payload.exitImageBase64);
+        }
+        targetCtrl.lookupSession(detectedPlate, payload.exitImageBase64 || null);
+        toast.info(`[${targetGate}] Exit vehicle scanned: ${formattedPlate}`, { id: `remote-detect-${targetGate}` });
+      }
+    };
+
+    // 1. Listen via Socket.IO
+    if (socket) {
+      socket.on('gate:vehicle_detected', handleRemoteVehicleDetected);
+    }
+
+    // 2. Listen via BroadcastChannel for zero-latency local tab communication
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('valo_gate_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'VEHICLE_DETECTED' && event.data?.payload) {
+            handleRemoteVehicleDetected(event.data.payload);
+          }
+        };
+      } catch (err) {
+        console.warn('BroadcastChannel not supported or error:', err);
+      }
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('gate:vehicle_detected', handleRemoteVehicleDetected);
+      }
+      if (channel) {
+        channel.close();
+      }
+    };
+  }, [socket, leftCtrl, rightCtrl, leftRole, rightRole, setEntrySnapshot, setExitSnapshot]);
+
   // ─── 5. AI MODAL SELECTION CALLBACK ───
   const handleSelectAiPlate = (selectedPlate) => {
     setShowAiModal(false);
@@ -1056,6 +1123,16 @@ export default function GateControl() {
                 const next = !autoScanDual;
                 setAutoScanDual(next);
                 localStorage.setItem('valo_auto_scan', String(next));
+                if (socket) {
+                  socket.emit('gate:auto_scan_changed', { enabled: next });
+                }
+                if (typeof BroadcastChannel !== 'undefined') {
+                  try {
+                    const ch = new BroadcastChannel('valo_gate_channel');
+                    ch.postMessage({ type: 'AUTO_SCAN_CHANGED', payload: { enabled: next } });
+                    ch.close();
+                  } catch (_) { }
+                }
                 toast(next ? t('gateControlUi.autoScanEnabled') : t('gateControlUi.autoScanDisabled'));
               }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 font-bold text-xs transition cursor-pointer ${autoScanDual
