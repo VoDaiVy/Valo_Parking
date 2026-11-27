@@ -765,6 +765,26 @@ router.post('/kiosk-exit-sync', protect, authorize('staff', 'admin'), (req, res)
   return res.json({ success: true, data: payload });
 });
 
+// Broadcast Live Camera Frame từ PC Staff sang các màn hình Kiosk trên Tablet
+router.post('/camera-live-frame', (req, res) => {
+  const { lane = 'entry', frameBase64, gate = 'ENTRY_1' } = req.body || {};
+  if (!frameBase64) {
+    return res.status(400).json({ success: false, message: 'frameBase64 is required' });
+  }
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('gate:live_frame', {
+      lane, // 'entry' | 'exit'
+      gate: String(gate).toUpperCase(),
+      frameBase64,
+      timestamp: Date.now(),
+    });
+  }
+
+  return res.json({ success: true });
+});
+
 module.exports = {
   router,
   triggerBarrierOpen

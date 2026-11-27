@@ -5,6 +5,7 @@ import logoImage from '../../assets/images/Kiosk/LogoKiosk.png';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
 import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
@@ -33,6 +34,8 @@ const plateFingerprint = (plate) => {
 };
 
 export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass, targetGate = 'ENTRY_1' }) {
+  const socket = useSocket();
+  const [remoteFrame, setRemoteFrame] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
   const [isParkingFull, setIsParkingFull] = useState(false);
@@ -164,6 +167,18 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       clearInterval(interval);
     };
   }, []);
+
+  // Lắng nghe luồng ảnh trực tiếp từ webcam C270 của PC qua Socket
+  useEffect(() => {
+    if (!socket) return;
+    const handleRemoteFrame = (data) => {
+      if (data?.lane === 'entry' && data?.frameBase64) {
+        setRemoteFrame(data.frameBase64);
+      }
+    };
+    socket.on('gate:live_frame', handleRemoteFrame);
+    return () => socket.off('gate:live_frame', handleRemoteFrame);
+  }, [socket]);
 
   useEffect(() => {
     let isMounted = true;
@@ -488,14 +503,58 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         isParkingFullRef.current = false;
       });
 
+    // 1. Ưu tiên quét trực tiếp từ ảnh camera C270 của PC nếu có stream
+    if (remoteFrame) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
+        const response = await fetch(`${API_BASE}/ai/scan-plate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: remoteFrame }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const data = await response.json();
+        const rawPlate = data?.data?.licensePlate || data?.data?.plate || data?.plate;
+        if (data.success && rawPlate) {
+          const normalized = normalizeLicensePlate(rawPlate);
+          const handled = await verifyScannedPlate({ plate: normalized, imageBase64: remoteFrame });
+          setIsScanning(false);
+          if (handled) return;
+          await checkFullPromise;
+          if (isParkingFullRef.current) {
+            setShowFullModal(true);
+            return;
+          }
+          onStart(1);
+          return;
+        }
+      } catch (err) {
+        console.warn('[Kiosk scan] Remote frame AI scan error, trying local camera:', err?.message);
+      }
+    }
+
     try {
       if (!streamRef.current) {
-        const stream = await openCameraStream();
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => { });
-          await configureCameraTrack(stream);
+        try {
+          const stream = await openCameraStream();
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play().catch(() => { });
+            await configureCameraTrack(stream);
+          }
+        } catch (camErr) {
+          console.warn('[Kiosk scan] Local camera unavailable on this tablet, moving directly to Step 1:', camErr?.message);
+          setIsScanning(false);
+          await checkFullPromise;
+          if (isParkingFullRef.current) {
+            setShowFullModal(true);
+            return;
+          }
+          onStart(1);
+          return;
         }
       }
 
