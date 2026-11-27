@@ -806,14 +806,14 @@ export default function GateControl() {
   const handleDualScanBothLanes = async () => {
     setEntrySnapshot(null);
     setExitSnapshot(null);
-    await Promise.allSettled([leftCtrl.scanPlate(), rightCtrl.scanPlate()]);
+    await Promise.allSettled([leftCtrl.scanPlate(null, false), rightCtrl.scanPlate(null, false)]);
   };
 
   const handleScanBothRef = useRef({ left: null, right: null });
   useEffect(() => {
     handleScanBothRef.current = {
-      left: () => leftCtrl.scanPlate(),
-      right: () => rightCtrl.scanPlate(),
+      left: (isAuto = false) => leftCtrl.scanPlate(null, isAuto),
+      right: (isAuto = false) => rightCtrl.scanPlate(null, isAuto),
     };
   });
 
@@ -834,7 +834,7 @@ export default function GateControl() {
         if (!entryMotionSigRef.current || hasLaneMotionChanged(entryMotionSigRef.current, sig)) {
           entryMotionSigRef.current = sig;
           lastAutoEntryAtRef.current = now;
-          tasks.push(handleScanBothRef.current.left?.());
+          tasks.push(handleScanBothRef.current.left?.(true));
         }
       }
 
@@ -849,7 +849,7 @@ export default function GateControl() {
         if (!exitMotionSigRef.current || hasLaneMotionChanged(exitMotionSigRef.current, sig)) {
           exitMotionSigRef.current = sig;
           lastAutoExitAtRef.current = now;
-          tasks.push(handleScanBothRef.current.right?.());
+          tasks.push(handleScanBothRef.current.right?.(true));
         }
       }
 
@@ -985,7 +985,7 @@ export default function GateControl() {
 
   return (
     <div className={`p-4 sm:p-6 lg:p-8 ${STAFF_THEME.page}`}>
-      <Toaster position="top-right" />
+      <Toaster position="top-right" toastOptions={{ duration: 4000, max: 3 }} />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           HEADER & STREAMLINED TOOLBAR
