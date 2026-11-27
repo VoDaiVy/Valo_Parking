@@ -36,6 +36,7 @@ const plateFingerprint = (plate) => {
 export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass, targetGate = 'ENTRY_1' }) {
   const socket = useSocket();
   const [remoteFrame, setRemoteFrame] = useState(null);
+  const remoteFrameRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
   const [isParkingFull, setIsParkingFull] = useState(false);
@@ -175,6 +176,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
     const handleRemoteFrame = (data) => {
       if (data?.lane === expectedLane && data?.frameBase64) {
         setRemoteFrame(data.frameBase64);
+        remoteFrameRef.current = data.frameBase64;
       }
     };
     socket.on('gate:live_frame', handleRemoteFrame);
@@ -505,9 +507,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       });
 
     // 1. Ưu tiên quét trực tiếp từ ảnh camera C270 của PC nếu có stream (hoặc lấy trực tiếp frame hiện tại)
-    let candidateFrame = remoteFrame;
+    let candidateFrame = remoteFrameRef.current || remoteFrame;
     if (!candidateFrame && typeof document !== 'undefined') {
-      // Fallback: nếu chưa nhận kịp remoteFrame qua state, thử capture trực tiếp từ video/canvas nếu có
       if (videoRef.current && videoRef.current.videoWidth) {
         candidateFrame = await buildScanImageBase64();
       }
@@ -544,27 +545,38 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       }
     }
 
+    // Nếu remote frame không nhận được biển số, cho qua luôn Step 1 để khách nhập biển số (chỉ quét camera tablet nếu có)
     try {
+      let localCameraAvailable = false;
       if (!streamRef.current) {
         try {
-          const stream = await openCameraStream();
+          const stream = await Promise.race([
+            openCameraStream(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Camera timeout')), 2500))
+          ]);
           streamRef.current = stream;
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
             await videoRef.current.play().catch(() => { });
             await configureCameraTrack(stream);
           }
+          localCameraAvailable = true;
         } catch (camErr) {
-          console.warn('[Kiosk scan] Local camera unavailable on this tablet, moving directly to Step 1:', camErr?.message);
-          setIsScanning(false);
-          await checkFullPromise;
-          if (isParkingFullRef.current) {
-            setShowFullModal(true);
-            return;
-          }
-          onStart(1);
+          console.warn('[Kiosk scan] Local camera unavailable or timed out:', camErr?.message);
+        }
+      } else {
+        localCameraAvailable = true;
+      }
+
+      if (!localCameraAvailable) {
+        setIsScanning(false);
+        await checkFullPromise;
+        if (isParkingFullRef.current) {
+          setShowFullModal(true);
           return;
         }
+        onStart(1);
+        return;
       }
 
       if (videoRef.current) {
@@ -582,7 +594,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       await checkFullPromise;
 
       const detectedPlates = new Map();
-      for (let i = 0; i < SCAN_ATTEMPTS; i++) {
+      for (let i = 0; i < 4; i++) {
         try {
           const rawResult = await captureAndAnalyze();
           if (rawResult) {
@@ -619,7 +631,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         } catch (scanError) {
           console.error('Welcome scan attempt failed:', scanError);
         }
-        await wait(SCAN_RETRY_DELAY_MS);
+        await wait(300);
       } // End of loop
       try {
         const ch = new BroadcastChannel('valo_gate_channel');
