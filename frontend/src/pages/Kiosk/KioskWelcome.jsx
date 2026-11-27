@@ -504,15 +504,23 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         isParkingFullRef.current = false;
       });
 
-    // 1. Ưu tiên quét trực tiếp từ ảnh camera C270 của PC nếu có stream
-    if (remoteFrame) {
+    // 1. Ưu tiên quét trực tiếp từ ảnh camera C270 của PC nếu có stream (hoặc lấy trực tiếp frame hiện tại)
+    let candidateFrame = remoteFrame;
+    if (!candidateFrame && typeof document !== 'undefined') {
+      // Fallback: nếu chưa nhận kịp remoteFrame qua state, thử capture trực tiếp từ video/canvas nếu có
+      if (videoRef.current && videoRef.current.videoWidth) {
+        candidateFrame = await buildScanImageBase64();
+      }
+    }
+
+    if (candidateFrame) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
         const response = await fetch(`${API_BASE}/ai/scan-plate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: remoteFrame }),
+          body: JSON.stringify({ image: candidateFrame }),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -520,7 +528,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         const rawPlate = data?.data?.licensePlate || data?.data?.plate || data?.plate;
         if (data.success && rawPlate) {
           const normalized = normalizeLicensePlate(rawPlate);
-          const handled = await verifyScannedPlate({ plate: normalized, imageBase64: remoteFrame });
+          const handled = await verifyScannedPlate({ plate: normalized, imageBase64: candidateFrame });
           setIsScanning(false);
           if (handled) return;
           await checkFullPromise;

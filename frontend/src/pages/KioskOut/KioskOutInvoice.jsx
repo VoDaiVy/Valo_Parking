@@ -262,21 +262,21 @@ export default function KioskOutInvoice({ sessionData: initialSessionData, exitI
         </div>
 
         <div className="flex-1 p-6 flex flex-col justify-center gap-6">
-          <div className="bg-[#111] border border-white/5 rounded-2xl overflow-hidden relative group">
-            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10">ENTRY CAMERA</div>
+          <div className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden relative group flex items-center justify-center min-h-[220px] max-h-[36vh]">
+            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10 shadow">ENTRY CAMERA</div>
             {session.entryImage_url ? (
-              <img src={session.entryImage_url} alt="Entry" className="w-full h-[30vh] object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+              <img src={session.entryImage_url} alt="Entry" className="w-full h-full max-h-[36vh] object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
             ) : (
-              <div className="w-full h-[30vh] flex items-center justify-center text-gray-600"><ImageIcon size={48} /></div>
+              <div className="w-full h-[220px] flex items-center justify-center text-gray-600"><ImageIcon size={48} /></div>
             )}
           </div>
 
-          <div className="bg-[#111] border border-white/5 rounded-2xl overflow-hidden relative group">
-            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10">EXIT CAMERA (LIVE)</div>
+          <div className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden relative group flex items-center justify-center min-h-[220px] max-h-[36vh]">
+            <div className="absolute top-0 left-0 bg-yellow-500 text-black font-bold px-3 py-1 text-xs rounded-br-lg z-10 shadow">EXIT CAMERA (LIVE)</div>
             {exitImage ? (
-              <img src={exitImage} alt="Exit" className="w-full h-[30vh] object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+              <img src={exitImage} alt="Exit" className="w-full h-full max-h-[36vh] object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
             ) : (
-              <div className="w-full h-[30vh] flex items-center justify-center text-gray-600"><ImageIcon size={48} /></div>
+              <div className="w-full h-[220px] flex items-center justify-center text-gray-600"><ImageIcon size={48} /></div>
             )}
           </div>
         </div>

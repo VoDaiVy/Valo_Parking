@@ -40,6 +40,38 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
   const cameraConfigRef = useRef(cameraConfig);
   const prevFrameSigRef = useRef(null);
   const lastAiScanAtRef = useRef(0);
+  const [autoScanEnabled, setAutoScanEnabled] = useState(() => localStorage.getItem('valo_auto_scan') !== 'false');
+
+  // Lắng nghe đồng bộ trạng thái Auto-Scan từ Staff qua Socket và BroadcastChannel
+  useEffect(() => {
+    const handleAutoScanChange = (data) => {
+      if (typeof data?.enabled === 'boolean') {
+        setAutoScanEnabled(data.enabled);
+        localStorage.setItem('valo_auto_scan', String(data.enabled));
+      }
+    };
+
+    if (socket) {
+      socket.on('gate:auto_scan_status', handleAutoScanChange);
+    }
+
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('valo_gate_channel');
+        channel.onmessage = (event) => {
+          if (event.data?.type === 'AUTO_SCAN_CHANGED' && event.data?.payload) {
+            handleAutoScanChange(event.data.payload);
+          }
+        };
+      } catch (_) { }
+    }
+
+    return () => {
+      if (socket) socket.off('gate:auto_scan_status', handleAutoScanChange);
+      if (channel) channel.close();
+    };
+  }, [socket]);
 
   // Lắng nghe luồng ảnh trực tiếp từ webcam C270 cắm trên PC
   const remoteFrameRef = useRef(null);
@@ -297,7 +329,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
     let consecutiveEmptyFrames = 0;
 
     interval = setInterval(async () => {
-      if (isScanningRef.current || qrScanningRef.current || showQrModal) return;
+      if (!autoScanEnabled || isScanningRef.current || qrScanningRef.current || showQrModal) return;
 
       const currentRemoteFrame = remoteFrameRef.current;
       const video = videoRef.current;
@@ -395,7 +427,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [streamError, targetGate, cameraLane, showQrModal]);
+  }, [autoScanEnabled, streamError, targetGate, cameraLane, showQrModal]);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-br from-[#151e34] via-[#0f172a] to-[#131b2e] overflow-hidden px-6 py-8 lg:px-12 text-white select-none">
@@ -459,8 +491,8 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
                       </span>
                     </div>
                     <div className="rounded-full bg-slate-950/60 backdrop-blur-md border border-white/20 px-3.5 py-1.5">
-                      <span className={`text-[11px] font-mono font-bold tracking-widest uppercase ${isScanning ? 'text-amber-300' : 'text-slate-100'}`}>
-                        {isScanning ? 'Scanning' : 'AI Ready'}
+                      <span className="text-[11px] font-mono font-bold tracking-widest uppercase text-emerald-400">
+                        AI Active
                       </span>
                     </div>
                   </div>
@@ -507,8 +539,8 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
                       </span>
                     </div>
                     <div className="rounded-full bg-slate-950/60 backdrop-blur-md border border-white/20 px-3.5 py-1.5">
-                      <span className={`text-[11px] font-mono font-bold tracking-widest uppercase ${isScanning ? 'text-amber-300' : 'text-slate-100'}`}>
-                        {isScanning ? 'Scanning' : 'AI Ready'}
+                      <span className="text-[11px] font-mono font-bold tracking-widest uppercase text-emerald-400">
+                        AI Active
                       </span>
                     </div>
                   </div>
@@ -555,14 +587,14 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300/30 to-amber-400/10 border border-amber-300/45 text-amber-300 shadow-[0_0_24px_rgba(250,204,21,0.18)]">
-                    <ScanLine size={26} className={isScanning ? 'animate-pulse' : ''} />
+                    <ScanLine size={26} />
                   </div>
                   <div className="text-left">
                     <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-300">
                       AI Plate Reader
                     </p>
                     <p className="text-lg font-bold text-white mt-0.5">
-                      {isScanning ? 'Scanning vehicle...' : 'Waiting for vehicle...'}
+                      Waiting for vehicle...
                     </p>
                   </div>
                 </div>
@@ -575,16 +607,11 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-5 border-t border-white/15">
-                <span className="text-sm font-medium text-slate-200">Or check out with QR</span>
-                <button
-                  type="button"
-                  disabled={isScanning}
-                  onClick={() => setShowQrModal(true)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-400/20 hover:bg-amber-400 text-amber-200 hover:text-slate-950 border border-amber-300/55 px-5 py-2.5 text-sm font-bold tracking-wide transition-all active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
-                >
-                  <QrCode size={16} />
-                  <span>Scan QR</span>
-                </button>
+                <span className="text-sm font-medium text-slate-200">Or check out with Parking Ticket / QR</span>
+                <div className="inline-flex items-center gap-2 rounded-xl bg-amber-400/15 border border-amber-300/40 px-4 py-2 text-sm font-bold tracking-wide text-amber-300 shadow-sm">
+                  <QrCode size={18} className="text-amber-400" />
+                  <span>Scan QR on Reader</span>
+                </div>
               </div>
             </div>
           </div>

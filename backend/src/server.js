@@ -115,6 +115,10 @@ const startServer = async () => {
         // Broadcast frame này ngay lập tức cho các tablet đang kết nối
         socket.broadcast.emit('gate:live_frame', data);
       });
+
+      socket.on('gate:auto_scan_changed', (data) => {
+        socket.broadcast.emit('gate:auto_scan_status', data);
+      });
     });
 
     // Setup notification socket handlers
