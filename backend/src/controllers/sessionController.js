@@ -2054,7 +2054,7 @@ exports.createKioskSession = async (req, res, next) => {
 exports.kioskExitScan = async (req, res, next) => {
   try {
     const { sessionId, qrPayload, exitImageBase64, detectedPlate, gate } = req.body;
-    const targetGate = gate ? String(gate).toUpperCase() : (req.headers['x-gate-id'] ? String(req.headers['x-gate-id']).toUpperCase() : 'EXIT_1');
+    const targetGate = gate ? String(gate).toUpperCase() : (req.headers?.['x-gate-id'] ? String(req.headers['x-gate-id']).toUpperCase() : 'EXIT_1');
     let { licensePlate } = req.body;
     let credentialSession = null;
     const credentialPayload = normalizeKioskQrPayload(qrPayload);
