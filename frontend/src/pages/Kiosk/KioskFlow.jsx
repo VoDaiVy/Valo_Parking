@@ -414,7 +414,7 @@ function KioskEntryFlowInner({ assignedGate, basePath, isTidalReversed }) {
   const handleFastPassComplete = () => {
     setSuccessSession(null);
     setFormData(createEmptyKioskFormData());
-    window.location.replace(basePath);
+    navigate(basePath, { replace: true });
   };
 
   const handleFastPassEntry = async () => {
