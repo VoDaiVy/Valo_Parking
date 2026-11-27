@@ -227,7 +227,8 @@ export default function GateControl() {
   const [availableCameras, setAvailableCameras] = useState([]);
   const [entryDeviceId, setEntryDeviceId] = useState(() => localStorage.getItem('valo_entry_cam') || '');
   const [exitDeviceId, setExitDeviceId] = useState(() => localStorage.getItem('valo_exit_cam') || '');
-  const [autoScanDual, setAutoScanDual] = useState(false);
+  // Mặc định BẬT Auto-Scan để hệ thống tự nhận diện xe ở cả Cổng Vào và Cổng Ra
+  const [autoScanDual, setAutoScanDual] = useState(() => localStorage.getItem('valo_auto_scan') !== 'false');
   const [camerasReady, setCamerasReady] = useState(false);
   const { cameraConfig, updateCameraConfig } = useGateCameraConfig();
   const cameraConfigRef = useRef(cameraConfig);
@@ -1054,6 +1055,7 @@ export default function GateControl() {
               onClick={() => {
                 const next = !autoScanDual;
                 setAutoScanDual(next);
+                localStorage.setItem('valo_auto_scan', String(next));
                 toast(next ? t('gateControlUi.autoScanEnabled') : t('gateControlUi.autoScanDisabled'));
               }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 font-bold text-xs transition cursor-pointer ${autoScanDual
