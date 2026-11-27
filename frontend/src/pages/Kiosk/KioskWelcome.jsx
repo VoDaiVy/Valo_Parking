@@ -506,11 +506,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         isParkingFullRef.current = false;
       });
 
-    // 1. Ưu tiên quét trực tiếp từ ảnh camera C270 của PC nếu có stream (hoặc lấy trực tiếp frame hiện tại)
+    // 1. Quét trực tiếp từ ảnh camera C270 máy chủ (live frame truyền qua Socket)
     let candidateFrame = remoteFrameRef.current || remoteFrame;
-    if (!candidateFrame && typeof document !== 'undefined') {
-      if (videoRef.current && videoRef.current.videoWidth) {
-        candidateFrame = await buildScanImageBase64();
+
+    // Chờ tối đa 1.5 giây để nhận frame mới nhất từ Camera C270 máy chủ nếu chưa có
+    if (!candidateFrame) {
+      for (let w = 0; w < 15; w++) {
+        await wait(100);
+        candidateFrame = remoteFrameRef.current || remoteFrame;
+        if (candidateFrame) break;
       }
     }
 
@@ -521,7 +525,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         const response = await fetch(`${API_BASE}/ai/scan-plate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: candidateFrame }),
+          body: JSON.stringify({ image: candidateFrame, lane: targetGate === 'EXIT_1' ? 'exit' : 'entry' }),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -541,133 +545,18 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
           return;
         }
       } catch (err) {
-        console.warn('[Kiosk scan] Remote frame AI scan error, trying local camera:', err?.message);
+        console.warn('[Kiosk scan] Remote frame AI scan error:', err?.message);
       }
     }
 
-    // Nếu remote frame không nhận được biển số, cho qua luôn Step 1 để khách nhập biển số (chỉ quét camera tablet nếu có)
-    try {
-      let localCameraAvailable = false;
-      if (!streamRef.current) {
-        try {
-          const stream = await Promise.race([
-            openCameraStream(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Camera timeout')), 2500))
-          ]);
-          streamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play().catch(() => { });
-            await configureCameraTrack(stream);
-          }
-          localCameraAvailable = true;
-        } catch (camErr) {
-          console.warn('[Kiosk scan] Local camera unavailable or timed out:', camErr?.message);
-        }
-      } else {
-        localCameraAvailable = true;
-      }
-
-      if (!localCameraAvailable) {
-        setIsScanning(false);
-        await checkFullPromise;
-        if (isParkingFullRef.current) {
-          setShowFullModal(true);
-          return;
-        }
-        onStart(1);
-        return;
-      }
-
-      if (videoRef.current) {
-        const ready = await waitForVideoFrame(videoRef.current);
-        if (!ready) {
-          console.warn('[Kiosk scan] Video frame not ready in time, proceeding anyway');
-        }
-      }
-
-      const isCamAlreadyWarm = videoRef.current && videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-      if (!isCamAlreadyWarm) {
-        await wait(CAMERA_WARMUP_MS);
-      }
-
-      await checkFullPromise;
-
-      const detectedPlates = new Map();
-      for (let i = 0; i < 4; i++) {
-        try {
-          const rawResult = await captureAndAnalyze();
-          if (rawResult) {
-            if (rawResult.rateLimited) {
-              updateFormData({ licensePlate: '', phone: '', entryImageBase64: null });
-              stopCamera();
-              setIsScanning(false);
-              setScanMessage(rawResult.message);
-              setInlineNotice({ title: 'Please Wait', message: rawResult.message });
-              return;
-            }
-            const normalizedPlate = normalizeLicensePlate(rawResult.plate);
-            const fingerprint = plateFingerprint(normalizedPlate);
-            const previous = detectedPlates.get(fingerprint);
-            const nextCandidate = previous
-              ? { ...previous, count: previous.count + 1, plate: normalizedPlate, imageBase64: rawResult.imageBase64 }
-              : { ...rawResult, plate: normalizedPlate, count: 1, fingerprint };
-            detectedPlates.set(fingerprint, nextCandidate);
-
-            // Tối ưu hóa: Biển số chuẩn Việt Nam hợp lệ được kích hoạt xác thực ngay từ lần đầu
-            if (isLikelyVietnamesePlate(normalizedPlate) || nextCandidate.count >= 2 || i >= 2) {
-              const handled = await verifyScannedPlate(nextCandidate);
-              stopCamera();
-              setIsScanning(false);
-              if (handled) return;
-              if (isParkingFullRef.current) {
-                setShowFullModal(true);
-                return;
-              }
-              onStart(1);
-              return;
-            }
-          }
-        } catch (scanError) {
-          console.error('Welcome scan attempt failed:', scanError);
-        }
-        await wait(300);
-      } // End of loop
-      try {
-        const ch = new BroadcastChannel('valo_gate_channel');
-        ch.postMessage({
-          type: 'VEHICLE_CLEARED',
-          gate: targetGate || 'ENTRY_1',
-          reason: 'NO_VEHICLE_DETECTED',
-        });
-        ch.close();
-      } catch (_) { }
-      if (isParkingFullRef.current) {
-        setShowFullModal(true);
-        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
-        stopCamera();
-        setIsScanning(false);
-        return;
-      }
-      updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
-      stopCamera();
-      setIsScanning(false);
-      onStart(1);
-    } catch (error) {
-      console.error('Welcome camera scan error:', error);
-
-      if (isParkingFullRef.current) {
-        setShowFullModal(true);
-        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
-        stopCamera();
-        setIsScanning(false);
-        return;
-      }
-      updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
-      stopCamera();
-      setIsScanning(false);
-      onStart(1);
+    // Nếu camera C270 chưa quét ra biển số, chuyển sang Step 1 để khách nhập tay
+    setIsScanning(false);
+    await checkFullPromise;
+    if (isParkingFullRef.current) {
+      setShowFullModal(true);
+      return;
     }
+    onStart(1);
   };
 
   // Quét mã QR trực tiếp từ mắt đọc GM65 (USB / UART) ngay tại màn hình Welcome
