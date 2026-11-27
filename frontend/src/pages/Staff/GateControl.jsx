@@ -556,32 +556,43 @@ export default function GateControl() {
   }, []);
 
   // Truyền luồng ảnh Live Frame từ camera PC sang Tablet Kiosk qua Socket.IO
+  // Chuẩn hóa phát chính xác theo Gate (ENTRY_1 / EXIT_1) và Lane (entry / exit)
   useEffect(() => {
     if (!socket) return undefined;
     const interval = setInterval(() => {
-      // 1. Gửi frame cổng Vào
+      // 1. Gửi frame Trạm Bên Trái (Cổng ENTRY_1 - Mặc định Cổng Vào)
       const entryVideo = entryVideoRef.current;
       const entryCanvas = entryCanvasRef.current;
       if (entryVideo && entryVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const frame = captureVideoLaneBase64(entryVideo, entryCanvas, 'entry', cameraConfigRef.current);
         if (frame) {
-          socket.emit('gate:stream_frame', { lane: 'entry', gate: 'ENTRY_1', frameBase64: frame });
+          socket.emit('gate:stream_frame', {
+            lane: 'entry',
+            gate: 'ENTRY_1',
+            role: leftRole,
+            frameBase64: frame
+          });
         }
       }
 
-      // 2. Gửi frame cổng Ra
+      // 2. Gửi frame Trạm Bên Phải (Cổng EXIT_1 - Mặc định Cổng Ra)
       const exitVideo = exitVideoRef.current;
       const exitCanvas = exitCanvasRef.current;
       if (exitVideo && exitVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const frame = captureVideoLaneBase64(exitVideo, exitCanvas, 'exit', cameraConfigRef.current);
         if (frame) {
-          socket.emit('gate:stream_frame', { lane: 'exit', gate: 'EXIT_1', frameBase64: frame });
+          socket.emit('gate:stream_frame', {
+            lane: 'exit',
+            gate: 'EXIT_1',
+            role: rightRole,
+            frameBase64: frame
+          });
         }
       }
     }, 400); // 400ms = 2.5 FPS siêu mượt và không tốn băng thông đường truyền
 
     return () => clearInterval(interval);
-  }, [socket]);
+  }, [socket, leftRole, rightRole]);
 
   const emitKioskEntrySync = useCallback((payload) => {
     if (!payload?.licensePlate) return;
@@ -1024,10 +1035,10 @@ export default function GateControl() {
                 <p className="text-[9px] font-black uppercase tracking-wider text-white/40">{t('gateControlUi.espBridge')}</p>
                 <p
                   className={`text-[11px] font-bold ${isEspOnline
-                      ? 'text-emerald-300'
-                      : isBridgeRunning
-                        ? 'text-amber-300'
-                        : 'text-red-300'
+                    ? 'text-emerald-300'
+                    : isBridgeRunning
+                      ? 'text-amber-300'
+                      : 'text-red-300'
                     }`}
                 >
                   {isEspOnline ? t('gateControlUi.online') : isBridgeRunning ? t('gateControlUi.offlineSim') : t('gateControlUi.offline')}
@@ -1065,8 +1076,8 @@ export default function GateControl() {
                 onClick={() => handleSwitchLaneMode('STANDARD')}
                 disabled={isSwitchingLaneMode}
                 className={`px-3 py-1.5 rounded-lg text-xs transition cursor-pointer ${laneMode === 'STANDARD'
-                    ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20 font-black'
-                    : 'text-white/60 hover:text-white hover:bg-white/5 font-semibold'
+                  ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20 font-black'
+                  : 'text-white/60 hover:text-white hover:bg-white/5 font-semibold'
                   }`}
                 title="Standard: Left = Entry, Right = Exit"
               >
@@ -1077,8 +1088,8 @@ export default function GateControl() {
                 onClick={() => handleSwitchLaneMode('PEAK_ENTRY')}
                 disabled={isSwitchingLaneMode}
                 className={`px-3 py-1.5 rounded-lg text-xs transition cursor-pointer ${laneMode === 'PEAK_ENTRY'
-                    ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/20 font-black'
-                    : 'text-white/60 hover:text-white hover:bg-white/5 font-semibold'
+                  ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/20 font-black'
+                  : 'text-white/60 hover:text-white hover:bg-white/5 font-semibold'
                   }`}
                 title="Dual Entry: Both gates act as Entry"
               >
@@ -1089,8 +1100,8 @@ export default function GateControl() {
                 onClick={() => handleSwitchLaneMode('PEAK_EXIT')}
                 disabled={isSwitchingLaneMode}
                 className={`px-3 py-1.5 rounded-lg text-xs transition cursor-pointer ${laneMode === 'PEAK_EXIT'
-                    ? 'bg-sky-500 text-black shadow-md shadow-sky-500/20 font-black'
-                    : 'text-white/60 hover:text-white hover:bg-white/5 font-semibold'
+                  ? 'bg-sky-500 text-black shadow-md shadow-sky-500/20 font-black'
+                  : 'text-white/60 hover:text-white hover:bg-white/5 font-semibold'
                   }`}
                 title="Dual Exit: Both gates act as Exit"
               >
@@ -1136,8 +1147,8 @@ export default function GateControl() {
                 toast(next ? t('gateControlUi.autoScanEnabled') : t('gateControlUi.autoScanDisabled'));
               }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 font-bold text-xs transition cursor-pointer ${autoScanDual
-                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
-                  : 'border-white/10 bg-white/5 text-white/65 hover:text-white'
+                ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
+                : 'border-white/10 bg-white/5 text-white/65 hover:text-white'
                 }`}
             >
               <Activity size={13} className={autoScanDual ? 'animate-pulse text-emerald-400' : ''} />
@@ -1150,8 +1161,8 @@ export default function GateControl() {
               type="button"
               onClick={() => setShowCameraSetup(prev => !prev)}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 font-bold text-xs transition cursor-pointer ${showCameraSetup || dualLaneSplitMode
-                  ? 'border-sky-400/45 bg-sky-500/15 text-sky-300'
-                  : 'border-white/10 bg-white/5 text-white/65 hover:text-white'
+                ? 'border-sky-400/45 bg-sky-500/15 text-sky-300'
+                : 'border-white/10 bg-white/5 text-white/65 hover:text-white'
                 }`}
               title={t('gateControlUi.cameraSetupTitle')}
             >
@@ -1315,14 +1326,12 @@ export default function GateControl() {
             LEFT COLUMN: ENTRY STATION (ENTRY_1 — flips to Exit in PEAK_EXIT)
         ────────────────────────────────────────────────────────────────── */}
         <div
-          className={`flex flex-col rounded-2xl border bg-[#111111] p-4 shadow-2xl relative overflow-hidden transition-colors ${
-            leftRole === 'exit' ? 'border-sky-500/30' : 'border-emerald-500/20'
-          }`}
+          className={`flex flex-col rounded-2xl border bg-[#111111] p-4 shadow-2xl relative overflow-hidden transition-colors ${leftRole === 'exit' ? 'border-sky-500/30' : 'border-emerald-500/20'
+            }`}
         >
           <div
-            className={`pointer-events-none absolute -top-12 -left-12 h-36 w-36 rounded-full blur-3xl ${
-              leftRole === 'exit' ? 'bg-sky-500/15' : 'bg-emerald-500/10'
-            }`}
+            className={`pointer-events-none absolute -top-12 -left-12 h-36 w-36 rounded-full blur-3xl ${leftRole === 'exit' ? 'bg-sky-500/15' : 'bg-emerald-500/10'
+              }`}
           />
 
           {/* Lane Header */}
@@ -1330,29 +1339,26 @@ export default function GateControl() {
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm ${
-                    leftRole === 'exit'
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm ${leftRole === 'exit'
                       ? 'bg-sky-500/20 text-sky-400 border-sky-500/30'
                       : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  }`}
+                    }`}
                 >
                   <Car size={18} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2
-                      className={`text-sm sm:text-base font-black uppercase tracking-wider ${
-                        leftRole === 'exit' ? 'text-sky-400' : 'text-emerald-400'
-                      }`}
+                      className={`text-sm sm:text-base font-black uppercase tracking-wider ${leftRole === 'exit' ? 'text-sky-400' : 'text-emerald-400'
+                        }`}
                     >
                       {t('gateControlUi.entryGate')}
                     </h2>
                     <span
-                      className={`rounded-md px-2 py-0.5 text-[10px] font-mono font-bold border ${
-                        leftRole === 'exit'
+                      className={`rounded-md px-2 py-0.5 text-[10px] font-mono font-bold border ${leftRole === 'exit'
                           ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
                           : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      }`}
+                        }`}
                     >
                       ENTRY_1
                     </span>
@@ -1380,8 +1386,8 @@ export default function GateControl() {
                     toast.success(`Entry camera rotated to ${updated.entryRotation}°.`);
                   }}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border transition cursor-pointer ${entryTransform.rotation !== 0
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
-                      : 'bg-white/5 text-white/70 border-white/15 hover:text-white'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
+                    : 'bg-white/5 text-white/70 border-white/15 hover:text-white'
                     }`}
                   title="Rotate Entry camera in 90° steps"
                 >
@@ -1391,10 +1397,10 @@ export default function GateControl() {
 
                 <span
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border whitespace-nowrap shadow-sm ${gatesState.ENTRY_1?.open
-                      ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/60 shadow-emerald-500/20'
-                      : gatesState.ENTRY_1?.holdOpen
-                        ? 'bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-amber-500/20'
-                        : 'bg-red-500/20 text-red-300 border-red-500/40'
+                    ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/60 shadow-emerald-500/20'
+                    : gatesState.ENTRY_1?.holdOpen
+                      ? 'bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-amber-500/20'
+                      : 'bg-red-500/20 text-red-300 border-red-500/40'
                     }`}
                 >
                   {gatesState.ENTRY_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
@@ -1449,26 +1455,23 @@ export default function GateControl() {
                 <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-2">
                   <div className="flex justify-end">
                     <span
-                      className={`rounded px-2 py-0.5 text-[9px] font-black uppercase text-black ${
-                        leftRole === 'exit' ? 'bg-sky-400/90' : 'bg-emerald-500/90'
-                      }`}
+                      className={`rounded px-2 py-0.5 text-[9px] font-black uppercase text-black ${leftRole === 'exit' ? 'bg-sky-400/90' : 'bg-emerald-500/90'
+                        }`}
                     >
                       {leftRole === 'exit' ? 'EXIT (REVERSED)' : 'ENTRY'} · {entryTransform.side === 'left' ? 'LEFT' : 'RIGHT'} ({entryTransform.rotation}°)
                     </span>
                   </div>
                   <div
-                    className={`mx-auto my-auto h-20 w-44 rounded-lg border-2 border-dashed ${
-                      leftRole === 'exit' ? 'border-sky-400/60 bg-sky-400/5' : 'border-emerald-400/60 bg-emerald-400/5'
-                    }`}
+                    className={`mx-auto my-auto h-20 w-44 rounded-lg border-2 border-dashed ${leftRole === 'exit' ? 'border-sky-400/60 bg-sky-400/5' : 'border-emerald-400/60 bg-emerald-400/5'
+                      }`}
                   />
                   <div />
                 </div>
               ) : (
                 <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
                   <div
-                    className={`h-20 w-52 rounded-lg border-2 border-dashed flex flex-col items-center justify-center text-center p-1 ${
-                      leftRole === 'exit' ? 'border-sky-400/50 bg-sky-400/5' : 'border-emerald-400/50 bg-emerald-400/5'
-                    }`}
+                    className={`h-20 w-52 rounded-lg border-2 border-dashed flex flex-col items-center justify-center text-center p-1 ${leftRole === 'exit' ? 'border-sky-400/50 bg-sky-400/5' : 'border-emerald-400/50 bg-emerald-400/5'
+                      }`}
                   >
                     <span className={`text-[9px] font-bold uppercase drop-shadow ${leftRole === 'exit' ? 'text-sky-300' : 'text-emerald-300'}`}>
                       {leftRole === 'exit' ? 'EXIT (REVERSED) SCAN ZONE' : 'ENTRY SCAN ZONE'} {entryTransform.rotation !== 0 ? `(${entryTransform.rotation}°)` : ''}
@@ -1534,9 +1537,8 @@ export default function GateControl() {
                     type="button"
                     onClick={() => leftCtrl.scanPlate()}
                     disabled={leftCtrl.isScanning}
-                    className={`flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold text-black ${
-                      leftRole === 'exit' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-emerald-500 hover:bg-emerald-400'
-                    }`}
+                    className={`flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold text-black ${leftRole === 'exit' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-emerald-500 hover:bg-emerald-400'
+                      }`}
                   >
                     {leftCtrl.isScanning ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
                     <span>{t('gateControlUi.scanPlateAi')}</span>
@@ -1624,11 +1626,10 @@ export default function GateControl() {
                     slot: leftRole === 'entry' ? leftCtrl.slotCode || '' : '',
                   })
                 }
-                className={`flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
-                  leftRole === 'exit'
+                className={`flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${leftRole === 'exit'
                     ? 'border-sky-500/25 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300'
                     : 'border-emerald-500/25 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300'
-                }`}
+                  }`}
               >
                 <Unlock size={13} className={leftRole === 'exit' ? 'text-sky-400' : 'text-emerald-400'} />
                 <span>{leftRole === 'exit' ? t('gateControlUi.openExit') : t('gateControlUi.openEntry')}</span>
@@ -1676,14 +1677,12 @@ export default function GateControl() {
             RIGHT COLUMN: EXIT STATION (EXIT_1 — flips to Entry in PEAK_ENTRY)
         ────────────────────────────────────────────────────────────────── */}
         <div
-          className={`flex flex-col rounded-2xl border bg-[#111111] p-4 shadow-2xl relative overflow-hidden transition-colors ${
-            rightRole === 'entry' ? 'border-emerald-500/30' : 'border-sky-500/20'
-          }`}
+          className={`flex flex-col rounded-2xl border bg-[#111111] p-4 shadow-2xl relative overflow-hidden transition-colors ${rightRole === 'entry' ? 'border-emerald-500/30' : 'border-sky-500/20'
+            }`}
         >
           <div
-            className={`pointer-events-none absolute -top-12 -right-12 h-36 w-36 rounded-full blur-3xl ${
-              rightRole === 'entry' ? 'bg-emerald-500/15' : 'bg-sky-500/10'
-            }`}
+            className={`pointer-events-none absolute -top-12 -right-12 h-36 w-36 rounded-full blur-3xl ${rightRole === 'entry' ? 'bg-emerald-500/15' : 'bg-sky-500/10'
+              }`}
           />
 
           {/* Lane Header */}
@@ -1691,29 +1690,26 @@ export default function GateControl() {
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm ${
-                    rightRole === 'entry'
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border shadow-sm ${rightRole === 'entry'
                       ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                       : 'bg-sky-500/20 text-sky-400 border-sky-500/30'
-                  }`}
+                    }`}
                 >
                   <Car size={18} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2
-                      className={`text-sm sm:text-base font-black uppercase tracking-wider ${
-                        rightRole === 'entry' ? 'text-emerald-400' : 'text-sky-400'
-                      }`}
+                      className={`text-sm sm:text-base font-black uppercase tracking-wider ${rightRole === 'entry' ? 'text-emerald-400' : 'text-sky-400'
+                        }`}
                     >
                       {t('gateControlUi.exitGate')}
                     </h2>
                     <span
-                      className={`rounded-md px-2 py-0.5 text-[10px] font-mono font-bold border ${
-                        rightRole === 'entry'
+                      className={`rounded-md px-2 py-0.5 text-[10px] font-mono font-bold border ${rightRole === 'entry'
                           ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                           : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
-                      }`}
+                        }`}
                     >
                       EXIT_1
                     </span>
@@ -1741,8 +1737,8 @@ export default function GateControl() {
                     toast.success(`Exit camera rotated to ${updated.exitRotation}°.`);
                   }}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border transition cursor-pointer ${exitTransform.rotation !== 0
-                      ? 'bg-sky-500/20 text-sky-300 border-sky-400/50'
-                      : 'bg-white/5 text-white/70 border-white/15 hover:text-white'
+                    ? 'bg-sky-500/20 text-sky-300 border-sky-400/50'
+                    : 'bg-white/5 text-white/70 border-white/15 hover:text-white'
                     }`}
                   title="Rotate Exit camera in 90° steps"
                 >
@@ -1752,10 +1748,10 @@ export default function GateControl() {
 
                 <span
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border whitespace-nowrap shadow-sm ${gatesState.EXIT_1?.open
-                      ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/60 shadow-emerald-500/20'
-                      : gatesState.EXIT_1?.holdOpen
-                        ? 'bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-amber-500/20'
-                        : 'bg-red-500/20 text-red-300 border-red-500/40'
+                    ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/60 shadow-emerald-500/20'
+                    : gatesState.EXIT_1?.holdOpen
+                      ? 'bg-amber-500/25 text-amber-300 border-amber-400/60 shadow-amber-500/20'
+                      : 'bg-red-500/20 text-red-300 border-red-500/40'
                     }`}
                 >
                   {gatesState.EXIT_1?.open ? <Unlock size={11} /> : <Lock size={11} />}
@@ -1810,26 +1806,23 @@ export default function GateControl() {
                 <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-2">
                   <div className="flex justify-start">
                     <span
-                      className={`rounded px-2 py-0.5 text-[9px] font-black uppercase text-black ${
-                        rightRole === 'entry' ? 'bg-emerald-500/90' : 'bg-sky-400/90'
-                      }`}
+                      className={`rounded px-2 py-0.5 text-[9px] font-black uppercase text-black ${rightRole === 'entry' ? 'bg-emerald-500/90' : 'bg-sky-400/90'
+                        }`}
                     >
                       {rightRole === 'entry' ? 'ENTRY (REVERSED)' : 'EXIT'} · {exitTransform.side === 'left' ? 'LEFT' : 'RIGHT'} ({exitTransform.rotation}°)
                     </span>
                   </div>
                   <div
-                    className={`mx-auto my-auto h-20 w-44 rounded-lg border-2 border-dashed ${
-                      rightRole === 'entry' ? 'border-emerald-400/60 bg-emerald-400/5' : 'border-sky-400/60 bg-sky-400/5'
-                    }`}
+                    className={`mx-auto my-auto h-20 w-44 rounded-lg border-2 border-dashed ${rightRole === 'entry' ? 'border-emerald-400/60 bg-emerald-400/5' : 'border-sky-400/60 bg-sky-400/5'
+                      }`}
                   />
                   <div />
                 </div>
               ) : (
                 <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
                   <div
-                    className={`h-20 w-52 rounded-lg border-2 border-dashed flex flex-col items-center justify-center text-center p-1 ${
-                      rightRole === 'entry' ? 'border-emerald-400/50 bg-emerald-400/5' : 'border-sky-400/50 bg-sky-400/5'
-                    }`}
+                    className={`h-20 w-52 rounded-lg border-2 border-dashed flex flex-col items-center justify-center text-center p-1 ${rightRole === 'entry' ? 'border-emerald-400/50 bg-emerald-400/5' : 'border-sky-400/50 bg-sky-400/5'
+                      }`}
                   >
                     <span className={`text-[9px] font-bold uppercase drop-shadow ${rightRole === 'entry' ? 'text-emerald-300' : 'text-sky-300'}`}>
                       {rightRole === 'entry' ? 'ENTRY (REVERSED) SCAN ZONE' : 'EXIT SCAN ZONE'} {exitTransform.rotation !== 0 ? `(${exitTransform.rotation}°)` : ''}
@@ -1895,9 +1888,8 @@ export default function GateControl() {
                     type="button"
                     onClick={() => rightCtrl.scanPlate()}
                     disabled={rightCtrl.isScanning}
-                    className={`flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold text-black ${
-                      rightRole === 'entry' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-sky-500 hover:bg-sky-400'
-                    }`}
+                    className={`flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold text-black ${rightRole === 'entry' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-sky-500 hover:bg-sky-400'
+                      }`}
                   >
                     {rightCtrl.isScanning ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />}
                     <span>{t('gateControlUi.scanPlateAi')}</span>
@@ -1985,11 +1977,10 @@ export default function GateControl() {
                     slot: rightRole === 'entry' ? rightCtrl.slotCode || '' : '',
                   })
                 }
-                className={`flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${
-                  rightRole === 'entry'
+                className={`flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-bold transition active:scale-95 cursor-pointer ${rightRole === 'entry'
                     ? 'border-emerald-500/25 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300'
                     : 'border-sky-500/25 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300'
-                }`}
+                  }`}
               >
                 <Unlock size={13} className={rightRole === 'entry' ? 'text-emerald-400' : 'text-sky-400'} />
                 <span>{rightRole === 'entry' ? t('gateControlUi.openEntry') : t('gateControlUi.openExit')}</span>

@@ -73,12 +73,20 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
     };
   }, [socket]);
 
-  // Lắng nghe luồng ảnh trực tiếp từ webcam C270 cắm trên PC
+  // Lắng nghe luồng ảnh trực tiếp từ đúng trạm camera của Staff qua Socket
+  // Ghép nối 1:1 chính xác theo targetGate ('EXIT_1' hoặc 'ENTRY_1')
   const remoteFrameRef = useRef(null);
   useEffect(() => {
     if (!socket) return;
+    const normTargetGate = String(targetGate || 'EXIT_1').toUpperCase();
     const handleRemoteFrame = (data) => {
-      if (data?.lane === cameraLane && data?.frameBase64) {
+      const dataGate = String(data?.gate || '').toUpperCase();
+      const isMatchingGate = dataGate === normTargetGate;
+      const isFallbackLane = !dataGate && (
+        normTargetGate === 'ENTRY_1' ? data?.lane === 'entry' : data?.lane === 'exit'
+      );
+
+      if ((isMatchingGate || isFallbackLane) && data?.frameBase64) {
         setRemoteFrame(data.frameBase64);
         remoteFrameRef.current = data.frameBase64;
         setStreamError(false);
@@ -86,7 +94,7 @@ export default function KioskOutWelcome({ onScanSuccess, targetGate = 'EXIT_1' }
     };
     socket.on('gate:live_frame', handleRemoteFrame);
     return () => socket.off('gate:live_frame', handleRemoteFrame);
-  }, [socket, cameraLane]);
+  }, [socket, targetGate]);
 
   useEffect(() => {
     cameraConfigRef.current = cameraConfig;
