@@ -27,6 +27,13 @@ const userVoucherSchema = new mongoose.Schema(
     },
     redeemedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
+    expiryChangeCount: { type: Number, default: 0, min: 0, max: 20 },
+    expiryHistory: [{
+      from: { type: Date, required: true },
+      to: { type: Date, required: true },
+      changedAt: { type: Date, required: true },
+      changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    }],
     usedAt: { type: Date, default: null },
     bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', default: null },
   },

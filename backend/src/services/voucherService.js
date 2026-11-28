@@ -6,6 +6,28 @@ const UserVoucher = require('../models/UserVoucher');
 const businessError = (message, statusCode = 400, code) =>
   Object.assign(new Error(message), { statusCode, ...(code ? { code } : {}) });
 
+// Expiry changes are extensions only. They never reset a used/revoked voucher.
+function validateVoucherExpiryChange(voucher, rawExpiresAt, now = new Date()) {
+  const nowMs = new Date(now).getTime();
+  const currentMs = new Date(voucher?.expiresAt).getTime();
+  const nextMs = new Date(rawExpiresAt).getTime();
+  if (![nowMs, currentMs, nextMs].every(Number.isFinite)) {
+    throw businessError('Expiry date must be a valid date', 400, 'INVALID_EXPIRY');
+  }
+  if (['used', 'revoked'].includes(voucher?.status) || voucher?.usedAt || voucher?.bookingId) {
+    throw businessError('Used or revoked vouchers cannot be extended', 409, 'VOUCHER_LOCKED');
+  }
+  if ((voucher?.expiryChangeCount || 0) >= 20) {
+    throw businessError('Voucher extension limit has been reached', 409, 'EXPIRY_LIMIT_REACHED');
+  }
+  if (nextMs <= nowMs) throw businessError('Expiry date must be in the future', 400, 'EXPIRY_IN_PAST');
+  if (nextMs <= currentMs) throw businessError('New expiry must be later than the current expiry', 400, 'EXPIRY_NOT_EXTENDED');
+  if (nextMs > nowMs + 365 * 24 * 60 * 60 * 1000) {
+    throw businessError('Expiry date cannot be more than 365 days from now', 400, 'EXPIRY_TOO_FAR');
+  }
+  return new Date(nextMs);
+}
+
 const withSession = (query, session) => (session ? query.session(session) : query);
 
 const calculateDiscountedTotal = (amount, discountPercent) => Math.floor(
@@ -189,5 +211,6 @@ module.exports = {
   markVoucherUsed,
   previewVoucher,
   releaseVoucherReservation,
+  validateVoucherExpiryChange,
   validateAndApplyVoucher,
 };

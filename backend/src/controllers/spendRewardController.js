@@ -3,6 +3,7 @@ const Month = require('../models/SpendRewardMonth');
 const UserVoucher = require('../models/UserVoucher');
 const EmailJob = require('../models/RewardEmailJob');
 const { monthOf } = require('../services/spendRewardRules');
+const { validateVoucherExpiryChange } = require('../services/voucherService');
 const autoAndManual = { source: { $in: ['spending', 'welcome', 'manual'] } };
 async function getTierUsage(month) {
   const counts = await UserVoucher.aggregate([
@@ -31,12 +32,15 @@ exports.getProgram = endpoint(async () => {
 
 exports.updateVoucherExpiry = endpoint(async (req) => {
   const raw = req.body?.expiresAt;
-  const expiresAt = raw instanceof Date ? raw : new Date(raw);
+  const current = await UserVoucher.findById(req.params.voucherId);
+  if (!current) throw Object.assign(new Error('Voucher not found'), { statusCode: 404 });
+  const expiresAt = validateVoucherExpiryChange(current, raw);
+  const changedAt = new Date();
   if (!raw || Number.isNaN(expiresAt.getTime())) throw Object.assign(new Error('Ngày hết hạn không hợp lệ'), { statusCode: 400 });
   if (expiresAt <= new Date()) throw Object.assign(new Error('Ngày hết hạn phải ở tương lai'), { statusCode: 400 });
   const voucher = await UserVoucher.findOneAndUpdate(
-    { _id: req.params.voucherId, status: { $in: ['available', 'expired'] }, usedAt: null, bookingId: null },
-    { $set: { expiresAt, status: 'available' } }, { new: true, runValidators: true },
+    { _id: current._id, expiresAt: current.expiresAt, status: { $in: ['available', 'expired'] }, usedAt: null, bookingId: null },
+    { $set: { expiresAt, status: 'available' }, $inc: { expiryChangeCount: 1 }, $push: { expiryHistory: { $each: [{ from: current.expiresAt, to: expiresAt, changedAt, changedBy: req.user._id }], $slice: -20 } } }, { new: true, runValidators: true },
   ).populate('userId', 'username email');
   if (!voucher) throw Object.assign(new Error('Chỉ voucher chưa dùng hoặc đã hết hạn mới được chỉnh sửa'), { statusCode: 400 });
   return voucher;
