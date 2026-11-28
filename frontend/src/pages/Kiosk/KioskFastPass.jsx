@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import ParkingMapViewer from '../../components/ParkingMapViewer';
 import { API_BASE } from '../../services/api';
@@ -23,6 +24,7 @@ const resolveZoneLabel = (slotRecord, slotCode) => {
 };
 
 export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onComplete, successSession, targetGate = 'ENTRY_1', basePath = '/kiosk' }) {
+  const navigate = useNavigate();
   const socket = useSocket();
   const [issuedSession, setIssuedSession] = useState(successSession);
   const [status, setStatus] = useState(successSession ? 'ready' : 'checking-in');
@@ -53,25 +55,13 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     } catch (e) {
       console.error(e);
     } finally {
-      window.location.replace(basePath || '/kiosk');
+      navigate(basePath || '/kiosk', { replace: true });
     }
-  }, [basePath]);
+  }, [basePath, navigate]);
 
   // Màn hình tự động quay trở lại màn hình chính khi xe đi qua barrier hoặc staff đóng cổng
   useEffect(() => {
     mountTimeRef.current = Date.now();
-    let returnTimerId = null;
-
-    const scheduleReturn = () => {
-      if (returnTimerId || isRedirectingRef.current) return;
-      const elapsed = Date.now() - mountTimeRef.current;
-      const delay = Math.max(0, 1500 - elapsed);
-      if (delay === 0) {
-        returnToStart();
-      } else {
-        returnTimerId = setTimeout(returnToStart, delay);
-      }
-    };
 
     const target = targetGate || 'ENTRY_1';
     const processGateState = (gateData) => {
@@ -83,7 +73,8 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
       const closedAfterMount = Boolean(gateData.forceClose)
         && Number(gateData.timestamp || 0) >= mountTimeRef.current;
       if (hasSeenOpenRef.current || closedAfterMount) {
-        scheduleReturn();
+        // Xe đã qua cổng và barrier đã đóng xuống -> lập tức quay về màn hình ban đầu
+        returnToStart();
       }
     };
 
@@ -123,12 +114,11 @@ export default function KioskFastPass({ formData, isMonthly, onAutoCheckIn, onCo
     return () => {
       clearInterval(interval);
       clearTimeout(maxTimeoutTimer);
-      if (returnTimerId) clearTimeout(returnTimerId);
       if (socket) {
         socket.off('gate:barrier_control', handleBarrierControl);
       }
     };
-  }, [socket, returnToStart]);
+  }, [socket, returnToStart, targetGate]);
 
   useEffect(() => {
     if (successSession) {

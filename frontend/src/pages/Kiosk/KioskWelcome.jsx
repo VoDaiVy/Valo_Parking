@@ -5,14 +5,15 @@ import logoImage from '../../assets/images/Kiosk/LogoKiosk.png';
 import ParkingFullModal from './ParkingFullModal';
 import PlateMismatchModal from './PlateMismatchModal';
 import { API_BASE } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import { normalizeLicensePlate } from '../../utils/licensePlate';
-import { captureVideoLaneBase64 } from '../../utils/cameraLaneCapture';
+import { captureVideoLaneBase64, rotateImageBase64 } from '../../utils/cameraLaneCapture';
 import { useQrScannerListener } from '../../hooks/useQrScannerListener';
 
 const SCAN_ATTEMPTS = 20;
 const SCAN_RETRY_DELAY_MS = 800;
 const CAMERA_WARMUP_MS = 1200;
-const SCAN_TIMEOUT_MS = 7000;
+const SCAN_TIMEOUT_MS = 11000;
 const VIDEO_READY_TIMEOUT_MS = 5000;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,6 +34,9 @@ const plateFingerprint = (plate) => {
 };
 
 export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass, targetGate = 'ENTRY_1' }) {
+  const socket = useSocket();
+  const [remoteFrame, setRemoteFrame] = useState(null);
+  const remoteFrameRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
   const isParkingFullRef = useRef(false);
   const [isParkingFull, setIsParkingFull] = useState(false);
@@ -164,6 +168,35 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       clearInterval(interval);
     };
   }, []);
+
+  const lastAiScanAtRef = useRef(0);
+  const isScanningRef = useRef(false);
+
+  useEffect(() => {
+    isScanningRef.current = isScanning;
+  }, [isScanning]);
+
+  // Lắng nghe luồng ảnh trực tiếp từ đúng trạm camera của Staff qua Socket
+  // Ghép nối 1:1 chính xác theo targetGate ('ENTRY_1' hoặc 'EXIT_1')
+  useEffect(() => {
+    if (!socket) return;
+    const normTargetGate = String(targetGate || 'ENTRY_1').toUpperCase();
+    const handleRemoteFrame = (data) => {
+      // Ưu tiên khớp chính xác theo gate vật lý
+      const dataGate = String(data?.gate || '').toUpperCase();
+      const isMatchingGate = dataGate === normTargetGate;
+      const isFallbackLane = !dataGate && (
+        normTargetGate === 'EXIT_1' ? data?.lane === 'exit' : data?.lane === 'entry'
+      );
+
+      if ((isMatchingGate || isFallbackLane) && data?.frameBase64) {
+        setRemoteFrame(data.frameBase64);
+        remoteFrameRef.current = data.frameBase64;
+      }
+    };
+    socket.on('gate:live_frame', handleRemoteFrame);
+    return () => socket.off('gate:live_frame', handleRemoteFrame);
+  }, [socket, targetGate]);
 
   useEffect(() => {
     let isMounted = true;
@@ -320,7 +353,8 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
 
     if (!data.success) {
       updateFormData({ licensePlate: formatted, entryImageBase64: imageBase64 });
-      return false;
+      onStart(2);
+      return true;
     }
 
     if (verifyData.isActive) {
@@ -427,7 +461,15 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       return true;
     }
 
-    if (isParkingFullRef.current || verifyData.isFull) {
+    const hasReservedSlot = Boolean(
+      verifyData.hasPreBooking ||
+      verifyData.isVIP ||
+      verifyData.isMonthly ||
+      verifyData.assignedSlot ||
+      verifyData.suggestedSlot
+    );
+
+    if (!hasReservedSlot && (isParkingFullRef.current || verifyData.isFull)) {
       setShowFullModal(true);
       updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: false });
       return true;
@@ -471,75 +513,72 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
       bookingMode: 'hourly',
       membershipType: verifyData.membershipType || null,
     });
-    return false;
+    // Biển số xe vãng lai đã quét thành công -> Tự động chuyển thẳng sang Bước 2 (Chọn vị trí đỗ)
+    onStart(2);
+    return true;
   };
 
-  const handleStart = async () => {
+  const handleStart = async (isAuto = false) => {
+    const isAutoScan = isAuto === true;
+    if (isScanningRef.current) return;
+    isScanningRef.current = true;
     setIsScanning(true);
     setScanMessage('Scanning Plate...');
 
-    const checkFullPromise = fetch(`${API_BASE}/sessions/check-full`)
-      .then((res) => res.json())
-      .then((fullData) => {
-        isParkingFullRef.current = Boolean(fullData.success && fullData.data && fullData.data.isFull);
-      })
-      .catch((e) => {
-        console.warn('Failed to check full status:', e);
-        isParkingFullRef.current = false;
-      });
-
     try {
-      if (!streamRef.current) {
-        const stream = await openCameraStream();
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => { });
-          await configureCameraTrack(stream);
+      const checkFullPromise = fetch(`${API_BASE}/sessions/check-full`)
+        .then((res) => res.json())
+        .then((fullData) => {
+          isParkingFullRef.current = Boolean(fullData.success && fullData.data && fullData.data.isFull);
+        })
+        .catch((e) => {
+          console.warn('Failed to check full status:', e);
+          isParkingFullRef.current = false;
+        });
+
+      // 1. Quét trực tiếp từ ảnh camera C270 máy chủ (live frame truyền qua Socket)
+      let candidateFrame = remoteFrameRef.current || remoteFrame;
+
+      // Chờ tối đa 2 giây để nhận frame mới nhất từ Camera C270 máy chủ nếu chưa có
+      if (!candidateFrame) {
+        for (let w = 0; w < 20; w++) {
+          await wait(100);
+          candidateFrame = remoteFrameRef.current || remoteFrame;
+          if (candidateFrame) break;
         }
       }
 
-      if (videoRef.current) {
-        const ready = await waitForVideoFrame(videoRef.current);
-        if (!ready) {
-          console.warn('[Kiosk scan] Video frame not ready in time, proceeding anyway');
-        }
-      }
-
-      const isCamAlreadyWarm = videoRef.current && videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-      if (!isCamAlreadyWarm) {
-        await wait(CAMERA_WARMUP_MS);
-      }
-
-      await checkFullPromise;
-
-      const detectedPlates = new Map();
-      for (let i = 0; i < SCAN_ATTEMPTS; i++) {
+      // Fallback sang camera local nếu máy chủ chưa stream frame (ví dụ test trực tiếp trên deploy)
+      if (!candidateFrame && videoRef.current?.videoWidth) {
         try {
-          const rawResult = await captureAndAnalyze();
-          if (rawResult) {
-            if (rawResult.rateLimited) {
-              updateFormData({ licensePlate: '', phone: '', entryImageBase64: null });
-              stopCamera();
-              setIsScanning(false);
-              setScanMessage(rawResult.message);
-              setInlineNotice({ title: 'Please Wait', message: rawResult.message });
-              return;
-            }
-            const normalizedPlate = normalizeLicensePlate(rawResult.plate);
-            const fingerprint = plateFingerprint(normalizedPlate);
-            const previous = detectedPlates.get(fingerprint);
-            const nextCandidate = previous
-              ? { ...previous, count: previous.count + 1, plate: normalizedPlate, imageBase64: rawResult.imageBase64 }
-              : { ...rawResult, plate: normalizedPlate, count: 1, fingerprint };
-            detectedPlates.set(fingerprint, nextCandidate);
+          candidateFrame = await buildScanImageBase64();
+        } catch (_) {}
+      }
 
-            // Tối ưu hóa: Biển số chuẩn Việt Nam hợp lệ được kích hoạt xác thực ngay từ lần đầu
-            if (isLikelyVietnamesePlate(normalizedPlate) || nextCandidate.count >= 2 || i >= 2) {
-              const handled = await verifyScannedPlate(nextCandidate);
-              stopCamera();
-              setIsScanning(false);
+      if (candidateFrame) {
+        const cameraLane = targetGate === 'EXIT_1' ? 'exit' : 'entry';
+        // Thực hiện tối đa 3 lần quét nhanh (cách nhau 250ms) nếu lần đầu xe đang tiến vào chưa lấy nét kịp
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const frameToScan = remoteFrameRef.current || candidateFrame;
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
+            const response = await fetch(`${API_BASE}/ai/scan-plate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: frameToScan, lane: cameraLane, gate: targetGate || 'ENTRY_1' }),
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            const data = await response.json();
+            const rawPlate = data?.data?.licensePlate || data?.data?.plate || data?.plate;
+            const usedFrame = frameToScan;
+
+            if (rawPlate) {
+              const normalized = normalizeLicensePlate(rawPlate);
+              const handled = await verifyScannedPlate({ plate: normalized, imageBase64: usedFrame });
               if (handled) return;
+              await checkFullPromise;
               if (isParkingFullRef.current) {
                 setShowFullModal(true);
                 return;
@@ -547,46 +586,25 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
               onStart(1);
               return;
             }
+          } catch (err) {
+            console.warn(`[Kiosk scan] Remote frame AI scan error (attempt ${attempt + 1}):`, err?.message);
           }
-        } catch (scanError) {
-          console.error('Welcome scan attempt failed:', scanError);
+          await wait(250);
         }
-        await wait(SCAN_RETRY_DELAY_MS);
-      } // End of loop
-      try {
-        const ch = new BroadcastChannel('valo_gate_channel');
-        ch.postMessage({
-          type: 'VEHICLE_CLEARED',
-          gate: targetGate || 'ENTRY_1',
-          reason: 'NO_VEHICLE_DETECTED',
-        });
-        ch.close();
-      } catch (_) { }
-      if (isParkingFullRef.current) {
-        setShowFullModal(true);
-        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
-        stopCamera();
-        setIsScanning(false);
-        return;
       }
-      updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
-      stopCamera();
-      setIsScanning(false);
-      onStart(1);
-    } catch (error) {
-      console.error('Welcome camera scan error:', error);
 
+      // Nếu sau 3 lần quét vẫn chưa đọc được biển số, chỉ chuyển sang Step 1 nếu khách chủ động bấm
+      await checkFullPromise;
       if (isParkingFullRef.current) {
         setShowFullModal(true);
-        updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: true });
-        stopCamera();
-        setIsScanning(false);
         return;
       }
-      updateFormData({ licensePlate: '', phone: '', entryImageBase64: null, isParkingFull: isParkingFullRef.current });
-      stopCamera();
+      if (!isAutoScan) {
+        onStart(1);
+      }
+    } finally {
+      isScanningRef.current = false;
       setIsScanning(false);
-      onStart(1);
     }
   };
 
@@ -804,7 +822,7 @@ export default function KioskWelcome({ onStart, updateFormData, onDirectFastPass
         </div>
 
         <button
-          onClick={handleStart}
+          onClick={() => handleStart(false)}
           disabled={isScanning}
           className="mt-12 bg-[#FFEB00] hover:bg-[#FFE000] text-[#0f172a] font-black text-3xl px-16 py-6 rounded-full flex items-center gap-4 transition-all shadow-[0_15px_30px_rgba(255,235,0,0.4)] border border-[#F2D600] group min-w-[400px] justify-center hover:shadow-[0_20px_40px_rgba(255,235,0,0.6)] active:scale-95 active:shadow-md cursor-pointer"
         >

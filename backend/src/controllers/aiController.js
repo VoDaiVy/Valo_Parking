@@ -27,13 +27,14 @@ const isQuotaError = (error) => {
 
 exports.scanPlate = async (req, res, next) => {
   try {
-    const { image, lane } = req.body;
+    const { image, lane, gate } = req.body;
     if (!image) {
       return res.status(400).json({ success: false, message: 'Image is required' });
     }
 
-    const normalizedLane = ['entry', 'exit'].includes(String(lane || '').trim().toLowerCase())
-      ? String(lane).trim().toLowerCase()
+    const resolvedLane = lane || (gate ? (String(gate).toUpperCase().includes('ENTRY') ? 'entry' : 'exit') : null);
+    const normalizedLane = ['entry', 'exit'].includes(String(resolvedLane || '').trim().toLowerCase())
+      ? String(resolvedLane).trim().toLowerCase()
       : null;
 
     // Strip data URL prefix if present
@@ -42,17 +43,22 @@ exports.scanPlate = async (req, res, next) => {
     // -------------------------------------------------------------
     // ATTEMPT 1: Local Python AI Service (YOLO + EasyOCR)
     // -------------------------------------------------------------
-    let detectedRawPlate = null;
+    let localAiResponded = false;
+    const rawAiUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim();
+    const aiServiceUrl = rawAiUrl.replace(/\/+(scan|api)?\/?$/i, '');
     try {
-      console.log('[AI Scan] Attempting Local Python AI for License Plate...', normalizedLane ? `(lane=${normalizedLane})` : '');
-      const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
+      console.log('[AI Scan] Attempting Local Python AI for License Plate...', aiServiceUrl, normalizedLane ? `(lane=${normalizedLane})` : '');
       const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
         image: base64Data,
         ...(normalizedLane ? { lane: normalizedLane } : {}),
       }, {
-        timeout: 4000 // Quick 4s timeout to fail over seamlessly if offline on cloud
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
+        timeout: 10000 // Allow enough time when multiple lanes scan concurrently
       });
 
+      localAiResponded = true;
       const rawPlate = pythonRes.data?.plate || pythonRes.data?.licensePlate;
       if (pythonRes.data && pythonRes.data.success && rawPlate) {
         console.log('[AI Scan] Local AI Success:', rawPlate);
@@ -67,22 +73,25 @@ exports.scanPlate = async (req, res, next) => {
           model: 'local_yolo'
         });
       }
-      console.log('[AI Scan] Local AI did not find plate, falling back to Gemini Vision...');
+      console.log('[AI Scan] Local AI did not find plate (empty lane or unclear).');
     } catch (localErr) {
       console.warn('[AI Scan] Local Python AI unavailable/timed out, falling back to Gemini Vision:', localErr.message);
     }
 
     // -------------------------------------------------------------
-    // ATTEMPT 2: Google Gemini Vision AI Fallback (Cloud Resilience)
+    // ATTEMPT 2: Google Gemini Vision AI Fallback (Chỉ chạy khi Local AI offline/timeout)
     // -------------------------------------------------------------
-    if (process.env.GEMINI_API_KEY) {
+    if (!localAiResponded && process.env.GEMINI_API_KEY) {
       try {
         console.log('[AI Scan] Running Gemini Vision ALPR Fallback...');
         const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
         const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const fallbackModels = ['gemini-2.5-flash', 'gemini-3.5-flash-lite'];
+        const fallbackModels = [
+          'gemini-2.5-flash',
+          'gemini-2.5-flash-lite',
+        ];
 
         for (const modelName of fallbackModels) {
           try {
@@ -98,14 +107,17 @@ Return ONLY a valid JSON object without markdown or code fences in this exact fo
 If no license plate is present or readable, return:
 { "detected": false, "plate": null }`;
 
-            const result = await model.generateContent([
-              prompt,
-              {
-                inlineData: {
-                  mimeType,
-                  data: base64Data,
+            const result = await Promise.race([
+              model.generateContent([
+                prompt,
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Data,
+                  },
                 },
-              },
+              ]),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini timeout after 6s')), 6000)),
             ]);
 
             const text = result.response.text().trim();

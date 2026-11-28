@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 
 const PREFIX = 'VALO_CHECKOUT';
 const VERSION = 1;
-const TTL_MS = 5 * 60 * 1000;
+const TTL_MS = 20 * 60 * 1000; // 20 minutes to cover the 15-minute checkout hold window
 
 const getSecret = () => process.env.SESSION_QR_SECRET || process.env.JWT_SECRET;
 

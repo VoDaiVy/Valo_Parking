@@ -252,11 +252,15 @@ def main():
                     # Đồng bộ chế độ làn đảo chiều cao điểm (STANDARD / PEAK_ENTRY / PEAK_EXIT)
                     current_lane_mode = data.get('laneMode')
                     if current_lane_mode and current_lane_mode != last_lane_mode:
-                        last_lane_mode = current_lane_mode
-                        print(f"\n🔄 [LANE MODE SYNC từ {b_name}] Chuyển chế độ làn: {current_lane_mode} -> Gửi xuống ESP32...")
-                        if ser and ser.is_open:
-                            ser.write(f"MODE|{current_lane_mode}\n".encode('utf-8'))
-                            ser.flush()
+                        # Tránh trường hợp localhost idle ở STANDARD ghi đè lên PEAK_ENTRY/PEAK_EXIT từ Cloud Render
+                        if current_lane_mode == 'STANDARD' and last_lane_mode in ['PEAK_ENTRY', 'PEAK_EXIT'] and b_id == 'local' and any(b['id'] == 'render' and b['is_online'] for b in TARGET_BACKENDS):
+                            pass
+                        else:
+                            last_lane_mode = current_lane_mode
+                            print(f"\n🔄 [LANE MODE SYNC từ {b_name}] Chuyển chế độ làn: {current_lane_mode} -> Gửi xuống ESP32...")
+                            if ser and ser.is_open:
+                                ser.write(f"MODE|{current_lane_mode}\n".encode('utf-8'))
+                                ser.flush()
 
                     # Chọn nguồn công suất ưu tiên (Authoritative):
                     # Ưu tiên Local Backend nếu đang hoạt động tốt; nếu Local mất kết nối thì dùng Render Cloud

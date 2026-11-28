@@ -624,13 +624,12 @@ export function ExitLaneConsole({
           {/* 1. Header Bar: Status & Identity */}
           <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border ${
-                ctrl.statusInfo?.sessionType === 'VIP' || ctrl.invoiceData.isMonthly
-                  ? 'bg-purple-500/20 text-purple-300 border-purple-400/40'
-                  : ctrl.statusInfo?.sessionType === 'BOOKING' || ctrl.invoiceData.session?.type === 'BOOKING'
-                    ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-              }`}>
+              <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border ${ctrl.statusInfo?.sessionType === 'VIP' || ctrl.invoiceData.isMonthly
+                ? 'bg-purple-500/20 text-purple-300 border-purple-400/40'
+                : ctrl.statusInfo?.sessionType === 'BOOKING' || ctrl.invoiceData.session?.type === 'BOOKING'
+                  ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
+                }`}>
                 {ctrl.statusInfo?.sessionType === 'VIP' || ctrl.invoiceData.isMonthly
                   ? 'VIP Pass'
                   : ctrl.statusInfo?.sessionType === 'BOOKING' || ctrl.invoiceData.session?.type === 'BOOKING'
@@ -644,11 +643,10 @@ export function ExitLaneConsole({
                 </span>
               )}
 
-              <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${
-                ctrl.invoiceData.violationDetails || ctrl.statusInfo?.violations?.hasViolations
-                  ? 'bg-red-500/20 text-red-300 border-red-400/40'
-                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-              }`}>
+              <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${ctrl.invoiceData.violationDetails || ctrl.statusInfo?.violations?.hasViolations
+                ? 'bg-red-500/20 text-red-300 border-red-400/40'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                }`}>
                 {ctrl.invoiceData.violationDetails || ctrl.statusInfo?.violations?.hasViolations ? (
                   <><AlertTriangle size={10} /> Violation Detected</>
                 ) : (
@@ -682,13 +680,13 @@ export function ExitLaneConsole({
             <div className="rounded-lg bg-black/40 border border-white/5 p-2 flex items-center justify-between gap-2.5">
               <div className="flex-1 text-center">
                 <div className="flex items-center justify-between mb-1 px-0.5">
-                  <span className="text-[10px] font-bold text-emerald-400">Ảnh Check-in</span>
-                  <span className="text-[9px] text-white/40 flex items-center gap-0.5"><Maximize2 size={9} /> Phóng to</span>
+                  <span className="text-[10px] font-bold text-emerald-400">Entry Photo</span>
+                  <span className="text-[9px] text-white/40 flex items-center gap-0.5"><Maximize2 size={9} /> Zoom</span>
                 </div>
                 <div
                   onClick={() => {
                     onPreviewPhoto?.({
-                      title: 'Ảnh xe lúc Check-in (Cổng Vào)',
+                      title: 'Entry Vehicle Photo (Entry Gate)',
                       image: ctrl.invoiceData.session?.entryImage,
                       time: formatGateTime(ctrl.invoiceData.session?.checkInTime),
                       plate: formatLicensePlateDisplay(ctrl.invoiceData.session?.licensePlate || ctrl.plate),
@@ -696,7 +694,7 @@ export function ExitLaneConsole({
                     });
                   }}
                   className="group relative h-24 sm:h-28 w-full rounded-lg bg-black border border-white/10 overflow-hidden flex items-center justify-center cursor-pointer hover:border-emerald-400 transition"
-                  title="Bấm để phóng to kiểm tra ảnh check-in"
+                  title="Click to zoom entry photo"
                 >
                   {ctrl.invoiceData.session?.entryImage ? (
                     <img
@@ -705,11 +703,11 @@ export function ExitLaneConsole({
                       className="h-full w-full object-contain group-hover:scale-105 transition duration-200"
                     />
                   ) : (
-                    <span className="text-[10px] text-white/30 font-medium">Không có ảnh vào</span>
+                    <span className="text-[10px] text-white/30 font-medium">No entry photo</span>
                   )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
                     <span className="rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-bold text-white flex items-center gap-1 border border-white/20">
-                      <Maximize2 size={10} /> Xem lớn
+                      <Maximize2 size={10} /> View Larger
                     </span>
                   </div>
                 </div>
@@ -717,22 +715,22 @@ export function ExitLaneConsole({
 
               <div className="flex-1 text-center">
                 <div className="flex items-center justify-between mb-1 px-0.5">
-                  <span className="text-[10px] font-bold text-sky-400">Ảnh Cổng Ra</span>
-                  <span className="text-[9px] text-white/40 flex items-center gap-0.5"><Maximize2 size={9} /> Phóng to</span>
+                  <span className="text-[10px] font-bold text-sky-400">Exit Photo</span>
+                  <span className="text-[9px] text-white/40 flex items-center gap-0.5"><Maximize2 size={9} /> Zoom</span>
                 </div>
                 <div
                   onClick={() => {
                     const snap = snapshot || captureFrame(ctrl.cameraLane);
                     onPreviewPhoto?.({
-                      title: `Ảnh xe tại ${ctrl.gate} (Live Checkout)`,
+                      title: `Vehicle Photo at ${ctrl.gate} (Live Checkout)`,
                       image: snap,
-                      time: 'Hiện tại (Check-out)',
+                      time: 'Current (Check-out)',
                       plate: formatLicensePlateDisplay(ctrl.plate),
                       type: 'exit',
                     });
                   }}
                   className="group relative h-24 sm:h-28 w-full rounded-lg bg-black border border-white/10 overflow-hidden flex items-center justify-center cursor-pointer hover:border-sky-400 transition"
-                  title="Bấm để phóng to kiểm tra camera ra"
+                  title="Click to zoom exit camera"
                 >
                   {snapshot ? (
                     <img
@@ -753,7 +751,7 @@ export function ExitLaneConsole({
                   )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
                     <span className="rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-bold text-white flex items-center gap-1 border border-white/20">
-                      <Maximize2 size={10} /> Xem lớn
+                      <Maximize2 size={10} /> View Larger
                     </span>
                   </div>
                 </div>
@@ -785,14 +783,14 @@ export function ExitLaneConsole({
           <div className="rounded-lg bg-black/60 px-3.5 py-2.5 text-xs border border-white/5 flex items-center justify-between">
             <div className="flex items-center gap-3 text-white/70 text-[11px]">
               <div>
-                <span className="text-white/40 block text-[9px] uppercase font-bold">Thời gian đỗ</span>
+                <span className="text-white/40 block text-[9px] uppercase font-bold">Duration</span>
                 <span className="font-bold text-white">{ctrl.invoiceData.durationFormatted || '2 hrs'}</span>
               </div>
               {ctrl.invoiceData.parkingFee > 0 && ctrl.invoiceData.parkingFee !== ctrl.invoiceData.totalAmount && (
                 <>
                   <div className="h-5 w-px bg-white/10" />
                   <div>
-                    <span className="text-white/40 block text-[9px] uppercase font-bold">Giá gốc</span>
+                    <span className="text-white/40 block text-[9px] uppercase font-bold">Base Fee</span>
                     <span className="font-mono text-white/50 line-through">{formatGateCurrency(ctrl.invoiceData.parkingFee)}</span>
                   </div>
                 </>
@@ -801,14 +799,14 @@ export function ExitLaneConsole({
                 <>
                   <div className="h-5 w-px bg-white/10" />
                   <div>
-                    <span className="text-emerald-400/80 block text-[9px] uppercase font-bold">Ưu đãi</span>
+                    <span className="text-emerald-400/80 block text-[9px] uppercase font-bold">Discount</span>
                     <span className="font-mono font-bold text-emerald-400">-{formatGateCurrency(ctrl.invoiceData.discountAmount)}</span>
                   </div>
                 </>
               )}
             </div>
             <div className="text-right">
-              <span className="text-white/40 block text-[9px] uppercase font-black">Cần thanh toán</span>
+              <span className="text-white/40 block text-[9px] uppercase font-black">Amount Due</span>
               <span className="text-sm sm:text-base font-black text-[#ffd555] font-mono">
                 {formatGateCurrency(ctrl.invoiceData.totalAmount || 0)}
               </span>
@@ -853,7 +851,7 @@ export function ExitLaneConsole({
                         const raw = e.target.value.replace(/\D/g, '');
                         ctrl.setCashReceivedAmount(raw);
                       }}
-                      placeholder={`Tối thiểu ${formatGateCurrency(ctrl.invoiceData.totalAmount)}`}
+                      placeholder={`Min ${formatGateCurrency(ctrl.invoiceData.totalAmount)}`}
                       className="w-full rounded-lg border border-white/15 bg-black/60 px-2.5 py-1.5 pr-9 font-mono text-xs font-semibold text-white placeholder:text-white/20 outline-none focus:border-amber-400"
                     />
                     <span className="absolute right-2 top-1.5 text-[10px] font-bold text-white/40 font-mono">VND</span>
@@ -862,11 +860,10 @@ export function ExitLaneConsole({
                   <button
                     type="button"
                     onClick={() => ctrl.setCashReceivedAmount(String(ctrl.invoiceData.totalAmount))}
-                    className={`shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-bold transition border ${
-                      Number(ctrl.cashReceivedAmount) === Number(ctrl.invoiceData.totalAmount)
-                        ? 'bg-amber-400 text-black border-amber-400'
-                        : 'bg-amber-400/10 text-amber-300 border-amber-400/30 hover:bg-amber-400/20'
-                    }`}
+                    className={`shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-bold transition border cursor-pointer active:scale-95 ${Number(ctrl.cashReceivedAmount) === Number(ctrl.invoiceData.totalAmount)
+                      ? 'bg-amber-400 text-black border-amber-400'
+                      : 'bg-amber-400/10 text-amber-300 border-amber-400/30 hover:bg-amber-400/20'
+                      }`}
                   >
                     Exact ({formatShortCurrency(ctrl.invoiceData.totalAmount)})
                   </button>
@@ -876,11 +873,10 @@ export function ExitLaneConsole({
                       key={val}
                       type="button"
                       onClick={() => ctrl.setCashReceivedAmount(String(val))}
-                      className={`shrink-0 rounded-lg px-1.5 py-1.5 text-[10px] font-mono font-medium transition border ${
-                        Number(ctrl.cashReceivedAmount) === val
-                          ? 'bg-amber-400 text-black border-amber-400 font-bold'
-                          : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
-                      }`}
+                      className={`shrink-0 rounded-lg px-1.5 py-1.5 text-[10px] font-mono font-medium transition border cursor-pointer active:scale-95 ${Number(ctrl.cashReceivedAmount) === val
+                        ? 'bg-amber-400 text-black border-amber-400 font-bold'
+                        : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                        }`}
                     >
                       {formatShortCurrency(val)}
                     </button>
@@ -990,7 +986,7 @@ export function ExitLaneConsole({
                 || !ctrl.invoiceData
                 || (Number(ctrl.invoiceData.totalAmount || 0) > 0
                   && !ctrl.invoiceData.canAutoPay
-                  && Number(ctrl.cashReceivedAmount) < Number(ctrl.invoiceData.totalAmount))
+                  && Number(ctrl.cashReceivedAmount || ctrl.invoiceData.totalAmount) < Number(ctrl.invoiceData.totalAmount))
               }
               className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 py-3 text-xs font-black text-black hover:brightness-110 disabled:opacity-50 transition shadow-lg shadow-sky-500/20 active:scale-95 cursor-pointer"
             >

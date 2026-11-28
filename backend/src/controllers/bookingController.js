@@ -2403,6 +2403,18 @@ exports.createBookingHold = async (req, res, next) => {
       return created;
     });
 
+    // Gửi tín hiệu realtime qua Socket.IO để các màn hình Kiosk khác cập nhật ô Hold ngay lập tức
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('booking:hold_created', {
+        holdId: newHold._id,
+        floorId: newHold.floorId,
+        slotCode: newHold.slotCode,
+        expiresAt: newHold.expiresAt,
+      });
+      io.emit('parking:slots_updated');
+    }
+
     res.status(201).json({
       success: true,
       message: 'Khóa ô đỗ tạm thời thành công (5 phút)',
@@ -2468,6 +2480,17 @@ exports.releaseBookingHold = async (req, res, next) => {
 
     hold.status = 'released';
     await hold.save();
+
+    // Gửi tín hiệu giải phóng ô Hold realtime qua Socket.IO
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('booking:hold_released', {
+        holdId: hold._id,
+        floorId: hold.floorId,
+        slotCode: hold.slotCode,
+      });
+      io.emit('parking:slots_updated');
+    }
 
     res.status(200).json({
       success: true,

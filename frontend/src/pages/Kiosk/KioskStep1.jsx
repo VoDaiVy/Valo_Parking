@@ -44,7 +44,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         setIsVerifying(false);
         setStepAlert({
           title: 'QR Verification Failed',
-          message: data.message || 'Mã QR không hợp lệ',
+          message: data.message || 'Invalid QR code',
         });
         return;
       }
@@ -76,7 +76,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       setIsVerifying(false);
       setStepAlert({
         title: 'Connection Error',
-        message: err.message || 'Lỗi kết nối khi xác thực mã QR.',
+        message: err.message || 'Connection error while verifying QR code.',
       });
     }
   };

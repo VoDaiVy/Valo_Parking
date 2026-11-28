@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useSocket } from '../../hooks/useSocket';
 import { API_BASE } from '../../services/api';
 
 export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/kiosk-out', onFinish }) {
+  const navigate = useNavigate();
   const socket = useSocket();
   const mountTimeRef = useRef(0);
   const hasSeenOpenRef = useRef(false);
@@ -18,11 +20,25 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
       if (isRedirectingRef.current) return;
       isRedirectingRef.current = true;
       try {
-        onFinish();
+        onFinish?.();
       } catch (e) {
         console.error(e);
       } finally {
-        window.location.replace(activeBasePath);
+        navigate(activeBasePath, { replace: true });
+      }
+    };
+
+    const processGateState = (gateData) => {
+      if (!gateData || (gateData.gate && gateData.gate !== activeGate)) return;
+      if (gateData.open) {
+        hasSeenOpenRef.current = true;
+        return;
+      }
+      const closedAfterMount = Boolean(gateData.forceClose)
+        && Number(gateData.timestamp || 0) >= mountTimeRef.current;
+      if (hasSeenOpenRef.current || closedAfterMount) {
+        // Xe đi qua rồi và barrier đóng xuống (isOpen: false) -> lập tức quay về màn hình chính
+        handleDone();
       }
     };
 
@@ -34,18 +50,7 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
         });
         const data = await res.json();
         if (data.success && data.data) {
-          const isOpen = Boolean(data.data.open);
-          if (isOpen) {
-            hasSeenOpenRef.current = true;
-          } else if (hasSeenOpenRef.current) {
-            // Cổng đã đóng sau khi xe qua cảm biến -> đợi đủ 1.5s rồi mới quay về màn hình chính
-            const elapsed = Date.now() - mountTimeRef.current;
-            if (elapsed >= 1500) {
-              handleDone();
-            } else {
-              setTimeout(handleDone, 1500 - elapsed);
-            }
-          }
+          processGateState(data.data);
         }
       } catch {
         // ignore
@@ -63,19 +68,7 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
 
     // 2. Lắng nghe qua Socket.IO (chỉ nhận sự kiện của đúng cổng)
     const handleBarrierControl = (data) => {
-      if (data && (data.gate === activeGate || !data.gate)) {
-        if (data.open) {
-          hasSeenOpenRef.current = true;
-        } else if (!data.open && hasSeenOpenRef.current) {
-          // Xe đã qua cổng và barrier đã đóng -> tự động quay về trang chủ sau tối thiểu 1.5s
-          const elapsed = Date.now() - mountTimeRef.current;
-          if (elapsed >= 1500) {
-            handleDone();
-          } else {
-            setTimeout(handleDone, 1500 - elapsed);
-          }
-        }
-      }
+      processGateState(data);
     };
 
     if (socket) {
@@ -89,7 +82,7 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
         socket.off('gate:barrier_control', handleBarrierControl);
       }
     };
-  }, [onFinish, socket, targetGate, basePath]);
+  }, [onFinish, socket, targetGate, basePath, navigate]);
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-black relative overflow-hidden">
@@ -111,7 +104,7 @@ export default function KioskOutSuccess({ targetGate = 'EXIT_1', basePath = '/ki
         </p>
 
         <p className="text-gray-400 text-lg">
-          Vui lòng lái xe qua cổng. Chúc quý khách thượng lộ bình an!
+          Please proceed through the gate. Have a safe journey!
         </p>
       </div>
     </div>

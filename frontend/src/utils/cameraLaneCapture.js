@@ -69,6 +69,10 @@ export function resolveLaneTransform(lane = 'full', cameraConfig = DEFAULT_CAMER
     };
   }
 
+  // VỊ TRÍ VẬT LÝ CỦA CAMERA TRÊN MÔ HÌNH:
+  // - Trạm Bên Trái (Cổng Vào ENTRY_1): NỬA BÊN PHẢI của Camera (side = 'right')
+  // - Trạm Bên Phải (Cổng Ra EXIT_1): NỬA BÊN TRÁI của Camera (side = 'left')
+  // Cố định bất biến cho từng cổng, không bao giờ thay đổi qua lại!
   let side = lane === 'entry' ? 'right' : 'left';
   if (cfg.swapLanes) {
     side = side === 'left' ? 'right' : 'left';
@@ -172,6 +176,40 @@ export function cropImageDataUrlForLane(dataUrl, lane = 'full', cameraConfig = D
 
       const canvas = document.createElement('canvas');
       renderOrientedCanvas(canvas, img, rect, outW, outH, rotation);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+export function rotateImageBase64(dataUrl, deg = 180) {
+  if (!dataUrl || deg === 0) return Promise.resolve(dataUrl);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (!w || !h) {
+        resolve(dataUrl);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      const swapDims = deg === 90 || deg === 270;
+      canvas.width = swapDims ? h : w;
+      canvas.height = swapDims ? w : h;
+      const ctx = canvas.getContext('2d');
+      if (deg === 180) {
+        ctx.translate(canvas.width, canvas.height);
+        ctx.rotate(Math.PI);
+      } else if (deg === 90) {
+        ctx.translate(canvas.width, 0);
+        ctx.rotate(Math.PI / 2);
+      } else if (deg === 270) {
+        ctx.translate(0, canvas.height);
+        ctx.rotate(-Math.PI / 2);
+      }
+      ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
     img.onerror = () => resolve(dataUrl);

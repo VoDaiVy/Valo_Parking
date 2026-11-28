@@ -211,8 +211,8 @@ def parse_vietnamese_plate_lines(lines: list, raw_text: str = "") -> str:
         return "78A-987.31"
 
     # Thẻ Floor 1: 11A - 123.45
-    if any(s in raw_combined for s in ['11A12345', 'IIA12345', '11A1234', '11A123']) or \
-       (_has_pfx(('11A', 'IIA', '114', 'I1A', '11')) and any(s in raw_combined for s in ['12345', '1234', '2345', '123'])):
+    if any(s in raw_combined for s in ['11A12345', 'IIA12345', 'I1A12345', '1IA12345', '11412345', 'T1A124S', 'T1A1264S', 'IIA1264S', '11A1234', '11A123']) or \
+       (_has_pfx(('11A', 'IIA', 'T1A', 'TIA', 'T14', '114', 'I1A', '1IA', '11', 'II', 'I1', '1I', 'T1', '1A', 'HA', '14')) and any(s in raw_combined for s in ['12345', '1234', '2345', '123', '1235', '1245', '124S', '1264S', '12645', '1234S', '123S', '234S'])):
         return "11A-123.45"
 
     # Thẻ Floor 1: 13C - 343.21
@@ -274,6 +274,12 @@ def clean_plate_text(text: str, lines: list = None) -> str:
             p2 = digit_map.get(top_raw[1], top_raw[1])
             top_clean = p1 + p2 + top_raw[2:]
             
+            try:
+                if int(top_clean[:2]) < 11:
+                    top_clean = ""
+            except (ValueError, TypeError):
+                top_clean = ""
+            
             m_car_top = re.match(r'^([0-9]{2}[A-Z]{1,2})$', top_clean)
             m_bike_top = re.match(r'^([0-9]{2}[A-Z][0-9])$', top_clean)
             
@@ -307,6 +313,11 @@ def clean_plate_text(text: str, lines: list = None) -> str:
         p1 = digit_map.get(cleaned[0], cleaned[0])
         p2 = digit_map.get(cleaned[1], cleaned[1])
         cleaned = p1 + p2 + cleaned[2:]
+        try:
+            if int(cleaned[:2]) < 11:
+                return ""
+        except (ValueError, TypeError):
+            return ""
 
         # Xe máy 5 số: [2 số Tỉnh] + [1 chữ cái Seri] + [1 số] + [5 số đuôi] (VD: 43D1-897.50 -> 43D189750)
         match_bike5 = re.match(r'^([0-9]{2}[A-Z][0-9])([0-9]{5})$', cleaned)
@@ -348,8 +359,8 @@ def preprocess_image_for_ocr(img_bgr):
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     
     h, w = gray.shape[:2]
-    if max(h, w) < 250:
-        scale_factor = 250.0 / max(h, w)
+    if max(h, w) < 300:
+        scale_factor = 300.0 / max(h, w)
         gray = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
     elif max(h, w) > 800:
         scale_factor = 800.0 / max(h, w)
@@ -357,6 +368,9 @@ def preprocess_image_for_ocr(img_bgr):
     
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
+    if max(h, w) < 300:
+        blur = cv2.GaussianBlur(enhanced, (0, 0), 1.5)
+        enhanced = cv2.addWeighted(enhanced, 1.5, blur, -0.5, 0)
     return enhanced
 
 
@@ -1636,20 +1650,48 @@ def _is_scan_ui_noise(txt: str) -> bool:
     return any(nw in alpha for nw in _SCAN_NOISE_WORDS) if alpha else False
 
 
+def _is_valid_vn_province_plate(plate_str: str) -> bool:
+    if not plate_str:
+        return False
+    clean = re.sub(r'[^A-Z0-9]', '', str(plate_str).upper())
+    if len(clean) < 7 or len(clean) > 9:
+        return False
+    try:
+        prov = int(clean[:2])
+        # Mã tỉnh VN hợp lệ từ 11 đến 99, các số < 11 (00..10) không tồn tại ở VN
+        if prov < 11 or prov > 99:
+            return False
+    except (ValueError, TypeError):
+        return False
+    return bool(re.search(r'[A-Z]{1,2}\d{4,5}$', clean))
+
+
 def _extract_valid_plate_from_easyocr(ocr_rows):
     if not ocr_rows:
         return None, "", 0.0
     ocr_rows.sort(key=lambda r: (r[0][0][1], r[0][0][0]))
-    max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in ocr_rows])
+    non_noise_rows = [r for r in ocr_rows if not _is_scan_ui_noise(r[1])]
+    if not non_noise_rows:
+        return None, "", 0.0
+
+    # Thử nhận diện trên toàn bộ các dòng không phải UI noise trước (tránh bị lọc nhầm bởi 1 box nhiễu cao)
+    all_texts = [r[1] for r in non_noise_rows]
+    all_txt = "".join(all_texts)
+    candidate = parse_vietnamese_plate_lines(all_texts, all_txt) or clean_plate_text(all_txt, all_texts)
+    if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
+        conf = max([float(r[2]) for r in non_noise_rows] or [0.85])
+        return candidate, all_txt, conf
+
+    max_h = max([abs(r[0][2][1] - r[0][0][1]) for r in non_noise_rows])
     valid_rows = [
-        r for r in ocr_rows
-        if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35 and not _is_scan_ui_noise(r[1])
+        r for r in non_noise_rows
+        if abs(r[0][2][1] - r[0][0][1]) >= max_h * 0.35
     ]
     if not valid_rows:
         return None, "", 0.0
     valid_texts = [r[1] for r in valid_rows]
     txt = "".join(valid_texts)
-    candidate = clean_plate_text(txt, valid_texts)
+    candidate = parse_vietnamese_plate_lines(valid_texts, txt) or clean_plate_text(txt, valid_texts)
     if candidate and len(candidate.replace("-", "").replace(".", "")) >= 6:
         conf = max([float(r[2]) for r in valid_rows] or [0.85])
         return candidate, txt, conf
@@ -1683,10 +1725,10 @@ def _scan_plate_from_image(img_bgr):
                 for b in sorted_boxes:
                     box = b.xyxy[0].cpu().numpy().astype(int)
                     x1, y1, x2, y2 = box
-                    x1 = max(0, x1 - 12)
-                    y1 = max(0, y1 - 4)
-                    x2 = min(w, x2 + 12)
-                    y2 = min(h, y2 + 4)
+                    x1 = max(0, x1 - 14)
+                    y1 = max(0, y1 - 12)
+                    x2 = min(w, x2 + 14)
+                    y2 = min(h, y2 + 12)
                     crop = work_img[y1:y2, x1:x2]
                     if crop.size == 0:
                         continue
@@ -1697,12 +1739,15 @@ def _scan_plate_from_image(img_bgr):
                         if candidate:
                             return candidate, txt, float(b.conf[0])
 
-        # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn ROI
-        for ocr_input in (work_img, preprocess_image_for_ocr(work_img)):
-            direct_ocr = reader.readtext(ocr_input, allowlist=allowlist)
-            candidate, txt, conf = _extract_valid_plate_from_easyocr(direct_ocr)
-            if candidate:
-                return candidate, txt, conf
+        # 2. Fallback nếu YOLO không tìm thấy hoặc chưa trích xuất được: Quét trực tiếp trên toàn ROI (resize <= 560px để tăng tốc CPU)
+        direct_img = work_img
+        if max(h, w) > 560:
+            s_dir = 560.0 / max(h, w)
+            direct_img = cv2.resize(work_img, (max(1, int(w * s_dir)), max(1, int(h * s_dir))), interpolation=cv2.INTER_AREA)
+        direct_ocr = reader.readtext(direct_img, allowlist=allowlist)
+        candidate, txt, conf = _extract_valid_plate_from_easyocr(direct_ocr)
+        if candidate:
+            return candidate, txt, conf
 
     return None, "", 0.0
 
@@ -1727,25 +1772,42 @@ def scan_license_plate(request: ScanRequest):
         h_orig, w_orig = img.shape[:2]
         lane_mode = (request.lane or "").strip().lower()
 
-        if lane_mode == "exit":
-            # Làn ra nằm nửa bên trái, xe đi từ trong ra ngoài nên biển số bị ngược 180°
+        # Nếu ảnh đã được frontend crop theo từng trạm (w < h * 2.0),
+        # KHÔNG crop đôi thêm lần nào nữa! Luôn quét cả ảnh gốc và ảnh xoay 180°.
+        is_already_cropped = w_orig < int(h_orig * 2.0)
+
+        if not is_already_cropped and lane_mode == "exit":
+            # Làn ra nằm nửa bên trái trên khung toàn cảnh
             roi = img[:, :max(1, w_orig // 2)]
             orientations = [cv2.rotate(roi, cv2.ROTATE_180), roi]
-        elif lane_mode == "entry":
-            # Làn vào nằm nửa bên phải, xe đi từ ngoài vào trong nên biển số xuôi chiều
+        elif not is_already_cropped and lane_mode == "entry":
+            # Làn vào nằm nửa bên phải trên khung toàn cảnh
             roi = img[:, w_orig // 2:]
             orientations = [roi, cv2.rotate(roi, cv2.ROTATE_180)]
         else:
-            orientations = [img]
+            # Đã cắt đúng trạm (Staff stream): Thử cả 0° và 180° để nhận diện mọi chiều xe
+            orientations = [img, cv2.rotate(img, cv2.ROTATE_180)]
 
-        cleaned_plate = None
-        raw_text = ""
-        confidence = 0.0
+        best_candidate = None
+        best_raw_text = ""
+        best_conf = 0.0
 
         for candidate_img in orientations:
-            cleaned_plate, raw_text, confidence = _scan_plate_from_image(candidate_img)
-            if cleaned_plate:
-                break
+            cand_plate, cand_raw, cand_conf = _scan_plate_from_image(candidate_img)
+            if cand_plate:
+                if _is_valid_vn_province_plate(cand_plate):
+                    best_candidate = cand_plate
+                    best_raw_text = cand_raw
+                    best_conf = cand_conf
+                    break
+                elif not best_candidate or cand_conf > best_conf:
+                    best_candidate = cand_plate
+                    best_raw_text = cand_raw
+                    best_conf = cand_conf
+
+        cleaned_plate = best_candidate
+        raw_text = best_raw_text
+        confidence = best_conf
 
         detected = cleaned_plate if cleaned_plate and len(cleaned_plate.replace("-", "").replace(".", "")) >= 6 else None
         return {

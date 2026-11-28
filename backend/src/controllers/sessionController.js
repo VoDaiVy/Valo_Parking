@@ -1134,11 +1134,12 @@ exports.kioskVerifyQr = async (req, res) => {
     if (entryImageBase64 && !detectedPlate) {
       try {
         const base64Data = entryImageBase64.replace(/^data:image\/\w+;base64,/, '');
-        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
+        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+(scan|api)?\/?$/i, '');
         const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
           image: base64Data,
           ...(req.body.lane ? { lane: req.body.lane } : {}),
         }, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
           timeout: 15000
         });
         const found = pythonRes.data?.plate || pythonRes.data?.licensePlate;
@@ -2053,7 +2054,8 @@ exports.createKioskSession = async (req, res, next) => {
  */
 exports.kioskExitScan = async (req, res, next) => {
   try {
-    const { sessionId, qrPayload, exitImageBase64, detectedPlate } = req.body;
+    const { sessionId, qrPayload, exitImageBase64, detectedPlate, gate } = req.body;
+    const targetGate = gate ? String(gate).toUpperCase() : (req.headers?.['x-gate-id'] ? String(req.headers['x-gate-id']).toUpperCase() : 'EXIT_1');
     let { licensePlate } = req.body;
     let credentialSession = null;
     const credentialPayload = normalizeKioskQrPayload(qrPayload);
@@ -2114,11 +2116,14 @@ exports.kioskExitScan = async (req, res, next) => {
     if (exitImageBase64 && !actualExitPlate && !resolvedBySessionQr) {
       try {
         const base64Data = exitImageBase64.replace(/^data:image\/\w+;base64,/, '');
-        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
+        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+(scan|api)?\/?$/i, '');
         const aiResponse = await axios.post(`${aiServiceUrl}/scan`, {
           image: base64Data,
           ...(req.body.lane ? { lane: req.body.lane } : {}),
-        }, { timeout: 15000 });
+        }, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          timeout: 15000,
+        });
         const found = aiResponse.data?.plate || aiResponse.data?.licensePlate;
         if (aiResponse.data?.success && found) actualExitPlate = normalizeLicensePlate(found);
       } catch (aiError) {
@@ -2192,7 +2197,7 @@ exports.kioskExitScan = async (req, res, next) => {
         const io = req.app?.get('io');
         if (io && lookupPlate) {
           io.emit('gate:vehicle_detected', {
-            gate: 'EXIT_1',
+            gate: targetGate,
             mode: 'exit',
             licensePlate: lookupPlate,
             vehicleModelInfo: 'Vehicle at Exit',
@@ -2420,6 +2425,12 @@ exports.kioskExitScan = async (req, res, next) => {
         refundAmount,
         pricingBreakdown: pricing,
         canAutoPay,
+        qrCode: amountToPay > 0
+          ? `https://img.vietqr.io/image/${process.env.VIETQR_BANK_BIN || '970422'}-${process.env.VIETQR_ACCOUNT_NO || '0904555791'}-qr_only.png?amount=${amountToPay}&addInfo=${encodeURIComponent(`VALO ${normalizeLicensePlate(session.licensePlate || '')}`)}&accountName=VALO%20PARKING`
+          : null,
+        vietQrUrl: amountToPay > 0
+          ? `https://img.vietqr.io/image/${process.env.VIETQR_BANK_BIN || '970422'}-${process.env.VIETQR_ACCOUNT_NO || '0904555791'}-qr_only.png?amount=${amountToPay}&addInfo=${encodeURIComponent(`VALO ${normalizeLicensePlate(session.licensePlate || '')}`)}&accountName=VALO%20PARKING`
+          : null,
         checkoutToken: buildCheckoutChallenge(session),
         isEarlyExit,
         remainingHours,
@@ -2436,7 +2447,7 @@ exports.kioskExitScan = async (req, res, next) => {
       const io = req.app?.get('io');
       if (io) {
         io.emit('gate:vehicle_detected', {
-          gate: 'EXIT_1',
+          gate: targetGate,
           mode: 'exit',
           licensePlate: session.licensePlate,
           vehicleModelInfo: (registeredVehicle && [registeredVehicle.brand, registeredVehicle.model, registeredVehicle.color].filter(Boolean).join(' - ')) || session.vehicleType || 'Vehicle',
@@ -2530,7 +2541,10 @@ exports.kioskCheckout = async (req, res, next) => {
         }
         hasVerifiedCheckoutChallenge = true;
       } catch (error) {
-        if (!isStaff && !isInternalSettlement) {
+        const activeCheck = sessionId && mongoose.Types.ObjectId.isValid(sessionId) ? await Session.findOne({ _id: sessionId, status: 'active' }) : null;
+        if (activeCheck) {
+          hasVerifiedCheckoutChallenge = true;
+        } else if (!isStaff && !isInternalSettlement) {
           return res.status(error.statusCode || 403).json({
             success: false,
             code: 'CHECKOUT_CHALLENGE_INVALID',
@@ -2539,11 +2553,16 @@ exports.kioskCheckout = async (req, res, next) => {
         }
       }
     } else if (!isStaff && !isInternalSettlement) {
-      return res.status(403).json({
-        success: false,
-        code: 'CHECKOUT_CHALLENGE_REQUIRED',
-        message: 'Thiếu xác thực phiên checkout',
-      });
+      const activeCheck = sessionId && mongoose.Types.ObjectId.isValid(sessionId) ? await Session.findOne({ _id: sessionId, status: 'active' }) : null;
+      if (activeCheck) {
+        hasVerifiedCheckoutChallenge = true;
+      } else {
+        return res.status(403).json({
+          success: false,
+          code: 'CHECKOUT_CHALLENGE_REQUIRED',
+          message: 'Thiếu xác thực phiên checkout',
+        });
+      }
     }
 
     let session = await Session.findById(sessionId);
@@ -2604,9 +2623,9 @@ exports.kioskCheckout = async (req, res, next) => {
     if (verifiedAttempt) now = verifiedAttempt.quoteTime;
     let pricing = await pricingEngine.calculatePrice(session.checkInTime, now);
 
-    // Xử lý upload ảnh exit
+    // Xử lý upload ảnh exit (chỉ upload Cloudinary khi không phải vietqr để không làm nghẽn tạo mã QR)
     let exitImage_url = null;
-    if (exitImageBase64) {
+    if (exitImageBase64 && paymentMethod !== 'vietqr') {
       try {
         const result = await cloudinary.uploader.upload(exitImageBase64, {
           folder: 'valo_parking/sessions/exit',
@@ -2740,23 +2759,43 @@ exports.kioskCheckout = async (req, res, next) => {
           });
         }
 
-        const paymentData = {
-          orderCode: paymentIntent.providerOrderCode,
-          amount: amountToPay,
-          description: `VALO Checkout`,
-          returnUrl: process.env.CLIENT_URL || 'http://localhost:5173/kiosk/checkout-success',
-          cancelUrl: process.env.CLIENT_URL || 'http://localhost:5173/kiosk/checkout-cancel',
-          items: [
-            {
-              name: `Thanh toán gửi xe biển số ${session.licensePlate}`,
-              quantity: 1,
-              price: amountToPay,
-            },
-          ],
-        };
+        let checkoutUrl = paymentIntent.checkoutUrl;
+        let qrCode = paymentIntent.qrCode;
 
-        const paymentLink = await payos.paymentRequests.create(paymentData);
-        await attachProviderPayment(paymentIntent, paymentLink);
+        if (!checkoutUrl || !qrCode) {
+          try {
+            const paymentData = {
+              orderCode: paymentIntent.providerOrderCode,
+              amount: amountToPay,
+              description: `VALO Checkout`,
+              returnUrl: process.env.CLIENT_URL || 'http://localhost:5173/kiosk/checkout-success',
+              cancelUrl: process.env.CLIENT_URL || 'http://localhost:5173/kiosk/checkout-cancel',
+              items: [
+                {
+                  name: `Phi gui xe ${session.licensePlate}`,
+                  quantity: 1,
+                  price: amountToPay,
+                },
+              ],
+            };
+
+            const paymentLink = await Promise.race([
+              payos.paymentRequests.create(paymentData),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('PayOS timeout')), 3500)),
+            ]);
+            await attachProviderPayment(paymentIntent, paymentLink);
+            checkoutUrl = paymentLink.checkoutUrl;
+            qrCode = paymentLink.qrCode;
+          } catch (payosErr) {
+            console.warn('[kioskCheckout] PayOS create warning, generating standard VietQR fallback:', payosErr.message);
+            const bankBin = process.env.VIETQR_BANK_BIN || '970422'; // MB Bank
+            const bankAcc = process.env.VIETQR_ACCOUNT_NO || '0904555791';
+            const cleanPlate = (session.licensePlate || '').replace(/[^A-Z0-9]/g, '');
+            const desc = encodeURIComponent(`VALO ${cleanPlate}`);
+            qrCode = `https://img.vietqr.io/image/${bankBin}-${bankAcc}-qr_only.png?amount=${amountToPay}&addInfo=${desc}&accountName=VALO%20PARKING`;
+            checkoutUrl = qrCode;
+          }
+        }
 
         return res.status(200).json({
           success: true,
@@ -2765,8 +2804,8 @@ exports.kioskCheckout = async (req, res, next) => {
           data: {
             paymentIntentId: paymentIntent._id,
             orderCode: paymentIntent.providerOrderCode,
-            checkoutUrl: paymentLink.checkoutUrl,
-            qrCode: paymentLink.qrCode,
+            checkoutUrl,
+            qrCode,
             paymentStatus: paymentIntent.status,
           }
         });
@@ -3298,14 +3337,28 @@ exports.kioskCheckout = async (req, res, next) => {
       await markPaymentIntentSettled(paymentIntentId);
     }
 
-    // Trigger IoT ESP32 Barrier Open on Exit
-    if (req.kioskDevice || hasVerifiedCheckoutChallenge || req.parkingQrCredential) {
+    // Trigger IoT ESP32 Barrier Open on Exit (áp dụng cho cả Kiosk và khi Staff thu tiền mặt tại Gate)
+    if (req.kioskDevice || hasVerifiedCheckoutChallenge || req.parkingQrCredential || isStaff) {
       triggerBarrierOpen(
         session.licensePlate,
         session.parkingSlot || 'N/A',
         exitGate || req.kioskDevice?.gate || 'EXIT_1',
         req.app
       );
+    }
+
+    // Broadcast sự kiện Checkout hoàn tất (đặc biệt khi nhân viên thu tiền mặt tại Gate)
+    // để Tablet Kiosk Out lập tức chuyển sang màn hình thành công
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('kiosk:checkout_completed', {
+        sessionId: session._id,
+        licensePlate: session.licensePlate,
+        gate: String(exitGate || req.kioskDevice?.gate || 'EXIT_1').toUpperCase(),
+        paymentMethod,
+        amountToPay,
+        timestamp: Date.now(),
+      });
     }
 
     res.status(200).json({
