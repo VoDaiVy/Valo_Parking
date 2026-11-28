@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import './adminPageConsistency.css';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -425,7 +426,7 @@ function SummaryStrip({ metrics }) {
               <div className="min-w-0">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-200/55">{metric.label}</p>
                 <div className="mt-1 flex items-baseline gap-2">
-                  <p className="c4-kpi-value font-mono text-3xl font-black text-white">{metric.value}</p>
+                  <p className="c4-kpi-value font-mono text-3xl font-black text-white"><AnimatedNumber value={metric.value} /></p>
                   <p className="truncate text-xs font-bold text-blue-200/50">{metric.note}</p>
                 </div>
               </div>

@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { revealCustomer, highlightCustomerRow } from './customerDeepLink.js';
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -67,24 +68,6 @@ const ROLES = {
 const PAGE_SIZE = 10;
 
 // --- Animated Counter ---------------------------------------------------------
-function AnimatedCounter({ target, duration = 1200 }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!target) return;
-    let frame;
-    const start = performance.now();
-    const animate = (now) => {
-      const elapsed = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.round(eased * target));
-      if (progress < 1) frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [target, duration]);
-  return <span>{count}</span>;
-}
 
 // --- Role Badge --------------------------------------------------
 function RoleBadge({ role }) {
@@ -141,7 +124,7 @@ function StatCard({ icon: Icon, label, value, loading, unavailable }) {
       <p className="g3-metric-label">{label}</p>
       <p className="g3-metric-value">{loading
         ? <span className="inline-block w-12 h-6 rounded bg-white/10 animate-skeleton" />
-        : unavailable ? '?' : <AnimatedCounter target={value} />}</p>
+        : unavailable ? '?' : <AnimatedNumber value={value} />}</p>
     </div>
   </article>;
 }

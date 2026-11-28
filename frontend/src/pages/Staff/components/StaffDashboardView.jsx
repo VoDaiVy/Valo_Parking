@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../../components/AnimatedNumber';
 import { format } from 'date-fns';
 import { enUS, vi } from 'date-fns/locale';
 import {
@@ -16,7 +17,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('vi-VN', {
 export function DashboardMetric({ icon: Icon, label, value, sub, emphasis }) {
   return <article className="staff-dash-metric" aria-label={label} data-emphasis={emphasis}>
     <p className="staff-dash-metric-label"><Icon size={18} aria-hidden="true" />{label}</p>
-    <p className="staff-type-kpi">{value}</p><p className="staff-dash-support">{sub}</p>
+    <p className="staff-type-kpi"><AnimatedNumber value={value} /></p><p className="staff-dash-support">{sub}</p>
   </article>;
 }
 

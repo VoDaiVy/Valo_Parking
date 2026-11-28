@@ -1,3 +1,5 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
+import { useCountUp } from '../../components/numberAnimation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, isValid } from 'date-fns';
@@ -55,57 +57,6 @@ const formatCurrency = (value = 0) => {
   const safeValue = Math.round(Number(value) || 0);
   return `${currencyFormatter.format(safeValue)} VND`;
 };
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
-
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const handleChange = () => setReduced(media.matches);
-    handleChange();
-    media.addEventListener('change', handleChange);
-    return () => media.removeEventListener('change', handleChange);
-  }, []);
-
-  return reduced;
-}
-
-function useCountUp(value, { duration = 650, formatter = (next) => next.toLocaleString('vi-VN') } = {}) {
-  const reducedMotion = usePrefersReducedMotion();
-  const [displayValue, setDisplayValue] = useState(() => formatter(Number(value) || 0));
-
-  useEffect(() => {
-    const target = Number(value) || 0;
-    if (reducedMotion) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDisplayValue(formatter(target));
-      return undefined;
-    }
-
-    let frameId;
-    let startTime;
-
-    const tick = (timestamp) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplayValue(formatter(target * eased));
-
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(tick);
-      } else {
-        setDisplayValue(formatter(target));
-      }
-    };
-
-    frameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [duration, formatter, reducedMotion, value]);
-
-  return displayValue;
-}
 
 function getRevenueTrend(stats, t = (key, options) => options?.defaultValue || key) {
   const current = Number(stats.currentRecordedSources) || 0;
@@ -522,7 +473,7 @@ function ParkingOperation({ operation, loading }) {
             <Icon size={21} className={tone} aria-hidden="true" />
             <dt className="mt-4 min-h-10 text-xs font-semibold leading-5 text-blue-200/60">{label}</dt>
             <dd className={`mt-2 break-words font-bold tracking-tight ${tone} ${value == null && !loading && !operation.error ? 'text-xs' : 'text-4xl'}`}>
-              {loading ? <span className="block h-9 w-12 animate-pulse rounded bg-white/10" aria-label={t('common.loading')} /> : operation.error ? '\u2014' : value == null ? t('adminDashboard.unavailable') : value.toLocaleString('vi-VN')}
+              {loading ? <span className="block h-9 w-12 animate-pulse rounded bg-white/10" aria-label={t('common.loading')} /> : operation.error ? '\u2014' : value == null ? t('adminDashboard.unavailable') : <AnimatedNumber value={value.toLocaleString('vi-VN')} />}
             </dd>
           </div>
         ))}

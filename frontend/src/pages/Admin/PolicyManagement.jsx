@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import './adminPageConsistency.css';
 import './policyList.css';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
@@ -618,7 +619,7 @@ export default function PolicyManagement() {
                     {item.label}
                   </p>
                   <div className="mt-1 flex items-end gap-2">
-                    <span className="c4-kpi-value admin-type-kpi text-2xl font-black leading-none text-white">{item.value}</span>
+                    <span className="c4-kpi-value admin-type-kpi text-2xl font-black leading-none text-white"><AnimatedNumber value={item.value} /></span>
                     <span className="text-xs font-semibold text-slate-500">{item.note}</span>
                   </div>
                 </div>

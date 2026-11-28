@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { createPortal } from 'react-dom';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -48,7 +49,7 @@ export function PricingOverview({ timeBlocks }) {
   return <dl className="pricing-metrics">{cards.map(({ label, value, note, icon: Icon }) =>
     <div className="pricing-metric" key={label}>
       <span className="pricing-metric-icon"><Icon size={18} strokeWidth={1.7} aria-hidden="true" /></span>
-      <div className="pricing-metric-copy"><dt>{label}</dt><dd>{value}</dd><p>{note}</p></div>
+      <div className="pricing-metric-copy"><dt>{label}</dt><dd><AnimatedNumber value={value} /></dd><p>{note}</p></div>
     </div>)}
   </dl>;
 }

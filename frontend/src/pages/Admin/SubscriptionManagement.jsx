@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
@@ -115,7 +116,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
   if (isAdmin) return <div className="vip-metric">
     <Icon size={18} className={`shrink-0 ${tone}`} aria-hidden="true" />
     <div className="min-w-0 flex-1"><p className="text-xs font-bold text-blue-200/55">{label}</p>
-      <div className="mt-1.5 flex items-baseline gap-2"><p className="font-mono text-2xl font-black leading-none text-white">{value}</p><span className="truncate text-xs text-emerald-300" title={support}>{support}</span></div>
+      <div className="mt-1.5 flex items-baseline gap-2"><p className="font-mono text-2xl font-black leading-none text-white"><AnimatedNumber value={value} /></p><span className="truncate text-xs text-emerald-300" title={support}>{support}</span></div>
     </div>
   </div>;
   return (
@@ -125,7 +126,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
       </div>
       <div className="min-w-0">
         <p className="g3-metric-label text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-        <p className="g3-metric-value admin-type-kpi mt-1 font-mono text-xl font-black text-white">{value}</p>
+        <p className="g3-metric-value admin-type-kpi mt-1 font-mono text-xl font-black text-white"><AnimatedNumber value={value} /></p>
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{support}</p>
       </div>
     </div>
@@ -751,7 +752,50 @@ export default function SubscriptionManagement() {
             <button type="button" aria-label={t('subscriptionPagination.nextPage')} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 disabled:opacity-25 disabled:cursor-not-allowed transition-all" disabled={loading || Boolean(subscriptionError) || adminCurrentPage === adminTotalPages} onClick={() => setAdminPage(adminCurrentPage + 1)}>{t('subscriptionPagination.next')} &rarr;</button>
           </div>
         </nav>}
-        {detailMembership && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[80]">
+        {detailMembership && isAdmin && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[80]">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" aria-hidden="true" />
+          <div className="fixed inset-0 overflow-y-auto p-4 sm:p-6">
+            <div className="flex min-h-full items-center justify-center">
+              <DialogPanel className="w-full max-w-[640px] rounded-2xl border border-white/10 bg-[#1a1a1a] text-white shadow-2xl">
+                <div className="flex items-start justify-between gap-4 border-b border-white/5 p-4 sm:px-6">
+                  <div className="min-w-0">
+                    <p className="mb-1.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#ffd555]"><Crown size={16} className="shrink-0" aria-hidden="true" />{t('subscriptionUiExtra.badge', { defaultValue: 'VIP Subscriptions' })}</p>
+                    <DialogTitle className="break-words text-xl font-bold">{detailMembership.ticketPackage?.name || t('subscriptionUi.unknownPackage')}</DialogTitle>
+                  </div>
+                  <button type="button" autoFocus onClick={() => setDetailMembership(null)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/5 text-gray-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ffd555]" aria-label={t('subscriptionUi.close')}><X size={18} /></button>
+                </div>
+                <div className="space-y-5 p-4 sm:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-gray-400"><UserRound size={20} aria-hidden="true" /></span>
+                      <div className="min-w-0"><p className="break-words text-sm font-semibold">{getDisplayUser(detailMembership, t)?.username || t('subscriptionUi.unknownUser')}</p><p className="mt-0.5 break-all text-xs text-gray-400">{getDisplayUser(detailMembership, t)?.email || t('subscriptionUi.noEmail')}</p></div>
+                    </div>
+                    <StatusBadge status={detailMembership.status} />
+                  </div>
+                  <dl className="grid gap-4 rounded-xl border border-[#ffd555]/20 bg-[#ffd555]/5 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="min-w-0"><dt className="mb-2 flex items-center gap-2 text-xs text-gray-400"><ParkingCircle size={15} className="text-[#ffd555]" aria-hidden="true" />{t('subscriptionUi.vipSlot')}</dt><dd className="break-words text-sm font-semibold text-[#ffd555]">{detailMembership.slots?.map((slot) => `${slot.floorId?.name || t('subscriptionUi.floor')} ${slot.slotCode}`).join(', ') || t('subscriptionUi.notAssigned')}</dd></div>
+                    <div className="min-w-0 sm:text-right"><dt className="mb-2 text-xs text-gray-400">{t('subscriptionUi.amount')}</dt><dd className="break-words text-lg font-bold text-[#ffd555]">{formatCurrency(detailMembership.amount, language)}</dd></div>
+                  </dl>
+                  <dl className="grid grid-cols-2 gap-x-5 gap-y-4 text-sm">
+                    {[
+                      [t('subscriptionUi.package'), t(`adminPages.ticketUi.types.${detailMembership.ticketPackage?.type}`, { defaultValue: titleCase(detailMembership.ticketPackage?.type) })],
+                      [t('walletPage.status'), t(`walletPage.statuses.${detailMembership.paymentStatus}`, { defaultValue: titleCase(detailMembership.paymentStatus) })],
+                      [t('subscriptionDetails.validFrom'), formatDate(detailMembership.validFrom, t('subscriptionUi.unavailable'), language)],
+                      [t('subscriptionDetails.expiresAt'), formatDate(detailMembership.expireAt, t('subscriptionUi.unavailable'), language)],
+                    ].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-gray-400">{label}</dt><dd className="mt-1 break-words font-semibold">{value}</dd></div>)}
+                  </dl>
+                  <section className="border-t border-white/5 pt-4" aria-label={t('subscriptionUi.customerVehicles')}>
+                    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">{t('subscriptionUi.registeredPlates')}</h3><span className="text-xs text-gray-400">{t('subscriptionUi.vehicleCount', { count: getDisplayUser(detailMembership, t)?.vehicles?.length || 0 })}</span></div>
+                    <div className="mt-3 flex flex-wrap gap-2">{(getDisplayUser(detailMembership, t)?.vehicles || []).map((plate, index) => <span key={`${plate}-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs"><Car size={14} className="shrink-0 text-gray-400" aria-hidden="true" /><span className="min-w-0 break-all font-mono font-semibold">{plate}</span></span>)}</div>
+                    {!getDisplayUser(detailMembership, t)?.vehicles?.length && <p className="mt-2 text-sm text-gray-400">{t('subscriptionUi.noVehicle')}</p>}
+                    {detailMembership.currentOwners?.length > 1 && <div className="mt-3 space-y-2 border-t border-white/10 pt-3">{detailMembership.currentOwners.map((owner, index) => <p key={owner._id || index} className="break-words text-xs text-gray-400">{owner.username || owner.email || t('subscriptionUi.unknownCustomer')}: {owner.vehicles?.join(', ') || t('subscriptionUi.noVehicleShort')}</p>)}</div>}
+                  </section>
+                </div>
+              </DialogPanel>
+            </div>
+          </div>
+        </Dialog>}
+        {detailMembership && !isAdmin && <Dialog open onClose={() => setDetailMembership(null)} className="relative z-[80]">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm" aria-hidden="true" />
           <div className="fixed inset-0 overflow-y-auto p-4 sm:p-8">
             <div className="flex min-h-full items-center justify-center">

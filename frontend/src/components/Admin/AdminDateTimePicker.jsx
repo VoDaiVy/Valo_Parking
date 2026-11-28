@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { enUS, vi } from 'date-fns/locale';
 import { addDays, addMonths, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek } from 'date-fns';
 import './adminDateTimePicker.css';
 
@@ -24,8 +25,10 @@ function TimeColumn({ label, options, value, onChange }) {
   </div>;
 }
 
-function Calendar({ value, onChange, label, close }) {
-  const selected = value ? new Date(value) : new Date();
+function Calendar({ value, onChange, label, close, mode, language, nowValue, panelClassName }) {
+  const localize = (en, vn) => language === 'vi' ? vn : en;
+  const locale = language === 'vi' ? vi : enUS;
+  const selected = value ? new Date(value) : nowValue ? new Date(nowValue()) : new Date();
   const [month, setMonth] = useState(() => startOfMonth(selected));
   const [focused, setFocused] = useState(selected);
   const cells = useRef(new Map());
@@ -45,16 +48,16 @@ function Calendar({ value, onChange, label, close }) {
     }[event.key];
     if (next) { event.preventDefault(); move(next()); }
   };
-  return <PopoverPanel portal focus anchor={{ to: 'bottom start', gap: 8, padding: 12 }} className="admin-datetime-panel" role="dialog" aria-label={label}>
+  return <PopoverPanel portal focus anchor={{ to: 'bottom start', gap: 8, padding: 12 }} className={`admin-datetime-panel ${mode ? `admin-datetime-${mode}-panel` : ''} ${panelClassName || ''}`} role="dialog" aria-label={label}>
     <div className="admin-datetime-content">
-    <section className="admin-datetime-calendar" aria-label="Date">
+    {mode !== 'time' && <section className="admin-datetime-calendar" aria-label={localize("Date", "Ng\u00e0y")}>
     <header>
-      <button type="button" aria-label="Previous month" onClick={() => move(addMonths(focused, -1))}><ChevronLeft size={18} /></button>
-      <h3 aria-live="polite">{format(month, 'MMMM yyyy')}</h3>
-      <button type="button" aria-label="Next month" onClick={() => move(addMonths(focused, 1))}><ChevronRight size={18} /></button>
+      <button type="button" aria-label={localize("Previous month", "Th\u00e1ng tr\u01b0\u1edbc")} onClick={() => move(addMonths(focused, -1))}><ChevronLeft size={18} /></button>
+      <h3 aria-live="polite">{format(month, 'MMMM yyyy', { locale })}</h3>
+      <button type="button" aria-label={localize("Next month", "Th\u00e1ng sau")} onClick={() => move(addMonths(focused, 1))}><ChevronRight size={18} /></button>
     </header>
-    <div className="admin-datetime-days" role="grid" aria-label={format(month, 'MMMM yyyy')}>
-      <div role="row" className="admin-datetime-weekdays">{['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(day => <span role="columnheader" key={day}>{day}</span>)}</div>
+    <div className="admin-datetime-days" role="grid" aria-label={format(month, 'MMMM yyyy', { locale })}>
+      <div role="row" className="admin-datetime-weekdays">{(language === 'vi' ? ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'] : ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']).map(day => <span role="columnheader" key={day}>{day}</span>)}</div>
       {Array.from({ length: 6 }, (_, week) => <div role="row" className="admin-datetime-week" key={week}>
         {Array.from({ length: 7 }, (_, day) => {
           const date = addDays(first, week * 7 + day);
@@ -62,7 +65,7 @@ function Calendar({ value, onChange, label, close }) {
           return <div role="gridcell" aria-selected={isSameDay(date, selected)} key={key}>
             <button type="button" ref={el => { if (el) cells.current.set(key, el); else cells.current.delete(key); }}
               tabIndex={isSameDay(date, focused) ? 0 : -1} data-selected={isSameDay(date, selected)} data-outside={!isSameMonth(date, month)}
-              aria-current={isSameDay(date, new Date()) ? 'date' : undefined} aria-label={format(date, 'EEEE, MMMM d, yyyy')}
+              aria-current={isSameDay(date, new Date()) ? 'date' : undefined} aria-label={format(date, 'EEEE, MMMM d, yyyy', { locale })}
               onKeyDown={event => onKeyDown(event, date)} onClick={() => {
                 date.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
                 update(date); setFocused(date); setMonth(startOfMonth(date));
@@ -71,33 +74,33 @@ function Calendar({ value, onChange, label, close }) {
         })}
       </div>)}
     </div>
-    </section>
-    <section className="admin-datetime-time" aria-label="Time">
-      <TimeColumn label="Hour" options={Array.from({ length: 12 }, (_, n) => String(n + 1).padStart(2, '0'))}
+    </section>}
+    {mode !== 'date' && <section className="admin-datetime-time" aria-label={localize("Time", "Gi\u1edd")}>
+      <TimeColumn label={localize("Hour", "Gi\u1edd")} options={Array.from({ length: 12 }, (_, n) => String(n + 1).padStart(2, '0'))}
         value={String(selected.getHours() % 12 || 12).padStart(2, '0')} onChange={hour => {
           const date = new Date(selected); date.setHours(Number(hour) % 12 + (selected.getHours() >= 12 ? 12 : 0)); update(date);
         }} />
-      <TimeColumn label="Min" options={Array.from({ length: 60 }, (_, n) => String(n).padStart(2, '0'))}
+      <TimeColumn label={localize("Min", "Ph\u00fat")} options={Array.from({ length: 60 }, (_, n) => String(n).padStart(2, '0'))}
         value={String(selected.getMinutes()).padStart(2, '0')} onChange={minute => {
           const date = new Date(selected); date.setMinutes(Number(minute)); update(date);
         }} />
-      <TimeColumn label="Period" options={['AM', 'PM']} value={selected.getHours() >= 12 ? 'PM' : 'AM'} onChange={period => {
+      <TimeColumn label={localize("Period", "Bu\u1ed5i")} options={['AM', 'PM']} value={selected.getHours() >= 12 ? 'PM' : 'AM'} onChange={period => {
         const date = new Date(selected); date.setHours(selected.getHours() % 12 + (period === 'PM' ? 12 : 0)); update(date);
       }} />
-    </section>
+    </section>}
     </div>
-    <footer><button type="button" onClick={() => { const now = new Date(); update(now); move(now); }}>Now</button><button type="button" onClick={() => close()}>Done</button></footer>
+    <footer><button type="button" onClick={() => { const now = nowValue ? new Date(nowValue()) : new Date(); if (mode === 'date') now.setHours(selected.getHours(), selected.getMinutes(), 0, 0); if (mode === 'time') now.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate()); update(now); move(now); }}>{localize("Now", "B\u00e2y gi\u1edd")}</button><button type="button" onClick={() => close()}>{localize("Done", "Xong")}</button></footer>
   </PopoverPanel>;
 }
 
-export default function AdminDateTimePicker({ value, onChange, label }) {
+export default function AdminDateTimePicker({ value, onChange, label, mode, language = 'en', disabled = false, nowValue, panelClassName }) {
   return <Popover className="admin-datetime">
     {({ open, close }) => <>
-      <PopoverButton className="admin-datetime-trigger" aria-label={label}>
+      <PopoverButton type="button" disabled={disabled} className="admin-datetime-trigger" aria-label={label}>
         <CalendarDays size={18} aria-hidden="true" />
-        <span>{value ? format(new Date(value), 'dd MMM yyyy') : 'Choose date'}<small>{value ? format(new Date(value), 'HH:mm') : 'Choose time'}</small></span>
+        <span>{mode === 'time' ? (value ? format(new Date(value), 'HH:mm') : language === 'vi' ? 'Ch\u1ecdn gi\u1edd' : 'Choose time') : (value ? format(new Date(value), 'dd MMM yyyy', { locale: language === 'vi' ? vi : enUS }) : language === 'vi' ? 'Ch\u1ecdn ng\u00e0y' : 'Choose date')}{!mode && <small>{value ? format(new Date(value), 'HH:mm') : 'Choose time'}</small>}</span>
       </PopoverButton>
-      {open && <Calendar value={value} onChange={onChange} label={label} close={close} />}
+      {open && <Calendar value={value} onChange={onChange} label={label} close={close} mode={mode} language={language} nowValue={nowValue} panelClassName={panelClassName} />}
     </>}
   </Popover>;
 }

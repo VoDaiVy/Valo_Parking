@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -71,7 +72,7 @@ const BookingStatCard = ({ icon, label, value, note, tone = 'emerald' }) => {
           {icon}
         </div>
         <p className={`min-w-0 flex-1 text-[22px] font-black leading-none tracking-tight tabular-nums ${colors.value}`}>
-          {value}
+          <AnimatedNumber value={value} />
         </p>
         <Activity size={13} className="shrink-0 text-white/15 transition group-hover:text-emerald-400/60" />
       </div>
@@ -472,17 +473,17 @@ export default function BookingManagement() {
           <div className="sbm-counts flex bg-[#121214] border border-white/10 rounded-2xl p-1.5 shadow-lg">
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">{t('bookingManagementUi.active')}</span>
-              <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">{getOperationalValue(bookingState, active.length)}</span>
+              <span className="text-emerald-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]"><AnimatedNumber value={getOperationalValue(bookingState, active.length)} /></span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">{t('bookingManagementUi.upcoming')}</span>
-              <span className="text-amber-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]">{getOperationalValue(bookingState, upcoming.length)}</span>
+              <span className="text-amber-400 font-black text-xl leading-none drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]"><AnimatedNumber value={getOperationalValue(bookingState, upcoming.length)} /></span>
             </div>
             <div className="w-px bg-white/10 my-1" />
             <div className="flex flex-col items-center px-5 py-1">
               <span className="text-[9px] uppercase font-bold text-white/40 tracking-widest mb-0.5">{t('bookingManagementUi.total')}</span>
-              <span className="text-white font-black text-xl leading-none">{getOperationalValue(bookingState, pagination?.total || 0)}</span>
+              <span className="text-white font-black text-xl leading-none"><AnimatedNumber value={getOperationalValue(bookingState, pagination?.total || 0)} /></span>
             </div>
           </div>
 

@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../../components/AnimatedNumber';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
@@ -2324,11 +2325,11 @@ export default function SlotCameraMonitorModal({
             <div className="grid grid-cols-4 gap-1.5 p-3 border-b border-white/10 bg-[#121622]">
               <div className="bg-white/5 p-2 rounded-xl border border-white/10 text-center">
                 <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wider block">Total Slots</span>
-                <span className="text-base font-black text-white">{totalSlots}</span>
+                <span className="text-base font-black text-white"><AnimatedNumber value={totalSlots} /></span>
               </div>
               <div className="bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20 text-center">
                 <span className="text-[9px] text-emerald-300 uppercase font-bold tracking-wider block">Parked</span>
-                <span className="text-base font-black text-emerald-400">{hasScanned ? validCount : '--'}</span>
+                <span className="text-base font-black text-emerald-400"><AnimatedNumber value={hasScanned ? validCount : '--'} /></span>
               </div>
               <div className={`p-2 rounded-xl border text-center transition ${
                 hasScanned && violations.length > 0 ? 'bg-rose-500/15 border-rose-500/30' : 'bg-white/5 border-white/10'
@@ -2338,11 +2339,11 @@ export default function SlotCameraMonitorModal({
                 }`}>Alerts</span>
                 <span className={`text-base font-black ${
                   hasScanned && violations.length > 0 ? 'text-rose-400 animate-pulse' : 'text-gray-400'
-                }`}>{hasScanned ? violations.length : '--'}</span>
+                }`}><AnimatedNumber value={hasScanned ? violations.length : '--'} /></span>
               </div>
               <div className="bg-sky-500/10 p-2 rounded-xl border border-sky-500/20 text-center">
                 <span className="text-[9px] text-sky-300 uppercase font-bold tracking-wider block">Available</span>
-                <span className="text-base font-black text-sky-400">{hasScanned ? availableCount : '--'}</span>
+                <span className="text-base font-black text-sky-400"><AnimatedNumber value={hasScanned ? availableCount : '--'} /></span>
               </div>
             </div>
 

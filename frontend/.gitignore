@@ -16,6 +16,7 @@ tests/
 __tests__/
 *.test.*
 !src/components/AIBusynessForecast.test.jsx
+!src/components/AnimatedNumber.test.jsx
 *.spec.*
 
 *.local

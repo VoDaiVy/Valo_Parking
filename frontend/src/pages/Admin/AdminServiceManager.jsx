@@ -1,3 +1,4 @@
+import { useCountUp } from '../../components/numberAnimation';
 import { serviceName, serviceDescription } from '../../utils/servicePresentation';
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,21 +19,7 @@ import { useLanguage } from '../../i18n/hooks/useLanguage';
 
 // --- Animated Counter ---------------------------------------------------------
 function AnimatedCounter({ target, duration = 1200, isCurrency, isTime, timeUnit = 'min' }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (target === undefined || target === null) return;
-    let frame;
-    const start = performance.now();
-    const animate = (now) => {
-      const elapsed = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(eased * target);
-      if (progress < 1) frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [target, duration]);
+  const count = useCountUp(target, { duration, formatter: (value) => value });
 
   if (isCurrency) {
     return (

@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import {
@@ -585,7 +586,7 @@ function InsightMetric({ label, value, note, tone = "default" }) {
           tone === "positive" ? "text-emerald-400" : "text-white"
         }`}
       >
-        {value}
+        <AnimatedNumber value={value} />
       </p>
       <p className="mt-1 text-xs text-white/35">{note}</p>
     </div>
@@ -610,11 +611,11 @@ function BalancePanel({ wallet, loading, onTopUp, onRefresh, refreshing }) {
               {t('walletPage.totalBalance')}
             </p>
             <div className="mt-3 text-5xl font-black tracking-tight text-[#DCA11D] sm:text-6xl">
-              {loading ? "..." : formatMoney(balance)}
+              {loading ? "..." : <AnimatedNumber value={formatMoney(balance)} />}
             </div>
             <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-white/70">
               <TrendingUp className="h-4 w-4 text-[#DCA11D]" />
-              {formatMoney(wallet?.monthlyTopUp)} {t('walletPage.topUpThisMonth')}
+              <AnimatedNumber value={formatMoney(wallet?.monthlyTopUp)} /> {t('walletPage.topUpThisMonth')}
             </p>
           </div>
 
@@ -805,7 +806,7 @@ function AnalyticsPanel({ wallet, weeklyBars }) {
 
       <div className="mt-7 flex items-baseline gap-3">
         <p className="text-3xl font-black tracking-tight">
-          {formatMoney(wallet?.monthlyTopUp)}
+          <AnimatedNumber value={formatMoney(wallet?.monthlyTopUp)} />
         </p>
         <p className="text-sm font-semibold text-[#AFC2D8]">{t('walletPage.topUpThisMonth')}</p>
       </div>
@@ -841,7 +842,7 @@ function AnalyticsMetric({ label, value }) {
       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
         {label}
       </p>
-      <p className="mt-1 text-sm font-black text-white">{value}</p>
+      <p className="mt-1 text-sm font-black text-white"><AnimatedNumber value={value} /></p>
     </div>
   );
 }

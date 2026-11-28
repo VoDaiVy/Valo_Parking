@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { Menu, Transition } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -50,24 +51,6 @@ const ROLES = {
 const PAGE_SIZE = 10;
 
 // --- Animated Counter ---------------------------------------------------------
-function AnimatedCounter({ target, duration = 1200 }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!target) return;
-    let frame;
-    const start = performance.now();
-    const animate = (now) => {
-      const elapsed = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.round(eased * target));
-      if (progress < 1) frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [target, duration]);
-  return <span>{count}</span>;
-}
 
 // --- Role Badge --------------------------------------------------
 function RoleBadge({ role }) {
@@ -140,7 +123,7 @@ function StatCard({ icon: Icon, label, value, sub, toneClass, subTone = 'text-em
             ) : (
               <div className="mt-1.5 flex items-baseline gap-2">
                 <p className="truncate font-mono text-2xl font-black leading-none text-white">
-                  <AnimatedCounter target={value} />
+                  <AnimatedNumber value={value} />
                 </p>
                 <p className={`truncate text-[10px] font-bold ${subTone}`}>
                   {sub}

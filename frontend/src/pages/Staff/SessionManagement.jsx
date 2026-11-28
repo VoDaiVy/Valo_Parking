@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import PackageParkingBreakdown from '../../components/PackageParkingBreakdown';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Loader2, Search, ShieldCheck, Sparkles, X, MonitorCheck, Car, CheckCircle2, Clock, RefreshCw, ZoomIn } from 'lucide-react';
@@ -251,7 +252,7 @@ export default function SessionManagement() {
                 <p className="text-xs font-bold text-blue-200/55">{label}</p>
                 {loading ? <div className="mt-1.5 h-6 w-16 animate-pulse rounded bg-white/10" aria-label={t('sessionManagementUi.loadingShort', { defaultValue: 'Loading' })} /> : (
                   <div className="mt-1.5 flex items-baseline gap-2">
-                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? t('sessionManagementUi.unavailable', { defaultValue: 'N/A' }) : value.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')}</p>
+                    <p className="font-mono text-2xl font-black leading-none text-white">{error || value == null ? t('sessionManagementUi.unavailable', { defaultValue: 'N/A' }) : <AnimatedNumber value={value.toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} />}</p>
                     <span className="truncate text-xs text-emerald-300">{error ? t('sessionManagementUi.unavailable', { defaultValue: 'Unavailable' }) : note}</span>
                   </div>
                 )}
@@ -269,7 +270,7 @@ export default function SessionManagement() {
           { label: t('sessionManagementUi.needsAttention', { defaultValue: 'Needs Attention' }), value: metrics.needsAttention, Icon: Clock, note: metrics.needsAttention == null ? t('sessionManagementUi.unavailableTiming', { defaultValue: 'Unavailable: an active session has missing or invalid expected timing.' }) : t('sessionManagementUi.attentionNote', { defaultValue: 'Active sessions past their recorded expected duration.' }) },
         ].map(({ label, value, Icon, note }) => <article key={label} aria-label={label} title={loading ? t('sessionManagementUi.loadingData', { defaultValue: 'Loading session data' }) : error ? t('sessionManagementUi.unavailable', { defaultValue: 'Session data unavailable' }) : note} className="staff-session-metric">
           <Icon size={19} aria-hidden="true" />
-          <div><p className="staff-session-metric-label">{label}</p><p className="staff-session-metric-value">{loading ? '...' : error ? '\u2014' : value == null ? <span className="staff-session-unavailable">{t('sessionManagementUi.unavailable', { defaultValue: 'Unavailable' })}</span> : value}</p></div>
+          <div><p className="staff-session-metric-label">{label}</p><p className="staff-session-metric-value">{loading ? '...' : error ? '\u2014' : value == null ? <span className="staff-session-unavailable">{t('sessionManagementUi.unavailable', { defaultValue: 'Unavailable' })}</span> : <AnimatedNumber value={value} />}</p></div>
         </article>)}
       </section>}
 

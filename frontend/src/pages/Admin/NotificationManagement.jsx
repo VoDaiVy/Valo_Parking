@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import '../../components/Admin/adminGridBackground.css';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -83,7 +84,7 @@ function StatCard({ label, value, icon: Icon }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold text-gray-500">{label}</p>
-          <p className="mt-2 text-2xl font-black text-white tabular-nums">{value}</p>
+          <p className="mt-2 text-2xl font-black text-white tabular-nums"><AnimatedNumber value={value} /></p>
         </div>
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/5 text-gray-400">
           <Icon size={20} />

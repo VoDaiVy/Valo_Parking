@@ -49,3 +49,4 @@ export function parseAnimatedNumber(value) {
     return `${prefix}${formatted}${digits ? decimal + fraction : ''}${suffix}`;
   } };
 }
+

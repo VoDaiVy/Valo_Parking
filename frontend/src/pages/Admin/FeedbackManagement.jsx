@@ -1,3 +1,12 @@
+import './pricingManagement.css';
+import './voucherManagement.css';
+import './feedbackManagement.css';
+import AdminSelect from '../../components/Admin/AdminSelect';
+import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker';
+import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
+import { MessageSquare, Star, TriangleAlert, Clock3, RotateCcw, Search, X } from 'lucide-react';
+import { getPaginationPages } from '../Staff/sessionPagination.js';
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { useLanguage } from '../../i18n/hooks/useLanguage';
 import '../../components/Admin/adminGridBackground.css';
 import { useEffect, useRef, useState } from "react";
@@ -55,7 +64,7 @@ export default function FeedbackManagement() {
       }
     });
     Promise.all([
-      getAdminFeedbacks({ ...filters, page, limit: 20 }),
+      getAdminFeedbacks({ ...filters, page, limit: 5 }),
       getFeedbackStats(filters),
     ]).then(([items, counts]) => {
       if (!active) return;
@@ -77,6 +86,23 @@ export default function FeedbackManagement() {
       active = false;
     };
   }, [filters, page, refresh, t]);
+
+  const updateFilter = (key, value) => {
+    setDraftFilters((current) => ({ ...current, [key]: value }));
+    if (key !== 'search') {
+      setPage(1);
+      setFilters((current) => ({ ...current, [key]: value }));
+    }
+  };
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (filters.search === draftFilters.search) return;
+      setPage(1);
+      setFilters((current) => ({ ...current, search: draftFilters.search }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [draftFilters.search, filters.search]);
+  const totalPages = Math.max(1, Math.ceil(list.total / 5));
 
   const openDetail = async (item, preserveDraft = false) => {
     const request = ++detailRequest.current;
@@ -129,120 +155,45 @@ export default function FeedbackManagement() {
   };
 
   return (
-    <div className="admin-grid-background min-h-full p-4 text-white sm:p-6 lg:p-8">
-      <header className="mb-7">
-        <p className="text-xs font-bold uppercase tracking-widest text-yellow-300/70">{t('adminFeedback.customerExperience')}</p>
-        <h1 className="mt-2 text-3xl font-bold">{t('adminFeedback.bookingFeedback')}</h1>
-        <p className="mt-2 text-sm text-white/50">{t('adminFeedback.reviewCustomerExperiencesAndRespondAsValoParkingAllDatesUseVietnamTime')}</p>
+    <div className="pricing-page voucher-management feedback-management">
+      <AdminBackgroundOverlay />
+      <div className="pricing-content">
+      <header className="pricing-header feedback-header">
+        <div><h1>{t('adminFeedback.bookingFeedback')}</h1>
+        <p className="pricing-subtitle">{t('adminFeedback.reviewCustomerExperiencesAndRespondAsValoParkingAllDatesUseVietnamTime')}</p></div>
+        <button type="button" className="feedback-icon" title={t('adminFeedback.reset')} aria-label={t('adminFeedback.reset')} onClick={() => {
+          setDraftFilters(initialFilters); setFilters(initialFilters); setPage(1);
+        }}><RotateCcw size={18} aria-hidden="true" /></button>
       </header>
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <dl className="pricing-metrics feedback-metrics">
         {[
-          [t('adminFeedback.totalReviews'), stats?.total],
-          [
-            t('adminFeedback.averageRating'),
-            stats?.averageRating == null
-              ? "—"
-              : `${Number(stats.averageRating).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/5`,
-          ],
-          [t('adminFeedback.12StarReviews'), stats?.lowRatingCount],
-          [t('adminFeedback.awaitingResponse'), stats?.unrepliedCount],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-2xl border border-white/10 bg-[#111111] p-4"
-          >
-            <p className="text-xs text-white/50">{label}</p>
-            <p className="mt-3 text-2xl font-bold text-yellow-200">
-              {value ?? "—"}
-            </p>
+          [t('adminFeedback.totalReviews'), stats?.total, undefined, MessageSquare],
+          [t('adminFeedback.averageRating'), stats?.averageRating == null ? '\u2014' : Number(stats.averageRating),
+            (number) => `${number.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/5`, Star],
+          [t('adminFeedback.12StarReviews'), stats?.lowRatingCount, undefined, TriangleAlert],
+          [t('adminFeedback.awaitingResponse'), stats?.unrepliedCount, undefined, Clock3],
+        ].map(([label, value, formatter, Icon]) => (
+          <div key={label} className="pricing-metric">
+            <span className="pricing-metric-icon"><Icon size={18} aria-hidden="true" /></span>
+            <div className="pricing-metric-copy"><dt>{label}</dt><dd><AnimatedNumber formatter={formatter} value={value ?? '\u2014'} /></dd></div>
           </div>
         ))}
+      </dl>
+      <div className="feedback-filters">
+        <label className="feedback-search"><span className="sr-only">{t('adminFeedback.bookingIdOrUsername')}</span><Search size={16} aria-hidden="true" /><input
+          className="voucher-input" placeholder={t('adminFeedback.bookingIdOrUsername')} value={draftFilters.search} onChange={(event) => updateFilter('search', event.target.value)} />
+        </label>
+        {[
+          ['rating', t('adminFeedback.rating'), [{ value: '', label: t('adminFeedback.allRatings') }, ...[1, 2, 3, 4, 5].map(value => ({ value: String(value), label: t('adminFeedback.stars', { count: value }) }))]],
+          ['category', t('adminFeedback.topic'), [{ value: '', label: t('adminFeedback.allTopics') }, ...['parking', 'staff', 'payment', 'app', 'other'].map(value => ({ value, label: categoryLabel(value) }))]],
+          ['status', t('adminFeedback.responseStatus'), [{ value: '', label: t('adminFeedback.allResponses') }, { value: 'UNREPLIED', label: t('adminFeedback.awaitingResponse') }, { value: 'REPLIED', label: t('adminFeedback.responded') }]],
+        ].map(([key, label, options]) => <AdminSelect key={key} value={draftFilters[key]} onChange={value => updateFilter(key, value)} options={options} ariaLabel={label} icon={null} buttonClassName="pricing-adjustment-button" menuClassName="pricing-adjustment-menu" menuAnchor="bottom start" />)}
+        <div className="feedback-date-range">
+          {['from', 'to'].map(key => <div key={key}><div className="feedback-date-heading"><p className="feedback-date-label">{key === 'from' ? t('adminFeedback.fromDate') : t('adminFeedback.toDateExclusive')}</p>{draftFilters[key] && <button type="button" className="feedback-clear-date" aria-label={`${t('adminFeedback.reset')}: ${key === 'from' ? t('adminFeedback.fromDate') : t('adminFeedback.toDateExclusive')}`} onClick={() => updateFilter(key, '')}><X size={12} aria-hidden="true" /></button>}</div><AdminDateTimePicker mode="date" language={language}
+            label={key === 'from' ? t('adminFeedback.fromDate') : t('adminFeedback.toDateExclusive')}
+            value={draftFilters[key]} onChange={value => updateFilter(key, value.slice(0, 10))} /></div>)}
+        </div>
       </div>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          setPage(1);
-          setFilters({ ...draftFilters });
-        }}
-        className="mb-5 flex flex-wrap items-end gap-3"
-      >
-        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.bookingIdOrUsername')}<input
-            className={inputClass}
-            value={draftFilters.search}
-            onChange={(e) =>
-              setDraftFilters({ ...draftFilters, search: e.target.value })
-            }
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.rating')}<select
-            className={inputClass}
-            value={draftFilters.rating}
-            onChange={(e) =>
-              setDraftFilters({ ...draftFilters, rating: e.target.value })
-            }
-          >
-            <option value="">{t('adminFeedback.allRatings')}</option>
-            {[1, 2, 3, 4, 5].map((v) => (
-              <option key={v} value={v}>
-                {t('adminFeedback.stars', { count: v })}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.topic')}<select
-            className={inputClass}
-            value={draftFilters.category}
-            onChange={(e) =>
-              setDraftFilters({ ...draftFilters, category: e.target.value })
-            }
-          >
-            <option value="">{t('adminFeedback.allTopics')}</option>
-            {["parking", "staff", "payment", "app", "other"].map((v) => (
-              <option key={v} value={v}>
-                {categoryLabel(v)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-white/60">{t('adminFeedback.responseStatus')}<select
-            className={inputClass}
-            value={draftFilters.status}
-            onChange={(e) =>
-              setDraftFilters({ ...draftFilters, status: e.target.value })
-            }
-          >
-            <option value="">{t('adminFeedback.allResponses')}</option>
-            <option value="UNREPLIED">{t('adminFeedback.awaitingResponse')}</option>
-            <option value="REPLIED">{t('adminFeedback.responded')}</option>
-          </select>
-        </label>
-        {["from", "to"].map((key) => (
-          <label
-            key={key}
-            className="flex flex-col gap-1 text-xs text-white/60"
-          >
-            {key === "from" ? t('adminFeedback.fromDate') : t('adminFeedback.toDateExclusive')}
-            <input
-              type="date"
-              className={inputClass}
-              value={draftFilters[key]}
-              onChange={(e) =>
-                setDraftFilters({ ...draftFilters, [key]: e.target.value })
-              }
-            />
-          </label>
-        ))}
-        <button className="rounded-xl bg-yellow-300 px-4 py-2 text-sm font-bold text-black">{t('adminFeedback.applyFilters')}</button>
-        <button
-          type="button"
-          onClick={() => {
-            setDraftFilters(initialFilters);
-            setFilters(initialFilters);
-            setPage(1);
-          }}
-          className={inputClass}
-        >{t('adminFeedback.reset')}</button>
-      </form>
       {error && (
         <div role="alert" className="mb-4 text-rose-300">
           {error}{" "}
@@ -257,8 +208,8 @@ export default function FeedbackManagement() {
       ) : (
         !error && (
           <>
-            <div className="overflow-x-auto rounded-2xl border border-white/10">
-              <table className="w-full text-left text-sm">
+            <div className="feedback-table-wrap">
+              <table className="feedback-table w-full text-left text-sm">
                 <thead className="bg-white/5 text-xs text-white/50">
                   <tr>
                     {[
@@ -279,7 +230,7 @@ export default function FeedbackManagement() {
                   {list.items.map((item) => (
                     <tr
                       key={entityId(item)}
-                      className="border-t border-white/10"
+                      className="border-t border-white/10" onClick={() => openDetail(item)}
                     >
                       <td className="p-4">
                         <p>
@@ -287,31 +238,26 @@ export default function FeedbackManagement() {
                             item.user?.username ||
                             t('adminFeedback.deletedCustomer')}
                         </p>
-                        <p className="mt-1 max-w-[200px] truncate text-xs text-white/40">
-                          {item.bookingId && typeof item.bookingId === "object"
-                            ? entityId(item.bookingId)
-                            : item.bookingId || t('adminFeedback.deletedBooking')}
-                        </p>
                       </td>
                       <td className="whitespace-nowrap p-4 text-yellow-300">
                         {item.rating}/5 ★
                       </td>
                       <td className="max-w-sm p-4">
-                        <p className="line-clamp-2 break-words">
+                        <p className="truncate" title={item.comment || undefined}>
                           {item.comment || t('adminFeedback.noWrittenComment')}
                         </p>
                       </td>
                       <td className="whitespace-nowrap p-4 text-xs text-white/50">
                         {date(item.createdAt, locale)}
                       </td>
-                      <td className="p-4 text-xs">
-                        {item.reply ? t('adminFeedback.responded') : t('adminFeedback.awaitingResponse')}
+                      <td className="p-4 text-xs"><span className={`feedback-status ${item.reply ? 'is-replied' : 'is-pending'}`}>
+                        {item.reply ? t('adminFeedback.responded') : t('adminFeedback.awaitingResponse')}</span>
                       </td>
                       <td className="p-4">
                         <button
-                          onClick={() => openDetail(item)}
-                          className="whitespace-nowrap rounded-lg border border-yellow-300/30 px-3 py-2 text-yellow-200"
-                        >{t('adminFeedback.viewRespond')}</button>
+                          onClick={(event) => { event.stopPropagation(); openDetail(item); }}
+                          className="feedback-icon" title={t('adminFeedback.viewRespond')} aria-label={t('adminFeedback.viewRespond')}
+                        ><MessageSquare size={18} aria-hidden="true" /></button>
                       </td>
                     </tr>
                   ))}
@@ -321,29 +267,18 @@ export default function FeedbackManagement() {
                 <p className="p-10 text-center text-white/50">{t('adminFeedback.noFeedbackMatchesTheseFilters')}</p>
               )}
             </div>
-            <nav
-              aria-label={t('adminFeedback.feedbackPagination')}
-              className="mt-4 flex items-center justify-between gap-4 text-sm"
-            >
-              <span>
-                {t('adminFeedback.paginationSummary', { count: list.total, page })}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  className={`${inputClass} disabled:opacity-40`}
-                >{t('adminFeedback.previous')}</button>
-                <button
-                  disabled={page * 20 >= list.total}
-                  onClick={() => setPage(page + 1)}
-                  className={`${inputClass} disabled:opacity-40`}
-                >{t('adminFeedback.next')}</button>
-              </div>
-            </nav>
+            <div className="voucher-data-pagination">
+              <span>{t('subscriptionPagination.pageSummary', { current: page, total: totalPages, count: list.total })}</span>
+              <nav aria-label={t('adminFeedback.feedbackPagination')}>
+                <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('adminFeedback.previous')}</button>
+                {getPaginationPages(page, totalPages).map(item => typeof item === 'number' ? <button type="button" key={item} aria-current={page === item ? 'page' : undefined} onClick={() => setPage(item)}>{item}</button> : <span key={item} aria-hidden="true">...</span>)}
+                <button type="button" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>{t('adminFeedback.next')}</button>
+              </nav>
+            </div>
           </>
         )
       )}
+      </div>
       <dialog
         ref={dialog}
         aria-labelledby="admin-feedback-title"

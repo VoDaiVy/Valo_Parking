@@ -1,0 +1,50 @@
+﻿/* Scoped to the quarterly voucher tab; shared Admin controls retain their styling. */
+.voucher-management .quarterly-leaderboard { margin-bottom:0; }
+.voucher-management .quarterly-leaderboard .ql-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; }
+.quarterly-leaderboard .ql-heading h2 { margin:0; font-size:16px; font-weight:600; }
+.quarterly-leaderboard .ql-quarter { display:flex; align-items:center; flex-shrink:0; gap:10px; color:var(--pricing-muted); font-size:12px; }
+.quarterly-leaderboard .ql-quarter .voucher-select { width:200px; flex-shrink:0; }
+.quarterly-leaderboard .ql-overview { display:grid; grid-template-columns:minmax(0,45fr) minmax(0,55fr); padding:8px 0 0; }
+.quarterly-leaderboard h3 { margin:0; font-size:13px; font-weight:600; }
+.quarterly-leaderboard .ql-chart-section { min-width:0; padding-right:20px; }
+.quarterly-leaderboard .ql-ranking { min-width:0; padding-left:20px; border-left:1px solid var(--pricing-border); }
+.quarterly-leaderboard h3 > span { margin-left:6px; color:var(--pricing-muted); font-size:11px; font-weight:400; }
+.quarterly-leaderboard .ql-chart { position:relative; display:flex; gap:12px; height:300px; margin:0; }
+.quarterly-leaderboard .ql-scale { display:flex; flex-direction:column; justify-content:space-between; width:44px; flex-shrink:0; padding-bottom:26px; color:var(--pricing-muted); font-size:10px; text-align:right; }
+.quarterly-leaderboard .ql-bars { display:flex; flex:1; min-width:0; gap:clamp(2px, .6vw, 10px); border-bottom:1px solid var(--pricing-border); background:repeating-linear-gradient(to top, transparent 0, transparent calc(25% - 1px), var(--pricing-border) calc(25% - 1px), var(--pricing-border) 25%) left top/100% calc(100% - 26px) no-repeat; }
+.quarterly-leaderboard .ql-bar-column { display:flex; flex:1; min-width:0; flex-direction:column; align-items:center; gap:10px; color:var(--pricing-gold); font-size:10px; }
+.quarterly-leaderboard .ql-bar-target { display:flex; width:100%; max-width:44px; height:274px; padding:0; border:0; border-radius:3px; background:transparent; align-items:flex-end; }
+.quarterly-leaderboard .ql-bar-target svg { width:100%; height:100%; transition:filter 160ms ease; }
+.quarterly-leaderboard .ql-bar-target:hover svg, .quarterly-leaderboard .ql-bar-target:focus-visible svg { filter:brightness(1.15) drop-shadow(0 0 6px #d5a93640); }
+.quarterly-leaderboard .ql-tooltip { position:absolute; z-index:2; top:0; left:0; width:max-content; max-width:100%; box-sizing:border-box; padding:8px 12px; border:1px solid var(--pricing-border); border-radius:8px; background:#1b1c1e; pointer-events:none; font-size:12px; overflow-wrap:anywhere; }
+.quarterly-leaderboard .ql-tooltip span { display:block; color:var(--pricing-gold); margin-top:2px; }
+.quarterly-leaderboard .ql-table-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+.voucher-management .quarterly-leaderboard .voucher-data-search { flex:0 1 200px; min-width:0; min-height:34px; }
+.quarterly-leaderboard .voucher-data-search input { padding:6px 0; }
+.voucher-management .quarterly-leaderboard .ql-table th:first-child { width:64px; }
+.voucher-management .quarterly-leaderboard .ql-table th:nth-child(3) { width:30%; }
+.voucher-management .quarterly-leaderboard .ql-table th:last-child { width:48px; }
+.voucher-management.pricing-page .quarterly-leaderboard .voucher-template-icon { display:inline-flex; align-items:center; justify-content:center; width:32px; min-height:32px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; color:var(--pricing-gold); cursor:pointer; }
+.voucher-management .quarterly-leaderboard .ql-table td { padding:6px 10px; }
+.quarterly-leaderboard .ql-empty { padding:24px 0; text-align:center; color:var(--pricing-muted); font-size:13px; }
+.quarterly-leaderboard .voucher-data-pagination nav { margin-left:auto; }
+@media (max-width:1023px) {
+ .quarterly-leaderboard .ql-overview { grid-template-columns:minmax(0,1fr); gap:20px; }
+ .quarterly-leaderboard .ql-chart-section { padding-right:0; }
+ .quarterly-leaderboard .ql-ranking { padding:16px 0 0; border-left:0; border-top:1px solid var(--pricing-border); }
+}
+@media (max-width:767px) {
+ .voucher-management .quarterly-leaderboard .ql-heading { flex-direction:column; }
+ .quarterly-leaderboard .ql-quarter { align-self:flex-end; }
+ .quarterly-leaderboard .ql-chart { height:280px; gap:8px; }
+ .quarterly-leaderboard .ql-bar-target { height:254px; }
+ .quarterly-leaderboard .ql-table-toolbar { flex-wrap:wrap; gap:8px; }
+ .voucher-management .quarterly-leaderboard .voucher-data-search { flex:1 1 220px; }
+ .voucher-management .quarterly-leaderboard .ql-table td { padding:5px 0; }
+ .voucher-management.pricing-page .quarterly-leaderboard .ql-table .voucher-template-icon { width:44px; min-height:44px; }
+ .quarterly-leaderboard .ql-bar-target { min-width:0; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+ .quarterly-leaderboard .ql-bar-target svg { transition:none; }
+}

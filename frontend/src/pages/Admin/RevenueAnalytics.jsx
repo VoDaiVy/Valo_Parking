@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import AdminDateTimePicker from '../../components/Admin/AdminDateTimePicker.jsx';
 import AdminBackgroundOverlay from '../../components/Admin/AdminBackgroundOverlay';
 import { Fragment, useEffect, useState } from 'react';
@@ -432,7 +433,7 @@ function KPIStrip({ summary, reduceMotion }) {
               {metric.label}
             </p>
             <p className="c4-kpi-value admin-type-kpi admin-type-kpi-compact mt-0.5 text-[18px] font-black leading-tight tracking-tight text-white">
-              {metric.value}
+              <AnimatedNumber value={metric.value} />
             </p>
           </div>
         </div>

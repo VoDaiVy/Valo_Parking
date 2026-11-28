@@ -1,3 +1,4 @@
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { ticketPackageLinkState, includeLinkedPackage, highlightTicketPackageRow } from './ticketPackageDeepLink.js';
@@ -136,7 +137,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
       <div className="package-kpi-copy">
         <p className="text-xs font-bold text-blue-200/55">{label}</p>
         <div className="package-kpi-line">
-          <p className={`package-kpi-value font-mono text-2xl font-black leading-none text-white ${label === 'Last Updated' ? 'package-kpi-date' : ''}`}>{value}</p>
+          <p className={`package-kpi-value font-mono text-2xl font-black leading-none text-white ${label === 'Last Updated' ? 'package-kpi-date' : ''}`}><AnimatedNumber value={value} /></p>
           <span className="package-kpi-support truncate text-xs text-emerald-300" title={support}>{support}</span>
         </div>
       </div>
@@ -149,7 +150,7 @@ function SummaryItem({ icon: Icon, label, value, support, tone = 'text-yellow-30
       </div>
       <div className="min-w-0">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-        <p className="mt-1 truncate text-xl font-black text-white">{value}</p>
+        <p className="mt-1 truncate text-xl font-black text-white"><AnimatedNumber value={value} /></p>
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{support}</p>
       </div>
     </div>
