@@ -117,17 +117,48 @@ export default function KioskEntryFlow({ assignedGate, basePath, isTidalReversed
       return;
     }
 
-    if (!verifyData || verifyData.isActive) return;
+    if (!verifyData) return;
+
+    const onIdleEntryScreen =
+      location.pathname === basePath ||
+      location.pathname === `${basePath}/` ||
+      location.pathname === `${basePath}/step1`;
+
+    if (verifyData.isActive) {
+      if (onIdleEntryScreen) {
+        lastEntrySyncRef.current = { key: dedupeKey, at: now };
+        setKioskAlert({
+          title: 'ALREADY INSIDE',
+          message: `Vehicle ${licensePlate} is already inside the parking lot!`,
+        });
+      }
+      return;
+    }
+
+    const hasReservedSlot = Boolean(
+      verifyData.hasPreBooking ||
+      verifyData.isVIP ||
+      verifyData.isMonthly ||
+      verifyData.assignedSlot ||
+      verifyData.suggestedSlot
+    );
+
+    if (!hasReservedSlot && verifyData.isFull) {
+      if (onIdleEntryScreen) {
+        lastEntrySyncRef.current = { key: dedupeKey, at: now };
+        setKioskAlert({
+          title: 'PARKING FULL',
+          message: 'All walk-in parking slots are currently occupied. Only pre-booked or VIP vehicles with reserved slots can enter.',
+        });
+      }
+      return;
+    }
 
     const isEligible = Boolean(verifyData.isMonthly || verifyData.hasPreBooking || verifyData.isVIP);
     // Nếu là xe vãng lai (walk-in): Tự động điền biển số vào Step 1 hoặc Step 2
     const isWalkIn = !isEligible;
 
     // Only auto-transition when kiosk is idle on welcome screen or Step 1
-    const onIdleEntryScreen =
-      location.pathname === basePath ||
-      location.pathname === `${basePath}/` ||
-      location.pathname === `${basePath}/step1`;
     if (!onIdleEntryScreen) return;
 
     lastEntrySyncRef.current = { key: dedupeKey, at: now };
