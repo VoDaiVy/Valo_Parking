@@ -37,6 +37,56 @@ import toast from 'react-hot-toast';
 
 const PAGE_SIZE = 30;
 
+const formatResolutionNote = (note) => {
+  if (!note || typeof note !== 'string') return '';
+  const trimmed = note.trim();
+  if (trimmed.includes('đã rời khỏi ô') || trimmed.includes('đã rời ô')) {
+    const plateMatch = trimmed.match(/Xe\s+([A-Z0-9.-]+)/i);
+    if (trimmed.includes('cổng checkout')) {
+      return plateMatch
+        ? `Vehicle ${plateMatch[1]} left slot and is heading to exit gate.`
+        : 'Vehicle left slot and is heading to exit gate.';
+    }
+    return plateMatch
+      ? `Vehicle ${plateMatch[1]} has left the slot; slot is now available.`
+      : 'Vehicle has left the slot; slot is now available.';
+  }
+  if (trimmed.includes('đã dời khỏi ô') || trimmed.includes('điều chỉnh hợp lệ')) {
+    return 'Vehicle has vacated the slot or status was resolved in the latest scan.';
+  }
+  if (trimmed.includes('đã vào đỗ') || trimmed.includes('vào đỗ tại ô')) {
+    const plateMatch = trimmed.match(/Xe\s+([A-Z0-9.-]+)/i);
+    return plateMatch
+      ? `Vehicle ${plateMatch[1]} parked in slot.`
+      : 'Vehicle parked in slot.';
+  }
+  if (trimmed.includes('chấp nhận chuyển sang ô') || trimmed.includes('chấp nhận đổi ô sang')) {
+    const slotMatch = trimmed.match(/ô\s+([A-Z0-9]+)/i);
+    return slotMatch
+      ? `Vehicle approved to move to slot ${slotMatch[1]}.`
+      : 'Vehicle slot reassignment approved.';
+  }
+  if (trimmed.includes('chuyển ô từ')) {
+    const fromTo = trimmed.match(/từ\s+([A-Z0-9]+)\s+sang\s+([A-Z0-9]+)/i);
+    return fromTo
+      ? `Staff reassigned slot from ${fromTo[1]} to ${fromTo[2]}.`
+      : 'Staff reassigned parking slot.';
+  }
+  if (trimmed.includes('tạm rời bãi')) {
+    const plateMatch = trimmed.match(/Xe\s+([A-Z0-9.-]+)/i);
+    return plateMatch
+      ? `Vehicle ${plateMatch[1]} temporarily departed (Booking PAUSED), slot reserved.`
+      : 'Vehicle temporarily departed (Booking PAUSED), slot reserved.';
+  }
+  if (trimmed.includes('checkout thành công')) {
+    const plateMatch = trimmed.match(/Xe\s+([A-Z0-9.-]+)/i);
+    return plateMatch
+      ? `Vehicle ${plateMatch[1]} checked out at exit gate, slot is available.`
+      : 'Vehicle checked out at exit gate, slot is available.';
+  }
+  return trimmed;
+};
+
 export default function GlobalViolationHistoryModal({
   isOpen,
   onClose,
@@ -1365,7 +1415,7 @@ export default function GlobalViolationHistoryModal({
                       {selectedLog.resolvedAt ? new Date(selectedLog.resolvedAt).toLocaleString() : 'N/A'}
                     </p>
                     {selectedLog.resolutionNote && (
-                      <p className="text-slate-400 italic">Note: {selectedLog.resolutionNote}</p>
+                      <p className="text-slate-400 italic">Note: {formatResolutionNote(selectedLog.resolutionNote)}</p>
                     )}
                   </div>
                 )}

@@ -15,11 +15,13 @@ import { getDashboardDensityClass } from "./staffDensity";
 import { getIssueReportLink, getSafeStaffDeepLink } from "../utils/staffDeepLink";
 import ValoAICopilot from "../features/valo-ai/components/ValoAICopilot";
 import { getSafeCustomerNotificationLink } from "../utils/notificationLinks";
+import RealtimeGateSpotlightModal from '../components/staff/RealtimeGateSpotlightModal';
 import { scopeAdminTypography } from './adminTypography';
 import '../styles/adminTypography.css';
 import '../styles/adminScrolling.css';
 import { scopeStaffTypography } from './staffTypography';
 import '../styles/staffTypography.css';
+import '../styles/staffPanel.css';
 import LanguageSwitch from '../i18n/components/LanguageSwitch';
 import { useLanguage } from '../i18n/hooks/useLanguage';
 import {
@@ -108,8 +110,8 @@ const NAV_CONFIG = {
       to: "/admin/revenue",
     },
     { label: "Vouchers", icon: <Gift size={18} />, to: "/admin/vouchers" },
-    { label: "Notifications", icon: <Bell size={18} />, to: "/admin/notifications" },
     { label: "Customer Feedback", icon: <BookOpen size={18} />, to: "/admin/feedbacks" },
+    { label: "Notifications", icon: <Bell size={18} />, to: "/admin/notifications" },
   ],
   staff: [
     {
@@ -133,7 +135,6 @@ const NAV_CONFIG = {
       to: "/staff/live-grid",
     },
     { label: "Gate Control", icon: <Car size={18} />, to: "/staff/gate" },
-    { label: "Membership services", icon: <Wrench size={18} />, to: "/staff/membership-services" },
     {
       label: "Booking Management",
       icon: <BookOpen size={18} />,
@@ -144,6 +145,7 @@ const NAV_CONFIG = {
       icon: <Ticket size={18} />,
       to: "/staff/tickets",
     },
+    { label: "Membership services", icon: <Wrench size={18} />, to: "/staff/membership-services" },
     {
       label: "Subscriptions",
       icon: <Crown size={18} />,
@@ -229,18 +231,17 @@ const NAV_LABEL_KEYS = {
   'Ticket Packages': 'nav.ticketPackages',
   Subscriptions: 'nav.subscriptions',
   Services: 'nav.services',
+  'Membership services': 'staffNav.membershipServices',
   Policies: 'nav.policies',
+  Vehicles: 'nav.vehicles',
   'Vehicles & 3D': 'nav.vehicles',
   'Revenue Analytics': 'nav.revenue',
   Vouchers: 'nav.vouchers',
-  Notifications: 'nav.notifications',
-  'Customer Feedback': 'nav.feedback',
   Home: 'nav.home',
   Profile: 'nav.profile',
   Membership: 'nav.membership',
-  'Membership services': 'staffNav.membershipServices',
   'My Vehicles': 'nav.vehicles',
-  'My Bookings': 'nav.bookings',
+  Bookings: 'nav.bookings',
   History: 'nav.history',
   Wallet: 'nav.wallet',
   Rewards: 'nav.rewards',
@@ -256,6 +257,9 @@ export default function DashboardLayout() {
     JSON.parse(sessionStorage.getItem("valo_user") || "{}"),
   );
   const [collapsed, setCollapsed] = useState(false);
+  const [staffDrawerOpen, setStaffDrawerOpen] = useState(false);
+  const staffDrawerRef = useRef(null);
+  const staffMenuRef = useRef(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -281,6 +285,35 @@ export default function DashboardLayout() {
 
   const { selectedNotification, openNotification, closeNotification } = useNotificationDetails(markAsRead);
   const role = user?.role;
+  useEffect(() => {
+    if (!staffDrawerOpen) return;
+    const menuButton = staffMenuRef.current;
+    const links = () => [...(staffDrawerRef.current?.querySelectorAll('nav a') || [])];
+    links()[0]?.focus();
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setStaffDrawerOpen(false);
+      if (event.key === 'Tab') {
+        const items = links();
+        const first = items[0];
+        const last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    const closeOnDesktop = () => { if (window.innerWidth >= 1024) setStaffDrawerOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnDesktop);
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnDesktop);
+      menuButton?.focus();
+    };
+  }, [staffDrawerOpen]);
   useLayoutEffect(() => scopeAdminTypography(document.body, role), [role]);
   useLayoutEffect(() => scopeStaffTypography(document.body, role), [role]);
   const densityClass = getDashboardDensityClass(role);
@@ -401,7 +434,10 @@ export default function DashboardLayout() {
     <div className={`${densityClass} staff-dashboard-shell h-screen overflow-hidden bg-gray-100 dark:bg-[#0D0D0D] flex font-sans transition-colors duration-300`}>
       {role === "customer" && <NotificationDetailModal notification={selectedNotification} onClose={() => { closeNotification(); notifRef.current?.querySelector("button")?.focus(); }} contextRole="customer" />}
       {/* ══════════ SIDEBAR ══════════ */}
+      {role === 'staff' && staffDrawerOpen && <button type="button" className="staff-drawer-backdrop" aria-label="Close navigation" onClick={() => setStaffDrawerOpen(false)} />}
       <aside
+        ref={staffDrawerRef}
+        data-drawer-open={role === 'staff' ? staffDrawerOpen : undefined}
         className={`
           ${collapsed ? "w-[4.5rem]" : "w-60"}
           staff-dashboard-sidebar ${role === 'staff' && !collapsed ? 'staff-sidebar-expanded' : ''}
@@ -418,7 +454,7 @@ export default function DashboardLayout() {
             alt="Valo Parking"
             className="w-9 h-9 object-contain shrink-0"
           />
-          {!collapsed && (
+          {(!collapsed || (role === 'staff' && staffDrawerOpen)) && (
             <div className="overflow-hidden leading-none">
               <p
                 className="
@@ -430,7 +466,7 @@ export default function DashboardLayout() {
                 VALO PARKING
               </p>
               <p className="staff-shell-caption text-[9px] font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap mt-0.5">
-                {role === 'customer' ? t('profilePage.myAccount') : theme.panelLabel}
+                {theme.panelLabel}
               </p>
             </div>
           )}
@@ -442,7 +478,9 @@ export default function DashboardLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              aria-label={role === 'staff' ? t(NAV_LABEL_KEYS[item.label] || item.label, { defaultValue: item.label }) : undefined}
+              id={item.to === '/staff/gate' ? 'sidebar-nav-gate' : undefined}
+              onClick={role === 'staff' ? () => setStaffDrawerOpen(false) : undefined}
+              aria-label={role === 'staff' ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
               end={item.to.split("/").length === 2}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold
@@ -452,10 +490,10 @@ export default function DashboardLayout() {
                   : `text-gray-500 hover:text-gray-300 hover:bg-white/5 border border-transparent`
                 }`
               }
-              title={collapsed ? t(NAV_LABEL_KEYS[item.label] || item.label, { defaultValue: item.label }) : undefined}
+              title={collapsed ? t(NAV_LABEL_KEYS[item.label] || item.label) : undefined}
             >
               <span className="shrink-0">{item.icon}</span>
-              {!collapsed && <span className="staff-shell-nav-label truncate">{t(NAV_LABEL_KEYS[item.label] || item.label, { defaultValue: item.label })}</span>}
+                {(!collapsed || (role === 'staff' && staffDrawerOpen)) && <span className="staff-shell-nav-label truncate">{t(NAV_LABEL_KEYS[item.label] || item.label)}</span>}
             </NavLink>
           ))}
         </nav>
@@ -482,15 +520,16 @@ export default function DashboardLayout() {
       </aside>
 
       {/* ══════════ MAIN AREA ══════════ */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="staff-dashboard-main flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="staff-dashboard-topbar relative z-[60] h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
+        <header data-notifications-open={role === 'staff' ? notifOpen : undefined} className="staff-dashboard-topbar h-[4.375rem] bg-white dark:bg-[#111111] border-b border-gray-200 dark:border-white/5 flex items-center justify-between px-6 shrink-0 transition-colors duration-300">
           {/* Hamburger (mobile) */}
           <button
+            ref={staffMenuRef}
             className="lg:hidden text-gray-500 hover:text-gray-900 dark:hover:text-white"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={role === 'staff' ? (collapsed ? 'Expand navigation' : 'Collapse navigation') : undefined}
-            aria-expanded={role === 'staff' ? !collapsed : undefined}
+            onClick={() => role === 'staff' ? setStaffDrawerOpen((open) => !open) : setCollapsed((c) => !c)}
+            aria-label={role === 'staff' ? 'Open navigation' : undefined}
+            aria-expanded={role === 'staff' ? staffDrawerOpen : undefined}
           >
             <Menu size={20} />
           </button>
@@ -507,14 +546,14 @@ export default function DashboardLayout() {
             >
               <ShieldCheck size={13} />
               <span className="text-xs font-bold uppercase">
-                {role === 'customer' ? t('customer.role') : theme.badge.label}
+                {theme.badge.label}
               </span>
             </div>
 
             {/* Report Issue (Staff only) */}
             {role === 'staff' && (
               <button
-                onClick={() => { setReportError(''); setReportModalOpen(true); }}
+                onClick={() => setReportModalOpen(true)}
                 className="flex items-center gap-2 px-3 py-1.5 h-9 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 hover:text-orange-300 border border-orange-500/20 transition-all font-semibold text-xs"
                 title="Report an Issue"
                 aria-label="Report an issue"
@@ -528,7 +567,7 @@ export default function DashboardLayout() {
             <button
               onClick={handleLogout}
               className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-red-400 transition-colors"
-              title={role === 'customer' ? t('auth.logout') : 'Logout'}
+              title="Logout"
               aria-label={role === 'staff' ? 'Log out' : undefined}
             >
               <LogOut size={17} />
@@ -536,7 +575,7 @@ export default function DashboardLayout() {
 
             {/* Notifications */}
             <div className="relative" ref={notifRef} onKeyDown={(event) => {
-              if (role === 'customer' && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('button')?.focus(); }
+              if ((role === 'customer' || role === 'staff') && event.key === 'Escape') { setNotifOpen(false); notifRef.current?.querySelector('button')?.focus(); }
             }}>
               <button
                 onClick={() => setNotifOpen((o) => !o)}
@@ -691,7 +730,7 @@ export default function DashboardLayout() {
 
       {/* Report Modal */}
       {reportModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="staff-report-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-[#1A1A1A] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -755,6 +794,9 @@ export default function DashboardLayout() {
           </div>
         </div>
       )}
+
+      {/* Realtime Gate Spotlight Live Modal (Staff only) */}
+      {role === 'staff' && <RealtimeGateSpotlightModal />}
     </div>
   );
 }

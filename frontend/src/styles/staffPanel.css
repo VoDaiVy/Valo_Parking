@@ -1,0 +1,205 @@
+/* Staff-only shell contract. Keep page scroll below the navbar and overlays
+   above the isolated monitor canvas, regardless of local toolbar z-indexes. */
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active {
+  --staff-page-gutter: clamp(20px, 2vw, 36px);
+  height: 100dvh;
+  font-family: Montserrat, sans-serif;
+}
+body[data-valo-typography="staff"] .staff-dashboard-main { min-width: 0; }
+body[data-valo-typography="staff"] .staff-dashboard-topbar {
+  position: relative;
+  z-index: 60;
+  overflow: visible;
+}
+body[data-valo-typography="staff"] .staff-dashboard-topbar[data-notifications-open="true"] { z-index: 95; }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: clip;
+}
+body[data-valo-typography="staff"] .staff-dashboard-collapse {
+  right: -16px;
+  top: 82px;
+  width: 32px;
+  height: 32px;
+}
+body[data-valo-typography="staff"] .staff-dashboard-sidebar nav { padding-top: 12px; }
+body[data-valo-typography="staff"] .staff-shell-notifications {
+  max-height: min(480px, calc(100dvh - 90px));
+  width: min(360px, calc(100vw - 32px));
+}
+body[data-valo-typography="staff"] .staff-shell-notifications > .overflow-y-auto { min-height: 0; }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(
+  .staff-operations-dashboard, .g3-session-page, .g3-vip-page,
+  .staff-gate-control, .staff-booking-management, .staff-ticket-packages
+) {
+  padding: 24px var(--staff-page-gutter);
+  min-width: 0;
+  background: var(--staff-bg);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .snm-content {
+  padding: 24px var(--staff-page-gutter);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .g3-customer-main {
+  background: var(--staff-bg);
+  padding-block: 24px;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .g3-customer-main > :is(.g3-header, .g3-toolbar, .g3-pagination) {
+  padding-inline: var(--staff-page-gutter);
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .g3-customer-main > .g3-table-scroll { margin-inline: var(--staff-page-gutter); }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.g3-header, .snm-header, .stp-header) {
+  padding-top: 0;
+  flex-wrap: wrap;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content h1 {
+  font-size: clamp(24px, 2vw, 30px);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.g3-toolbar, .snm-toolbar, .stp-toolbar, .sbm-toolbar) {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.g3-table-scroll, .overflow-x-auto, .g3-membership-list) {
+  max-width: 100%;
+  min-width: 0;
+  overscroll-behavior-x: contain;
+}
+body[data-valo-typography="staff"] :is(.g4-session-dialog, [role="dialog"]) {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+}
+body[data-valo-typography="staff"] .g4-session-body { overflow-y: auto; min-height: 0; }
+body[data-valo-typography="staff"] .staff-live-monitor {
+  height: calc(100dvh - 70px);
+  min-height: 0;
+  isolation: isolate;
+}
+body[data-valo-typography="staff"] .staff-live-toolbar {
+  position: relative;
+  inset: auto;
+  flex: 0 0 auto;
+  margin: 16px;
+  gap: 8px;
+  background: var(--staff-surface);
+  border-color: var(--staff-border);
+}
+body[data-valo-typography="staff"] .staff-live-monitor > .flex-1 { min-height: 0; }
+body[data-valo-typography="staff"] .staff-live-monitor > .absolute.right-0 { max-width: 100%; padding: 20px; }
+/* Existing status colors remain semantic; legacy gold is replaced only here. */
+body[data-valo-typography="staff"] .staff-live-monitor :is(.text-\[\#ffd555\], .text-\[\#d7b94a\]) { color: var(--staff-accent); }
+body[data-valo-typography="staff"] .staff-live-monitor .staff-live-toolbar > button {
+  min-height: 40px;
+  background: var(--staff-surface-raised);
+  color: var(--staff-text-primary);
+  border-color: var(--staff-border);
+}
+body[data-valo-typography="staff"] .staff-drawer-backdrop { display: none; }
+/* The assistant keeps its drag, chat and approval behavior in the Staff palette. */
+body[data-valo-typography="staff"] :is(.valo-ai-panel, .valo-ai-preview) {
+  background: var(--staff-surface);
+  color: var(--staff-text-primary);
+  border-color: var(--staff-border);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+}
+body[data-valo-typography="staff"] .valo-ai-panel :is(.valo-ai-header, .valo-ai-tabs, .valo-ai-conversation, .valo-ai-suggestions, .valo-ai-compose, footer) {
+  background: var(--staff-surface);
+  border-color: var(--staff-border);
+  color: var(--staff-text-primary);
+}
+body[data-valo-typography="staff"] .valo-ai-panel :is(.valo-ai-message-bubble, .valo-ai-welcome > div, .valo-ai-suggestions button, .valo-ai-notification, .valo-ai-notification-detail, .valo-ai-draft, .valo-ai-filters button) {
+  background: var(--staff-surface-raised);
+  border-color: var(--staff-border);
+  color: var(--staff-text-primary);
+}
+body[data-valo-typography="staff"] .valo-ai-panel :is(input, .valo-ai-draft-type, .valo-ai-draft-reason) { color: var(--staff-text-primary); }
+body[data-valo-typography="staff"] .valo-ai-panel :is(.valo-ai-header p, .valo-ai-notification p, .valo-ai-tabs button) { color: var(--staff-text-secondary); }
+body[data-valo-typography="staff"] .valo-ai-panel :is(.valo-ai-tabs button.active, .valo-ai-filters button.active) { color: var(--staff-accent); border-color: var(--staff-accent); }
+body[data-valo-typography="staff"] .valo-ai-panel .valo-ai-compose button { background: var(--staff-accent); color: #080B0F; }
+body[data-valo-typography="staff"] .valo-ai-panel .is-user .valo-ai-message-bubble { background: #12392C; color: var(--staff-text-primary); }
+body[data-valo-typography="staff"] .valo-ai-panel :is(.valo-ai-header > button, .valo-ai-draft-actions button) { background: var(--staff-surface-raised); color: var(--staff-text-primary); border-color: var(--staff-border); }
+body[data-valo-typography="staff"] .valo-ai-panel button:hover:not(:disabled) { background-color: var(--staff-hover-surface); color: var(--staff-primary-hover); }
+body[data-valo-typography="staff"] .staff-overlay-root { position: relative; z-index: 100; }
+body[data-valo-typography="staff"] .staff-report-overlay { padding: 16px; }
+body[data-valo-typography="staff"] .staff-report-overlay > div { max-height: calc(100dvh - 32px); overflow-y: auto; background: var(--staff-surface); }
+body[data-valo-typography="staff"] .staff-overlay-root > .fixed > div {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+}
+body[data-valo-typography="staff"] .dashboard-page-content .fixed { z-index: 100; }
+body[data-valo-typography="staff"] .dashboard-page-content .fixed.right-0 { max-width: 100vw; }
+body[data-valo-typography="staff"] .staff-camera-dialog,
+body[data-valo-typography="staff"] .staff-camera-dialog > div { background-color: var(--staff-surface); }
+body[data-valo-typography="staff"] .staff-camera-header { flex-wrap: wrap; gap: 16px; flex-shrink: 0; }
+body[data-valo-typography="staff"] .staff-camera-header > div { min-width: 0; flex-wrap: wrap; }
+body[data-valo-typography="staff"] .staff-camera-header h2 { font-family: Montserrat, sans-serif; }
+body[data-valo-typography="staff"] .staff-camera-header button { min-height: 40px; }
+body[data-valo-typography="staff"] .staff-camera-dialog :is(.text-amber-300, .text-amber-400) { color: var(--staff-accent); }
+body[data-valo-typography="staff"] .staff-camera-dialog :is(.bg-amber-400, .bg-yellow-400) { background: var(--staff-accent); }
+body[data-valo-typography="staff"] .staff-camera-dialog .from-amber-400 { background: var(--staff-accent); }
+@media (max-width: 1023px) {
+  body[data-valo-typography="staff"] .staff-camera-dialog { overflow-y: auto; }
+  body[data-valo-typography="staff"] .staff-camera-dialog > div { flex-shrink: 0; padding-inline: 12px; }
+  body[data-valo-typography="staff"] .staff-camera-header > div:last-child { width: 100%; gap: 8px; }
+  body[data-valo-typography="staff"] .staff-camera-header > div:last-child > div { flex-wrap: wrap; }
+  body[data-valo-typography="staff"] .staff-camera-header button[aria-label] { margin-left: auto; }
+  body[data-valo-typography="staff"] .staff-camera-dialog select { max-width: 100%; min-width: 0; }
+  body[data-valo-typography="staff"] .staff-camera-workspace { display: flex; flex-direction: column; overflow: visible; min-height: 0; }
+  body[data-valo-typography="staff"] .staff-camera-workspace > div { min-height: 280px; flex: 0 0 auto; }
+}
+/* Lists follow the single page scroller; horizontal overflow stays in tables. */
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.g3-customer-page, .g3-vip-page, .staff-session-management, .staff-ticket-packages, .staff-notification-management) {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.g3-customer-main, .g3-vip-main, .g3-session-panel, .stp-content, .snm-content, .snm-feed, .snm-stream) {
+  height: auto;
+  flex: 1 1 auto;
+  overflow: visible;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.stp-catalog, .snm-event-list, .staff-membership-scroll) {
+  flex: 1 1 auto;
+  overflow: visible;
+}
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .g3-table-scroll { flex: 0 0 auto; overflow: auto; }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .g3-membership-list { flex: 1 1 auto; overflow: auto; }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .snm-content { padding-bottom: 24px; }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.snm-metrics, .stp-metrics, .staff-session-metrics) { background: var(--staff-surface); }
+body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content :is(.snm-stream, .stp-row, .sgc-station, .sbm-stat) { background: var(--staff-surface); border-color: var(--staff-border); }
+@media (max-width: 1023px) {
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(288px, calc(100vw - 48px));
+    z-index: 110;
+    transform: translateX(-100%);
+    visibility: hidden;
+  }
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar[data-drawer-open="true"] { transform: none; visibility: visible; }
+  body[data-valo-typography="staff"] .staff-dashboard-sidebar nav { padding-top: 16px; }
+  body[data-valo-typography="staff"] .staff-dashboard-collapse { display: none; }
+  body[data-valo-typography="staff"] .staff-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 105;
+    background: #0009;
+  }
+}
+@media (max-width: 639px) {
+  body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active { --staff-page-gutter: 16px; }
+  body[data-valo-typography="staff"] .staff-shell-notifications {
+    position: fixed;
+    top: 78px;
+    right: 16px;
+  }
+  body[data-valo-typography="staff"] .staff-live-toolbar { margin: 12px; }
+  body[data-valo-typography="staff"] .staff-live-toolbar > div { border-right: 0; padding-inline: 4px; }
+  body[data-valo-typography="staff"] .staff-live-toolbar > .min-w-\[190px\] { min-width: 0; flex: 1 1 150px; }
+  body[data-valo-typography="staff"] .staff-dashboard-shell.staff-density-active .staff-dashboard-main .dashboard-page-content .g3-toolbar > div { width: 100%; min-width: 0; }
+  body[data-valo-typography="staff"] .g4-session-body { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px; }
+}

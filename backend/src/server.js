@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
 const dotenv = require('dotenv');
 const { createCorsOptions } = require('./config/cors');
 const connectDB = require('./config/db');
@@ -12,6 +13,7 @@ const { startScheduler } = require('./services/parkingScheduler');
 const { seedRules } = require('./seeds/notificationRuleSeeder');
 
 // Load env variables
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 // Import routes
@@ -113,6 +115,27 @@ const startServer = async () => {
 
     // Attach io to app so controllers/services can access it
     app.set('io', io);
+
+    // Lắng nghe stream frame trực tiếp qua Socket từ PC sang Kiosk tablet (siêu nhẹ, không tốn HTTP overhead)
+    io.on('connection', (socket) => {
+      socket.on('gate:stream_frame', (data) => {
+        // Broadcast frame này ngay lập tức cho các tablet đang kết nối
+        socket.broadcast.emit('gate:live_frame', data);
+      });
+
+      socket.on('gate:auto_scan_changed', (data) => {
+        socket.broadcast.emit('gate:auto_scan_status', data);
+      });
+
+      socket.on('kiosk:slot_hold_changed', (data) => {
+        if (data?.type === 'HOLD_CREATED') {
+          socket.broadcast.emit('booking:hold_created', data);
+        } else if (data?.type === 'HOLD_RELEASED') {
+          socket.broadcast.emit('booking:hold_released', data);
+        }
+        socket.broadcast.emit('parking:slots_updated');
+      });
+    });
 
     // Setup notification socket handlers
     const { onlineUsers } = setupNotificationSocket(io);

@@ -44,7 +44,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
         setIsVerifying(false);
         setStepAlert({
           title: 'QR Verification Failed',
-          message: data.message || 'Mã QR không hợp lệ',
+          message: data.message || 'Invalid QR code',
         });
         return;
       }
@@ -76,7 +76,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       setIsVerifying(false);
       setStepAlert({
         title: 'Connection Error',
-        message: err.message || 'Lỗi kết nối khi xác thực mã QR.',
+        message: err.message || 'Connection error while verifying QR code.',
       });
     }
   };
@@ -94,11 +94,20 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
     if (verifyData.hasPreBooking || verifyData.isMonthly) {
       const needsReallocation = Boolean(verifyData.requiresSlotReallocation);
       const canFastPass = Boolean(!needsReallocation && verifyData.assignedSlot);
+      const isPausedResume = Boolean(verifyData.isPausedResume);
+      const isAutoReallocated = Boolean(verifyData.slotAutoReallocated);
+
       updateFormData({
         step3Mode: canFastPass ? 'fastpass' : 'policy',
         isMonthly: Boolean(verifyData.isMonthly),
         membershipType: verifyData.membershipType || null,
         hasPreBooking: Boolean(verifyData.hasPreBooking),
+        isPausedResume,
+        slotAutoReallocated: isAutoReallocated,
+        reallocationReason: verifyData.reallocationReason || null,
+        remainingHours: verifyData.remainingHours,
+        remainingMinutes: verifyData.remainingMinutes,
+        bookingEnd: verifyData.bookingEnd || null,
         isVipReallocation: Boolean(verifyData.vipSlotOccupiedByOther),
         isBookingReallocation: Boolean(verifyData.isBookingReallocation),
         quotaExhausted: Boolean(verifyData.quotaExhausted),
@@ -115,11 +124,18 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       });
 
       if (needsReallocation) {
-        setReallocationTitle('Slot Reallocation');
+        setReallocationTitle('Slot Reallocation Required');
         setReallocationMessage(
           verifyData.vipSlotOccupiedByOther
             ? 'Your VIP slot is currently occupied. Please choose an available replacement slot on the map (0 VND/hr).'
             : 'Your reserved booking slot is currently unavailable. Please choose another available slot on the map (No extra charge).'
+        );
+        setShowReallocationModal(true);
+      } else if (isAutoReallocated) {
+        setReallocationTitle('Slot Automatically Reassigned');
+        setReallocationMessage(
+          verifyData.reallocationReason ||
+          `Your reserved slot was obstructed. Conflict-free replacement slot ${verifyData.assignedSlot} (${verifyData.assignedFloorName || 'Floor 1'}) has been assigned at no extra charge.`
         );
         setShowReallocationModal(true);
       } else {
@@ -578,7 +594,7 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
       {/* Reallocation Modal */}
       {showReallocationModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white rounded-[32px] p-8 max-w-[400px] w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-[32px] p-8 max-w-[460px] w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
             <div className="w-20 h-20 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mb-6 shadow-inner">
               <AlertCircle size={40} strokeWidth={2.5} />
             </div>
@@ -588,15 +604,41 @@ export default function KioskStep1({ formData, updateFormData, onNext }) {
             <p className="text-sm font-medium text-slate-600 mb-8 leading-relaxed">
               {reallocationMessage}
             </p>
-            <button
-              onClick={() => {
-                setShowReallocationModal(false);
-                onNext('2');
-              }}
-              className="w-full h-[60px] bg-amber-500 hover:bg-amber-400 text-white text-lg font-black rounded-2xl transition-all shadow-[0_8px_20px_rgba(245,158,11,0.3)] active:scale-95"
-            >
-              CHOOSE NEW SLOT
-            </button>
+            {formData.slotAutoReallocated ? (
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReallocationModal(false);
+                    onNext('3');
+                  }}
+                  className="w-full h-[60px] bg-emerald-600 hover:bg-emerald-500 text-white text-lg font-black rounded-2xl transition-all shadow-[0_8px_20px_rgba(16,185,129,0.3)] active:scale-95 cursor-pointer"
+                >
+                  PROCEED TO SLOT {formData.selectedSlot}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReallocationModal(false);
+                    onNext('2');
+                  }}
+                  className="text-xs font-bold text-slate-500 hover:text-slate-800 underline py-2 cursor-pointer"
+                >
+                  Need another slot? Choose on map
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReallocationModal(false);
+                  onNext('2');
+                }}
+                className="w-full h-[60px] bg-amber-500 hover:bg-amber-400 text-white text-lg font-black rounded-2xl transition-all shadow-[0_8px_20px_rgba(245,158,11,0.3)] active:scale-95 cursor-pointer"
+              >
+                CHOOSE NEW SLOT
+              </button>
+            )}
           </div>
         </div>
       )}
