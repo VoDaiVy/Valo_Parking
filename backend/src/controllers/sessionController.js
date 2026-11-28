@@ -1134,11 +1134,12 @@ exports.kioskVerifyQr = async (req, res) => {
     if (entryImageBase64 && !detectedPlate) {
       try {
         const base64Data = entryImageBase64.replace(/^data:image\/\w+;base64,/, '');
-        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
+        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+(scan|api)?\/?$/i, '');
         const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
           image: base64Data,
           ...(req.body.lane ? { lane: req.body.lane } : {}),
         }, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
           timeout: 15000
         });
         const found = pythonRes.data?.plate || pythonRes.data?.licensePlate;
@@ -2115,11 +2116,14 @@ exports.kioskExitScan = async (req, res, next) => {
     if (exitImageBase64 && !actualExitPlate && !resolvedBySessionQr) {
       try {
         const base64Data = exitImageBase64.replace(/^data:image\/\w+;base64,/, '');
-        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
+        const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+(scan|api)?\/?$/i, '');
         const aiResponse = await axios.post(`${aiServiceUrl}/scan`, {
           image: base64Data,
           ...(req.body.lane ? { lane: req.body.lane } : {}),
-        }, { timeout: 15000 });
+        }, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          timeout: 15000,
+        });
         const found = aiResponse.data?.plate || aiResponse.data?.licensePlate;
         if (aiResponse.data?.success && found) actualExitPlate = normalizeLicensePlate(found);
       } catch (aiError) {

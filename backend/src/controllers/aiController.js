@@ -44,9 +44,10 @@ exports.scanPlate = async (req, res, next) => {
     // ATTEMPT 1: Local Python AI Service (YOLO + EasyOCR)
     // -------------------------------------------------------------
     let localAiResponded = false;
+    const rawAiUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim();
+    const aiServiceUrl = rawAiUrl.replace(/\/+(scan|api)?\/?$/i, '');
     try {
-      console.log('[AI Scan] Attempting Local Python AI for License Plate...', normalizedLane ? `(lane=${normalizedLane})` : '');
-      const aiServiceUrl = (process.env.AI_SERVICE_URL || 'http://localhost:8000').trim().replace(/\/+$/, '');
+      console.log('[AI Scan] Attempting Local Python AI for License Plate...', aiServiceUrl, normalizedLane ? `(lane=${normalizedLane})` : '');
       const pythonRes = await axios.post(`${aiServiceUrl}/scan`, {
         image: base64Data,
         ...(normalizedLane ? { lane: normalizedLane } : {}),
@@ -89,7 +90,7 @@ exports.scanPlate = async (req, res, next) => {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const fallbackModels = [
           'gemini-2.5-flash',
-          'gemini-1.5-flash',
+          'gemini-2.5-flash-lite',
         ];
 
         for (const modelName of fallbackModels) {
