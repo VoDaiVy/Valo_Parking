@@ -1,3 +1,5 @@
+import AdminNotificationFeed from "../Admin/AdminNotificationFeed";
+import AnimatedNumber from '../../components/AnimatedNumber';
 import { notificationPresentation, notificationLabel } from '../../utils/notificationPresentation';
 import '../../components/Admin/adminGridBackground.css';
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -36,6 +38,7 @@ import {
   getResponseAvailability,
 } from "../../utils/staffOperationalAvailability";
 import "./components/staffNotificationManagement.css";
+import "../Admin/adminNotificationManagement.css";
 import { getPaginationPages } from "./sessionPagination.js";
 import StaffNotificationAudience from "./components/StaffNotificationAudience";
 import { STAFF_THEME } from "./components/staffTheme.js";
@@ -61,8 +64,10 @@ export default function NotificationManagement({ role }) {
   const { t, language } = useLanguage();
   const isStaffView = role === 'staff';
   const [selectedTab, setSelectedTab] = useState("feed");
+  const [issueRefreshVersion, setIssueRefreshVersion] = useState(0);
   const [params, setParams] = useSearchParams();
   const tab = params.has('incident') || params.get('view') === 'issues' ? 'issues' : selectedTab;
+  const isAdminWorkspace = role === "admin" && tab !== "feed";
   const socket = useSocket();
   const setTab = value => {
     setSelectedTab(value);
@@ -168,7 +173,7 @@ export default function NotificationManagement({ role }) {
   }, [refreshHistory]);
 
   return (
-    <div className={`staff-notification-management ${STAFF_THEME.page} ${role === 'admin' ? 'admin-grid-background' : ''}`}>
+    <div className={`staff-notification-management ${STAFF_THEME.page} ${role === 'admin' ? 'admin-grid-background admin-notification-page' : ''} ${isAdminWorkspace ? 'admin-notification-workspace' : ''}`}>
       <div className="snm-content px-6 py-6 max-w-[1400px] mx-auto">
         <header className="snm-header flex items-start justify-between gap-4 mb-6">
           <div>
@@ -182,6 +187,12 @@ export default function NotificationManagement({ role }) {
               {isStaffView ? t("staffNotifications.subtitle.staff") : t("staffNotifications.subtitle.admin")}
             </p>
           </div>
+          {role === 'admin' && <button
+            type="button" className="snm-admin-header-refresh"
+            aria-label={t("common.refresh")} title={t("common.refresh")}
+            disabled={tab !== 'issues' && (historyLoading || historyLoadingMore)}
+            onClick={() => { if (tab === 'issues') setIssueRefreshVersion(value => value + 1); else refreshHistory(); }}
+          ><RefreshCw size={17} aria-hidden="true" className={tab !== 'issues' && historyLoading ? 'animate-spin' : ''} /></button>}
           {isStaffView && <span className="snm-header-refresh-slot" data-inactive={tab !== "feed" || undefined} aria-hidden={tab !== "feed"} inert={tab !== "feed"}>
             <HistoryRefreshButton loading={historyLoading} loadingMore={historyLoadingMore} onRefresh={refreshHistory} t={t} />
           </span>}
@@ -195,7 +206,7 @@ export default function NotificationManagement({ role }) {
           {tab === "feed" && (
             <>
             {isStaffView && <StatsRow stats={apiStats} state={historyState} received t={t} />}
-            <FeedTab
+            {role === "admin" ? <AdminNotificationFeed source={historyList} onRefresh={refreshHistory} t={t} language={language} /> : <FeedTab
               notifications={historyList}
               loading={historyLoading}
               loadingMore={historyLoadingMore}
@@ -205,13 +216,13 @@ export default function NotificationManagement({ role }) {
               total={historyTotal}
               onLoadMore={loadMoreHistory}
               onRefresh={refreshHistory} t={t} language={language}
-              showRefresh={!isStaffView}
+              showRefresh={false}
               paginated={isStaffView}
-            />
+            />}
             </>
           )}
-          {tab === "compose" && <ComposeTab onSent={() => { setTab("feed"); refreshHistory(); }} t={t} />}
-          {tab === "issues" && <StaffIssueReports role={role} />}
+          {tab === "compose" && <ComposeTab role={role} onSent={() => { setTab("feed"); refreshHistory(); }} t={t} />}
+          {tab === "issues" && <StaffIssueReports role={role} refreshVersion={issueRefreshVersion} />}
         </section>
       </div>
     </div>
@@ -285,7 +296,7 @@ function StatsRow({ stats, state, received = false, t }) {
             <div className={`w-11 h-11 rounded-lg border ${toneMap[c.tone]} grid place-items-center`}>
               <IconComponent size={24} />
             </div>
-            <div className="mt-4 text-4xl font-bold tracking-tight text-white">{c.value}</div>
+            <div className="mt-4 text-4xl font-bold tracking-tight text-white"><AnimatedNumber value={c.value} /></div>
             <div className="text-sm text-gray-400 mt-1">{c.label}</div>
           </div>
         );
@@ -621,9 +632,10 @@ function NotificationDrawer({ notification: m, onClose, t, language = "en" }) {
   );
 }
 
-function ComposeTab({ onSent, t }) {
+function ComposeTab({ role, onSent, t }) {
   let isStaffCompose = false;
   try { isStaffCompose = JSON.parse(sessionStorage.getItem('valo_user') || '{}').role === 'staff'; } catch { /* Keep other role presentation unchanged. */ }
+  const isCompactCompose = isStaffCompose || role === 'admin';
   const [audienceKind, setAudienceKind] = useState("single");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectedRoles, setSelectedRoles] = useState(["customer"]);
@@ -725,9 +737,9 @@ function ComposeTab({ onSent, t }) {
   const messageSection = (
           <section className="snm-message-section">
             <div className="snm-message-heading">
-            <StepHeading number="2" title={isStaffCompose ? t("staffNotifications.compose.message") : t("staffNotifications.compose.writeMessage")} description={t("staffNotifications.compose.messageHint")} />
-              {isStaffCompose && <Listbox value={notificationLabel('priority', priority, t)} onChange={setPriority}>
-                <ListboxButton className="snm-priority-select" data-priority={notificationLabel('priority', priority, t)} aria-label={t("staffNotifications.compose.priority")}>
+            <StepHeading number="2" title={isCompactCompose ? t("staffNotifications.compose.message") : t("staffNotifications.compose.writeMessage")} description={t("staffNotifications.compose.messageHint")} />
+              {isCompactCompose && <Listbox value={role === 'admin' ? priority : notificationLabel('priority', priority, t)} onChange={setPriority}>
+                <ListboxButton className="snm-priority-select" data-priority={role === "admin" ? priority : notificationLabel('priority', priority, t)} aria-label={t("staffNotifications.compose.priority")}>
                   <span className="snm-priority-dot" aria-hidden="true" /><span>{notificationLabel('priority', priority, t)}</span><ChevronDown size={14} aria-hidden="true" />
                 </ListboxButton>
                 <ListboxOptions anchor={{ to: 'bottom end', gap: 6, padding: 12 }} className="snm-composer-options snm-priority-menu">
@@ -762,7 +774,7 @@ function ComposeTab({ onSent, t }) {
   );
 
   return (
-    <div data-compact-composer={isStaffCompose} className="snm-compose max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+    <div data-compact-composer={isCompactCompose} className="snm-compose max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
       <div className="flex flex-col gap-3 border-b border-[#ffd555]/15 bg-gradient-to-r from-[#ffd555]/[0.06] to-transparent px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-[#ffd555]/20 bg-[#ffd555]/10 text-[#ffd555]">
@@ -785,11 +797,12 @@ function ComposeTab({ onSent, t }) {
       <div className="snm-compose-grid grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.7fr)]">
         <div className="snm-compose-fields space-y-7 p-5 sm:p-7 lg:border-r lg:border-white/5">
           <section>
-            <StepHeading number="1" title={isStaffCompose ? t("staffNotifications.compose.audienceLabel") : t("staffNotifications.compose.chooseAudience")} description={t("staffNotifications.compose.audienceHint")} />
-            {isStaffCompose ? <StaffNotificationAudience
+            <StepHeading number="1" title={isCompactCompose ? t("staffNotifications.compose.audienceLabel") : t("staffNotifications.compose.chooseAudience")} description={t("staffNotifications.compose.audienceHint")} />
+            {isCompactCompose ? <StaffNotificationAudience
               kind={audienceKind} options={audienceOptions} onKindChange={changeAudience}
               users={selectedUsers} onUsersChange={setSelectedUsers}
               roles={selectedRoles} onRolesChange={setSelectedRoles}
+              t={role === "admin" ? t : undefined}
             /> : <>
             <div className="snm-audience-segments mt-4 grid gap-3 sm:grid-cols-2">
               {audienceOptions.map((option) => {
@@ -879,12 +892,12 @@ function ComposeTab({ onSent, t }) {
             </>}
           </section>
 
-          {!isStaffCompose && messageSection}
+          {!isCompactCompose && messageSection}
         </div>
 
         <aside className="snm-preview-column space-y-6 bg-[#0d0d0d] p-5 sm:p-7">
-          {isStaffCompose && messageSection}
-          {!isStaffCompose && <section>
+          {isCompactCompose && messageSection}
+          {!isCompactCompose && <section>
             <StepHeading number="3" title={t("staffNotifications.compose.priority")} description={t("staffNotifications.compose.priorityHint")} compact />
             <div className="snm-priority-options mt-4 grid grid-cols-2 gap-2">
               {PRIORITIES.map((item) => {
@@ -910,7 +923,7 @@ function ComposeTab({ onSent, t }) {
           </section>}
 
           <section className="snm-review-preview">
-            <p className="snm-preview-heading text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{isStaffCompose ? t("staffNotifications.compose.livePreview") : t("staffNotifications.compose.preview")}</p>
+            <p className="snm-preview-heading text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{isCompactCompose ? t("staffNotifications.compose.livePreview") : t("staffNotifications.compose.preview")}</p>
             <div className="snm-preview mt-3 overflow-hidden rounded-xl border border-white/10 bg-[#0D0D0D]">
               <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
                 <span className="text-xs text-gray-500">{t("staffNotifications.compose.recipientInbox")}</span>
@@ -929,14 +942,14 @@ function ComposeTab({ onSent, t }) {
                   <p className={`mt-1 whitespace-pre-wrap break-words text-xs leading-5 ${message.trim() ? "text-gray-400" : "text-gray-700"}`}>
                     {message.trim() || t("staffNotifications.compose.previewContent")}
                   </p>
-                  {!isStaffCompose && <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-600">
+                  {!isCompactCompose && <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-600">
                     <Users size={12} />
                     {audienceSummary}
                   </p>}
                 </div>
               </div>
             </div>
-            {isStaffCompose && <p className="snm-recipient-summary"><Users size={14} aria-hidden="true" />
+            {isCompactCompose && <p className="snm-recipient-summary"><Users size={14} aria-hidden="true" />
               {audienceKind === 'single' || audienceKind === 'multi'
                 ? t("staffNotifications.compose.recipientsSelected", { count: selectedUsers.length })
                 : audienceKind === 'role' ? `${t("staffNotifications.compose.recipientRoles")}: ${audienceSummary}` : audienceSummary}

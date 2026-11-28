@@ -1,0 +1,55 @@
+.admin-notification-feed{color:#eee;min-width:0;font-size:13px}
+.anf-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.anf-search{display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:0 12px;border:1px solid #ffffff1a;border-radius:8px;color:#9ca3af;background:#111}
+.anf-search input{width:100%;min-width:0;height:42px;background:transparent;color:white;outline:none;font-size:13px}
+.anf-search:focus-within{border-color:#c6a76e}
+.admin-notification-feed .anf-select{height:44px;border-radius:8px;font-size:12px;font-weight:500;min-width:170px}
+.anf-icon{display:inline-grid;place-items:center;width:40px;height:40px;flex-shrink:0;border-radius:8px;color:#e8dcc4}
+.anf-icon:hover{background:#c6a76e14}
+.anf-icon:disabled{opacity:.5}
+.anf-table-scroll{overflow-x:auto;border-block:1px solid #ffffff1a}
+.admin-notification-feed table{width:100%;table-layout:fixed;border-collapse:collapse;min-width:760px}
+.admin-notification-feed th{text-align:left;font-size:11px;color:#9ca3af;font-weight:600;background:#ffffff03}
+.admin-notification-feed :is(th,td){padding:10px 12px}
+.admin-notification-feed th:first-child{width:32%}
+.admin-notification-feed th:nth-child(5){width:19%}
+.admin-notification-feed th:last-child{width:70px}
+.admin-notification-feed tbody tr{height:58px;border-top:1px solid #ffffff0d;cursor:pointer}
+.admin-notification-feed tbody tr:hover{background:#ffffff04}
+.anf-title{display:block;width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:left;font-weight:500}
+.anf-badge{display:inline-block;padding:3px 7px;border-radius:5px;background:#ffffff06;font-size:11px}
+.anf-badge[data-status]{color:#91d3ad;background:#14352750}
+.anf-badge:is([data-status=REVOKED],[data-status=FAILED]){color:#f2a5af;background:#512f3440}
+.anf-badge:is([data-status=PENDING],[data-status=SCHEDULED]){color:#e7c278;background:#4b3c2440}
+.admin-notification-feed .anf-empty{height:232px;text-align:center;color:#9ca3af}
+.anf-empty button{margin-left:12px;color:#e8dcc4}
+.anf-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;font-size:12px;color:#9ca3af}
+.anf-pagination>div{display:flex;align-items:center;gap:6px}
+.anf-pagination button{min-width:32px;height:32px;padding:0 9px;border:1px solid #ffffff1a;border-radius:7px;color:#ccc}
+.anf-pagination button[aria-current]{color:#e8dcc4;border-color:#c6a76e80;background:#c6a76e14}
+.anf-pagination button:disabled{opacity:.35;cursor:not-allowed}
+
+.anf-dialog{position:relative;z-index:100;color:#eee}
+.anf-backdrop{position:fixed;inset:0;background:#000b}
+.anf-dialog-position{position:fixed;inset:0;display:grid;place-items:center;padding:20px;overflow-y:auto}
+.anf-panel{width:100%;max-width:900px;max-height:calc(100dvh - 40px);overflow-y:auto;border:1px solid #c6a76e40;border-radius:12px;background:#111;padding:22px 24px;font-size:13px}
+.anf-panel header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:16px;border-bottom:1px solid #ffffff1a}
+.anf-panel h2{font-size:20px;font-weight:600;overflow-wrap:anywhere}
+.anf-panel dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 28px;padding:18px 0;border-bottom:1px solid #ffffff1a}
+.anf-panel dt,.anf-panel h3{color:#9ca3af;font-size:12px;margin-bottom:6px}
+.anf-panel dd{overflow-wrap:anywhere}
+.anf-panel section{padding:18px 0}
+.anf-panel section p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;max-height:30vh;overflow-y:auto}
+.anf-panel a{color:#e8dcc4;text-decoration:underline}
+.anf-panel footer{display:flex;justify-content:flex-end;border-top:1px solid #ffffff1a;padding-top:14px}
+.anf-panel footer button{border:1px solid #c6a76e70;border-radius:7px;padding:8px 22px;color:#e8dcc4;background:#c6a76e14}
+:is(.admin-notification-feed,.anf-panel) button:focus-visible{outline:2px solid #c6a76e;outline-offset:2px}
+
+@media(max-width:639px){.anf-toolbar{flex-wrap:wrap}
+.anf-search{flex-basis:100%}
+.anf-pagination{align-items:flex-start;flex-direction:column}
+.anf-pagination>div{flex-wrap:wrap}
+.anf-panel{padding:18px 16px}
+.anf-panel dl{grid-template-columns:minmax(0,1fr)}
+.anf-icon,.anf-pagination button,.anf-panel footer button{min-height:44px;min-width:44px}
+}

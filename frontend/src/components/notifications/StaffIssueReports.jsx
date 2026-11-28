@@ -8,7 +8,7 @@ import { useLanguage } from '../../i18n/hooks/useLanguage';
 const button = 'rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50';
 const keyOf = value => String(value || '').toLowerCase();
 
-export default function StaffIssueReports({ role }) {
+export default function StaffIssueReports({ role, refreshVersion = 0 }) {
   const { t, language } = useLanguage();
   const [params, setParams] = useSearchParams();
   const { state } = useLocation();
@@ -19,7 +19,7 @@ export default function StaffIssueReports({ role }) {
   const [list, setList] = useState(null);
   const [detail, setDetail] = useState(null);
   const socket = useSocket();
-  const listKey = `${status}:${page}:${refresh}`;
+  const listKey = `${status}:${page}:${refresh}:${refreshVersion}`;
   const timeLabel = new Intl.DateTimeFormat(language === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Bangkok' });
   const priorityText = value => t(`staffNotifications.issues.priority.${keyOf(value) === 'error' ? 'urgent' : keyOf(value) === 'warning' ? 'high' : 'normal'}`);
   const statusText = value => t(`staffNotifications.issues.status.${keyOf(value) === 'in_progress' ? 'inProgress' : keyOf(value) === 'closed' ? 'resolved' : 'waitingAdmin'}`);
@@ -39,7 +39,7 @@ export default function StaffIssueReports({ role }) {
       if (!controller.signal.aborted) setDetail({ id: selected, report: response.ok ? response.data?.data : null, error: response.ok ? '' : response.data?.message || t('staffNotifications.issues.errors.loadOne') });
     });
     return () => controller.abort();
-  }, [selected, refresh, t]);
+  }, [selected, refresh, refreshVersion, t]);
 
   useEffect(() => {
     if (!socket) return undefined;
@@ -56,7 +56,7 @@ export default function StaffIssueReports({ role }) {
   });
   const current = detail?.id === selected ? detail : null;
   return (
-    <section className="space-y-4 text-white" aria-label={t('staffNotifications.issues.aria')}>
+    <section className="snm-issue-reports space-y-4 text-white" aria-label={t('staffNotifications.issues.aria')}>
       {state?.adminNotified === false && <p role="status" className="text-sm text-amber-300">{t('staffNotifications.issues.reportSavedNoAdmin')}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
@@ -64,7 +64,7 @@ export default function StaffIssueReports({ role }) {
             <button key={value} type="button" className={`${button} ${status === value ? 'bg-white/15' : ''}`} aria-pressed={status === value} onClick={() => { setStatus(value); setPage(1); select(''); }}>{label}</button>
           ))}
         </div>
-        <button type="button" className={`${button} inline-flex items-center gap-2`} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /> {t('common.refresh')}</button>
+        {role !== "admin" && <button type="button" className={`${button} inline-flex items-center gap-2`} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /> {t('common.refresh')}</button>}
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(230px,1fr)_minmax(0,2fr)]">
         <div className="space-y-2">
